@@ -46,6 +46,7 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     func restoreReply(_ reply: String) throws -> DocumentSnapshot { try base.restoreReply(reply) }
     func clearReply() throws -> DocumentSnapshot { try base.clearReply() }
     func type(_ range: SourceRange, _ text: String) throws -> Typed { try base.type(range, text) }
+    func format(_ edits: [EditorEdit]) throws -> Typed { try base.format(edits) }
     func endTyping() { base.endTyping() }
     func discover() throws -> DocumentSnapshot { try base.discover() }
     func followFirstLine() throws -> String? { try base.followFirstLine() }

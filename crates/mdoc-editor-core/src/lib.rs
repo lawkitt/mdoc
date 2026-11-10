@@ -25,6 +25,7 @@ pub mod search;
 pub mod spell_exclusions;
 pub mod tables;
 pub mod text;
+pub mod toolbar;
 pub mod transactions;
 pub mod turn_into;
 pub mod words;

@@ -276,20 +276,37 @@ final class LivePreviewTests: XCTestCase {
         XCTAssertEqual(coreText(harness), harness.shown)
     }
 
-    func testReturnInCodeIsANewlineAndAFenceDoesNotCloseItself() throws {
+    func testReturnInCodeIsANewlineAndAFenceAboveCodeDoesNotClose() throws {
         let harness = try harness(text: "a\n\n```\ncode\n```\n")
         let code = location(of: "code", in: harness) + 4
         caret(harness, at: code)
         change(harness, NSRange(location: code, length: 0), "\n")
         XCTAssertTrue(harness.shown.contains("code\n\n```"))
-        // A typed opening fence: Return types a newline (the core closes no
-        // fence yet; slice 4 decides).
+        // A fence typed above a code block pairs with its opening fence:
+        // Return types a newline.
         caret(harness, at: 1)
         type(harness, "\n```")
         let at = harness.view.selectedRange.location
         change(harness, NSRange(location: at, length: 0), "\n")
         XCTAssertTrue(harness.shown.hasPrefix("a\n\n```\n\n"), harness.shown)
         XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    /// ADR 0109's typing helpers: a fence typed where nothing closes it
+    /// closes itself, the caret on the line between, one undo step.
+    func testATypedFenceClosesItself() throws {
+        let harness = try harness(text: "a")
+        caret(harness, at: harness.string.length)
+        type(harness, "\n```swift")
+        XCTAssertEqual(harness.shown, "a\n\n```swift")
+        let at = harness.view.selectedRange.location
+        change(harness, NSRange(location: at, length: 0), "\n")
+        XCTAssertTrue(harness.shown.hasSuffix("```swift\n\n```"), harness.shown)
+        XCTAssertEqual(harness.view.selectedRange.location, harness.string.length - 4)
+        XCTAssertEqual(coreText(harness), harness.shown)
+        harness.model.undoTapped()
+        show(harness)
+        XCTAssertTrue(harness.shown.hasSuffix("```swift"), harness.shown)
     }
 
     func testBackspaceJoinsParagraphsAndEmptiesAPair() throws {

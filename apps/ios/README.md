@@ -115,6 +115,13 @@ failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
 not a gate: iOS 26 sheets are translucent, so the audit reports contrast and
 clipping on sheet text (and the system's Cancel and Done) that reads fine;
 missing labels, small targets and text in a category colour are real.
+The edit-mode audits (ADR 0109's acceptance) are opt-in the same way, since
+hosted runners are too slow for an audit: with
+`TEST_RUNNER_MDOC_A11Y_EXPLORE=1`,
+`LivePreviewUITests/testTheAccessibilityAuditInEditMode` and
+`EditToolbarUITests/testTheAccessibilityAuditWithTheToolbarUp` fail on any
+issue on the edited text, Done, the toolbar or the formatting keyboard. The
+hub runs them at the phone check.
 `LargeTextExploreUITests` saves the main screens at the largest accessibility
 text size as PNGs into the folder in `TEST_RUNNER_MDOC_SHOTS_DIR` (it skips
 without it), for checking that rows stack instead of breaking words.

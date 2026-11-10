@@ -52,8 +52,13 @@ struct MdocApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New document") { app.showStart() }
                     .keyboardShortcut("n", modifiers: .command)
-                Button("Search documents and cases") { app.requestSearch() }
-                    .keyboardShortcut("k", modifiers: .command)
+                Button("Search documents and cases") {
+                    // In edit mode ⌘K is the text's Link… (ADR 0109): the
+                    // menu's key comes first, so it asks the text view.
+                    let link = #selector(CandidateTextView.linkKey)
+                    if !UIApplication.shared.sendAction(link, to: nil, from: nil, for: nil) { app.requestSearch() }
+                }
+                .keyboardShortcut("k", modifiers: .command)
             }
         }
     }

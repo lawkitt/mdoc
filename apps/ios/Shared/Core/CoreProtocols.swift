@@ -159,6 +159,11 @@ protocol DocumentSession: AnyObject, Sendable {
     /// change saves once typing pauses. Returns at once with what the edit
     /// view needs, not a snapshot.
     func type(_ range: SourceRange, _ text: String) throws -> Typed
+    /// One edit-mode command (a toolbar or formatting-keyboard button, ⌘B,
+    /// the link sheet), as the view applied the editor core's edits: one
+    /// "Formatting" undo step of its own. The edits are sorted, in UTF-8
+    /// offsets of the text before any of them.
+    func format(_ edits: [EditorEdit]) throws -> Typed
     /// The next typed edit starts a step of its own: the caret moved.
     func endTyping()
     /// After a typing pause: the names under review found again in what

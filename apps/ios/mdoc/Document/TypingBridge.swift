@@ -36,6 +36,9 @@ final class TypingBridge {
     /// The core's text and the view's differ: the owner fetches the core's
     /// text and calls `resync(core:view:)`.
     var onResync: () -> Void = {}
+    /// Sends one editor command's edits to the core as one step; nil when
+    /// the core refused them.
+    var sendCommand: ([EditorEdit]) -> Typed? = { _ in nil }
     /// The core took the view's text as `Typed.text_revision`.
     var onTyped: (Typed) -> Void = { _ in }
     /// After a sync sent edits: each, in order, in the offsets of the text
@@ -62,6 +65,8 @@ final class TypingBridge {
     private(set) var sent = 0
     /// Applying a structural key's edit: its own change is plain.
     private var applying = false
+    /// Making an editor command's edits: they reach the core together.
+    private(set) var isCommanding = false
     /// Between `willChange` and `didChange`: a selection change now is the
     /// edit's own, not the reader's.
     var isChanging: Bool { changing || applying }
@@ -143,6 +148,8 @@ final class TypingBridge {
     /// API: sends what changed since the last sync, once nothing is marked.
     /// Calling it again with nothing new sends nothing.
     func didChange(_ view: UITextView) {
+        // An editor command's edits are sent together once all are made.
+        guard !isCommanding else { return }
         changing = false
         guard view.markedTextRange == nil else {
             composing = true
@@ -177,6 +184,79 @@ final class TypingBridge {
             return
         }
         if !edits.isEmpty { onApplied(edits) }
+    }
+
+    /// An editor command (a toolbar or formatting-keyboard button, a
+    /// shortcut, the link sheet; ADR 0109): `make` gets the core's text and
+    /// the view's selection in UTF-8 and answers with the core's change. Its
+    /// edits are made through the view's own `replace(_:withText:)`, last
+    /// first, so each stays in the offsets of the text before them; then
+    /// they reach the core together, one "Formatting" step, and the core's
+    /// selection is set. Marked text is committed first. False when no
+    /// text changed: no change, a caret move, or the core refused it (the
+    /// view then syncs again).
+    @discardableResult
+    func command(in view: UITextView, _ make: (String, TextRange) -> EditorChange?) -> Bool {
+        if view.markedTextRange != nil { view.unmarkText() }
+        didChange(view)
+        guard mirror.isEqual(to: view.textStorage.string) else {
+            onResync()
+            return false
+        }
+        var source = mirror as String
+        source.makeContiguousUTF8()
+        let selected = view.selectedRange.clamped(to: mirror.length)
+        guard let change = make(source, Self.sourceRange(selected, in: mirror).textRange) else { return false }
+        let bytes = Array(source.utf8)
+        var edited: [UInt8] = []
+        var at = 0
+        for edit in change.edits {
+            edited += bytes[at..<Int(edit.range.start)]
+            edited += Array(edit.text.utf8)
+            at = Int(edit.range.end)
+        }
+        let result = String(decoding: edited + bytes[at...], as: UTF8.self)
+        let selection = UTF8Map(result).range(of: SourceRange(change.selection))
+        let map = UTF8Map(source)
+        let edits = change.edits.map { (range: map.range(of: SourceRange($0.range)), text: $0.text) }
+        applying = true
+        defer { applying = false }
+        guard let first = edits.first, let last = edits.last else {
+            view.selectedRange = selection
+            return false
+        }
+        isCommanding = true
+        for edit in edits.reversed() {
+            guard let start = view.position(from: view.beginningOfDocument, offset: edit.range.location),
+                  let end = view.position(from: start, offset: edit.range.length),
+                  let range = view.textRange(from: start, to: end) else { continue }
+            view.replace(range, withText: edit.text)
+        }
+        isCommanding = false
+        changing = false
+        composing = false
+        announced.removeAll()
+        guard view.textStorage.string == result, let typed = sendCommand(change.edits) else {
+            onResync()
+            return false
+        }
+        sent += 1
+        mirror = NSMutableString(string: result)
+        onTyped(typed)
+        guard Int(typed.utf16Len) == mirror.length else {
+            onResync()
+            return false
+        }
+        if NSMaxRange(selection) <= mirror.length { view.selectedRange = selection }
+        caretAfterEdit = view.selectedRange
+        // The edits as one stretch, for live preview's restyle.
+        let span = NSRange(location: first.range.location, length: NSMaxRange(last.range) - first.range.location)
+        let grown = edits.reduce(0) { $0 + ($1.text as NSString).length - $1.range.length }
+        let source0 = SourceRange(start: Int(change.edits[0].range.start), end: Int(change.edits[change.edits.count - 1].range.end))
+        onApplied([AppliedEdit(
+            range: span, source: source0,
+            text: mirror.substring(with: NSRange(location: span.location, length: span.length + grown)))])
+        return true
     }
 
     /// `textViewDidChangeSelection`: a caret moved by the reader, not by an
@@ -253,5 +333,14 @@ final class TypingBridge {
             text as CFString, CFRange(location: range.location, length: range.length),
             CFStringBuiltInEncodings.UTF8.rawValue, 0, false, nil, 0, &used)
         return used
+    }
+}
+
+extension NSRange {
+    /// The range within a text `length` long: a caret at the end stays
+    /// there, where `NSIntersectionRange` would give up.
+    func clamped(to length: Int) -> NSRange {
+        let start = Swift.min(Swift.max(location, 0), length)
+        return NSRange(location: start, length: Swift.min(Swift.max(self.length, 0), length - start))
     }
 }

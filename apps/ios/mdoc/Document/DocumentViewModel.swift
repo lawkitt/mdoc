@@ -61,6 +61,9 @@ final class DocumentViewModel {
     @ObservationIgnored var typing = TypingState()
     /// Bumped to show the system find bar over the text (ADR 0109).
     var findBarRequest = 0
+    /// Edit mode's link sheet (ADR 0109): the Link key, ⌘K or the link
+    /// chip's Edit.
+    var linkDraft: LinkDraft?
     /// Try a sample's names, proposed once recognition has read the text.
     var storedNames: [SampleDocument.Name]?
     /// Identities wanted: a regular window shows them in the inspector or

@@ -65,6 +65,7 @@ extension DocumentViewModel {
     /// pause, and the typing is saved then rather than after it.
     func doneEditing() {
         guard isEditing else { return }
+        linkDraft = nil
         // Marked (IME) text is committed and sent while typing still counts.
         typing.flush?()
         // The text as typed, before review shows it: the snapshot is older.
@@ -86,10 +87,23 @@ extension DocumentViewModel {
     /// One committed edit from the text view: the core's answer, or nil
     /// when it refused (the view then syncs again).
     func typed(_ range: SourceRange, _ text: String) -> Typed? {
+        edited(label: String(localized: "Typing")) { try session.type(range, text) }
+    }
+
+    /// One editor command's edits (the toolbar, the formatting keyboard, a
+    /// shortcut, the link sheet), as the view made them: one "Formatting"
+    /// step. Nil when the core refused them.
+    func formatted(_ edits: [EditorEdit]) -> Typed? {
+        edited(label: String(localized: "Formatting")) { try session.format(edits) }
+    }
+
+    /// What follows each edit in edit mode: the undo step mirrored, the
+    /// alias hint, discovery once typing pauses.
+    private func edited(label: String, _ edit: () throws -> Typed) -> Typed? {
         guard isEditing else { return nil }
         let typed: Typed
         do {
-            typed = try session.type(range, text)
+            typed = try edit()
         } catch {
             errorMessage = error.localizedDescription
             return nil
@@ -97,9 +111,9 @@ extension DocumentViewModel {
         typing.revision = typed.textRevision
         typing.canUndo = typed.canUndo
         typing.canRedo = typed.canRedo
-        // Each new typing step mirrors on the window's undo stack, as a
-        // review step does (ADR 0098).
-        if typed.newStep { registerSystemUndo(label: String(localized: "Typing")) }
+        // Each new step mirrors on the window's undo stack, as a review
+        // step does (ADR 0098).
+        if typed.newStep { registerSystemUndo(label: label) }
         if typed.brokeAlias && !typing.hintedAlias {
             typing.hintedAlias = true
             say(String(localized: "You edited an alias: that mention no longer restores."), symbol: "info.circle")
