@@ -99,6 +99,39 @@ final class NewDocumentTests: XCTestCase {
         XCTAssertEqual(app.library.document(model.id)?.title, "Flat 3")
     }
 
+    /// Text still being composed (IME) when the document is left is text:
+    /// it is committed first, and the document stays (review finding 1).
+    func testComposedTextIsCommittedBeforeTheEmptyCheck() throws {
+        let app = try app()
+        let model = try newDocument(app)
+        // What the text view's flush does with marked text.
+        model.typing.flush = { _ = model.typed(SourceRange(start: 0, end: 0), "日本語") }
+        app.showStart()
+        XCTAssertEqual(app.library.document(model.id)?.title, "日本語")
+    }
+
+    /// Another document's job holds the one slot: New document still opens
+    /// at once in edit mode, and goes when left empty (review finding 2).
+    func testANewDocumentOpensWhileAnotherJobRuns() throws {
+        let app = try app()
+        let before = app.library.documents.count
+        let running = Task {
+            await app.jobs.run(.scan, documentID: seeded.letter, title: "Busy") { observer in
+                while !observer.isCancelled() { Thread.sleep(forTimeInterval: 0.01) }
+                throw CoreError.cancelled
+            }
+        }
+        wait("the other job") { app.jobs.current != nil }
+        app.newDocument()
+        let model = try XCTUnwrap(app.openModel)
+        XCTAssertTrue(model.isEditing)
+        XCTAssertEqual(model.snapshot.origin, .new)
+        app.showStart()
+        XCTAssertEqual(app.library.documents.count, before)
+        app.jobs.cancel()
+        _ = running
+    }
+
     /// A new document with text stays when left, under its first line.
     func testANewDocumentWithTextStays() throws {
         let app = try app()
@@ -151,6 +184,22 @@ final class NewDocumentTests: XCTestCase {
     }
 
     // MARK: The sample
+
+    /// No restore while a job runs for the document: the edit would throw
+    /// its result away (ADR 0109; review finding 3).
+    func testRestoreWaitsForAJob() throws {
+        seeded = try Fixture.seeded()
+        let jobs = LongJobRunner(background: NoBackgroundContinuation())
+        let letter = try seeded.model(seeded.letter, jobs: jobs, slow: 30)
+        let text = letter.snapshot.markdown
+        let scan = Task { await letter.findNames() }
+        wait("the scan") { letter.runningJob != nil }
+        letter.restore(SampleDocument.english)
+        XCTAssertEqual(letter.coreText(), text)
+        XCTAssertEqual(letter.notice, letter.editBlockedReason)
+        letter.cancelJob()
+        _ = scan
+    }
 
     /// Try a sample again opens the sample; edited, it asks first, and
     /// Restore brings its text and proposals back as they came.

@@ -1,19 +1,9 @@
 import Foundation
 import MdocFFI
 
-/// What slice 6 of ADR 0109 adds to a document: a new document opening in
-/// edit mode, Find names again over edited text, and the sample restored.
+/// What slice 6 of ADR 0109 adds to a document: Find names again over
+/// edited text, and the sample restored.
 extension DocumentViewModel {
-    /// New document: edit mode, keyboard up, once its empty text is read;
-    /// at once when it is read already.
-    func editsOnceRead() {
-        if snapshot.phase == nil {
-            editsWhenRead = true
-        } else {
-            enterEditMode()
-        }
-    }
-
     // MARK: Find names again (ADR 0109)
 
     /// Find names again shows in the document's menu once names were looked
@@ -48,6 +38,11 @@ extension DocumentViewModel {
     /// Try a sample again on this, the sample: its text as it came, as one
     /// edit (one Undo brings the edits back), with its names proposed again.
     func restore(_ sample: SampleDocument) {
+        // No editing during a job: its result would be thrown away (ADR 0109).
+        if let reason = editBlockedReason {
+            say(reason, symbol: "hourglass")
+            return
+        }
         if isEditing { doneEditing() }
         if isReviewing { endReview() }
         let whole = SourceRange(start: 0, end: session.snapshot().markdown.utf8.count)

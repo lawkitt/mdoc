@@ -165,9 +165,13 @@ final class AppModel {
     /// first (ADR 0104: the save follows the tap), then the models of
     /// documents no longer open go.
     private func show(_ destination: Destination) {
-        if let open = navigator.openDocument, destination != .document(open), !discardIfEmpty(open) {
-            followFirstLine(of: open)
-            saveChanges(of: open)
+        if let open = navigator.openDocument, destination != .document(open) {
+            // Marked (IME) text is committed first: it is text, not empty.
+            documents.model(for: open)?.typing.flush?()
+            if !discardIfEmpty(open) {
+                followFirstLine(of: open)
+                saveChanges(of: open)
+            }
         }
         navigator.show(destination)
         evictClosedDocuments()
@@ -303,8 +307,17 @@ final class AppModel {
     func newDocument() {
         if case .settings = navigator.presentation { navigator.dismiss() }
         let title = String(localized: "New document")
-        let pending = PendingImport(source: .newDocument, suggestedTitle: title)
-        finishImport(pending, title: title, into: .newCase(name: title))?.editsOnceRead()
+        do {
+            let session = try library.importDocument(
+                PendingImport(source: .newDocument, suggestedTitle: title), title: title, into: .newCase(name: title))
+            // Its empty text is read now, outside the one job slot: a job on
+            // another document never holds it back (ADR 0085 Long jobs).
+            _ = try session.recognize(observer: JobToken { _ in })
+            open(session.id)
+            documents.model(for: session.id)?.enterEditMode()
+        } catch {
+            present(error)
+        }
     }
 
     /// Imports into the chosen case, opens the document and starts
@@ -364,7 +377,12 @@ final class AppModel {
             open(sample.id)
             guard let model = documents.model(for: sample.id), navigator.openDocument == sample.id else { return }
             if !SampleDocument.isOriginal(model.snapshot.markdown) {
-                navigator.present(.restoreSample(sample.id))
+                // A job on it would lose its result to the edit: it says why.
+                if let reason = model.editBlockedReason {
+                    model.say(reason, symbol: "hourglass")
+                } else {
+                    navigator.present(.restoreSample(sample.id))
+                }
             }
             return
         }

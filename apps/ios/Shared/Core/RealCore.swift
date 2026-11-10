@@ -660,11 +660,13 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     func snapshot() -> DocumentSnapshot {
         reopenIfPending()
         guard let review = try? ffi.snapshot() else {
-            let (kind, original, ocrStarted) = lock.withLock { (self.kind, self.original, self.ocrStarted) }
+            let (kind, original, ocrStarted, source) = lock.withLock { (self.kind, self.original, self.ocrStarted, self.source) }
+            // Before it is read, its origin is the import's.
+            let origin: DocumentOrigin = if case .text(_, let origin) = source?.input { origin } else { .ordinary }
             return DocumentSnapshot(
                 id: id, title: chosen.title, caseID: chosen.caseID.map(CaseID.init), caseName: library.caseName(chosen.caseID),
                 kind: kind, phase: nil, markdown: "", styling: .empty, candidates: [], identities: [],
-                original: original, pagesDone: 0, pageCount: 0, reply: nil, resumesOCR: ocrStarted)
+                original: original, pagesDone: 0, pageCount: 0, reply: nil, resumesOCR: ocrStarted, origin: origin)
         }
         return snapshot(of: review, path: ffi.info()?.path)
     }
