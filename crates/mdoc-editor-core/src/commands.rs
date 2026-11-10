@@ -117,6 +117,11 @@ pub fn enter(source: &str, selection: Range<usize>, rendered: bool) -> EditResul
         return EditResult::one(range, text, to);
     }
     let (row, _) = row_col(source, caret);
+    if selection.start == selection.end
+        && let Some(closed) = close_fence(source, blocks, row, caret)
+    {
+        return closed;
+    }
     if blocks.row_is_literal(source, row) {
         return type_over(&selection, "\n");
     }
@@ -126,6 +131,31 @@ pub fn enter(source: &str, selection: Range<usize>, rendered: bool) -> EditResul
     let (range, text, offset) = enter::enter_edit(source, caret);
     let to = range.start + offset;
     EditResult::one(range, text, to)
+}
+
+/// The phones' typing helper (ADR 0109): Return at the end of an opening
+/// code fence nobody closed yet (```` ``` ````, a language after it or not)
+/// closes it, the caret on the empty line between. Desktop's Enter types a
+/// newline there.
+fn close_fence(source: &str, blocks: Blocks, row: usize, caret: usize) -> Option<EditResult> {
+    if blocks.in_fence(row) {
+        return None;
+    }
+    let (start, end) = (line_starts(source)[row], line_end(source, row));
+    let line = &source[start..end];
+    let body = line.trim_start();
+    let indent = &line[..line.len() - body.len()];
+    let ticks = body.bytes().take_while(|&b| b == b'`').count();
+    if ticks < 3
+        || body[ticks..].contains('`')
+        || caret < start + indent.len() + ticks
+        || !source[caret..end].trim().is_empty()
+        || blocks.fence_block_rows(source, row).1.is_some()
+    {
+        return None;
+    }
+    let text = format!("\n{indent}\n{indent}{}", &body[..ticks]);
+    Some(EditResult::one(end..end, text, end + 1 + indent.len()))
 }
 
 /// ⇧Enter: a line break inside the block — a hard break in prose, lists
@@ -273,20 +303,16 @@ pub fn delete_forward(source: &str, selection: Range<usize>, rendered: bool) -> 
     })
 }
 
-/// Toggle `format` around the selection; the same text stays selected.
-/// `None` on an empty or blank selection.
+/// Toggle `format` the phone's way ([`crate::toolbar::toggle_format`]): a
+/// selection as desktop's toggle does, and a caret too — inside the format
+/// its markers come off, in a word the word wraps, elsewhere an empty pair
+/// goes in. `None` on a blank selection.
 pub fn toggle_format(
     source: &str,
     selection: Range<usize>,
     format: InlineFormat,
 ) -> Option<EditResult> {
-    let (open, close) = format.markers();
-    let (range, text, selection) =
-        format::toggle_wrap_pair(source, sorted(&selection), open, close)?;
-    Some(EditResult {
-        edits: vec![crate::Edit { range, text }],
-        selection,
-    })
+    crate::toolbar::toggle_format(source, selection, format)
 }
 
 /// Tab: indent the caret's list or quote item one level, else type spaces
@@ -426,11 +452,61 @@ mod tests {
             run(s, Some(enter(s, caret(5), true))).unwrap().0,
             "```\nx\n\n```"
         );
+        // The closing fence takes a plain newline too.
+        assert_eq!(
+            run(s, Some(enter(s, caret(9), true))).unwrap().0,
+            "```\nx\n```\n"
+        );
         let s = "one two";
         assert_eq!(
             run(s, Some(enter(s, 3..4, true))),
             Some(("one\n\ntwo".into(), caret(5)))
         );
+    }
+
+    #[test]
+    fn a_typed_opening_fence_closes_itself() {
+        for rendered in [true, false] {
+            // At the text's end, with a language or without one.
+            for (s, out) in [
+                ("```", "```\n\n```"),
+                (
+                    "```rust",
+                    "```rust\n\n```rust"[..12].to_string().leak() as &str,
+                ),
+            ] {
+                let r = enter(s, caret(s.len()), rendered);
+                assert_eq!(r.apply(s), out, "{s:?}");
+                assert_eq!(r.selection, caret(s.len() + 1));
+            }
+            // Indented, before more text, and with four backticks.
+            let s = "  ````\nnext";
+            let r = enter(s, caret(6), rendered);
+            assert_eq!(r.apply(s), "  ````\n  \n  ````\nnext");
+            assert_eq!(r.selection, caret(9));
+            // A fence a later one closes, a closing fence, inline code and a
+            // caret before the backticks get a plain newline.
+            for (s, at) in [
+                ("```\nx\n```", 3),
+                ("```\nx\n```", 9),
+                ("```a``` b", 9),
+                ("```", 1),
+            ] {
+                let r = enter(s, caret(at), rendered);
+                assert!(
+                    !r.apply(s).ends_with("\n```")
+                        || s.ends_with("```") && at != s.len()
+                        || r.apply(s).matches("```").count() == s.matches("```").count(),
+                    "{s:?} at {at}: {:?}",
+                    r.apply(s)
+                );
+                assert_eq!(
+                    r.apply(s).matches('`').count(),
+                    s.matches('`').count(),
+                    "{s:?} at {at}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -614,7 +690,11 @@ mod tests {
             run(s, toggle_format(s, 2..4, InlineFormat::Highlight)),
             Some(("a ==bc== d".into(), 4..6))
         );
-        assert_eq!(toggle_format(s, 2..2, InlineFormat::Bold), None);
+        // A caret between words: an empty pair to type into (the phone's rule).
+        assert_eq!(
+            run(s, toggle_format(s, 1..1, InlineFormat::Bold)),
+            Some(("a**** bc d".into(), caret(3)))
+        );
         let s = "- a";
         assert_eq!(
             run(s, indent(s, caret(3), true)),

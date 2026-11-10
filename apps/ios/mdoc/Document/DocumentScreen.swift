@@ -48,6 +48,9 @@ struct DocumentScreen: View {
             .sheet(isPresented: $model.showsFind) {
                 FindSheet(model: model)
             }
+            .sheet(item: $model.linkDraft) { draft in
+                LinkSheet(draft: draft)
+            }
             .sheet(item: Binding(get: { sameAsCandidate.map(PickerSource.candidate) ?? sameAsIdentity.map(PickerSource.identity) },
                                  set: { if $0 == nil { sameAsCandidate = nil; sameAsIdentity = nil } })) { source in
                 sameAsPicker(source)

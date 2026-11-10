@@ -448,8 +448,22 @@ extension DocumentViewModel {
     func registerSystemUndo(label: String? = nil) {
         systemUndoSteps = min(systemUndoSteps + 1, Self.systemUndoLevels)
         guard let manager = systemUndo else { return }
+        let name = label ?? snapshot.undoStep?.label ?? ""
+        // Each core step is its own group. Grouped by event, two steps made
+        // in one turn of the run loop (Return then the next letter, typed
+        // fast) would join one group, and one ⌘Z would undo both.
+        guard manager.groupingLevel == 0 else {
+            manager.registerUndo(withTarget: self) { $0.undoFromSystem() }
+            manager.setActionName(name)
+            return
+        }
+        let byEvent = manager.groupsByEvent
+        manager.groupsByEvent = false
+        manager.beginUndoGrouping()
         manager.registerUndo(withTarget: self) { $0.undoFromSystem() }
-        manager.setActionName(label ?? snapshot.undoStep?.label ?? "")
+        manager.setActionName(name)
+        manager.endUndoGrouping()
+        manager.groupsByEvent = byEvent
     }
 
     /// As many steps as the core keeps (`DocumentSession`, 256).
