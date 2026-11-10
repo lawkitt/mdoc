@@ -133,6 +133,25 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toolbar-bold"].exists, "the toolbar stays up")
     }
 
+    /// Done, then edit mode again with the caret still in the cell: the new
+    /// toolbar starts scrolled to ⋯ as well (review finding on #783).
+    @MainActor
+    func testTheTableMenuShowsWholeAfterEditingAgain() throws {
+        let (app, target) = Self.editCell("Депозит")
+        let more = app.buttons["table-more"]
+        let shown = { more.exists && more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 }
+        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole")
+        app.buttons["done-editing"].tap()
+        XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
+        app.buttons["edit-button"].tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        if !app.buttons["toolbar-bold"].waitForExistence(timeout: 2) {
+            target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 10), "the caret is in the cell again")
+        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole again")
+    }
+
     /// Aa in a cell (ADR 0110): the ordinary formatting keyboard, its
     /// formats on and its blocks off; Strikethrough works in the cell.
     @MainActor

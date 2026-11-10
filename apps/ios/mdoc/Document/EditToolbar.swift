@@ -29,6 +29,9 @@ struct EditToolbar: View {
                         }
                         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                         .onChange(of: model.inCell) { _, inCell in follow(inCell, with: proxy) }
+                        // A toolbar made again (edit mode entered again)
+                        // with the caret still in a cell starts at ⋯ too.
+                        .onAppear { if model.inCell { proxy.scrollTo(Self.tableMenuID, anchor: .trailing) } }
                     }
                     .glassEffect(.regular, in: .capsule)
                     ToolbarKey(
