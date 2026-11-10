@@ -30,6 +30,9 @@ final class LivePreview {
     /// The markers shown and the lines the selection is on, in UTF-8.
     private(set) var visible: [SourceRange] = []
     private(set) var caretLines: SourceRange?
+    /// The caret's line, in both modes, while nothing is selected: a blank
+    /// one keeps the body's height (ADR 0110), in UTF-8.
+    private(set) var caretLine: SourceRange?
     /// How many keystrokes or caret moves restyled blocks: a test hook.
     private(set) var restyles = 0
     /// The UTF-16 range the last restyle styled: a test hook.
@@ -64,6 +67,7 @@ final class LivePreview {
             fences = fences.map { $0.compactMap { Self.grown($0, by: edit) } }
             visible = visible.compactMap { Self.moved($0, by: edit) }
             caretLines = caretLines.flatMap { Self.grown($0, by: edit) }
+            caretLine = caretLine.flatMap { Self.grown($0, by: edit) }
             for table in view.tableViews {
                 let range = table.table.range
                 if NSMaxRange(edit.range) <= range.location {
@@ -82,30 +86,51 @@ final class LivePreview {
         let edited = SourceRange(start: edit.source.start, end: edit.source.start + edit.sourceLength)
         var ranges = [edited, lines]
         if let caretLines { ranges.append(caretLines) }
+        if let caretLine { ranges.append(caretLine) }
         visible = look.rendered ? editorVisibleMarkers(text: text, selection: selection.textRange).map(SourceRange.init) : []
         caretLines = look.rendered ? lines : nil
+        caretLine = selection.start == selection.end ? lines : nil
         return restyle(ranges, text: text, in: view, look: look, checkFences: true)
     }
 
     /// The selection moved: when what the caret reveals changed, the lines
-    /// it left and entered restyle. Show Markdown reveals nothing.
+    /// it left and entered restyle. Show Markdown reveals nothing, but a
+    /// blank line the caret enters or leaves restyles there too.
     func selectionChanged(in view: CandidateTextView, look: Look, force: Bool = false) {
-        guard look.rendered else {
-            visible = []
-            caretLines = nil
-            return
-        }
         let interval = editingSignposter.beginInterval("Restyle", id: editingSignposter.makeSignpostID())
         defer { editingSignposter.endInterval("Restyle", interval) }
         let text = Self.text(of: view)
         let (selection, lines) = Self.selection(in: view)
-        let shown = editorVisibleMarkers(text: text, selection: selection.textRange).map(SourceRange.init)
-        guard force || shown != visible || lines != caretLines else { return }
+        let caret = selection.start == selection.end ? lines : nil
         var ranges = [lines]
-        if let caretLines, caretLines != lines { ranges.append(caretLines) }
-        visible = shown
-        caretLines = lines
+        if let caretLine, caretLine != lines { ranges.append(caretLine) }
+        if look.rendered {
+            let shown = editorVisibleMarkers(text: text, selection: selection.textRange).map(SourceRange.init)
+            guard force || shown != visible || lines != caretLines || caret != caretLine else { return }
+            if let caretLines, caretLines != lines { ranges.append(caretLines) }
+            visible = shown
+            caretLines = lines
+        } else {
+            visible = []
+            caretLines = nil
+            // A whole restyle (`force`) squeezed the caret's blank line again.
+            guard force || caret != caretLine,
+                  [caret, caretLine].contains(where: { $0.map { Self.blank($0, in: text) } ?? false }) else {
+                caretLine = caret
+                return
+            }
+        }
+        caretLine = caret
         restyle(ranges, text: text, in: view, look: look)
+    }
+
+    /// Whether `line` holds nothing but its line break.
+    private static func blank(_ line: SourceRange, in text: String) -> Bool {
+        let bytes = text.utf8
+        guard line.start <= bytes.count, line.end <= bytes.count else { return false }
+        let from = bytes.index(bytes.startIndex, offsetBy: line.start)
+        let to = bytes.index(bytes.startIndex, offsetBy: line.end)
+        return bytes[from..<to].allSatisfy { $0 == 0x0A || $0 == 0x0D }
     }
 
     /// The view's text, in UTF-8 once: each core call copies it.
@@ -161,6 +186,7 @@ final class LivePreview {
         }
         var styler = MarkdownStyler(traits: look.traits, selected: nil, scoped: [], rendered: look.rendered, width: look.width)
         styler.editing = true
+        styler.caretLine = caretLine.flatMap(local)
         // Its tables keep their columns while their cells are typed into.
         styler.keptTables = Dictionary(
             view.tableViews.filter { NSLocationInRange($0.table.anchor, range) }

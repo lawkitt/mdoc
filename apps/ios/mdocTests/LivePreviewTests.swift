@@ -133,6 +133,83 @@ final class LivePreviewTests: XCTestCase {
         harness.session.snapshot().markdown
     }
 
+    // MARK: The caret on an empty line (ADR 0110)
+
+    /// The caret's height where it rests now, and the body line's.
+    func caretHeight(_ harness: Harness) throws -> (caret: CGFloat, body: CGFloat) {
+        harness.view.layoutIfNeeded()
+        let end = try XCTUnwrap(harness.view.selectedTextRange?.end)
+        let body = MarkdownStyler.font(.body, traits: harness.view.traitCollection)
+        return (harness.view.caretRect(for: end).height, body.lineHeight)
+    }
+
+    func assertBodyTyping(_ harness: Harness, _ message: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let (caret, body) = try caretHeight(harness)
+        XCTAssertGreaterThanOrEqual(caret, body * 0.95, "the caret is a body line tall \(message)", file: file, line: line)
+        XCTAssertLessThanOrEqual(caret, ceil(body) + 0.5, "and no taller \(message)", file: file, line: line)
+        let font = try XCTUnwrap(harness.view.typingAttributes[.font] as? UIFont, file: file, line: line)
+        XCTAssertEqual(font.pointSize, MarkdownStyler.font(.body, traits: harness.view.traitCollection).pointSize,
+                       "what is typed next is body-sized \(message)", file: file, line: line)
+    }
+
+    func testTheCaretOnAnEmptyLineIsABodyLineTall() throws {
+        for rendered in [true, false] {
+            let harness = try harness(rendered: rendered)
+            let mode = rendered ? "in live preview" : "with Show Markdown"
+            // A blank line between paragraphs.
+            let blank = location(of: "The **tenant**", in: harness) - 1
+            XCTAssertEqual(harness.string.character(at: blank), 0x0A)
+            caret(harness, at: blank)
+            try assertBodyTyping(harness, "on a blank line \(mode)")
+            // A whole restyle, the caret staying there, keeps it tall.
+            harness.coordinator.restyleWhole(harness.view)
+            try assertBodyTyping(harness, "on a blank line after a whole restyle \(mode)")
+            // It shrinks back once the caret leaves, as a whole restyle draws it.
+            caret(harness, at: location(of: "monthly", in: harness))
+            assertMatchesAWholeRestyle(harness, mode)
+            // After Return at the end of a paragraph, and after a heading.
+            caret(harness, at: location(of: "Last line.", in: harness) + 10)
+            type(harness, "\n")
+            try assertBodyTyping(harness, "after Return \(mode)")
+            type(harness, "x")
+            XCTAssertTrue(harness.shown.hasSuffix("x"))
+            caret(harness, at: location(of: "# Lease", in: harness) + 7)
+            type(harness, "\n")
+            try assertBodyTyping(harness, "after a heading \(mode)")
+            assertMatchesAWholeRestyle(harness, mode)
+        }
+    }
+
+    /// The caret's whole line is kept above the toolbar's room: after a
+    /// command, a keyboard change or the room growing, the text scrolls it
+    /// back up; the room comes off when edit mode ends (ADR 0110).
+    func testTheCaretsLineStaysAboveTheToolbar() throws {
+        let paragraphs = (1...60).map { "Paragraph \($0) of the lease." }.joined(separator: "\n\n")
+        let harness = try harness(text: Self.text + "\n\n" + paragraphs + "\n")
+        let view = harness.view, coordinator = harness.coordinator
+        harness.window.makeKeyAndVisible()
+        XCTAssertTrue(view.becomeFirstResponder())
+        let inset = view.contentInset.bottom
+        coordinator.setToolbarRoom(300, in: view)
+        XCTAssertEqual(view.contentInset.bottom, inset + 300)
+        // The caret on a line the toolbar's room covers.
+        view.layoutIfNeeded()
+        let hidden = try XCTUnwrap(view.closestPosition(to: CGPoint(x: 40, y: view.contentOffset.y + view.bounds.height - 120)))
+        caret(harness, at: view.offset(from: view.beginningOfDocument, to: hidden))
+        XCTAssertGreaterThan(view.caretRect(for: try XCTUnwrap(view.selectedTextRange?.end)).maxY,
+                             view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom, "the caret starts under the room")
+        coordinator.scrollCaretLineIntoView(view, animated: false)
+        view.layoutIfNeeded()
+        let end = try XCTUnwrap(view.selectedTextRange?.end)
+        let line = view.caretRect(for: end)
+        let bottom = view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom
+        XCTAssertLessThanOrEqual(line.maxY, bottom + 0.5, "the caret's line is above the room: \(line), \(bottom)")
+        XCTAssertGreaterThan(line.minY, view.contentOffset.y + view.adjustedContentInset.top, "and still in view")
+        // With no keyboard showing there is no room.
+        coordinator.updateToolbarRoom(view)
+        XCTAssertEqual(view.contentInset.bottom, inset)
+    }
+
     // MARK: The reveal rule
 
     func testTheCaretsBoldShowsItsMarkersDimmed() throws {
@@ -497,6 +574,7 @@ final class LivePreviewTests: XCTestCase {
             harness.view.tableViews.map { ($0.table.anchor, $0.table) }, uniquingKeysWith: { first, _ in first })
         let styling = MarkdownStyling(markdown: text)
         styler.revealed = preview.visible + (preview.caretLines.map { LivePreview.shownLines(in: styling, caret: $0) } ?? [])
+        styler.caretLine = preview.caretLine
         let expected = styler.document(markdown: text, styling: styling, candidates: preview.candidates).text
         let actual = harness.view.textStorage
         XCTAssertEqual(expected.length, actual.length, file: file, line: line)

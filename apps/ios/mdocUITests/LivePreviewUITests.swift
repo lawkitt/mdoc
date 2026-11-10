@@ -34,6 +34,8 @@ final class LivePreviewUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        // The keyboard may wait for a tap in the text (ADR 0110).
+        if !app.keyboards.firstMatch.waitForExistence(timeout: 3) { text.tap() }
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         return (app, text)
     }
@@ -58,6 +60,28 @@ final class LivePreviewUITests: XCTestCase {
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Milk\n- "), timeout: 5))
         app.typeKey("z", modifierFlags: [.command, .shift])
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: 5))
+    }
+
+    /// The caret on an empty line, after Return, is as tall as on the
+    /// line of text before it, and stays above the floating toolbar (ADR
+    /// 0110). The caret is found where the screen changes as it blinks.
+    @MainActor
+    func testTheCaretOnAnEmptyLineIsABodyLineTall() throws {
+        let (app, text) = edit(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
+        toTheEnd(app, text)
+        // The hardware keys moved it: the toolbar shows at the bottom edge.
+        XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
+        // A word of text, the caret after it; then Return: a new line.
+        app.typeText("Word")
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Word"), timeout: 5))
+        let onText = try XCTUnwrap(MdocUITest.caretRect(in: text), "the caret blinks after the word")
+        app.typeText("\n")
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value ENDSWITH %@)", "Word"), timeout: 5))
+        let onEmpty = try XCTUnwrap(MdocUITest.caretRect(in: text), "the caret blinks on the empty line")
+        XCTAssertLessThan(onEmpty.minX, onText.minX - 10, "the caret went to a new line: \(onText) then \(onEmpty)")
+        XCTAssertEqual(onEmpty.height, onText.height, accuracy: 2, "as tall as on the text: \(onText) then \(onEmpty)")
+        let toolbar = app.buttons["toolbar-bold"].frame
+        XCTAssertLessThan(onEmpty.maxY, toolbar.minY, "above the toolbar: \(onEmpty), \(toolbar)")
     }
 
     /// Puts the caret at the end of the text. A key sent while edit mode is

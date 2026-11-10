@@ -35,6 +35,10 @@ struct MarkdownStyler {
     /// mode keeps a table's columns while its cells are typed into, and
     /// measures only the rows that changed (ADR 0109).
     var keptTables: [Int: RenderedTable] = [:]
+    /// Edit mode: the caret's line, in the styled text's UTF-8 offsets.
+    /// When it is blank it keeps the body's height, so the caret on it is
+    /// a body line tall (ADR 0110).
+    var caretLine: SourceRange?
 
     static func link(for id: CandidateID) -> URL {
         var components = URLComponents()
@@ -87,10 +91,12 @@ struct MarkdownStyler {
         blank.paragraphSpacing = 0
         let blankFont = UIFont.systemFont(ofSize: max(body.pointSize / 3, 4))
         let source = markdown as NSString
+        let caret = caretLine.map { offsets.nsRange($0) }
         var index = 0
         while index < source.length {
             let line = source.lineRange(for: NSRange(location: index, length: 0))
-            if source.substring(with: line).trimmingCharacters(in: .newlines).isEmpty {
+            let hasCaret = caret.map { $0.location >= line.location && $0.location < NSMaxRange(line) } ?? false
+            if !hasCaret, source.substring(with: line).trimmingCharacters(in: .newlines).isEmpty {
                 text.addAttributes([.font: blankFont, .paragraphStyle: blank], range: line)
             }
             index = NSMaxRange(line)
