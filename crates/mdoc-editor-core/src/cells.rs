@@ -275,8 +275,8 @@ pub fn keep_in_cell(source: &str, selection: Range<usize>) -> Option<Range<usize
 }
 
 /// Moves the caret as Tab, ⇧Tab or an arrow key does in a drawn table:
-/// no edit, except Tab from the last cell, which leaves the table below as
-/// Return from its last row does (ADR 0060). `None` outside a drawn table.
+/// no edit, except Tab from the last cell, which leaves the table onto a
+/// fresh line below it ([`crate::enter::table_exit_edit`], ADR 0060). `None` outside a drawn table.
 pub fn move_caret(source: &str, selection: Range<usize>, by: CellMove) -> Option<EditResult> {
     let scan = BlockScan::new(source);
     let blocks = scan.view();

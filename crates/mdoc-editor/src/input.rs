@@ -15,6 +15,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use mdoc_editor_core::history::{EditKind, Snapshot};
 use mdoc_editor_core::paste::{PasteTarget, normalize_paste};
+use mdoc_editor_core::tables as table_rules;
 use mdoc_editor_core::{delete, enter, format, text};
 
 use super::{
@@ -299,8 +300,8 @@ impl EditorState {
         }
         // Inside a table, a raw newline would split the row's `| … |` markup.
         // Enter instead moves to the cell directly below (next row, same column,
-        // spreadsheet-style); from the last row it exits onto a fresh line below
-        // the table.
+        // spreadsheet-style); in the last row it adds a row, or from an empty
+        // last row exits onto a fresh line below the table (ADR 0110).
         if self.caret_in_table() {
             if let Some(off) = self.table_move_vertical(1)
                 && self
@@ -310,6 +311,15 @@ impl EditorState {
                     .is_some_and(|t| !t.is_separator)
             {
                 self.move_to(off, cx);
+                return;
+            }
+            if let Some((range, text, caret)) = table_rules::return_in_last_row(
+                &self.content,
+                self.scan_data().blocks(),
+                self.cursor_offset(),
+            ) {
+                let into = caret - range.start;
+                self.edit(range, &text, into, window, cx);
                 return;
             }
             let (row, _) = self.row_col(self.cursor_offset());
@@ -575,30 +585,20 @@ impl EditorState {
 
     pub(super) fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
-            let range = self.copy_range();
-            // Ordered markers copy at their DISPLAYED positions (still digit
-            // markdown), so a paste counts the way the screen did.
-            let text = if self.markdown_style.is_some() {
-                markdown_syntax::renumber_copy(&self.content, range)
-            } else {
-                self.content[range].to_string()
-            };
+            // Ordered items show the numbers written (ADR 0110), so the
+            // source copies as the screen reads.
+            let text = self.content[self.copy_range()].to_string();
             self.write_clipboard(text, cx);
         }
     }
 
     /// Copy the selection as the raw markdown ONLY — no host clipboard
     /// flavors — for pasting literal source into rich surfaces (the context
-    /// menu's "Copy as Markdown"). Same selection/renumber rules and copy
-    /// metadata as `copy`.
+    /// menu's "Copy as Markdown"). Same selection rules and copy metadata as
+    /// `copy`.
     pub(crate) fn copy_plain(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
-            let range = self.copy_range();
-            let text = if self.markdown_style.is_some() {
-                markdown_syntax::renumber_copy(&self.content, range)
-            } else {
-                self.content[range].to_string()
-            };
+            let text = self.content[self.copy_range()].to_string();
             self.write_clipboard(text, cx);
         }
     }
@@ -1372,8 +1372,19 @@ mod tests {
             text_of(&editor, cx),
             "| A | B |\n| --- | --- |\n| one<br> | two |"
         );
-        // From the last row, Enter leaves the table with a blank line, so the
-        // next text isn't read as another row.
+        // From the last row, Enter adds a row, the caret in its column
+        // (ADR 0110).
+        cx.simulate_keystrokes("enter");
+        assert_eq!(
+            text_of(&editor, cx),
+            "| A | B |\n| --- | --- |\n| one<br> | two |\n|  |  |"
+        );
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        // From that empty row, Enter removes it and leaves the table with a
+        // blank line, so the next text isn't read as another row.
         cx.simulate_keystrokes("enter");
         cx.simulate_input("After");
         let text = text_of(&editor, cx);

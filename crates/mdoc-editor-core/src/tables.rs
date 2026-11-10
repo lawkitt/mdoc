@@ -85,14 +85,25 @@ pub fn caret_pos_for_cell(source: &str, row: usize, cell: usize, in_cell: usize)
     row_start + col
 }
 
+/// The column holding `offset` as the cells read it
+/// ([`crate::cells::cell_at`]): a last cell left without its closing pipe
+/// counts, and the spaces before a pipe belong to the cell they pad. Falls
+/// back to [`cell_pos`] in a table the view does not draw.
+fn caret_column(source: &str, blocks: Blocks, offset: usize) -> Option<usize> {
+    crate::cells::cell_at(source, offset)
+        .map(|cell| cell.column)
+        .or_else(|| cell_pos(source, blocks, offset).map(|(_, cell, _)| cell))
+}
+
 fn applied(source: &str, range: &Range<usize>, text: &str) -> String {
     source[..range.start].to_owned() + text + &source[range.end..]
 }
 
 /// Insert an empty row above/below the caret's row; the caret moves into the
-/// new row's first cell. `None` outside a table.
+/// new row's cell in its own column (ADR 0110). `None` outside a table.
 pub fn insert_row(source: &str, blocks: Blocks, cursor: usize, below: bool) -> Option<TableEdit> {
-    let (row, _) = row_col(source, cursor);
+    let (row, _, _) = cell_pos(source, blocks, cursor)?;
+    let cell = caret_column(source, blocks, cursor)?;
     let (header, sep, _end, cols) = table_block(blocks, row)?;
     // From the header a new row always lands below the separator (the first
     // body row); above/below a body row is literal.
@@ -105,7 +116,40 @@ pub fn insert_row(source: &str, blocks: Blocks, cursor: usize, below: bool) -> O
     };
     let new_row = format!("\n|{}", "  |".repeat(cols));
     let pos = line_end(source, after);
-    Some((pos..pos, new_row, pos + 3)) // first cell, after "\n| "
+    let range = pos..pos;
+    let caret = caret_pos_for_cell(&applied(source, &range, &new_row), after + 1, cell, 0);
+    Some((range, new_row, caret))
+}
+
+/// Return in a table's last row (ADR 0110): a new row below it, the caret
+/// in the new row's cell in its own column. On a last body row whose cells
+/// are all empty that row goes and the caret leaves the table onto a fresh
+/// line below it ([`crate::enter::table_exit_edit`]), as an empty item ends
+/// a list; a table of only a header row keeps it and is left the same way.
+/// `None` outside a table's last row.
+pub fn return_in_last_row(source: &str, blocks: Blocks, cursor: usize) -> Option<TableEdit> {
+    let (row, _, _) = cell_pos(source, blocks, cursor)?;
+    let (header, sep, end, _cols) = table_block(blocks, row)?;
+    let last = if end == sep + 1 { header } else { end - 1 };
+    if row != last {
+        return None;
+    }
+    let line = &source[line_starts(source)[row]..line_end(source, row)];
+    if table_cells(line).iter().any(|c| !c.trim().is_empty()) {
+        return insert_row(source, blocks, cursor, true);
+    }
+    let (range, text) = if row == header {
+        let (range, text, _) = crate::enter::table_exit_edit(source, end - 1);
+        (range, text)
+    } else {
+        // The empty row and its newline give way to the exit's blank line.
+        (
+            line_end(source, row - 1)..line_end(source, row),
+            "\n\n".into(),
+        )
+    };
+    let caret = range.start + text.len();
+    Some((range, text, caret))
 }
 
 /// Delete the caret's table row (body rows only — the header + separator stay).
@@ -314,20 +358,20 @@ pub fn rewrite_table_columns(
 }
 
 /// Insert an empty column left/right of the caret's column (a cell added to
-/// every row; the separator gets a default-left marker). The caret stays in
-/// its cell. `None` outside a table.
+/// every row; the separator gets a default-left marker). The caret moves
+/// into the new column's cell in its own row (ADR 0110). `None` outside a
+/// table.
 pub fn insert_column(
     source: &str,
     blocks: Blocks,
     cursor: usize,
     right: bool,
 ) -> Option<TableEdit> {
-    let (row, cell, in_cell) = cell_pos(source, blocks, cursor)?;
+    let (row, _, _) = cell_pos(source, blocks, cursor)?;
+    let cell = caret_column(source, blocks, cursor)?;
     let at = if right { cell + 1 } else { cell };
     let (range, text) = rewrite_table_columns(source, blocks, row, ColEdit::Insert(at))?;
-    // Inserting to the left shifts the caret's cell one column right.
-    let new_cell = if right { cell } else { cell + 1 };
-    let caret = caret_pos_for_cell(&applied(source, &range, &text), row, new_cell, in_cell);
+    let caret = caret_pos_for_cell(&applied(source, &range, &text), row, at, 0);
     Some((range, text, caret))
 }
 
@@ -376,6 +420,90 @@ mod tests {
         assert_eq!(out, "| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\nafter");
     }
 
+    /// The `(row, cell)` the caret is in.
+    fn cell_of(source: &str, caret: usize) -> (usize, usize) {
+        let scan = BlockScan::new(source);
+        let (row, cell, _) = cell_pos(source, scan.view(), caret).unwrap();
+        (row, cell)
+    }
+
+    #[test]
+    fn a_new_row_or_column_takes_the_caret_in_line() {
+        let s = "| Сторона | Сумма |\n| --- | --- |\n| Арендатор | 100 |";
+        let sum = s.find("100").unwrap();
+        // Below and above a body row, from its second column: the new row's
+        // second cell.
+        for (below, row) in [(true, 3), (false, 2)] {
+            let (out, caret) = run(s, |s, b| insert_row(s, b, sum + 1, below)).unwrap();
+            assert_eq!(cell_of(&out, caret), (row, 1), "below {below}");
+            assert_eq!(&out[caret - 2..caret + 2], "|  |", "{out}");
+        }
+        // From the header the row lands under the separator, same column.
+        let header = s.find("Сумма").unwrap();
+        let (out, caret) = run(s, |s, b| insert_row(s, b, header, true)).unwrap();
+        assert_eq!(cell_of(&out, caret), (2, 1));
+        // A new column right or left: its cell in the caret's row.
+        let party = s.find("Арендатор").unwrap() + "Аре".len();
+        let (out, caret) = run(s, |s, b| insert_column(s, b, party, true)).unwrap();
+        assert_eq!(cell_of(&out, caret), (2, 1));
+        assert!(out.ends_with("| Арендатор |  | 100 |"), "{out}");
+        let (out, caret) = run(s, |s, b| insert_column(s, b, party, false)).unwrap();
+        assert_eq!(cell_of(&out, caret), (2, 0));
+        assert!(s.is_char_boundary(party) && out.is_char_boundary(caret));
+    }
+
+    /// A row without its closing pipe, and a caret in a cell's padding:
+    /// the new row and Return keep the column the caret is in.
+    #[test]
+    fn the_caret_column_counts_an_open_last_cell_and_padding() {
+        let s = "| Сторона | Сумма |\n| --- | --- |\n| Арендатор | 100";
+        let sum = s.rfind("100").unwrap() + 1;
+        let (out, caret) = run(s, |s, b| insert_row(s, b, sum, true)).unwrap();
+        assert_eq!(cell_of(&out, caret), (3, 1), "{out}");
+        let (out, caret) = run(s, |s, b| return_in_last_row(s, b, sum)).unwrap();
+        assert_eq!(cell_of(&out, caret), (3, 1), "{out}");
+        // In the spaces after `Арендатор`, before its pipe: still column 0.
+        let s = "| Сторона | Сумма |\n| --- | --- |\n| Арендатор   | 100 |";
+        let pad = s.find("Арендатор").unwrap() + "Арендатор ".len();
+        let (out, caret) = run(s, |s, b| insert_row(s, b, pad, true)).unwrap();
+        assert_eq!(cell_of(&out, caret), (3, 0), "{out}");
+    }
+
+    #[test]
+    fn return_in_the_last_row_adds_one_or_leaves_an_empty_one() {
+        let s = "| Сторона | Сумма |\n| --- | --- |\n| Арендатор | 100 |\nдалее";
+        let sum = s.find("100").unwrap();
+        let (out, caret) = run(s, |s, b| return_in_last_row(s, b, sum)).unwrap();
+        assert_eq!(
+            out,
+            "| Сторона | Сумма |\n| --- | --- |\n| Арендатор | 100 |\n|  |  |\nдалее"
+        );
+        assert_eq!(cell_of(&out, caret), (3, 1));
+        // Return again on that empty row: it goes, and the caret leaves the
+        // table onto a blank line below, as Return does from a last row.
+        let (left, caret) = run(&out, |s, b| return_in_last_row(s, b, caret)).unwrap();
+        assert_eq!(
+            left,
+            "| Сторона | Сумма |\n| --- | --- |\n| Арендатор | 100 |\n\n\nдалее"
+        );
+        assert_eq!(&left[caret..], "\nдалее");
+        // Not the last row: nothing.
+        let header = s.find("Сумма").unwrap();
+        assert_eq!(run(s, |s, b| return_in_last_row(s, b, header)), None);
+        // A table of only a header: a filled one gets its first body row, an
+        // empty one keeps its header and is left.
+        let s = "| Сторона | Сумма |\n| --- | --- |";
+        let (out, caret) = run(s, |s, b| return_in_last_row(s, b, 2)).unwrap();
+        assert_eq!(out, format!("{s}\n|  |  |"));
+        assert_eq!(cell_of(&out, caret), (2, 0));
+        let s = "|  |  |\n| --- | --- |";
+        let (out, caret) = run(s, |s, b| return_in_last_row(s, b, 2)).unwrap();
+        assert_eq!(
+            (out.as_str(), caret),
+            ("|  |  |\n| --- | --- |\n\n", out.len())
+        );
+    }
+
     #[test]
     fn a_carried_cell_offset_lands_on_a_character() {
         let s = "| ab |\n| --- |\n| я |";
@@ -391,7 +519,7 @@ mod tests {
             out,
             "|  | a | b |\n| --- | --- | --- |\n|  | 1 | 2 |\nafter"
         );
-        assert_eq!(&out[caret..caret + 1], "a");
+        assert_eq!(caret, caret_pos_for_cell(&out, 0, 0, 0));
         let (out, _) = run(T, |s, b| delete_column(s, b, 2)).unwrap();
         assert_eq!(out, "| b |\n| --- |\n| 2 |\nafter");
         let one = "| a |\n| - |";

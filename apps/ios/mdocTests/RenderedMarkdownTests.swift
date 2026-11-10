@@ -74,7 +74,7 @@ final class RenderedMarkdownTests: XCTestCase {
         let text = "1. One\n3. Two\n    1. Deep\n- Bullet\n- [x] Done"
         let styled = render(text).text
         XCTAssertEqual(decoration(styled, at: "One")?.label?.text.string, "1.")
-        XCTAssertEqual(decoration(styled, at: "Two")?.label?.text.string, "2.")
+        XCTAssertEqual(decoration(styled, at: "Two")?.label?.text.string, "3.", "the number written (ADR 0110)")
         XCTAssertEqual(decoration(styled, at: "Deep")?.label?.text.string, "a.")
         XCTAssertEqual(decoration(styled, at: "Bullet")?.label?.text.string, "•")
         XCTAssertEqual(decoration(styled, at: "Done")?.task?.checked, true)
