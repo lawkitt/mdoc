@@ -547,6 +547,15 @@ struct BlockLayout {
                 } else if let checked = item.task {
                     let size = ceil(body.capHeight * 1.25)
                     decoration.task = (checked, x, size, resolved(.secondaryLabel), resolved(.tintColor), resolved(.onAccent))
+                } else if item.list == nil {
+                    // A bullet a fifth larger than the text, centred in the
+                    // column's first 16 pt and on the text's x-height.
+                    let font = body.withSize(body.pointSize * Self.bulletScale)
+                    let label = NSAttributedString(string: item.label, attributes: [
+                        .font: font, .foregroundColor: resolved(.label),
+                        .baselineOffset: (body.xHeight - font.xHeight) / 2,
+                    ])
+                    decoration.label = (label, x + (Self.bulletBox * scale - Self.width(of: label)) / 2)
                 } else {
                     let label = NSAttributedString(string: item.label, attributes: [.font: body, .foregroundColor: resolved(.label)])
                     decoration.label = (label, x)
@@ -669,6 +678,10 @@ struct BlockLayout {
     static let listStep: CGFloat = 24
     /// The least room between a number and its text.
     static let labelGap: CGFloat = 6
+    /// A bullet's size against the text's, and the width at the column's
+    /// start it is centred in (the look chosen in ADR 0110's variants).
+    static let bulletScale: CGFloat = 1.2
+    static let bulletBox: CGFloat = 16
     /// The least room between the caret line's source marker and its text,
     /// and the narrowest a space inside that marker gets.
     static let markerGap: CGFloat = 4

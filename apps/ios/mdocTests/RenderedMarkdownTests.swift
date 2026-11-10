@@ -89,8 +89,8 @@ final class RenderedMarkdownTests: XCTestCase {
     /// The list look (ADR 0110): bullets, numbers and task boxes flush with
     /// the paragraph's edge, their text one 24 pt column in, each nested
     /// level a column further; an ordered list too wide for the column
-    /// widens all of its items; bullets and numbers in the text colour at
-    /// body size.
+    /// widens all of its items; bullets and numbers in the text colour, the
+    /// bullet a fifth larger than the text.
     func testListsShareOneColumn() throws {
         let numbered = (1...12).map { "\($0). Clause \($0)" }.joined(separator: "\n")
         let text = """
@@ -120,16 +120,21 @@ final class RenderedMarkdownTests: XCTestCase {
             XCTAssertEqual(style.headIndent, step * CGFloat(depth + 1), accuracy: 0.01, "\(word)'s text")
             XCTAssertEqual(style.firstLineHeadIndent, style.headIndent, "\(word) wraps under its text")
         }
-        for (word, depth) in [("Top", 0), ("Middle", 1), ("Bottom", 2), ("First", 0)] {
-            XCTAssertEqual(try XCTUnwrap(decoration(styled, at: word)?.label).x, step * CGFloat(depth), accuracy: 0.01, word)
+        // Bullets centred in the column's first 16 pt, numbers flush.
+        let box = BlockLayout.bulletBox * body.pointSize / 17
+        for (word, depth) in [("Top", 0), ("Middle", 1), ("Bottom", 2)] {
+            let label = try XCTUnwrap(decoration(styled, at: word)?.label)
+            XCTAssertEqual(label.x + label.text.size().width / 2, step * CGFloat(depth) + box / 2, accuracy: 0.5, word)
         }
+        XCTAssertEqual(try XCTUnwrap(decoration(styled, at: "First")?.label).x, 0, accuracy: 0.01)
         XCTAssertEqual(try XCTUnwrap(decoration(styled, at: "Open task")?.task).x, 0, "a task's box is flush")
         XCTAssertEqual(decoration(styled, at: "Done task")?.task?.checked, true)
-        // Bullets and numbers: the text colour, at body size.
-        for word in ["Top", "First"] {
+        // Bullets and numbers: the text colour; numbers at body size, the
+        // bullet a fifth larger.
+        for (word, size) in [("Top", body.pointSize * BlockLayout.bulletScale), ("First", body.pointSize)] {
             let label = try XCTUnwrap(decoration(styled, at: word)?.label?.text)
             XCTAssertEqual(label.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor, UIColor.label.resolvedColor(with: traits))
-            XCTAssertEqual((label.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize, body.pointSize)
+            XCTAssertEqual(try XCTUnwrap((label.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize), size, accuracy: 0.01)
         }
         // "10." does not fit 24 pt: its whole list widens, and the item
         // nested under it starts at its text.
@@ -137,7 +142,8 @@ final class RenderedMarkdownTests: XCTestCase {
         let one = try indent("Clause 1\n")
         XCTAssertGreaterThan(one.headIndent, step)
         XCTAssertEqual(try indent("Clause 12").headIndent, one.headIndent)
-        XCTAssertEqual(try XCTUnwrap(decoration(styled, at: "Under twelve")?.label).x, one.headIndent, accuracy: 0.01)
+        let under = try XCTUnwrap(decoration(styled, at: "Under twelve")?.label)
+        XCTAssertEqual(under.x + under.text.size().width / 2, one.headIndent + box / 2, accuracy: 0.5)
         XCTAssertEqual(try indent("Under twelve").headIndent, one.headIndent + step, accuracy: 0.01)
         XCTAssertEqual(try indent("Second").headIndent, step, accuracy: 0.01, "another list keeps its column")
     }
