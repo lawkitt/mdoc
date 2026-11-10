@@ -157,6 +157,21 @@ Features are frozen until items 13–19 land (Q4).
     again, iPad keys. Device checks after slices 3 and 6. *Done when:*
     ADR 0109's acceptance bars pass and the iPhone 17 Pro and 12 Pro
     checks have no open `ui` findings.
+24. **[Mobile] Editing polish.** *From the
+    [mobile editor polish grill](docs/design/mobile-editor-polish-grill-2026-11-10.md)
+    ([ADR 0110](docs/adr/0110-mobile-editor-polish.md)).* Slices, one PR
+    each: (1) editor core: a block command over several blocks, italic on a
+    bold selection, the caret after a new row or column, Return in a
+    table's last row, ordered lists showing the number written; desktop
+    follows; (2) iOS modes: one text view across the pencil, Done and the
+    Text/Original switch, the keyboard waiting for a tap, Identities hidden
+    while editing, the checkmark, the long title; (3) iOS caret and
+    toolbar: the caret on an empty line, text under the floating toolbar,
+    the narrow empty column; (4) iOS table controls in the toolbar, the
+    table panel and the Keyboard key gone, after 1; (5) iOS list look and
+    the marker that does not shift the text, after 1. *Done when:* the five
+    merge, the iPhone 12 Pro gate passes and one TestFlight build carries
+    them.
 
 ## Android
 
@@ -530,6 +545,12 @@ Android takes what applies. Its clipboard finding is
   text for AI out to an AI app in Split View and the reply back in, two
   windows (review keys are built). *From the 2026-10-31 mobile UX
   ideas.*
+- **[Mobile] The Original at the caret's page.** *From the editor polish
+  grill Q10.* For a scan, the Original opens at the page the caret is on,
+  from the text's page headings.
+- **[Mobile] A heading that does not shift.** *From the editor polish grill
+  Q18.* The heading moves when the caret shows its `#`; `##` and `###` do
+  not fit the margin.
 - **[Mobile] To grill: highlights on the original page.** Found names boxed
   on scan and photo pages, if OCR keeps word boxes. *From the 2026-10-31
   mobile UX ideas.*

@@ -5,7 +5,8 @@ Text display rule and [ADR 0087](0087-ios-ui-polish.md)'s review-text
 styling. The separate table spike was skipped (the user's call): the
 implementation itself must meet the pass test below. "The text stays read-only" is replaced by
 [ADR 0109](0109-mobile-markdown-editor.md): the rendered view becomes
-editable in edit mode.
+editable in edit mode. Amended by
+[ADR 0110](0110-mobile-editor-polish.md) (list look, written numbers).
 
 ## Problem
 
@@ -44,8 +45,10 @@ alerts and code as blocks. The phone should read as well as desktop.
   reads a table as a data table (row, column, column header). No full-screen
   table view for now.
 - **Lists** as desktop draws them: `•` at every depth, ordered items
-  `1.` → `a.` → `i.` by depth and renumbered (`ordered_marker`), a hanging
-  indent, task items as ☐ / ☑ that do not toggle.
+  `1.` → `a.` → `i.` by depth (`ordered_marker`), each showing the number
+  written in the text in its depth's style, never a count
+  ([ADR 0110](0110-mobile-editor-polish.md)); a hanging indent, task items
+  as ☐ / ☑ that do not toggle. The list look is ADR 0110's.
 - **Other blocks.** Headings at desktop's relative sizes and spacing; quote
   bars; alert cards with their title; code cards with the fences hidden;
   drawn rules; footnote definitions and raw HTML greyed. Math shows as
