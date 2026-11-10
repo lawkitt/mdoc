@@ -476,7 +476,7 @@ final class SurveyUITests: XCTestCase {
         > [!NOTE]
         > - A list inside an alert
 
-        A closing paragraph.
+        Write to maya.bennett@example.com about the list.
         """
 
     @MainActor

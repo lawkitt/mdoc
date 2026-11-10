@@ -309,9 +309,22 @@ final class LivePreviewTests: XCTestCase {
                 harness.view.layoutIfNeeded()
                 let start = try XCTUnwrap(harness.view.selectedTextRange?.start)
                 XCTAssertEqual(harness.view.caretRect(for: start).minX, away, accuracy: 2, "\(word): the caret at its start (\(size))")
+                // What is typed there is the text's size, not a narrowed marker's.
+                let textFont = harness.view.textStorage.attribute(.font, at: location(of: word, in: harness), effectiveRange: nil) as? UIFont
+                XCTAssertEqual((harness.view.typingAttributes[.font] as? UIFont)?.pointSize, textFont?.pointSize, "\(word): typing at its start (\(size))")
                 caret(harness, at: location(of: "Last line.", in: harness))
                 XCTAssertEqual(try x(of: word), away, accuracy: 0.5, "and as it leaves (\(size))")
             }
+            // Return after a done task gives a new task, its marker narrowed;
+            // what is typed next is the text's size.
+            let body = harness.view.textStorage.attribute(.font, at: location(of: "Done task", in: harness), effectiveRange: nil) as? UIFont
+            caret(harness, at: location(of: "Done task", in: harness) + 9)
+            type(harness, "\n")
+            XCTAssertTrue(harness.shown.contains("- [x] Done task\n- [ ] \n"), "a new task")
+            XCTAssertEqual((harness.view.typingAttributes[.font] as? UIFont)?.pointSize, body?.pointSize, "typing in a new task (\(size))")
+            type(harness, "Next")
+            let next = harness.view.textStorage.attribute(.font, at: location(of: "Next", in: harness), effectiveRange: nil) as? UIFont
+            XCTAssertEqual(next?.pointSize, body?.pointSize, "the typed text (\(size))")
         }
     }
 

@@ -437,7 +437,7 @@ struct BlockLayout {
         var columns: [UInt32: CGFloat] = [:]
         for item in styling.listItems {
             guard let list = item.list else { continue }
-            let marker = listMarker(at: offsets.nsRange(item.range).location)
+            let marker = listMarker(of: item, at: offsets.nsRange(item.range).location)
             let needed = max(labelWidth(item.label) + Self.labelGap * scale, ceil(sourceWidth(of: marker.glyphs)))
             columns[list] = max(columns[list] ?? step, needed)
         }
@@ -543,7 +543,7 @@ struct BlockLayout {
                 if source {
                     // The caret's line draws its marker in the same column,
                     // so its text stays where it was.
-                    fit(listMarker(at: range.location), into: column)
+                    fit(listMarker(of: item, at: range.location), into: column)
                 } else if let checked = item.task {
                     let size = ceil(body.capHeight * 1.25)
                     decoration.task = (checked, x, size, resolved(.secondaryLabel), resolved(.tintColor), resolved(.onAccent))
@@ -674,34 +674,19 @@ struct BlockLayout {
     static let markerGap: CGFloat = 4
     static let markerSpace: CGFloat = 2
 
-    /// The list item's source prefix on the line at `start`: the indent
-    /// before its marker, and the marker (`- `, `12. `, `- [ ] `) with its
-    /// space.
-    private func listMarker(at start: Int) -> (indent: NSRange, glyphs: NSRange) {
+    /// Where the core's list item `item`, on the line at `start`, has its
+    /// source prefix: the indent before its marker, and the marker (`- `,
+    /// `12. `, `- [ ] `) with its space. The core decides what is an item
+    /// and a task; this only finds the characters: a marker runs to the
+    /// first space after it, and a task's box is the four after that.
+    private func listMarker(of item: MarkdownListItem, at start: Int) -> (indent: NSRange, glyphs: NSRange) {
         let end = NSMaxRange(source.lineRange(for: NSRange(location: start, length: 0)))
-        func unit(_ index: Int) -> unichar? { index < end ? source.character(at: index) : nil }
-        func isDigit(_ unit: unichar?) -> Bool { unit.map { (0x30...0x39).contains($0) } ?? false }
         var index = start
-        while let unit = unit(index), unit == 0x20 || unit == 0x09 { index += 1 }
-        let indent = NSRange(location: start, length: index - start)
+        while index < end, [0x20, 0x09].contains(source.character(at: index)) { index += 1 }
         var marker = index
-        if let unit = unit(marker), [0x2D, 0x2A, 0x2B].contains(unit) {
-            marker += 1
-        } else {
-            while isDigit(unit(marker)) { marker += 1 }
-            guard marker > index, let unit = unit(marker), unit == 0x2E || unit == 0x29 else {
-                return (indent, NSRange(location: index, length: 0))
-            }
-            marker += 1
-        }
-        guard unit(marker) == 0x20 else { return (indent, NSRange(location: index, length: 0)) }
-        marker += 1
-        // A task's box: `[ ] `, `[x] `, `[X] `.
-        if unit(marker) == 0x5B, let mark = unit(marker + 1), [0x20, 0x78, 0x58].contains(mark),
-           unit(marker + 2) == 0x5D, unit(marker + 3) == 0x20 {
-            marker += 4
-        }
-        return (indent, NSRange(location: index, length: marker - index))
+        while marker < end, source.character(at: marker) != 0x20 { marker += 1 }
+        marker = min(marker + 1 + (item.task == nil ? 0 : 4), end)
+        return (NSRange(location: start, length: index - start), NSRange(location: index, length: marker - index))
     }
 
     /// `range` of the source as it reads in the body font, spaces included.
@@ -732,9 +717,12 @@ struct BlockLayout {
         let font = shown.flatMap { $0.pointSize >= 1 ? $0 : nil } ?? body
         let gap = Self.markerGap * scale
         var size = font.pointSize
+        // The marker's space keeps the line's font, so what is typed after
+        // it is not made smaller.
+        text.addAttribute(.font, value: font, range: NSRange(location: NSMaxRange(lead), length: 1))
         for _ in 0..<4 {
             let sized = font.withSize(size)
-            text.addAttribute(.font, value: sized, range: glyphs)
+            text.addAttribute(.font, value: sized, range: lead)
             text.removeAttribute(.kern, range: glyphs)
             var width = Self.width(of: text.attributedSubstring(from: lead))
             if width + gap <= column { break }
