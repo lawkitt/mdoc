@@ -95,14 +95,17 @@ final class EditModeUITests: XCTestCase {
         let (app, text) = open(
             seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle,
             contentSize: "UICTContentSizeCategoryAccessibilityL")
-        XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
-        text.swipeUp()
+        let name = text.links[MdocUITest.markdownEmail].firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 30))
+        // The text scrolled so the email, the one name, sits higher up:
+        // its place says where the text is. Held at the end, no fling.
+        let start = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+        start.press(
+            forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -max(name.frame.minY - 220, 120))),
+            withVelocity: .slow, thenHoldForDuration: 0.3)
         MdocUITest.settledScreen()
         let window = app.windows.firstMatch.frame
-        // A name in view below the bar, whose place says where the text is.
-        guard let name = text.links.allElementsBoundByIndex.first(where: {
-            $0.frame.minY > window.minY + 150 && $0.frame.maxY < window.maxY - 150
-        }) else { return XCTFail("a name in view after the scroll") }
+        XCTAssertTrue(name.frame.minY > window.minY + 120 && name.frame.maxY < window.maxY - 200, "the email in view")
         let label = name.label
         let before = name.frame.minY
 

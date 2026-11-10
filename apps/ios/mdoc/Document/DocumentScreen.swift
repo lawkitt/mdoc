@@ -18,6 +18,7 @@ struct DocumentScreen: View {
 
     private var isRegular: Bool { layout.isRegular }
     @State private var screenHeight: CGFloat = 800
+    @State private var screenWidth: CGFloat = 0
     /// The long press's Same as… with a long list: the searchable picker.
     @State private var sameAsCandidate: CandidateID?
     /// Identities' Same as…: the identity it starts from.
@@ -25,10 +26,6 @@ struct DocumentScreen: View {
     /// This screen, for the window's undo: a size-class change builds a new
     /// one for the same document (#672).
     @State private var screenID = UUID()
-    /// The screen's middle and the trailing buttons' left edge, in the
-    /// window: the title fits between ☰ and them (ADR 0110).
-    @State private var screenMidX: CGFloat = 0
-    @State private var trailingMinX: CGFloat?
 
     private var hasRightPane: Bool { model.hasRightPane }
 
@@ -44,7 +41,7 @@ struct DocumentScreen: View {
             .toast($model.toast)
             .safeAreaInset(edge: .bottom) { bottomBar }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).midX } action: { screenMidX = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
             .inspector(isPresented: inspectorBinding) {
                 identities
                     .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
@@ -236,7 +233,6 @@ struct DocumentScreen: View {
         .accessibilityLabel(Text("Done editing"))
         .accessibilityHint(Text("Back to reviewing names. Your changes are saved."))
         .accessibilityIdentifier("done-editing")
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minX } action: { trailingMinX = $0 }
     }
 
     @ViewBuilder
@@ -253,7 +249,6 @@ struct DocumentScreen: View {
             .accessibilityLabel(Text("Edit text"))
             .accessibilityHint(model.editBlockedReason.map { Text($0) } ?? Text("Edits the document's text."))
             .accessibilityIdentifier("edit-button")
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minX } action: { trailingMinX = $0 }
         }
     }
 
@@ -402,21 +397,25 @@ struct DocumentScreen: View {
                 }
                 .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
                 .accessibilityIdentifier("identities-button")
-                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minX } action: { minX in
-                    // First in the capsule only when Edit is not offered.
-                    if !offersEdit { trailingMinX = minX }
-                }
                 moreMenu
             }
         }
     }
 
-    /// The title's widest: twice the room from the screen's middle to the
-    /// trailing buttons, as the title is centred, less a gap either side.
+    /// The title's widest, so it truncates at its tail in the room between
+    /// ☰ and the trailing buttons (ADR 0110). The bar offers a title any
+    /// width and centres it, and a toolbar item's place can't be read, so
+    /// the room comes from the screen's width less the bar's fixed
+    /// buttons: ☰ with its margin, and the trailing capsules (the review
+    /// capsule 48 pt a button, edit mode's checkmark and ⋯ capsules), a gap
+    /// either side and the chevron. The buttons keep their size at every
+    /// text size.
     private var titleWidth: CGFloat {
         let cap: CGFloat = isRegular ? 420 : 300
-        guard let trailingMinX, screenMidX > 0 else { return isRegular ? 420 : 170 }
-        return min(cap, max(60, 2 * (trailingMinX - screenMidX - Space.xs) - 24))
+        guard screenWidth > 0 else { return isRegular ? 420 : 140 }
+        let leading: CGFloat = 60
+        let trailing: CGFloat = model.isEditing ? 120 : 16 + 14 + 48 * (offersEdit ? 3 : 2)
+        return min(cap, max(60, screenWidth - leading - trailing - 2 * Space.xs - 22))
     }
 
     private var moreMenu: some View {
