@@ -7,7 +7,7 @@ mod state;
 #[cfg(test)]
 mod summary_tests;
 
-use crate::CoreError;
+use crate::{CoreError, document_session::DocumentOrigin};
 use mdoc_pii::restore::RestoreMap;
 use mdoc_store::cases::{Case, CaseLink, Store};
 use state::DocumentState;
@@ -137,6 +137,8 @@ pub struct DocumentSummary {
     /// When it was last opened or saved, in seconds since the Unix epoch;
     /// `None` for one not opened since the library began keeping it.
     pub opened: Option<u64>,
+    /// How it began: Try a sample finds its sample by it (ADR 0109).
+    pub origin: DocumentOrigin,
 }
 
 /// Where `rename_document` left a document.
@@ -343,6 +345,7 @@ impl Library {
                         scanned,
                         summary: Recorded::of(counts, stamp, mark),
                         opened: state.and_then(|s| s.opened),
+                        origin: state.map(|s| s.origin).unwrap_or_default(),
                     };
                     changed.push((path.clone(), state.cloned(), recounted));
                     (counts, scanned)
@@ -358,6 +361,7 @@ impl Library {
                 kept: counts.kept,
                 modified: stamp.map_or(0, |stamp| stamp.modified),
                 opened: state.and_then(|s| s.opened),
+                origin: state.map(|s| s.origin).unwrap_or_default(),
                 path: path.display().to_string(),
             });
         }
@@ -522,7 +526,17 @@ impl Library {
         title: String,
     ) -> Result<RenamedDocument, CoreError> {
         let lock = self.lock()?;
-        self.rename_locked(&lock, Path::new(&path), &title)
+        let renamed = self.rename_locked(&lock, Path::new(&path), &title)?;
+        // Named by the user, a new document stops following its first line
+        // (ADR 0109).
+        if let Some(path) = &renamed.path
+            && self
+                .document_state(Path::new(path))
+                .is_some_and(|state| state.origin == DocumentOrigin::New)
+        {
+            let _ = self.record_origin(&lock, Path::new(path), DocumentOrigin::Ordinary);
+        }
+        Ok(renamed)
     }
 
     /// Rename case `case_id` to `name`; its documents keep their titles.
@@ -652,6 +666,20 @@ impl Library {
             _file: file,
             _guard: guard,
         })
+    }
+
+    /// Delete case `id` when nothing is in it: no document, no name, no
+    /// reply kept (a new document's own case, once it is discarded: ADR
+    /// 0109). True when it went.
+    pub(crate) fn delete_case_if_unused(&self, id: &str) -> Result<bool, CoreError> {
+        let _lock = self.lock()?;
+        let case = self.load(id)?;
+        let unused =
+            case.members.is_empty() && case.identities.is_empty() && case.replies.is_empty();
+        if unused {
+            self.store.delete(id)?;
+        }
+        Ok(unused)
     }
 
     /// Save a new case.

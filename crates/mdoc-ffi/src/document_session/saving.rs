@@ -124,6 +124,7 @@ struct Pending {
     dismissed: Vec<(String, String)>,
     counts: super::Counts,
     scanned: bool,
+    origin: super::DocumentOrigin,
 }
 
 /// What a write stored.
@@ -156,6 +157,7 @@ impl Document {
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
             scanned: self.scanned,
+            origin: self.origin,
         }
     }
 
@@ -300,7 +302,7 @@ impl Pending {
             Stamp::of_file(&path),
             Some((case.id.clone(), library.case_stamp(&case.id))),
         );
-        let _ = library.record_saved(&lock, &path, self.scanned, summary);
+        let _ = library.record_saved(&lock, &path, self.scanned, summary, self.origin);
         Ok(Some(Saved {
             case,
             synced: stored.identities,
