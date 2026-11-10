@@ -341,6 +341,19 @@ final class SurveyUITests: XCTestCase {
         shot("51-new-document-named")
     }
 
+    /// Table editing (ADR 0109, slice 5): the caret in a drawn cell with
+    /// text typed there, then Aa's table controls.
+    @MainActor
+    func test10TableEditing() throws {
+        let (app, _) = TableEditingUITests.editCell("Депозит")
+        app.typeText(" paid")
+        XCTAssertTrue(TableEditingUITests.cell(app, "Депозит paid").waitForExistence(timeout: 5))
+        shot("48-table-cell")
+        app.buttons["toolbar-formatting"].tap()
+        XCTAssertTrue(app.buttons["table-align-left"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
+        shot("49-table-controls")
+    }
+
     /// Below the detector floor (ADR 0088): no setup card on Home; where
     /// Find names would be, the document says it cannot find names; Settings
     /// says the same.

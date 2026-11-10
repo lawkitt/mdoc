@@ -48,6 +48,9 @@ final class TypingBridge {
     /// key does to `mirror` with the view's selection, where UIKit would
     /// change `range`.
     var structural: (StructuralKey, _ range: NSRange, _ selection: NSRange) -> KeyOutcome = { _, _, _ in .native }
+    /// A key or command moved the caret without an edit (Return to the
+    /// cell below): the reveal and toolbar follow it as a reader's move.
+    var onMoved: () -> Void = {}
 
     /// The text as the core has it.
     private(set) var mirror = NSMutableString()
@@ -134,6 +137,7 @@ final class TypingBridge {
             return
         case .select(let selection):
             view.selectedRange = selection
+            onMoved()
         case .replace(let range, let text, let selection):
             guard let start = view.position(from: view.beginningOfDocument, offset: range.location),
                   let end = view.position(from: start, offset: range.length),
@@ -223,6 +227,7 @@ final class TypingBridge {
         defer { applying = false }
         guard let first = edits.first, let last = edits.last else {
             view.selectedRange = selection
+            onMoved()
             return false
         }
         isCommanding = true

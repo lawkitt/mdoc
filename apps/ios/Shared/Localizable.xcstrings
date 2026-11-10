@@ -245,6 +245,18 @@
     "Alias, %@" : {
 
     },
+    "Align center" : {
+
+    },
+    "Align column" : {
+
+    },
+    "Align left" : {
+
+    },
+    "Align right" : {
+
+    },
     "All" : {
 
     },
@@ -341,6 +353,12 @@
     "Caution" : {
       "comment" : "A Markdown alert's title"
     },
+    "Cell above" : {
+
+    },
+    "Cell below" : {
+
+    },
     "Change category" : {
 
     },
@@ -363,6 +381,15 @@
 
     },
     "Code block" : {
+
+    },
+    "Column left" : {
+
+    },
+    "Column right" : {
+
+    },
+    "Columns" : {
 
     },
     "Continue" : {
@@ -414,6 +441,15 @@
     "Delete" : {
 
     },
+    "Delete column" : {
+
+    },
+    "Delete row" : {
+
+    },
+    "Delete table" : {
+
+    },
     "Deleted %@" : {
 
     },
@@ -447,6 +483,9 @@
     "Done editing" : {
 
     },
+    "Double-tap to edit this cell." : {
+      "comment" : "VoiceOver hint on a table cell in edit mode"
+    },
     "Download" : {
 
     },
@@ -478,6 +517,9 @@
 
     },
     "Drag to make one with another name" : {
+
+    },
+    "Duplicate row" : {
 
     },
     "Each document you add starts a case, or joins one you choose." : {
@@ -851,6 +893,9 @@
     "Next" : {
 
     },
+    "Next cell" : {
+
+    },
     "No cases yet" : {
 
     },
@@ -978,6 +1023,9 @@
 
     },
     "Previous" : {
+
+    },
+    "Previous cell" : {
 
     },
     "Privacy" : {
@@ -1172,6 +1220,15 @@
 
     },
     "Review this identity" : {
+
+    },
+    "Row above" : {
+
+    },
+    "Row below" : {
+
+    },
+    "Rows" : {
 
     },
     "Rule" : {

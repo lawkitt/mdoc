@@ -79,6 +79,9 @@ extension MarkdownTextView.Coordinator {
         bridge.command(in: view) { text, selection in
             command.change(text: text, selection: selection, rendered: rendered)
         }
+        // A table control's cell stays in view.
+        view.revealCaretCell()
+        view.redrawCaret()
         refreshToolbar(view)
     }
 

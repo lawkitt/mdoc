@@ -262,14 +262,14 @@ final class EditToolbarTests: XCTestCase {
         assertOneStep(harness) { run(harness, .rule) }
         XCTAssertTrue(harness.shown.hasSuffix("Last line.\n\n---\n\n"), harness.shown)
         XCTAssertEqual(harness.view.selectedRange.location, harness.string.length)
-        assertOneStep(harness) { run(harness, .table) }
+        assertOneStep(harness) { run(harness, .insertTable) }
         XCTAssertTrue(harness.shown.hasSuffix("---\n\n|  |  |\n| --- | --- |\n|  |  |\n\n"), harness.shown)
         // With Show Markdown on the caret is in the first cell.
         let table = harness.string.range(of: "|  |  |").location
         XCTAssertEqual(harness.view.selectedRange.location, table + 2)
         harness.coordinator.refreshToolbar(harness.view)
         XCTAssertTrue(harness.toolbar.state?.inTable == true)
-        XCTAssertFalse(harness.toolbar.isEnabled(.table))
+        XCTAssertFalse(harness.toolbar.isEnabled(.insertTable))
     }
 
     // MARK: Links

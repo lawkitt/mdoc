@@ -67,7 +67,7 @@ final class LivePreviewUITests: XCTestCase {
     private func toTheEnd(_ app: XCUIApplication, _ text: XCUIElement) {
         var there = false
         for _ in 0..<3 where !there {
-            app.typeKey(.downArrow, modifierFlags: .command)
+            MdocUITest.caretToTheEnd(app)
             app.typeText("Q")
             there = text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Q"), timeout: 3)
             app.typeText(XCUIKeyboardKey.delete.rawValue)
