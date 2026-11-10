@@ -117,18 +117,23 @@ pub fn html_block(line: &str) -> bool {
     matches!(t, [b'<', rest, ..] if rest.is_ascii_alphabetic() || *rest == b'/' || *rest == b'!')
 }
 
-/// The ordered numbering the editor and the mobile apps paint: `(position, level)`
-/// of every ordered list item (see the editor's `ordered_numbers`), plus, for each ordered item, the list it belongs to:
-/// siblings share an id (a nested list, or a new list after a break, gets its
-/// own), so their bodies can share one marker width. Non-items are `None`.
+/// The ordered labels the editor and the mobile apps paint: `(number, level)`
+/// of every ordered list item, the number as written in the source (a clause
+/// number is content, ADR 0110) and the level STRUCTURAL (how many lists are
+/// open above, not an indent-width guess), plus, for each ordered item, the
+/// list it belongs to: siblings share an id (a nested list, a new marker type
+/// at the same indent, or a new list after a break gets its own), so their
+/// bodies can share one marker width. A blank line or prose ends the open
+/// lists; indented text hangs under the innermost item. Non-items are
+/// `(0, 0)` and `None`.
 pub fn ordered_scan(lines: &[&str]) -> (Vec<(u32, usize)>, Vec<Option<u32>>) {
     let mut out = vec![(0u32, 0usize); lines.len()];
     let mut lists = vec![None; lines.len()];
     let mut next_list = 0u32;
-    // One entry per open list level: (indent, is_ordered, next number, list id).
-    let mut stack: Vec<(usize, bool, u32, u32)> = Vec::new();
+    // One entry per open list level: (indent, is_ordered, list id).
+    let mut stack: Vec<(usize, bool, u32)> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
-        let Some((_, indent, ordered, _)) = list_prefix(line) else {
+        let Some((_, indent, ordered, number)) = list_prefix(line) else {
             // Indented text hangs under the innermost item; anything else —
             // including a blank line — ends the open lists.
             let ws = line
@@ -146,30 +151,26 @@ pub fn ordered_scan(lines: &[&str]) -> (Vec<(u32, usize)>, Vec<Option<u32>>) {
             stack.pop();
         }
         let depth = stack.len();
-        match stack.last_mut() {
-            Some((ind, ord, next, list)) if *ind == indent => {
+        let (level, list) = match stack.last_mut() {
+            Some((ind, ord, list)) if *ind == indent => {
                 if *ord != ordered {
                     // A different marker type at the same indent starts a
                     // new list.
                     *ord = ordered;
-                    *next = 1;
                     *list = next_list;
                     next_list += 1;
                 }
-                if ordered {
-                    out[i] = (*next, depth - 1);
-                    lists[i] = Some(*list);
-                    *next += 1;
-                }
+                (depth - 1, *list)
             }
             _ => {
-                stack.push((indent, ordered, 2, next_list));
-                out[i] = (1, depth);
-                if ordered {
-                    lists[i] = Some(next_list);
-                }
+                stack.push((indent, ordered, next_list));
                 next_list += 1;
+                (depth, next_list - 1)
             }
+        };
+        if ordered {
+            out[i] = (number, level);
+            lists[i] = Some(list);
         }
     }
     (out, lists)
@@ -274,9 +275,11 @@ mod tests {
                 None
             ]
         );
-        // Ordered numbering restarts after a break and per nesting level.
-        let (numbers, _) = ordered_scan(&["1. a", "1. b", "   1. c", "1. d", "", "5. e"]);
-        assert_eq!(numbers, [(1, 0), (2, 0), (1, 1), (3, 0), (0, 0), (1, 0)]);
+        // The number written shows, at its structural level (ADR 0110).
+        let (numbers, lists) = ordered_scan(&["9. а", "10. б", "   3. в", "11. г", "", "5. д"]);
+        assert_eq!(numbers, [(9, 0), (10, 0), (3, 1), (11, 0), (0, 0), (5, 0)]);
+        // The nested list and the list after the break are lists of their own.
+        assert_eq!(lists, [Some(0), Some(0), Some(1), Some(0), None, Some(2)]);
     }
 
     #[test]

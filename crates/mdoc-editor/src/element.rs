@@ -3331,8 +3331,8 @@ fn shape_document(
     let mut out = ShapedDoc::default();
     let diagnostics = DiagnosticRanges::new(content, diagnostics);
     let lines: Vec<&str> = content.split('\n').collect();
-    // Ordered items paint their computed CommonMark position, not their
-    // literal source digits (the reader renumbers the same way).
+    // Ordered items paint the number written in the source, in their
+    // depth's style (ADR 0110), as the phones do.
     let ordered_nums = &scan.ordered;
     // Rows a (non-empty) selection touches. A selected block reveals its raw
     // source just like the caret's block does, so what's highlighted is what a
@@ -3824,8 +3824,8 @@ fn shape_document(
                 let (num, level) = ordered_nums[idx];
                 let glyph = if ordered {
                     // Word-style depth markers (1. -> a. -> i.), shared with
-                    // the reader. The level is structural (from the
-                    // renumbering pass), not an indent-width guess.
+                    // the phones. The level is structural (from the ordered
+                    // scan), not an indent-width guess.
                     mdoc_markdown::syntax::ordered_marker(level, num)
                 } else {
                     "\u{2022}".to_string()

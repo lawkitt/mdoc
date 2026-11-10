@@ -2831,25 +2831,29 @@ impl EditorState {
         turn_into::block_kind_at(&self.content, self.scan_data().blocks(), row)
     }
 
-    /// Convert the caret's block to `kind` — the "Turn into" menu action.
-    /// One undoable edit rewriting the block's lines; fenced kinds (code,
-    /// math) and quote runs convert as whole blocks.
+    /// Convert every block the selection touches to `kind` — the "Turn
+    /// into" menu action (ADR 0110): one undoable edit; fenced kinds (code,
+    /// math) and quote runs convert as whole blocks, and when every block is
+    /// `kind` already they all turn back into text.
     fn turn_into(&mut self, kind: TurnKind, window: &mut Window, cx: &mut Context<Self>) {
-        let row = self.row_col(self.selected_range.start).0;
-        let Some(edit) = turn_into::turn_into(&self.content, self.scan_data().blocks(), row, kind)
-        else {
+        let Some(result) = turn_into::turn_selection(
+            &self.content,
+            self.scan_data().blocks(),
+            self.selected_range.clone(),
+            kind,
+        ) else {
+            return;
+        };
+        let Some(edit) = result.edits.into_iter().next() else {
             return;
         };
         self.selected_range = edit.range;
         self.selection_reversed = false;
         self.replace_text_in_range(None, &edit.text, window, cx);
-        // Fenced kinds: the caret parks after the closing fence, revealing the
-        // raw markers (reveal-on-caret) — seat it on the body's first line
-        // instead, like `set_code_lang`.
-        if let Some(caret) = edit.caret {
-            let caret = caret.min(self.content.len());
-            self.selected_range = caret..caret;
-        }
+        // Fenced kinds seat the caret on the body's first line, not after
+        // the closing fence (reveal-on-caret); a selection stays selected.
+        let len = self.content.len();
+        self.selected_range = result.selection.start.min(len)..result.selection.end.min(len);
     }
 
     /// The line span the gutter grip drags as one unit: whole fenced/rendered

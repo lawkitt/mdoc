@@ -82,8 +82,9 @@ pub struct MarkdownListItem {
     /// How many lists are open above the item (0 at the top level), whatever
     /// the source's spaces per level.
     pub depth: u32,
-    /// What desktop paints in the marker's place: `•`, or the item's
-    /// renumbered position as `1.`, `a.` or `i.` by depth. Empty for a task.
+    /// What desktop paints in the marker's place: `•`, or the number
+    /// written in the source in its depth's style (`9.` shows `9.`, a nested
+    /// `3.` shows `c.`, deeper `iii.`; ADR 0110). Empty for a task.
     pub label: String,
     /// A task item's box: checked or not. `None` for a plain item.
     pub task: Option<bool>,
@@ -1123,7 +1124,7 @@ mod tests {
     /// labels and levels, fences, alerts, greyed lines and table rows.
     #[test]
     fn rendered_view_roles() {
-        let text = "1. One\n3. Two\n    - Sub\n    1. Deep\n- [x] Done\n\n> [!WARNING]\n> Body\n\n[^1]: note\n<div>\n\n```\ncode\n```\n\n<!-- table:striped cols=100,200 -->\n| A | B |\n| --- | :-: |\n| a | b |\n| c";
+        let text = "1. One\n3. Two\n    - Sub\n    3. Deep\n- [x] Done\n\n> [!WARNING]\n> Body\n\n[^1]: note\n<div>\n\n```\ncode\n```\n\n<!-- table:striped cols=100,200 -->\n| A | B |\n| --- | :-: |\n| a | b |\n| c";
         let styling = styling(text);
         let items: Vec<_> = styling
             .list_items
@@ -1140,10 +1141,11 @@ mod tests {
         assert_eq!(
             items,
             [
+                // The number written, in its depth's style (ADR 0110).
                 ("1. One", 0, "1.", None),
-                ("3. Two", 0, "2.", None),
+                ("3. Two", 0, "3.", None),
                 ("    - Sub", 1, "•", None),
-                ("    1. Deep", 1, "a.", None),
+                ("    3. Deep", 1, "c.", None),
                 ("- [x] Done", 0, "", Some(true)),
             ]
         );
