@@ -43,11 +43,18 @@ final class EditModeUITests: XCTestCase {
         app.typeText(Self.marker)
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", Self.marker), timeout: 5))
 
-        // ⌘Z undoes the typing as one step; ⇧⌘Z makes it again.
+        // ⌘Z undoes the typing as one step; ⇧⌘Z makes it again. The first
+        // hardware key after the software keyboard can be lost in the
+        // switch (see `caretToTheEnd`): then ⌘Z goes again, which with the
+        // typing the only step changes nothing more.
+        let undone = NSPredicate(format: "NOT (value CONTAINS %@)", "Zephyrine")
         app.typeKey("z", modifierFlags: .command)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value CONTAINS %@)", "Zephyrine"), timeout: 5))
+        if !text.wait(until: undone, timeout: 3) { app.typeKey("z", modifierFlags: .command) }
+        XCTAssertTrue(text.wait(until: undone, timeout: 5))
+        let redone = NSPredicate(format: "value CONTAINS %@", Self.marker)
         app.typeKey("z", modifierFlags: [.command, .shift])
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", Self.marker), timeout: 5))
+        if !text.wait(until: redone, timeout: 3) { app.typeKey("z", modifierFlags: [.command, .shift]) }
+        XCTAssertTrue(text.wait(until: redone, timeout: 5))
 
         // Done, then mdoc leaves the foreground: the typing is saved.
         done.tap()

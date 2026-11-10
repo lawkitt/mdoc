@@ -144,6 +144,8 @@ extension MarkdownTextView.Coordinator {
     func restyle(after edits: [AppliedEdit], in view: CandidateTextView) {
         // Marked text reaches the core only once committed, and restyles then.
         guard view.markedTextRange == nil else { return }
+        // Typing moved on from where the mode changed.
+        modeAnchor = nil
         if !livePreview.edited(edits, in: view, look: look(view)) {
             restyleWhole(view)
         }

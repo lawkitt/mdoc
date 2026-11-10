@@ -87,12 +87,16 @@ extension MdocUITest {
 
     /// A tap in the text, near its top left: in edit mode with no
     /// selection the keyboard waits for one (ADR 0110). Waits for the
-    /// keyboard.
+    /// keyboard or its toolbar.
     @MainActor
     static func tapIntoText(_ app: XCUIApplication) {
         let text = app.textViews["document-text"]
         text.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 60, dy: 28)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "a tap in the text brings the keyboard")
+        // The toolbar shows with the keyboard; with a hardware keyboard
+        // (an iPad Simulator), it shows alone.
+        XCTAssertNotNil(
+            firstToAppear([app.keyboards.firstMatch, app.buttons["toolbar-bold"]], timeout: 10),
+            "a tap in the text brings the keyboard")
     }
 
     /// ⌘↓ from the hardware keyboard: the caret to the end of the text. The

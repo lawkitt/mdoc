@@ -183,6 +183,13 @@ struct MarkdownTextView: UIViewRepresentable {
         /// The keyboard went when the Original covered the text in edit
         /// mode: it comes back with the text.
         var focusOnReturn = false
+        /// Where the reader was when the mode last changed: on iPad
+        /// Identities come or go with it and the text's width changes a
+        /// moment later, and that layout and the next change return here
+        /// too, until the reader scrolls, types or a reveal moves the text.
+        var modeAnchor: CandidateTextView.ScrollAnchor?
+        /// The width the text was last styled for.
+        var renderedWidth: CGFloat?
         /// Edit mode's restyling and reveal (ADR 0109).
         let livePreview = LivePreview()
         /// The selection before the latest move, for snapping the caret.
@@ -358,6 +365,7 @@ struct MarkdownTextView: UIViewRepresentable {
         /// lands, it is measured again and, if still out of the band,
         /// corrected once (`correcting`).
         func reveal(range source: SourceRange, in view: CandidateTextView, always: Bool = true, correcting: Bool = false) {
+            modeAnchor = nil
             let range = offsets.nsRange(source)
             let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
                 NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
@@ -409,6 +417,7 @@ struct MarkdownTextView: UIViewRepresentable {
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
             landing = nil
             scrolling = false
+            modeAnchor = nil
         }
 
         /// The room `reveal` added below the text, taken away once no
@@ -471,9 +480,17 @@ struct MarkdownTextView: UIViewRepresentable {
             // selection where they were (ADR 0110).
             let switching = shownEditing.map { $0 != parent.editing } ?? false
             shownEditing = parent.editing
-            let anchor = switching ? view.scrollAnchor() : nil
+            let widthChanged = renderedWidth.map { abs($0 - width) > 0.5 } ?? false
+            renderedWidth = width
+            // Kept from the last change while the reader has not moved:
+            // a wider text that fits whole sits at the top, and Done still
+            // goes back to where they were.
+            if switching { modeAnchor = modeAnchor ?? view.scrollAnchor() }
+            let anchor = switching || widthChanged ? modeAnchor : nil
             let selection = view.selectedRange
-            let shownText = switching ? view.textStorage.string : nil
+            // A selection survives a change of mode or width (Identities
+            // coming back on iPad) when the text is the same.
+            let shownText = switching || selection.length > 0 ? view.textStorage.string : nil
             // Built undecorated, its candidates' stretches noted, then
             // decorated as a selection change recolours them, so the two
             // never differ; the view gets the text decorated already.
@@ -536,7 +553,7 @@ struct MarkdownTextView: UIViewRepresentable {
             }
             view.rotorItems = items.sorted { $0.order < $1.order }
             if let shownText, shownText == view.textStorage.string, NSMaxRange(selection) <= view.textStorage.length {
-                // Done: the same text, so the same selection.
+                // The same text, so the same selection.
                 view.selectedRange = selection
             }
             if let anchor {
