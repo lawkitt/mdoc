@@ -1,6 +1,8 @@
 # Mobile Markdown editor
 
-Status: Accepted, 2026-11-09. Amends
+Status: Accepted, 2026-11-09. Amended by
+[ADR 0110](0110-mobile-editor-polish.md) (entering edit mode, Identities,
+table controls, lists). Amends
 [ADR 0085](0085-mobile-apps.md) (scope: "no full Markdown editor"; review
 screen "No text editing"), [ADR 0096](0096-rendered-markdown-on-mobile.md)
 ("The text stays read-only") and [ADR 0098](0098-mobile-review-bar.md)
@@ -46,8 +48,8 @@ target feel is Obsidian's iOS live-preview editor.
 - **Toolbar:** a capsule bar above the keyboard (undo, redo, bold, italic,
   list, task, indent, outdent, Aa, hide keyboard); Aa swaps in a
   formatting keyboard (Turn into H1–H3, quote, code, callout; strike,
-  code, highlight, link, rule, table), which becomes table controls inside
-  a table. The selection menu stays the system one.
+  code, highlight, link, rule, table). In a table the toolbar carries the
+  table controls (ADR 0110). The selection menu stays the system one.
 - **Tables** are edited cell by cell in the drawn grid: typing changes only
   that cell's bytes; row and column actions are the core's table commands;
   nothing pads or realigns columns.
