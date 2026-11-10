@@ -5,10 +5,10 @@ import UIKit
 /// Edit mode's formatting keyboard (ADR 0109), which Aa swaps in for the
 /// system keyboard as Bear and Taio do: Turn into (text, three headings,
 /// quote, code block, callout), strikethrough, inline code, highlight,
-/// link, rule and table, and a key back to the system keyboard. The caret's
-/// block shows selected. In a table's cell it shows the table controls
-/// instead, as Bear's table keyboard does. It scrolls when the text size
-/// leaves it no room.
+/// link, rule and table; Aa switches back (ADR 0110). The caret's block
+/// shows selected. In a table's cell it is the same keyboard: the formats
+/// work there, the blocks are off. It scrolls when the text size leaves it
+/// no room.
 struct FormattingKeyboard: View {
     let model: EditToolbarModel
 
@@ -26,11 +26,7 @@ struct FormattingKeyboard: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xs) {
-                if model.inCell {
-                    TableControls(model: model)
-                } else {
-                    keys
-                }
+                keys
             }
             .padding(.horizontal, Space.s)
             .padding(.vertical, Space.xs)
@@ -39,7 +35,6 @@ struct FormattingKeyboard: View {
         .accessibilityIdentifier("formatting-keyboard")
     }
 
-    /// The formatting keys, outside a table's cells.
     @ViewBuilder private var keys: some View {
         KeySection(title: Text("Turn into")) {
             ForEach(Self.kinds, id: \.3) { kind, symbol, label, id in
@@ -52,7 +47,6 @@ struct FormattingKeyboard: View {
         KeySection(title: Text("Insert")) {
             CommandKey(model: model, command: .rule, symbol: "minus", label: Text("Rule"), id: "insert-rule")
             CommandKey(model: model, command: .insertTable, symbol: "tablecells", label: Text("Table"), id: "insert-table")
-            KeyboardKey(model: model)
         }
     }
 }
@@ -111,20 +105,6 @@ struct FormatKeys: View {
             id: "format-highlight")
         FormattingKey(symbol: "link", label: Text("Link"), id: "format-link", on: model.state?.link != nil) {
             model.editLink()
-        }
-    }
-}
-
-/// The key back to the system keyboard.
-struct KeyboardKey: View {
-    let model: EditToolbarModel
-
-    var body: some View {
-        FormattingKey(
-            symbol: "keyboard", label: Text("Keyboard"), id: "formatting-keyboard-return",
-            hint: Text("Brings back the keyboard.")
-        ) {
-            model.setFormatting(false)
         }
     }
 }

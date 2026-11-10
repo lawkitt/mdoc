@@ -223,11 +223,12 @@ final class EditToolbarTests: XCTestCase {
 
     // MARK: The formatting keyboard
 
-    func testAaSwapsInTheFormattingKeyboardAndItsKeyBringsTheKeyboardBack() throws {
+    func testAaSwapsInTheFormattingKeyboardAndBack() throws {
         let harness = try harness()
         harness.toolbar.setFormatting(true)
         XCTAssertTrue(harness.toolbar.formatting)
         XCTAssertTrue(harness.view.inputView is FormattingKeyboardHost)
+        // Aa again: no key on the keyboard does it (ADR 0110).
         harness.toolbar.setFormatting(false)
         XCTAssertFalse(harness.toolbar.formatting)
         XCTAssertNil(harness.view.inputView)

@@ -317,7 +317,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["turn-text"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
         shot("46-formatting-keyboard")
         // The caret in the link: its chip offers Open and Edit.
-        app.buttons["formatting-keyboard-return"].tap()
+        app.buttons["toolbar-formatting"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText(" to [the agent](https://example.com)")
@@ -371,17 +371,25 @@ final class SurveyUITests: XCTestCase {
         shot("51-new-document-named")
     }
 
-    /// Table editing (ADR 0109, slice 5): the caret in a drawn cell with
-    /// text typed there, then Aa's table controls.
+    /// Table editing (ADR 0110): the caret in a drawn cell with text typed
+    /// there and the table controls in the toolbar, the ⋯ menu open, then
+    /// Aa's formatting keyboard in the cell.
     @MainActor
     func test10TableEditing() throws {
         let (app, _) = TableEditingUITests.editCell("Депозит")
         app.typeText(" paid")
         XCTAssertTrue(TableEditingUITests.cell(app, "Депозит paid").waitForExistence(timeout: 5))
-        shot("48-table-cell")
+        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 5))
+        shot("57-table-toolbar")
+        app.buttons["table-more"].tap()
+        XCTAssertTrue(app.buttons["Delete table"].waitForExistence(timeout: 5))
+        shot("58-table-menu")
+        // The menu closes without a choice; Aa: the formatting keyboard.
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+        XCTAssertTrue(app.buttons["Delete table"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
         app.buttons["toolbar-formatting"].tap()
-        XCTAssertTrue(app.buttons["table-align-left"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
-        shot("49-table-controls")
+        XCTAssertTrue(app.buttons["format-strikethrough"].waitForExistence(timeout: 5))
+        shot("59-table-formatting-keyboard")
     }
 
     /// Below the detector floor (ADR 0088): no setup card on Home; where

@@ -144,11 +144,17 @@ final class TableEditingTests: XCTestCase {
         let rect = harness.view.caretRect(for: try XCTUnwrap(harness.view.selectedTextRange?.end))
         let frame = try grid(harness).cells[2][0].convert(try grid(harness).cells[2][0].bounds, to: harness.view)
         XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(CGPoint(x: rect.midX, y: rect.midY)), "\(rect) in \(frame)")
-        // Blocks are off in a cell; formats and Aa's table controls are on.
+        // Blocks are off in a cell; formats, the formatting keyboard's too,
+        // are on, and the toolbar shows the table controls (ADR 0110).
         XCTAssertFalse(harness.toolbar.isEnabled(.list))
         XCTAssertFalse(harness.toolbar.isEnabled(.task))
         XCTAssertFalse(harness.toolbar.isEnabled(.indent))
-        XCTAssertTrue(harness.toolbar.isEnabled(.format(.bold)))
+        XCTAssertFalse(harness.toolbar.isEnabled(.turnInto(.heading1)))
+        XCTAssertFalse(harness.toolbar.isEnabled(.rule))
+        XCTAssertFalse(harness.toolbar.isEnabled(.insertTable))
+        for format in [EditorInlineFormat.bold, .italic, .strikethrough, .code, .highlight] {
+            XCTAssertTrue(harness.toolbar.isEnabled(.format(format)), "\(format)")
+        }
         XCTAssertTrue(harness.toolbar.inCell)
     }
 
@@ -335,7 +341,6 @@ final class TableEditingTests: XCTestCase {
         let controls: [(EditorTableCommand, String)] = [
             (.insertRowAbove, "| Rent | £1,150 |\n|  |  |\n| Deposit"),
             (.insertRowBelow, "| Deposit | £1,725 |\n|  |  |\n\nAfter"),
-            (.duplicateRow, "| Deposit | £1,725 |\n| Deposit | £1,725 |"),
             (.deleteRow, "| --- | ---: |\n| Rent | £1,150 |\n\nAfter"),
             (.insertColumnLeft, "|  | Deposit | £1,725 |"),
             (.insertColumnRight, "| Deposit |  | £1,725 |"),
