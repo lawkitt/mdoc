@@ -16,6 +16,7 @@
 
 use std::ops::Range;
 
+use mdoc_editor_core::cells::{self, CellMove};
 use mdoc_editor_core::commands::{self, InlineFormat, TableCommand};
 use mdoc_editor_core::reveal::{RevealRule, visible_markers};
 use mdoc_editor_core::toolbar;
@@ -297,6 +298,84 @@ pub fn editor_table_command(
     commands::table_command(&text, sel, &command).map(change)
 }
 
+/// A caret move in a drawn table (ADR 0109): Tab, ⇧Tab, the arrow keys and
+/// the table controls' move keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum EditorTableMove {
+    /// The next cell; from the last cell, out below the table as Return
+    /// leaves its last row.
+    Next,
+    /// The previous cell; the first cell stays.
+    Previous,
+    /// The cell above, or out above the table.
+    Up,
+    /// The cell below, or out below the table.
+    Down,
+    /// A character left, then the previous cell.
+    Left,
+    /// A character right, then the next cell.
+    Right,
+}
+
+/// Tab, ⇧Tab, an arrow key or a table control's move key in a drawn table
+/// (live preview): the caret to another cell, or a character over. Nil
+/// outside a drawn table, where the key does what it does elsewhere.
+#[uniffi::export]
+pub fn editor_table_move(
+    text: String,
+    selection: TextRange,
+    by: EditorTableMove,
+    rendered: bool,
+) -> Option<EditorChange> {
+    let sel = self::selection(&text, selection);
+    let by = match by {
+        EditorTableMove::Next => CellMove::Next,
+        EditorTableMove::Previous => CellMove::Previous,
+        EditorTableMove::Up => CellMove::Up,
+        EditorTableMove::Down => CellMove::Down,
+        EditorTableMove::Left => CellMove::Left,
+        EditorTableMove::Right => CellMove::Right,
+    };
+    commands::table_move(&text, sel, by, rendered).map(change)
+}
+
+/// Typing `typed` over the selection in a drawn table's cell (live
+/// preview), as that cell's own bytes: a line break becomes `<br>`, a pipe
+/// is escaped (`\|`), and backslashes keep each pipe what it was. Nil
+/// outside a drawn table, where typing is plain.
+#[uniffi::export]
+pub fn editor_type_in_table(
+    text: String,
+    selection: TextRange,
+    typed: String,
+    rendered: bool,
+) -> Option<EditorChange> {
+    let sel = self::selection(&text, selection);
+    commands::type_in_table(&text, sel, &typed, rendered).map(change)
+}
+
+/// The selection kept in one cell of a drawn table (live preview), its
+/// caret's: never past the cell's pipes, between a backslash and what it
+/// escapes, on the `| --- |` row or the style marker. Nil outside a drawn
+/// table.
+#[uniffi::export]
+pub fn editor_table_selection(text: String, selection: TextRange) -> Option<TextRange> {
+    let sel = self::selection(&text, selection);
+    cells::keep_in_cell(&text, sel).map(|range| TextRange::of(&range))
+}
+
+/// The drawn table's cell holding the caret, for the table controls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct EditorTableCell {
+    /// The grid row: 0 is the header, then the body rows.
+    pub row: u32,
+    pub column: u32,
+    pub rows: u32,
+    pub columns: u32,
+    /// The caret's column's alignment.
+    pub align: MarkdownAlign,
+}
+
 /// A link at the caret: an inline `[text](url)` or a bare URL.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct EditorLink {
@@ -327,9 +406,11 @@ pub struct EditorCaretState {
     pub can_indent: bool,
     /// The caret's line has an indent to take away.
     pub can_outdent: bool,
-    /// The caret is in a table the view draws: the formatting keyboard's
-    /// table controls (a later slice).
+    /// The caret is in a table the view draws.
     pub in_table: bool,
+    /// In live preview, the drawn table's cell holding the caret: the
+    /// formatting keyboard shows the table controls (ADR 0109).
+    pub cell: Option<EditorTableCell>,
     /// The link holding or touching the caret, for its Open and Edit chip.
     pub link: Option<EditorLink>,
 }
@@ -361,6 +442,17 @@ pub fn editor_caret_state(text: String, selection: TextRange, rendered: bool) ->
         can_indent: state.can_indent,
         can_outdent: state.can_outdent,
         in_table: state.in_table,
+        cell: state.cell.map(|cell| EditorTableCell {
+            row: u32::try_from(cell.row).unwrap_or(u32::MAX),
+            column: u32::try_from(cell.column).unwrap_or(u32::MAX),
+            rows: u32::try_from(cell.rows).unwrap_or(u32::MAX),
+            columns: u32::try_from(cell.columns).unwrap_or(u32::MAX),
+            align: match cell.align {
+                Align::Left => MarkdownAlign::Left,
+                Align::Center => MarkdownAlign::Center,
+                Align::Right => MarkdownAlign::Right,
+            },
+        }),
         link: state.link.map(|link| EditorLink {
             range: TextRange::of(&link.range),
             text: link.text,
@@ -409,12 +501,11 @@ pub fn editor_insert_rule(text: String, selection: TextRange) -> EditorChange {
 }
 
 /// The formatting keyboard's Table: an empty two-column table (a header
-/// row and a body row) after the caret's line; the caret in its first cell
-/// with Show Markdown on, below it in live preview.
+/// row and a body row) after the caret's line, the caret in its first cell.
 #[uniffi::export]
-pub fn editor_insert_table(text: String, selection: TextRange, rendered: bool) -> EditorChange {
+pub fn editor_insert_table(text: String, selection: TextRange) -> EditorChange {
     let sel = self::selection(&text, selection);
-    change(toolbar::insert_table(&text, sel, rendered))
+    change(toolbar::insert_table(&text, sel))
 }
 
 /// Paste `pasted` (plain text, or [`crate::markdown::pasted_markdown`]'s
@@ -581,7 +672,7 @@ mod tests {
         );
         let c = editor_insert_rule("a".into(), caret(1));
         assert_eq!(applied("a", &c), ("a\n\n---\n\n".into(), caret(8)));
-        let c = editor_insert_table("".into(), caret(0), false);
+        let c = editor_insert_table("".into(), caret(0));
         assert_eq!(
             applied("", &c),
             ("|  |  |\n| --- | --- |\n|  |  |\n\n".into(), caret(2))
@@ -669,6 +760,50 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn cells_are_edited_and_moved_through() {
+        let t = "| a | b |\n| --- | --: |\n| 1 | 2 |";
+        let b = t.find("b |").unwrap() as u64;
+        let state = editor_caret_state(t.into(), caret(b), true);
+        assert_eq!(
+            state.cell,
+            Some(EditorTableCell {
+                row: 0,
+                column: 1,
+                rows: 2,
+                columns: 2,
+                align: MarkdownAlign::Right
+            })
+        );
+        assert_eq!(editor_caret_state(t.into(), caret(b), false).cell, None);
+        // Typing a pipe and a line break stays in the cell.
+        let c = editor_type_in_table(t.into(), caret(b), "x|\ny".into(), true).unwrap();
+        assert_eq!(applied(t, &c).0, t.replace("| b", "| x\\|<br>yb"));
+        assert_eq!(
+            editor_type_in_table(t.into(), caret(b), "|".into(), false),
+            None
+        );
+        // Tab to the next row's first cell; Up back to the header.
+        let c = editor_table_move(t.into(), caret(b), EditorTableMove::Next, true).unwrap();
+        assert_eq!(&t[c.selection.start as usize..], "1 | 2 |");
+        let c = editor_table_move(t.into(), c.selection, EditorTableMove::Up, true).unwrap();
+        assert_eq!(
+            &t[c.selection.start as usize..],
+            "a | b |\n| --- | --: |\n| 1 | 2 |"
+        );
+        assert_eq!(
+            editor_table_move(t.into(), caret(b), EditorTableMove::Next, false),
+            None
+        );
+        // The `| --- |` row keeps no caret.
+        let sep = t.find("--:").unwrap() as u64;
+        assert_eq!(editor_table_selection(t.into(), caret(sep)), Some(caret(b)));
+        assert_eq!(editor_table_selection("x".into(), caret(0)), None);
+        // ⌫ at a cell's start changes nothing.
+        let c = editor_backspace(t.into(), caret(b), true).unwrap();
+        assert!(c.edits.is_empty());
     }
 
     #[test]

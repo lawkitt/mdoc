@@ -31,6 +31,10 @@ struct MarkdownStyler {
     /// first marker shows draws its source instead of what the marker paints
     /// (a bullet, a task box, an alert's title, a fence's card edge, a rule).
     var revealed: [SourceRange] = []
+    /// The grids shown, by their UTF-16 location in the styled text: edit
+    /// mode keeps a table's columns while its cells are typed into, and
+    /// measures only the rows that changed (ADR 0109).
+    var keptTables: [Int: RenderedTable] = [:]
 
     static func link(for id: CandidateID) -> URL {
         var components = URLComponents()
@@ -237,7 +241,7 @@ struct MarkdownStyler {
         guard rendered else { return RenderedDocument(text: text, tables: []) }
         var layout = BlockLayout(
             text: text, source: source, offsets: offsets, styling: styling, hidden: hidden,
-            traits: traits, body: body, paragraph: paragraph, revealed: shown, editing: editing)
+            traits: traits, body: body, paragraph: paragraph, revealed: shown, editing: editing, kept: keptTables)
         let tables = width.map { layout.tables(width: $0) } ?? []
         layout.apply(tables: tables)
         return RenderedDocument(text: text, tables: tables)

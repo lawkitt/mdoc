@@ -6,7 +6,7 @@ import XCTest
 /// Live-preview editing (ADR 0109, slice 3), on the real core: the rendered
 /// view is edited with its string staying the source; the caret's construct
 /// and line prefix show dimmed and the rest stays hidden; the caret never
-/// rests in a hidden run and skips tables; Return, ⌫ and ⌦ are the editor
+/// rests in a hidden run and goes into a table's cells; Return, ⌫ and ⌦ are the editor
 /// core's, one core edit each; and each keystroke restyles only its block,
 /// to exactly what a whole restyle draws.
 @MainActor
@@ -217,27 +217,26 @@ final class LivePreviewTests: XCTestCase {
         XCTAssertEqual(harness.view.selectedRange.location, item + 2)
     }
 
-    func testTheCaretSkipsATable() throws {
+    /// Slice 5 (ADR 0109): a caret that lands in a table's hidden source
+    /// is kept in a cell, and a tap on the grid puts it in the cell tapped.
+    func testTheCaretGoesIntoATablesCells() throws {
         let harness = try harness()
         let table = location(of: "| A | B |", in: harness)
-        let after = location(of: "\n\n![](scan.png)", in: harness) + 1
-        let before = table - 1
         XCTAssertTrue(hidden(harness, at: table))
-        XCTAssertFalse(hidden(harness, at: after), "the blank line after the table shows")
-        // Moving down into the table goes past it…
-        caret(harness, at: before - 1)
-        caret(harness, at: table + 2)
-        XCTAssertEqual(harness.view.selectedRange.location, after)
-        // …and moving up into it, before it, onto the blank line above.
-        caret(harness, at: after - 1)
-        XCTAssertEqual(harness.view.selectedRange.location, before)
-        // A tap on a cell puts the caret after the table.
+        // Landing on the row's first pipe: the first cell's text.
+        caret(harness, at: table)
+        XCTAssertEqual(harness.view.selectedRange.location, table + 2)
+        // On the `| --- |` row: the header's cell above.
+        caret(harness, at: location(of: "| --- | ---", in: harness) + 8)
+        XCTAssertEqual(harness.view.selectedRange.location, location(of: "B |", in: harness))
+        // A tap on a cell: the caret in that cell's source.
         let grid = try XCTUnwrap(harness.view.tableViews.first)
         caret(harness, at: 0)
-        harness.view.onTableTap?(grid)
+        let two = grid.cells[1][1]
+        harness.view.onTableTap?(grid, CGPoint(x: two.frame.maxX - 4, y: two.frame.midY))
         harness.coordinator.textViewDidChangeSelection(harness.view)
-        XCTAssertEqual(harness.view.selectedRange.location, after)
-        XCTAssertTrue(grid.cells.joined().allSatisfy { !$0.isUserInteractionEnabled }, "cells take no edits")
+        XCTAssertEqual(harness.view.selectedRange.location, location(of: "2 |", in: harness) + 1)
+        XCTAssertTrue(grid.cells.joined().allSatisfy { !$0.isUserInteractionEnabled }, "the text view keeps the caret")
     }
 
     // MARK: Structural keys
@@ -347,11 +346,9 @@ final class LivePreviewTests: XCTestCase {
 
     func testTypingAfterATableAtTheEndStartsAParagraph() throws {
         let harness = try harness(text: "a\n\n| A |\n| - |\n| 1 |")
-        let grid = try XCTUnwrap(harness.view.tableViews.first)
-        harness.view.onTableTap?(grid)
-        harness.coordinator.textViewDidChangeSelection(harness.view)
         let end = harness.string.length
-        XCTAssertEqual(harness.view.selectedRange.location, end)
+        caret(harness, at: end)
+        XCTAssertEqual(harness.view.selectedRange.location, end, "the end of the text is not in a cell")
         XCTAssertFalse(change(harness, NSRange(location: end, length: 0), "x"))
         XCTAssertEqual(harness.shown, "a\n\n| A |\n| - |\n| 1 |\n\nx", "the row keeps its cells")
         XCTAssertEqual(harness.view.selectedRange.location, end + 3)
@@ -495,6 +492,9 @@ final class LivePreviewTests: XCTestCase {
             traits: harness.view.traitCollection, selected: nil, scoped: [], rendered: harness.rendered,
             width: harness.view.textWidth)
         styler.editing = true
+        // Tables keep their columns while their cells are typed into.
+        styler.keptTables = Dictionary(
+            harness.view.tableViews.map { ($0.table.anchor, $0.table) }, uniquingKeysWith: { first, _ in first })
         let styling = MarkdownStyling(markdown: text)
         styler.revealed = preview.visible + (preview.caretLines.map { LivePreview.shownLines(in: styling, caret: $0) } ?? [])
         let expected = styler.document(markdown: text, styling: styling, candidates: preview.candidates).text

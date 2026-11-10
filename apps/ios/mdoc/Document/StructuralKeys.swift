@@ -38,7 +38,7 @@ enum StructuralKey: Equatable {
 enum KeyOutcome: Equatable {
     /// UIKit's own change is the core's: let it happen.
     case native
-    /// Nothing: the key would edit a table, which this slice does not.
+    /// Nothing: the key would join a line to a table's row.
     case ignored
     /// The caret moves; the text stays.
     case select(NSRange)
@@ -69,6 +69,18 @@ enum StructuralKeys {
         case .deleteForward: editorDeleteForward(text: source, selection: selected, rendered: rendered)
         }
         guard let change else { return .native }
+        let outcome = replacement(for: change, in: source)
+        guard key != .enter, case .replace(let range, let text, _) = outcome else { return outcome }
+        if protected.contains(where: { NSIntersectionRange($0, range).length > 0 || NSIntersectionRange($0, native).length > 0 }) {
+            return .ignored
+        }
+        if text.isEmpty && range == native { return .native }
+        return outcome
+    }
+
+    /// The core's `change` to `source` as one replacement in UTF-16
+    /// offsets, then the selection; a change without edits moves the caret.
+    static func replacement(for change: EditorChange, in source: String) -> KeyOutcome {
         let map = UTF8Map(source)
         guard let first = change.edits.first, let last = change.edits.last else {
             return .select(map.range(of: SourceRange(change.selection)))
@@ -85,12 +97,6 @@ enum StructuralKeys {
         }
         let text = String(decoding: replacement, as: UTF8.self)
         let range = map.range(of: SourceRange(start: start, end: end))
-        if key != .enter {
-            if protected.contains(where: { NSIntersectionRange($0, range).length > 0 || NSIntersectionRange($0, native).length > 0 }) {
-                return .ignored
-            }
-            if text.isEmpty && range == native { return .native }
-        }
         let edited = String(decoding: Array(bytes[..<start]) + replacement + Array(bytes[end...]), as: UTF8.self)
         return .replace(range: range, text: text, selection: UTF8Map(edited).range(of: SourceRange(change.selection)))
     }

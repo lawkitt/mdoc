@@ -7,7 +7,7 @@ use crate::spans::is_backslash_escaped;
 use crate::syntax::{TableStyle, base_direction, table_col_widths, table_style_marker};
 
 /// Per-column text alignment of a GFM table.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Align {
     Left,
     Center,
@@ -146,6 +146,86 @@ pub fn table_cell_ranges(line: &str) -> Vec<Range<usize>> {
     out
 }
 
+/// Each cell's whole span between its pipes, line-local, in the order of
+/// [`table_cell_ranges`]: the cell's content with its spaces, where typing
+/// in the cell stays in the cell (ADR 0109). A row left without its closing
+/// pipe (`| a | b`) ends with the text after its last pipe, when there is
+/// some.
+pub fn table_cell_spans(line: &str) -> Vec<Range<usize>> {
+    let (Some(first), Some(last)) = (line.find('|'), line.rfind('|')) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if last > first {
+        let base = first + 1;
+        let mut seg = 0;
+        for piece in split_unescaped_pipes(&line[base..last]) {
+            out.push(base + seg..base + seg + piece.len());
+            seg += piece.len() + 1;
+        }
+    }
+    if !line[last + 1..].trim().is_empty() {
+        out.push(last + 1..line.len());
+    }
+    out
+}
+
+/// Byte ranges of the `<br>`, `<br/>` and `<br />` tags (any case) in a table
+/// cell: converted DOCX tables break cell lines with them (ADR 0046). A tag
+/// inside a code span or after a backslash is literal text, not a break.
+pub fn table_cell_breaks(content: &str) -> Vec<Range<usize>> {
+    let b = content.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            // An escaped character is literal.
+            b'\\' => i += 2,
+            // A code span runs to the next backtick run of the same length;
+            // an unmatched run is literal backticks (CommonMark).
+            b'`' => {
+                let run = b[i..].iter().take_while(|&&c| c == b'`').count();
+                let fence = &content[i..i + run];
+                let mut at = i + run;
+                let mut close = None;
+                while let Some(rel) = content[at..].find(fence) {
+                    let start = at + rel;
+                    let len = b[start..].iter().take_while(|&&c| c == b'`').count();
+                    if len == run {
+                        close = Some(start + run);
+                        break;
+                    }
+                    at = start + len;
+                }
+                i = close.unwrap_or(i + run);
+            }
+            b'<' => {
+                let tag = |len: usize| {
+                    b.get(i..i + len)
+                        .is_some_and(|t| t[1..3].eq_ignore_ascii_case(b"br"))
+                };
+                let len = [4, 5, 6].into_iter().find(|&len| {
+                    tag(len)
+                        && match len {
+                            4 => b[i + 3] == b'>',
+                            5 => &b[i + 3..i + 5] == b"/>",
+                            _ => &b[i + 3..i + 6] == b" />",
+                        }
+                });
+                match len {
+                    Some(len) => {
+                        out.push(i..i + len);
+                        i += len;
+                    }
+                    None => i += 1,
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
 /// If `line` is a table separator row (every cell is dashes with optional
 /// alignment colons), return its per-column alignment, else `None`.
 fn separator_aligns(line: &str) -> Option<Vec<Align>> {
@@ -215,6 +295,21 @@ mod tests {
         assert_eq!(ranges.len(), 2);
         assert_eq!(&line[ranges[0].clone()], r"left \| right");
         assert_eq!(&line[ranges[1].clone()], "ok");
+    }
+
+    #[test]
+    fn cell_spans_hold_their_content() {
+        let line = r"|  a \| b | | c";
+        let spans = table_cell_spans(line);
+        let pieces: Vec<&str> = spans.iter().map(|r| &line[r.clone()]).collect();
+        assert_eq!(pieces, [r"  a \| b ", " ", " c"]);
+        let line = "| a |  |";
+        let spans = table_cell_spans(line);
+        for (span, cell) in spans.iter().zip(table_cell_ranges(line)) {
+            assert!(span.start <= cell.start && cell.end <= span.end);
+        }
+        assert_eq!(spans, [1..4, 5..7]);
+        assert!(table_cell_spans("no pipes").is_empty());
     }
 
     #[test]

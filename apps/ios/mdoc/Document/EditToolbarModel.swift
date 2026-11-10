@@ -13,7 +13,16 @@ enum EditCommand: Hashable {
     case outdent
     case turnInto(EditorBlockKind)
     case rule
-    case table
+    /// The formatting keyboard's Table: a new table.
+    case insertTable
+    /// A table control on the caret's table (ADR 0109): rows, columns,
+    /// alignment, delete.
+    case table(EditorTableCommand)
+    /// Tab, ⇧Tab, an arrow key or a table control's move key in a cell:
+    /// no edit, but Tab from the last cell, which leaves the table.
+    case moveInTable(EditorTableMove)
+    /// ⇧Return in a cell: `<br>`.
+    case lineBreak
 
     /// The core's change for `selection` (UTF-8) in `text`; nil when the
     /// command does not apply there.
@@ -26,7 +35,10 @@ enum EditCommand: Hashable {
         case .outdent: editorOutdent(text: text, selection: selection, rendered: rendered)
         case .turnInto(let kind): editorTurnInto(text: text, selection: selection, kind: kind)
         case .rule: editorInsertRule(text: text, selection: selection)
-        case .table: editorInsertTable(text: text, selection: selection, rendered: rendered)
+        case .insertTable: editorInsertTable(text: text, selection: selection)
+        case .table(let command): editorTableCommand(text: text, selection: selection, command: command)
+        case .moveInTable(let move): editorTableMove(text: text, selection: selection, by: move, rendered: rendered)
+        case .lineBreak: editorShiftEnter(text: text, selection: selection, rendered: rendered)
         }
     }
 }
@@ -66,13 +78,15 @@ final class EditToolbarModel {
         case .list: state.list
         case .task: state.task != nil
         case .turnInto(let kind): state.block == kind
-        case .indent, .outdent, .rule, .table: false
+        case .table(.align(let align)): state.cell?.align == align
+        case .indent, .outdent, .rule, .insertTable, .table, .moveInTable, .lineBreak: false
         }
     }
 
     /// The command can apply at the caret: inline formats outside code,
-    /// indent under an item, outdent with an indent; blocks outside tables
-    /// (the table slice gives tables their own controls).
+    /// indent under an item, outdent with an indent; blocks outside tables;
+    /// table controls in a drawn table's cell, but no row above or deleted
+    /// in the header and no last column deleted.
     func isEnabled(_ command: EditCommand) -> Bool {
         guard let state else { return false }
         return switch command {
@@ -80,9 +94,24 @@ final class EditToolbarModel {
         case .indent: state.canIndent
         case .outdent: state.canOutdent
         case .list, .task, .turnInto: !state.inTable
-        case .rule, .table: state.canFormat && !state.inTable
+        case .rule, .insertTable: state.canFormat && !state.inTable
+        case .table(let command): state.cell.map { Self.applies(command, in: $0) } ?? false
+        case .moveInTable, .lineBreak: state.cell != nil
         }
     }
+
+    /// Whether a table control does something in `cell`.
+    static func applies(_ command: EditorTableCommand, in cell: EditorTableCell) -> Bool {
+        switch command {
+        case .insertRowAbove, .deleteRow: cell.row > 0
+        case .deleteColumn: cell.columns > 1
+        case .insertRowBelow, .duplicateRow, .insertColumnLeft, .insertColumnRight, .align, .style, .deleteTable: true
+        }
+    }
+
+    /// The table controls show in place of the formatting keys: the caret
+    /// is in a drawn table's cell.
+    var inCell: Bool { state?.cell != nil }
 
     /// What VoiceOver says the task button's line is.
     var taskValue: String? {
