@@ -161,6 +161,9 @@ final class LivePreviewTests: XCTestCase {
             XCTAssertEqual(harness.string.character(at: blank), 0x0A)
             caret(harness, at: blank)
             try assertBodyTyping(harness, "on a blank line \(mode)")
+            // A whole restyle, the caret staying there, keeps it tall.
+            harness.coordinator.restyleWhole(harness.view)
+            try assertBodyTyping(harness, "on a blank line after a whole restyle \(mode)")
             // It shrinks back once the caret leaves, as a whole restyle draws it.
             caret(harness, at: location(of: "monthly", in: harness))
             assertMatchesAWholeRestyle(harness, mode)

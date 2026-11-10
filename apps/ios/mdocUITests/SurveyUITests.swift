@@ -323,6 +323,33 @@ final class SurveyUITests: XCTestCase {
         shot("47-edit-link-chip")
     }
 
+    /// The caret and the toolbar (ADR 0110): after Return the caret on the
+    /// empty line is a body line tall; lines typed down to the toolbar keep
+    /// the caret's line above it.
+    @MainActor
+    func test9EditCaret() throws {
+        let app = launch(seed: MdocUITest.markdownFixture)
+        let row = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
+        let edit = app.buttons["edit-button"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        // The keyboard may wait for a tap in the text (ADR 0110).
+        if !app.buttons["toolbar-bold"].waitForExistence(timeout: 3) { text.tap() }
+        XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
+        app.typeKey(.downArrow, modifierFlags: .command)
+        app.typeText("\nPay monthly\n")
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value ENDSWITH %@)", "monthly"), timeout: 5))
+        _ = MdocUITest.caretRect(in: text)
+        shot("52-edit-caret-empty-line")
+        app.typeText((1...8).map { "Clause \($0) of the lease" }.joined(separator: "\n"))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Clause 8 of the lease"), timeout: 5))
+        shot("53-edit-caret-last-line")
+    }
+
     /// New document (ADR 0109, slice 6): the sidebar's + menu with New
     /// document first, then a new document in edit mode, named after its
     /// first line once typing pauses.
@@ -529,6 +556,8 @@ final class SurveyUITests: XCTestCase {
         let light = MdocUITest.settledScreen()
         keep(light, "\(name)-light")
         XCUIDevice.shared.appearance = .dark
+        // A blinking caret differs from light at once: dark gets a moment.
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
         keep(MdocUITest.settledScreen(unlike: light), "\(name)-dark")
         XCUIDevice.shared.appearance = .light
     }

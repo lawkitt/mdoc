@@ -113,7 +113,9 @@ final class LivePreview {
         } else {
             visible = []
             caretLines = nil
-            guard caret != caretLine, [caret, caretLine].contains(where: { $0.map { Self.blank($0, in: text) } ?? false }) else {
+            // A whole restyle (`force`) squeezed the caret's blank line again.
+            guard force || caret != caretLine,
+                  [caret, caretLine].contains(where: { $0.map { Self.blank($0, in: text) } ?? false }) else {
                 caretLine = caret
                 return
             }
