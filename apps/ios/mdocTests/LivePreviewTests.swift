@@ -146,6 +146,7 @@ final class LivePreviewTests: XCTestCase {
     func assertBodyTyping(_ harness: Harness, _ message: String, file: StaticString = #filePath, line: UInt = #line) throws {
         let (caret, body) = try caretHeight(harness)
         XCTAssertGreaterThanOrEqual(caret, body * 0.95, "the caret is a body line tall \(message)", file: file, line: line)
+        XCTAssertLessThanOrEqual(caret, ceil(body) + 0.5, "and no taller \(message)", file: file, line: line)
         let font = try XCTUnwrap(harness.view.typingAttributes[.font] as? UIFont, file: file, line: line)
         XCTAssertEqual(font.pointSize, MarkdownStyler.font(.body, traits: harness.view.traitCollection).pointSize,
                        "what is typed next is body-sized \(message)", file: file, line: line)
@@ -174,6 +175,36 @@ final class LivePreviewTests: XCTestCase {
             try assertBodyTyping(harness, "after a heading \(mode)")
             assertMatchesAWholeRestyle(harness, mode)
         }
+    }
+
+    /// The caret's whole line is kept above the toolbar's room: after a
+    /// command, a keyboard change or the room growing, the text scrolls it
+    /// back up; the room comes off when edit mode ends (ADR 0110).
+    func testTheCaretsLineStaysAboveTheToolbar() throws {
+        let paragraphs = (1...60).map { "Paragraph \($0) of the lease." }.joined(separator: "\n\n")
+        let harness = try harness(text: Self.text + "\n\n" + paragraphs + "\n")
+        let view = harness.view, coordinator = harness.coordinator
+        harness.window.makeKeyAndVisible()
+        XCTAssertTrue(view.becomeFirstResponder())
+        let inset = view.contentInset.bottom
+        coordinator.setToolbarRoom(300, in: view)
+        XCTAssertEqual(view.contentInset.bottom, inset + 300)
+        // The caret on a line the toolbar's room covers.
+        view.layoutIfNeeded()
+        let hidden = try XCTUnwrap(view.closestPosition(to: CGPoint(x: 40, y: view.contentOffset.y + view.bounds.height - 120)))
+        caret(harness, at: view.offset(from: view.beginningOfDocument, to: hidden))
+        XCTAssertGreaterThan(view.caretRect(for: try XCTUnwrap(view.selectedTextRange?.end)).maxY,
+                             view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom, "the caret starts under the room")
+        coordinator.scrollCaretLineIntoView(view, animated: false)
+        view.layoutIfNeeded()
+        let end = try XCTUnwrap(view.selectedTextRange?.end)
+        let line = view.caretRect(for: end)
+        let bottom = view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom
+        XCTAssertLessThanOrEqual(line.maxY, bottom + 0.5, "the caret's line is above the room: \(line), \(bottom)")
+        XCTAssertGreaterThan(line.minY, view.contentOffset.y + view.adjustedContentInset.top, "and still in view")
+        // With no keyboard showing there is no room.
+        coordinator.updateToolbarRoom(view)
+        XCTAssertEqual(view.contentInset.bottom, inset)
     }
 
     // MARK: The reveal rule

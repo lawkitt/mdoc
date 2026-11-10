@@ -147,6 +147,31 @@ final class RenderedMarkdownTests: XCTestCase {
         XCTAssertGreaterThan(table.width, 360)
     }
 
+    /// An empty column, as a new one is, is a 44 pt touch target however
+    /// the grid is laid out and at every text size (ADR 0110).
+    func testAnEmptyColumnIsWideEnoughToTap() throws {
+        let long = String(repeating: "Индивидуальный предприниматель ", count: 6)
+        let layouts = [
+            "| A | B |  |\n| --- | --- | --- |\n| 1 | 2 |  |",
+            "|  | Item |\n| --- | --- |\n|  | Rent |",
+            "| RU | EN |  |\n| --- | --- | --- |\n| \(long) | \(long) |  |",
+            "<!-- table:striped cols=300,300,4 -->\n| A | B |  |\n| --- | --- | --- |\n| 1 | 2 |  |",
+        ]
+        for size in [UIContentSizeCategory.extraSmall, .large, .accessibilityLarge] {
+            let traits = UITraitCollection(traitsFrom: [
+                UITraitCollection(userInterfaceStyle: .light), UITraitCollection(preferredContentSizeCategory: size),
+            ])
+            for text in layouts {
+                let document = MarkdownStyler(traits: traits, selected: nil, width: 360)
+                    .document(markdown: text, styling: .init(markdown: text), candidates: [])
+                let table = try XCTUnwrap(document.tables.first, text)
+                for column in table.columns {
+                    XCTAssertGreaterThanOrEqual(column, 44, "\(size.rawValue): \(text.debugDescription)")
+                }
+            }
+        }
+    }
+
     /// A table inside fenced code stays code, pipes and all.
     func testAFencedTableStaysCode() {
         let text = "```\n| A | B |\n| --- | --- |\n| a | b |\n```"

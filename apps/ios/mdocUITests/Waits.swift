@@ -97,4 +97,53 @@ extension MdocUITest {
         app.keyboards.firstMatch.wait(until: NSPredicate(format: "exists == false"), timeout: 2)
         app.typeKey(.downArrow, modifierFlags: .command)
     }
+
+    /// Where the caret draws inside `element`, in screen points: the
+    /// pixels that change while it blinks, nothing else on screen moving.
+    /// Looks at the element's left `share` only, away from the scroll
+    /// indicator. Nil when no blink was seen within `timeout`.
+    @MainActor
+    static func caretRect(in element: XCUIElement, share: CGFloat = 0.6, timeout: TimeInterval = 4) -> CGRect? {
+        let frame = element.frame
+        let region = CGRect(x: frame.minX, y: frame.minY, width: frame.width * share, height: frame.height)
+        func pixels() -> (data: [UInt8], width: Int, height: Int, scale: CGFloat)? {
+            let image = XCUIScreen.main.screenshot().image
+            guard let cg = image.cgImage else { return nil }
+            let scale = CGFloat(cg.width) / image.size.width
+            let crop = CGRect(x: region.minX * scale, y: region.minY * scale, width: region.width * scale, height: region.height * scale)
+                .integral
+            guard let part = cg.cropping(to: crop) else { return nil }
+            var data = [UInt8](repeating: 0, count: part.width * part.height * 4)
+            guard let context = CGContext(
+                data: &data, width: part.width, height: part.height, bitsPerComponent: 8, bytesPerRow: part.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            context.draw(part, in: CGRect(x: 0, y: 0, width: part.width, height: part.height))
+            return (data, part.width, part.height, scale)
+        }
+        guard let first = pixels() else { return nil }
+        var box: (minX: Int, minY: Int, maxX: Int, maxY: Int)?
+        let deadline = Date().addingTimeInterval(timeout)
+        var looks = 0
+        while Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.12))
+            guard let next = pixels(), next.width == first.width, next.height == first.height else { continue }
+            looks += 1
+            for y in 0..<first.height {
+                for x in 0..<first.width {
+                    let index = (y * first.width + x) * 4
+                    let change = abs(Int(first.data[index]) - Int(next.data[index]))
+                        + abs(Int(first.data[index + 1]) - Int(next.data[index + 1]))
+                        + abs(Int(first.data[index + 2]) - Int(next.data[index + 2]))
+                    guard change > 90 else { continue }
+                    box = box.map { (min($0.minX, x), min($0.minY, y), max($0.maxX, x), max($0.maxY, y)) } ?? (x, y, x, y)
+                }
+            }
+            // A blink seen and a few more looks: it has drawn whole.
+            if box != nil, looks >= 12 { break }
+        }
+        guard let box else { return nil }
+        return CGRect(
+            x: region.minX + CGFloat(box.minX) / first.scale, y: region.minY + CGFloat(box.minY) / first.scale,
+            width: CGFloat(box.maxX - box.minX + 1) / first.scale, height: CGFloat(box.maxY - box.minY + 1) / first.scale)
+    }
 }
