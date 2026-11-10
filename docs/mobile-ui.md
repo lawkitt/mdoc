@@ -105,6 +105,16 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 - **The name under review** keeps its category's fill and gets an ink
   outline, black in light mode and white in dark mode (`mdocOutline`, drawn
   by `MarkdownLayoutFragment`, in table cells too).
+- **Lists** (`BlockLayout`, drawn by `MarkdownLayoutFragment`): bullets,
+  numbers and task boxes start at the paragraph's left edge; their text
+  starts one column in, 24 pt at the 17 pt body and scaled with the text,
+  and each nested level starts at its parent's text. An ordered list whose
+  widest number (or written marker) does not fit widens its whole list's
+  column. Bullets and numbers are `.label` at body size; task boxes are
+  secondary. In edit mode the caret's line shows its source marker (`-`,
+  `12.`, `- [ ]`) dimmed in that column, the spare room kerned after it, so
+  the text does not move; a marker wider than the column (a task's) has
+  its inner spaces narrowed, then its size reduced, to fit (ADR 0110).
 - **System controls:** switches stay the system green; menu pickers take
   the ink tint; the segmented Theme control is the system's.
 - **Document font:** System or Serif (New York) at the same sizes

@@ -133,6 +133,7 @@ final class RenderedMarkdownTests: XCTestCase {
         }
         // "10." does not fit 24 pt: its whole list widens, and the item
         // nested under it starts at its text.
+        XCTAssertEqual(decoration(styled, at: "Clause 12")?.label?.text.string, "12.", "the number written")
         let one = try indent("Clause 1\n")
         XCTAssertGreaterThan(one.headIndent, step)
         XCTAssertEqual(try indent("Clause 12").headIndent, one.headIndent)

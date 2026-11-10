@@ -726,8 +726,8 @@ struct BlockLayout {
         }
         let glyphs = marker.glyphs
         guard glyphs.length > 1 else { return }
+        // All but the marker's space.
         let lead = NSRange(location: glyphs.location, length: glyphs.length - 1)
-        let last = NSRange(location: NSMaxRange(lead), length: 1)
         let shown = text.attribute(.font, at: glyphs.location, effectiveRange: nil) as? UIFont
         let font = shown.flatMap { $0.pointSize >= 1 ? $0 : nil } ?? body
         let gap = Self.markerGap * scale
@@ -747,8 +747,11 @@ struct BlockLayout {
             if width + gap <= column { break }
             size = max(1, size * (column - gap) / width)
         }
+        // The spare room goes before the marker's space, not on it: TextKit
+        // puts the caret after a kerned space halfway into its kerning, off
+        // the text it draws.
         let width = Self.width(of: text.attributedSubstring(from: glyphs))
-        text.addAttribute(.kern, value: column - width, range: last)
+        text.addAttribute(.kern, value: column - width, range: NSRange(location: NSMaxRange(lead) - 1, length: 1))
     }
 
     /// What an image with no alt text says in its chip.

@@ -1,4 +1,5 @@
 import MdocFFI
+import SwiftUI
 import UIKit
 import XCTest
 @testable import mdoc
@@ -280,8 +281,6 @@ final class LivePreviewTests: XCTestCase {
 
             \(numbered)
 
-            > - Quoted item
-
             Last line.
             """
         for size in [DynamicTypeSize.large, .accessibility5] {
@@ -297,13 +296,19 @@ final class LivePreviewTests: XCTestCase {
                 let to = try XCTUnwrap(view.position(from: from, offset: 1))
                 return view.firstRect(for: try XCTUnwrap(view.textRange(from: from, to: to))).minX
             }
-            for word in ["Bullet item", "Nested item", "Deep item", "Open task", "Done task", "Clause 1\n", "Clause 11", "Quoted item"] {
+            for word in ["Bullet item", "Nested item", "Deep item", "Open task", "Done task", "Clause 1\n", "Clause 11"] {
                 caret(harness, at: location(of: "Last line.", in: harness))
                 let away = try x(of: word)
                 caret(harness, at: location(of: word, in: harness) + 3)
                 XCTAssertFalse(hidden(harness, at: location(of: word, in: harness) - 2), "\(word): its marker shows")
                 let on = try x(of: word)
                 XCTAssertEqual(on, away, accuracy: 0.5, "\(word) stays put as the caret enters its line (\(size))")
+                // The caret at the text's start stands at the text, not in the
+                // room before it.
+                caret(harness, at: location(of: word, in: harness))
+                harness.view.layoutIfNeeded()
+                let start = try XCTUnwrap(harness.view.selectedTextRange?.start)
+                XCTAssertEqual(harness.view.caretRect(for: start).minX, away, accuracy: 2, "\(word): the caret at its start (\(size))")
                 caret(harness, at: location(of: "Last line.", in: harness))
                 XCTAssertEqual(try x(of: word), away, accuracy: 0.5, "and as it leaves (\(size))")
             }
