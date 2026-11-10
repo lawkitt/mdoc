@@ -92,61 +92,12 @@ pub fn alert_kind(body: &str) -> Option<AlertKind> {
     alert_prefix(body).map(|(kind, ..)| kind)
 }
 
-/// `(position, nesting level)` of every ordered list item, both 0-based-
-/// level / 1-based-position. Word-style, NOT CommonMark: every list counts
-/// from 1 (source digits are display-irrelevant), a nested list is its own
-/// list, and any break — a blank line or prose — ends the open lists, so the
-/// next list starts over. The level is STRUCTURAL (how many lists are open
-/// above), not an indent-width guess, so it survives any spaces-per-level
-/// setting. Non-items are (0, 0).
+/// `(number, nesting level)` of every ordered list item: the number as
+/// written in the source (ADR 0110), the level 0-based and STRUCTURAL (how
+/// many lists are open above), so it survives any spaces-per-level setting.
+/// Non-items are (0, 0). See [`mdoc_markdown::lines::ordered_scan`].
 pub fn ordered_numbers(lines: &[&str]) -> Vec<(u32, usize)> {
     ordered_scan(lines).0
-}
-
-/// A copied slice with its ordered markers rewritten to their DISPLAYED
-/// positions — still digit markdown (letters/romans are display-only), so a
-/// nested block pastes starting at 1 and a continuation pastes as `3.`,
-/// exactly the counting the screen showed, in any markdown app. Lines whose
-/// marker sits outside the slice are copied verbatim. Positions come from
-/// the WHOLE document, so a mid-list copy keeps its true numbering.
-pub fn renumber_copy(content: &str, range: std::ops::Range<usize>) -> String {
-    let lines: Vec<&str> = content.split('\n').collect();
-    let nums = ordered_numbers(&lines);
-    let mut out = String::with_capacity(range.len());
-    let mut line_start = 0;
-    for (i, line) in lines.iter().enumerate() {
-        let line_end = line_start + line.len();
-        // The slice of this line (excluding its newline) inside the range.
-        let seg_start = range.start.max(line_start);
-        let seg_end = range.end.min(line_end);
-        if seg_start <= seg_end && range.start <= line_end && range.end >= line_start {
-            let rel = (seg_start - line_start)..(seg_end - line_start);
-            let marker = list_prefix(line).filter(|&(_, _, ordered, _)| ordered);
-            match marker {
-                // Rewrite only when the whole marker is inside the slice.
-                Some((plen, indent, _, _))
-                    if rel.start == 0 && rel.end >= plen && nums[i].0 > 0 =>
-                {
-                    out.push_str(&line[..indent]);
-                    out.push_str(&nums[i].0.to_string());
-                    // Keep the source's `.`/`)` punctuation and the body.
-                    let digits_end = indent
-                        + line.as_bytes()[indent..]
-                            .iter()
-                            .take_while(|b| b.is_ascii_digit())
-                            .count();
-                    out.push_str(&line[digits_end..rel.end]);
-                }
-                _ => out.push_str(&line[rel]),
-            }
-        }
-        // The newline between this line and the next, when it's in range.
-        if range.start <= line_end && line_end < range.end && i + 1 < lines.len() {
-            out.push('\n');
-        }
-        line_start = line_end + 1;
-    }
-    out
 }
 
 /// Toggle a GFM task item's checkbox in `line` — flip the char between the

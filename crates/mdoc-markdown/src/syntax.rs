@@ -167,12 +167,14 @@ pub fn table_marker_text(style: TableStyle, widths: Option<&[f32]>) -> Option<St
     }
 }
 
-/// The marker for ordered item `n` (1-based) at nesting `depth`, Word-style:
-/// `1.` -> `a.` -> `i.`, cycling for deeper levels. Both views paint ordered
-/// lists with this scheme (a deliberate divergence from CommonMark's
-/// digits-everywhere), so nesting is readable at a glance.
+/// The label for ordered item number `n` (as written) at nesting `depth`,
+/// Word-style: `1.` -> `a.` -> `i.`, cycling for deeper levels. Both views
+/// paint ordered lists with this scheme (a deliberate divergence from
+/// CommonMark's digits-everywhere), so nesting is readable at a glance. A
+/// `0`, which has no letter or numeral, stays a digit.
 pub fn ordered_marker(depth: usize, n: u32) -> String {
     match depth % 3 {
+        _ if n == 0 => "0.".to_owned(),
         0 => format!("{n}."),
         1 => format!("{}.", letters(n)),
         _ => format!("{}.", roman(n)),
@@ -1089,6 +1091,8 @@ mod tests {
         assert_eq!(ordered_marker(2, 4), "iv.");
         assert_eq!(ordered_marker(2, 9), "ix.");
         assert_eq!(ordered_marker(3, 2), "2."); // cycle restarts
+        assert_eq!(ordered_marker(1, 0), "0.");
+        assert_eq!(ordered_marker(2, 0), "0.");
     }
 
     #[test]

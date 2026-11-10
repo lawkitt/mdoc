@@ -48,16 +48,27 @@ pub fn toggle_wrap_pair(
 
 /// The edit that strips `open`/`close` from `sel`, if they sit just
 /// inside or just outside it: (range, replacement, new selection).
+///
+/// An emphasis marker (`*`, `**`, `_`, `__`) counts only as the whole run
+/// of its character there: `**` beside a selection is bold, not two italic
+/// markers, so Italic on bold wraps it into `***bold italic***` and Italic
+/// on that takes one `*` back off (ADR 0110). A run of three is both and
+/// gives up whichever is asked for.
 pub fn unwrap_edit(source: &str, sel: Range<usize>, open: &str, close: &str) -> Option<WrapEdit> {
     let (ol, cl) = (open.len(), close.len());
     let sel_text = &source[sel.clone()];
-    if sel_text.len() >= ol + cl && sel_text.starts_with(open) && sel_text.ends_with(close) {
+    if sel_text.len() >= ol + cl
+        && sel_text.starts_with(open)
+        && sel_text.ends_with(close)
+        && emphasis_run_fits(source, open, sel.start, sel.end - cl)
+    {
         // `**foo**` selected → strip the markers inside the selection.
         let inner = source[sel.start + ol..sel.end - cl].to_string();
         Some((sel.clone(), inner, sel.start..sel.end - ol - cl))
     } else if !sel.is_empty()
         && source[..sel.start].ends_with(open)
         && source[sel.end..].starts_with(close)
+        && emphasis_run_fits(source, open, sel.start - ol, sel.end)
     {
         // `foo` selected with the markers just outside → strip them.
         Some((
@@ -68,6 +79,27 @@ pub fn unwrap_edit(source: &str, sel: Range<usize>, open: &str, close: &str) -> 
     } else {
         None
     }
+}
+
+/// Whether the emphasis markers `open` found at `opening` and `closing`
+/// are whole runs there, or runs of three (bold and italic). The shorter
+/// run decides. Markers of other kinds always fit.
+fn emphasis_run_fits(source: &str, open: &str, opening: usize, closing: usize) -> bool {
+    let bytes = source.as_bytes();
+    let Some(&c) = bytes.get(opening).filter(|c| matches!(c, b'*' | b'_')) else {
+        return true;
+    };
+    if open.bytes().any(|o| o != c) {
+        return true;
+    }
+    // The run of `c` holding the byte at `at`.
+    let run = |at: usize| {
+        let left = bytes[..at].iter().rev().take_while(|&&b| b == c).count();
+        let right = bytes[at..].iter().take_while(|&&b| b == c).count();
+        left + right
+    };
+    let run = run(opening).min(run(closing));
+    run == open.len() || run == 3
 }
 
 /// What Tab does outside a table.
@@ -100,8 +132,7 @@ pub fn indent(source: &str, cursor: usize, tab_indent: usize) -> IndentEdit {
         return IndentEdit::Spaces(indent);
     }
     // Indenting an ordered item starts a NESTED list, so its number
-    // becomes the new list's start: rewrite it to 1. (Both views
-    // renumber the items after it, so only the start digit matters.)
+    // becomes the new list's start: rewrite it to 1, which shows as `a.`.
     let (range, text) = match item {
         Some((_, ws, true, _)) => {
             let de = ws + line[ws..].bytes().take_while(u8::is_ascii_digit).count();
@@ -158,7 +189,57 @@ mod tests {
             Some((0..8, "x".into(), 0..1))
         );
         assert_eq!(toggle_wrap_pair("a  b", 1..3, "*", "*"), None);
+        assert_eq!(
+            toggle_wrap_pair("<u>x</u>", 3..4, "<u>", "</u>"),
+            Some((0..8, "x".into(), 0..1))
+        );
         assert_eq!(toggle_wrap_pair("ab", 1..1, "*", "*"), None);
+    }
+
+    /// The text and the selected text after a toggle.
+    fn toggled(source: &str, sel: Range<usize>, marker: &str) -> (String, String) {
+        let (range, text, sel) = toggle_wrap_pair(source, sel, marker, marker).unwrap();
+        let mut out = source.to_string();
+        out.replace_range(range, &text);
+        let selected = out[sel].to_string();
+        (out, selected)
+    }
+
+    fn word(source: &str, w: &str) -> Range<usize> {
+        let at = source.find(w).unwrap();
+        at..at + w.len()
+    }
+
+    #[test]
+    fn italic_on_bold_is_bold_italic_and_back() {
+        let s = "раз **два** три";
+        let (out, selected) = toggled(s, word(s, "два"), "*");
+        assert_eq!(
+            (out.as_str(), selected.as_str()),
+            ("раз ***два*** три", "два")
+        );
+        let (out, selected) = toggled(&out, word(&out, "два"), "*");
+        assert_eq!(
+            (out.as_str(), selected.as_str()),
+            ("раз **два** три", "два")
+        );
+        // Bold on italic, and Bold off bold italic.
+        let s = "раз *два* три";
+        let (out, _) = toggled(s, word(s, "два"), "**");
+        assert_eq!(out, "раз ***два*** три");
+        let (out, _) = toggled(&out, word(&out, "два"), "**");
+        assert_eq!(out, "раз *два* три");
+        // Bold and italic still come off their own markers.
+        assert_eq!(toggled("**два**", 2..8, "**").0, "два");
+        assert_eq!(toggled("*два*", 1..7, "*").0, "два");
+        // The markers selected with the word: Italic adds, not strips.
+        assert_eq!(toggled("**два**", 0..10, "*").0, "***два***");
+        // Underscores read the same way.
+        let s = "__два__";
+        let (out, _) = toggled(s, word(s, "два"), "_");
+        assert_eq!(out, "___два___");
+        assert_eq!(toggled(&out, word(&out, "два"), "_").0, "__два__");
+        assert_eq!(toggled(&out, word(&out, "два"), "__").0, "_два_");
     }
 
     #[test]

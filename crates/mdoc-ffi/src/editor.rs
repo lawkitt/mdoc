@@ -159,8 +159,10 @@ impl From<TurnKind> for EditorBlockKind {
 
 /// Return: a new block (ADR 0060). Lists, tasks, numbers and quotes
 /// continue, and an empty item ends its list; in a rendered table it moves
-/// to the cell below or leaves the table from its last row; in code and math
-/// it types a newline.
+/// to the cell below, and in the last row adds a row with the caret in the
+/// same column, or, on a last row whose cells are all empty, removes it and
+/// leaves the table (a table of only a header keeps it; ADR 0110); in code
+/// and math it types a newline.
 #[uniffi::export]
 pub fn editor_enter(text: String, selection: TextRange, rendered: bool) -> EditorChange {
     let sel = self::selection(&text, selection);
@@ -204,7 +206,9 @@ pub fn editor_delete_forward(
 /// format, the caret or a selection within it, its markers come off;
 /// otherwise a selection is wrapped (the same text kept selected), a caret
 /// in a word wraps the word, and a caret elsewhere gets an empty pair to
-/// type into. Nil on a blank selection, and in code or math.
+/// type into. Italic on a bold selection gives bold italic (`***x***`) and
+/// back, as does Bold on an italic one (ADR 0110). Nil on a blank
+/// selection, and in code or math.
 #[uniffi::export]
 pub fn editor_toggle_format(
     text: String,
@@ -239,7 +243,11 @@ pub fn editor_outdent(text: String, selection: TextRange, rendered: bool) -> Opt
     commands::outdent(&text, sel, rendered).map(change)
 }
 
-/// Turn the caret's block into `kind`. Nil when it already is one.
+/// Turn every block the selection touches into `kind` (ADR 0110): blank
+/// lines are skipped, and between new list or task items they go; a code
+/// or math block or a callout wraps the selection in one. When every block
+/// is `kind` already they all turn back into text. A selection keeps the
+/// changed blocks selected. Nil when nothing changes.
 #[uniffi::export]
 pub fn editor_turn_into(
     text: String,
@@ -265,8 +273,10 @@ pub fn editor_toggle_task(text: String, selection: TextRange) -> Option<EditorCh
     commands::toggle_task(&text, sel).map(change)
 }
 
-/// Run a table command on the table holding the caret. Nil outside a table
-/// or where it does not apply (deleting the header row or the last column).
+/// Run a table command on the table holding the caret. A new row takes the
+/// caret into its cell in the caret's column, a new column into its cell in
+/// the caret's row (ADR 0110). Nil outside a table or where it does not
+/// apply (deleting the header row or the last column).
 #[uniffi::export]
 pub fn editor_table_command(
     text: String,
@@ -462,16 +472,19 @@ pub fn editor_caret_state(text: String, selection: TextRange, rendered: bool) ->
     }
 }
 
-/// The toolbar's list button: a bulleted or numbered item turns back into
-/// text, any other block into a bulleted item.
+/// The toolbar's list button: every block the selection touches becomes a
+/// bulleted item, the blank lines between them gone; when each is a
+/// bulleted or numbered item already, they all turn back into text
+/// (ADR 0110). The changed blocks stay selected.
 #[uniffi::export]
 pub fn editor_toggle_list(text: String, selection: TextRange) -> Option<EditorChange> {
     let sel = self::selection(&text, selection);
     toolbar::toggle_list(&text, sel).map(change)
 }
 
-/// The toolbar's task button: a task's box checks or unchecks; any other
-/// block turns into a task.
+/// The toolbar's task button: on one task line its box checks or unchecks;
+/// otherwise every block the selection touches becomes a task, or, when
+/// each is a task already, they all turn back into text (ADR 0110).
 #[uniffi::export]
 pub fn editor_task_button(text: String, selection: TextRange) -> Option<EditorChange> {
     let sel = self::selection(&text, selection);
@@ -658,6 +671,18 @@ mod tests {
         assert_eq!(applied("a", &c).0, "- a");
         let c = editor_task_button("- [ ] a".into(), caret(7)).unwrap();
         assert_eq!(applied("- [ ] a", &c).0, "- [x] a");
+        // Over several paragraphs: an item each, the selection kept on them,
+        // and back to text (ADR 0110). Offsets are UTF-8 bytes.
+        let s = "Первый.\n\nВторой.";
+        let all = range(0, s.len() as u64);
+        let c = editor_toggle_list(s.into(), all).unwrap();
+        let (out, sel) = applied(s, &c);
+        assert_eq!(out, "- Первый.\n- Второй.");
+        assert_eq!(sel, range(0, out.len() as u64));
+        let c = editor_toggle_list(out.clone(), sel).unwrap();
+        assert_eq!(applied(&out, &c).0, "Первый.\n\nВторой.");
+        let c = editor_task_button(s.into(), all).unwrap();
+        assert_eq!(applied(s, &c).0, "- [ ] Первый.\n- [ ] Второй.");
         let c = editor_set_link(
             "go".into(),
             range(0, 2),
@@ -700,8 +725,11 @@ mod tests {
             editor_block_kind("> [!TIP]\n> x".into(), caret(11)),
             EditorBlockKind::Callout
         );
+        // Already that kind: back to text (ADR 0110).
+        let c = editor_turn_into("- a".into(), caret(3), EditorBlockKind::BulletList).unwrap();
+        assert_eq!(applied("- a", &c).0, "a");
         assert_eq!(
-            editor_turn_into("- a".into(), caret(3), EditorBlockKind::BulletList),
+            editor_turn_into("a".into(), caret(1), EditorBlockKind::Text),
             None
         );
     }

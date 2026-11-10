@@ -25,7 +25,7 @@ use crate::Diagnostic;
 // Recognition shared with the mobile apps (ADR 0085), re-exported under the
 // names the editor's modules already use.
 pub(crate) use mdoc_editor_core::markdown::{
-    MathRegion, alert_kind, image_row, math_regions, renumber_copy, toggle_task_checkbox,
+    MathRegion, alert_kind, image_row, math_regions, toggle_task_checkbox,
 };
 pub(crate) use mdoc_markdown::lines::{
     blockquote_prefix, footnote_def, heading_level, html_block, list_prefix, ordered_scan,
@@ -722,31 +722,6 @@ pub(crate) fn splice_inline_math(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn copies_renumber_to_displayed_positions() {
-        // Source digits are stale (7., 9.) and the nested list starts at 3 —
-        // the copy carries what the SCREEN showed: 1,2 nested from 1.
-        let doc = "1. a\n7. b\n  3. c\n  9. d\n5. e";
-        assert_eq!(
-            renumber_copy(doc, 0..doc.len()),
-            "1. a\n2. b\n  1. c\n  2. d\n3. e"
-        );
-        // A mid-list copy keeps its true positions (paste renders 2,3).
-        let from = doc.find("7.").unwrap();
-        assert_eq!(
-            renumber_copy(doc, from..doc.len()),
-            "2. b\n  1. c\n  2. d\n3. e"
-        );
-        // A partial first line (marker outside the slice) is verbatim.
-        let from = doc.find("b").unwrap();
-        assert_eq!(
-            renumber_copy(doc, from..doc.find('c').unwrap() + 1),
-            "b\n  1. c"
-        );
-        // Non-list text passes through untouched.
-        assert_eq!(renumber_copy("plain\ntext", 0..10), "plain\ntext");
-    }
 
     #[test]
     fn selection_reveal_shows_inline_but_not_prefix() {
@@ -1465,35 +1440,24 @@ mod tests {
     }
 
     #[test]
-    fn ordered_numbers_word_style() {
-        // A nested list counts on its own from 1 (whatever the digits say)
-        // one level deeper, and the outer list resumes after it. The level
-        // is structural — ANY deeper indent nests, whatever the tab setting.
+    fn ordered_numbers_are_the_numbers_written() {
+        // The number written shows (ADR 0110); the level is structural —
+        // ANY deeper indent nests, whatever the tab setting.
         assert_eq!(
             ordered_numbers(&["1. a", "2. b", "  3. c", "  9. d", "6. e"]),
-            vec![(1, 0), (2, 0), (1, 1), (2, 1), (3, 0)]
+            vec![(1, 0), (2, 0), (3, 1), (9, 1), (6, 0)]
         );
-        // Source digits are display-irrelevant; every list starts at 1.
-        assert_eq!(ordered_numbers(&["5. a", "9. b"]), vec![(1, 0), (2, 0)]);
-        // A bullet at the same indent ends the ordered run (bullets still
-        // occupy a level for anything nested under them).
+        assert_eq!(ordered_numbers(&["5. a", "9. b"]), vec![(5, 0), (9, 0)]);
+        // A bullet in between is not numbered.
         assert_eq!(
             ordered_numbers(&["1. a", "- b", "7. c"]),
-            vec![(1, 0), (0, 0), (1, 0)]
+            vec![(1, 0), (0, 0), (7, 0)]
         );
-        // Any break — blank line or prose — starts numbering over.
+        // A hanging indent (wrapped text under an item) keeps the list open:
+        // the next item stays at the top level.
         assert_eq!(
-            ordered_numbers(&["1. a", "", "2. b"]),
-            vec![(1, 0), (0, 0), (1, 0)]
-        );
-        assert_eq!(
-            ordered_numbers(&["1. a", "prose", "7. b"]),
-            vec![(1, 0), (0, 0), (1, 0)]
-        );
-        // A hanging indent (wrapped text under an item) keeps the list open.
-        assert_eq!(
-            ordered_numbers(&["1. a", "   wrapped", "7. b"]),
-            vec![(1, 0), (0, 0), (2, 0)]
+            ordered_numbers(&["1. a", "   wrapped", "  7. b"]),
+            vec![(1, 0), (0, 0), (7, 1)]
         );
     }
 

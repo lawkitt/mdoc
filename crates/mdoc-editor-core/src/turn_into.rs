@@ -1,13 +1,13 @@
-//! "Turn into": convert the caret's block between text, headings, lists,
-//! to-dos, quotes, callouts, code and math.
+//! "Turn into": convert the blocks a selection touches between text,
+//! headings, lists, to-dos, quotes, callouts, code and math (ADR 0110).
 
 use std::ops::Range;
 
 use mdoc_markdown::lines::{blockquote_prefix, heading_level, list_prefix, task_prefix};
 
-use crate::Blocks;
 use crate::markdown::alert_kind;
-use crate::text::{line_end, line_starts};
+use crate::text::{line_end, line_starts, row_col};
+use crate::{Blocks, Edit, EditResult};
 
 /// A block kind "Turn into" converts between — flat-markdown natural: each
 /// conversion is a line-prefix rewrite (fenced kinds wrap/unwrap the block's
@@ -156,44 +156,37 @@ pub fn block_kind_at(source: &str, blocks: Blocks, row: usize) -> TurnKind {
     TurnKind::Text
 }
 
-/// A "Turn into" edit: replace `range` with `text`. `caret` is where a
-/// fenced kind seats the caret (the body's first line) instead of after the
-/// replaced text; `None` leaves it after the text.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TurnIntoEdit {
-    pub range: Range<usize>,
-    pub text: String,
-    pub caret: Option<usize>,
+/// One block a "Turn into" rewrites: its rows, its kind and its text with
+/// the kind's dressing removed.
+struct Span {
+    first: usize,
+    last: usize,
+    kind: TurnKind,
+    body: Vec<String>,
 }
 
-/// Convert the block containing `row` to `kind`: one edit rewriting the
-/// block's lines; fenced kinds (code, math) and quote runs convert as whole
-/// blocks. `None` when the block already is `kind`.
-pub fn turn_into(source: &str, blocks: Blocks, row: usize, kind: TurnKind) -> Option<TurnIntoEdit> {
-    let cur = block_kind_at(source, blocks, row);
-    if cur == kind {
-        return None;
-    }
+/// The block holding `row`: fenced kinds (code, math) and quote runs are
+/// whole blocks, anything else is its line.
+fn span_at(source: &str, blocks: Blocks, row: usize) -> Span {
+    let kind = block_kind_at(source, blocks, row);
     let starts = line_starts(source);
     let last_row = starts.len().saturating_sub(1);
     let line_at = |r: usize| source[starts[r]..line_end(source, r)].to_string();
-    // The block's line span + its content with the current dressing removed.
-    let (first, last, mut body): (usize, usize, Vec<String>) = match cur {
-        TurnKind::Code => {
+    let (first, last, body): (usize, usize, Vec<String>) = match (kind, blocks.math_at(row)) {
+        (TurnKind::Code, _) => {
             let (open, close) = blocks.fence_block_rows(source, row);
             let last = close.unwrap_or(last_row);
             let body_end = close.map(|c| c.saturating_sub(1)).unwrap_or(last_row);
             let body = ((open + 1)..=body_end).map(line_at).collect();
             (open, last, body)
         }
-        TurnKind::Math => {
-            let reg = blocks.math_at(row)?;
+        (TurnKind::Math, Some(reg)) => {
             let first = reg.range.start;
             let last = reg.range.end.saturating_sub(1).max(first);
             let body = ((first + 1)..last).map(line_at).collect();
             (first, last, body)
         }
-        TurnKind::Quote | TurnKind::Callout => {
+        (TurnKind::Quote | TurnKind::Callout, _) => {
             let (first, last) = quote_run_rows(source, row);
             let body = (first..=last)
                 .filter_map(|r| {
@@ -217,42 +210,236 @@ pub fn turn_into(source: &str, blocks: Blocks, row: usize, kind: TurnKind) -> Op
             vec![strip_block_prefix(&line_at(row)).to_string()],
         ),
     };
-    if body.is_empty() {
-        body.push(String::new());
+    Span {
+        first,
+        last,
+        kind,
+        body,
     }
-    let text = match kind {
-        TurnKind::Text => body.join("\n"),
-        TurnKind::H1 => prefix_lines(&body, |_| "# ".into()),
-        TurnKind::H2 => prefix_lines(&body, |_| "## ".into()),
-        TurnKind::H3 => prefix_lines(&body, |_| "### ".into()),
-        TurnKind::Bullet => prefix_lines(&body, |_| "- ".into()),
-        TurnKind::Numbered => prefix_lines(&body, |i| format!("{}. ", i + 1)),
-        TurnKind::Todo => prefix_lines(&body, |_| "- [ ] ".into()),
-        TurnKind::Quote => prefix_lines(&body, |_| "> ".into()),
-        TurnKind::Callout => format!("> [!NOTE]\n{}", prefix_lines(&body, |_| "> ".into())),
-        TurnKind::Code => format!("```\n{}\n```", body.join("\n")),
-        TurnKind::Math => format!("$$\n{}\n$$", body.join("\n")),
+}
+
+/// The rows `selection` touches. A selection that ends at a line's start
+/// does not touch that line.
+pub fn selected_rows(source: &str, selection: Range<usize>) -> (usize, usize) {
+    let start = selection.start.min(selection.end).min(source.len());
+    let end = selection.start.max(selection.end).min(source.len());
+    let first = row_col(source, start).0;
+    let (last, col) = row_col(source, end);
+    if end > start && col == 0 && last > first {
+        return (first, last - 1);
+    }
+    (first, last)
+}
+
+/// The blocks `selection` touches, in order. Blank lines, a drawn table and
+/// its style marker are skipped; when nothing else is left, the block at the
+/// selection's start (a blank line turns into an empty item to type in).
+fn spans(source: &str, blocks: Blocks, selection: Range<usize>) -> Vec<Span> {
+    let (first, last) = selected_rows(source, selection);
+    let starts = line_starts(source);
+    let skipped = |r: usize| {
+        !blocks.row_is_literal(source, r)
+            && (source[starts[r]..line_end(source, r)].trim().is_empty()
+                || blocks.row_in_table(r)
+                || blocks.tables.iter().any(|t| t.marker_line == Some(r)))
     };
-    let range = starts[first]..line_end(source, last);
-    // Fenced kinds: the caret parks after the closing fence, revealing the
-    // raw markers (reveal-on-caret) — seat it on the body's first line
-    // instead.
-    let caret = matches!(kind, TurnKind::Code | TurnKind::Math)
-        .then(|| range.start + text.find('\n').map_or(0, |i| i + 1));
-    Some(TurnIntoEdit { range, text, caret })
+    let mut out = Vec::new();
+    let mut row = first;
+    while row <= last {
+        if skipped(row) {
+            row += 1;
+            continue;
+        }
+        let span = span_at(source, blocks, row);
+        row = span.last + 1;
+        out.push(span);
+    }
+    if out.is_empty() {
+        out.push(span_at(source, blocks, first));
+    }
+    out
+}
+
+/// The kinds of the blocks `selection` touches, in order.
+pub fn selected_kinds(source: &str, blocks: Blocks, selection: Range<usize>) -> Vec<TurnKind> {
+    spans(source, blocks, selection)
+        .into_iter()
+        .map(|s| s.kind)
+        .collect()
+}
+
+/// "Turn into" over `selection` (ADR 0110): every block it touches becomes
+/// `kind`; when every one is `kind` already, they all turn back into text.
+/// `None` when nothing changes.
+pub fn turn_selection(
+    source: &str,
+    blocks: Blocks,
+    selection: Range<usize>,
+    kind: TurnKind,
+) -> Option<EditResult> {
+    turn_selection_where(source, blocks, selection, kind, |k| k == kind)
+}
+
+/// [`turn_selection`] where `is_kind` says which kinds count as `kind`
+/// already (the list button counts a numbered item as a list).
+///
+/// Blank lines in the selection are skipped, and between new list and task
+/// items they go. Turned back into text, items that were adjacent get a
+/// blank line between them, so each stays a paragraph. Code, math and a
+/// callout wrap every block in one container. A blank line, a table or
+/// another block skipped between the blocks stays as it is. A selection
+/// keeps the changed blocks selected (a container's body); a caret lands
+/// at the end of the new text, or on a code or math block's first line.
+pub fn turn_selection_where(
+    source: &str,
+    blocks: Blocks,
+    selection: Range<usize>,
+    kind: TurnKind,
+    is_kind: impl Fn(TurnKind) -> bool,
+) -> Option<EditResult> {
+    let spans = spans(source, blocks, selection.clone());
+    let target = if kind != TurnKind::Text && spans.iter().all(|s| is_kind(s.kind)) {
+        TurnKind::Text
+    } else {
+        kind
+    };
+    if spans.iter().all(|s| s.kind == target) {
+        return None;
+    }
+    let starts = line_starts(source);
+    let start = starts[spans[0].first];
+    let end = line_end(source, spans[spans.len() - 1].last);
+    let original = |s: &Span| &source[starts[s.first]..line_end(source, s.last)];
+    let between = |i: usize| &source[line_end(source, spans[i - 1].last)..starts[spans[i].first]];
+    let body = |s: &Span| {
+        if s.body.is_empty() {
+            vec![String::new()]
+        } else {
+            s.body.clone()
+        }
+    };
+    let container = matches!(target, TurnKind::Code | TurnKind::Math | TurnKind::Callout);
+    let text = if container {
+        let mut lines: Vec<String> = Vec::new();
+        for (i, s) in spans.iter().enumerate() {
+            if i > 0 {
+                // The lines between, without their first and last newline.
+                let sep = between(i);
+                let quoted = target == TurnKind::Callout;
+                if sep.len() == 1 && quoted {
+                    lines.push(">".to_string());
+                } else if sep.len() > 1 {
+                    let inner = &sep[1..sep.len() - 1];
+                    lines.extend(inner.split('\n').map(|l| match l.trim().is_empty() {
+                        true if quoted => ">".to_string(),
+                        true => String::new(),
+                        false if quoted => format!("> {l}"),
+                        false => l.to_string(),
+                    }));
+                }
+            }
+            let own = body(s);
+            lines.extend(match target {
+                TurnKind::Callout => own.iter().map(|l| format!("> {l}")).collect(),
+                _ => own,
+            });
+        }
+        match target {
+            TurnKind::Code => format!("```\n{}\n```", lines.join("\n")),
+            TurnKind::Math => format!("$$\n{}\n$$", lines.join("\n")),
+            _ => format!("> [!NOTE]\n{}", lines.join("\n")),
+        }
+    } else {
+        let mut text = String::new();
+        let mut number = 1u32;
+        for (i, s) in spans.iter().enumerate() {
+            if i > 0 {
+                let sep = between(i);
+                let changed = spans[i - 1].kind != target || s.kind != target;
+                text.push_str(match target {
+                    _ if !changed || !sep.trim().is_empty() => sep,
+                    TurnKind::Bullet | TurnKind::Numbered | TurnKind::Todo => "\n",
+                    TurnKind::Text if sep == "\n" => "\n\n",
+                    TurnKind::Quote if sep == "\n" => "\n>\n",
+                    _ => sep,
+                });
+            }
+            if s.kind == target {
+                let kept = original(s);
+                if let Some((_, _, true, n)) = kept.lines().last().and_then(list_prefix) {
+                    number = n.saturating_add(1);
+                }
+                text.push_str(kept);
+                continue;
+            }
+            let body = body(s);
+            text.push_str(&match target {
+                TurnKind::Text => body.join("\n"),
+                TurnKind::H1 => prefix_lines(&body, |_| "# ".into()),
+                TurnKind::H2 => prefix_lines(&body, |_| "## ".into()),
+                TurnKind::H3 => prefix_lines(&body, |_| "### ".into()),
+                TurnKind::Bullet => prefix_lines(&body, |_| "- ".into()),
+                TurnKind::Numbered => {
+                    let from = number;
+                    number = number.saturating_add(body.len() as u32);
+                    prefix_lines(&body, |i| format!("{}. ", from + i as u32))
+                }
+                TurnKind::Todo => prefix_lines(&body, |_| "- [ ] ".into()),
+                _ => prefix_lines(&body, |_| "> ".into()),
+            });
+        }
+        text
+    };
+    // A fenced kind's caret would park after the closing fence, revealing
+    // the raw markers: it goes on the body's first line instead.
+    let body_start = start + text.find('\n').map_or(0, |i| i + 1);
+    let selection = if selection.start == selection.end {
+        let caret = match target {
+            TurnKind::Code | TurnKind::Math => body_start,
+            _ => start + text.len(),
+        };
+        caret..caret
+    } else {
+        match target {
+            TurnKind::Code | TurnKind::Math => {
+                body_start..(start + text.rfind('\n').unwrap_or(text.len())).max(body_start)
+            }
+            TurnKind::Callout => body_start..start + text.len(),
+            _ => start..start + text.len(),
+        }
+    };
+    Some(EditResult {
+        edits: vec![Edit {
+            range: start..end,
+            text,
+        }],
+        selection,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::BlockScan;
+    use TurnKind::*;
 
-    fn turn(source: &str, row: usize, kind: TurnKind) -> Option<String> {
+    /// The text and selection after turning `selection` into `kind`.
+    fn turn(source: &str, selection: Range<usize>, kind: TurnKind) -> Option<(String, String)> {
         let scan = BlockScan::new(source);
-        let edit = turn_into(source, scan.view(), row, kind)?;
-        let mut out = source.to_string();
-        out.replace_range(edit.range, &edit.text);
-        Some(out)
+        let r = turn_selection(source, scan.view(), selection, kind)?;
+        let out = r.apply(source);
+        let selected = out[r.selection.clone()].to_string();
+        Some((out, selected))
+    }
+
+    /// The text after turning the block at the start of `row` into `kind`.
+    fn turn_row(source: &str, row: usize, kind: TurnKind) -> Option<String> {
+        let at = line_starts(source)[row];
+        turn(source, at..at, kind).map(|(out, _)| out)
+    }
+
+    fn all(source: &str) -> Range<usize> {
+        0..source.len()
     }
 
     #[test]
@@ -277,21 +464,18 @@ mod tests {
 
     #[test]
     fn converts_lines_and_blocks() {
-        assert_eq!(turn("a\n- b", 1, TurnKind::H2).as_deref(), Some("a\n## b"));
-        assert_eq!(
-            turn("> x\n> y", 0, TurnKind::Bullet).as_deref(),
-            Some("- x\n- y")
-        );
-        assert_eq!(
-            turn("> [!NOTE]\n> y", 1, TurnKind::Quote).as_deref(),
-            Some("> y")
-        );
-        assert_eq!(turn("```\nx\n```", 1, TurnKind::Text).as_deref(), Some("x"));
-        assert_eq!(turn("x", 0, TurnKind::Code).as_deref(), Some("```\nx\n```"));
-        assert_eq!(turn("- a", 0, TurnKind::Bullet), None);
+        assert_eq!(turn_row("a\n- b", 1, H2).as_deref(), Some("a\n## b"));
+        assert_eq!(turn_row("> x\n> y", 0, Bullet).as_deref(), Some("- x\n- y"));
+        assert_eq!(turn_row("> [!NOTE]\n> y", 1, Quote).as_deref(), Some("> y"));
+        assert_eq!(turn_row("```\nx\n```", 1, Text).as_deref(), Some("x"));
+        assert_eq!(turn_row("x", 0, Code).as_deref(), Some("```\nx\n```"));
+        // The caret's block is that kind already: back to text.
+        assert_eq!(turn_row("- a", 0, Bullet).as_deref(), Some("a"));
+        assert_eq!(turn_row("a", 0, Text), None);
+        // A fenced kind seats the caret on the body's first line.
         let scan = BlockScan::new("x");
-        let edit = turn_into("x", scan.view(), 0, TurnKind::Math).unwrap();
-        assert_eq!(edit.caret, Some(3));
+        let r = turn_selection("x", scan.view(), 0..0, Math).unwrap();
+        assert_eq!(r.selection, 3..3);
     }
 
     #[test]
@@ -299,10 +483,121 @@ mod tests {
         let s = "# h\n- [ ] t\n1. n\n> [!TIP]\n> c\n$$\nm\n$$";
         let scan = BlockScan::new(s);
         let kinds: Vec<TurnKind> = (0..8).map(|r| block_kind_at(s, scan.view(), r)).collect();
-        use TurnKind::*;
         assert_eq!(
             kinds,
             [H1, Todo, Numbered, Callout, Callout, Math, Math, Math]
+        );
+    }
+
+    #[test]
+    fn every_selected_block_turns_and_list_items_close_up() {
+        let s = "Арендатор платит.\n\nАрендодатель чинит.\n\nСрок год.";
+        assert_eq!(
+            turn(s, all(s), Bullet),
+            Some((
+                "- Арендатор платит.\n- Арендодатель чинит.\n- Срок год.".into(),
+                "- Арендатор платит.\n- Арендодатель чинит.\n- Срок год.".into()
+            ))
+        );
+        assert_eq!(
+            turn(s, all(s), Numbered).unwrap().0,
+            "1. Арендатор платит.\n2. Арендодатель чинит.\n3. Срок год."
+        );
+        assert_eq!(
+            turn(s, all(s), Todo).unwrap().0,
+            "- [ ] Арендатор платит.\n- [ ] Арендодатель чинит.\n- [ ] Срок год."
+        );
+        // Headings and quotes keep the blank lines: each block turns alone.
+        assert_eq!(
+            turn(s, all(s), H2).unwrap().0,
+            "## Арендатор платит.\n\n## Арендодатель чинит.\n\n## Срок год."
+        );
+        // A selection from the middle of one paragraph into another touches both.
+        let from = s.find("платит").unwrap();
+        let to = s.find("чинит").unwrap();
+        assert_eq!(
+            turn(s, from..to, Bullet).unwrap().0,
+            "- Арендатор платит.\n- Арендодатель чинит.\n\nСрок год."
+        );
+    }
+
+    #[test]
+    fn blank_lines_at_the_selection_edges_are_skipped() {
+        // Starting on a blank line no longer makes an empty item.
+        let s = "Вступление.\n\nПервый.\n\nВторой.\n";
+        let from = s.find("\n\nПервый").unwrap() + 1;
+        let (out, selected) = turn(s, from..s.len(), Bullet).unwrap();
+        assert_eq!(out, "Вступление.\n\n- Первый.\n- Второй.\n");
+        assert_eq!(selected, "- Первый.\n- Второй.");
+        // A selection ending at a line's start leaves that line alone.
+        let to = s.find("Второй").unwrap();
+        let from = s.find("Первый").unwrap();
+        assert_eq!(
+            turn(s, from..to, H1).unwrap().0,
+            "Вступление.\n\n# Первый.\n\nВторой.\n"
+        );
+        // A caret on a blank line still starts an empty item there.
+        assert_eq!(
+            turn("а\n\nб", 3..3, Bullet),
+            Some(("а\n- \nб".into(), String::new()))
+        );
+    }
+
+    #[test]
+    fn all_of_that_kind_turn_back_into_paragraphs() {
+        let s = "- Первый пункт\n- Второй пункт\n\n- Третий";
+        assert_eq!(
+            turn(s, all(s), Bullet).unwrap().0,
+            "Первый пункт\n\nВторой пункт\n\nТретий"
+        );
+        let s = "## Раз\n\n## Два";
+        assert_eq!(turn(s, all(s), H2).unwrap().0, "Раз\n\nДва");
+        // Mixed: everything becomes the kind; items that are already keep
+        // their text, and the numbers run on from them.
+        let s = "1. Один\nДва\n\nТри";
+        assert_eq!(
+            turn(s, all(s), Numbered).unwrap().0,
+            "1. Один\n2. Два\n3. Три"
+        );
+        let s = "- [x] Сделано\nНовое";
+        assert_eq!(
+            turn(s, all(s), Todo).unwrap().0,
+            "- [x] Сделано\n- [ ] Новое"
+        );
+    }
+
+    #[test]
+    fn a_container_wraps_the_selection_once() {
+        let s = "строка один\n\nстрока два";
+        let (out, selected) = turn(s, all(s), Code).unwrap();
+        assert_eq!(out, "```\nстрока один\n\nстрока два\n```");
+        assert_eq!(selected, "строка один\n\nстрока два");
+        assert_eq!(
+            turn(s, all(s), Math).unwrap().0,
+            "$$\nстрока один\n\nстрока два\n$$"
+        );
+        let (out, selected) = turn("- раз\n- два", all("- раз\n- два"), Callout).unwrap();
+        assert_eq!(out, "> [!NOTE]\n> раз\n>\n> два");
+        assert_eq!(selected, "> раз\n>\n> два");
+        // Every block code already: back to text.
+        let s = "```\nкод\n```";
+        assert_eq!(turn(s, all(s), Code).unwrap().0, "код");
+    }
+
+    #[test]
+    fn tables_between_selected_blocks_stay() {
+        let s = "Перед\n\n| а | б |\n| - | - |\n| 1 | 2 |\n\nПосле";
+        assert_eq!(
+            turn(s, all(s), H3).unwrap().0,
+            "### Перед\n\n| а | б |\n| - | - |\n| 1 | 2 |\n\n### После"
+        );
+        assert_eq!(
+            turn(s, all(s), Bullet).unwrap().0,
+            "- Перед\n\n| а | б |\n| - | - |\n| 1 | 2 |\n\n- После"
+        );
+        assert_eq!(
+            selected_kinds(s, BlockScan::new(s).view(), all(s)),
+            [Text, Text]
         );
     }
 }

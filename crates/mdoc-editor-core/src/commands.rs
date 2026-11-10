@@ -94,8 +94,9 @@ fn in_table_cell(source: &str, blocks: Blocks, caret: usize, rendered: bool) -> 
 }
 
 /// Enter: a new block (ADR 0060). In a rendered table it moves to the cell
-/// below, or leaves the table from its last row; in code and math it types a
-/// newline; a selection becomes a paragraph break.
+/// below; in the last row it adds a row, or leaves the table from an empty
+/// one ([`table_rules::return_in_last_row`], ADR 0110); in code and math it
+/// types a newline; a selection becomes a paragraph break.
 pub fn enter(source: &str, selection: Range<usize>, rendered: bool) -> EditResult {
     let scan = BlockScan::new(source);
     let blocks = scan.view();
@@ -103,11 +104,15 @@ pub fn enter(source: &str, selection: Range<usize>, rendered: bool) -> EditResul
     if in_table_cell(source, blocks, caret, rendered)
         && let Some(cell) = cells::cell_at(source, caret)
     {
-        // The cell below, keeping the column; from the last row out below.
+        // The cell below, keeping the column; from the last row a new row,
+        // or out below from an empty one.
         if cell.row + 1 < cell.rows
             && let Some(moved) = cells::move_caret(source, caret..caret, CellMove::Down)
         {
             return moved;
+        }
+        if let Some(edit) = table_rules::return_in_last_row(source, blocks, caret) {
+            return from_table(edit);
         }
         let region = blocks
             .table_at(row_col(source, caret).0)
@@ -354,15 +359,12 @@ pub fn outdent(source: &str, selection: Range<usize>, rendered: bool) -> Option<
     Some(delete_range(range, caret))
 }
 
-/// Turn the block holding the selection's start into `kind`. `None` when it
-/// already is one.
+/// Turn every block the selection touches into `kind`; when each is one
+/// already, they all turn back into text
+/// ([`crate::turn_into::turn_selection`]). `None` when nothing changes.
 pub fn turn_into(source: &str, selection: Range<usize>, kind: TurnKind) -> Option<EditResult> {
     let scan = BlockScan::new(source);
-    let start = sorted(&selection).start.min(source.len());
-    let row = row_col(source, start).0;
-    let edit = crate::turn_into::turn_into(source, scan.view(), row, kind)?;
-    let caret = edit.caret.unwrap_or(edit.range.start + edit.text.len());
-    Some(EditResult::one(edit.range, edit.text, caret))
+    crate::turn_into::turn_selection(source, scan.view(), sorted(&selection), kind)
 }
 
 /// The "Turn into" kind of the block holding the caret.
@@ -430,7 +432,8 @@ pub fn table_command(
 /// caret's deleted (`None`), as desktop's column commands rewrite the
 /// table. The caret's column is the cells' reading
 /// ([`cells::cell_at`]), which counts a last cell left without its closing
-/// pipe; the caret stays in its cell.
+/// pipe. A new column takes the caret into its cell in the caret's row
+/// (ADR 0110); after a delete the caret stays in its place.
 fn column_edit(
     source: &str,
     blocks: Blocks,
@@ -439,11 +442,18 @@ fn column_edit(
 ) -> Option<TableEdit> {
     let cell = cells::cell_at(source, caret)?;
     let row = row_col(source, caret).0;
-    let into = caret.saturating_sub(cell.content.start);
-    let (edit, column) = match insert_right {
-        Some(true) => (table_rules::ColEdit::Insert(cell.column + 1), cell.column),
-        Some(false) => (table_rules::ColEdit::Insert(cell.column), cell.column + 1),
-        None => (table_rules::ColEdit::Delete(cell.column), cell.column),
+    let (edit, column, into) = match insert_right {
+        Some(true) => (
+            table_rules::ColEdit::Insert(cell.column + 1),
+            cell.column + 1,
+            0,
+        ),
+        Some(false) => (table_rules::ColEdit::Insert(cell.column), cell.column, 0),
+        None => (
+            table_rules::ColEdit::Delete(cell.column),
+            cell.column,
+            caret.saturating_sub(cell.content.start),
+        ),
     };
     let (range, text) = table_rules::rewrite_table_columns(source, blocks, row, edit)?;
     let edited = source[..range.start].to_owned() + &text + &source[range.end..];
@@ -585,9 +595,13 @@ mod tests {
         let r = enter(s, caret(2), true);
         assert!(r.edits.is_empty());
         assert_eq!(&s[r.selection.start..r.selection.start + 1], "b");
-        // From the last row out of the table.
+        // From the last row a new row, the caret in its column; from that
+        // empty row out of the table.
+        let (out, at) = run(s, Some(enter(s, caret(14), true))).unwrap();
+        assert_eq!(out, format!("{s}\n|  |"));
+        assert_eq!(cells::cell_at(&out, at.end).map(|c| c.row), Some(2));
         assert_eq!(
-            run(s, Some(enter(s, caret(14), true))).unwrap().0,
+            run(&out, Some(enter(&out, at, true))).unwrap().0,
             format!("{s}\n\n")
         );
         // With Show Markdown on a table is plain lines.
@@ -785,6 +799,24 @@ mod tests {
             Some(("- [x] t".into(), caret(7)))
         );
         assert_eq!(toggle_task("t", caret(1)), None);
+    }
+
+    #[test]
+    fn new_rows_and_columns_take_the_caret_along() {
+        let s = "| Сторона | Сумма |\n| --- | --- |\n| Арендатор | 100 |";
+        let sum = caret(s.find("100").unwrap() + 1);
+        for (command, row, column) in [
+            (TableCommand::InsertRowBelow, 3, 1),
+            (TableCommand::InsertRowAbove, 2, 1),
+            (TableCommand::InsertColumnRight, 2, 2),
+            (TableCommand::InsertColumnLeft, 2, 1),
+        ] {
+            let r = table_command(s, sum.clone(), &command).unwrap();
+            let out = r.apply(s);
+            let cell = cells::cell_at(&out, r.selection.end).unwrap();
+            assert_eq!((cell.row, cell.column), (row - 1, column), "{command:?}");
+            assert!(cell.content.is_empty(), "{command:?} lands in the new cell");
+        }
     }
 
     /// A row left without its closing pipe still has its last cell: the
