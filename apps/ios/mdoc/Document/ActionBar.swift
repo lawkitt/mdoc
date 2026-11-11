@@ -7,6 +7,15 @@ struct ActionBar: View {
     @Bindable var model: DocumentViewModel
 
     var body: some View {
+        if model.barActsOnReply {
+            replyButtons
+        } else {
+            documentButtons
+        }
+    }
+
+    @ViewBuilder
+    private var documentButtons: some View {
         switch model.primaryAction {
         case .recognize(let resume):
             primary(resume ? "Resume recognition" : "Recognize text", systemImage: "text.viewfinder") {
@@ -65,31 +74,6 @@ struct ActionBar: View {
                 .accessibilityLabel(Text("Replace all \(count) proposals"))
                 .accessibilityHint(Text("Each gets its alias. You can still keep any of them."))
             }
-        case .handOff where model.pane == .reply && model.snapshot.reply != nil:
-            // On the Reply tab the bar acts on the reply (ADR 0087). Short
-            // labels keep three buttons in one row on a phone; VoiceOver
-            // says what each acts on.
-            layout {
-                Button {
-                    model.shareReply()
-                } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .primaryAction()
-                .accessibilityLabel(Text("Share reply"))
-                .accessibilityIdentifier("share-reply")
-                Button {
-                    model.copyReply { RestoredPasteboard.copy($0) }
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                }
-                .secondaryAction()
-                .accessibilityLabel(Text("Copy reply"))
-                .accessibilityIdentifier("copy-reply")
-                pasteReply(accessibilityLabel: "Paste another reply")
-            }
         case .handOff:
             VStack(spacing: Space.xs) {
                 if !model.snapshot.candidates.isEmpty {
@@ -97,6 +81,34 @@ struct ActionBar: View {
                 }
                 handOffButtons
             }
+        }
+    }
+
+    /// On the Reply pane the bar acts on the reply (ADR 0087), also in
+    /// place of Review and Replace N where the reply covers the text
+    /// (ADR 0111). Short labels keep three buttons in one row on a phone;
+    /// VoiceOver says what each acts on.
+    private var replyButtons: some View {
+        layout {
+            Button {
+                model.shareReply()
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .frame(maxWidth: .infinity)
+            }
+            .primaryAction()
+            .accessibilityLabel(Text("Share reply"))
+            .accessibilityIdentifier("share-reply")
+            Button {
+                model.copyReply { RestoredPasteboard.copy($0) }
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .secondaryAction()
+            .accessibilityLabel(Text("Copy reply"))
+            .accessibilityIdentifier("copy-reply")
+            pasteReply(accessibilityLabel: "Paste another reply")
         }
     }
 

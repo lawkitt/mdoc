@@ -605,6 +605,11 @@ in a table too. Not "format menu".
 in a cell: row below, column right and a ⋯ menu for the rest
 ([ADR 0110](docs/adr/0110-mobile-editor-polish.md)). Not a panel.
 
+**Panes row** (mobile): the segmented row pinned under the document's
+navigation bar, shown with more than one pane: Text, Original and Reply on
+iPhone, the right column's choices on iPad. Not "tabs", and not part of the
+bar ([ADR 0111](docs/adr/0111-ios-panes-row.md)).
+
 **In-app clipboard** (mobile): the pasteboard edit mode's Cut and Copy write,
 which only mdoc reads; Paste reads it first, then the system clipboard.
 
