@@ -1182,8 +1182,10 @@ patterns = [
     '(?i)\b(?:northern|southern|eastern|western|middle|central)[\p{Zs}\t]+district\b|\bdistricts?[\p{Zs}\t]+(?:of|attorney)\b',
     '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
     # Short names that companies share count alone only: "the IRS", "SEC",
-    # "ET", "EAT", "NASA", "BLM" (but "CMA CGM", "SEC Newgate").
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET|NASA|BLM|STB|CEQ|USGS|AGFD|DPP|ChD|PBGC|ARRC)(?:[\x27’]s?)?[\s\p{P}]*$',
+    # "ET", "EAT", "NASA", "BLM" (but "CMA CGM", "SEC Newgate"); more US
+    # and UK agencies' and regulators' short names in #788 ("FEMA", "the
+    # NRC", "DVLA", "Ofsted").
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET|NASA|BLM|STB|CEQ|USGS|AGFD|DPP|ChD|PBGC|ARRC|FEMA|FHWA|FMCSA|PHMSA|NRC|DOE|DOD|DoD|DOT|DOL|DOI|HUD|SSA|OPM|GSA|SBA|USPS|NOAA|NPS|USACE|BIA|BOP|CBP|TSA|INS|MSPB|FLRA|FERC|CFTC|OCC|FDIC|FHFA|NCUA|HRSA|SAMHSA|NIOSH|MSHA|OFCCP|EBSA|BLS|USTR|USITC|NIST|NTIA|USAID|CIA|NSA|ODNI|CISA|OIG|GAO|CBO|OMB|TVA|FHA|NARA|NSF|FWS|BOEM|BSEE|BOR|USBR|NRCS|APHIS|FSIS|USFS|DVLA|DVSA|HMPPS|MHRA|CQC|HSE|ONS|HMLR|Ofsted|OFSTED|Ofqual|SRA|PRA|UKHSA|DfE|DfT|DHSC|DEFRA|Defra|FCDO|MoD|MOD|MoJ|MOJ|HMT|NCA|IOPC|TPR|FOS|FSCS|PHSO)(?:[\x27’]s?)?[\s\p{P}]*$',
     # Codes and rules of law: "Bankruptcy Code", "Code of Federal
     # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
     # Evidence".
@@ -1290,6 +1292,88 @@ patterns = [
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?Law[\p{Zs}\t]+Society[\p{Zs}\t]+of[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]*){1,4}[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG", "PERSON"]
+
+# Public bodies other than courts by their heads, as an organization or a
+# person (guide rules 2 and 8, issue #788): agencies, commissions,
+# authorities, councils, districts, units, police, NHS bodies, regulators
+# and the armed forces. Each head counts only after a word that makes it a
+# state's, so a private agency, bureau or panel keeps its name ("Acme
+# Talent Agency", "Better Business Bureau", "Harlow County Bank"); a legal
+# form keeps a company ("Kestrel Advisory Board LLC").
+[[never]]
+match = "pattern"
+patterns = [
+    # Commissions of a state or a city by a subject a state's body has:
+    # "Coastal Fisheries Commission", "Pellow River Basin Commission",
+    # "Port Commission", "Racing Commission", "Care Quality Commission". A
+    # trading name's industry word is no evidence ("Quillon Tourism
+    # Commission", "Quillon Banking Commission" stay).
+    '(?i)\b(?:fisheries|fish(?:[\p{Zs}\t]+and[\p{Zs}\t]+game)?|game|wildlife|water|river(?:[\p{Zs}\t]+basin)?|basin|harbou?r|ports?|coastal|parks?(?:[\p{Zs}\t]+and[\p{Zs}\t]+recreation)?|highways?|tax|revenue|housing|health|power|railroad|transit|crime|police|fire|historic(?:al)?[\p{Zs}\t]+preservation|land|conservation|environmental[\p{Zs}\t]+quality|aviation|resources|care[\p{Zs}\t]+quality|law[\p{Zs}\t]+reform|pay|wage|salary|workers[\x27’]?[\p{Zs}\t]+compensation|industrial|alcoholic[\p{Zs}\t]+beverages?|racing|athletic|boxing|gaming|gambling)[\p{Zs}\t]+commissions?\b',
+    # Authorities by a public subject: "Northvale Housing Authority",
+    # "Water Authority", "Power Authority", "Civil Aviation Authority",
+    # "Local Authority", "Financial Conduct Authority", "Solicitors
+    # Regulation Authority", "Valley Authority"; a trading name's industry
+    # word is none ("Quillon Shipping Authority", "Quillon Energy
+    # Authority", "Quillon Banking Authority" stay).
+    '(?i)\b(?:housing|transit|transportation|airports?|aviation|water|turnpike|power|(?:re)?development|financial[\p{Zs}\t]+conduct|regulation|regulatory|health|local|parking|sewer(?:age)?|toll(?:way)?|gaming|gambling|revenue|tax|food[\p{Zs}\t]+safety|competition(?:[\p{Zs}\t]+and[\p{Zs}\t]+markets)?|planning|harbou?r|ports?|river|valley|bridge|waste|utilit(?:y|ies)|maritime|broadcasting|communications|data[\p{Zs}\t]+protection|pensions?|statistics|highways?|roads?|rail|marine|fire|police|education|school|library|parks?|building|public[\p{Zs}\t]+service|environmental[\p{Zs}\t]+protection|monetary|securities)[\p{Zs}\t]+authorit(?:y|ies)\b',
+    # Agencies with a public head ("Emergency Management Agency", "Food
+    # Standards Agency", "Child Support Agency", "Highways Agency"); a
+    # logistics, talent, insurance, travel, employment, marketing,
+    # licensing or home health agency is a trading name and stays.
+    '(?i)\b(?:emergency(?:[\p{Zs}\t]+management)?|safety|standards|highways?|medicines(?:[\p{Zs}\t]+and[\p{Zs}\t]+healthcare[\p{Zs}\t]+products[\p{Zs}\t]+regulatory)?|child[\p{Zs}\t]+support|housing[\p{Zs}\t]+finance|public[\p{Zs}\t]+housing|transit|water|public[\p{Zs}\t]+health|statistics|statistical|pollution[\p{Zs}\t]+control|conservation|veterans|benefits|crime|resources|research[\p{Zs}\t]+projects|meteorological|forestry|fisheries|wildlife|vehicle[\p{Zs}\t]+licensing|(?:consumer|child|coastal|data|radiation)[\p{Zs}\t]+protection)[\p{Zs}\t]+agenc(?:y|ies)\b',
+    # A public body's units: any subcommittee, an advisory or review
+    # panel or council, an inspectorate or a directorate ("Grants Review
+    # Subcommittee", "Science Advisory Panel", "Planning Inspectorate").
+    '(?i)\bsub[\p{Zs}\t-]?committees?\b|\binspectorates?\b|\bdirectorates?\b',
+    '(?i)\b(?:advisory|review|scientific|science|expert|technical|appeals?|hearing|ethics|oversight|grants?|disciplinary|selection|evaluation)[\p{Zs}\t]+(?:panels?|councils?)\b',
+    # Special districts of local government: "Pellow Water District",
+    # "Unified School District", "Fire Protection District".
+    '(?i)\b(?:school|water|fire(?:[\p{Zs}\t]+protection)?|sanitation|sanitary|sewer|irrigation|(?:public|municipal)[\p{Zs}\t]+utility|utility|hospital|healthcare|park|recreation|conservation|transit|port|library|drainage|levee|flood[\p{Zs}\t]+control|air[\p{Zs}\t]+quality(?:[\p{Zs}\t]+management)?|groundwater|reclamation|mosquito[\p{Zs}\t]+(?:abatement|control)|cemetery|special|tax)[\p{Zs}\t]+districts?\b',
+    # Police by its other names: "Highway Patrol", "State Troopers".
+    '(?i)\bhighway[\p{Zs}\t]+patrol\b|\bstate[\p{Zs}\t]+troopers?\b',
+    # NHS bodies other than trusts and statutory health regulators:
+    # "Clinical Commissioning Group", "Integrated Care System", "Health
+    # Authority", "Health and Safety Executive", "General Medical
+    # Council", "Health Practitioners Council", "Nursing and Midwifery
+    # Council", "the Law Society", "the Bar Council"; "NHS England".
+    '(?i)\bclinical[\p{Zs}\t]+commissioning[\p{Zs}\t]+groups?\b|\bintegrated[\p{Zs}\t]+care[\p{Zs}\t]+(?:boards?|systems?)\b|\bprimary[\p{Zs}\t]+care[\p{Zs}\t]+trusts?\b|\bhealth[\p{Zs}\t]+and[\p{Zs}\t]+safety[\p{Zs}\t]+executive\b',
+    '(?i)\b(?:general[\p{Zs}\t]+(?:medical|dental|optical|osteopathic|chiropractic|pharmaceutical|teaching|social[\p{Zs}\t]+care)|(?:health(?:[\p{Zs}\t]+and[\p{Zs}\t]+care)?|healthcare)[\p{Zs}\t]+(?:practitioners|professions|professionals)|nursing(?:[\p{Zs}\t]+and[\p{Zs}\t]+midwifery)?|medical|dental|pharmacy|social[\p{Zs}\t]+work|legal[\p{Zs}\t]+services|veterinary|bar)[\p{Zs}\t]+council\b',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?law[\p{Zs}\t]+society(?:[\x27’]s)?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?NHS(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*){0,2}[\s\p{P}]*$',
+    # The armed forces, alone or a nation's: "the Royal Navy", "the U.S.
+    # Navy", "the Army", "Coast Guard", "Marine Corps", "Armed Forces"
+    # ("Salvation Army" and "Navy Federal Credit Union" stay).
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|us|united[\p{Zs}\t]+states|american|royal|british|his[\p{Zs}\t]+majesty[\x27’]s|her[\p{Zs}\t]+majesty[\x27’]s|canadian|australian|irish|indian|french|german|israeli|ukrainian|russian)[\p{Zs}\t]+)?(?:navy|army|air[\p{Zs}\t]+force|marine[\p{Zs}\t]+corps|marines|coast[\p{Zs}\t]?guard|(?:army[\p{Zs}\t]+|air[\p{Zs}\t]+)?national[\p{Zs}\t]+guard|space[\p{Zs}\t]+force|armed[\p{Zs}\t]+forces|military)(?:[\x27’]s?)?[\s\p{P}]*$',
+    '(?i)\barmed[\p{Zs}\t]+forces\b|\broyal[\p{Zs}\t]+(?:navy|air[\p{Zs}\t]+force|marines)\b',
+    # Their units and laboratories, and other federal laboratories: "Army
+    # Aeromedical Laboratory", "Naval Research Laboratory", "Coast Guard
+    # Sector Command", "Pellow Federal Laboratory".
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:(?:U\.[\p{Zs}\t]?S\.|US|United[\p{Zs}\t]+States)[\p{Zs}\t]+)?(?:Army|Navy|Naval|Air[\p{Zs}\t]+Force|Marine[\p{Zs}\t]+Corps|Coast[\p{Zs}\t]+Guard)(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’.-]*){0,4}[\p{Zs}\t]+(?i:laborator(?:y|ies)|command|center|centre|base|station|hospital|medical[\p{Zs}\t]+center|reserve|division|brigade|regiment|battalion|squadron|fleet|sector)(?:[\x27’]s)?[\s\p{P}]*$',
+    '(?i)\bfederal[\p{Zs}\t]+laborator(?:y|ies)\b',
+]
+anywhere_in = ["ORG", "PERSON"]
+
+# A public body's generic word alone, after the document names the body or
+# as its defined term, is no organization: "the Agency", "the Commission",
+# "the County", "the Trust", "the Crown", "the Navy" (guide rules 2 and 8,
+# issue #788). Any other word keeps a name ("Agency Partners").
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:agenc(?:y|ies)|commissions?|councils?|panels?|count(?:y|ies)|departments?|bureaus?|administrations?|authorit(?:y|ies)|trusts?|sub[\p{Zs}\t-]?committees?|committees?|inspectorates?|secretariats?|directorates?|regulators?|crown|city|town|borough|village|township|municipality|parish|police|government|ministry|office|division|legislature|cabinet|treasury)(?:[\x27’]s?)?[\s\p{P}]*$',
+]
+anywhere_in = ["ORG"]
+
+# The same words alone as a person, unless a title or the document's
+# other person span makes one a surname ("Mr Council", "Ruth Crown").
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:agenc(?:y|ies)|commissions?|councils?|panels?|count(?:y|ies)|departments?|bureaus?|administrations?|authorit(?:y|ies)|trusts?|sub[\p{Zs}\t-]?committees?|committees?|inspectorates?|secretariats?|directorates?|regulators?|crown|city|town|borough|village|township|municipality|parish|police|government|ministry|office|division|legislature|cabinet|treasury)(?:[\x27’]s?)?[\s\p{P}]*$',
+]
+anywhere_in = ["PERSON"]
+unless_titled = true
+unless_last_named = true
 
 # An ambiguous Field Office stays even when labelled PERSON: the generic
 # `office` word above is not public ownership. Require a public parent in
@@ -1429,6 +1513,9 @@ patterns = [
         | geneva
     ) (?:[\s\p{P}]+|$) )+ $''',
     '^[\s\p{P}]*(?i:the[\p{Zs}\t]+)?(?i:people[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?)?(?i:state|states|commonwealth|city|town|village|borough|county|township|parish|district)[\p{Zs}\t]+(?i:of)[\p{Zs}\t]+(?i:the[\p{Zs}\t]+)?\p{Uppercase}[^\s\p{P}]*(?:[\p{Zs}\t]+\p{Uppercase}[^\s\p{P}]*){0,2}[\s\p{P}]*$',
+    # The same with its state after a comma, and a municipality: "County
+    # of Harlow, Nevada", "Municipality of Pellow" (#788).
+    '^[\s\p{P}]*(?i:the[\p{Zs}\t]+)?(?i:city|town|village|borough|county|township|parish|municipality)[\p{Zs}\t]+(?i:of)[\p{Zs}\t]+(?i:the[\p{Zs}\t]+)?\p{Uppercase}[^\s\p{P}]*(?:[\p{Zs}\t]+\p{Uppercase}[^\s\p{P}]*){0,2}(?:,[\p{Zs}\t]+\p{Uppercase}[^\s\p{P}]*(?:[\p{Zs}\t]+\p{Uppercase}[^\s\p{P}]*)?)?[\s\p{P}]*$',
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:county|parish|township|borough)[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG"]
