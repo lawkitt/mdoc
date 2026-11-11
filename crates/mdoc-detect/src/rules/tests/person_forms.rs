@@ -549,14 +549,19 @@ fn a_surname_with_initials_given_both_labels_is_a_person() {
             "{source}"
         );
     }
-    // A company: its legal form and quotes keep it an organization.
-    let source = "Поставщик ООО «Р.Р. Групп» отгрузил товар.";
-    assert!(
-        !both_labels(source, "Р.Р. Групп")
-            .iter()
-            .any(|shown| shown.starts_with("PERSON")),
-        "{source}"
-    );
+    // A company: its legal form and quotes keep it an organization, spaces
+    // inside the quotes too.
+    for (source, name) in [
+        ("Поставщик ООО «Р.Р. Групп» отгрузил товар.", "Р.Р. Групп"),
+        ("Поставщик ООО « Д.А. Сухов » отгрузил товар.", "Д.А. Сухов"),
+    ] {
+        assert!(
+            !both_labels(source, name)
+                .iter()
+                .any(|shown| shown.starts_with("PERSON")),
+            "{source}"
+        );
+    }
     check(&[
         (
             "Акт подписал Корнев-Ясный Д.Д., а затем ушёл.",
@@ -597,6 +602,28 @@ fn bare_initials_of_a_known_person_are_the_person() {
             "Обязать Д. А. Сухову вернуть ключи. Требования к В. Г. оставить.",
             &[("person", "Д. А. Сухову")],
             &["PERSON⟦Д. А. Сухову⟧"],
+        ),
+        // A company's quoted initials, a country's abbreviation after a
+        // label's colon and a list of letters are no person.
+        (
+            "Сухов Д.А. подписал. Поставщик ООО «Д.А.» оплатил счёт.",
+            &[("person", "Сухов Д.А.")],
+            &["PERSON⟦Сухов Д.А.⟧"],
+        ),
+        (
+            "Морозов Р.Ф. подписал.\nкод страны: Р.Ф.",
+            &[("person", "Морозов Р.Ф.")],
+            &["PERSON⟦Морозов Р.Ф.⟧"],
+        ),
+        (
+            "Сухов А.Б. подписал.\nперечень букв: А.Б., В.Г.",
+            &[("person", "Сухов А.Б.")],
+            &["PERSON⟦Сухов А.Б.⟧"],
+        ),
+        (
+            "Сухов А.Б. подписал.\nперечень букв к А.Б. и В.Г. приложен.",
+            &[("person", "Сухов А.Б.")],
+            &["PERSON⟦Сухов А.Б.⟧"],
         ),
         // No known person with initials: nothing is added.
         ("Требования к Д. А. оставить без рассмотрения.", &[], &[]),

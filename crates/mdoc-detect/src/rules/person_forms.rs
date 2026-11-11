@@ -102,6 +102,16 @@ static BARE_INITIALS: LazyLock<Regex> = LazyLock::new(|| {
 /// Quotes that set off a company's name («ООО «Р.Р. Групп»»).
 const QUOTES: [char; 6] = ['«', '»', '"', '“', '”', '„'];
 
+/// Spaces on a line, between a name and its quotes or its neighbours.
+const BLANKS: [char; 3] = [' ', '\t', '\u{a0}'];
+
+/// More initials after a comma or «и»: a list of letters («А.Б., В.Г.»,
+/// «А.Б. и В.Г.»), no person's name.
+static MORE_INITIALS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[\p{Zs}\t]*(?:,|и[\p{Zs}\t])[\p{Zs}\t]*[А-ЯЁ]\.")
+        .expect("constant more initials pattern")
+});
+
 /// What the document says of people, read from the model's person spans.
 struct People {
     /// Each person span's surname, lowercase: the word before a comma
@@ -354,12 +364,7 @@ impl Pack {
     fn initials_name(&self, source: &str, range: &Range<usize>) -> Option<String> {
         let text = &source[range.clone()];
         let found = INITIALS_NAME.captures(text)?;
-        let quote = |c: Option<char>| c.is_some_and(|c| QUOTES.contains(&c));
-        if text.contains(QUOTES)
-            || quote(source[..range.start].chars().next_back())
-            || quote(source[range.end..].chars().next())
-            || self.company_named(text)
-        {
+        if text.contains(QUOTES) || self.quoted(source, range) || self.company_named(text) {
             return None;
         }
         let initials = found.name("after").or_else(|| found.name("before"))?;
@@ -372,14 +377,36 @@ impl Pack {
         )
     }
 
+    /// Whether the text at `range` of `source` stands in a company's
+    /// quotes or after its legal form: a quote right before or after it,
+    /// spaces between allowed («ООО « Д.А. Сухов »», «ООО «Д.А.»»), or a
+    /// legal form as the word before it, an opening quote between
+    /// allowed.
+    fn quoted(&self, source: &str, range: &Range<usize>) -> bool {
+        let before = source[..range.start].trim_end_matches(BLANKS);
+        let after = source[range.end..].trim_start_matches(BLANKS);
+        let quote = |c: Option<char>| c.is_some_and(|c| QUOTES.contains(&c));
+        if quote(before.chars().next_back()) || quote(after.chars().next()) {
+            return true;
+        }
+        before
+            .trim_end_matches(|c: char| BLANKS.contains(&c) || QUOTES.contains(&c))
+            .rsplit(|c: char| c.is_whitespace())
+            .next()
+            .is_some_and(|word| !word.is_empty() && self.legal_form(word))
+    }
+
     /// Bare Cyrillic initials the model left unmarked are a known person's
     /// other name form (#503) where a person span of the document is those
     /// initials and a surname: «Требования к Е. Р.» beside «Е. Р. Тулину».
-    /// Only two initials standing alone on their line: no letter, digit or
-    /// period glued on, no capitalised word right before them (a surname
-    /// first, a verb) or after them (a surname, the next initial), and no
-    /// span over them. Initials no person of the document has stay
-    /// unmarked.
+    /// Only two initials after a lowercase word and a space (a
+    /// preposition, a verb, a conjunction: no colon or other mark between,
+    /// so a label's «код страны: Р.Ф.» stays): no letter, digit or period
+    /// glued on, no capitalised word after them (a surname, the next
+    /// initial), no more initials after a comma or «и» (a list of letters,
+    /// «А.Б., В.Г.»), no quote beside them or legal form before them (a
+    /// company's «ООО «Д.А.»»), and no span over them. Initials no person
+    /// of the document has stay unmarked.
     fn bare_initials(&self, source: &str, detections: &mut Vec<Detection>) {
         let known: HashSet<String> = detections
             .iter()
@@ -405,13 +432,18 @@ impl Pack {
                 .rsplit('\n')
                 .next()
                 .unwrap_or_default();
-            let capitalised = line.split_whitespace().next_back().is_some_and(|word| {
-                word.starts_with(char::is_uppercase) && word.ends_with(char::is_alphabetic)
-            });
-            if capitalised
+            let before = line.trim_end_matches(BLANKS);
+            let lowercase = before.len() < line.len()
+                && before
+                    .rsplit(char::is_whitespace)
+                    .next()
+                    .is_some_and(|word| !word.is_empty() && word.chars().all(char::is_lowercase));
+            if !lowercase
                 || after
-                    .trim_start_matches([' ', '\t', '\u{a0}'])
+                    .trim_start_matches(BLANKS)
                     .starts_with(char::is_uppercase)
+                || MORE_INITIALS.is_match(after)
+                || self.quoted(source, &range)
             {
                 continue;
             }
