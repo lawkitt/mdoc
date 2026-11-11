@@ -1912,7 +1912,9 @@ category = "ADDRESS"
 # The pattern is a list of its forms, which match as their alternation
 # would: as one regex it comes near the regex size limit.
 pattern = [
-    '(?:(?:(?:{flat}|{building})(?:{sep}|{nl})){1,3}{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}|{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){1,3}|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|(?:{flat}(?:{sep}|{nl})){0,2}{building}(?:{sep}|{nl}){named}(?:(?:{sep}|{nl}){flat}){0,3})(?:{after})?',
+    # A box may follow the street's units before the town (#551): "77
+    # Quillon Street West Suite 3000, P.O. Box 95, Brindleton, …".
+    '(?:(?:(?:{flat}|{building})(?:{sep}|{nl})){1,3}{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}|{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){1,3}|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|(?:{flat}(?:{sep}|{nl})){0,2}{building}(?:{sep}|{nl}){named}(?:(?:{sep}|{nl}){flat}){0,3})(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?(?:{after})?',
     '{street}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?{after}',
     '(?:{building}(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?)?(?:{flat}(?:{sep}|{nl})){0,2}{box}{after}',
     '{named}{after_zip}',
@@ -1936,7 +1938,18 @@ pattern = [
     '{fstreet}(?:(?:{sep}|{nl}){flat}){0,2}{beyond}',
     '{fstreet}(?:(?:{sep}|{nl}){flat}){0,2}{after}',
     # A named house or farm with its postcode and town, no street (#551).
-    '{fbuilding}(?:(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|(?:{sep}{village}){1,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep})',
+    '{fbuilding}(?:(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|{sep}{village}[\p{Zs}\t]+\d{4}\b|(?:{sep}{village}){1,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep})',
+    # A named private house is an address alone (guide rule 3, #551):
+    # "Chalet Les Ostrands". A venue or a business so named is none
+    # (`skip`). After the forms with a street, which win where it opens one.
+    '{fhouse}',
+    # A named commercial property opens a full address without a unit
+    # before it (guide rule 3, #553 item 2): "Kestrel Medical Centre, 12 Oak
+    # Road, Leeds LS1 4AB". Not a court: a court's name stays outside
+    # its address (#553 item 1). After a comma only: a letterhead's name
+    # line above its address ("Brindle Medical Center", then "3939 …") is
+    # the organization's (#498).
+    '{commercial},[\p{Zs}\t]*{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}{after}',
     # A Hong Kong unit and floor in a named commercial building before its
     # street (#551).
     '(?:{flat}(?:{sep}|{nl})){1,3}{place}(?:{sep}|{nl})(?:{street}|{named})(?:(?:{sep}|{nl}){flat}){0,2}(?:{after})?',
@@ -1956,9 +1969,10 @@ parts.corners = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,2}a
 parts.after = '{after_zip}|[\p{Zs}\t]+(?:\p{Uppercase}[\p{Ll}\x27’-]+[\p{Zs}\t]+){1,2}Township\b|{sep}[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2}{sep}(?:Hong[\p{Zs}\t]+Kong|HONG[\p{Zs}\t]+KONG|Kowloon|KOWLOON|New[\p{Zs}\t]+Territories|NEW[\p{Zs}\t]+TERRITORIES)\b|{sep}{town}'
 # The foreign ends that need a postcode, a state, a district or a city's
 # word: "Taman Larkspur, 50999 Kuala Lumpur" (an estate, then the postcode
-# and city), "CH-1299 Brindlex", "São Paulo - SP, CEP 01999-000",
+# and city), "CH-1299 Brindlex", a town before its postcode as some
+# Swiss letters write it ("Brindlex 1999"), "São Paulo - SP, CEP 01999-000",
 # "Zhongshan District, Taipei City 10499", "Taipei City".
-parts.beyond = '(?:{sep}{estate})?(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){0,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep}|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){1,2}[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf}|{sep}(?:[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\x27’-]*[\p{Zs}\t]+){1,2}(?:District|Dist\.|Township|Twp\.)(?:{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?{village}(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?)?|{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?(?:[A-Z][a-z]+[\p{Zs}\t]+){1,2}(?:City|County)\b(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?'
+parts.beyond = '(?:{sep}{estate})?(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|{sep}{village}[\p{Zs}\t]+(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4}\b|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){0,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep}|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){1,2}[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf}|{sep}(?:[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\x27’-]*[\p{Zs}\t]+){1,2}(?:District|Dist\.|Township|Twp\.)(?:{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?{village}(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?)?|{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?(?:[A-Z][a-z]+[\p{Zs}\t]+){1,2}(?:City|County)\b(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?'
 # A Brazilian postcode, "CEP" before it or not.
 parts.cep = '\b(?:CEP:?[\p{Zs}\t]*\d{5}-?\d{3}|\d{5}-\d{3})\b'
 # A Malaysian estate or a Brazilian district before the postcode.
@@ -1992,6 +2006,12 @@ parts.numbered = '\bNo\.[\p{Zs}\t]*\d{1,5}(?:-\d{1,4})?(?:{sep}(?:Lane|Ln\.|Alle
 # it: "Unit 12, 9/F, Larkspur Centre, …" (#551). Not alone, nor before a
 # street without a unit: many a company's name ends so.
 parts.place = '\b(?:[A-Z][A-Za-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Centre|Center|Plaza|Court|Mansion|Square|Mall|Arcade|CENTRE|CENTER|PLAZA|COURT|MANSION|SQUARE|MALL|ARCADE)\b'
+# A named commercial property before a full address: a centre, plaza,
+# park, mall or arcade (#553 item 2).
+parts.commercial = '\b(?:[A-Z][A-Za-z\x27’&-]*[\p{Zs}\t]+){1,3}(?:Centre|Center|Plaza|Park|Mall|Arcade|CENTRE|CENTER|PLAZA|PARK|MALL|ARCADE)\b'
+# A private house or farm named type first, a capitalised name after
+# the type: "Chalet Les Ostrands", "Villa Kestrel", "Fazenda Boa Vista".
+parts.fhouse = '\b(?:Chalet|Villa|Maison|Domaine|Château|Casa|Quinta|Fazenda|Sítio|Chácara)(?:[\p{Zs}\t]+(?:(?:de|du|des|la|le|da|do|das|dos)[\p{Zs}\t]+)?[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\x27’-]*){1,3}'
 # A Canadian province, by name, code or abbreviation.
 parts.province = '(?:Alberta|British[\p{Zs}\t]+Columbia|Manitoba|New[\p{Zs}\t]+Brunswick|Newfoundland(?:[\p{Zs}\t]+and[\p{Zs}\t]+Labrador)?|Nova[\p{Zs}\t]+Scotia|Ontario|Prince[\p{Zs}\t]+Edward[\p{Zs}\t]+Island|Qu[eé]bec|Saskatchewan|Northwest[\p{Zs}\t]+Territories|Nunavut|Yukon|AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)\b|(?:Ont|Qué|Que|B\.C)\.'
 # A Canadian postal code, "A9A 9A9", of the letters Canada Post uses.
@@ -2030,8 +2050,10 @@ parts.zip = '(?:\d{5}|[OoIliB]\d{4}|\d[OoIliB]\d{3}|\d{2}[OoIliB]\d{2}|\d{3}[OoI
 # A house, farm or building whose type comes first is the address's own
 # part before its street, its "No." or its postcode and town (#551):
 # "Wisma Pellow" of "Wisma Pellow, Jalan Kestrel 3, …", "Fazenda Boa
-# Vista" of "Fazenda Boa Vista, Kestrelândia, CEP 37999-000".
-absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)|{building}|{fbuilding})(?:[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?)?(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box}|{named}|{fstreet}|{ftype}|No\.|{village}(?:{sep}{village})?(?:{sep}|[\p{Zs}\t]+){cep})'
+# Vista" of "Fazenda Boa Vista, Kestrelândia, CEP 37999-000", and a
+# commercial property before its street ("Kestrel Medical Centre", #553
+# item 2).
+absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)|{building}|{fbuilding}|{commercial})(?:[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?)?(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box}|{named}|{fstreet}|{ftype}|No\.|{village}(?:{sep}{village})?(?:{sep}|[\p{Zs}\t]+){cep})'
 # The street/units, box, stray-comma street or corner are definite
 # components; the guessed town after them is not allowed to absorb a model
 # name or an attention/contact field. A match with none of them (a city,
@@ -2065,7 +2087,10 @@ continuation_stop = '(?P<recipient>\b(?i:attn|attention|c/o)\b)|\b(?i:contact|em
 # A company named with a street type that comes first is no street
 # (#551): "Rua Holdings Ltd, 2024, London", "Avenue Capital 2, Inc" (a
 # legal form, "Holdings" or "Partners" within three words of the type).
-skip = '\b{ftype}[\p{Zs}\t]+(?:[^\s,]+,?[\p{Zs}\t]+){0,3}(?:Ltd|Limited|LLC|LLP|Inc|Corp|plc|PLC|GmbH|AG|Sdn|Bhd|Ltda|Holdings|Partners)\b|\A(?:[^\s,]+[\p{Zs}\t]+){0,2}(?i:account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|tel|phone|fax|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:(?i:no|nr|number|account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})|I\.?D\.?)(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}'
+# A house named type first with a venue's, a business's or a legal
+# form's word in its name is no house: "Villa Park", "Casa Pellow
+# Restaurant".
+skip = '\A(?:Chalet|Villa|Maison|Domaine|Château|Casa|Quinta|Fazenda|Sítio|Chácara)[\p{Zs}\t]+(?:[^\s,]+[\p{Zs}\t]+){0,2}(?:Park|Stadium|Ground|Arena|FC|AFC|Club|Hotel|Resort|Restaurant|Café|Cafe|Bar|Theatre|Cinema|Ltd|Limited|LLC|Inc|Group|Holdings)\b|\b{ftype}[\p{Zs}\t]+(?:[^\s,]+,?[\p{Zs}\t]+){0,3}(?:Ltd|Limited|LLC|LLP|Inc|Corp|plc|PLC|GmbH|AG|Sdn|Bhd|Ltda|Holdings|Partners)\b|\A(?:[^\s,]+[\p{Zs}\t]+){0,2}(?i:account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|tel|phone|fax|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:(?i:no|nr|number|account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})|I\.?D\.?)(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}'
 
 # A UK flat's "24, Pellin Court, Harrow Place, Worcester" has two
 # street parts before its town (#498). The comma after the number is

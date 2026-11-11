@@ -2439,6 +2439,8 @@ fn a_canadian_address_runs_to_its_province_and_postal_code() {
         "40 Vennick Road, Montréal, Québec H2Z 9Z9",
         "Brindleton, Ontario K9Z 9Z9",
         "Marlow Falls, ON M9Z 9Z9",
+        // A box after the street's suite, before the city.
+        "77 Quillon Street West Suite 3000, P.O. Box 95, Brindleton, Ontario K9Z 9Z9",
     ] {
         let source = format!("Notices go to {address}, Canada.");
         assert_eq!(proposed_addresses(&source), [address], "{source}");
@@ -2486,6 +2488,10 @@ fn a_swiss_address_runs_from_its_street_or_house_to_its_town() {
         "Via Pellow 5, 6999 Brindlano",
         "Chalet Les Ostrands, Route de Penrow 12, 1999 Brindlex",
         "Chalet Les Ostrands, 1999 Brindlex",
+        // The town before its postcode, as some Swiss letters write it.
+        "Chalet Les Ostrands, Route de Penrow, Brindlex 1999",
+        "Chalet Les Ostrands, Brindlex 1999",
+        "Rue du Lac 4, Genève CH-1299",
     ] {
         let source = format!("The house is at {address}, Switzerland.");
         assert_eq!(proposed_addresses(&source), [address], "{source}");
@@ -2514,10 +2520,24 @@ fn a_swiss_address_runs_from_its_street_or_house_to_its_town() {
             "{source}: {model}"
         );
     }
+    // A named private house is an address alone (guide rule 3); a venue
+    // or a business named like one is not.
+    for (source, house) in [
+        (
+            "The chalet is called Chalet Les Ostrands.",
+            "Chalet Les Ostrands",
+        ),
+        ("They summer at Villa Kestrel.", "Villa Kestrel"),
+    ] {
+        assert_eq!(proposed_addresses(source), [house], "{source}");
+    }
     for source in [
-        "The chalet is called Chalet Les Ostrands.",
         "Spring 2026 was wet in Zürich.",
         "In 1999 Brindlex sold the chalet.",
+        "The match at Villa Park was abandoned.",
+        "We dined at Casa Pellow Restaurant.",
+        "Villa Kestrel Holdings signed.",
+        "the villa and the chalet were let.",
     ] {
         assert!(proposed_addresses(source).is_empty(), "{source}");
     }
@@ -2598,12 +2618,40 @@ fn asian_addresses_run_from_their_unit_to_their_city() {
     ] {
         assert!(proposed_addresses(source).is_empty(), "{source}");
     }
-    // A commercial building opens an address only after its unit: before
-    // a street alone it may be a company's name.
+    // A named commercial property opens a full address with no unit
+    // before it (guide rule 3, #553 item 2), the model's company on it
+    // included; a court's name stays outside its address (#553 item 1).
+    let address = "Kestrel Medical Centre, 12 Oak Road, Leeds LS1 4AB";
+    assert_eq!(proposed_addresses(address), [address]);
+    for model in [
+        "Kestrel Medical Centre",
+        "Kestrel Medical Centre, 12 Oak Road",
+    ] {
+        let label = if model.contains(',') {
+            "address"
+        } else {
+            "organization"
+        };
+        assert_eq!(
+            shown(address, &[(model, label)]),
+            pairs(&[(address, "ADDRESS")]),
+            "{model}"
+        );
+    }
     assert_eq!(
-        proposed_addresses("Kestrel Medical Centre, 12 Oak Road, Leeds LS1 4AB"),
+        proposed_addresses("Pellow Business Park, 4 Larch Way, Ashby Falls, OH 45999"),
+        ["Pellow Business Park, 4 Larch Way, Ashby Falls, OH 45999"]
+    );
+    assert_eq!(
+        proposed_addresses("Brindle County Court, 12 Oak Road, Leeds LS1 4AB"),
         ["12 Oak Road, Leeds LS1 4AB"]
     );
+    for source in [
+        "Kestrel Medical Centre, 12 patients were seen.",
+        "Kestrel Medical Centre, which moved to Leeds, agreed.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
 }
 
 /// #551: a Brazilian address runs from its street, its type first and its
@@ -2654,8 +2702,13 @@ fn brazilian_and_pacific_addresses_run_to_their_postcode_or_city() {
             "{source}: {model}"
         );
     }
+    // A named farm is a named private house, an address alone (guide rule
+    // 3); a city and state alone are none.
+    assert_eq!(
+        proposed_addresses("The Fazenda Boa Vista harvest was late."),
+        ["Fazenda Boa Vista"]
+    );
     for source in [
-        "The Fazenda Boa Vista harvest was late.",
         "São Paulo - SP hosted the hearing.",
         "Port Vila is the capital.",
     ] {

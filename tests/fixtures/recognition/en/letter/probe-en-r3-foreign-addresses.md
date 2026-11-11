@@ -1,9 +1,10 @@
 ---
-status: pass
+status: known-flaw
 flaw: en-foreign-address
 issue: 551
 kind: letter
 source: probe-r3
+expect: boundary: gold PERSON "Edda Brannock", ORG "Hartwell Vane LLP"; proposed ORG "Edda Brannock\nHartwell Vane LLP"
 ---
 <!-- SPDX-License-Identifier: CC0-1.0; synthetic, invented values only. -->
 **⟦ORG|Hartwell Vane LLP⟧**
