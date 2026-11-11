@@ -25,7 +25,8 @@ document history ([ADR 0079](0079-decision-history.md)).
 - **A docked review bar replaces the candidate sheet.** While reviewing, it
   takes the place of the bottom action bar. Nothing dims; the text stays
   scrollable and tappable, and tapping another candidate retargets the bar
-  in place.
+  in place. On iPhone's Reply pane, which covers the text, the reply's bar
+  shows instead ([ADR 0111](0111-ios-panes-row.md)).
 - **Layout, top to bottom:** a grabber; the progress line ("3 of 15" beside
   a thin track that fills with the decided share); the review card; the
   buttons Undo, Keep and Replace (40 pt high, 14 pt below the card; Replace

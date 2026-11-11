@@ -2,8 +2,9 @@ import MdocFFI
 import SwiftUI
 import UIKit
 
-/// One document: Text and Original switch on iPhone and sit side by side on
-/// iPad, with the Identities list beside the text there. In a narrow iPad
+/// One document: Text and Original switch on iPhone, from the panes' row
+/// under the bar (ADR 0111), and sit side by side on iPad, with the
+/// Identities list beside the text there. In a narrow iPad
 /// window (portrait) Identities take the Original's place instead of a third
 /// column (ADR 0087). Where Identities show comes from the window's
 /// `DocumentLayout`; whether they are wanted, from the model.
@@ -34,6 +35,8 @@ struct DocumentScreen: View {
 
     var body: some View {
         content
+            // Pinned: the text scrolls under the row, never with it.
+            .safeAreaBar(edge: .top, spacing: 0) { panesRow }
             .navigationTitle(model.snapshot.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
@@ -281,22 +284,17 @@ struct DocumentScreen: View {
         }
     }
 
-    /// What the picker switches between: a pane, or Identities in iPad's
-    /// right column.
-    private enum Shown: Hashable {
-        case pane(DocumentViewModel.Pane)
-        case identities
-    }
+    /// The panes the row offers in this window.
+    private var panes: [DocumentViewModel.Shown] { model.panes(in: layout) }
 
-    /// The panes a picker offers: on iPhone all of them, on iPad the right
-    /// side, with Identities there in a narrow window.
-    private var panes: [Shown] {
-        var panes: [Shown] = isRegular ? [] : [.pane(.text)]
-        if model.hasOriginal || isRegular { panes.append(.pane(.original)) }
-        // Identities are hidden while editing (ADR 0110).
-        if identitiesInPane && !model.isEditing { panes.append(.identities) }
-        if model.snapshot.reply != nil { panes.append(.pane(.reply)) }
-        return panes
+    /// The panes' row, pinned under the navigation bar, only with more
+    /// than one pane (ADR 0111). In edit mode too: the Original is what
+    /// recognized text is checked against.
+    @ViewBuilder
+    private var panesRow: some View {
+        if panes.count > 1 {
+            PanesRow(panes: panes, selection: paneBinding, natural: isRegular)
+        }
     }
 
     @ViewBuilder
@@ -332,49 +330,31 @@ struct DocumentScreen: View {
         if let showSidebar {
             SidebarButton(action: showSidebar)
         }
-        if panes.count == 1 {
-            // Tapping the title: the document's menu, as in Claude. A title
-            // of its own truncates at its tail between ☰ and the trailing
-            // buttons, so they keep their place (ADR 0110).
-            ToolbarItem(placement: .principal) {
-                Menu {
-                    titleMenu
-                } label: {
-                    HStack(spacing: Space.xxs) {
-                        Text(model.snapshot.title)
-                            .font(.headline)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: titleWidth)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
-                    }
-                    .foregroundStyle(.primary)
+        // Tapping the title: the document's menu, as in Claude. The title
+        // truncates at its tail between ☰ and the trailing buttons, so they
+        // keep their place (ADR 0110); the panes have their own row below
+        // (ADR 0111).
+        ToolbarItem(placement: .principal) {
+            Menu {
+                titleMenu
+            } label: {
+                HStack(spacing: Space.xxs) {
+                    Text(model.snapshot.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: titleWidth)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
-                .accessibilityLabel(Text(model.snapshot.title))
-                .accessibilityHint(Text("Rename, move, share or delete the document."))
-                .accessibilityIdentifier("title-menu")
+                .foregroundStyle(.primary)
             }
-        }
-        if panes.count > 1 {
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: paneBinding) {
-                    ForEach(panes, id: \.self) { shown in
-                        switch shown {
-                        case .pane(.text): Text("Text").tag(shown)
-                        case .pane(.original): Text("Original").tag(shown)
-                        case .pane(.reply): Text("Reply").tag(shown)
-                        case .identities: Text("Identities").tag(shown)
-                        }
-                    }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .accessibilityIdentifier("pane-picker")
-            }
+            .accessibilityLabel(Text(model.snapshot.title))
+            .accessibilityHint(Text("Rename, move, share or delete the document."))
+            .accessibilityIdentifier("title-menu")
         }
         if model.isEditing {
             // Editing: the checkmark in its own capsule, apart from ⋯, and
@@ -433,30 +413,14 @@ struct DocumentScreen: View {
                 Label("Show Markdown", systemImage: "number")
             }
             .accessibilityIdentifier("show-markdown")
-            // The title's menu too, where the title shows Text and Original.
-            if panes.count > 1 {
-                Section { titleMenu }
-            }
         } label: {
             Label("More", systemImage: "ellipsis.circle")
         }
         .accessibilityIdentifier("document-menu")
     }
 
-    private var paneBinding: Binding<Shown> {
-        Binding(
-            get: {
-                if identitiesInPane && model.wantsIdentities { return .identities }
-                return .pane(isRegular && model.pane == .text ? .original : model.pane)
-            },
-            set: { shown in
-                switch shown {
-                case .identities:
-                    model.showIdentities(true)
-                case .pane(let pane):
-                    model.show(pane)
-                }
-            })
+    private var paneBinding: Binding<DocumentViewModel.Shown> {
+        Binding(get: { model.shown(in: layout) }, set: { model.show($0) })
     }
 
     // MARK: Bottom bar
@@ -470,7 +434,9 @@ struct DocumentScreen: View {
                 noticeLabel(notice)
                     .padding(.vertical, 6)
             }
-        } else if model.isReviewing && model.runningJob == nil {
+        } else if model.isReviewing && model.runningJob == nil && !model.replyCoversText {
+            // Not under a reply that covers the text: its bar acts on the
+            // reply there (ADR 0111).
             ReviewBar(model: model, detailsHeight: ReviewBarMetrics.detailsHeight(screen: screenHeight))
         } else {
             actionBottomBar

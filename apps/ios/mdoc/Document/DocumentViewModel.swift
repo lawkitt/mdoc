@@ -276,6 +276,7 @@ final class DocumentViewModel {
     /// place when it is already up (ADR 0098).
     func open(_ candidate: CandidateID) {
         guard !reviewWaitsForJob() else { return }
+        showTextForReview()
         select(candidate)
     }
 

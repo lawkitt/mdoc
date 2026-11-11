@@ -3,6 +3,7 @@
 Status: Accepted, 2026-11-10. Amends
 [ADR 0109](0109-mobile-markdown-editor.md) (edit mode, toolbar, tables) and
 the ordered-list labels of [ADR 0096](0096-rendered-markdown-on-mobile.md).
+The bar's centre is amended by [ADR 0111](0111-ios-panes-row.md).
 Record:
 [mobile editor polish grill](../design/mobile-editor-polish-grill-2026-11-10.md).
 
@@ -24,8 +25,9 @@ lists were faint and uneven.
 - **Entering:** with a selection the keyboard comes up and the selection
   stays. With none, nothing moves: the bar changes and the keyboard waits
   for a tap in the text.
-- **The bar while editing:** ☰, the title or the Text/Original switch, a
-  tinted checkmark in its own capsule (Done), and ⋯. The Original keeps its
+- **The bar while editing:** ☰, the title, a tinted checkmark in its own
+  capsule (Done), and ⋯; the Text/Original switch is the panes' row under
+  the bar ([ADR 0111](0111-ios-panes-row.md)). The Original keeps its
   own page and zoom between switches; opening it at the caret's page is a
   Later item.
 - **Identities are hidden while editing.** iPhone: no button and no edge

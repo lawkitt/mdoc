@@ -130,6 +130,16 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   tiles, and Try a sample while there are no documents.
 - **Cases:** each case with its colour, document count and how many wait
   for review; a tap shows its documents.
+- **A document's panes** ([ADR 0111](adr/0111-ios-panes-row.md),
+  `PanesRow`): the bar's centre is always the title's menu. With more
+  than one pane a segmented row is pinned under the bar: Text, Original
+  and Reply at the content's width on iPhone; on iPad the right column's
+  choices at their natural width, centred. It stays in edit mode. On
+  iPhone's Reply pane the bottom bar is Share, Copy and Paste for the
+  reply, in place of Review and Replace N and the review bar; on iPad
+  those stay while names wait, the text being in view. Asking for review
+  on iPhone (a name in Identities, Review this identity, a Find match)
+  selects Text first (`showTextForReview`).
 
 ## Sidebar
 
@@ -282,7 +292,7 @@ that only the view model changes; views send intents
 - **Entering** (the pencil, ⌘E): with a selection the keyboard comes up
   on it; with none nothing moves, names dim and the keyboard waits for a
   tap in the text. A new, empty document opens with the keyboard up.
-- **The bar:** ☰, the title (or the Text/Original switch), Done as a
+- **The bar:** ☰, the title, Done as a
   checkmark in its own tinted glass capsule (`.glassProminent`, VoiceOver
   "Done editing", ⌘E), and ⋯. In review: the pencil, Identities and ⋯ in
   one capsule. The title truncates at its tail in the room between ☰ and

@@ -43,6 +43,7 @@ extension DocumentViewModel {
     /// decided.
     func beginReview(focus: ReviewFocus? = nil) {
         guard !reviewWaitsForJob() else { return }
+        showTextForReview()
         updateReview { $0.begin(focus: focus) }
     }
 
@@ -430,6 +431,7 @@ extension DocumentViewModel {
     /// Scrolls the text to a match: onto its candidate when it is one.
     func reveal(_ range: SourceRange) {
         let covering = candidate(covering: range)
+        showTextForReview()
         updateReview { state in
             if let covering {
                 state.select(covering.id)

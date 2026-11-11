@@ -4,7 +4,8 @@ Status: Accepted, 2026-10-31. The hand-off bar at accessibility sizes
 amended 2026-11-04 (the [name-replacement journey survey](../design/ios-pii-journey-survey-2026-11-04.md)).
 Home, Settings and the survey's device are amended by
 [ADR 0099](0099-mobile-ui-system.md); the candidate sheet is replaced by
-[ADR 0098](0098-mobile-review-bar.md)'s review bar.
+[ADR 0098](0098-mobile-review-bar.md)'s review bar. The segmented control
+has its own row under the bar ([ADR 0111](0111-ios-panes-row.md)).
 
 ## Problem
 
@@ -51,7 +52,9 @@ Markdown.
   share sheet with the text and the document's title as its preview; a
   long press offers Share as Markdown file.
 - **The hand-off bar follows the pane.** On the Reply tab it shares, copies
-  or replaces the reply; on the Text tab it acts on the document.
+  or replaces the reply; on the Text tab it acts on the document. On
+  iPhone the Reply tab's bar acts on the reply while names wait for review
+  too ([ADR 0111](0111-ios-panes-row.md)).
 - **Restored replies are styled** with the review screen's spans and
   colours, restored values highlighted, in the app and in Restore with mdoc.
 - **An empty scan says so**: a notice and the Home status "Nothing found".

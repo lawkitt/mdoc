@@ -90,8 +90,9 @@ target feel is Obsidian's iOS live-preview editor.
 - **Replies stay read-only:** the Reply view and Restore with mdoc show
   output and are not editable.
 - **Original beside the text:** the iPad keeps the Original side by side
-  in edit mode; on iPhone the Text/Original switch stays, and Original
-  hides the keyboard without leaving edit mode.
+  in edit mode; on iPhone the Text/Original switch stays (in the panes'
+  row, [ADR 0111](0111-ios-panes-row.md)), and Original hides the keyboard
+  without leaving edit mode.
 - **No new settings:** Show Markdown stays the one display setting; the
   sample document is editable and Try a sample restores it.
 - **Invariants kept:** the text view's string is the source; saved bytes
