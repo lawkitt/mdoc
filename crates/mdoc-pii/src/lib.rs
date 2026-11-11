@@ -326,7 +326,9 @@ fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
         && source[range.end..]
             .chars()
             .next()
-            .is_some_and(|c| c.is_alphanumeric() && !view::note_marker(c));
+            .is_some_and(|c| c.is_alphanumeric() && !view::note_marker(c))
+        // A mis-decoded no-break space glued to the word ends it (#489).
+        && !view::mojibake_space(&source[range.end..]);
     // A zone's document number is glued to its check digit, and on a TD1
     // card to its head too (#495).
     (!left && !right) || mrz::number_at(source, range)

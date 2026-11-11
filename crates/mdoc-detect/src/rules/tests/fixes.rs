@@ -852,3 +852,61 @@ fn a_judges_surname_on_the_header_line_takes_its_initials() {
         );
     }
 }
+
+/// #489: a no-break space read through a wrong Latin-1/UTF-8 round trip is
+/// "Â" glued to the word before it; it comes off a person's or a company's
+/// end, with a possessive and what follows. "Â" opening a word is a letter,
+/// and one before another name word is the space between names.
+#[test]
+fn a_misdecoded_a_circumflex_comes_off_a_name() {
+    for (source, model, label, expected, category) in [
+        (
+            "RosalindÂ came.",
+            "RosalindÂ",
+            "person",
+            "Rosalind",
+            "PERSON",
+        ),
+        (
+            "Dr. OstrovaÂ’s labÂ is open.",
+            "OstrovaÂ",
+            "person",
+            "Ostrova",
+            "PERSON",
+        ),
+        (
+            "Dr. OstrovaÂ’s labÂ is open.",
+            "OstrovaÂ’s labÂ",
+            "person",
+            "Ostrova",
+            "PERSON",
+        ),
+        (
+            "Quillon FreightÂ ships.",
+            "Quillon FreightÂ",
+            "organization",
+            "Quillon Freight",
+            "ORG",
+        ),
+        (
+            "Âgé Ostrova came.",
+            "Âgé Ostrova",
+            "person",
+            "Âgé Ostrova",
+            "PERSON",
+        ),
+        (
+            "RosalindÂ Ostrova came.",
+            "RosalindÂ Ostrova",
+            "person",
+            "RosalindÂ Ostrova",
+            "PERSON",
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(model, label)]),
+            pairs(&[(expected, category)]),
+            "{model}"
+        );
+    }
+}

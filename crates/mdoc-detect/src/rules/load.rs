@@ -390,6 +390,10 @@ pub(super) struct SpanEntry {
     /// Case-sensitive regexes removed only from the start of a span.
     #[serde(default)]
     trim_start: Vec<String>,
+    /// Case-sensitive regexes: a span ends where the first match starts,
+    /// with some text left before it.
+    #[serde(default)]
+    trim_end: Vec<String>,
     #[serde(default)]
     extend: Vec<String>,
     #[serde(default)]
@@ -1140,6 +1144,7 @@ impl Pack {
                 let fixes = !entry.trim.is_empty()
                     || entry.role_trim
                     || !entry.trim_start.is_empty()
+                    || !entry.trim_end.is_empty()
                     || !entry.extend.is_empty()
                     || !entry.strip_end.is_empty()
                     || !entry.person_before.is_empty()
@@ -1151,7 +1156,7 @@ impl Pack {
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, trim_start, extend, strip_end, person_before, org_before, org_after, list_letter, unless_over or nested_quotes".into(),
+                            "a pattern takes no trim, trim_start, trim_end, extend, strip_end, person_before, org_before, org_after, list_letter, unless_over or nested_quotes".into(),
                         ));
                     }
                     // A sized pattern's `mark` groups are what its lines'
@@ -1261,7 +1266,7 @@ impl Pack {
                 }
                 if !fixes {
                     return Err(at(
-                        "needs a pattern, trim words, trim_start, extend patterns, strip_end, person_before, org_before or org_after"
+                        "needs a pattern, trim words, trim_start, trim_end, extend patterns, strip_end, person_before, org_before or org_after"
                             .into(),
                     ));
                 }
@@ -1364,6 +1369,21 @@ impl Pack {
                         Ok(regex)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                let trim_end = entry
+                    .trim_end
+                    .iter()
+                    .map(|pattern| {
+                        let regex =
+                            Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))?;
+                        if regex.is_match("") {
+                            return Err(at("trim_end matches an empty end".into()));
+                        }
+                        if regex.capture_names().flatten().next().is_some() {
+                            return Err(at("trim_end takes no groups".into()));
+                        }
+                        Ok(regex)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 // Each form, ending where the outer quote opens (spaces
                 // between), and as a whole word anywhere.
                 let nested_quotes = entry
@@ -1389,6 +1409,7 @@ impl Pack {
                     trim: entry.trim.clone(),
                     role_trim: entry.role_trim,
                     trim_start,
+                    trim_end,
                     extend,
                     strip_end: entry.strip_end.clone(),
                     person_before: entry.person_before.clone(),
