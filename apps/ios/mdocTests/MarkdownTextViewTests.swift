@@ -331,38 +331,6 @@ final class MarkdownTextViewTests: XCTestCase {
         return blocks.joined(separator: "\n\n") + "\n"
     }()
 
-    /// Where the name is drawn now, in the text view's coordinates: its
-    /// text's or its table cell's rect, after the layout pass the scroll's
-    /// end brings.
-    private func drawnRect(of candidate: Candidate, in view: CandidateTextView, offsets: TextOffsets) -> CGRect? {
-        view.setNeedsLayout()
-        view.layoutIfNeeded()
-        let range = offsets.nsRange(candidate.range)
-        let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
-            NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
-        }
-        if let cell {
-            let location = range.location - cell.location
-            guard let start = cell.position(from: cell.beginningOfDocument, offset: location),
-                  let end = cell.position(from: start, offset: range.length),
-                  let text = cell.textRange(from: start, to: end) else { return nil }
-            let rect = cell.firstRect(for: text)
-            return rect.isNull ? nil : cell.convert(rect, to: view)
-        }
-        // The frame its line is drawn in, as the viewport laid it out:
-        // `firstRect(for:)` can still answer with an estimate.
-        guard let layout = view.textLayoutManager, let content = layout.textContentManager,
-              let from = content.location(content.documentRange.location, offsetBy: range.location),
-              let to = content.location(from, offsetBy: range.length),
-              let target = NSTextRange(location: from, end: to) else { return nil }
-        var first: CGRect?
-        layout.enumerateTextSegments(in: target, type: .standard, options: []) { _, frame, _, _ in
-            first = frame
-            return false
-        }
-        return first.map { $0.offsetBy(dx: view.textContainerInset.left, dy: view.textContainerInset.top) }
-    }
-
     /// Runs the run loop until the text stops scrolling.
     private func settle(_ view: UIScrollView) {
         let deadline = Date().addingTimeInterval(4)
@@ -380,10 +348,11 @@ final class MarkdownTextViewTests: XCTestCase {
     }
 
     /// Stepping to a name far down a long document lands with the name in
-    /// the band above the docked bar, in the text and in a table cell: the
-    /// text is laid out up to the name before it is measured, and measured
-    /// again once the scroll lands. Before, the scroll trusted TextKit 2's
-    /// estimate and the name stayed off screen ("14 of 16").
+    /// view above the docked bar (ADR 0098, amended 2026-11-11), in the
+    /// text and in a table cell: the text is laid out up to the name
+    /// before it is measured, and measured again once the scroll lands.
+    /// Before, the scroll trusted TextKit 2's estimate and the name stayed
+    /// off screen ("14 of 16").
     func testSteppingFarDownKeepsTheNameInView() throws {
         let probe = try harness(text: Self.longText)
         let mentions = probe.session.snapshot().candidates.sorted { $0.range.start < $1.range.start }
@@ -400,13 +369,16 @@ final class MarkdownTextViewTests: XCTestCase {
             settle(view)
             show(harness, textView(snapshot, selected: sorted[index].id))
             settle(view)
-            let rect = try XCTUnwrap(drawnRect(of: sorted[index], in: view, offsets: offsets))
+            // Where the name is drawn, after the pass the scroll's end brings.
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            let rect = try XCTUnwrap(harness.coordinator.place(of: offsets.nsRange(sorted[index].range), in: view, onlyShown: true)?.rect)
             let insets = view.adjustedContentInset
             let top = view.contentOffset.y + insets.top
             // Above the bar; room added below the end is no bar.
             let visible = view.bounds.height - insets.top - 190
             XCTAssertGreaterThanOrEqual(rect.minY, top - 1, "mention \(index + 1) of 17 below the top: \(rect), top \(top)")
-            XCTAssertLessThanOrEqual(rect.maxY, top + visible / 3 + 1, "mention \(index + 1) of 17 in the top third above the bar: \(rect), top \(top)")
+            XCTAssertLessThanOrEqual(rect.maxY, top + visible + 1, "mention \(index + 1) of 17 above the bar: \(rect), top \(top)")
         }
     }
 
@@ -415,15 +387,30 @@ final class MarkdownTextViewTests: XCTestCase {
         XCTAssertTrue(CandidateTextView().alwaysBounceVertical)
     }
 
-    /// A long document keeps its place across a Replace.
+    /// A long document keeps its place across a Replace: the line at the
+    /// top of the view stays there, though the name replaced above it
+    /// changed how the text before it wraps.
     func testALongDocumentKeepsItsScrollAcrossAReplace() throws {
         let harness = try harness()
+        let view = harness.view
         show(harness, textView(harness.session.snapshot()))
-        harness.view.setContentOffset(CGPoint(x: 0, y: 800), animated: false)
-        harness.view.layoutIfNeeded()
+        view.setContentOffset(CGPoint(x: 0, y: 800), animated: false)
+        view.layoutIfNeeded()
+        // A paragraph in view, and how far below the view's top it is drawn.
+        let paragraph = "Paragraph 16 of the agreement"
+        func place() throws -> CGFloat {
+            let range = (view.textStorage.string as NSString).range(of: paragraph)
+            XCTAssertNotEqual(range.location, NSNotFound)
+            let rect = try XCTUnwrap(view.laidOutRect(of: range, onlyShown: true), "in view")
+            return rect.minY - view.contentOffset.y
+        }
+        let before = try place()
+        XCTAssertGreaterThan(before, 0)
+        XCTAssertLessThan(before, view.bounds.height)
 
         show(harness, textView(try harness.session.replaceAllPending()))
 
-        XCTAssertEqual(harness.view.contentOffset.y, 800)
+        XCTAssertEqual(try place(), before, accuracy: 1)
+        XCTAssertEqual(view.contentOffset.y, 800, accuracy: 60, "about where it was")
     }
 }

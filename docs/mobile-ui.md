@@ -186,8 +186,13 @@ that only the view model changes; views send intents
   fling and it settles on the neighbor with one spring, else springs
   back; at either end it gives a little and bumps. Next, Previous, ← →
   and a tap on a peek move the same strip; Reduce Motion cross-fades.
-  The text then scrolls the name into the top third above the bar,
-  measured where it is laid out, not where TextKit 2 estimates it.
+  The text stays where it is when the name is wholly visible between
+  the bars above it and the review bar (the view's own insets); otherwise
+  it scrolls just far enough to show the name, at the nearer edge with
+  `Space.m` to spare, measured where it is laid out, not where TextKit 2
+  estimates it. A table scrolls sideways to a name in it. A decision that
+  changes the text keeps a visible name under review at the same place
+  on screen (ADR 0098, amended 2026-11-11).
 - **Mentions (full):** one row each, in document order: the heading above
   it, the words of its own paragraph cut at words, and the original name
   bold on its category's highlight. A tap on the row goes there; a tap on
