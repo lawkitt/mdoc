@@ -715,7 +715,9 @@ impl Pack {
     /// `source` to a company's whole name ("АЗС" in "ООО «АЗС»", "ЭДО" in
     /// "АНО «ЭДО»"; every ORG `extend` is a name with its legal form), so
     /// its shape is checked on the grown span (`fix_spans`). Fixes stay on
-    /// one line, so only the span's lines are searched.
+    /// one line, so only the span's lines are searched. A pattern with a
+    /// `tail` grows only a span it starts with, to where the tail starts
+    /// ("QUILLAN" of "QUILLAN, INC").
     pub(super) fn grows_to_company(
         &self,
         source: &str,
@@ -736,12 +738,26 @@ impl Pack {
                 _ => None,
             })
             .flat_map(|fix| &fix.extend)
-            .flat_map(|pattern| pattern.find_iter(&source[start..end]))
-            .any(|found| {
-                let found_range = start + found.start()..start + found.end();
-                found_range.start <= range.start
-                    && range.end <= found_range.end
-                    && found_range.len() > range.len()
+            .any(|pattern| {
+                let line = &source[start..end];
+                if pattern
+                    .capture_names()
+                    .flatten()
+                    .any(|group| group == "tail")
+                {
+                    return pattern
+                        .captures_at(line, range.start - start)
+                        .and_then(|found| Some((found.get(0)?.start(), found.name("tail")?)))
+                        .is_some_and(|(at, tail)| {
+                            start + at == range.start && range.end < start + tail.start()
+                        });
+                }
+                pattern.find_iter(line).any(|found| {
+                    let found_range = start + found.start()..start + found.end();
+                    found_range.start <= range.start
+                        && range.end <= found_range.end
+                        && found_range.len() > range.len()
+                })
             })
     }
 }

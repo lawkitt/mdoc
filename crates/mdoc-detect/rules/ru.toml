@@ -204,6 +204,20 @@ extend = [
     '(?i:\b(?:обществ\p{Alphabetic}*[\p{Zs}\t]+с[\p{Zs}\t]+ограниченной[\p{Zs}\t]+ответственностью|(?:(?:публичн|непубличн|открыт|закрыт)\p{Alphabetic}*[\p{Zs}\t]+)?акционерн\p{Alphabetic}*[\p{Zs}\t]+обществ\p{Alphabetic}*))[\p{Zs}\t]*"[\p{Uppercase}\p{N}][^"\n]*"',
 ]
 
+# A legal form in brackets right after a company's name belongs to it too:
+# the model's «Банк Кедр» in «Банк Кедр (ПАО)» grows to the whole of it,
+# and so it does before «(АО)», «(публичное акционерное общество)» or
+# «(публичного акционерного общества)» in any case form and letter case
+# (guide rule 2, #374, #502). The name opens with a capital or a quote and
+# runs on over words and quoted parts («Банк «Кедр» (ПАО)»). Only a span
+# the name starts grows (the `tail`), so a role before it stays out
+# («Ответчик Банк Кедр (ПАО)»).
+[[span]]
+category = "ORG"
+extend = [
+    '(?:\b\p{Uppercase}[\p{Alphabetic}\d-]*|«[^«»\n]+»|"[^"\n]+")(?:[\p{Zs}\t]+(?:\p{Alphabetic}[\p{Alphabetic}\d-]*|«[^«»\n]+»|"[^"\n]+")){0,8}[\p{Zs}\t]*\((?:ПАО|АО|ООО|ЗАО|ОАО|НАО|(?i:(?:(?:публичн|непубличн|открыт|закрыт)\p{Alphabetic}*[\p{Zs}\t]+)?акционерн\p{Alphabetic}*[\p{Zs}\t]+обществ\p{Alphabetic}*|обществ\p{Alphabetic}*[\p{Zs}\t]+с[\p{Zs}\t]+ограниченной[\p{Zs}\t]+ответственностью))\)(?P<tail>)',
+]
+
 # A state or municipal institution's quoted name belongs to the institution,
 # so the public-body `never` words below reach it: the model's "Дирекция
 # парков" in "ГКУ города Ольховска «Дирекция парков»" grows to the

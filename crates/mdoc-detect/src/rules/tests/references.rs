@@ -141,7 +141,8 @@ fn party_code_company_continuations_do_not_establish_a_series() {
     }
     // A company wrapped onto the next line, or with a space before its
     // legal-form comma, still opens with its code: the code marks stay
-    // with only the code or short name marked by the model.
+    // with only the code or short name marked by the model. The code
+    // before ", Inc" grows to the company's whole name (#502).
     for source in [
         "Claimant C1\nHoldings Ltd, trading as C1, paid.",
         "Claimant C1\r\nHoldings Ltd, trading as C1, paid.",
@@ -166,7 +167,10 @@ fn party_code_company_continuations_do_not_establish_a_series() {
                 .into_iter()
                 .map(|span| source[span.range].to_owned())
                 .collect();
-            assert!(actual.iter().any(|text| text == "C1"), "{source} at {at}");
+            assert!(
+                actual.iter().any(|text| text == "C1" || text == "C1, Inc"),
+                "{source} at {at}"
+            );
         }
     }
     // A heading layout still defines its codes.
@@ -246,7 +250,8 @@ fn unexplained_codes_and_names_beside_party_codes_stay() {
         assert!(
             shown(source, &[("C1", "organization")])
                 .iter()
-                .any(|(text, _)| text == "C1" || text == "C1 Ltd"),
+                // "C1, Inc" with its legal form (#502).
+                .any(|(text, _)| text == "C1" || text == "C1 Ltd" || text == "C1, Inc"),
             "{source}"
         );
     }

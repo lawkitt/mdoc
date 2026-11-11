@@ -2053,6 +2053,142 @@ fn a_us_city_state_and_zip_alone_are_an_address() {
     }
 }
 
+/// #502: a city, state and ZIP after a public body's or a company's name
+/// start at the city, with the model's name on the body or without it: a
+/// body's or a company's word, or a word a model span covers, is none of
+/// the city. A real city with such a word in its name keeps it.
+#[test]
+fn a_city_after_a_body_or_company_name_starts_at_the_city() {
+    for (source, address) in [
+        (
+            "Write to the Bureau of Permits Tarrow, VA 20998 today.",
+            "Tarrow, VA 20998",
+        ),
+        (
+            "Write to the Bureau of Permits Ashby Falls, OH 45999 today.",
+            "Ashby Falls, OH 45999",
+        ),
+        (
+            "DEPARTMENT OF PERMITS WEXMOOR, DC 20598",
+            "WEXMOOR, DC 20598",
+        ),
+        (
+            "COASTAL TRANSIT SAFETY WEXMOOR, DC 20598",
+            "WEXMOOR, DC 20598",
+        ),
+        (
+            "Harbor Permits Review Board Wexmoor, DC 20598",
+            "Wexmoor, DC 20598",
+        ),
+        (
+            "Brackwater Police Department Ostley, NY 11998",
+            "Ostley, NY 11998",
+        ),
+        (
+            "Dock Pilots Union, International Ostley, VA 20198",
+            "Ostley, VA 20198",
+        ),
+        ("Corvane Holdings LLC Tarrow, VA 20998", "Tarrow, VA 20998"),
+        // A real city's name with such a word, or with "Union" or "Park".
+        ("Union City, NJ 07998", "Union City, NJ 07998"),
+        ("Park City, UT 84098", "Park City, UT 84098"),
+        ("Council Bluffs, IA 51598", "Council Bluffs, IA 51598"),
+        ("SAFETY HARBOR, FL 34698", "SAFETY HARBOR, FL 34698"),
+        (
+            "Harbor Permits Board International Falls, MN 56698",
+            "International Falls, MN 56698",
+        ),
+        (
+            "12 Mill Street, Safety Harbor, FL 34698",
+            "12 Mill Street, Safety Harbor, FL 34698",
+        ),
+    ] {
+        assert_eq!(proposed_addresses(source), [address], "{source}");
+    }
+    // With the model's name on the body, kept or dropped as a public body.
+    for (source, model, expected) in [
+        (
+            "Write to the Bureau of Permits Tarrow, VA 20998 today.",
+            "Bureau of Permits",
+            &[("Tarrow, VA 20998", "ADDRESS")][..],
+        ),
+        (
+            "Harbor Permits Panel Wexmoor, DC 20598",
+            "Harbor Permits Panel",
+            &[
+                ("Harbor Permits Panel", "ORG"),
+                ("Wexmoor, DC 20598", "ADDRESS"),
+            ][..],
+        ),
+        // Dropped as a public body, the name still keeps the city apart.
+        (
+            "Harbor Permits Tribunal Wexmoor, DC 20598",
+            "Harbor Permits Tribunal",
+            &[("Wexmoor, DC 20598", "ADDRESS")][..],
+        ),
+        (
+            "Dock Pilots Union, International Ostley, VA 20198",
+            "Dock Pilots Union",
+            &[
+                ("Dock Pilots Union", "ORG"),
+                ("Ostley, VA 20198", "ADDRESS"),
+            ][..],
+        ),
+        (
+            "Corvane Holdings LLC Tarrow, VA 20998",
+            "Corvane Holdings LLC",
+            &[
+                ("Corvane Holdings LLC", "ORG"),
+                ("Tarrow, VA 20998", "ADDRESS"),
+            ][..],
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(model, "organization")]),
+            pairs(expected),
+            "{source}"
+        );
+    }
+    // A model's name that runs into a city the rule found after a body's
+    // or a company's word ends before the city, and goes where what is
+    // left is a public body's name.
+    for (source, model, expected) in [
+        (
+            "Corvane Holdings LLC Tarrow, VA 20998",
+            "Corvane Holdings LLC Tarrow",
+            &[
+                ("Corvane Holdings LLC", "ORG"),
+                ("Tarrow, VA 20998", "ADDRESS"),
+            ][..],
+        ),
+        (
+            "COASTAL TRANSIT SAFETY BOARD WEXMOOR, DC 20598",
+            "COASTAL TRANSIT SAFETY BOARD WEXMOOR",
+            &[("WEXMOOR, DC 20598", "ADDRESS")][..],
+        ),
+        (
+            "Copies went to the Bureau of Permits Tarrow, VA 20998.",
+            "Bureau of Permits Tarrow",
+            &[("Tarrow, VA 20998", "ADDRESS")][..],
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(model, "organization")]),
+            pairs(expected),
+            "{source}"
+        );
+    }
+    // Without a body's or a company's word before the city, a model's
+    // name over the whole city leaves no address beside it.
+    assert_eq!(
+        shown(
+            "Harbor Permits Panel Wexmoor, DC 20598",
+            &[("Harbor Permits Panel Wexmoor", "organization")]
+        ),
+        pairs(&[("Harbor Permits Panel Wexmoor", "ORG")])
+    );
+}
+
 /// #498 round 3: an address that opens with a floor, a suite, a unit or a
 /// building opens there, not at its street.
 #[test]

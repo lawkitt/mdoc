@@ -373,7 +373,106 @@ pub(super) fn line_numbers(source: &str) -> Vec<std::ops::Range<usize>> {
         .collect()
 }
 
+/// A pleading's line number at an organization span's edge is no part of
+/// the name: the model's "ICL 14" on a numbered pleading is "ICL" (guide
+/// rule 2, #502). Only a number of the pleading's run ([`line_numbers`])
+/// comes off, so "Studio 54" keeps its number.
+pub(super) fn company_line_numbers(source: &str, detections: &mut [Detection]) {
+    let mut numbers: Option<Vec<std::ops::Range<usize>>> = None;
+    let mut numbered = |at: usize| {
+        numbers
+            .get_or_insert_with(|| line_numbers(source))
+            .iter()
+            .any(|number| number.start == at)
+    };
+    let blank = |c: char| c == ' ' || c == '\t';
+    for detection in detections
+        .iter_mut()
+        .filter(|d| d.category == Category::Organization)
+    {
+        let text = &source[detection.range.clone()];
+        let name = text.trim_end_matches(|c: char| c.is_ascii_digit());
+        let digits = text.len() - name.len();
+        let rest = name.trim_end_matches(blank);
+        if (1..=2).contains(&digits)
+            && rest.len() < name.len()
+            && !rest.is_empty()
+            && numbered(detection.range.start + name.len())
+        {
+            detection.range.end = detection.range.start + rest.len();
+        }
+        let text = &source[detection.range.clone()];
+        let after = text.trim_start_matches(|c: char| c.is_ascii_digit());
+        let digits = text.len() - after.len();
+        let rest = after.trim_start_matches(blank);
+        if (1..=2).contains(&digits)
+            && rest.len() < after.len()
+            && !rest.is_empty()
+            && numbered(detection.range.start)
+        {
+            detection.range.start = detection.range.end - rest.len();
+        }
+    }
+}
+
 impl Pack {
+    /// An organization span that opens with a `person_after` phrase is the
+    /// person named after it: the model's "Estate of Desmond Arkwright" is
+    /// "Desmond Arkwright", the phrase outside (guide rules 1 and 2, #502).
+    /// A named trust or estate with no person's name stays a company's: the
+    /// rest must be one to four capitalized words or initials of a person's
+    /// shape, with no legal form ("Estate of Harrow Holdings Ltd" stays).
+    pub(super) fn person_estates(&self, source: &str, detections: &mut [Detection]) {
+        let phrases: Vec<Vec<&str>> = self
+            .spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) if fix.category == Category::Organization => Some(&fix.person_after),
+                _ => None,
+            })
+            .flatten()
+            .map(|phrase| phrase.split(' ').collect())
+            .collect();
+        if phrases.is_empty() {
+            return;
+        }
+        for detection in detections
+            .iter_mut()
+            .filter(|d| d.category == Category::Organization)
+        {
+            let text = &source[detection.range.clone()];
+            let words: Vec<(usize, &str)> = text
+                .split_whitespace()
+                .map(|word| (word.as_ptr() as usize - text.as_ptr() as usize, word))
+                .collect();
+            let lower: Vec<String> = words.iter().map(|(_, w)| w.to_lowercase()).collect();
+            let skip = usize::from(lower.first().is_some_and(|word| word == "the"));
+            let Some(at) = phrases.iter().find_map(|phrase| {
+                let end = skip + phrase.len();
+                (lower.len() > end && lower[skip..end].iter().zip(phrase).all(|(w, p)| w == p))
+                    .then_some(end)
+            }) else {
+                continue;
+            };
+            let name_word = |word: &str| {
+                word.starts_with(char::is_uppercase)
+                    && word
+                        .chars()
+                        .all(|c| c.is_alphabetic() || matches!(c, '.' | '-' | '\'' | '’'))
+            };
+            let rest = &text[words[at].0..];
+            if words.len() - at > 4
+                || !words[at..].iter().all(|(_, word)| name_word(word))
+                || self.legal_form(rest)
+                || !self.shaped_named(rest, Category::Person, &|_| false)
+            {
+                continue;
+            }
+            detection.range.start += words[at].0;
+            detection.category = Category::Person;
+        }
+    }
+
     /// Two person spans with only a pleading line number between them on
     /// one line are one name the line's end cut: the model's "DESMOND" and
     /// "ARKWRIGHT" in "Plaintiff DESMOND 4 ARKWRIGHT alleges" are "DESMOND

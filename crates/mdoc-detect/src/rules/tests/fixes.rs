@@ -910,3 +910,249 @@ fn a_misdecoded_a_circumflex_comes_off_a_name() {
         );
     }
 }
+
+/// #374, #502: a legal form after a comma or in brackets joins the
+/// company's name, its last dot outside (guide rule 2, #506 item 1); a
+/// role before the name stays out, "and" joins no two names, and a form
+/// already inside stays.
+#[test]
+fn a_legal_form_after_a_comma_or_in_brackets_joins_the_company() {
+    for (source, model, expected) in [
+        (
+            "Defendant DARROWAY, INC filed.",
+            "DARROWAY",
+            "DARROWAY, INC",
+        ),
+        (
+            "Counsel: PELLWICK LAW, APC for the claimant.",
+            "PELLWICK LAW",
+            "PELLWICK LAW, APC",
+        ),
+        (
+            "Larkmoor Advisors, L.P. joined.",
+            "Larkmoor Advisors",
+            "Larkmoor Advisors, L.P",
+        ),
+        (
+            "Larkmoor Advisors, L.P. joined.",
+            "Larkmoor Advisors, L.P.",
+            "Larkmoor Advisors, L.P",
+        ),
+        (
+            "Ostley Mutual, Inc., the insurer, paid.",
+            "Ostley Mutual",
+            "Ostley Mutual, Inc",
+        ),
+        (
+            "Brindle Grain, LLC sold it.",
+            "Brindle Grain",
+            "Brindle Grain, LLC",
+        ),
+        (
+            "Paid by Tarrow Bank USA, N.A. today.",
+            "Tarrow Bank USA, N.A.",
+            "Tarrow Bank USA, N.A",
+        ),
+        (
+            "Paid by Bank of Tarrow, N.A. today.",
+            "Bank of Tarrow",
+            "Bank of Tarrow, N.A",
+        ),
+        (
+            "Ответчик Банк Ольховый (ПАО) возражал.",
+            "Банк Ольховый",
+            "Банк Ольховый (ПАО)",
+        ),
+        (
+            "Ответчик Банк Ольховый (публичного акционерного общества) возражал.",
+            "Банк Ольховый",
+            "Банк Ольховый (публичного акционерного общества)",
+        ),
+        (
+            "Третье лицо Банк «Ольховый» (АО) не явилось.",
+            "Банк «Ольховый»",
+            "Банк «Ольховый» (АО)",
+        ),
+        // A role before the name is no part of it, the model's or not.
+        (
+            "Defendant DARROWAY, INC filed.",
+            "Defendant DARROWAY",
+            "DARROWAY, INC",
+        ),
+        // A form already inside, and none after the name, change nothing.
+        (
+            "Brindle Grain LLC sold it.",
+            "Brindle Grain LLC",
+            "Brindle Grain LLC",
+        ),
+        (
+            "Brindle Grain, the seller, sold it.",
+            "Brindle Grain",
+            "Brindle Grain",
+        ),
+    ] {
+        assert_eq!(proposed_orgs(source, &[model]), [expected], "{source}");
+    }
+    // "and" joins two companies, not one name.
+    assert_eq!(
+        proposed_orgs(
+            "Plaintiffs Corvane and Pellam, Inc sued.",
+            &["Corvane", "Pellam, Inc"]
+        ),
+        ["Corvane", "Pellam, Inc"]
+    );
+}
+
+/// #502: a seal or execution phrase, a party's role, a job title or a
+/// citation's abbreviation before a company's name come off it; a
+/// company named with such a word keeps it.
+#[test]
+fn a_seal_a_role_a_title_or_a_citation_before_a_company_comes_off() {
+    for (source, model, expected) in [
+        (
+            "The Common Seal of Brannoch Quay Ltd was affixed.",
+            "Common Seal of Brannoch Quay Ltd",
+            "Brannoch Quay Ltd",
+        ),
+        (
+            "the common seal of Brannoch Quay Ltd was affixed.",
+            "common seal of Brannoch Quay Ltd",
+            "Brannoch Quay Ltd",
+        ),
+        (
+            "The Common Seal of*** ***Brannoch Quay Ltd was affixed.",
+            "Common Seal of*** ***Brannoch Quay Ltd",
+            "Brannoch Quay Ltd",
+        ),
+        (
+            "Signed for and on behalf of Brannoch Quay Ltd by its director.",
+            "Signed for and on behalf of Brannoch Quay Ltd",
+            "Brannoch Quay Ltd",
+        ),
+        (
+            "Defendant Quellmark Freight filed a motion.",
+            "Defendant Quellmark Freight",
+            "Quellmark Freight",
+        ),
+        (
+            "PLAINTIFF: Quellmark Freight LLC",
+            "PLAINTIFF: Quellmark Freight LLC",
+            "Quellmark Freight LLC",
+        ),
+        (
+            "Edda Varrow, Senior Vice Ostley Mutual Insurance Company, signed.",
+            "Senior Vice Ostley Mutual Insurance Company",
+            "Ostley Mutual Insurance Company",
+        ),
+        (
+            "A letter from the Treasurer of Pellam Mutual confirms it.",
+            "Treasurer of Pellam Mutual",
+            "Pellam Mutual",
+        ),
+        (
+            "It appeared in Ann. The Marrow Institute last spring.",
+            "Ann. The Marrow Institute",
+            "The Marrow Institute",
+        ),
+        // A company named with such a word keeps it.
+        (
+            "Senior Living Ltd runs the home.",
+            "Senior Living Ltd",
+            "Senior Living Ltd",
+        ),
+        (
+            "Director Holdings Ltd owns the lease.",
+            "Director Holdings Ltd",
+            "Director Holdings Ltd",
+        ),
+        (
+            "The Common Seal of The Harbor Trust Ltd was affixed.",
+            "Common Seal of The Harbor Trust Ltd",
+            "The Harbor Trust Ltd",
+        ),
+        // An abbreviation before any other word may be the name's own.
+        (
+            "See Quill. Recovery Sys. Ltd, at 4.",
+            "Quill. Recovery Sys. Ltd",
+            "Quill. Recovery Sys. Ltd",
+        ),
+    ] {
+        assert_eq!(proposed_orgs(source, &[model]), [expected], "{source}");
+    }
+}
+
+/// #502: a year, a flight number or a pleading's line number after a
+/// company's name comes off it; a year inside the name and a number
+/// outside a pleading's run stay.
+#[test]
+fn a_year_a_flight_or_a_line_number_after_a_company_comes_off() {
+    for (source, model, expected) in [
+        (
+            "A gift to the Velling Party 2031 campaign.",
+            "Velling Party 2031",
+            "Velling Party",
+        ),
+        (
+            "The cargo flew aboard Corran Air Flight 418 to Ostley.",
+            "Corran Air Flight 418",
+            "Corran Air",
+        ),
+        (
+            "Filed by Brannoch Quay Ltd Case No. 31-4410 today.",
+            "Brannoch Quay Ltd Case No. 31-4410",
+            "Brannoch Quay Ltd",
+        ),
+        // A year inside the name, and a number that is no year, stay.
+        (
+            "The Class of 2019 Foundation gave a grant.",
+            "Class of 2019 Foundation",
+            "Class of 2019 Foundation",
+        ),
+        ("Studio 54 Ltd hosted it.", "Studio 54 Ltd", "Studio 54 Ltd"),
+        ("Studio 14 hosted it.", "Studio 14", "Studio 14"),
+    ] {
+        assert_eq!(proposed_orgs(source, &[model]), [expected], "{source}");
+    }
+    // A pleading's line number after the name, and before it.
+    let pleading = (1..=14)
+        .map(|n| match n {
+            6 => "6 against Defendant Quellmark Freight 7 and others".to_owned(),
+            9 => "9 Brannoch Quay Ltd claims".to_owned(),
+            _ => format!("{n} the claim goes on"),
+        })
+        .filter(|line| !line.starts_with("7 "))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(
+        proposed_orgs(&pleading, &["Quellmark Freight 7", "9 Brannoch Quay Ltd"]),
+        ["Quellmark Freight", "Brannoch Quay Ltd"]
+    );
+}
+
+/// #502: a person's "Estate of …" is the person, the phrase outside
+/// (guide rules 1 and 2); an estate without a person's name stays a
+/// company's.
+#[test]
+fn a_persons_estate_is_the_person() {
+    assert_eq!(
+        shown(
+            "We act for the Estate of Corwin Ashdale in this claim.",
+            &[("Estate of Corwin Ashdale", "organization")]
+        ),
+        pairs(&[("Corwin Ashdale", "PERSON")])
+    );
+    assert_eq!(
+        shown(
+            "In re Estate of Corwin Ashdale, Deceased",
+            &[("Estate of Corwin Ashdale", "person")]
+        ),
+        pairs(&[("Corwin Ashdale", "PERSON")])
+    );
+    assert_eq!(
+        shown(
+            "The Estate of Brannoch Quay Ltd was wound up.",
+            &[("Estate of Brannoch Quay Ltd", "organization")]
+        ),
+        pairs(&[("Estate of Brannoch Quay Ltd", "ORG")])
+    );
+}

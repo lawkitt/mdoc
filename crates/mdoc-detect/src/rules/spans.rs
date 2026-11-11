@@ -38,7 +38,7 @@ impl Pack {
     /// its first element to its postcode or city (ADR 0092).
     #[cfg(test)]
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
-        self.spans_beside(source, &[])
+        self.spans_beside(source, &[], &[])
             .into_iter()
             .map(|found| found.detection)
             .collect()
@@ -52,18 +52,22 @@ impl Pack {
     /// part. A lone capital that ends it before a capitalised word is that
     /// word's initial, no house letter ("д. 5 В Петров" ends at "д. 5"). One
     /// that ends at "№ 2" before "-1234/2020" is a case number's head.
+    /// A `city` the rule found after a body's name ([`Self::guessed_city`])
+    /// gives way only to a name that starts with it.
     fn address_beside(
         &self,
         source: &str,
         names: &[Detection],
         (entry, pattern): (usize, &Alternation),
         mut range: std::ops::Range<usize>,
+        city: bool,
     ) -> Option<std::ops::Range<usize>> {
         let front = names
             .iter()
             .filter(|name| {
                 matches!(name.category, Category::Person | Category::Organization)
                     && name.range.start <= range.start
+                    && !(city && name.range.start < range.start)
                     && range.start < name.range.end
                     && name.range.end < range.end
                     && !self.absorbs(
@@ -113,10 +117,94 @@ impl Pack {
         (!case_number && !range.is_empty()).then_some(range)
     }
 
+    /// A city, state and ZIP with no street or box before them, the match
+    /// at `range` of `pattern` (its lead included in `whole`), guessed
+    /// whole: its city takes no name or `stop` field after its start, and
+    /// the pattern is searched again after them ("Ship To Ashby Falls, OH
+    /// 45999"); a name at its front edge is `address_beside`'s. A model
+    /// name over the city's first words, kept or dropped as a public body
+    /// ("Bureau of Records" before "Haddon, VA 20999"), is none of the
+    /// city either: it starts after the name, or there is none (#502).
+    /// Returns the range and whether the rule alone found where the city
+    /// starts: after a body's name that is the match's `lead`, or after a
+    /// stop's `body` word ("Review Board Washington, DC 20599"). Such a
+    /// city stands though a model name runs into it ("Coastal Safety Board
+    /// Wexmoor" of the model): the name ends before it (`correct`).
+    fn guessed_city(
+        &self,
+        source: &str,
+        (names, model): (&[Detection], &[std::ops::Range<usize>]),
+        pattern: &Alternation,
+        stop: Option<&Regex>,
+        mut range: std::ops::Range<usize>,
+        whole: &std::ops::Range<usize>,
+    ) -> (std::ops::Range<usize>, bool) {
+        // The match after `at`, within `end`, without its lead and tail.
+        let again = |at: usize, end: usize| {
+            let found = pattern.captures_at(source, at)?;
+            let matched = found.get(0)?;
+            let start = found
+                .name("lead")
+                .map_or(matched.start(), |lead| lead.end());
+            let stop = found
+                .name("tail")
+                .map_or(matched.end(), |tail| tail.start());
+            (start < stop && stop <= end).then_some(start..stop)
+        };
+        // Cut at each name and field after the city's start, searched again
+        // after it; a recipient's label (Attn) is followed by a name, not a
+        // city.
+        let cut = |names: &[Detection], mut range: std::ops::Range<usize>| {
+            while let Some((_, resume)) =
+                guessed_cut(source, names, &range, range.start, false, stop)
+            {
+                match resume.and_then(|resume| again(resume, range.end)) {
+                    Some(found) => range = found,
+                    None => return range.start..range.start,
+                }
+            }
+            range
+        };
+        let own = cut(&[], range.clone());
+        let line = source[..own.start].rfind('\n').map_or(0, |at| at + 1);
+        let before = source[line..own.start].trim_end_matches([' ', '\t', ',']);
+        let body = stop.is_some_and(|stop| {
+            stop.captures_iter(before).any(|found| {
+                found.name("body").is_some()
+                    && found.get(0).is_some_and(|word| word.end() == before.len())
+            })
+        });
+        if !own.is_empty() && (own == range && whole.start < range.start || body) {
+            return (cut(names, own), true);
+        }
+        if let Some(after) = model
+            .iter()
+            .filter(|name| {
+                name.start < range.start && range.start < name.end && name.end < range.end
+            })
+            .map(|name| name.end)
+            .max()
+        {
+            match again(after, range.end) {
+                Some(found) => range = found,
+                None => return (range.start..range.start, false),
+            }
+        }
+        (cut(names, range), false)
+    }
+
     /// Matches beside existing evidence, all in view coordinates. Definite
     /// street/building components may contain names; a guessed town tail
-    /// never consumes an independent PERSON/ORG or a contact field.
-    pub(crate) fn spans_beside(&self, source: &str, names: &[Detection]) -> Vec<SpanMatch> {
+    /// never consumes an independent PERSON/ORG or a contact field. The
+    /// `model` ranges are the model's people and companies as it gave them,
+    /// those the fixes dropped too (a public body's name): a guessed city
+    /// starts after one that starts before it and ends in it.
+    pub(crate) fn spans_beside(
+        &self,
+        source: &str,
+        names: &[Detection],
+        model: &[std::ops::Range<usize>],
+    ) -> Vec<SpanMatch> {
         self.spans
             .iter()
             .enumerate()
@@ -163,32 +251,15 @@ impl Pack {
                                 // Ashby Falls, OH 45999"); a name at its
                                 // front edge is `address_beside`'s.
                                 if core.is_none() {
-                                    let stop = continuation_stop.as_ref();
-                                    while let Some((_, resume)) =
-                                        guessed_cut(source, names, &range, range.start, false, stop)
-                                    {
-                                        // A recipient's label (Attn) is
-                                        // followed by a name, not a city.
-                                        let Some(found) = resume
-                                            .and_then(|resume| pattern.captures_at(source, resume))
-                                        else {
-                                            range.end = range.start;
-                                            break;
-                                        };
-                                        let matched = found.get(0).expect("group 0 is the match");
-                                        let start = found
-                                            .name("lead")
-                                            .map_or(matched.start(), |lead| lead.end());
-                                        let end = found
-                                            .name("tail")
-                                            .map_or(matched.end(), |tail| tail.start());
-                                        if end > range.end || start >= end {
-                                            range.end = range.start;
-                                            break;
-                                        }
-                                        range = start..end;
-                                    }
-                                    return (range, whole);
+                                    let (range, city) = self.guessed_city(
+                                        source,
+                                        (names, model),
+                                        pattern,
+                                        continuation_stop.as_ref(),
+                                        range,
+                                        &whole,
+                                    );
+                                    return (range, whole, city);
                                 }
                                 let tail = range.start + core.map_or(0, |core| core.end());
                                 // A name crossing the definite component's
@@ -203,7 +274,7 @@ impl Pack {
                                         && range.start < name.range.end
                                 }) {
                                     range.end = range.start;
-                                    return (range, whole);
+                                    return (range, whole, false);
                                 }
                                 if let Some((end, _)) = guessed_cut(
                                     source,
@@ -241,30 +312,30 @@ impl Pack {
                                     }
                                 }
                             }
-                            (range, whole)
+                            (range, whole, false)
                         })
                         // A split match's spans are the pieces between the
                         // split's matches ("KRENC<<LIDIIA" is two names); the
                         // whole match goes with each.
-                        .flat_map(move |(range, whole)| match split {
+                        .flat_map(move |(range, whole, city)| match split {
                             Some(split) => pieces(split, source, range)
                                 .into_iter()
-                                .map(|piece| (piece, Some(whole.clone())))
+                                .map(|piece| (piece, Some(whole.clone()), false))
                                 .collect(),
-                            None => vec![(range, None)],
+                            None => vec![(range, None, city)],
                         })
-                        .filter_map(move |(range, whole)| {
+                        .filter_map(move |(range, whole, city)| {
                             if category != Category::Address || range.is_empty() {
-                                return Some((range, whole));
+                                return Some((range, whole, city));
                             }
-                            self.address_beside(source, names, (entry, pattern), range)
-                                .map(|range| (range, whole))
+                            self.address_beside(source, names, (entry, pattern), range, city)
+                                .map(|range| (range, whole, city))
                         })
                         // An address match before a colon ends in a field's
                         // label ("12 Oak Road, Email: …"), not the address's
                         // last part; a name before one is a speaker's ("ФИО1
                         // А. Б.: …").
-                        .filter(move |(range, _)| {
+                        .filter(move |(range, _, _)| {
                             !range.is_empty()
                                 && skip
                                     .as_ref()
@@ -283,7 +354,7 @@ impl Pack {
                                         .trim_start_matches([' ', '\t'])
                                         .starts_with(':'))
                         })
-                        .map(move |(range, whole)| SpanMatch {
+                        .map(move |(range, whole, city)| SpanMatch {
                             detection: Detection {
                                 range,
                                 category,
@@ -292,6 +363,7 @@ impl Pack {
                             },
                             whole,
                             entry,
+                            city,
                         })
                 },
             )
@@ -303,7 +375,8 @@ impl Pack {
 /// at the first person's or company's name (from `tail` on where
 /// `at_tail`, after it otherwise) or the first `stop` field, with where a
 /// search may go on after it: the end of that name or field, or none after
-/// a field the `stop` regex's `recipient` group holds (Attn).
+/// a field the `stop` regex's `recipient` group holds (Attn). A match of
+/// its `place` group is none.
 fn guessed_cut(
     source: &str,
     names: &[Detection],
@@ -321,8 +394,14 @@ fn guessed_cut(
         })
         .map(|name| (name.range.start, Some(name.range.end)))
         .min();
+    // A `place` group is a real place with a stop word in its name
+    // ("Council Bluffs"), no stop.
     let field = stop
-        .and_then(|pattern| pattern.captures(&source[tail..range.end]))
+        .and_then(|pattern| {
+            pattern
+                .captures_iter(&source[tail..range.end])
+                .find(|found| found.name("place").is_none())
+        })
         .map(|found| {
             let field = found.get(0).expect("group 0 is the match");
             let resume = found
