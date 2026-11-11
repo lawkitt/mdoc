@@ -284,6 +284,12 @@ struct ContextEntry {
     /// a list's values form one run the model reads whole (#563).
     #[serde(default)]
     unless_slashed: bool,
+    /// Before its value only: the label may touch the text before it and
+    /// the value after it, with no word's edge at either side ("PMINDEX
+    /// NO." of a running header), so its `value` must be the number's own
+    /// strict shape.
+    #[serde(default)]
+    glued: bool,
 }
 
 #[derive(Deserialize)]
@@ -1045,6 +1051,9 @@ impl Pack {
                         "only a label before its value takes unless_slashed".into()
                     ));
                 }
+                if entry.after && entry.glued {
+                    return Err(at("only a label before its value takes glued".into()));
+                }
                 if let Some(label) = entry
                     .labels
                     .iter()
@@ -1066,13 +1075,15 @@ impl Pack {
                         labels.join("|"),
                     )
                 } else {
+                    let edge = if entry.glued { "" } else { r"\b" };
                     format!(
                         // Case is ignored in the label only. Where the value
                         // ends is checked after matching ("1988 г." ends in
                         // a dot). A note marker may follow the label, inside
                         // its emphasis or after it ("ИНН¹:", which the view
-                        // reads "ИНН ¹:", or "**ИНН**¹:"; #448).
-                        r"(?i)\b(?:{})\b(?-i:(?:[*_]*\p{{Zs}}?[¹²³⁰⁴-⁹]+)?(?:{})((?:{})))",
+                        // reads "ИНН ¹:", or "**ИНН**¹:"; #448). A glued
+                        // label has no word's edge to keep.
+                        r"(?i){edge}(?:{}){edge}(?-i:(?:[*_]*\p{{Zs}}?[¹²³⁰⁴-⁹]+)?(?:{})((?:{})))",
                         labels.join("|"),
                         rust_classes(&entry.between),
                         rust_classes(&entry.value),

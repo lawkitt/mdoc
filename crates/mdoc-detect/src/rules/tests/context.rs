@@ -1727,3 +1727,185 @@ fn the_word_before_a_label_stops_at_a_blank_line() {
     assert!(cases("в рамках исполнительного\nпроизводства № 4821/31/99001-ИП").is_empty());
     assert!(cases("в рамках **исполнительного**\n*производства* № 4821/31/99001-ИП").is_empty());
 }
+
+/// Part of #364: an English criminal appeal's number keeps its
+/// letter-digit suffix, a Crown Court indictment's number is CASE after
+/// "indictment" and in the bracket under the court's name, a UK
+/// tribunal's reference is CASE after its label, and a New York index
+/// number is CASE with its label glued to markup or a running header.
+#[test]
+fn english_criminal_tribunal_and_glued_index_numbers_are_case_numbers() {
+    for (source, expected) in [
+        ("CASE NO 203199907 C3\n\nR v Quill", &["203199907 C3"][..]),
+        ("Case No: 203199908 A1", &["203199908 A1"]),
+        (
+            "The appellant was convicted on indictment No. T20319907 of fraud.",
+            &["T20319907"],
+        ),
+        (
+            "He pleaded guilty to counts 2 to 4 on indictment T20319908.",
+            &["T20319908"],
+        ),
+        (
+            "A second indictment (T20319909) was stayed.",
+            &["T20319909"],
+        ),
+        (
+            "IN THE CROWN COURT AT BRANWICK\n[T20319907 T20319905 & T20319906]\n\nSentencing remarks",
+            &["T20319907", "T20319905", "T20319906"],
+        ),
+        (
+            "# IN THE CROWN COURT AT SLOCOMBE\n\n[T20319901, T20319902 and T20319903]",
+            &["T20319901", "T20319902", "T20319903"],
+        ),
+        (
+            "IN THE COURT OF APPEAL (CRIMINAL DIVISION)\nON APPEAL FROM THE CROWN COURT AT SLOCOMBE [T20319904]\n",
+            &["T20319904"],
+        ),
+        (
+            "Neutral Citation Number: [2031] EWCA Crim 999\nOn appeal from the Crown Court at Slocombe\n\n[T20319906 & T20319908]",
+            &["T20319906", "T20319908"],
+        ),
+        ("Appeal reference: TC/2031/09992", &["TC/2031/09992"]),
+        ("Case Number: TC 19992", &["TC 19992"]),
+        (
+            "NYSCEF DOC. NO. 9 RECEIVED 03/01/2031 17:03:31</u>INDEX NO. 799913/2031",
+            &["799913/2031"],
+        ),
+        (
+            "FILED: KINGS COUNTY CLERK 03/01/2031 05:03 PMINDEX NO. 799914/2031",
+            &["799914/2031"],
+        ),
+    ] {
+        assert_eq!(cases(source), expected, "{source}");
+    }
+    // A number glued to the label's letter by OCR is the rule's, but the
+    // review takes whole words only, so it is not proposed yet.
+    assert!(cases("Index Number799916/2031").is_empty());
+}
+
+/// The new case labels leave a precedent's docket in its citation, a
+/// statute's, a form's and a standard's numbers, a neutral citation, a
+/// T-number with no indictment or Crown Court before it and a list's
+/// "No." unmarked (part of #364).
+#[test]
+fn english_case_labels_leave_citations_forms_and_bare_t_numbers() {
+    for source in [
+        "The court followed Pellow v. Marsh, No. 09-31-00999-CV (Tex. App. 2031).",
+        "NAICS 999999 and Form 1099 under s. 18 Sentencing Act 2031.",
+        "See Quillon Ltd v Revenue [2031] UKFTT 09999 (TC) at [12].",
+        "Replace part T20319999 and the seal [T20319998 T20319997].",
+        "The hearing is in No. 4 Court on the second floor.",
+        "an indictment of 12 counts and indictment T12",
+        "Index Number of prices 2031",
+        // A precedent's Crown Court in prose is no heading of the
+        // document's own court (#506 item 3).
+        "The court followed R v Quill (Crown Court [T20319907]).",
+        "The court followed R v Quill, Crown Court at Branwick [T20319907], in 2030.",
+        "As in the Crown Court at Branwick\n[T20319907] the judge said.",
+        "See Quill v Harrow,\nCrown Court at Branwick [T20319907]\n",
+        "Grant v. Finecy,\nCrown Court\n[T20319907]\n",
+        "See R v Quill\nCrown Court at Branwick [T20319907]",
+        "R v Quill and Another\nIn the Crown Court at Branwick\n[T20319907]",
+    ] {
+        assert!(
+            proposed(source).is_empty(),
+            "{source}: {:?}",
+            proposed(source)
+        );
+    }
+    // A tribunal's own reference beside its neutral citation.
+    assert_eq!(
+        cases("Appeal reference: TC/2031/09993\n\nNeutral Citation: [2031] UKFTT 09999 (TC)"),
+        ["TC/2031/09993"]
+    );
+}
+
+/// The model's TAX or BANK guess on an indictment's or a tribunal's
+/// number gives way to the label's CASE; a real tax or bank value beside
+/// such a label keeps its category (part of #364).
+#[test]
+fn a_models_tax_or_bank_on_an_indictment_or_tribunal_number_is_case() {
+    let source = "The defendant was arraigned on indictment No. T20319907 on 3 March.";
+    assert_eq!(
+        shown(source, &[("T20319907", "tax_id")]),
+        pairs(&[("T20319907", "CASE")])
+    );
+    let source = "IN THE CROWN COURT AT BRANWICK\n[T20319907 T20319905]\n";
+    assert_eq!(
+        shown(source, &[("T20319905", "tax_id")]),
+        pairs(&[("T20319907", "CASE"), ("T20319905", "CASE")])
+    );
+    let source = "Case Number: TC 19992\n\nThe appellant appeals.";
+    assert_eq!(
+        shown(source, &[("TC 19992", "bank_account")]),
+        pairs(&[("TC 19992", "CASE")])
+    );
+    assert_eq!(
+        shown(source, &[("19992", "bank_account")]),
+        pairs(&[("TC 19992", "CASE")])
+    );
+    let source = "CASE NO 203199907 C3\n\nEIN 12-3456789; Account number 99887766.";
+    assert_eq!(
+        shown(source, &[("203199907", "tax_id"), ("12-3456789", "tax_id")]),
+        pairs(&[
+            ("203199907 C3", "CASE"),
+            ("12-3456789", "TAX"),
+            ("99887766", "BANK"),
+        ])
+    );
+}
+
+/// Part of #483: an officer's ID or badge number after the officer, a
+/// notary's commission number after "State No." in the notary's block
+/// and an aircraft's registration mark are IDENTITY, the value only.
+#[test]
+fn officer_notary_and_aircraft_numbers_are_identity() {
+    for (source, value) in [
+        ("DEPUTY HALVERSEN ID #8813 entered the cell.", "8813"),
+        ("Officer Pell, Badge No. 4472, arrived.", "4472"),
+        ("Sgt. Ivo Ostrand (ID 9913) signed.", "9913"),
+        ("Notary Public, State No. QX9988772", "QX9988772"),
+        (
+            "Notary Public\nState No.QX9988773\nMy commission expires",
+            "QX9988773",
+        ),
+        (
+            "a Boeing 737-800, registration number N9972Q, landed",
+            "N9972Q",
+        ),
+        ("EQUIPMENT: Airbus A320, N9973Q", "N9973Q"),
+        ("the aircraft's tail number N9974Q", "N9974Q"),
+        ("a jet with registration mark 9H-ZQX was leased", "9H-ZQX"),
+        ("EQUIPMENT: Airbus A320, 9H-ZQY", "9H-ZQY"),
+        ("a Boeing 737-800 (4X-ZQZ) landed", "4X-ZQZ"),
+    ] {
+        assert_eq!(proposed(source), pairs(&[(value, "IDENTITY")]), "{source}");
+    }
+    for source in [
+        "Order ID #12345 shipped on a Boeing 737-800.",
+        "The A320 and the Boeing 737 MAX were grounded.",
+        "State No. 12345 of the survey; notary fees apply.",
+        "The officer asked for ID 1234 times.",
+        "An Airbus A320-200 seats rows 9-12 in business.",
+        "registration mark A320-200 and registration number 9-12",
+        "a Boeing 737-800, 9-12 seats free",
+    ] {
+        assert!(
+            proposed(source).is_empty(),
+            "{source}: {:?}",
+            proposed(source)
+        );
+    }
+    // The model's PERSON on the officer stays, beside the number.
+    let source = "DEPUTY HALVERSEN ID #8813 entered the cell.";
+    assert_eq!(
+        shown(source, &[("HALVERSEN", "person")]),
+        pairs(&[("HALVERSEN", "PERSON"), ("8813", "IDENTITY")])
+    );
+    let source = "Officer Pell, Badge No. 4472, arrived.";
+    assert_eq!(
+        shown(source, &[("Pell", "person")]),
+        pairs(&[("Pell", "PERSON"), ("4472", "IDENTITY")])
+    );
+}

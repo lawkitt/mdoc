@@ -147,6 +147,10 @@ fn mistakes_in_a_rule_file_are_named() {
             "only a label before its value takes unless_slashed",
         ),
         (
+            "[[context]]\ncategory = \"DATE\"\nlabels = [\"birth date\"]\nafter = true\nglued = true\nbetween = ' '\nvalue = '\\d{4}'",
+            "only a label before its value takes glued",
+        ),
+        (
             "[[never]]\nmatch = \"plural\"\nwords = [\"Ms\"]",
             "not lowercase",
         ),
