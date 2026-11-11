@@ -534,12 +534,12 @@ final class TableEditingTests: XCTestCase {
         harness.view.selectedRange = NSRange(location: word.location - 4, length: 4)
         harness.coordinator.textViewDidChangeSelection(harness.view)
         XCTAssertEqual(harness.view.selectedRange, NSRange(location: word.location, length: offset - word.location))
-        // A selection set with no such hit just before is kept in its cell
-        // as ever.
-        harness.view.lastCellHit = nil
-        harness.view.selectedRange = NSRange(location: word.location, length: 3)
+        // The hit is used once: a key that changes the selection right
+        // after the drag is kept as the key made it.
+        let keyed = NSRange(location: word.location, length: offset - word.location + 2)
+        harness.view.selectedRange = keyed
         harness.coordinator.textViewDidChangeSelection(harness.view)
-        XCTAssertEqual(harness.view.selectedRange, NSRange(location: word.location, length: 3))
+        XCTAssertEqual(harness.view.selectedRange, keyed)
         // Outside edit mode the grids take no such gesture.
         harness.model.doneEditing()
         show(harness)

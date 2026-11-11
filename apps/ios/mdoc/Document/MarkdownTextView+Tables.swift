@@ -92,9 +92,12 @@ extension CandidateTextView {
     /// `closestPosition(to:)` for the same point first, so the cell's
     /// character there is known (`lastCellHit`). When the selection in a
     /// cell changes at one end only, just after such a hit in that cell,
-    /// the moved end is the hit.
+    /// the moved end is the hit, which is used once.
     func handleDragged(from previous: NSRange?) -> NSRange? {
         let new = selectedRange
+        // One hit moves one selection change: a key that changes the
+        // selection just after a drag is not a drag.
+        defer { lastCellHit = nil }
         guard let previous, previous.length > 0, new != previous, let hit = lastCellHit,
               CACurrentMediaTime() - hit.time < 0.5, let cell = cell(at: previous.location),
               self.cell(at: hit.offset)?.view === cell.view else { return nil }
