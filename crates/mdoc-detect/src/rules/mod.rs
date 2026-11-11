@@ -10,6 +10,8 @@
 //! - `defined`: a document's defined terms, abbreviations and generic words;
 //! - `people`: initials after a role, titles, person documents and pleading
 //!   line numbers inside a name;
+//! - `person_forms`: a person's surname or titled name the model proposed
+//!   as an organization, and words glued onto a name;
 //! - `companies`: legal forms, company nouns and short names;
 //! - `references`: legal references and cited cases;
 //! - `fixes`: span fixes and `Pack::fix_spans`, which applies every rule to model spans;
@@ -28,6 +30,7 @@ mod fixes;
 mod load;
 mod ocr;
 mod people;
+mod person_forms;
 mod public;
 mod references;
 mod shapes;
@@ -223,6 +226,15 @@ struct SpanFix {
     /// Lowercase phrases opening an organization's span that make the name
     /// after them a person's: "estate of" before "Desmond Arkwright".
     person_after: Vec<String>,
+    /// Lowercase titles only a person holds ("senator", "sen."): a model
+    /// organization on a titled surname is the person (#503).
+    person_titles: Vec<String>,
+    /// Lowercase plural titles before a list of surnames ("senators"):
+    /// each name in the list is a person's (#503).
+    person_lists: Vec<String>,
+    /// Lowercase nouns after a person's name that are no part of it
+    /// ("family", "campaign", "lab"), #503.
+    person_nouns: Vec<String>,
     list_letter: bool,
     /// Lowercase words a span never grows over ("exhibit" in "EXHIBIT A.
     /// WELK").

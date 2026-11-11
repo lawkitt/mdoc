@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":593,"end":631,"label":"person","score":0.95735765,"text":"Пётр Сергеевич Дымов"},
+    {"start":388,"end":408,"label":"person","score":0.95671517,"text":"Е. Р. Тулину"},
+    {"start":167,"end":193,"label":"person","score":0.8846386,"text":"Т.Т.Ольшанская"},
+    {"start":328,"end":350,"label":"person","score":0.76942694,"text":"Л. Н. Кедрина"},
+    {"start":242,"end":280,"label":"person","score":0.50414264,"text":"Верхов-Залесский Р.Р."},
+    {"start":242,"end":280,"label":"organization","score":0.80084777,"text":"Верхов-Залесский Р.Р."}
+  ]
+}

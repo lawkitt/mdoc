@@ -227,6 +227,21 @@
 #                         as the" before "Brindle Harriers"); a leading
 #                         "the" of the span comes off; the name must end
 #                         with the span
+#   person_titles = […]   for PERSON: lowercase titles only a person holds
+#                         ("senator", "sen."), besides the person fixes'
+#                         `trim` words: a model organization of one and a
+#                         name, or a surname the document writes after one,
+#                         is the person (`person_forms`, #503)
+#   person_lists = […]    for PERSON: lowercase plural titles or a list's
+#                         heading word ("senators", "signatories"): each
+#                         surname listed after one is a person's span
+#   person_nouns = […]    for PERSON: lowercase nouns after a name that are
+#                         no part of it ("family", "lab"): a person's span
+#                         loses one, and a model organization of a name the
+#                         document gives a person and one is that person
+# Before these fixes a model organization that is a person's surname or
+# titled name in the same document becomes that person (`person_forms` in
+# rules/person_forms.rs, #503); never one with a legal form or a body word.
 # After these fixes a model person's span that is a company's short name
 # in the same document becomes that company (`company_short_names` in
 # rules/companies.rs, #548).

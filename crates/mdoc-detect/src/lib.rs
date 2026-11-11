@@ -6260,12 +6260,13 @@ mod tests {
     }
 
     /// #548 review inputs (target/review-o2 cases): firms named after
-    /// people, a company named after its owner, a model ORG caption, «ИП»,
-    /// "Bank" and "Medicine" surnames, "bank" after a person's name, cut
-    /// "of medicine" companies and a team name carried on by a lowercase
-    /// word all stay as they were: people kept, nothing uncovered. Only
-    /// "Frost"/"Pellam" beside "Frost Bank"/"Pellam Bank" with no title or
-    /// full name become the bank, as the issue's "Frost" does.
+    /// people, a company named after its owner, «ИП», "Bank" and
+    /// "Medicine" surnames, "bank" after a person's name, cut "of medicine"
+    /// companies and a team name carried on by a lowercase word all stay as
+    /// they were: people kept, nothing uncovered. Only "Frost"/"Pellam"
+    /// beside "Frost Bank"/"Pellam Bank" with no title or full name become
+    /// the bank, as the issue's "Frost" does, and a model ORG caption on a
+    /// person's full name is the person (#503).
     #[test]
     fn review_inputs_keep_people_who_share_a_company_word() {
         #[allow(clippy::type_complexity)]
@@ -6438,8 +6439,10 @@ mod tests {
                     ("Ada Pellam", "person", 0),
                     ("Ada Pellam", "person", 1),
                 ],
+                // The model's organization on a full name the document gives
+                // a person is the person (#503).
                 &[
-                    ("ORG", "ADA PELLAM"),
+                    ("PERSON", "ADA PELLAM"),
                     ("ORG", "QUILLON FREIGHT CORP"),
                     ("PERSON", "Ada Pellam"),
                     ("PERSON", "Ada Pellam"),

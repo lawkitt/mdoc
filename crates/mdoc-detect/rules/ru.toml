@@ -351,14 +351,85 @@ trim = [
 
 # Two initials beside a surname belong to the name: the model's "Ветлин" in
 # "Ветлин Н. О." grows to the whole of it, as "Брюн" does in "Л.И. Брюн"
-# (guide rule 1, #391). Only spaces between: never across a sentence's
-# period ("Ветлин. Н. Иванов"), a comma or a line.
+# (the next entry but one; guide rule 1, #391). Only spaces between: never
+# across a sentence's period ("Ветлин. Н. Иванов"), a comma or a line. A
+# court order's operative verb is no surname (`unless_over`): the model's
+# «Е. Р.» in «Выдать Е. Р. копию» stays as it is. The verbs are the next
+# entry's, and `OPERATIVE_VERBS` in rules/person_forms.rs, lowercase.
 [[span]]
 category = "PERSON"
 extend = [
     '\b(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*[ \t]+[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.',
-    '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
 ]
+unless_over = [
+    "обязать", "взыскать", "признать", "отказать", "возложить", "запретить",
+    "освободить", "назначить", "вернуть", "возвратить", "выдать", "выплатить",
+    "возместить", "оплатить", "перечислить", "погасить", "компенсировать",
+    "предоставить", "передать", "восстановить", "прекратить", "приостановить",
+    "возобновить", "расторгнуть", "отменить", "изменить", "удовлетворить",
+    "оставить", "отклонить", "направить", "привлечь", "наложить", "выселить",
+    "вселить", "истребовать", "изъять", "конфисковать", "лишить", "ограничить",
+    "отстранить", "утвердить", "включить", "исключить", "зачесть", "уменьшить",
+    "снизить", "обратить", "разъяснить", "установить", "объявить", "допросить",
+    "вызвать", "уведомить", "предупредить", "разрешить", "определить", "снять",
+    "продлить", "отсрочить", "рассрочить", "произвести", "обеспечить",
+    "поручить", "применить", "избрать", "поместить", "зарегистрировать",
+    "аннулировать", "разделить", "выделить", "присудить", "принять", "устранить",
+]
+
+# A word glued before initials is no part of the name: the model's
+# «Обязать Е. Р.» and «к Е. Р.» are «Е. Р.» (guide rule 1, #793): a
+# lowercase word (a preposition, a verb mid-sentence) or a capitalised
+# infinitive that opens a court order's operative part («Обязать»,
+# «Взыскать», «Признать» …, listed below). Only those verbs, never any
+# capitalised word in -ть: a surname may end so too («Свидетель Локоть
+# Е. Р.», «Локоть Е. Р. подписал»), and a surname-first name keeps it. A
+# listed verb opens its sentence or line; no surname is spelled so. A
+# surname's particle is lowercase too, but stands before a surname («де
+# Лаваль»), never before initials. The model's organization of such words
+# and Cyrillic initials is the person's initials (`person_forms` in
+# rules/, the same verbs). After the join above, which reads any other
+# capitalised word as a surname, and before the one below, so the
+# initials left grow to a surname after them («Е. Р. Тулину»).
+[[span]]
+category = "PERSON"
+trim_start = [
+    '(?:(?:\p{Ll}+|(?:Обязать|Взыскать|Признать|Отказать|Возложить|Запретить|Освободить|Назначить|Вернуть|Возвратить|Выдать|Выплатить|Возместить|Оплатить|Перечислить|Погасить|Компенсировать|Предоставить|Передать|Восстановить|Прекратить|Приостановить|Возобновить|Расторгнуть|Отменить|Изменить|Удовлетворить|Оставить|Отклонить|Направить|Привлечь|Наложить|Выселить|Вселить|Истребовать|Изъять|Конфисковать|Лишить|Ограничить|Отстранить|Утвердить|Включить|Исключить|Зачесть|Уменьшить|Снизить|Обратить|Разъяснить|Установить|Объявить|Допросить|Вызвать|Уведомить|Предупредить|Разрешить|Определить|Снять|Продлить|Отсрочить|Рассрочить|Произвести|Обеспечить|Поручить|Применить|Избрать|Поместить|Зарегистрировать|Аннулировать|Разделить|Выделить|Присудить|Принять|Устранить))[\p{Zs}\t]+)+(?P<rest>\p{Lu}\.[\p{Zs}\t]?\p{Lu}\.)',
+]
+
+# Two initials before a surname belong to the name, as above: the model's
+# "Брюн" in "Л.И. Брюн" grows to the whole of it (#391). Initials glued to
+# the surname are the name too: the model's «Т.Т.» in «Т.Т.Колобова» grows
+# to the whole of it (#503).
+[[span]]
+category = "PERSON"
+extend = [
+    '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]*(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
+]
+
+# A double surname with two initials after it is a person's name, whatever
+# the model made of it: «Ростов-Кедров Т.Т.», «Ростов-Кедровой Т. Т.»
+# (guide rule 1, #503). Two capitalised parts joined by a hyphen, then the
+# initials with their periods. Only a gap: where a name span overlaps the
+# match it is not proposed (`gaps_only`), so the model's own span stays. A
+# hyphenated place before initials is no surname («Санкт-Петербург Т.Т.»,
+# «Улан-Удэ», «Нью-Йорк»): skipped.
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>(?m:^)|[^\p{Alphabetic}\-])[А-ЯЁ][а-яё]+-[А-ЯЁ][а-яё]+[\p{Zs}\t]+[А-ЯЁ]\.[\p{Zs}\t]?[А-ЯЁ]\.(?P<tail>[^\p{Alphabetic}]|$)'
+skip = '(?:Санкт|Улан|Йошкар|Ханты|Нарьян|Горно|Усть|Алма|Буэнос|Нью|Лос|Сан|Санта|Рио|Пуэрто|Коста|Шри|Абу|Тель|Эль)-'
+gaps_only = true
+
+# Initials and a surname after a court officer's or a party's role are a
+# person's name, whatever the model made of it: «судья Л. Н. Кедрин»,
+# «секретарём Л.Н. Кедриной» (guide rule 1, #503). The role, in its case
+# forms and any letter case, stays outside (`lead`); the initials keep
+# their periods, with spaces or none between them and the surname. Only a
+# gap (`gaps_only`), as above.
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>\b(?i:судь(?:я|и|е|ю|ей|ёй|ею)|секретар(?:ь|я|ю|ём|ем|е)|помощник(?:а|у|ом|е)?|прокурор(?:а|у|ом|е)?|следовател(?:ь|я|ю|ем|е)|дознавател(?:ь|я|ю|ем|е)|адвокат(?:а|у|ом|е)?|защитник(?:а|у|ом|е)?|эксперт(?:а|у|ом|е)?|свидетел(?:ь|я|ю|ем|е)|нотариус(?:а|у|ом|е)?|истц(?:а|у|ом|е)|истец|ответчик(?:а|у|ом|е)?)[\p{Zs}\t]+)[А-ЯЁ]\.[\p{Zs}\t]?[А-ЯЁ]\.[\p{Zs}\t]*[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?P<tail>[^\p{Alphabetic}]|$)'
+gaps_only = true
 
 # A surname-first name is one span, comma included: the model's "Иванов"
 # in "Иванов, И. И., 1999" grows to "Иванов, И. И.", and its "Иванов" and

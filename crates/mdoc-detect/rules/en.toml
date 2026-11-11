@@ -90,13 +90,14 @@ trim = [
 # letters at a line start or list break are no initials (#546). A Lord
 # Justice's "LJ" ("LJJ" for several) is a judge's post-nominal, not part
 # of the name: "per Ivo Ostrand LJ" is "Ivo Ostrand" (#499). "J" alone
-# stays, since it may be an initial.
+# stays, since it may be an initial. A doctor's dotted "M.D." and "Ph.D."
+# come off too: "Darren Holt, Ph.D." is "Darren Holt" (#503).
 [[span]]
 category = "PERSON"
 trim = [
     "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
     "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau", "monsieur",
-    "kc", "qc", "esq", "phd", "lj", "ljj",
+    "kc", "qc", "esq", "phd", "lj", "ljj", "m.d", "ph.d",
 ]
 list_letter = true
 
@@ -118,11 +119,13 @@ list_letter = true
 # ("Earl", "Dean", "Duke", "Baron", "Prince", "Gen"), and "Sen" (a
 # surname) counts only with its period. "Hon" only with its period: "Hon
 # Wai Keung" is a surname first; "HHJ", "DJ" and "DDJ" only in capitals.
-# Not `trim` words: those also mark a titled surname.
+# A pleading's line number of one or two digits may follow a title, and
+# goes with it: "former President 21 Quillfeather" is "Quillfeather"
+# (#503). Not `trim` words: those also mark a titled surname.
 [[span]]
 category = "PERSON"
 trim_start = [
-    '(?:(?i:the)[ \t]+)?(?:(?:(?i:late|former|then|acting|deputy|assistant|associate|chief|senior|vice|lord|lady|mr|mrs|ms|miss|mx|dr|sir|dame|dear|honourable|honorable|(?:his|her)[ \t]+hono(?:u)?r|employment|district|circuit|county|high|regional|presiding|retired|immigration|defendants?|plaintiffs?|claimant|respondent|petitioner|appellant|appellee|complainant|intervenor|movant|witness|decedent|officer|ofc|dep|sheriff|undersheriff|sergeant|sgt|lieutenant|lt|captain|capt|colonel|col|major|maj|corporal|cpl|private|pvt|admiral|commander|cmdr|detective|det|trooper|tpr|constable|inspector|insp|superintendent|supt|agent|marshal|warden|investigator|attorney|senator|sen\.|representative|rep|congressman|congresswoman|assemblyman|assemblywoman|governor|gov|mayor|president|councillor|councilor|councilman|councilwoman|commissioner|secretary|ambassador|minister|chancellor|speaker|alderman|judge|justice|magistrate|master|recorder|registrar|referee|coroner|bailiff|trustee|examiner|viscount|viscountess|marquess|baroness)\.?|HHJ|DJ|DDJ|Hon\.|HON\.)[ \t]+)+(?P<rest>(?:(?:(?:\p{Lu}[\x27’])?\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+)(?:-\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+))*|\p{Lu}\.?)[ \t]+)*(?:\p{Lu}[\x27’])?\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+)(?:-\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+))*(?:[\x27’]s)?)\z',
+    '(?:(?i:the)[ \t]+)?(?:(?:(?i:late|former|then|acting|deputy|assistant|associate|chief|senior|vice|lord|lady|mr|mrs|ms|miss|mx|dr|sir|dame|dear|honourable|honorable|(?:his|her)[ \t]+hono(?:u)?r|employment|district|circuit|county|high|regional|presiding|retired|immigration|defendants?|plaintiffs?|claimant|respondent|petitioner|appellant|appellee|complainant|intervenor|movant|witness|decedent|officer|ofc|dep|sheriff|undersheriff|sergeant|sgt|lieutenant|lt|captain|capt|colonel|col|major|maj|corporal|cpl|private|pvt|admiral|commander|cmdr|detective|det|trooper|tpr|constable|inspector|insp|superintendent|supt|agent|marshal|warden|investigator|attorney|senator|sen\.|representative|rep|congressman|congresswoman|assemblyman|assemblywoman|governor|gov|mayor|president|councillor|councilor|councilman|councilwoman|commissioner|secretary|ambassador|minister|chancellor|speaker|alderman|judge|justice|magistrate|master|recorder|registrar|referee|coroner|bailiff|trustee|examiner|viscount|viscountess|marquess|baroness)\.?|HHJ|DJ|DDJ|Hon\.|HON\.)[ \t]+(?:\d{1,2}[ \t]+)?)+(?P<rest>(?:(?:(?:\p{Lu}[\x27’])?\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+)(?:-\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+))*|\p{Lu}\.?)[ \t]+)*(?:\p{Lu}[\x27’])?\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+)(?:-\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+))*(?:[\x27’]s)?)\z',
 ]
 
 # The head noun of a team's or a body's name is no one alone: the model's
@@ -387,6 +390,80 @@ trim_end = [
 [[span]]
 category = "ORG"
 person_after = ["estate of"]
+
+# A person's other name forms the model proposed as an organization are
+# the person (guide rule 1, #503; `person_forms` in rules/): a surname a
+# person span gives ("Ostrander confirmed" beside "Talwen Ostrander", in
+# any letter case), or one the document writes after a person's title
+# anywhere ("Senator Quillfeather"); a title and a name ("Dr. Pellow",
+# "HHJ Penrow", "Judge Marrow" are the name); and surnames listed after a
+# plural title, each its own span ("Senators Quillfeather, Brannock and
+# Ostley"). Never a company with a legal form or a body word ("Ostrander
+# Holdings Ltd", "Ostrander Foundation"), nor a surname such a company of
+# the document holds (its short name, #506 item 10).
+# `person_titles` are titles only a person holds, besides the courtesy
+# titles and post-nominals above (`trim`). "Sen" counts only with its
+# period, as in the title chain above.
+# `person_lists` are plural titles or a list's heading word before
+# surnames ("Signatories: Quillfeather, Brannock").
+# `person_nouns` are words after a name that are no part of it: a
+# person's span loses one ("the Ostrander campaign", "Ostrander Lab",
+# "Ashby Kestrel Site" are "Ostrander" and "Ashby Kestrel"), and a model
+# organization of a name and one is the person where the document names
+# the person so ("the Pellow family", a researcher's "Pellow laboratory").
+# A company's own name with a legal form stays ("Kestrel Labs Inc"), and a
+# prize, an act or a programme is no noun here ("Pellow Prize").
+[[span]]
+category = "PERSON"
+person_titles = [
+    "senator", "sen.", "congressman", "congresswoman", "representative", "rep.",
+    "assemblyman", "assemblywoman", "governor", "gov.", "mayor", "president",
+    "secretary", "chairman", "chairwoman", "councillor", "councilor",
+    "councilman", "councilwoman", "commissioner", "ambassador", "minister",
+    "chancellor", "speaker", "alderman", "judge", "justice", "magistrate", "hhj",
+    "detective", "sergeant", "sgt.", "lieutenant", "captain", "colonel",
+    "officer", "sheriff", "deputy", "inspector", "constable",
+]
+person_lists = [
+    "senators", "sens.", "congressmen", "congresswomen", "representatives",
+    "reps.", "assemblymen", "assemblywomen", "governors", "mayors",
+    "councillors", "councilors", "councilmen", "commissioners", "judges",
+    "justices", "magistrates", "messrs", "drs", "doctors",
+    "professors", "profs.", "detectives", "officers", "deputies",
+    "signatories", "witnesses",
+]
+person_nouns = [
+    "family", "families", "household", "campaign", "administration", "laptop",
+    "laboratory", "lab", "site",
+]
+
+# A capitalised given name right before a surname in an all-capitals
+# caption belongs to the name: the model's "ODEGAARD" in "PLAINTIFF SIGNE
+# ODEGAARD" or "SIGNE ODEGAARD, Defendant" grows to "SIGNE ODEGAARD"
+# (guide rule 1, #503). The `lead`, outside the span, marks a caption's
+# position: a caption's party word, "and", "&", "v." or a comma, or a
+# line's start (list, quote and table marks allowed); a party word at a
+# line's start is the lead, not a given name. A role or title there
+# is a `never` word and never comes in ("PLAINTIFF ODEGAARD"), nor is an
+# `unless_over` word: a role modifier, a title, a connector, a heading or
+# a place's word ("DEPUTY ODEGAARD", "STATE ODEGAARD"). Never over a
+# company or another category's span (in code).
+[[span]]
+category = "PERSON"
+extend = [
+    '(?P<lead>(?:(?m:^)[ \t>*_#|-]*)?\b(?:PLAINTIFFS?|DEFENDANTS?|PETITIONERS?|RESPONDENTS?|APPELLANTS?|APPELLEES?|CLAIMANTS?|INTERVENORS?|MOVANTS?|AND|and|V\.?|VS\.?|v\.|vs\.)[ \t]+|(?m:^)[ \t>*_#|-]*|&[ \t]+|,[ \t]+)[A-Z][A-Z\x27’]+(?:-[A-Z][A-Z\x27’]+)?[ \t]+[A-Z][A-Z\x27’]+(?:-[A-Z][A-Z\x27’]+)?\b',
+]
+unless_over = [
+    "deputy", "officer", "detective", "sergeant", "sgt", "lieutenant", "captain",
+    "agent", "trooper", "inspector", "judge", "justice", "magistrate", "senator",
+    "governor", "mayor", "president", "secretary", "chief", "acting", "former",
+    "late", "honorable", "honourable", "hon", "the", "of", "and", "to", "by",
+    "for", "in", "re", "on", "at", "from", "with", "estate", "minor", "child",
+    "exhibit", "schedule", "case", "court", "county", "district", "superior",
+    "state", "states", "united", "people", "commonwealth", "city", "town",
+    "counsel", "attorney", "attorneys", "esq", "doe", "roe", "does", "roes",
+    "dear", "mr", "mrs", "ms", "miss", "dr", "sir", "dame", "lord", "lady",
+]
 
 # An organization ends with its legal form, not the sentence's period or
 # comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal

@@ -7,6 +7,7 @@ mod fixes;
 mod load;
 mod ocr;
 mod people;
+mod person_forms;
 mod public;
 mod references;
 mod shapes;

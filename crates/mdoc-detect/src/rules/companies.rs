@@ -7,6 +7,17 @@ use super::{Pack, Span};
 use mdoc_pii::{Category, Detection, Recognizer};
 use regex::Regex;
 
+/// The two-letter codes of the US states, the District of Columbia and
+/// Puerto Rico, as an address writes them after a town and a comma
+/// ("Pellam, CO 80501"). Some read as a legal form ("CO" as "Co", "PA",
+/// "NV"); written so, without a period, after a comma they are an address.
+const US_STATES: [&str; 52] = [
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
+    "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+    "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+    "WI", "WY", "DC", "PR",
+];
+
 /// Generic business words, lowercase: after one other word in a company's
 /// name they make that word its short name ("Pellam" of "Pellam Bank",
 /// "Quillon" of "Quillon Freight Corp"; #548). Not "Motor", "Controls" or
@@ -689,6 +700,28 @@ impl Pack {
                 return false;
             }
             let after = &source[found.end()..];
+            // A comma may stand before the legal form, as is conventional
+            // ("Pellam and Quenby, LLP", ", Inc.", ", Co."): only the form
+            // right after it, on the same line. An address is no company:
+            // a US state's code after a town's comma ("Pellam, CO 80501":
+            // "CO" is no "Co", also in brackets) and a form with a ZIP or
+            // postcode right after it. A form with its own comma may have
+            // the firm's address after it ("…, LLP, 18 Alder Road").
+            if let Some(rest) = after.strip_prefix(',') {
+                let line = rest.split('\n').next().unwrap_or_default();
+                let mut words = line.split_whitespace();
+                let Some(word) = words.next() else {
+                    return false;
+                };
+                let bare = word.trim_end_matches([',', ';', ')', '»', '”', '"']);
+                let form = bare.trim_end_matches('.');
+                let state = form == bare && US_STATES.contains(&form);
+                let postcode = bare == word
+                    && words
+                        .next()
+                        .is_some_and(|next| next.starts_with(|c: char| c.is_ascii_digit()));
+                return !state && !postcode && self.legal_form(form);
+            }
             if !after.starts_with(char::is_whitespace) {
                 return false;
             }
