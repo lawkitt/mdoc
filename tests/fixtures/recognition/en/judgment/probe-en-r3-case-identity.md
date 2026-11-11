@@ -1,10 +1,13 @@
 ---
-status: pass
+status: known-flaw
 flaw: case-number
 issue: 364
 kind: judgment
 source: probe-r3
 # SPDX-License-Identifier: CC0-1.0
+expect: false hit: ORG "Boeing" ×2
+expect: false hit: ORG "Airbus A321"
+expect: false hit: ORG "NYSCEF" ×2
 ---
 # Judgment
 

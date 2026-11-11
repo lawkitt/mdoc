@@ -1119,8 +1119,14 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .filter_map(|found| {
             let mut detection = found.detection;
             detection.range = view.source_range(detection.range);
-            // One only over an inserted table header names nothing.
-            (!detection.range.is_empty()).then(|| {
+            // One only over an inserted table header names nothing, and a
+            // case number inside a precedent's citation is part of it, as
+            // for the `context` rules below (#506 item 3).
+            let cited = detection.category == Category::CaseNumber
+                && precedents.iter().any(|case| {
+                    case.start <= detection.range.start && detection.range.end <= case.end
+                });
+            (!detection.range.is_empty() && !cited).then(|| {
                 (
                     detection,
                     found.whole.map(|whole| view.source_range(whole)),

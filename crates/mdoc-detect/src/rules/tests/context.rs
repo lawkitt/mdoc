@@ -1790,6 +1790,19 @@ fn english_case_labels_leave_citations_forms_and_bare_t_numbers() {
         "The hearing is in No. 4 Court on the second floor.",
         "an indictment of 12 counts and indictment T12",
         "Index Number of prices 2031",
+        // A precedent's Crown Court in prose is no heading of the
+        // document's own court (#506 item 3).
+        "The court followed R v Quill (Crown Court [T20319907]).",
+        "The court followed R v Quill, Crown Court at Branwick [T20319907], in 2030.",
+        "As in the Crown Court at Branwick
+[T20319907] the judge said.",
+        "See Quill v Harrow,
+Crown Court at Branwick [T20319907]
+",
+        "Grant v. Finecy,
+Crown Court
+[T20319907]
+",
     ] {
         assert!(
             proposed(source).is_empty(),
@@ -1859,6 +1872,9 @@ fn officer_notary_and_aircraft_numbers_are_identity() {
         ),
         ("EQUIPMENT: Airbus A320, N9973Q", "N9973Q"),
         ("the aircraft's tail number N9974Q", "N9974Q"),
+        ("a jet with registration mark 9H-ZQX was leased", "9H-ZQX"),
+        ("EQUIPMENT: Airbus A320, 9H-ZQY", "9H-ZQY"),
+        ("a Boeing 737-800 (4X-ZQZ) landed", "4X-ZQZ"),
     ] {
         assert_eq!(proposed(source), pairs(&[(value, "IDENTITY")]), "{source}");
     }
@@ -1867,6 +1883,9 @@ fn officer_notary_and_aircraft_numbers_are_identity() {
         "The A320 and the Boeing 737 MAX were grounded.",
         "State No. 12345 of the survey; notary fees apply.",
         "The officer asked for ID 1234 times.",
+        "An Airbus A320-200 seats rows 9-12 in business.",
+        "registration mark A320-200 and registration number 9-12",
+        "a Boeing 737-800, 9-12 seats free",
     ] {
         assert!(
             proposed(source).is_empty(),

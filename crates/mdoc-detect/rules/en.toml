@@ -1734,12 +1734,19 @@ min_digits = 4
 # Court's name at a judgment's head (part of #364): "IN THE CROWN COURT AT
 # BRANWICK", then "[T20319981 T20319984 & T20319985]", each number a CASE
 # span of its own, the brackets and the "&", "and" or comma between them
-# outside. The court's name may end the line above or open the
-# bracket's own; a bracket of T-numbers with no Crown Court before it
-# stays unmarked.
+# outside. Only the document's own court heading counts: a line that is
+# the court's name alone, "In the", "On appeal from the" or "The" before
+# it and "at" or "sitting at" and a place after it (Markdown marks around
+# it), then the bracket alone on the next line (a blank line between or
+# not) or ending the heading's own line. "Crown Court" in prose ("R v
+# Quill (Crown Court [T20319907])", a precedent's, #506 item 3) and a
+# bracket of T-numbers with no such heading stay unmarked, and so does a
+# heading-like line under one ending in a comma, a wrapped citation
+# ("Quill v Harrow,", then "Crown Court at Branwick [T20319907]"); a match
+# inside a precedent's citation goes too (code).
 [[span]]
 category = "CASE"
-pattern = '(?m)(?P<lead>(?i:\bcrown[\p{Zs}\t]+court\b)[^\n\[]*(?:\r?\n(?:[\p{Zs}\t]*\r?\n)?[\p{Zs}\t>*_#]*)?\[[\p{Zs}\t]*)(?:{number}(?:{between}{number})*)(?P<tail>[\p{Zs}\t]*\])'
+pattern = '(?m)(?P<lead>(?:\A|(?:^|[^,\s])[\p{Zs}\t]*\r?\n)[\p{Zs}\t>*_#]*(?i:(?:in|on[\p{Zs}\t]+appeal[\p{Zs}\t]+from)[\p{Zs}\t]+)?(?i:the[\p{Zs}\t]+)?(?i:crown[\p{Zs}\t]+court)(?:[\p{Zs}\t]+(?i:at|sitting[\p{Zs}\t]+at)[\p{Zs}\t]+[^\n\[\]()]{1,60}?)?[\p{Zs}\t*_]*(?:\r?\n(?:[\p{Zs}\t]*\r?\n)?[\p{Zs}\t>*_]*)?\[[\p{Zs}\t]*)(?:{number}(?:{between}{number})*)(?P<tail>[\p{Zs}\t]*\][\p{Zs}\t*_]*\r?$)'
 parts.number = 'T(?:19|20)\d{4,6}'
 parts.between = '[\p{Zs}\t]*(?:[,;&]|\band\b)[\p{Zs}\t]*|[\p{Zs}\t]+'
 split = '[\p{Zs}\t]*(?:[,;&]|\band\b)[\p{Zs}\t]*|[\p{Zs}\t]+'
@@ -1905,8 +1912,12 @@ pattern = '(?P<lead>(?i:\bnotary\b)[^\n]{0,80}?(?:\r?\n(?:[\p{Zs}\t]*\r?\n)?[^\n
 # owner's asset, IDENTITY, the value only, like a cadastral number (guide
 # rule 6; part of #483): a US "N" number or a hyphenated ICAO mark after
 # its label ("registration number N9971Q", "tail number N9971Q",
-# "registration mark G-ZQXY"). A company's or a vehicle's registration
-# number has another shape and is left to the model.
+# "registration mark G-ZQXY"). An ICAO mark's nationality prefix is one or
+# two letters, or a digit and a letter either way round ("9H-ZQX",
+# "4X-ZQX", "C6-ZQX"), and letters only follow its hyphen, so a part
+# number or a range ("A320-200", "9-12") is none. A company's or a
+# vehicle's registration number has another shape and is left to the
+# model.
 [[context]]
 category = "IDENTITY"
 labels = [
@@ -1914,17 +1925,18 @@ labels = [
     "tail no",
 ]
 between = '[\p{Zs}\t:*_#.]{1,8}'
-value = 'N[1-9]\d{0,4}[A-HJ-NP-Z]{0,2}|[A-Z]{1,2}-[A-Z]{3,4}'
+value = 'N[1-9]\d{0,4}[A-HJ-NP-Z]{0,2}|(?:[A-Z]{1,2}|[2-9][A-Z]|[A-Z][2-9])-[A-Z]{3,4}'
 
 # The same mark right after the aircraft's maker and type: "EQUIPMENT:
 # Airbus A320, N9971Q", "a Boeing 737-800 (N9971Q)", "a Cessna 172,
-# registration N9971Q". The maker and type stay outside, and alone
-# ("Boeing 737-800", "A320") they give nothing.
+# registration N9971Q", "Airbus A320, 9H-ZQX". A space, a comma or a
+# bracket parts the type from the mark. The maker and type stay outside,
+# and alone ("Boeing 737-800", "Airbus A320-200") they give nothing.
 [[span]]
 category = "IDENTITY"
-pattern = '(?P<lead>\b(?:{maker})[\p{Zs}\t]+[A-Z0-9][A-Za-z0-9-]*(?:[\p{Zs}\t]+[A-Z0-9][A-Za-z0-9-]*){0,2}[\p{Zs}\t]*[,(]?[\p{Zs}\t]*(?:(?i:registration|reg\.|tail)(?:[\p{Zs}\t]+(?i:number|no\.?|mark))?[\p{Zs}\t:#.]*)?)(?:{mark})\b'
+pattern = '(?P<lead>\b(?:{maker})[\p{Zs}\t]+[A-Z0-9][A-Za-z0-9-]*(?:[\p{Zs}\t]+[A-Z0-9][A-Za-z0-9-]*){0,2}(?:[\p{Zs}\t]+|[\p{Zs}\t]*[,(][\p{Zs}\t]*)(?:(?i:registration|reg\.|tail)(?:[\p{Zs}\t]+(?i:number|no\.?|mark))?[\p{Zs}\t:#.]*)?)\b(?:{mark})\b'
 parts.maker = 'Boeing|BOEING|Airbus|AIRBUS|Embraer|EMBRAER|Bombardier|BOMBARDIER|Cessna|CESSNA|Gulfstream|GULFSTREAM|Learjet|LEARJET|Beechcraft|BEECHCRAFT|Dassault|DASSAULT|Pilatus|PILATUS|Cirrus|CIRRUS|Sikorsky|SIKORSKY|ATR'
-parts.mark = 'N[1-9]\d{0,4}[A-HJ-NP-Z]{0,2}|[A-Z]{1,2}-[A-Z]{3,4}'
+parts.mark = 'N[1-9]\d{0,4}[A-HJ-NP-Z]{0,2}|(?:[A-Z]{1,2}|[2-9][A-Z]|[A-Z][2-9])-[A-Z]{3,4}'
 
 # Addresses (ADR 0092, issues #361, #498): from the first element, a
 # building name included, to the postcode or town: "Flat 3, 41 Larch Road,
