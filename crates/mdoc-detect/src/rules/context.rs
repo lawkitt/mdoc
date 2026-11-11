@@ -90,8 +90,12 @@ impl Pack {
                             .next()
                             .is_none_or(|c| "\r\n.,;:)]»\"'”’".contains(c));
                     let start = found.get(0)?.start();
+                    // The word before the label, past spaces and inline
+                    // markup closing it ("**исполнительное** производство",
+                    // "_in_ case"): emphasis, strike-through, code and an
+                    // escape's backslash.
                     let before = source[..start]
-                        .trim_end()
+                        .trim_end_matches(|c: char| c.is_whitespace() || "*_~`\\".contains(c))
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()
