@@ -1740,13 +1740,17 @@ min_digits = 4
 # it), then the bracket alone on the next line (a blank line between or
 # not) or ending the heading's own line. "Crown Court" in prose ("R v
 # Quill (Crown Court [T20319907])", a precedent's, #506 item 3) and a
-# bracket of T-numbers with no such heading stay unmarked, and so does a
-# heading-like line under one ending in a comma, a wrapped citation
-# ("Quill v Harrow,", then "Crown Court at Branwick [T20319907]"); a match
-# inside a precedent's citation goes too (code).
+# bracket of T-numbers with no such heading stay unmarked. The heading
+# opens the text or follows a blank line or another heading's line: one
+# with no lowercase letter ("IN THE COURT OF APPEAL (CRIMINAL DIVISION)")
+# or one opening with "In the Court", "Neutral Citation", "Case No" or
+# "Royal Courts". Under any other line it is a wrapped citation ("See R v
+# Quill", "R v Quill and Another", "Quill v Harrow,", then "Crown Court at
+# Branwick [T20319907]") and stays unmarked; a match inside a precedent's
+# citation goes too (code).
 [[span]]
 category = "CASE"
-pattern = '(?m)(?P<lead>(?:\A|(?:^|[^,\s])[\p{Zs}\t]*\r?\n)[\p{Zs}\t>*_#]*(?i:(?:in|on[\p{Zs}\t]+appeal[\p{Zs}\t]+from)[\p{Zs}\t]+)?(?i:the[\p{Zs}\t]+)?(?i:crown[\p{Zs}\t]+court)(?:[\p{Zs}\t]+(?i:at|sitting[\p{Zs}\t]+at)[\p{Zs}\t]+[^\n\[\]()]{1,60}?)?[\p{Zs}\t*_]*(?:\r?\n(?:[\p{Zs}\t]*\r?\n)?[\p{Zs}\t>*_]*)?\[[\p{Zs}\t]*)(?:{number}(?:{between}{number})*)(?P<tail>[\p{Zs}\t]*\][\p{Zs}\t*_]*\r?$)'
+pattern = '(?m)(?P<lead>(?:\A|^(?:[^\n\p{Ll}]*|[\p{Zs}\t>*_#]*(?i:in[\p{Zs}\t]+the[\p{Zs}\t]+court|neutral[\p{Zs}\t]+citation|case[\p{Zs}\t]+no|royal[\p{Zs}\t]+courts)[^\n]*)\r?\n)[\p{Zs}\t>*_#]*(?i:(?:in|on[\p{Zs}\t]+appeal[\p{Zs}\t]+from)[\p{Zs}\t]+)?(?i:the[\p{Zs}\t]+)?(?i:crown[\p{Zs}\t]+court)(?:[\p{Zs}\t]+(?i:at|sitting[\p{Zs}\t]+at)[\p{Zs}\t]+[^\n\[\]()]{1,60}?)?[\p{Zs}\t*_]*(?:\r?\n(?:[\p{Zs}\t]*\r?\n)?[\p{Zs}\t>*_]*)?\[[\p{Zs}\t]*)(?:{number}(?:{between}{number})*)(?P<tail>[\p{Zs}\t]*\][\p{Zs}\t*_]*\r?$)'
 parts.number = 'T(?:19|20)\d{4,6}'
 parts.between = '[\p{Zs}\t]*(?:[,;&]|\band\b)[\p{Zs}\t]*|[\p{Zs}\t]+'
 split = '[\p{Zs}\t]*(?:[,;&]|\band\b)[\p{Zs}\t]*|[\p{Zs}\t]+'

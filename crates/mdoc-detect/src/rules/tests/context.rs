@@ -1758,6 +1758,14 @@ fn english_criminal_tribunal_and_glued_index_numbers_are_case_numbers() {
             "# IN THE CROWN COURT AT SLOCOMBE\n\n[T20319901, T20319902 and T20319903]",
             &["T20319901", "T20319902", "T20319903"],
         ),
+        (
+            "IN THE COURT OF APPEAL (CRIMINAL DIVISION)\nON APPEAL FROM THE CROWN COURT AT SLOCOMBE [T20319904]\n",
+            &["T20319904"],
+        ),
+        (
+            "Neutral Citation Number: [2031] EWCA Crim 999\nOn appeal from the Crown Court at Slocombe\n\n[T20319906 & T20319908]",
+            &["T20319906", "T20319908"],
+        ),
         ("Appeal reference: TC/2031/09992", &["TC/2031/09992"]),
         ("Case Number: TC 19992", &["TC 19992"]),
         (
@@ -1794,15 +1802,11 @@ fn english_case_labels_leave_citations_forms_and_bare_t_numbers() {
         // document's own court (#506 item 3).
         "The court followed R v Quill (Crown Court [T20319907]).",
         "The court followed R v Quill, Crown Court at Branwick [T20319907], in 2030.",
-        "As in the Crown Court at Branwick
-[T20319907] the judge said.",
-        "See Quill v Harrow,
-Crown Court at Branwick [T20319907]
-",
-        "Grant v. Finecy,
-Crown Court
-[T20319907]
-",
+        "As in the Crown Court at Branwick\n[T20319907] the judge said.",
+        "See Quill v Harrow,\nCrown Court at Branwick [T20319907]\n",
+        "Grant v. Finecy,\nCrown Court\n[T20319907]\n",
+        "See R v Quill\nCrown Court at Branwick [T20319907]",
+        "R v Quill and Another\nIn the Crown Court at Branwick\n[T20319907]",
     ] {
         assert!(
             proposed(source).is_empty(),
