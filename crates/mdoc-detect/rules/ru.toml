@@ -517,12 +517,15 @@ words = [
 # defines it: elsewhere a company or a person may share the word, and a term
 # with any coined or real word («Кедровое») defines none. As stems with up
 # to three letters of ending, including genitive plurals («Кредиторов»).
-# Other surname endings remain excluded, and a title or an initial keeps a
-# person's surname («г-н Кредиторов», «Кредиторов И. П.»; in code).
+# Other surname endings remain excluded; in a person's span "-ов" and "-ев"
+# are a surname's too (`person_not_endings`, #450: «Свидетель Подрядчиков»),
+# and a title or an initial keeps a person's surname («г-н Кредиторов»,
+# «Кредиторов И. П.»; in code).
 [[defined]]
 match = "stem"
 ending = 3
 not_endings = ["ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
+person_not_endings = ["ов", "ев"]
 words = [
     "положени", "учреждени", "предприяти", "соглашени", "договор", "контракт",
     "приложени", "регламент", "устав", "программ", "объект", "имуществ",
@@ -538,11 +541,13 @@ words = [
 # дальнейшем «Поставщик»», «(далее – Покупатель)», «Заказчику», «Арендатора»
 # (issue #390, run 4). They are `never` roles too, which drop them alone
 # unless a name in the document has the word; a definition drops them even
-# then. Same stems and endings as above.
+# then. Same endings as above, "-ов" and "-ев" a surname's in a person's
+# span.
 [[defined]]
 match = "stem"
 ending = 3
 not_endings = ["ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
+person_not_endings = ["ов", "ев"]
 words = [
     "поставщик", "покупател", "заказчик", "исполнител", "подрядчик",
     "арендатор", "арендодател",

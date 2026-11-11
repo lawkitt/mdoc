@@ -870,6 +870,11 @@ impl Pack {
         let precedents = self.cited_cases(view, detections);
         let abbreviations = self.unnamed_abbreviations(&view.text);
         let defined = self.defined_terms(&view.text);
+        let phrases = if defined.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            Self::defined_phrases(&view.text)
+        };
         let named = self.named_words(view, detections);
         // A name-part header establishes the cell's name even when the
         // spelling is also a role ("Trustee", "Должник"; #575), and so does
@@ -919,11 +924,17 @@ impl Pack {
                 // “Distributor”)" proposed as a person goes too, at the
                 // definition and at each mention, so it never seeds the
                 // review's repeats. A title keeps a surname ("Mr Seller"),
-                // and initials or a given name keep a name ("Ann Seller").
+                // and initials, a given name or a surname's ending keep a
+                // name ("Ann Seller", «Подрядчиков»).
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && !defined.is_empty()
                     && !(d.category == Category::Person && (titled || initialed(text)))
-                    && self.defined_generic(text, &defined))
+                    && self.defined_generic(
+                        text,
+                        &defined,
+                        &phrases,
+                        d.category == Category::Person,
+                    ))
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && abbreviations.contains(
                         text.trim_matches(|c: char| !c.is_alphanumeric())

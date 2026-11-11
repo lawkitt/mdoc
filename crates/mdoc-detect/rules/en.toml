@@ -602,6 +602,9 @@ words = [
 # run 4). Many are `never` roles too, which drop them alone unless a name
 # in the document has the word; a definition drops them even then, and
 # lets the term's other generic words go with them ("Disclosing Party").
+# "Company" ending a span after a word of its own is a company's name ("The
+# Venue Company"), as "Corporation" and "Group" are, unless the document
+# defines that very term (in code).
 [[defined]]
 match = "plural"
 words = [

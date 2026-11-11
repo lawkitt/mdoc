@@ -638,7 +638,15 @@ fn pack_regexes<'p>(pack: &'p Pack) -> Vec<(String, &'p Regex)> {
             named(format!("never #{index}"), regex);
         }
     }
-    for (index, Defined { list, document: _ }) in defined.iter().enumerate() {
+    for (
+        index,
+        Defined {
+            list,
+            document: _,
+            person_not_endings: _,
+        },
+    ) in defined.iter().enumerate()
+    {
         for regex in never_patterns(list) {
             named(format!("defined #{index}"), regex);
         }

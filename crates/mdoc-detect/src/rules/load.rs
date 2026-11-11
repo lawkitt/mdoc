@@ -155,6 +155,11 @@ struct DefinedEntry {
     /// of the stem.
     #[serde(default)]
     not_endings: Vec<String>,
+    /// For `stem`: endings that never count in a person's span, where they
+    /// make a surname of the stem («Подрядчиков», «Агентов»), though they
+    /// count in an organization's span (a genitive plural, «Кредиторов»).
+    #[serde(default)]
+    person_not_endings: Vec<String>,
     /// Names of filings and contract documents ("Statement", "Motion"): a
     /// long form of generic words with one among them has an abbreviation
     /// that names no one ("Def.'s Statement of Material Facts (“DSMF”)").
@@ -719,7 +724,9 @@ impl Pack {
                     (_, Some(_)) => return Err(at("only a stem takes an ending".into())),
                     (_, None) => 0,
                 };
-                if entry.form != Form::Stem && !entry.not_endings.is_empty() {
+                if entry.form != Form::Stem
+                    && !(entry.not_endings.is_empty() && entry.person_not_endings.is_empty())
+                {
                     return Err(at("only a stem takes not_endings".into()));
                 }
                 if entry.words.is_empty() {
@@ -754,6 +761,7 @@ impl Pack {
                         unless_last_named: false,
                     },
                     document: entry.document,
+                    person_not_endings: entry.person_not_endings,
                 });
             }
             for (index, entry) in file.shape.into_iter().enumerate() {

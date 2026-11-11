@@ -740,7 +740,7 @@ fn defined_party_noun_guards_keep_names() {
     // named person's surname as it always does.)
     assert_eq!(
         fixed_every(
-            "Quillon Freight LLC (the “Seller”) sells to Ann Seller. Mr Seller              and J. Seller agree; the Seller delivers.",
+            "Quillon Freight LLC (the “Seller”) sells to Ann Seller. Mr Seller and J. Seller agree; the Seller delivers.",
             &[
                 ("Ann Seller", Category::Person),
                 ("J. Seller", Category::Person),
@@ -751,7 +751,7 @@ fn defined_party_noun_guards_keep_names() {
     );
     assert_eq!(
         fixed_every(
-            "Банки (далее — «Поставщики»). Поставщиков И. П. и г-н Поставщиков              согласны; Поставщики платят.",
+            "Банки (далее — «Поставщики»). Поставщиков И. П. и г-н Поставщиков согласны; Поставщики платят.",
             &[
                 ("Поставщиков И. П.", Category::Person),
                 ("Поставщиков", Category::Person),
@@ -759,6 +759,70 @@ fn defined_party_noun_guards_keep_names() {
             ]
         ),
         ["Поставщиков И. П.", "Поставщиков"]
+    );
+    // A surname on a party's stem stays a person: "-ов" and "-ев" make
+    // one in a person's span (#450), though «Кредиторов» counts in an
+    // organization's.
+    for (source, surname) in [
+        (
+            "ООО «Бор» (далее – «Подрядчик»). Свидетель Подрядчиков пояснил.",
+            "Подрядчиков",
+        ),
+        (
+            "ООО «Бор» (далее – «Заказчик»). Свидетель Заказчиков пояснил.",
+            "Заказчиков",
+        ),
+        (
+            "ООО «Бор» (далее – «Покупатель»). Свидетель Покупателев пояснил.",
+            "Покупателев",
+        ),
+        (
+            "Банки (далее – «Кредиторы»). Свидетель Кредиторов пояснил.",
+            "Кредиторов",
+        ),
+        (
+            "ООО «Бор» (далее – «Агент»). Свидетель Агентов пояснил.",
+            "Агентов",
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(surname, "person")]),
+            pairs(&[(surname, "PERSON")]),
+            "{source}"
+        );
+    }
+    // A company word after a word of its own ends a company's name, though
+    // the document defines both words; a term it defines whole goes.
+    let source = concat!(
+        "Brackwater Hall (the “Venue”) and Acme Ltd (the “Company”) hire The ",
+        "Venue Company. Pellow LLC (the “Supplier”) and Orrin LLC (the ",
+        "“Principal”) join the Supplier Group and the Principal Group. Tarn ",
+        "LLC (the “Sponsor Group”) pays; the Sponsor Group and the Company agree.",
+    );
+    assert_eq!(
+        shown_at(
+            source,
+            &[
+                ("Acme Ltd", 0, "organization"),
+                ("The Venue Company", 0, "organization"),
+                ("Pellow LLC", 0, "organization"),
+                ("Orrin LLC", 0, "organization"),
+                ("Supplier Group", 0, "organization"),
+                ("Principal Group", 0, "organization"),
+                ("Tarn LLC", 0, "organization"),
+                ("Sponsor Group", 1, "organization"),
+                ("Company", 2, "organization"),
+            ]
+        ),
+        pairs(&[
+            ("Acme Ltd", "ORG"),
+            ("The Venue Company", "ORG"),
+            ("Pellow LLC", "ORG"),
+            ("Orrin LLC", "ORG"),
+            ("Supplier Group", "ORG"),
+            ("Principal Group", "ORG"),
+            ("Tarn LLC", "ORG"),
+        ])
     );
     // A coined or real word in the term defines nothing: the person and
     // the company keep their short names.
