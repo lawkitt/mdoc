@@ -459,19 +459,49 @@ impl Pack {
         found
     }
 
-    /// Whether `text`, an organization span, is wholly generic words, one
-    /// of them a term the document `defined` (#390): "Distributor",
-    /// "the Sponsor’s", "RESELLER AGREEMENT", «Положение». A word that is
-    /// not generic, a legal form included, makes it a name.
+    /// The terms `text` defines, as their lowercase words ("sponsor
+    /// group" of "(the “Sponsor Group”)").
+    pub(super) fn defined_phrases(text: &str) -> std::collections::HashSet<Vec<String>> {
+        definitions(text)
+            .iter()
+            .map(|definition| plain_words(definition.term))
+            .collect()
+    }
+
+    /// Whether `text`, an organization or person span, is wholly generic
+    /// words, one of them a term the document `defined` (#390):
+    /// "Distributor", "the Sponsor’s", "RESELLER AGREEMENT", «Положение».
+    /// A word that is not generic, a legal form included, makes it a name.
+    /// So does a spelled-out legal form that ends it right after a word
+    /// other than a joiner ("The Venue Company", "Purchaser Corporation"),
+    /// unless the document defines that very term (`phrases`); "Group" is
+    /// no legal form, so a defined party's group goes ("the Purchaser
+    /// Group"), and so do joined parties ("Seller and the Company"). In a
+    /// `person`'s span a stem's surname ending makes a name too
+    /// («Подрядчиков», #450).
     pub(super) fn defined_generic(
         &self,
         text: &str,
         defined: &std::collections::HashSet<(usize, usize)>,
+        phrases: &std::collections::HashSet<Vec<String>>,
+        person: bool,
     ) -> bool {
         let mut known = false;
         let words = plain_words(text);
+        let named = words
+            .iter()
+            .position(|word| !JOINERS.contains(&word.as_str()));
+        if let (Some(first), [.., before, last]) = (named, words.as_slice())
+            && words.len() - first > 1
+            && !JOINERS.contains(&before.as_str())
+            && SPELLED_FORMS.contains(&last.as_str())
+            && !phrases.contains(&words[first..].to_vec())
+        {
+            return false;
+        }
         !words.is_empty()
             && words.iter().all(|word| match self.defined_word(word) {
+                Some((entry, at)) if person && self.person_surname(word, entry, at) => false,
                 Some(at) if defined.contains(&at) => {
                     known = true;
                     true
@@ -483,6 +513,15 @@ impl Pack {
                 None => self.generic_anywhere(word),
             })
             && known
+    }
+
+    /// Whether lowercase `word`, the `at`th word of `defined` entry
+    /// `entry`, has one of the entry's `person_not_endings` after its
+    /// stem: a surname in a person's span («Подрядчиков», «Агентов»).
+    fn person_surname(&self, word: &str, entry: usize, at: usize) -> bool {
+        let defined = &self.defined[entry];
+        word.strip_prefix(defined.list.words[at].as_str())
+            .is_some_and(|ending| defined.person_not_endings.iter().any(|not| not == ending))
     }
 
     /// Whether `long`, the words before an abbreviation's bracket, names a

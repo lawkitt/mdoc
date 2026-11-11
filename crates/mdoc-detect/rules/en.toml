@@ -573,11 +573,15 @@ words = [
 # term for a party or its business ("(the “Distributor”)", "(the
 # “Franchised Business”)", "(“Townhouse”)"): once the document defines one,
 # every mention of it, alone or with the other generic words of the term
-# ("RESELLER AGREEMENT"), is a defined term and no organization (guide rule
-# 2, issue #390). Only where the document defines it: elsewhere a company
-# may share the word, and a term with any coined or real word ("Kew
-# Project", "Quillon", "Fox") defines none. Plurals are matched; the -ies
-# plurals are listed.
+# ("RESELLER AGREEMENT"), is a defined term and no organization and no
+# person, whichever the model called it (guide rules 1, 2 and 8, issue
+# #390): "XXXXXXXX (“Distributor”)" proposed as a person goes at the
+# definition and at every mention. Only where the document defines it:
+# elsewhere a company or a person may share the word ("Distributor
+# Holdings Ltd", "Ann Seller"), and a term with any coined or real word
+# ("Kew Project", "Quillon", "Fox") defines none. A title or an initial
+# keeps a person's surname ("Mr Seller", "J. Seller"; in code). Plurals
+# are matched; the -ies plurals are listed.
 [[defined]]
 match = "plural"
 words = [
@@ -590,6 +594,26 @@ words = [
     "premises", "business", "agency", "shareholder", "stockholder", "class",
     "proceeding", "action", "loan", "mortgage", "asset", "transfer",
     "application", "jurisdiction", "trade", "judgment",
+]
+
+# The parties of common contracts and complaints, defined the same way:
+# "(the “Promoter”)", "(hereinafter referred to as the “Manufacturer”)",
+# "(“Licensee”)", "(the “Agency Worker”)", "(the “Company”)" (issue #390,
+# run 4). Many are `never` roles too, which drop them alone unless a name
+# in the document has the word; a definition drops them even then, and
+# lets the term's other generic words go with them ("Disclosing Party").
+# "Company" ending a span right after a word of its own is a company's name
+# ("The Venue Company"), as "Corporation" is, unless the document defines
+# that very term; a defined party's "Group" is not ("the Purchaser Group";
+# in code).
+[[defined]]
+match = "plural"
+words = [
+    "promoter", "manufacturer", "supplier", "customer", "seller", "buyer",
+    "licensor", "licensee", "hirer", "worker", "contractor", "subcontractor",
+    "artist", "performer", "venue", "client", "principal", "recipient",
+    "discloser", "landlord", "tenant", "employer", "employee", "company",
+    "party",
 ]
 
 # The -ies and -es plurals of the same words.
@@ -610,6 +634,13 @@ words = [
     "declaratory", "other", "such", "uncontested", "undisputed", "material",
     "summary", "supplemental", "amended", "def", "pl",
 ]
+
+# Words that make a party's defined term of "Party" ("Disclosing Party",
+# "Receiving Party", "Indemnifying Party", "Indemnified Parties"; issue
+# #390, run 4).
+[[defined]]
+match = "plural"
+words = ["disclosing", "receiving", "indemnifying", "indemnified"]
 
 # Documents of a contract or a case: a defined term of them is no
 # organization ("Agency Agreement", "Subscription Agreements"), and an

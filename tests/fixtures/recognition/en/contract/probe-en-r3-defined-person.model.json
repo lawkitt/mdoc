@@ -1,0 +1,28 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":147,"end":172,"label":"full_name","score":0.6873153,"text":"Fenwick Orchard Cider LLC"},
+    {"start":147,"end":172,"label":"organization","score":0.9939496,"text":"Fenwick Orchard Cider LLC"},
+    {"start":193,"end":201,"label":"organization","score":0.92135763,"text":"XXXXXXXX"},
+    {"start":385,"end":392,"label":"organization","score":0.81017876,"text":"Company"},
+    {"start":177,"end":184,"label":"organization","score":0.80379057,"text":"Company"},
+    {"start":260,"end":267,"label":"organization","score":0.6735138,"text":"Company"},
+    {"start":206,"end":217,"label":"organization","score":0.57033134,"text":"Distributor"},
+    {"start":481,"end":494,"label":"person","score":0.9962783,"text":"Ottilie Marsk"},
+    {"start":624,"end":645,"label":"organization","score":0.9987744,"text":"Corrow Glassworks Inc"},
+    {"start":406,"end":424,"label":"organization","score":0.99872565,"text":"Saltmarsh Live Ltd"},
+    {"start":736,"end":760,"label":"organization","score":0.9967141,"text":"Lowmoor Distributors Ltd"},
+    {"start":1042,"end":1059,"label":"person","score":0.8949732,"text":"Indemnified Party"},
+    {"start":830,"end":846,"label":"person","score":0.8349459,"text":"Disclosing Party"},
+    {"start":856,"end":871,"label":"person","score":0.8171371,"text":"Receiving Party"},
+    {"start":881,"end":896,"label":"person","score":0.7839885,"text":"Receiving Party"},
+    {"start":922,"end":938,"label":"person","score":0.75797355,"text":"Disclosing Party"},
+    {"start":995,"end":1013,"label":"person","score":0.677474,"text":"Indemnifying Party"},
+    {"start":1078,"end":1095,"label":"person","score":0.64567864,"text":"Indemnified Party"},
+    {"start":1117,"end":1128,"label":"organization","score":0.98971164,"text":"Distributor"},
+    {"start":1186,"end":1197,"label":"organization","score":0.9756234,"text":"Distributor"},
+    {"start":1148,"end":1159,"label":"organization","score":0.96371174,"text":"Distributor"},
+    {"start":1139,"end":1146,"label":"organization","score":0.91920847,"text":"Company"}
+  ]
+}

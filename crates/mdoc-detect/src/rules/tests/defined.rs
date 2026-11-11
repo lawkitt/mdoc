@@ -1,7 +1,7 @@
 //! Defined terms and generic words.
 use super::*;
 use crate::rules::defined::definitions;
-use crate::rules::test_support::{pairs, shown};
+use crate::rules::test_support::{pairs, shown, shown_at};
 use mdoc_pii::Recognizer;
 
 /// Every whole-word occurrence of each text in `spans`, as a model
@@ -310,13 +310,14 @@ fn defined_terms_of_generic_words_are_no_organizations() {
         ),
         ["Distributor"]
     );
-    // A person's span is never dropped for it.
+    // A person's span goes as well, but a title keeps a surname (#390,
+    // run 4).
     assert_eq!(
         fixed_every(
             "Larkfield LLC (the “Estate”) pays Mr Estate.",
             &[("Estate", Category::Person)]
         ),
-        ["Estate", "Estate"]
+        ["Estate"]
     );
 }
 
@@ -592,5 +593,271 @@ fn generic_names_and_their_abbreviations_are_not_shown() {
     assert_eq!(
         shown(source, &[("IBM", "organization")]),
         pairs(&[("IBM", "ORG"), ("IBM", "ORG")])
+    );
+}
+
+/// Run 4's shape of #390: the model proposes a defined party noun as a
+/// person, at its definition and at a mention, and the review would copy
+/// the wording to every other mention. A defined generic term goes in
+/// any category, so nothing seeds its repeats.
+#[test]
+fn defined_party_nouns_proposed_as_people_go_with_their_repeats() {
+    let source = "This agreement is made between Marrowind Tea LLC (“Company”) and \
+                  XXXXXXXX (“Distributor”). Distributor shall pay Company monthly. \
+                  Distributor’s Affiliates may resell. Distributor shall report to \
+                  Company. The Distributor keeps the books.";
+    assert_eq!(
+        shown_at(
+            source,
+            &[
+                ("Marrowind Tea LLC", 0, "organization"),
+                ("Company", 0, "person"),
+                ("Distributor", 0, "person"),
+                ("Distributor", 1, "person"),
+                ("Distributor’s Affiliates", 0, "person"),
+                ("Company", 1, "organization"),
+            ]
+        ),
+        pairs(&[("Marrowind Tea LLC", "ORG")])
+    );
+    // Without a definition the same person spreads to each mention: the
+    // repeats the definition now stops.
+    assert_eq!(
+        shown_at(
+            "Distributor shall pay monthly. Distributor shall report.",
+            &[("Distributor", 0, "person")]
+        ),
+        pairs(&[("Distributor", "PERSON"), ("Distributor", "PERSON")])
+    );
+}
+
+/// The nouns of run 4's documents, defined after "hereinafter" or "the",
+/// with possessives, plurals and the term's other generic words (#390).
+#[test]
+fn defined_party_terms_go_in_every_form() {
+    let source = "Tollmere Events Ltd (hereinafter referred to as the “Promoter”) \
+                  engages Ivo Saltash (the “Artist”) at Brackwater Hall (the “Venue”). \
+                  Pellock Brewing Co (the “Manufacturer”) supplies the bar. The \
+                  Promoter’s staff meet the Artist; the Manufacturer pays the Promoter. \
+                  Each party may be the Disclosing Party or the Receiving Party (each \
+                  a “Disclosing Party” or “Receiving Party”). The Indemnifying Party \
+                  (the “Indemnifying Party”) holds the Indemnified Parties (the \
+                  “Indemnified Parties”) harmless. Hollin Staffing Ltd supplies Edda \
+                  Varne (the “Agency Worker”) to the Hirer (the “Hirer”); the Agency \
+                  Worker reports to the Hirer. The Licensees (the “Licensees”) pay the \
+                  Licensor (the “Licensor”).";
+    assert_eq!(
+        shown_at(
+            source,
+            &[
+                ("Tollmere Events Ltd", 0, "organization"),
+                ("Promoter", 0, "person"),
+                ("Ivo Saltash", 0, "person"),
+                ("Artist", 0, "person"),
+                ("Venue", 0, "organization"),
+                ("Pellock Brewing Co", 0, "organization"),
+                ("Manufacturer", 0, "person"),
+                ("Promoter’s", 0, "person"),
+                ("Artist", 1, "person"),
+                ("Manufacturer", 1, "organization"),
+                ("Disclosing Party", 0, "person"),
+                ("Receiving Party", 1, "organization"),
+                ("Indemnifying Party", 1, "person"),
+                ("Indemnified Parties", 0, "person"),
+                ("Hollin Staffing Ltd", 0, "organization"),
+                ("Edda Varne", 0, "person"),
+                ("Agency Worker", 0, "person"),
+                ("Hirer", 0, "person"),
+                ("Licensees", 0, "person"),
+                ("Licensor", 1, "organization"),
+            ]
+        ),
+        pairs(&[
+            ("Tollmere Events Ltd", "ORG"),
+            ("Ivo Saltash", "PERSON"),
+            ("Pellock Brewing Co", "ORG"),
+            ("Hollin Staffing Ltd", "ORG"),
+            ("Edda Varne", "PERSON"),
+        ])
+    );
+}
+
+/// Russian party nouns defined after «именуемое в дальнейшем» or «далее»
+/// go as people too, in their case forms; the parties' names stay (#390).
+#[test]
+fn russian_defined_party_nouns_proposed_as_people_go() {
+    let source = "ООО «Сосновый бор», именуемое в дальнейшем «Поставщик», и Мирон \
+                  Ильич Тарасов (далее – Покупатель) заключили договор. Поставщик \
+                  передаёт товар Покупателю, Покупатель платит Поставщику. ИП Лада \
+                  Кирсанова (далее – Арендатор) платит Арендодателю (далее – \
+                  Арендодатель); Арендатора известили.";
+    assert_eq!(
+        shown_at(
+            source,
+            &[
+                ("ООО «Сосновый бор»", 0, "organization"),
+                ("Поставщик", 0, "person"),
+                ("Мирон Ильич Тарасов", 0, "person"),
+                ("Покупатель", 0, "person"),
+                ("Покупателю", 0, "person"),
+                ("Поставщику", 0, "organization"),
+                ("Лада Кирсанова", 0, "person"),
+                ("Арендатор", 0, "person"),
+                ("Арендодателю", 0, "person"),
+                ("Арендатора", 0, "person"),
+            ]
+        ),
+        pairs(&[
+            ("ООО «Сосновый бор»", "ORG"),
+            ("Мирон Ильич Тарасов", "PERSON"),
+            ("Лада Кирсанова", "PERSON"),
+        ])
+    );
+}
+
+/// What the definition must not take (#390): the same word where the
+/// document defines nothing, a name beside the word, a title or an
+/// initial before it, and a term with a coined or real word.
+#[test]
+fn defined_party_noun_guards_keep_names() {
+    // Not defined: a company and a person that share the word stay.
+    assert_eq!(
+        shown(
+            "Distributor Holdings Ltd pays Ann Seller; Seller signs.",
+            &[
+                ("Distributor Holdings Ltd", "organization"),
+                ("Ann Seller", "person"),
+            ]
+        ),
+        pairs(&[
+            ("Distributor Holdings Ltd", "ORG"),
+            ("Ann Seller", "PERSON"),
+            ("Seller", "PERSON"),
+        ])
+    );
+    // Defined: a given name, a title or an initial keeps the model's
+    // person, the defined word alone goes. (The review then spreads a
+    // named person's surname as it always does.)
+    assert_eq!(
+        fixed_every(
+            "Quillon Freight LLC (the “Seller”) sells to Ann Seller. Mr Seller and J. Seller agree; the Seller delivers.",
+            &[
+                ("Ann Seller", Category::Person),
+                ("J. Seller", Category::Person),
+                ("Seller", Category::Person),
+            ]
+        ),
+        ["Ann Seller", "Seller", "J. Seller"]
+    );
+    assert_eq!(
+        fixed_every(
+            "Банки (далее — «Поставщики»). Поставщиков И. П. и г-н Поставщиков согласны; Поставщики платят.",
+            &[
+                ("Поставщиков И. П.", Category::Person),
+                ("Поставщиков", Category::Person),
+                ("Поставщики", Category::Person),
+            ]
+        ),
+        ["Поставщиков И. П.", "Поставщиков"]
+    );
+    // A surname on a party's stem stays a person: "-ов" and "-ев" make
+    // one in a person's span (#450), though «Кредиторов» counts in an
+    // organization's.
+    for (source, surname) in [
+        (
+            "ООО «Бор» (далее – «Подрядчик»). Свидетель Подрядчиков пояснил.",
+            "Подрядчиков",
+        ),
+        (
+            "ООО «Бор» (далее – «Заказчик»). Свидетель Заказчиков пояснил.",
+            "Заказчиков",
+        ),
+        (
+            "ООО «Бор» (далее – «Покупатель»). Свидетель Покупателев пояснил.",
+            "Покупателев",
+        ),
+        (
+            "Банки (далее – «Кредиторы»). Свидетель Кредиторов пояснил.",
+            "Кредиторов",
+        ),
+        (
+            "ООО «Бор» (далее – «Агент»). Свидетель Агентов пояснил.",
+            "Агентов",
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(surname, "person")]),
+            pairs(&[(surname, "PERSON")]),
+            "{source}"
+        );
+    }
+    // A spelled-out legal form right after a word of its own ends a
+    // company's name, though the document defines both words ("The Venue
+    // Company", "Purchaser Corporation"); a term it defines whole goes, and
+    // so do a defined party's group (no legal form) and joined parties.
+    let source = concat!(
+        "Brackwater Hall (the “Venue”) and Acme Ltd (the “Company”) hire The ",
+        "Venue Company. Pellow LLC (the “Supplier”), Orrin LLC (the ",
+        "“Principal”) and Kell Ltd (the “Purchaser”) join the Supplier Group, ",
+        "the Principal Group and the Purchaser Group; Purchaser Corporation ",
+        "objects. Tarn LLC (the “Sponsor”) and Wyle LLC (the “Seller”) and the ",
+        "Sponsor’s Group pay. Vane LLC (the “Agency Group”) pays; the Agency ",
+        "Group, Seller and the Company agree.",
+    );
+    assert_eq!(
+        shown_at(
+            source,
+            &[
+                ("Acme Ltd", 0, "organization"),
+                ("The Venue Company", 0, "organization"),
+                ("Pellow LLC", 0, "organization"),
+                ("Orrin LLC", 0, "organization"),
+                ("Kell Ltd", 0, "organization"),
+                ("Supplier Group", 0, "organization"),
+                ("Principal Group", 0, "organization"),
+                ("the Purchaser Group", 0, "organization"),
+                ("Purchaser Corporation", 0, "organization"),
+                ("Tarn LLC", 0, "organization"),
+                ("Wyle LLC", 0, "organization"),
+                ("Sponsor’s Group", 0, "organization"),
+                ("Vane LLC", 0, "organization"),
+                ("Agency Group", 1, "organization"),
+                ("Seller and the Company", 0, "organization"),
+            ]
+        ),
+        pairs(&[
+            ("Acme Ltd", "ORG"),
+            ("The Venue Company", "ORG"),
+            ("Pellow LLC", "ORG"),
+            ("Orrin LLC", "ORG"),
+            ("Kell Ltd", "ORG"),
+            ("Purchaser Corporation", "ORG"),
+            ("Tarn LLC", "ORG"),
+            ("Wyle LLC", "ORG"),
+            ("Vane LLC", "ORG"),
+        ])
+    );
+    // A coined or real word in the term defines nothing: the person and
+    // the company keep their short names.
+    let source = "Edda Brannock (“Brannock”) and Larkfield Supply LLC (“Larkfield”) \
+                  fund the Kew Project (the “Kew Project”). Brannock and Larkfield sign.";
+    assert_eq!(
+        shown_at(
+            source,
+            &[
+                ("Edda Brannock", 0, "person"),
+                ("Brannock", 1, "person"),
+                ("Larkfield Supply LLC", 0, "organization"),
+                ("Larkfield", 1, "organization"),
+            ]
+        ),
+        pairs(&[
+            ("Edda Brannock", "PERSON"),
+            ("Brannock", "PERSON"),
+            ("Larkfield Supply LLC", "ORG"),
+            ("Larkfield", "ORG"),
+            ("Brannock", "PERSON"),
+            ("Larkfield", "ORG"),
+        ])
     );
 }

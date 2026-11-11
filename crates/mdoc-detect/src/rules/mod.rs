@@ -255,6 +255,8 @@ struct Context {
 struct Defined {
     list: Never,
     document: bool,
+    /// A stem's endings that make a surname in a person's span.
+    person_not_endings: Vec<String>,
 }
 
 struct Never {
