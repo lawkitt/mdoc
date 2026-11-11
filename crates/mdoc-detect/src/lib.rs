@@ -1113,15 +1113,20 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         })
         .collect();
     // Each span with the whole match a split one was cut from.
-    let spans: Vec<(Detection, Option<Range<usize>>)> = rules::pack()
+    let spans: Vec<(Detection, Option<Range<usize>>, usize)> = rules::pack()
         .spans_beside(&view.text, &names)
         .into_iter()
         .filter_map(|found| {
             let mut detection = found.detection;
             detection.range = view.source_range(detection.range);
             // One only over an inserted table header names nothing.
-            (!detection.range.is_empty())
-                .then(|| (detection, found.whole.map(|whole| view.source_range(whole))))
+            (!detection.range.is_empty()).then(|| {
+                (
+                    detection,
+                    found.whole.map(|whole| view.source_range(whole)),
+                    found.entry,
+                )
+            })
         })
         .collect();
     let rules: Vec<Detection> = rules::pack()
@@ -1155,7 +1160,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         detections
             .iter()
             .chain(&rules)
-            .chain(spans.iter().map(|(span, _)| span)),
+            .chain(spans.iter().map(|(span, _, _)| span)),
     )
     .into_iter()
     .chain(rules)
@@ -1183,7 +1188,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         rules
             .iter()
             .chain(&addresses)
-            .chain(spans.iter().map(|(span, _)| span)),
+            .chain(spans.iter().map(|(span, _, _)| span)),
     );
     detections.extend(rest);
     detections.extend(rules);
@@ -1191,13 +1196,13 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     // A model span a match holds as its own part ("Harrow House" of an
     // address) is no evidence against it. It stays for the review, which
     // takes the match over it, or it where the review turns the match down.
-    let absorbed = |detection: &Detection, span: &Detection| {
+    let absorbed = |detection: &Detection, span: &Detection, entry: usize| {
         detection.recognizer == mdoc_pii::Recognizer::Model
             && span.range.start <= detection.range.start
             && detection.range.end <= span.range.end
             && rules::pack().absorbs(
                 &view.text,
-                span.category,
+                entry,
                 view.view_range(span.range.clone()),
                 detection.category,
                 view.view_range(detection.range.clone()),
@@ -1216,15 +1221,15 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     // Span matches stand only where they are the widest evidence.
     let spans: Vec<Detection> = spans
         .into_iter()
-        .filter(|(span, whole)| {
+        .filter(|(span, whole, entry)| {
             stands(
-                detections
-                    .iter()
-                    .filter(|detection| !absorbed(detection, span) && !held(detection, whole)),
+                detections.iter().filter(|detection| {
+                    !absorbed(detection, span, *entry) && !held(detection, whole)
+                }),
                 span,
             )
         })
-        .map(|(span, _)| span)
+        .map(|(span, _, _)| span)
         .collect();
     detections.extend(spans);
     role_initials_are_people(source, &mut detections);

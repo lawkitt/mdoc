@@ -1747,3 +1747,132 @@ fn a_role_before_a_line_number_joins_no_name() {
         ["Holloway"]
     );
 }
+
+/// #362, run 4: a Russian full name the model split into a surname and a
+/// given name with a patronymic, on one line with only spaces between, is
+/// one span, in either order and any case form; a line's end, a table
+/// cell's edge, no patronymic or a second full name keeps the parts apart.
+#[test]
+fn a_russian_full_name_split_on_one_line_is_one_span() {
+    for (source, model, name) in [
+        (
+            "ФИО\nКоврижкина Елена Тарасовна\n",
+            [("person", "Коврижкина"), ("person", "Елена Тарасовна")],
+            "Коврижкина Елена Тарасовна",
+        ),
+        (
+            "| 1 | Коврижкина Елена Тарасовна | 1985 |\n",
+            [("person", "Коврижкина"), ("person", "Елена Тарасовна")],
+            "Коврижкина Елена Тарасовна",
+        ),
+        (
+            "Подпись: Елена Тарасовна Коврижкина\n",
+            [("person", "Елена Тарасовна"), ("person", "Коврижкина")],
+            "Елена Тарасовна Коврижкина",
+        ),
+        (
+            "Выдано Коврижкиной Елене Тарасовне лично.\n",
+            [("person", "Коврижкиной"), ("person", "Елене Тарасовне")],
+            "Коврижкиной Елене Тарасовне",
+        ),
+        (
+            "ФИО\nПахомов Илья Кузьмич\n",
+            [("person", "Пахомов"), ("person", "Илья Кузьмич")],
+            "Пахомов Илья Кузьмич",
+        ),
+        (
+            "ФИО\nПахомова Зоя Ильинична\n",
+            [("person", "Пахомова"), ("person", "Зоя Ильинична")],
+            "Пахомова Зоя Ильинична",
+        ),
+        (
+            "ФИО\nПахомов   Илья Тимурович\n",
+            [("person", "Пахомов"), ("person", "Илья Тимурович")],
+            "Пахомов   Илья Тимурович",
+        ),
+    ] {
+        assert_eq!(
+            proposed_marks(source, &model),
+            [format!("PERSON⟦{name}⟧")],
+            "{source}"
+        );
+    }
+    for (source, model) in [
+        // A line's end and a table cell's edge. (A comma's surname-first
+        // name is the guide's one span by its own rule, #414.)
+        (
+            "Коврижкина\nЕлена Тарасовна\n",
+            vec![("person", "Коврижкина"), ("person", "Елена Тарасовна")],
+        ),
+        (
+            "| Коврижкина | Елена Тарасовна |\n",
+            vec![("person", "Коврижкина"), ("person", "Елена Тарасовна")],
+        ),
+        // No patronymic on either side.
+        (
+            "Гости: Коврижкина Елена Пахомова\n",
+            vec![("person", "Коврижкина"), ("person", "Елена Пахомова")],
+        ),
+        // The surname between two given names with patronymics may be
+        // either's: no join.
+        (
+            "Елена Тарасовна Коврижкина Илья Кузьмич\n",
+            vec![
+                ("person", "Елена Тарасовна"),
+                ("person", "Коврижкина"),
+                ("person", "Илья Кузьмич"),
+            ],
+        ),
+        // Two full names.
+        (
+            "Коврижкина Елена Тарасовна Пахомов Илья Кузьмич\n",
+            vec![
+                ("person", "Коврижкина Елена Тарасовна"),
+                ("person", "Пахомов Илья Кузьмич"),
+            ],
+        ),
+        // A given name with a patronymic between two one-word spans may
+        // be either's: no join (review).
+        (
+            "Пахомов Илья Тимурович Коврижкин\n",
+            vec![
+                ("person", "Пахомов"),
+                ("person", "Илья Тимурович"),
+                ("person", "Коврижкин"),
+            ],
+        ),
+        // A woman's surname with a man's patronymic, and a man's with a
+        // woman's (review).
+        (
+            "ФИО\nКоврижкина Илья Тимурович\n",
+            vec![("person", "Коврижкина"), ("person", "Илья Тимурович")],
+        ),
+        (
+            "ФИО\nПахомов Елена Тарасовна\n",
+            vec![("person", "Пахомов"), ("person", "Елена Тарасовна")],
+        ),
+    ] {
+        let expected: Vec<String> = model
+            .iter()
+            .map(|(_, text)| format!("PERSON⟦{text}⟧"))
+            .collect();
+        assert_eq!(proposed_marks(source, &model), expected, "{source}");
+    }
+    // Two split full names in a row are two names: the second's surname
+    // opens a name of its own (review).
+    assert_eq!(
+        proposed_marks(
+            "Коврижкина Елена Тарасовна Пахомов Илья Тимурович\n",
+            &[
+                ("person", "Коврижкина"),
+                ("person", "Елена Тарасовна"),
+                ("person", "Пахомов"),
+                ("person", "Илья Тимурович"),
+            ]
+        ),
+        [
+            "PERSON⟦Коврижкина Елена Тарасовна⟧",
+            "PERSON⟦Пахомов Илья Тимурович⟧"
+        ]
+    );
+}

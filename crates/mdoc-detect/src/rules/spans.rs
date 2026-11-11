@@ -8,25 +8,22 @@ use mdoc_pii::{Category, Detection, Recognizer};
 use regex::Regex;
 
 impl Pack {
-    /// Whether a model span of `category` at `at` of `text`, inside a
-    /// `span` pattern's match of `matched` at `within`, is that match's own
-    /// part (its `absorbs`), read within the match alone: "Harrow House"
-    /// before ", 12 Pellin Street" is the address's building, not a company;
-    /// a number after the match ("…, Chatham House, 12 March") is none of it.
+    /// Whether a model span of `category` at `at` of `text`, inside the
+    /// match at `within` of the `span` entry numbered `entry`, is that
+    /// match's own part (the entry's own `absorbs`, no other entry's), read
+    /// within the match alone: "Harrow House" before ", 12 Pellin Street" is
+    /// the address's building, not a company; a number after the match
+    /// ("…, Chatham House, 12 March") is none of it.
     pub(crate) fn absorbs(
         &self,
         text: &str,
-        matched: Category,
+        entry: usize,
         within: std::ops::Range<usize>,
         category: Category,
         at: std::ops::Range<usize>,
     ) -> bool {
-        self.spans.iter().any(|span| match span {
-            Span::Pattern {
-                category: of,
-                absorbs,
-                ..
-            } if *of == matched => absorbs.iter().any(|(absorbed, regex)| {
+        self.spans.get(entry).is_some_and(|span| match span {
+            Span::Pattern { absorbs, .. } => absorbs.iter().any(|(absorbed, regex)| {
                 *absorbed == category
                     && regex
                         .captures(&text[at.start..within.end])
@@ -59,7 +56,7 @@ impl Pack {
         &self,
         source: &str,
         names: &[Detection],
-        pattern: &Alternation,
+        (entry, pattern): (usize, &Alternation),
         mut range: std::ops::Range<usize>,
     ) -> Option<std::ops::Range<usize>> {
         let front = names
@@ -71,7 +68,7 @@ impl Pack {
                     && name.range.end < range.end
                     && !self.absorbs(
                         source,
-                        Category::Address,
+                        entry,
                         range.clone(),
                         name.category,
                         name.range.clone(),
@@ -122,7 +119,8 @@ impl Pack {
     pub(crate) fn spans_beside(&self, source: &str, names: &[Detection]) -> Vec<SpanMatch> {
         self.spans
             .iter()
-            .filter_map(|span| match span {
+            .enumerate()
+            .filter_map(|(entry, span)| match span {
                 Span::Pattern {
                     category,
                     pattern,
@@ -138,7 +136,7 @@ impl Pack {
                     pattern,
                     continuation_after,
                     continuation_stop,
-                    (split, skip, *gaps_only),
+                    (split, skip, *gaps_only, entry),
                     line_length,
                 )),
                 Span::Fix(_) => None,
@@ -149,7 +147,7 @@ impl Pack {
                     pattern,
                     continuation_after,
                     continuation_stop,
-                    (split, skip, gaps_only),
+                    (split, skip, gaps_only, entry),
                     line_length,
                 )| {
                     span_ranges_sized(pattern, source, line_length.as_ref())
@@ -259,7 +257,7 @@ impl Pack {
                             if category != Category::Address || range.is_empty() {
                                 return Some((range, whole));
                             }
-                            self.address_beside(source, names, pattern, range)
+                            self.address_beside(source, names, (entry, pattern), range)
                                 .map(|range| (range, whole))
                         })
                         // An address match before a colon ends in a field's
@@ -293,6 +291,7 @@ impl Pack {
                                 recognizer: Recognizer::Span,
                             },
                             whole,
+                            entry,
                         })
                 },
             )
