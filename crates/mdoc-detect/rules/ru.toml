@@ -796,25 +796,28 @@ anywhere_in = ["ORG", "PERSON"]
 # Regional statistics offices, supervision services and inspectorates in
 # one word, as an organization (#788): "Энскстат", "Энскоблстат",
 # "Гостехнадзор", "Энскгосстройнадзора", "Госавтоинспекция",
-# "Энскжилинспекции". Only the bodies' own case endings count, so a
-# surname built on the word ("Надзоров", "Надзорова") is no body.
+# "Энскжилинспекции", "Госжилинспекциям", "территориальным
+# надзорам". Only the bodies' own case endings count, singular and plural,
+# so a surname built on the word ("Надзоров", "Надзорова") is no body; the
+# genitive plural «…надзоров» counts only after a prefix ("Роснадзоров").
 [[never]]
 match = "pattern"
 patterns = [
-    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат(?:а|у|ом|е)?\b',
-    '(?i)\b\p{Alphabetic}*надзор(?:а|у|ом|е)?\b',
-    '(?i)\b\p{Alphabetic}+инспекци(?:я|и|ю|ей|ею)\b',
+    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат(?:а|у|ом|е|ы|ов|ам|ами|ах)?\b',
+    '(?i)\b\p{Alphabetic}*надзор(?:а|у|ом|е|ы|ам|ами|ах)?\b|\b\p{Alphabetic}+надзоров\b',
+    '(?i)\b\p{Alphabetic}+инспекци(?:я|и|ю|ей|ею|й|ям|ями|ях)\b',
 ]
 anywhere_in = ["ORG"]
 
 # The same as a person, unless a title or the document's other person span
-# makes the word a surname ("г-н Роснадзор").
+# makes the word a surname ("г-н Роснадзор"). The genitive plural
+# «…надзоров» and «…статов» are surnames' endings here, never a body's.
 [[never]]
 match = "pattern"
 patterns = [
-    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат(?:а|у|ом|е)?\b',
-    '(?i)\b\p{Alphabetic}*надзор(?:а|у|ом|е)?\b',
-    '(?i)\b\p{Alphabetic}+инспекци(?:я|и|ю|ей|ею)\b',
+    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат(?:а|у|ом|е|ы|ам|ами|ах)?\b',
+    '(?i)\b\p{Alphabetic}*надзор(?:а|у|ом|е|ы|ам|ами|ах)?\b',
+    '(?i)\b\p{Alphabetic}+инспекци(?:я|и|ю|ей|ею|й|ям|ями|ях)\b',
 ]
 anywhere_in = ["PERSON"]
 unless_titled = true

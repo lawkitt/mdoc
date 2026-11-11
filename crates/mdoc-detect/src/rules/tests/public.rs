@@ -1522,6 +1522,17 @@ fn public_bodies_other_than_courts_are_no_names() {
         "Pellow Transit Authority",
         "Civil Aviation Authority",
         "Pellow Local Authority",
+        "Pellow Water Authority",
+        "Pellow Power Authority",
+        "Pellow Highways Authority",
+        "Pellow Parking Authority",
+        "Pellow Racing Commission",
+        "Pellow Gaming Commission",
+        "Pellow Boxing Commission",
+        "Pellow Athletic Commission",
+        "Pellow Tax Commission",
+        "Highways Agency",
+        "Pellow Water Agency",
         "Emergency Management Agency",
         "Food Standards Agency",
         "Science Advisory Panel",
@@ -1586,6 +1597,13 @@ fn public_bodies_other_than_courts_are_no_names() {
         "Энскгосстройнадзора",
         "Энскжилинспекции",
         "Энскжилинспекция",
+        "Госжилинспекциям",
+        "Госжилинспекциях",
+        "Госжилинспекциями",
+        "Госжилинспекций",
+        "Роснадзорам",
+        "Роснадзорами",
+        "Энскстатами",
         "Росаккредитация",
         "Росавиация",
         "ФТС России",
@@ -1620,6 +1638,9 @@ fn public_bodies_other_than_courts_are_no_names() {
         }
     }
     assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+    // The genitive plural after a prefix is a body as an organization; as a
+    // person it may be a surname, and stays.
+    assert!(shown("Роснадзоров", &[("Роснадзоров", "organization")]).is_empty());
 }
 
 /// #788 in context: an acronym the document defines for a public body,
@@ -1731,12 +1752,16 @@ fn public_bodies_788_keep_private_names_and_details() {
         ("Quillon Shipping Authority", "organization", "ORG"),
         ("Quillon Energy Authority", "organization", "ORG"),
         ("Quillon Tourism Commission", "organization", "ORG"),
+        ("Quillon Banking Commission", "organization", "ORG"),
+        ("Quillon Banking Authority", "organization", "ORG"),
         ("Иван Надзоров", "person", "PERSON"),
         ("Надзоров И. П.", "person", "PERSON"),
         ("Надзорова Анна", "person", "PERSON"),
         ("Ивана Надзорова", "person", "PERSON"),
         ("Анне Надзоровой", "person", "PERSON"),
         ("Олег Инспекциев", "person", "PERSON"),
+        ("Надзоровым", "person", "PERSON"),
+        ("Надзоров", "person", "PERSON"),
         ("АО «Энскэнерго»", "organization", "ORG"),
         (
             "ФГБОУ ВО «Энский государственный университет»",
