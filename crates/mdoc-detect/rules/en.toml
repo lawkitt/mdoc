@@ -1819,7 +1819,11 @@ min_digits = 3
 # ("Harrow House" of "Harrow House, 12 Pellin Street\nSlocombe SL9
 # 9ZZ"): a company span that is just the match's building name, with a
 # comma or a line break and a house number (a flat or suite between) after
-# it, within the match, is the address's own (`absorbs`): the match stands
+# it, within the match, is the address's own (`absorbs`); so is a Plaza's
+# name before its number, and a building with a dash and a named suite, a
+# box or a street after it ("Kestrel Plaza" of "Kestrel Plaza No. 15,
+# Granby Road"; #498). A person's span is never absorbed so ("Jane House,
+# 12 Oak Road" names her). The match stands
 # over it, and the review takes the address, or the company where it turns
 # the address down. A company named so but with no
 # street after it ("Harrow House Ltd agreed", "Harrow House agreed") or
@@ -1829,11 +1833,12 @@ min_digits = 3
 # - A city, a state and a ZIP with no street are an address (guide rule 3,
 #   #506 item 6), on a line of their own or after a body's name ("Bureau of
 #   Records, Haddon, VA 20170": the name stays out): the last form. Its
-#   state is a real state's code or name after a comma, or "DC" after a
-#   space alone ("Washington DC 20017"), so "CASE NO 12345" and "Account
-#   ID 12345" are none; a city and state with no ZIP ("Haddon, VA") are
-#   none either. Its city is one place, so a body's last word before the
-#   comma ("Records, Haddon") stays out.
+#   state is a real state's code or name, after a comma or a space
+#   ("Washington DC 20017", "Boise Idaho 83702"), so "CASE NO 12345" is
+#   none; a city and state with no ZIP ("Haddon, VA") are none either. Its
+#   city is one place, so a body's last word before the comma ("Records,
+#   Haddon") stays out. A field's word before the state and a number
+#   ("Account ID 12345", "Claim No CA 90210", `skip`) makes no city.
 # - Any ZIP may be a ZIP+4 broken after its hyphen ("82070- 0042"), follow
 #   its state after a comma ("Coral Bend, FL, 33999"), and have one OCR
 #   look-alike letter for a digit ("02l39").
@@ -1871,7 +1876,7 @@ pattern = [
     '\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?{after_zip}',
     '{street_core},?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b)',
     '\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners}),?[\p{Zs}\t]+(?:(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)?[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2},[\p{Zs}\t]*[A-Z]{2}[\p{Zs}\t]+{zip}\b',
-    '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*(?:{state}|[A-Z]\.[A-Z]\.|{state_name})|[\p{Zs}\t]+(?:DC|D\.C\.))(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}\b',
+    '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}\b',
 ]
 # A corner's street, without a house number: the corner needs its city
 # and ZIP (#553 item 3), so a bare pair of street names cannot match. The
@@ -1902,11 +1907,16 @@ parts.state_name = '(?i:alabama|alaska|arizona|arkansas|california|colorado|conn
 # A ZIP, or a ZIP+4 broken after its hyphen; one OCR look-alike letter
 # may stand for a digit.
 parts.zip = '(?:\d{5}|[OoIliB]\d{4}|\d[OoIliB]\d{3}|\d{2}[OoIliB]\d{2}|\d{3}[OoIliB]\d|\d{4}[OoIliB])(?:-[\p{Zs}\t]?\d{4})?'
-absorbs.ORG = '(?P<span>{building})(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box})'
+absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)|{building})(?:[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?)?(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box}|{named})'
 # The street/units or box are definite components; the guessed town after
 # them is not allowed to absorb a model name or an attention/contact field.
 continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}'
 continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
+# A field's label and its value are no city, state and ZIP: "Account ID
+# 12345", "Claim No CA 90210", "Policy Form OH 45999" (a word that names a
+# field, then two letters or a state's name and five digits, at the
+# match's start or one or two words in).
+skip = '(?i)\A(?:[^\s,]+[\p{Zs}\t]+){0,2}(?:account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|number|no|id|tel|phone|fax|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?[\p{Zs}\t]+(?:[a-z]\.[a-z]\.|[a-z]{2,})[\p{Zs}\t]+[\dOoIliB]{5}'
 
 # A UK flat's "24, Pellin Court, Harrow Place, Worcester" has two
 # street parts before its town (#498). The comma after the number is
@@ -1956,11 +1966,20 @@ trim = [
 
 # A building, floor, room or mail-stop part of an address alone is no
 # company: "Bldg 499", "10th Floor", "Suite 210, 3rd Floor", "Mail Stop
-# K9-24" (#498). A company named with one of the words stays ("Harrow Floor
-# Services", "Brindle Building Society").
+# K9-24", "Lower Ground Floor", "27th Fl.", "Unit 7, 2F" (#498), and nor is
+# a Plaza with its number ("Kestrel Plaza No. 15"), a building no company
+# owns by that name. A company named with one of the words stays ("Harrow
+# Floor Services", "Brindle Building Society").
 [[shape]]
 category = "ORG"
-forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+floor|(?:ground|first|second|third|lower|upper)\s+floor)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+floor|(?:ground|first|second|third|lower|upper)\s+floor))*\s*$']
+forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b))*\s*$', '(?i)^\s*(?:[\p{Alphabetic}\x27’-]+\s+){1,3}plaza\s+(?:no\.?|#)\s*\d+[a-z]?\s*$']
+
+# Nor is a floor, unit or other such part of an address a person: the model
+# may read "Lower Ground Floor" or "3rd Floor" as a name, which would cut
+# the address that opens with it (#498).
+[[shape]]
+category = "PERSON"
+forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b))*\s*$']
 
 # Nor is such a part, anywhere in the span, a bank account or an identity
 # document: "Room 2.104", "Building 179A", "Mail Stop K9-24".

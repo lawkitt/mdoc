@@ -1,9 +1,13 @@
 ---
-status: pass
+status: known-flaw
 flaw: en-address
 issue: 498
 kind: letter
 source: probe-r3
+expect: false hit: ORG "Section 4 Board of Directors"
+expect: false hit: ORG "Fire Area 41"
+expect: false hit: ORG "Board 7C"
+expect: false hit: ORG "County of Harlan, Nevada"
 ---
 **⟦ORG|Quenby & Rook LLP⟧**
 ⟦ADDRESS|1640 Q St., N.W.⟧

@@ -1990,6 +1990,15 @@ fn a_us_city_state_and_zip_alone_are_an_address() {
         ("Hartwell, MA 02l39", "Hartwell, MA 02l39"),
         ("Ostrand,NJ 07999", "Ostrand,NJ 07999"),
         ("Ashby Falls, OH\n45999", "Ashby Falls, OH\n45999"),
+        // No comma before the state, its code or its name.
+        ("Ashby Falls OH 45999", "Ashby Falls OH 45999"),
+        ("Pellam Falls OH 45999-4410", "Pellam Falls OH 45999-4410"),
+        ("Corrow Idaho 83999", "Corrow Idaho 83999"),
+        ("TALLOWAY OK 74999", "TALLOWAY OK 74999"),
+        (
+            "Brindle Falls New Mexico 87999",
+            "Brindle Falls New Mexico 87999",
+        ),
         // A letterhead's or a signature's line.
         (
             "Quenby & Rook LLP\nAshby Falls, OH 45999\n(555) 010-4477",
@@ -2021,6 +2030,12 @@ fn a_us_city_state_and_zip_alone_are_an_address() {
         "Account ID 12345 was closed.",
         "Haddon, ZZ 20170",
         "Haddon, VA 201701",
+        // A field's label and its value, a number before a state code.
+        "Claim No CA 90999 was paid.",
+        "Policy Form OH 45999 applies.",
+        "Customer Account ID 12345",
+        "Policy No 4410 OH 45999",
+        "Exhibit 12 PA 19999",
     ] {
         assert!(proposed_addresses(source).is_empty(), "{source}");
     }
@@ -2041,13 +2056,75 @@ fn an_address_opens_at_its_floor_suite_unit_or_building() {
         let source = format!("Deliveries go to {address}.");
         assert_eq!(proposed_addresses(&source), [address], "{source}");
     }
-    // The model's company that is the building opening the address is
-    // the address's own part.
-    let address = "Wexford Tower – Administration Suite 220, P. O. Box 4410, Ashby Falls, OH 45999";
-    let source = format!("Deliveries go to {address}.");
+    // The model's company or person on the floor, unit or building that
+    // opens the address is the address's own part, never a cut in it.
+    for (address, model) in [
+        (
+            "Lower Ground Floor, 12 Quill Lane, London WC2A 9ZZ",
+            "Lower Ground Floor",
+        ),
+        (
+            "27th Fl., 418 N. Larch Ave., Ashby Falls, OH 45999",
+            "27th Fl.",
+        ),
+        ("2F, Kestrel Plaza No. 15, Pellow Road, Kowloon", "2F"),
+        (
+            "Unit 7, 2F, Kestrel Plaza No. 15, Pellow Road, Kowloon",
+            "Unit 7, 2F",
+        ),
+        (
+            "Kestrel Plaza No. 15, Pellow Road, Kowloon",
+            "Kestrel Plaza",
+        ),
+        (
+            "Kestrel Plaza No. 15, 12 Pellow Road, Kowloon",
+            "Kestrel Plaza No. 15",
+        ),
+        (
+            "Wexford Tower – Administration Suite 220, P. O. Box 4410, Ashby Falls, OH 45999",
+            "Wexford Tower",
+        ),
+        (
+            "Wexford Tower – Administration Suite 220, P. O. Box 4410, Ashby Falls, OH 45999",
+            "Administration Suite 220",
+        ),
+    ] {
+        let source = format!("Deliveries go to {address}.");
+        assert_eq!(
+            shown(&source, &[(model, "organization")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    for (address, model) in [
+        (
+            "Lower Ground Floor, 12 Quill Lane, London WC2A 9ZZ",
+            "Lower Ground Floor",
+        ),
+        (
+            "3rd Floor, 40 Mercer Street, Ashby Falls, OH 45999",
+            "3rd Floor",
+        ),
+        (
+            "Unit 7, 2F, Kestrel Plaza No. 15, Pellow Road, Kowloon",
+            "Unit 7",
+        ),
+    ] {
+        let source = format!("Deliveries go to {address}.");
+        assert_eq!(
+            shown(&source, &[(model, "person")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    // A person named like a building stays a person before her address.
+    let source = "Jane House, 12 Quill Lane, London WC2A 9ZZ";
     assert_eq!(
-        shown(&source, &[("Wexford Tower", "organization")]),
-        pairs(&[(address, "ADDRESS")]),
+        shown(source, &[("Jane House", "person")]),
+        pairs(&[
+            ("Jane House", "PERSON"),
+            ("12 Quill Lane, London WC2A 9ZZ", "ADDRESS")
+        ])
     );
 }
 
