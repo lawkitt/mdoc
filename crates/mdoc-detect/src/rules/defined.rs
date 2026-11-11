@@ -384,7 +384,7 @@ impl Pack {
     /// "ООО") or spelled out: an English one its last words are
     /// ("Contract Corporation", "Acme Company Limited"), a Russian one
     /// anywhere.
-    fn company_form(&self, text: &str) -> bool {
+    pub(super) fn company_form(&self, text: &str) -> bool {
         let words = plain_words(text);
         self.legal_form(text)
             || words

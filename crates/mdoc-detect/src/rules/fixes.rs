@@ -2,6 +2,8 @@
 //! recategorize model spans, and `Pack::fix_spans`, which applies them with
 //! every other rule on the model's spans.
 use super::context::field_code;
+use super::people::company_line_numbers;
+use super::spans::horizontal;
 use super::{Pack, Span, SpanFix};
 use mdoc_pii::{Category, Detection};
 use regex::Regex;
@@ -446,7 +448,9 @@ impl SpanFix {
             if let Some(c) = text.chars().next_back()
                 && text.len() > c.len_utf8()
                 && self.strip_end.contains(c)
-                && !(c == '.' && ends_with_initial(&text[..text.len() - 1]))
+                && !(c == '.'
+                    && ends_with_initial(&text[..text.len() - 1])
+                    && !dotted_form(&text[..text.len() - 1]))
             {
                 range.end -= c.len_utf8();
                 continue;
@@ -509,6 +513,20 @@ fn ends_with_initial(text: &str) -> bool {
     let mut chars = text.chars().rev();
     chars.next().is_some_and(char::is_uppercase)
         && chars.next().is_none_or(|c| c.is_whitespace() || c == '.')
+}
+
+/// Whether `text` ends with a dotted legal form after a space or a comma,
+/// its last dot left off: "Chase Bank USA, N.A" or "Larkfield Advisors,
+/// L.P". The form's last dot stays outside the span like the dot of
+/// "Inc." (guide rule 2, #506 item 1, #374), though its last letter
+/// stands alone like an initial's.
+fn dotted_form(text: &str) -> bool {
+    const FORMS: [&str; 7] = ["N.A", "L.P", "L.L.C", "L.L.P", "P.L.L.C", "P.C", "A.P.C"];
+    let last = text
+        .rsplit(|c: char| c.is_whitespace() || c == ',')
+        .next()
+        .unwrap_or_default();
+    FORMS.contains(&last) && last.len() < text.len()
 }
 
 /// Whether `text` holds an initial: a capital alone, with its period or
@@ -619,14 +637,39 @@ impl Pack {
                 // over any part of another category's span either: "ACME
                 // LLC" stays the company's. Others may: a person's
                 // institution grows over the model's organization in it.
-                let crosses = |(m, led, _): &(std::ops::Range<usize>, bool, bool)| {
+                let crosses = |(m, led, tailed): &(std::ops::Range<usize>, bool, bool)| {
                     order.iter().any(|&j| {
                         let other = &detections[j].range;
                         j != i
                             && other.start < m.end
                             && m.start < other.end
                             && !(m.start <= other.start && other.end <= m.end)
-                    }) || *led
+                    })
+                        // An organization's tail (its legal form) never
+                        // joins it to another company in the match: «ООО
+                        // «Кедр» и Банк «Ольховый» (ПАО)» are two (#502).
+                        // Pieces of one name, only spaces between and no
+                        // legal form in either (`own_legal_form`), are one:
+                        // the model's "Pellam" and "Quenby" of "Pellam
+                        // Quenby, Inc".
+                        || fix.category == Category::Organization
+                            && *tailed
+                            && order.iter().any(|&j| {
+                                let other = &detections[j].range;
+                                let gap = if range.end <= other.start {
+                                    range.end..other.start
+                                } else {
+                                    other.end.min(range.start)..range.start
+                                };
+                                j != i
+                                    && m.start <= other.start
+                                    && other.end <= m.end
+                                    && (other.end <= range.start || range.end <= other.start)
+                                    && !(source[gap].chars().all(horizontal)
+                                        && !self.own_legal_form(&source[range.clone()])
+                                        && !self.own_legal_form(&source[other.clone()]))
+                            })
+                        || *led
                         && detections.iter().any(|other| {
                             other.category != fix.category
                                 && other.range.start < m.end
@@ -654,7 +697,10 @@ impl Pack {
                         // #414) never grows over a role or an `unless_over`
                         // word after the span either: "France" in "Paris,
                         // France", "President" in "Pellwright, President".
-                        || tailed
+                        // An organization's tail grows over its legal form,
+                        // whose words may be generic ones («общества»).
+                        || fix.category == Category::Person
+                            && tailed
                             && source[range.end..m.end]
                                 .split(|c: char| !c.is_alphanumeric() && c != '-')
                                 .any(|word| {
@@ -667,7 +713,9 @@ impl Pack {
                 // it, or the rest of a name whose start is a span: the
                 // model's "Penrow" and "J. L." in "Penrow, J. L." are one
                 // name, its "J.R." alone in "Thereafter, J.R., a minor"
-                // never takes the word before the comma (#414).
+                // never takes the word before the comma (#414). A company
+                // before an organization's span is another one unless it
+                // is a piece of the same name (`crosses`, #502).
                 let starts = |m: &std::ops::Range<usize>, tailed: bool| {
                     !tailed
                         || range.start == m.start
@@ -696,8 +744,16 @@ impl Pack {
                 // Nor may a job phrase consume a titled person's whole
                 // name: "Mr Team Leader" must not become just "Mr". The
                 // title fix can then remove Mr and establish the name.
+                // Nor may a trim leave part of a public body's name, which
+                // goes whole: "Secretary of Defense" is no "Defense" (#502).
                 detections[i].range = if trimmed != grown
                     && (self.only_legal_form(&source[trimmed.clone()])
+                        || fix.category == Category::Organization
+                            && self.public_body(
+                                &source[grown.clone()],
+                                Category::Organization,
+                                false,
+                            )
                         || fix.category == Category::Person
                             && self.role_person_name(&source[grown.clone()])
                             && !self.role_person_name(&source[trimmed.clone()])
@@ -728,6 +784,8 @@ impl Pack {
             }
         }
         // After the trims, so a role before either part is gone first.
+        company_line_numbers(source, detections);
+        self.person_estates(source, detections);
         self.join_line_numbers(source, detections);
         self.join_full_names(source, detections);
         self.person_documents(source, detections);
