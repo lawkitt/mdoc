@@ -1044,6 +1044,28 @@ unless_guessed = ["DATE"]
 category = "CASE"
 pattern = '\b\d{2}[RР][SЅ]\d{4}-\d{2}-(?:19|20)\d{2}-\d{6}-\d{2}\b'
 
+# The model's span of the same shape, its label «УИД» with it or not, is
+# that case number whatever category the model guessed: a tax value
+# («99RS0517-01-2030-006271-38» as TAX, #364) is the УИД alone, as CASE.
+[[shape]]
+category = "TAX"
+case = ['^\s*(?:УИД[\p{Zs}\t:№]*)?(?P<case>\d{2}[RР][SЅ]\d{4}-\d{2}-(?:19|20)\d{2}-\d{6}-\d{2})\s*$']
+
+# The same as bank details.
+[[shape]]
+category = "BANK"
+case = ['^\s*(?:УИД[\p{Zs}\t:№]*)?(?P<case>\d{2}[RР][SЅ]\d{4}-\d{2}-(?:19|20)\d{2}-\d{6}-\d{2})\s*$']
+
+# The same as an identity document's number.
+[[shape]]
+category = "IDENTITY"
+case = ['^\s*(?:УИД[\p{Zs}\t:№]*)?(?P<case>\d{2}[RР][SЅ]\d{4}-\d{2}-(?:19|20)\d{2}-\d{6}-\d{2})\s*$']
+
+# The same as a phone.
+[[shape]]
+category = "PHONE"
+case = ['^\s*(?:УИД[\p{Zs}\t:№]*)?(?P<case>\d{2}[RР][SЅ]\d{4}-\d{2}-(?:19|20)\d{2}-\d{6}-\d{2})\s*$']
+
 # An appellate proceeding's number (#484 item 7): "апелляционное производство
 # № 05АП-1234/2031", in each case form.
 [[context]]

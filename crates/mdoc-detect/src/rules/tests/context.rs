@@ -1669,3 +1669,34 @@ fn a_uid_is_a_case_number_by_its_shape() {
         assert!(cases(source).is_empty(), "{source}");
     }
 }
+
+/// The model's tax, bank, identity or phone span of a УИД's shape is that
+/// case number, CASE, whatever it guessed (#364), its label outside.
+#[test]
+fn a_model_value_of_a_uids_shape_is_a_case_number() {
+    for label in ["tax_id", "bank_account", "passport_number", "phone_number"] {
+        assert_eq!(
+            shown(
+                "Судья Ракитина О.Л. № 33-5120/2031\n\n99RS0644-01-2030-007312-81\n",
+                &[("99RS0644-01-2030-007312-81", label)]
+            ),
+            pairs(&[
+                ("33-5120/2031", "CASE"),
+                ("99RS0644-01-2030-007312-81", "CASE")
+            ]),
+            "{label}"
+        );
+    }
+    assert_eq!(
+        shown(
+            "УИД 99RS0644-01-2030-007312-81",
+            &[("УИД 99RS0644-01-2030-007312-81", "tax_id")]
+        ),
+        pairs(&[("99RS0644-01-2030-007312-81", "CASE")])
+    );
+    // A tax value of another shape stays a tax value.
+    assert_eq!(
+        shown("ИНН 7707083893", &[("7707083893", "tax_id")]),
+        pairs(&[("7707083893", "TAX")])
+    );
+}

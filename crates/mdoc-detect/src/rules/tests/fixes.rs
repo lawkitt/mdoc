@@ -826,3 +826,29 @@ fn a_spelled_out_form_needs_a_quoted_company_name() {
         ["PERSON⟦Ракитиной О. Л.⟧"]
     );
 }
+
+/// A judge's surname on an appeal's header line takes its initials after
+/// it, «№» and the number outside (guide rule 1, #391, #364). The model's
+/// span with the role in front («Судья Чернолесова») waits for the role's
+/// trim (#795), which runs before this growth.
+#[test]
+fn a_judges_surname_on_the_header_line_takes_its_initials() {
+    for (source, surname, whole) in [
+        (
+            "Судья Ракитина О.Л. № 33-5120/2031",
+            "Ракитина",
+            "Ракитина О.Л.",
+        ),
+        (
+            "Судья Ракитина О. Л. № 33-5120/2031",
+            "Ракитина",
+            "Ракитина О. Л.",
+        ),
+    ] {
+        assert_eq!(
+            proposed_marks(source, &[("person", surname)]),
+            [format!("PERSON⟦{whole}⟧"), "CASE⟦33-5120/2031⟧".to_owned()],
+            "{source}"
+        );
+    }
+}
