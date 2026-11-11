@@ -185,6 +185,10 @@ pub(crate) struct SpanMatch {
     pub(crate) whole: Option<std::ops::Range<usize>>,
     /// The `span` entry that found it, for its own `absorbs`.
     pub(crate) entry: usize,
+    /// A city, state and ZIP alone whose start the rule found after a
+    /// body's name (`Pack::guessed_city`): a model name running into it
+    /// ends before it.
+    pub(crate) city: bool,
 }
 
 /// A boundary fix for one category's spans.
@@ -216,6 +220,9 @@ struct SpanFix {
     /// Lowercase phrases right before a person's span that make it a
     /// company's: "team known as the" before "Brindle Harriers".
     org_after: Vec<String>,
+    /// Lowercase phrases opening an organization's span that make the name
+    /// after them a person's: "estate of" before "Desmond Arkwright".
+    person_after: Vec<String>,
     list_letter: bool,
     /// Lowercase words a span never grows over ("exhibit" in "EXHIBIT A.
     /// WELK").

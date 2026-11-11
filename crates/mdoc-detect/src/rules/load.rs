@@ -419,6 +419,10 @@ pub(super) struct SpanEntry {
     /// company's ("the team known as the Brindle Harriers").
     #[serde(default)]
     org_after: Vec<String>,
+    /// For ORG: lowercase phrases that, opening a span, make the name after
+    /// them a person's ("estate of" before "Desmond Arkwright").
+    #[serde(default)]
+    person_after: Vec<String>,
     /// A lowercase list marker at a line or list break is no initial.
     #[serde(default)]
     list_letter: bool,
@@ -1171,13 +1175,14 @@ impl Pack {
                     || !entry.person_before.is_empty()
                     || !entry.org_before.is_empty()
                     || !entry.org_after.is_empty()
+                    || !entry.person_after.is_empty()
                     || entry.list_letter
                     || !entry.unless_over.is_empty()
                     || !entry.nested_quotes.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, trim_start, trim_end, extend, strip_end, person_before, org_before, org_after, list_letter, unless_over or nested_quotes".into(),
+                            "a pattern takes no trim, trim_start, trim_end, extend, strip_end, person_before, org_before, org_after, person_after, list_letter, unless_over or nested_quotes".into(),
                         ));
                     }
                     // A sized pattern's `mark` groups are what its lines'
@@ -1294,12 +1299,15 @@ impl Pack {
                 }
                 if !fixes {
                     return Err(at(
-                        "needs a pattern, trim words, trim_start, trim_end, extend patterns, strip_end, person_before, org_before or org_after"
+                        "needs a pattern, trim words, trim_start, trim_end, extend patterns, strip_end, person_before, org_before, org_after or person_after"
                             .into(),
                     ));
                 }
                 if !entry.person_before.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes person_before".into()));
+                }
+                if !entry.person_after.is_empty() && category != Category::Organization {
+                    return Err(at("only an ORG fix takes person_after".into()));
                 }
                 if !entry.nested_quotes.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes nested_quotes".into()));
@@ -1324,6 +1332,7 @@ impl Pack {
                     .iter()
                     .chain(&entry.org_before)
                     .chain(&entry.org_after)
+                    .chain(&entry.person_after)
                 {
                     if word
                         .split(' ')
@@ -1346,6 +1355,7 @@ impl Pack {
                     .chain(&entry.person_before)
                     .chain(&entry.org_before)
                     .chain(&entry.org_after)
+                    .chain(&entry.person_after)
                     .chain(&entry.unless_over)
                 {
                     if *word != word.to_lowercase() {
@@ -1369,13 +1379,20 @@ impl Pack {
                             Some(group) => Err(at(format!(
                                 "extend group {group:?} is not `lead` or `tail`"
                             ))),
-                            // Only a person's growth reads a lead or a tail:
-                            // the ORG checks (`grows_to_company`) take whole
-                            // matches.
+                            // Only a person's growth reads a lead. An ORG's
+                            // reads a tail, which grows only a span the
+                            // match starts with: a legal form after the
+                            // name ("QUILLAN" of "QUILLAN, INC"), which
+                            // `grows_to_company` reads the same way.
                             None if category != Category::Person
-                                && regex.capture_names().flatten().next().is_some() =>
+                                && regex.capture_names().flatten().any(|group| {
+                                    group == "lead" || category != Category::Organization
+                                }) =>
                             {
-                                Err(at("only a PERSON extend takes a `lead` or a `tail`".into()))
+                                Err(at(
+                                    "only a PERSON extend takes a `lead`, and only a PERSON or ORG one a `tail`"
+                                        .into(),
+                                ))
                             }
                             None => Ok(regex),
                         }
@@ -1443,6 +1460,7 @@ impl Pack {
                     person_before: entry.person_before.clone(),
                     org_before: entry.org_before.clone(),
                     org_after: entry.org_after.clone(),
+                    person_after: entry.person_after.clone(),
                     list_letter: entry.list_letter,
                     unless_over: entry.unless_over.clone(),
                     nested_quotes,

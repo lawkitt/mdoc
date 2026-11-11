@@ -1041,7 +1041,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .collect();
     let mut detections: Vec<Detection> = raw
         .iter()
-        .zip(categories)
+        .zip(categories.iter().copied())
         .filter_map(|(entity, category)| {
             let mut category = category?;
             // Read as the model read it: "%41lice" in a link target is "Alice".
@@ -1112,13 +1112,25 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             ..d.clone()
         })
         .collect();
+    // The model's people and companies as it gave them, those the fixes
+    // dropped included: a public body's name is none of the city after it.
+    let model_names: Vec<Range<usize>> = raw
+        .iter()
+        .zip(&categories)
+        .filter(|(_, category)| matches!(category, Some(Category::Person | Category::Organization)))
+        .map(|(entity, _)| view.view_range(entity.start..entity.end))
+        .collect();
     // Each span with the whole match a split one was cut from.
+    let mut cities = Vec::new();
     let spans: Vec<(Detection, Option<Range<usize>>, usize)> = rules::pack()
-        .spans_beside(&view.text, &names)
+        .spans_beside(&view.text, &names, &model_names)
         .into_iter()
         .filter_map(|found| {
             let mut detection = found.detection;
             detection.range = view.source_range(detection.range);
+            if found.city {
+                cities.push(detection.range.clone());
+            }
             // One only over an inserted table header names nothing, and a
             // case number inside a precedent's citation is part of it, as
             // for the `context` rules below (#506 item 3).
@@ -1135,6 +1147,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             })
         })
         .collect();
+    names_before_cities(source, &view, &mut detections, &cities);
     let rules: Vec<Detection> = rules::pack()
         .context(&view.text)
         .into_iter()
@@ -1349,6 +1362,55 @@ fn yield_to_whole_values(
         }
     }
     left
+}
+
+/// A person's or a company's model span that runs into a city, state and
+/// ZIP whose start the rule found after a body's name (`cities`, #502)
+/// ends before the city: the model's "Coastal Safety Board Wexmoor" before
+/// ", DC 20598" is "Coastal Safety Board", and it goes where that part is
+/// no name of its category ("Bureau of Permits Tarrow" is a public body's
+/// name and its city). The review would otherwise take the span over the
+/// city, or the city over the span.
+fn names_before_cities(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    detections: &mut Vec<Detection>,
+    cities: &[Range<usize>],
+) {
+    if cities.is_empty() {
+        return;
+    }
+    detections.retain_mut(|detection| {
+        if detection.recognizer != mdoc_pii::Recognizer::Model
+            || !matches!(
+                detection.category,
+                Category::Person | Category::Organization
+            )
+        {
+            return true;
+        }
+        let Some(city) = cities.iter().find(|city| {
+            detection.range.start < city.start
+                && city.start < detection.range.end
+                && detection.range.end <= city.end
+        }) else {
+            return true;
+        };
+        let part = &source[detection.range.start..city.start];
+        let end = detection.range.start
+            + part
+                .trim_end_matches(|c: char| c.is_whitespace() || c == ',')
+                .len();
+        let range = detection.range.start..end;
+        let text = &view.text[view.view_range(range.clone())];
+        if range.is_empty()
+            || !rules::pack().identifying_at(source, range.clone(), text, detection.category)
+        {
+            return false;
+        }
+        detection.range = range;
+        true
+    });
 }
 
 /// A person's or a company's model span that runs into a labelled value

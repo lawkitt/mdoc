@@ -543,6 +543,26 @@ impl Pack {
             })
     }
 
+    /// Whether `text` holds a company's legal form by any of the pack's
+    /// rules: an abbreviated or spelled-out form ([`Self::company_form`]:
+    /// "Ltd", "Corporation", «общество»), a name with its form as an ORG
+    /// `extend` reads it ("АНО «Кедр»", "Harbor Lane Bank, N.A"), or a form
+    /// before nested quotes («АНО», «коллегия адвокатов»). A span with one
+    /// is a whole company, never a piece of the next one's name (#502).
+    pub(super) fn own_legal_form(&self, text: &str) -> bool {
+        self.company_form(text)
+            || self.spans.iter().any(|span| match span {
+                Span::Fix(fix) if fix.category == Category::Organization => {
+                    fix.extend.iter().any(|pattern| pattern.is_match(text))
+                        || fix
+                            .nested_quotes
+                            .iter()
+                            .any(|(_, anywhere)| anywhere.is_match(text))
+                }
+                _ => false,
+            })
+    }
+
     /// Whether `rest`, the text after a role and its code, carries on a
     /// company or other name, so the code opens a name rather than
     /// defining a party code: more capitalized words ("C1 Holdings"), a
@@ -715,7 +735,9 @@ impl Pack {
     /// `source` to a company's whole name ("АЗС" in "ООО «АЗС»", "ЭДО" in
     /// "АНО «ЭДО»"; every ORG `extend` is a name with its legal form), so
     /// its shape is checked on the grown span (`fix_spans`). Fixes stay on
-    /// one line, so only the span's lines are searched.
+    /// one line, so only the span's lines are searched. A pattern with a
+    /// `tail` grows only a span it starts with, to where the tail starts
+    /// ("QUILLAN" of "QUILLAN, INC").
     pub(super) fn grows_to_company(
         &self,
         source: &str,
@@ -736,12 +758,26 @@ impl Pack {
                 _ => None,
             })
             .flat_map(|fix| &fix.extend)
-            .flat_map(|pattern| pattern.find_iter(&source[start..end]))
-            .any(|found| {
-                let found_range = start + found.start()..start + found.end();
-                found_range.start <= range.start
-                    && range.end <= found_range.end
-                    && found_range.len() > range.len()
+            .any(|pattern| {
+                let line = &source[start..end];
+                if pattern
+                    .capture_names()
+                    .flatten()
+                    .any(|group| group == "tail")
+                {
+                    return pattern
+                        .captures_at(line, range.start - start)
+                        .and_then(|found| Some((found.get(0)?.start(), found.name("tail")?)))
+                        .is_some_and(|(at, tail)| {
+                            start + at == range.start && range.end < start + tail.start()
+                        });
+                }
+                pattern.find_iter(line).any(|found| {
+                    let found_range = start + found.start()..start + found.end();
+                    found_range.start <= range.start
+                        && range.end <= found_range.end
+                        && found_range.len() > range.len()
+                })
             })
     }
 }

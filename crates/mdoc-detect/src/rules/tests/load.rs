@@ -232,8 +232,16 @@ fn mistakes_in_a_rule_file_are_named() {
             "only a PERSON extend takes a `lead`",
         ),
         (
-            "[[span]]\ncategory = \"ORG\"\nextend = ['X Ltd(?P<tail>,)']",
-            "only a PERSON extend takes a `lead` or a `tail`",
+            "[[span]]\ncategory = \"TAX\"\nextend = ['X(?P<tail>,)']",
+            "only a PERSON or ORG one a `tail`",
+        ),
+        (
+            "[[span]]\ncategory = \"PERSON\"\nperson_after = [\"estate of\"]",
+            "only an ORG fix takes person_after",
+        ),
+        (
+            "[[span]]\ncategory = \"ORG\"\nperson_after = [\"Estate of\"]",
+            "not lowercase",
         ),
         (
             "[[span]]\ncategory = \"PERSON\"\nextend = ['(?P<name>x)y']",
@@ -777,6 +785,7 @@ fn pack_regexes<'p>(pack: &'p Pack) -> Vec<(String, &'p Regex)> {
                 person_before: _,
                 org_before: _,
                 org_after: _,
+                person_after: _,
                 list_letter: _,
                 unless_over: _,
                 nested_quotes,

@@ -298,6 +298,96 @@ category = "ORG"
 trim = ["anor", "ors"]
 list_letter = true
 
+# A legal form after a comma belongs to the company's name: the model's
+# "QUILLAN" in "QUILLAN, INC" grows to "QUILLAN, INC", "HARTWELL LAW" in
+# "HARTWELL LAW, APC" to the whole of it, and so on for LLC, PLLC, LLP, Ltd,
+# L.P., LP, P.C., Corp, N.A. and PLC (guide rule 2, #374, #502). The form's
+# dot stays outside, as the dot of "Inc." does. The name is capitalized
+# words or capitals, "&", "of" and "the" between them; "and" joins two
+# names and is none of it. Only a span the match starts with grows (the
+# `tail`), so a role before the name ("Defendant QUILLAN, INC") never comes
+# in, nor another category's span.
+[[span]]
+category = "ORG"
+extend = [
+    '\b\p{Uppercase}[\p{Alphabetic}\d&\x27’.-]*(?:[\p{Zs}\t]+(?:(?:&|of|the)[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\d&\x27’.-]*){0,6},[\p{Zs}\t]*(?:INC|Inc|LLC|L\.L\.C|PLLC|P\.L\.L\.C|LLP|L\.L\.P|APC|A\.P\.C|LTD|Ltd|L\.P|LP|P\.C|PC|CORP|Corp|N\.A|PLC|plc)\b(?P<tail>)',
+]
+
+# A company's seal or an execution phrase before its name is no part of
+# it: the model's "Common Seal of Harbor Lane Ltd" is "Harbor Lane Ltd", in
+# any letter case and with emphasis markup between ("Common Seal of***
+# ***Harbor Lane Ltd"), and so are "executed as a deed by", "signed for
+# and on behalf of" and "for and on behalf of" before the name (guide rule
+# 2, #502). A lowercase "the" after them goes too; the name left opens with
+# a capital or a digit ("The Harbor Trust" keeps its "The").
+[[span]]
+category = "ORG"
+trim_start = [
+    '(?:(?i:the)[\p{Zs}\t*_]+)?(?i:common)[\p{Zs}\t*_]+(?i:seal)[\p{Zs}\t*_]+(?i:of)[\p{Zs}\t*_]+(?:the[\p{Zs}\t]+)?(?P<rest>\p{Uppercase}|\d)',
+    '(?i:(?:executed|signed)(?:[\p{Zs}\t]+as[\p{Zs}\t]+a[\p{Zs}\t]+deed)?(?:[\p{Zs}\t]+for[\p{Zs}\t]+and)?[\p{Zs}\t]+(?:on[\p{Zs}\t]+behalf[\p{Zs}\t]+of|by)|for[\p{Zs}\t]+and[\p{Zs}\t]+on[\p{Zs}\t]+behalf[\p{Zs}\t]+of)[\p{Zs}\t*_]+(?:the[\p{Zs}\t]+)?(?P<rest>\p{Uppercase}|\d)',
+]
+
+# A party's role before a company's name is no part of it: the model's
+# "Defendant ICL" is "ICL", "PLAINTIFFS: Harbor Lane Ltd" is "Harbor Lane
+# Ltd" (guide rules 1 and 2, #382, #502), in any letter case, with a colon
+# or a comma after the role or none. The name left opens with a capital or
+# a digit, and a legal form is never left alone (in code).
+[[span]]
+category = "ORG"
+trim_start = [
+    '(?:(?i:the)[\p{Zs}\t]+)?(?:(?i:(?:counter-|cross-|third-party[\p{Zs}\t]+)?(?:defendants?|plaintiffs?|claimants?|respondents?|petitioners?|appellants?|appellees?|intervenors?|movants?|garnishees?))[,:]?[\p{Zs}\t]+)+(?P<rest>\p{Uppercase}|\d)',
+]
+
+# A person's job title before a company's name is no part of it either:
+# the model's "Senior Vice Kestrel Insurance Company" (a title the line cut
+# short) is "Kestrel Insurance Company", "Secretary of Kestrel Mutual" is
+# "Kestrel Mutual" (guide rules 1 and 2, #382, #502). A title word alone
+# may open a company's own name ("Director Holdings Ltd", "Senior Living
+# Ltd"), so it counts only with a modifier before it ("Senior Vice",
+# "Executive Director", "General Counsel"), as "Vice President", or with
+# "of", "for" or "at" after it.
+[[span]]
+category = "ORG"
+trim_start = [
+    '(?:(?:Senior|Executive|Assistant|Deputy|Associate|First|Second|Managing|General|SENIOR|EXECUTIVE|ASSISTANT|DEPUTY|ASSOCIATE|FIRST|SECOND|MANAGING|GENERAL)[\p{Zs}\t]+)+(?:(?:Vice|VICE)[\p{Zs}\t]+)?(?:President|Vice|Secretary|Treasurer|Director|Manager|Officer|Partner|Counsel|PRESIDENT|VICE|SECRETARY|TREASURER|DIRECTOR|MANAGER|OFFICER|PARTNER|COUNSEL)(?:[\p{Zs}\t]+(?:of|for|at|OF|FOR|AT))?[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<rest>\p{Uppercase}|\d)',
+    '(?:Vice|VICE)[\p{Zs}\t]+(?:President|PRESIDENT)(?:[\p{Zs}\t]+(?:of|for|at|OF|FOR|AT))?[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<rest>\p{Uppercase}|\d)',
+    '(?:President|Secretary|Treasurer|Director|Chairman|Chairwoman|Chairperson|Chair|Manager|Officer|Partner|Counsel|Member|PRESIDENT|SECRETARY|TREASURER|DIRECTOR|CHAIRMAN|CHAIRWOMAN|CHAIRPERSON|CHAIR|MANAGER|OFFICER|PARTNER|COUNSEL|MEMBER)[\p{Zs}\t]+(?:of|for|at|OF|FOR|AT)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<rest>\p{Uppercase}|\d)',
+]
+
+# A citation's abbreviated word before a body's name that opens with "The"
+# is a journal's or a reporter's, no part of the name: the model's "Comb.
+# The Kestrel Institute" is "The Kestrel Institute" (guide rule 2, #502).
+# Before any other word the abbreviation may be the name's own ("Quill.
+# Recovery Sys., Inc", #374), so it stays.
+[[span]]
+category = "ORG"
+trim_start = [
+    '\p{Uppercase}\p{Ll}{1,7}\.[\p{Zs}\t]+(?P<rest>(?:The|THE)[\p{Zs}\t]+\p{Uppercase})',
+]
+
+# A year, a flight or a case number after a company's name is no part of
+# it: the model's "Harlan Party 2024" is "Harlan Party", "Kestrel Air
+# Flight 912" is "Kestrel Air", "Harbor Lane Ltd Case No. 4410" is "Harbor
+# Lane Ltd" (guide rule 2, #502). A year inside the name stays ("Class of
+# 2019 Foundation"), and so does a number that is no year ("Studio 54"). A
+# pleading's line number at the edge comes off in code.
+[[span]]
+category = "ORG"
+trim_end = [
+    '[\p{Zs}\t]*,?[\p{Zs}\t]+(?:19|20)\d{2}\z',
+    '[\p{Zs}\t]+(?:Flight|FLIGHT|Flt\.?|FLT\.?)[\p{Zs}\t]*(?:(?:No\.?|NO\.?|#)[\p{Zs}\t]*)?[A-Z]{0,3}\d{1,5}[A-Z]?\z',
+    '[\p{Zs}\t]*,?[\p{Zs}\t]+(?:Case|CASE|Docket|DOCKET)[\p{Zs}\t]+(?:No\.?|NO\.?|Number|NUMBER|#)[\p{Zs}\t]*[\dA-Za-z:/-]*\d[\dA-Za-z:/-]*\z',
+]
+
+# A person's estate is the person's: the model's organization "Estate of
+# Desmond Arkwright" is the person "Desmond Arkwright", "Estate of" outside
+# (guide rules 1 and 2, #502). A named trust or estate without a person's
+# name stays a company's (in code: the name left must be a person's shape
+# of one to four capitalized words, with no legal form).
+[[span]]
+category = "ORG"
+person_after = ["estate of"]
+
 # An organization ends with its legal form, not the sentence's period or
 # comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal
 # Ltd" (#374), nor with an "&" a trim left behind.
@@ -1389,10 +1479,12 @@ unless_titled = true
 
 # A caption's opening words stay outside a party's span: "In re Quill", "In
 # the Matter of Quill", "Ex parte Quill" and its short "Ex p Quill" are
-# "Quill" (guide rule 1, issue #500).
+# "Quill" (guide rule 1, issue #500). So is "Estate of" before a person's
+# name: "In re Estate of Quill" is "Quill" (#502; an organization's span
+# of it is the person too, by `person_after` above).
 [[span]]
 category = "PERSON"
-trim = ["in re", "in the matter of", "ex parte", "ex p"]
+trim = ["in re", "in the matter of", "ex parte", "ex p", "estate of"]
 
 # The same for an organization ("In re Quillon Freight LLC").
 [[span]]
@@ -2102,9 +2194,15 @@ pattern = [
     # street (#551).
     '(?:{flat}(?:{sep}|{nl})){1,3}{place}(?:{sep}|{nl})(?:{street}|{named})(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}(?:{after})?',
     '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}\b',
+    # The same city after a body's name that ends in "of" or "for" and one
+    # capitalized word, with no comma: the name is the `lead`, outside
+    # ("Bureau of Records Haddon, VA 20999" is "Haddon, VA 20999", #502).
+    '(?P<lead>\b(?i:{body_head})[\p{Zs}\t]+(?:of|for|OF|FOR)[\p{Zs}\t]+(?:(?:the|THE)[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+)(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}\b',
     # A Canadian city, province and postal code with no street (#551).
     '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\({province}\)|{province})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){postcode_ca}',
 ]
+# A public body's head noun before "of" or "for" (#502).
+parts.body_head = 'agency|administration|authority|board|bureau|commission|committee|council|department|dept\.|division|office|ministry'
 # A corner's street, without a house number: the corner needs its city
 # and ZIP (#553 item 3), so a bare pair of street names cannot match. The
 # alphabet and suffixes stay bounded to these English street forms rather
@@ -2218,6 +2316,20 @@ absorbs.PERSON = '(?P<span>{fhouse})\z'
 # the model. A model's name that is a city's own word
 # ("Calder" of "Port Calder, IN 46999") still costs the city: it cannot be
 # told from a recipient's name before ", NY".
+# A public body's or a company's word (the `body` group) is no city's
+# either where it goes on a name (#502): after a capitalized word on its
+# line, only spaces between, a guessed town ends before it and is searched
+# again after it, so "Appeals Review Board Washington, DC 20599" and
+# "TRANSIT SAFETY WASHINGTON, DC 20599" are "Washington, DC 20599" and
+# "WASHINGTON, DC 20599". Opening its line, or an element after a comma,
+# or after a function word ("In", "To") it is a city's own first word:
+# "Council Grove, KS 66899", "12 Mill Street, Council Grove, KS 66899" (in
+# code). A real city named so after a name is the `place` group, no stop
+# ("Council Bluffs", "Safety Harbor", "International Falls"); "Union" and
+# "Park" are no such words ("Union City", "Park City"). A city after such
+# a word on a name, or after a body's name the pattern's `lead` holds,
+# stands though a model name runs into it: the name ends before the city
+# (in code).
 # A foreign street (#551) is definite too: a Taiwanese "No." street, a
 # street whose type comes first or a German one, a bare one after the
 # unit, house or "No." before it ("No. 8, Jalan Kestrel"). A model's
@@ -2228,7 +2340,7 @@ continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t
 # A country after a comma ends a foreign address's guessed town, outside
 # it: "Rua das Acácias, 412, São Paulo, Brazil" ends at "São Paulo"
 # (guide rule 3, #551). Hong Kong is a territory that ends an address.
-continuation_stop = '(?P<recipient>\b(?i:attn|attention|c/o)\b)|\b(?i:contact|email|e-mail|phone|telephone|tel|fax)\b|\bTo\b|,[\p{Zs}\t]*(?:Switzerland|Canada|Brazil|Brasil|Taiwan|Malaysia|Vanuatu|Singapore|Indonesia|Philippines)\b'
+continuation_stop = '(?P<recipient>\b(?i:attn|attention|c/o)\b)|\b(?i:contact|email|e-mail|phone|telephone|tel|fax)\b|\bTo\b|(?P<place>\b(?i:council[\p{Zs}\t]+bluffs|safety[\p{Zs}\t]+harbor|international[\p{Zs}\t]+falls)\b)|(?P<body>\b(?i:agency|administration|association|authority|board|bureau|commission|committee|company|corporation|corp|council|department|dept|division|foundation|group|inc|international|llc|llp|ltd|office|police|protection|safety|services)\b)|,[\p{Zs}\t]*(?:Switzerland|Canada|Brazil|Brasil|Taiwan|Malaysia|Vanuatu|Singapore|Indonesia|Philippines)\b'
 # A field's label and its value are no city, state and ZIP: "Account ID
 # 12345", "Claim No CA 90999", "Policy Form New York 10999" (a word that
 # names a field, then "No", "Number" or a second such word and a state, or
