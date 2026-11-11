@@ -4432,6 +4432,11 @@ fn a_washington_street_with_no_type_keeps_its_number() {
     ] {
         assert!(proposed_addresses(source).is_empty(), "{source}");
     }
+    // A page label's letter is no street: only the town, state and ZIP.
+    assert_eq!(
+        proposed_addresses("See Page 12 A, St. Louis, MO 63999."),
+        ["St. Louis, MO 63999"]
+    );
 }
 
 /// #498 follow-ups: a named building and its street that markup closes

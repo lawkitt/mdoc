@@ -2145,9 +2145,9 @@ pattern = [
     '{named}{after_zip}',
     '{street}(?:{nl}|[\p{Zs}\t]+){street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}{after_zip}',
     # A Washington street with no type before its quadrant (#498): "1999
-    # Kestrel, NW, Washington, DC 20999", a lettered one too ("1999 K, NW,
-    # …").
-    '\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}*,[\p{Zs}\t]+(?:(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|(?:[NS]\.[EW]\.|[NS][EW]\b)){after_zip}',
+    # Kestrel, NW, Washington, DC 20999"; a lettered one only with its
+    # quadrant ("1999 K, NW, …"), so "Page 12 A, St. Louis, …" is none.
+    '\b\d+[A-Za-z]?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|(?:[NS]\.[EW]\.|[NS][EW]\b))|\p{Uppercase},[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b)){after_zip}',
     '{street_core},?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b)',
     '\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners}),?[\p{Zs}\t]+(?:(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)?[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2},[\p{Zs}\t]*[A-Z]{2}[\p{Zs}\t]+{zip}\b',
     # A Taiwanese "No." street (#551): after a floor, unit, lot or a house
@@ -2349,7 +2349,7 @@ absorbs.PERSON = '(?P<span>{fhouse})\z'
 # person on a street named after one ("Rua Ana Pellow, 412") stays the
 # address's. A house or farm with only its postcode and town after it is
 # guessed whole, as a city is.
-continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}|\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}*,[\p{Zs}\t]+(?:(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|(?:[NS]\.[EW]\.|[NS][EW]\b))|\b\d{1,5}[A-Za-z]?[\p{Zs}\t]+{fbuilding}|(?:{flat}(?:{sep}|{nl})){1,2}{building}{sep}(?:{pacific})\b|\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners})|{numbered}|{fstreet}|(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl}){ftype}{fword}(?:[\p{Zs}\t]+\d{1,5}[A-Za-z]?(?:[-/]\d{1,4}[A-Za-z]?)?\b)?'
+continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}|\b\d+[A-Za-z]?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|(?:[NS]\.[EW]\.|[NS][EW]\b))|\p{Uppercase},[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))|\b\d{1,5}[A-Za-z]?[\p{Zs}\t]+{fbuilding}|(?:{flat}(?:{sep}|{nl})){1,2}{building}{sep}(?:{pacific})\b|\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners})|{numbered}|{fstreet}|(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl}){ftype}{fword}(?:[\p{Zs}\t]+\d{1,5}[A-Za-z]?(?:[-/]\d{1,4}[A-Za-z]?)?\b)?'
 # A country after a comma ends a foreign address's guessed town, outside
 # it: "Rua das Acácias, 412, São Paulo, Brazil" ends at "São Paulo"
 # (guide rule 3, #551). Hong Kong is a territory that ends an address.
