@@ -1,9 +1,10 @@
 ---
-status: pass
+status: known-flaw
 flaw: defined-term-as-person
 issue: 390
 kind: contract
 source: probe-r3
+expect: false hit: ORG "XXXXXXXX"
 ---
 <!-- SPDX-License-Identifier: CC0-1.0; synthetic, invented values only. -->
 # Distribution and promotion agreement
