@@ -287,14 +287,16 @@ final class EditToolbarHost: UIView {
         // Above the keyboard there is no home indicator to clear, yet a
         // hosting controller with no parent takes the window's bottom
         // inset and left that much empty under the toolbar. The host's own
-        // inset is right (none above the keyboard, the home indicator's
-        // with a hardware keyboard), so the toolbar ends at its guide.
+        // insets are right (none below above the keyboard, the home
+        // indicator's with a hardware keyboard, the notch's at a
+        // landscape phone's sides), so the hosting view ignores the safe
+        // area and fills the host's guide.
         hosting.safeAreaRegions = []
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting.view)
         NSLayoutConstraint.activate([
-            hosting.view.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hosting.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hosting.view.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
+            hosting.view.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
             hosting.view.topAnchor.constraint(equalTo: topAnchor),
             hosting.view.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
         ])
@@ -317,7 +319,8 @@ final class EditToolbarHost: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         // The toolbar's own height, as the text size and the chip make it.
-        let fitted = hosting.sizeThatFits(in: CGSize(width: bounds.width > 0 ? bounds.width : 400, height: .infinity)).height
+        let width = bounds.width - safeAreaInsets.left - safeAreaInsets.right
+        let fitted = hosting.sizeThatFits(in: CGSize(width: width > 0 ? width : 400, height: .infinity)).height
             + safeAreaInsets.bottom
         if abs(fitted - height) > 0.5 {
             height = fitted

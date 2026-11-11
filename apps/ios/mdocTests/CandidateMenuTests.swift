@@ -106,15 +106,29 @@ final class CandidateMenuTests: XCTestCase {
         }
     }
 
-    /// A word joiner between every two characters, and nothing else added;
-    /// a long alias is left as it is.
-    func testAnUnbrokenAliasHasNoBreakPoint() {
+    /// A short alias has a word joiner between every two characters, so
+    /// no place to break. A long one may break after a separator and
+    /// nowhere else. Nothing visible is added.
+    func testAnAliasInAMenuBreaksOnlyAfterASeparatorWhenLong() {
         let alias = "PERSON_6"
-        XCTAssertEqual(alias.unbrokenAlias.replacingOccurrences(of: "\u{2060}", with: ""), alias)
-        XCTAssertEqual(alias.unbrokenAlias.unicodeScalars.filter { $0 == "\u{2060}" }.count, alias.count - 1)
+        XCTAssertEqual(alias.unbrokenAlias, "P\u{2060}E\u{2060}R\u{2060}S\u{2060}O\u{2060}N\u{2060}_\u{2060}6")
         XCTAssertEqual("".unbrokenAlias, "")
-        let long = String(repeating: "A", count: String.unbrokenAliasLimit + 1)
-        XCTAssertEqual(long.unbrokenAlias, long, "a long alias wraps rather than lose its end")
+        XCTAssertEqual("A".unbrokenAlias, "A")
+
+        let long = "CLIENT_HOLDING-CO 2"
+        XCTAssertGreaterThan(long.count, String.unbrokenAliasLimit)
+        let shown = long.unbrokenAlias
+        XCTAssertEqual(
+            shown.replacingOccurrences(of: "\u{2060}", with: "").replacingOccurrences(of: "\u{200B}", with: ""), long)
+        // Break points (zero-width spaces) only after "_", "-" and " ".
+        let characters = Array(shown)
+        let breaks = characters.indices.filter { characters[$0] == "\u{200B}" }
+        XCTAssertEqual(breaks.map { characters[$0 - 1] }, ["_", "-", " "])
+        // Every other pair of neighbours is joined.
+        XCTAssertEqual(characters.filter { $0 == "\u{2060}" }.count, long.count - 1 - breaks.count)
+
+        let word = String(repeating: "A", count: String.unbrokenAliasLimit + 1)
+        XCTAssertFalse(word.unbrokenAlias.contains("\u{200B}"), "a long word has no break point")
     }
 
     private static func rgba(_ colour: UIColor) -> [Int] {

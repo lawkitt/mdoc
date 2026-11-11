@@ -157,6 +157,28 @@ final class EditToolbarTests: XCTestCase {
         XCTAssertEqual(height(at: window.bounds.midY), own, accuracy: 0.5, "and back")
     }
 
+    /// On a landscape phone the toolbar's buttons stay out of the notch
+    /// and the home indicator's side: the toolbar fills the host's safe
+    /// area, not its bounds.
+    func testTheToolbarKeepsToTheSafeAreaAtTheSides() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        controller.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 62, bottom: 0, right: 48)
+        window.rootViewController = controller
+        window.isHidden = false
+        let host = EditToolbarHost(model: EditToolbarModel())
+        host.frame = CGRect(x: 0, y: 200, width: controller.view.bounds.width, height: 60)
+        controller.view.addSubview(host)
+        window.layoutIfNeeded()
+        let sides = host.safeAreaInsets
+        XCTAssertGreaterThanOrEqual(sides.left, 62)
+        XCTAssertGreaterThanOrEqual(sides.right, 48)
+        let toolbar = try XCTUnwrap(host.subviews.first).frame
+        XCTAssertEqual(toolbar.minX, sides.left, accuracy: 0.5)
+        XCTAssertEqual(toolbar.maxX, host.bounds.width - sides.right, accuracy: 0.5)
+    }
+
     func testBoldWrapsTheCaretsWordAndComesOffInsideBold() throws {
         let harness = try harness()
         caret(harness, at: "tenant", offset: 2)
