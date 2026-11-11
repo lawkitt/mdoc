@@ -96,6 +96,18 @@ fn a_known_persons_surname_is_no_organization() {
             ],
             &["PERSON⟦Petra Vandermeer⟧", "PERSON⟦Vandermeer⟧"],
         ),
+        // An address is no company: a state's code after a town's comma
+        // reads as "Co" no more, so the titled surname is the person, and
+        // its mentions follow; the town stays in the address.
+        (
+            "Senator Hartrow testified.\nMail: Hartrow, CO 80501.\nHartrow objected.",
+            &[("organization", "Hartrow")],
+            &[
+                "PERSON⟦Hartrow⟧",
+                "ADDRESS⟦Hartrow, CO 80501⟧",
+                "PERSON⟦Hartrow⟧",
+            ],
+        ),
     ]);
 }
 
@@ -151,6 +163,23 @@ fn surnames_after_a_plural_title_are_people() {
             "Hartrow and Vensel, LLP signed.\nSignatories: Hartrow and Vensel",
             &[("organization", "Hartrow and Vensel")],
             &["ORG⟦Hartrow and Vensel⟧", "ORG⟦Hartrow and Vensel⟧"],
+        ),
+        // The model's span over the heading too: the firm's short name
+        // stays one organization, the heading outside.
+        (
+            "Hartrow and Vensel LLP signed.\nSignatories: Hartrow and Vensel",
+            &[
+                ("organization", "Hartrow and Vensel LLP"),
+                ("organization", "Signatories: Hartrow and Vensel"),
+            ],
+            &["ORG⟦Hartrow and Vensel LLP⟧", "ORG⟦Hartrow and Vensel⟧"],
+        ),
+        // A comma and "Co." still make a company's short name: that name
+        // alone stays an organization.
+        (
+            "Hartrow, Co. signed.\nSignatories: Hartrow and Vensel",
+            &[("organization", "Hartrow and Vensel")],
+            &["ORG⟦Hartrow⟧", "ORG⟦Hartrow⟧", "PERSON⟦Vensel⟧"],
         ),
         // A company holding one surname of a people list keeps only that
         // name an organization: the rest of the list are people.

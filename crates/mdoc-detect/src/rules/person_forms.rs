@@ -326,14 +326,18 @@ impl Pack {
         (opened || pieces.len() > 1).then_some(pieces)
     }
 
-    /// Whether the model's organization over a list is a company's by its
-    /// whole wording: a legal form or a body word in it, or the wording
-    /// written with a legal form after it ("Pellam and Quenby" of "Pellam
-    /// and Quenby LLP" or "Pellam and Quenby, LLP", its short name). Then
-    /// the list is no list of people and stays whole.
-    fn company_list(&self, source: &str, range: &Range<usize>) -> bool {
-        let text = &source[name_range(source, range)];
-        self.company_named(text) || self.company_short_name(source, text)
+    /// The wording of a model organization's list (`pieces`, by
+    /// [`Self::list_pieces`]), from its first name to its last, a heading
+    /// or title before it left out, if it is a company's by its whole
+    /// wording: a legal form or a body word in it, or the wording written
+    /// with a legal form after it ("Pellam and Quenby" of "Pellam and
+    /// Quenby LLP" or "Pellam and Quenby, LLP", its short name). Then the
+    /// list is no list of people: it stays one organization, without the
+    /// heading ("Signatories: Pellam and Quenby" is "Pellam and Quenby").
+    fn company_list(&self, source: &str, pieces: &[Range<usize>]) -> Option<Range<usize>> {
+        let wording = pieces.first()?.start..pieces.last()?.end;
+        let text = &source[wording.clone()];
+        (self.company_named(text) || self.company_short_name(source, text)).then_some(wording)
     }
 
     /// Whether one name of a model organization's list is a company's, as
@@ -402,12 +406,15 @@ impl Pack {
                 continue;
             }
             // A list after a plural title: one span per surname, unless the
-            // model's organization is a company's name or short name; a
-            // name of it a company holds stays an organization alone.
+            // model's organization is a company's name or short name, which
+            // stays one organization, its heading outside; a name of it a
+            // company holds stays an organization alone.
             let person = detection.category == Category::Person;
-            if let Some(pieces) = self.list_pieces(source, &detection.range, &lists, person)
-                && (person || !self.company_list(source, &detection.range))
-            {
+            if let Some(pieces) = self.list_pieces(source, &detection.range, &lists, person) {
+                if !person && let Some(wording) = self.company_list(source, &pieces) {
+                    detection.range = wording;
+                    continue;
+                }
                 let category = |piece: &Range<usize>| {
                     if !person && self.company_piece(source, &source[piece.clone()], &companies) {
                         Category::Organization
