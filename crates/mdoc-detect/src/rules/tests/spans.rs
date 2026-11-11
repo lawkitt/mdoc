@@ -1296,10 +1296,12 @@ fn russian_addresses_keep_the_review_inputs_apart() {
             &[("г. Энск, ул. Лесная, д. 5, кв. 7, тел", "address")][..],
             &[("г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
         ),
+        // A house first, then its street after «по», runs from «дом»
+        // (#362, run 4).
         (
             "дом № 5 по ул. Лесной",
             &[("№ 5 по ул. Лесной", "address")][..],
-            &[("5 по ул. Лесной", "ADDRESS")][..],
+            &[("дом № 5 по ул. Лесной", "ADDRESS")][..],
         ),
         (
             "г. Энск, ул. Лесная, участок № 5",
@@ -2472,6 +2474,184 @@ fn settlement_addresses_take_no_names_or_phones() {
     }
 }
 
+/// #362, run 4: the city after the house, and the index after it, stay
+/// in the address, with or without the model's address cut at the house:
+/// a typed city spaced or not, «город», a bare city before its index, a
+/// city in the locative after «в», a hyphenated one.
+#[test]
+fn a_russian_address_keeps_the_city_and_index_after_the_house() {
+    for (address, model) in [
+        (
+            "ул. Ольховая, д. 18/2, г.Кедровск, 160999",
+            "ул. Ольховая, д. 18/2",
+        ),
+        (
+            "ул. Ольховая, д. 18/2, г. Кедровск, 160999",
+            "ул. Ольховая, д. 18/2",
+        ),
+        (
+            "ул. Ольховая, д. 18, кв. 4, город Кедровск",
+            "ул. Ольховая, д. 18, кв. 4",
+        ),
+        ("Сосновая ул., д. 7, Ольховск, 170999", "Сосновая ул., д. 7"),
+        (
+            "ул. 4-я Полевая, 61 в г. Усть-Кедровске",
+            "ул. 4-я Полевая, 61",
+        ),
+        (
+            "ул. Ольховая, д. 3, г. Нижний Кедровск, 603999",
+            "ул. Ольховая, д. 3",
+        ),
+    ] {
+        let source = format!("Адрес: {address}. Подпись");
+        assert_eq!(
+            shown(&source, &[]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}"
+        );
+        assert_eq!(
+            shown(&source, &[(model, "address")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}"
+        );
+    }
+    // A bare word after the house with no index after it is the next
+    // field's, and a name after a typed city is no part of it.
+    for (source, address) in [
+        (
+            "Адрес: ул. Ольховая, д. 18, Петров явился.",
+            "ул. Ольховая, д. 18",
+        ),
+        (
+            "Адрес: ул. Ольховая, д. 18, г. Кедровск Петрову.",
+            "ул. Ольховая, д. 18, г. Кедровск",
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}"
+        );
+    }
+    // A city or an index alone is still no address.
+    for source in [
+        "Адрес: г. Кедровск.",
+        "Адрес: Ольховская область.",
+        "Индекс: 160999.",
+    ] {
+        assert!(shown(source, &[]).is_empty(), "{source}");
+    }
+}
+
+/// #362, run 4: a register extract's address in capitals, its places'
+/// types dotless, runs from the index, with or without the model's address
+/// from the street; a depersonalised district stays inside, and a court's
+/// name before its address stays out.
+#[test]
+fn a_register_extracts_address_in_capitals_starts_at_the_index() {
+    for address in [
+        "354999, ОЛЬХОВСКИЙ КРАЙ, Г КЕДРОВСК, УЛ 30 ЛЕТ ОКТЯБРЯ, Д. 12, ОФИС 4",
+        "366999, ОЛЬХОВСКАЯ РЕСПУБЛИКА, СТ-ЦА КЕДРОВСКАЯ, УЛ. САДОВАЯ, Д. 3",
+        "346999, ОЛЬХОВСКАЯ ОБЛ., КЕДРОВСКИЙ Р-Н, Х СОСНОВЫЙ, УЛ ПОЛЕВАЯ, ЗД. 9, СТР. 2",
+        "346999, ОЛЬХОВСКАЯ ОБЛ., КЕДРОВСКИЙ Р-Н, ПОС СОСНОВЫЙ, УЛ ПОЛЕВАЯ, Д. 9",
+        "346999, ОЛЬХОВСКАЯ ОБЛ., Р-Н КЕДРОВСКИЙ, С СОСНОВКА, УЛ ПОЛЕВАЯ, Д. 9",
+    ] {
+        let source = format!("Адрес: {address}\n");
+        let street = source.find("УЛ").unwrap();
+        let model = &source[street..source.len() - 1];
+        assert_eq!(
+            shown(&source, &[]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}"
+        );
+        assert_eq!(
+            shown(&source, &[(model, "address")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}"
+        );
+    }
+    let source = "Адрес: 346999, ОЛЬХОВСКАЯ ОБЛ., Р-Н ФИО2, С СОСНОВКА, УЛ ПОЛЕВАЯ, Д. 9\n";
+    let address = "346999, ОЛЬХОВСКАЯ ОБЛ., Р-Н ФИО2, С СОСНОВКА, УЛ ПОЛЕВАЯ, Д. 9";
+    assert_eq!(shown(source, &[]), pairs(&[(address, "ADDRESS")]));
+    assert_eq!(
+        shown(source, &[("ФИО2", "person")]),
+        pairs(&[(address, "ADDRESS")])
+    );
+    // A court's name stays out of its address.
+    assert_eq!(
+        shown(
+            "Арбитражный суд Ольховской области, 354999, Г КЕДРОВСК, УЛ ПОЛЕВАЯ, Д. 1",
+            &[]
+        ),
+        pairs(&[("354999, Г КЕДРОВСК, УЛ ПОЛЕВАЯ, Д. 1", "ADDRESS")]),
+    );
+    // With no index, a dotless capital is no place: "С" is a preposition.
+    assert_eq!(
+        shown("Встреча С ПЕТРОВЫМ, УЛ ПОЛЕВАЯ, Д. 9\n", &[]),
+        pairs(&[("УЛ ПОЛЕВАЯ, Д. 9", "ADDRESS")]),
+    );
+    // A region or an index alone is still no address.
+    for source in ["Адрес: ОЛЬХОВСКИЙ КРАЙ\n", "Адрес: 354999, \n"] {
+        assert!(shown(source, &[]).is_empty(), "{source}");
+    }
+}
+
+/// #362, run 4: a house first, then «по» and its street, then the
+/// settlement, is an address from «дом» in its case form to the
+/// settlement's name; «дом» in prose with no street after «по» is none.
+#[test]
+fn a_house_first_address_runs_from_the_house_to_the_settlement() {
+    for (source, address) in [
+        (
+            "Пожар в доме 41 по ул. Кедровая пос. Ольховый произошёл ночью.",
+            "доме 41 по ул. Кедровая пос. Ольховый",
+        ),
+        (
+            "Собственник дома № 7 по улице Садовой г. Кедровска обратился в суд.",
+            "дома № 7 по улице Садовой г. Кедровска",
+        ),
+        (
+            "Квартира в доме 12а, корп. 2 по Сосновой улице, с. Кедровка, продана.",
+            "доме 12а, корп. 2 по Сосновой улице, с. Кедровка",
+        ),
+        (
+            "Жильцы дома 3 по улице Малой Полевой давно ждут ремонта.",
+            "дома 3 по улице Малой Полевой",
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}"
+        );
+    }
+    // The model's person on the settlement's name is the address's own; a
+    // surname after the street is no part of it and stays a name.
+    let source = "Пожар в доме 41 по ул. Кедровая пос. Ольховый произошёл ночью.";
+    assert_eq!(
+        shown(source, &[("Ольховый", "person")]),
+        pairs(&[("доме 41 по ул. Кедровая пос. Ольховый", "ADDRESS")]),
+    );
+    assert_eq!(
+        shown(
+            "Сообщил, что в доме 3 по улице Садовой Петров И. И. не живёт.",
+            &[("Петров И. И.", "person")]
+        ),
+        pairs(&[
+            ("доме 3 по улице Садовой", "ADDRESS"),
+            ("Петров И. И.", "PERSON")
+        ]),
+    );
+    for source in [
+        "В доме 5 человек, и все дома.",
+        "Ремонт дома по улице Садовой начат.",
+        "Он был дома 3 часа по просьбе матери.",
+        "В доме 7 было тепло.",
+    ] {
+        assert!(shown(source, &[]).is_empty(), "{source}");
+    }
+}
+
 /// The names the review shows for `source` with the model's `entities`
 /// (`label` and text): what the machine-readable zone rules propose
 /// (#495).
@@ -3136,10 +3316,10 @@ fn a_list_patterns_forms_search_a_text_about_once() {
                 category: Category::Address,
                 pattern,
                 ..
-            } if pattern.0.len() == 3 => Some(pattern),
+            } if pattern.0.len() == 4 && pattern.0[0].as_str().contains("ГСП") => Some(pattern),
             _ => None,
         })
-        .expect("the Russian forward address, three forms");
+        .expect("the Russian forward address, four forms");
     let line =
         "Истец: Иванов И. И., 123456, г. Энск, ул. Ленина, д. 5, кв. 12; тел. 8-900-000-00-00\n";
     let text = line.repeat(2000);
