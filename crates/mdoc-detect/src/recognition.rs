@@ -1447,8 +1447,19 @@ mod tests {
 
     /// Contact labels end a continuation even without model name evidence;
     /// with evidence both the recipient and its repeated mention survive.
+    /// The city, state and ZIP after the recipient may be an address of
+    /// their own (guide rule 3, #506 item 6), never one with the field or
+    /// the name.
     #[test]
     fn address_continuations_stop_at_contact_fields() {
+        let city = "Slocombe, NY 10999";
+        let without_city = |source: &str, proposed: Vec<Span>| -> Vec<Span> {
+            let at = source.find(city).unwrap();
+            proposed
+                .into_iter()
+                .filter(|span| span.category != "ADDRESS" || span.range != (at..at + city.len()))
+                .collect()
+        };
         for field in [
             "Attn",
             "Attention",
@@ -1470,12 +1481,31 @@ mod tests {
                         let source = format!(
                             "{prefix}, {field}{colon} {name}, Slocombe, NY 10999.\n{name} signed."
                         );
-                        assert_address_proposals(
-                            &source,
-                            &[(model_address, "address"), (name, label)],
-                            &[(prefix, "ADDRESS"), (name, category)],
+                        let raw: Vec<_> = [(model_address, "address"), (name, label)]
+                            .into_iter()
+                            .map(|(text, label)| {
+                                let start = source.find(text).unwrap();
+                                RawEntity {
+                                    start,
+                                    end: start + text.len(),
+                                    label: label.into(),
+                                    score: 0.8,
+                                    text: text.into(),
+                                }
+                            })
+                            .collect();
+                        let mut expected: Vec<_> = source
+                            .match_indices(name)
+                            .map(|(start, _)| span(start..start + name.len(), category))
+                            .chain([span(0..prefix.len(), "ADDRESS")])
+                            .collect();
+                        expected.sort();
+                        assert_eq!(
+                            without_city(&source, proposals(&source, &raw).unwrap()),
+                            expected,
+                            "{source}"
                         );
-                        let proposed = proposals(&source, &[]).unwrap();
+                        let proposed = without_city(&source, proposals(&source, &[]).unwrap());
                         assert!(
                             proposed
                                 .iter()
