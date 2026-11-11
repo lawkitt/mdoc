@@ -134,6 +134,16 @@ fn surnames_after_a_plural_title_are_people() {
             &[("person", "Brannock, Ivo")],
             &["PERSON⟦Brannock, Ivo⟧"],
         ),
+        // A list heading over a company's short name: the firm signs, so
+        // the model's organization stays whole, as a lone surname would.
+        (
+            "Hartrow and Vensel LLP signed below.\nSignatories: Hartrow and Vensel",
+            &[
+                ("organization", "Hartrow and Vensel LLP"),
+                ("organization", "Hartrow and Vensel"),
+            ],
+            &["ORG⟦Hartrow and Vensel LLP⟧", "ORG⟦Hartrow and Vensel⟧"],
+        ),
         // No plural title: a company's list stays.
         (
             "Clients: Kestrel, Pellam and Quenby renewed.",
@@ -378,6 +388,28 @@ fn russian_initials_forms_are_the_name() {
             "Иск к Е. Р. Тулиной удовлетворить.",
             &[("organization", "к Е. Р.")],
             &["PERSON⟦Е. Р. Тулиной⟧"],
+        ),
+        // A surname in -ть before initials is no verb: it stays after a
+        // role, surname first and mid-sentence.
+        (
+            "Свидетель Белоть Е. Р. подписал.",
+            &[("person", "Белоть Е. Р.")],
+            &["PERSON⟦Белоть Е. Р.⟧"],
+        ),
+        (
+            "Белоть Е. Р. подписал расписку.",
+            &[("person", "Белоть Е. Р.")],
+            &["PERSON⟦Белоть Е. Р.⟧"],
+        ),
+        (
+            "Расписку вчера подписал Дремоть Е. Р. при свидетелях.",
+            &[("person", "Е. Р.")],
+            &["PERSON⟦Дремоть Е. Р.⟧"],
+        ),
+        (
+            "Иск к Белоть Е. Р. удовлетворить.",
+            &[("organization", "Белоть Е. Р.")],
+            &["ORG⟦Белоть Е. Р.⟧"],
         ),
         // A place before initials is no double surname.
         ("г. Санкт-Петербург Т.Т. Колобова", &[], &[]),

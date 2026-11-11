@@ -362,16 +362,21 @@ extend = [
 # A word glued before initials is no part of the name: the model's
 # «Обязать Е. Р.» and «к Е. Р.» are «Е. Р.» (guide rule 1, #793): a
 # lowercase word (a preposition, a verb mid-sentence) or a capitalised
-# verb's infinitive opening a sentence. A surname's particle is lowercase
-# too, but stands before a surname («де Лаваль»), never before initials.
-# The model's organization of such words and Cyrillic initials is the
-# person's initials (`person_forms` in rules/). After the join above,
-# which reads a capitalised verb as a surname, and before the one below,
-# so the initials left grow to a surname after them («Е. Р. Тулину»).
+# infinitive that opens a court order's operative part («Обязать»,
+# «Взыскать», «Признать» …, listed below). Only those verbs, never any
+# capitalised word in -ть: a surname may end so too («Свидетель Локоть
+# Е. Р.», «Локоть Е. Р. подписал»), and a surname-first name keeps it. A
+# listed verb opens its sentence or line; no surname is spelled so. A
+# surname's particle is lowercase too, but stands before a surname («де
+# Лаваль»), never before initials. The model's organization of such words
+# and Cyrillic initials is the person's initials (`person_forms` in
+# rules/, the same verbs). After the join above, which reads a
+# capitalised verb as a surname, and before the one below, so the
+# initials left grow to a surname after them («Е. Р. Тулину»).
 [[span]]
 category = "PERSON"
 trim_start = [
-    '(?:(?:\p{Ll}+|\p{Lu}\p{Ll}*(?:ть|ться))[\p{Zs}\t]+)+(?P<rest>\p{Lu}\.[\p{Zs}\t]?\p{Lu}\.)',
+    '(?:(?:\p{Ll}+|(?:Обязать|Взыскать|Признать|Отказать|Возложить|Запретить|Освободить|Назначить|Вернуть|Возвратить|Предоставить|Восстановить|Выселить|Вселить|Истребовать|Прекратить|Отменить|Удовлетворить|Оставить|Направить|Привлечь|Передать|Расторгнуть|Лишить|Ограничить|Отстранить|Утвердить|Включить|Исключить|Допросить|Вызвать|Уведомить|Разрешить|Определить))[\p{Zs}\t]+)+(?P<rest>\p{Lu}\.[\p{Zs}\t]?\p{Lu}\.)',
 ]
 
 # Two initials before a surname belong to the name, as above: the model's
