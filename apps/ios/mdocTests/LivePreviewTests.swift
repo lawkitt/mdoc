@@ -245,8 +245,12 @@ final class LivePreviewTests: XCTestCase {
         XCTAssertFalse(hidden(harness, at: item), "the item's - shows")
         XCTAssertNil(decoration(harness, at: item)?.label, "and no bullet beside it")
         caret(harness, at: task + 8)
-        XCTAssertFalse(hidden(harness, at: task + 2), "the task's box shows as source")
-        XCTAssertNil(decoration(harness, at: task)?.task)
+        XCTAssertTrue(hidden(harness, at: task), "a task's prefix stays hidden on its line")
+        XCTAssertTrue(hidden(harness, at: task + 2))
+        XCTAssertNotNil(decoration(harness, at: task)?.task, "and its box stays drawn")
+        // A caret put in the hidden prefix goes to the task's text.
+        caret(harness, at: task + 1)
+        XCTAssertEqual(harness.view.selectedRange.location, task + 6)
         // A hidden fence line is stepped over, onto its code, where both
         // fences show their source; a rule on the caret's line shows too.
         let fence = location(of: "```", in: harness)
@@ -265,9 +269,9 @@ final class LivePreviewTests: XCTestCase {
     }
 
     /// The caret's list line draws its source marker in the list's column,
-    /// so the item's text does not move sideways as the caret enters or
-    /// leaves it (ADR 0110): bullets, tasks, nested items, a two-digit
-    /// number, and at the largest text size.
+    /// and a task keeps its box, so the item's text does not move sideways
+    /// as the caret enters or leaves it (ADR 0110): bullets, tasks, nested
+    /// items, a two-digit number, and at the largest text size.
     func testTheCaretsListLineDoesNotShift() throws {
         let numbered = (1...11).map { "\($0). Clause \($0)" }.joined(separator: "\n")
         let text = """
@@ -300,7 +304,10 @@ final class LivePreviewTests: XCTestCase {
                 caret(harness, at: location(of: "Last line.", in: harness))
                 let away = try x(of: word)
                 caret(harness, at: location(of: word, in: harness) + 3)
-                XCTAssertFalse(hidden(harness, at: location(of: word, in: harness) - 2), "\(word): its marker shows")
+                // A task keeps its box; any other item shows its marker.
+                XCTAssertEqual(
+                    hidden(harness, at: location(of: word, in: harness) - 2), word.hasSuffix("task"),
+                    "\(word): its marker shows, or its box stays")
                 let on = try x(of: word)
                 XCTAssertEqual(on, away, accuracy: 0.5, "\(word) stays put as the caret enters its line (\(size))")
                 // The caret at the text's start stands at the text, not in the
@@ -315,8 +322,8 @@ final class LivePreviewTests: XCTestCase {
                 caret(harness, at: location(of: "Last line.", in: harness))
                 XCTAssertEqual(try x(of: word), away, accuracy: 0.5, "and as it leaves (\(size))")
             }
-            // Return after a done task gives a new task, its marker narrowed;
-            // what is typed next is the text's size.
+            // Return after a done task gives a new task, its box drawn; what
+            // is typed next is the text's size.
             let body = harness.view.textStorage.attribute(.font, at: location(of: "Done task", in: harness), effectiveRange: nil) as? UIFont
             caret(harness, at: location(of: "Done task", in: harness) + 9)
             type(harness, "\n")

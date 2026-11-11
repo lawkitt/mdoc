@@ -462,12 +462,156 @@ pub fn turn_selection_where(
         }
     };
     Some(EditResult {
-        edits: vec![Edit {
-            range: start..end,
-            text,
-        }],
+        edits: line_edits(&source[start..end], &text, start),
         selection,
     })
+}
+
+/// `old`, which sits at `start` in the source, rewritten as `new`: one edit
+/// for each line prefix put, changed or taken away and for each line added
+/// or removed, so a line's own text is in no edit. What lies in an edit is
+/// replaced for everything that follows the text (a mobile proposal there
+/// is dropped), and a block command changes markers, not words. One edit
+/// for the whole stretch when the lines do not pair up.
+fn line_edits(old: &str, new: &str, start: usize) -> Vec<Edit> {
+    let whole = || {
+        vec![Edit {
+            range: start..start + old.len(),
+            text: new.to_string(),
+        }]
+    };
+    // Neither ends with a line break (the stretch ends at a line's end):
+    // each line is compared with one.
+    let lines =
+        |text: &str| -> Vec<String> { text.split('\n').map(|l| format!("{l}\n")).collect() };
+    let (was, now) = (lines(old), lines(new));
+    // How many bytes two lines share at their end, when that is more than
+    // the line break and what differs before it is a marker's length.
+    let shared = |a: &str, b: &str| -> Option<usize> {
+        let mut n = a
+            .bytes()
+            .rev()
+            .zip(b.bytes().rev())
+            .take_while(|(x, y)| x == y)
+            .count();
+        while !a.is_char_boundary(a.len() - n) || !b.is_char_boundary(b.len() - n) {
+            n -= 1;
+        }
+        const MARKER: usize = 16;
+        (n > 1 && a.len() - n <= MARKER && b.len() - n <= MARKER).then_some(n)
+    };
+    let pairs = |a: &str, b: &str| a == b || shared(a, b).is_some();
+    // From lines that do not pair: how many new lines to add, or old ones
+    // to remove, before a pair comes.
+    let ahead = |a: Option<&str>, b: Option<&str>, i: usize, j: usize| -> Option<(usize, usize)> {
+        let (a, b) = (a?, b?);
+        let added = now[j + 1..]
+            .iter()
+            .position(|next| pairs(a, next))
+            .map(|k| k + 1);
+        let removed = was[i + 1..]
+            .iter()
+            .position(|next| pairs(next, b))
+            .map(|k| k + 1);
+        match (added, removed) {
+            (Some(n), Some(m)) if m <= n => Some((0, m)),
+            (Some(n), _) => Some((n, 0)),
+            (None, Some(m)) => Some((0, m)),
+            (None, None) => None,
+        }
+    };
+    let mut edits: Vec<Edit> = Vec::new();
+    let mut push = |range: Range<usize>, text: &str| match edits.last_mut() {
+        Some(last) if last.range.end == range.start => {
+            last.range.end = range.end;
+            last.text.push_str(text);
+        }
+        _ => edits.push(Edit {
+            range,
+            text: text.to_string(),
+        }),
+    };
+    let (mut i, mut j, mut at) = (0, 0, 0);
+    while i < was.len() || j < now.len() {
+        let a = was.get(i).map(String::as_str);
+        let b = now.get(j).map(String::as_str);
+        match (a, b) {
+            (Some(a), Some(b)) if a == b => {
+                at += a.len();
+                (i, j) = (i + 1, j + 1);
+            }
+            (Some(a), Some(b)) if shared(a, b).is_some() => {
+                let n = shared(a, b).unwrap_or(0);
+                push(at..at + a.len() - n, &b[..b.len() - n]);
+                at += a.len();
+                (i, j) = (i + 1, j + 1);
+            }
+            // Lines added (the old line pairs with a later new one) or
+            // removed (a later old line pairs with the new one): whichever
+            // run is shorter, so the lines that pair stay out of the edit.
+            (a, b) if a.is_none() || b.is_none() || ahead(a, b, i, j).is_some() => {
+                let (added, removed) = match (a, b) {
+                    (None, _) => (1, 0),
+                    (_, None) => (0, 1),
+                    _ => ahead(a, b, i, j).unwrap_or((0, 0)),
+                };
+                for line in &now[j..j + added] {
+                    push(at..at, line);
+                }
+                for line in &was[i..i + removed] {
+                    push(at..at + line.len(), "");
+                    at += line.len();
+                }
+                (i, j) = (i + removed, j + added);
+            }
+            (Some(a), Some(b)) => {
+                push(at..at + a.len(), b);
+                at += a.len();
+                (i, j) = (i + 1, j + 1);
+            }
+            (None, None) => break,
+            // Guarded out above: a lone side is a line added or removed.
+            (Some(_), None) | (None, Some(_)) => return whole(),
+        }
+    }
+    // The last line's break is not in the source: an edit that reaches it
+    // gives it up, or takes the break before the edit instead.
+    if let Some(last) = edits.last_mut()
+        && last.range.end > old.len()
+    {
+        last.range.end = old.len();
+        if last.text.ends_with('\n') {
+            last.text.pop();
+            if last.range.start > old.len() {
+                last.range.start = old.len();
+                last.text.insert(0, '\n');
+            }
+        } else if last.range.start > 0 && last.range.start <= old.len() {
+            last.range.start -= 1;
+        } else {
+            return whole();
+        }
+    }
+    for edit in &mut edits {
+        edit.range = start + edit.range.start..start + edit.range.end;
+    }
+    edits.retain(|e| !e.range.is_empty() || !e.text.is_empty());
+    // Checked against the text asked for: any doubt is one edit.
+    let result = EditResult {
+        edits,
+        selection: 0..0,
+    };
+    let ordered = result
+        .edits
+        .windows(2)
+        .all(|w| w[0].range.end < w[1].range.start);
+    let mut padded = " ".repeat(start);
+    padded.push_str(old);
+    if ordered && result.apply(&padded)[start..] == *new {
+        result.edits
+    } else {
+        whole()
+    }
 }
 
 #[cfg(test)]
@@ -483,6 +627,92 @@ mod tests {
         let out = r.apply(source);
         let selected = out[r.selection.clone()].to_string();
         Some((out, selected))
+    }
+
+    /// A block command edits markers and blank lines, never a line's own
+    /// text: what an edit covers is replaced for whoever follows the text
+    /// (a mobile proposal inside it is dropped).
+    #[test]
+    fn edits_leave_each_lines_text_alone() {
+        let source = "Intro Anna\n\nOne Anna\n\nTwo Anna\ntwo more\n\n- Three Anna\n\nLast";
+        let all = 0..source.len();
+        for kind in [Bullet, Numbered, Todo, Quote, Text, H2, Code, Callout] {
+            let scan = BlockScan::new(source);
+            let Some(r) = turn_selection(source, scan.view(), all.clone(), kind) else {
+                continue;
+            };
+            assert!(kind == Text || r.edits.len() > 1, "{kind:?}: {:?}", r.edits);
+            for edit in &r.edits {
+                assert!(
+                    !source[edit.range.clone()].contains("Anna"),
+                    "{kind:?}: {edit:?}"
+                );
+                assert!(!edit.text.contains("Anna"), "{kind:?}: {edit:?}");
+            }
+            assert!(
+                r.edits
+                    .windows(2)
+                    .all(|w| w[0].range.end < w[1].range.start)
+            );
+        }
+        // Blank lines in a run between two paragraphs go as a run.
+        let source = "Alice\n\n\n\nPay Anna";
+        let scan = BlockScan::new(source);
+        let r = turn_selection(source, scan.view(), 0..source.len(), Todo).unwrap();
+        assert_eq!(r.apply(source), "- [ ] Alice\n- [ ] Pay Anna");
+        for edit in &r.edits {
+            assert!(!source[edit.range.clone()].contains("Anna"), "{edit:?}");
+        }
+        assert_eq!(
+            r.joined(source).unwrap().range,
+            0..source.len() - "Pay Anna".len()
+        );
+        // One paragraph: only its prefix is put, and taken away again.
+        let scan = BlockScan::new("Pay Anna");
+        let r = turn_selection("Pay Anna", scan.view(), 3..3, Todo).unwrap();
+        assert_eq!(
+            r.edits,
+            [Edit {
+                range: 0..0,
+                text: "- [ ] ".into()
+            }]
+        );
+        let scan = BlockScan::new("- [ ] Pay Anna");
+        let r = turn_selection("- [ ] Pay Anna", scan.view(), 8..8, Text).unwrap();
+        assert_eq!(
+            r.edits,
+            [Edit {
+                range: 0..6,
+                text: String::new()
+            }]
+        );
+    }
+
+    #[test]
+    fn line_edits_give_the_text_asked_for() {
+        let cases = [
+            ("a", "- a"),
+            ("a\n\nb", "- a\n- b"),
+            ("- a\n- b", "a\n\nb"),
+            ("a\nb", "```\na\nb\n```"),
+            ("```\na\n```", "a"),
+            ("a\n\nb", "> [!NOTE]\n> a\n>\n> b"),
+            ("x\ny", "completely\ndifferent\nlines here"),
+            ("é\n\nü", "1. é\n2. ü"),
+            ("", "- "),
+        ];
+        for (old, new) in cases {
+            let edits = line_edits(old, new, 3);
+            let r = EditResult {
+                edits,
+                selection: 0..0,
+            };
+            assert_eq!(
+                r.apply(&format!("ab\n{old}\ntail")),
+                format!("ab\n{new}\ntail"),
+                "{old:?} -> {new:?}"
+            );
+        }
     }
 
     /// The text after turning the block at the start of `row` into `kind`.

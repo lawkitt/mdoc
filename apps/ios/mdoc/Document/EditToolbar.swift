@@ -2,17 +2,21 @@ import MdocFFI
 import SwiftUI
 import UIKit
 
-/// Edit mode's toolbar above the keyboard (ADR 0109): a Liquid Glass
-/// capsule of undo, redo, bold, italic, list, task, indent and outdent,
-/// then Aa and hide keyboard as glass circles that always show. With the
-/// caret in a table's cell, row below, column right and the table's ⋯ menu
-/// take the list and task buttons' place (ADR 0110). A button is on while the caret is in what it makes (bold inside `**…**`, list on a
-/// list line) and off where it cannot apply. Every button is a 44 pt
-/// target; the capsule scrolls sideways when the phone or the text size
-/// leaves it no room. With the caret in a link, a chip above it offers
-/// Open and Edit.
+/// Edit mode's toolbar above the keyboard (ADR 0109): Liquid Glass. Undo
+/// and redo sit in a capsule of their own at its start and never scroll
+/// away (ADR 0110; at an accessibility text size they lead the next
+/// capsule instead); then a capsule of bold, italic, list, task, indent and
+/// outdent, which scrolls sideways when the phone or the text size leaves
+/// it no room; then Aa and hide keyboard as circles that always show. With
+/// the caret in a table's cell, row below, column right and the table's ⋯
+/// menu take the list, task and indent buttons' place (ADR 0110). A button
+/// is on while the caret is in what it makes (bold inside `**…**`, list on
+/// a list line) and off where it cannot apply. Every button is a 44 pt
+/// target. With the caret in a link, a chip above it offers Open and Edit.
 struct EditToolbar: View {
     let model: EditToolbarModel
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         GlassEffectContainer(spacing: Space.xs) {
@@ -21,11 +25,18 @@ struct EditToolbar: View {
                     LinkChip(link: link, model: model)
                 }
                 HStack(spacing: Space.xs) {
+                    if pinsUndo {
+                        HStack(spacing: 0) {
+                            undoRedo
+                        }
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                    }
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 0) {
                                 buttons
                             }
+                            .id(Self.firstID)
                         }
                         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                         .onChange(of: model.inCell) { _, inCell in follow(inCell, with: proxy) }
@@ -52,15 +63,24 @@ struct EditToolbar: View {
         .padding(.vertical, Space.xxs)
     }
 
+    /// Undo and Redo keep a capsule of their own (ADR 0110). At an
+    /// accessibility text size four pinned buttons would leave the others
+    /// no room, so they lead the scrolling capsule instead.
+    private var pinsUndo: Bool { !dynamicTypeSize.isAccessibilitySize }
+
     @ViewBuilder
-    private var buttons: some View {
+    private var undoRedo: some View {
         ToolbarKey(symbol: "arrow.uturn.backward", label: Text("Undo"), id: "toolbar-undo", enabled: model.canUndo) {
             model.undo()
         }
-        .id(Self.undoID)
         ToolbarKey(symbol: "arrow.uturn.forward", label: Text("Redo"), id: "toolbar-redo", enabled: model.canRedo) {
             model.redo()
         }
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        if !pinsUndo { undoRedo }
         command(.format(.bold), symbol: "bold", label: Text("Bold"), id: "toolbar-bold")
         command(.format(.italic), symbol: "italic", label: Text("Italic"), id: "toolbar-italic")
         if model.inCell {
@@ -81,20 +101,20 @@ struct EditToolbar: View {
         }
     }
 
-    /// The scroll ids of the capsule's first button and of ⋯.
-    static let undoID = "toolbar-undo"
+    /// The scroll ids of the capsule's buttons, for their start, and of ⋯.
+    static let firstID = "toolbar-buttons"
     static let tableMenuID = "table-more"
 
     /// Entering a cell scrolls the capsule to its end, so ⋯ shows whole on
     /// a phone too narrow for every button; leaving one scrolls back to
-    /// Undo.
+    /// its start.
     private func follow(_ inCell: Bool, with proxy: ScrollViewProxy) {
         let animation: Animation? = UIAccessibility.isReduceMotionEnabled ? nil : .default
         withAnimation(animation) {
             if inCell {
                 proxy.scrollTo(Self.tableMenuID, anchor: .trailing)
             } else {
-                proxy.scrollTo(Self.undoID, anchor: .leading)
+                proxy.scrollTo(Self.firstID, anchor: .leading)
             }
         }
     }

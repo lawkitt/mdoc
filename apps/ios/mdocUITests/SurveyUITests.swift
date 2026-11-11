@@ -423,8 +423,8 @@ final class SurveyUITests: XCTestCase {
 
     /// The list look (ADR 0110): bullets, numbers and task boxes flush with
     /// the paragraph, their text one column in; then edit mode with the
-    /// caret in a nested item and in a task, their source markers in the
-    /// same column.
+    /// caret in a nested item, its source marker in the same column, and in
+    /// a task, which keeps its box.
     @MainActor
     func test12Lists() throws {
         let seed = FileManager.default.temporaryDirectory.appendingPathComponent("lists.md")

@@ -2844,7 +2844,9 @@ impl EditorState {
         ) else {
             return;
         };
-        let Some(edit) = result.edits.into_iter().next() else {
+        // The core edits line prefixes one by one (mobile keeps the names
+        // between them); here they are one replacement, one undo step.
+        let Some(edit) = result.joined(&self.content) else {
             return;
         };
         self.selected_range = edit.range;
