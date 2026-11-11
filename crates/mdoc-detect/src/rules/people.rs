@@ -1,5 +1,5 @@
-//! People: bare initials after a role, titles, programmes' titles and
-//! person documents ("Ostrand Decl.").
+//! People: bare initials after a role, titles, programmes' titles, person
+//! documents ("Ostrand Decl.") and pleading line numbers inside a name.
 use super::defined::definitions;
 use super::shapes::bare;
 use super::{Pack, Role, Span};
@@ -136,6 +136,43 @@ impl Pack {
                 })
     }
 
+    /// Whether a person span's trim, taking `before` off its start, leaves
+    /// `left`, a lone role (a `person_role` word) after another role or a
+    /// role's modifier: "Magistrate Judge", "Chief Investigator" and
+    /// "Deputy Director" are role phrases, no name to cut a title from
+    /// (#382). A courtesy title before it is no role ("Mr Judge" is
+    /// "Judge"), and a doubled word is a title and its surname ("Judge
+    /// Judge" is "Judge").
+    pub(super) fn role_left(&self, before: &str, left: &str) -> bool {
+        let left = bare(left.trim()).to_lowercase();
+        if left.is_empty() || left.contains(char::is_whitespace) {
+            return false;
+        }
+        let role = |word: &str| {
+            self.never
+                .iter()
+                .any(|entry| entry.anywhere_in.is_empty() && entry.has(word))
+        };
+        let courtesy = |word: &str| {
+            self.spans.iter().any(|span| match span {
+                Span::Fix(fix) => {
+                    fix.category == Category::Person && fix.trim.iter().any(|t| t == word)
+                }
+                Span::Pattern { .. } => false,
+            })
+        };
+        let words: Vec<String> = before
+            .split_whitespace()
+            .map(|word| bare(word).to_lowercase())
+            .filter(|word| !word.is_empty())
+            .collect();
+        self.never
+            .iter()
+            .any(|entry| entry.person_role && entry.has(&left))
+            && words.last().is_some_and(|last| *last != left)
+            && words.iter().any(|word| role(word) && !courtesy(word))
+    }
+
     /// Whether a person's title stands just before `at` in `source` ("Mr
     /// He", "Dr. General", "г-н Суд"): the person fixes' `trim` words.
     pub(super) fn titled(&self, source: &str, at: usize) -> bool {
@@ -262,4 +299,122 @@ impl Pack {
             detection.category = Category::Person;
         }
     }
+}
+
+/// The most bytes between two pleading line numbers in a row: a line of
+/// text (a pleading's line holds some 70 characters) and some markup.
+const LINE_NUMBER_GAP: usize = 200;
+
+/// The fewest pleading line numbers in a row (1, 2, 3, …, each within
+/// [`LINE_NUMBER_GAP`] of the one before) that make them a pleading's.
+const LINE_NUMBER_RUN: usize = 10;
+
+/// The pleading line numbers in `source`: court pleadings number each
+/// line from 1 to 28, and an import keeps the numbers inline ("3
+/// Plaintiff DESMOND 4 ARKWRIGHT alleges 5 …"). A number of one or two
+/// digits from 1 to 28, alone between spaces or line ends, is one where
+/// it stands in a run of at least [`LINE_NUMBER_RUN`] numbers counting up
+/// by one, each close to the one before; other numbers may sit between
+/// them ("§ 3"). A lone number between two names ("Smith 2 Jones") is in
+/// no such run.
+pub(super) fn line_numbers(source: &str) -> Vec<std::ops::Range<usize>> {
+    static NUMBER: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"\d+").expect("constant number pattern"));
+    let tokens: Vec<(std::ops::Range<usize>, u8)> = NUMBER
+        .find_iter(source)
+        .filter(|found| {
+            source[..found.start()]
+                .chars()
+                .next_back()
+                .is_none_or(char::is_whitespace)
+                && source[found.end()..]
+                    .chars()
+                    .next()
+                    .is_none_or(char::is_whitespace)
+        })
+        .filter_map(|found| {
+            let value: u8 = found.as_str().parse().ok()?;
+            (found.len() <= 2 && (1..=28).contains(&value)).then(|| (found.range(), value))
+        })
+        .collect();
+    // The longest run ending at each number, and starting at it.
+    let near = |earlier: usize, later: usize| {
+        tokens[earlier].1 + 1 == tokens[later].1
+            && tokens[later].0.start - tokens[earlier].0.end <= LINE_NUMBER_GAP
+    };
+    let mut back = vec![1; tokens.len()];
+    for later in 0..tokens.len() {
+        for earlier in (0..later).rev() {
+            if tokens[later].0.start - tokens[earlier].0.end > LINE_NUMBER_GAP {
+                break;
+            }
+            if near(earlier, later) {
+                back[later] = back[later].max(back[earlier] + 1);
+            }
+        }
+    }
+    let mut forward = vec![1; tokens.len()];
+    for earlier in (0..tokens.len()).rev() {
+        for later in earlier + 1..tokens.len() {
+            if tokens[later].0.start - tokens[earlier].0.end > LINE_NUMBER_GAP {
+                break;
+            }
+            if near(earlier, later) {
+                forward[earlier] = forward[earlier].max(forward[later] + 1);
+            }
+        }
+    }
+    tokens
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| back[*i] + forward[*i] > LINE_NUMBER_RUN)
+        .map(|(_, (range, _))| range)
+        .collect()
+}
+
+/// Two person spans with only a pleading line number between them, spaces
+/// and one line end at most around it, are one name the line's end cut:
+/// the model's "DESMOND" and "ARKWRIGHT" in "DESMOND 4 ARKWRIGHT" are
+/// "DESMOND 4 ARKWRIGHT", the number inside (the fixture guide's annotators
+/// keep it so, #382). Only in a pleading ([`line_numbers`]).
+pub(super) fn join_line_numbers(source: &str, detections: &mut Vec<Detection>) {
+    let mut people: Vec<usize> = (0..detections.len())
+        .filter(|&i| detections[i].category == Category::Person)
+        .collect();
+    if people.len() < 2 {
+        return;
+    }
+    people.sort_by_key(|&i| detections[i].range.start);
+    let mut numbers: Option<Vec<std::ops::Range<usize>>> = None;
+    let mut gone = vec![false; detections.len()];
+    let mut first = people[0];
+    for &next in &people[1..] {
+        let (end, start) = (detections[first].range.end, detections[next].range.start);
+        let between = source.get(end..start).unwrap_or_default();
+        let digits = between.trim();
+        let joins = end < start
+            && (1..=2).contains(&digits.len())
+            && digits.bytes().all(|b| b.is_ascii_digit())
+            && between.starts_with(char::is_whitespace)
+            && between.ends_with(char::is_whitespace)
+            && between.matches('\n').count() <= 1
+            && {
+                let at = end + (between.len() - between.trim_start().len());
+                numbers
+                    .get_or_insert_with(|| line_numbers(source))
+                    .iter()
+                    .any(|number| number.start == at)
+            };
+        if joins {
+            detections[first].range.end = detections[next].range.end;
+            gone[next] = true;
+        } else {
+            first = next;
+        }
+    }
+    let mut index = 0;
+    detections.retain(|_| {
+        index += 1;
+        !gone[index - 1]
+    });
 }

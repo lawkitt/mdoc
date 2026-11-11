@@ -3588,3 +3588,29 @@ fn a_document_number_in_a_machine_readable_zone_is_a_word_of_its_own() {
     let map = crate::restore::RestoreMap::new(review.export_identities());
     assert_eq!(map.restore_in_place(&applied).text, source);
 }
+
+/// #489: a no-break space read through a wrong Latin-1/UTF-8 round trip is
+/// "Â" glued to the word before it. A name ends before it, as a model
+/// span or a repeat, whether the text, a space, punctuation or a
+/// possessive follows; "Â" before a letter is the word's own letter, so a
+/// span ending there would cut a word ("RosalindÂgé").
+#[test]
+fn a_misdecoded_no_break_space_ends_a_name() {
+    let source =
+        "RosalindÂ Ostrova came. Dr. RosalindÂ’s lab and RosalindÂ. Then RosalindÂgé left.";
+    let mut review = Review::default();
+    review
+        .ingest(source, vec![detection(0..8, Category::Person)])
+        .unwrap();
+    let found: Vec<&str> = review
+        .candidates()
+        .iter()
+        .map(|candidate| &source[candidate.range.clone()])
+        .collect();
+    assert_eq!(found, ["Rosalind", "Rosalind", "Rosalind"]);
+    assert!(view::mojibake_space("Â"));
+    assert!(view::mojibake_space("ÂÂ, then"));
+    assert!(view::mojibake_space("Â’s lab"));
+    assert!(!view::mojibake_space("Âgé"));
+    assert!(!view::mojibake_space(" Â"));
+}

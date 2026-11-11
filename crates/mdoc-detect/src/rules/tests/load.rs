@@ -741,6 +741,7 @@ fn pack_regexes<'p>(pack: &'p Pack) -> Vec<(String, &'p Regex)> {
                 trim: _,
                 role_trim: _,
                 trim_start,
+                trim_end,
                 extend,
                 strip_end: _,
                 person_before: _,
@@ -751,7 +752,12 @@ fn pack_regexes<'p>(pack: &'p Pack) -> Vec<(String, &'p Regex)> {
                 nested_quotes,
             }) => {
                 let nested = nested_quotes.iter().flat_map(|(end, word)| [end, word]);
-                for regex in trim_start.iter().chain(extend).chain(nested) {
+                for regex in trim_start
+                    .iter()
+                    .chain(trim_end)
+                    .chain(extend)
+                    .chain(nested)
+                {
                     named(format!("{} span fix #{index}", category.token()), regex);
                 }
             }

@@ -317,6 +317,22 @@ impl SpanFix {
                     continue;
                 }
             }
+            // A `trim_end` match ends the span where it starts: "OstrovaÂ’s
+            // lab" is "Ostrova".
+            if let Some(end) = self
+                .trim_end
+                .iter()
+                .filter_map(|pattern| {
+                    pattern
+                        .find_iter(text)
+                        .map(|found| found.start())
+                        .find(|&end| 0 < end)
+                })
+                .min()
+            {
+                range.end = range.start + end;
+                continue;
+            }
             // A `rest` group is the name the prefix must leave: only what
             // is before it comes off.
             if let Some(end) = trim_start
@@ -689,6 +705,11 @@ impl Pack {
                                 &source[trimmed.clone()],
                                 Category::Person,
                                 &|_| false,
+                            )
+                        || fix.category == Category::Person
+                            && self.role_left(
+                                &source[grown.start..trimmed.start.max(grown.start)],
+                                &source[trimmed.clone()],
                             )) {
                     grown
                 } else {
@@ -696,6 +717,8 @@ impl Pack {
                 };
             }
         }
+        // After the trims, so a role before either part is gone first.
+        super::people::join_line_numbers(source, detections);
         self.person_documents(source, detections);
         // Before citations drop a precedent's parties: "Spiliada Maritime
         // Corp" there still makes "Spiliada" a company's short name.

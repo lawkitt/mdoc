@@ -1361,6 +1361,20 @@ pub fn note_marker(c: char) -> bool {
     matches!(c, '¹' | '²' | '³' | '⁰' | '⁴'..='⁹')
 }
 
+/// Whether `after`, the text right after a word, opens with a mis-decoded
+/// no-break space: "Â" (U+00C2, what a wrong Latin-1/UTF-8 round trip
+/// leaves of one) that ends the word, the text's end, a space, a
+/// punctuation mark or an apostrophe after it ("RosalindÂ", "OstrovaÂ’s",
+/// #489). "Â" before a letter is a letter of the word ("Âgé").
+pub fn mojibake_space(after: &str) -> bool {
+    after.strip_prefix('Â').is_some_and(|rest| {
+        rest.trim_start_matches('Â')
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric())
+    })
+}
+
 /// Characters that only break a word for the eye or a renderer: the soft
 /// hyphen and zero-width spaces and joiners ("Ма\u{ad}рина" is "Марина").
 fn invisible(c: char) -> bool {

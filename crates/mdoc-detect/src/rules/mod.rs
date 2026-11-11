@@ -8,7 +8,8 @@
 //! - `shapes`: `never` words and `shape`s: which model spans are kept, and guesses;
 //! - `public`: courts, public bodies and public sites;
 //! - `defined`: a document's defined terms, abbreviations and generic words;
-//! - `people`: initials after a role, titles and person documents;
+//! - `people`: initials after a role, titles, person documents and pleading
+//!   line numbers inside a name;
 //! - `companies`: legal forms, company nouns and short names;
 //! - `references`: legal references and cited cases;
 //! - `fixes`: span fixes and `Pack::fix_spans`, which applies every rule to model spans;
@@ -190,6 +191,10 @@ struct SpanFix {
     role_trim: bool,
     /// Anchored, case-sensitive prefixes, with some name left after them.
     trim_start: Vec<Regex>,
+    /// Case-sensitive patterns searched anywhere in the span: it ends where
+    /// the first match starts, with some text left before it (a mis-decoded
+    /// "Â" glued to a name's end).
+    trim_end: Vec<Regex>,
     /// A span inside a match grows to the whole match.
     extend: Vec<Regex>,
     /// Characters that come off the end (a sentence's period).

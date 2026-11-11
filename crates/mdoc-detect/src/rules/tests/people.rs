@@ -1,7 +1,7 @@
 //! People: initials, particles, surname-first names and entrepreneurs.
 use super::*;
 use crate::rules::load::Form;
-use crate::rules::test_support::{pairs, proposed_marks, shown};
+use crate::rules::test_support::{fixed, pairs, proposed_marks, shown, shown_at};
 
 /// #403: a surname's lowercase particle joins the model's surname, in
 /// Russian and English, chained, glued, with the given names, initials
@@ -677,9 +677,9 @@ fn one_initial_or_an_all_caps_given_name_joins_a_surname() {
             &["Hon Wai Keung"],
             &["Hon Wai Keung"],
         ),
-        // A judge's title the model took in comes off before an initial
-        // and surname or a given name and surname; a role surname or a
-        // given name stays.
+        // A judge's title the model took in comes off before a name: an
+        // initial and surname, a given name and surname, or a lone surname
+        // (#382); a role surname alone or after a given name stays.
         (
             "Before Judge K Ashdale and DORIAN P. WELK, Magistrate.",
             &["Judge K Ashdale", "DORIAN P. WELK"],
@@ -698,11 +698,7 @@ fn one_initial_or_an_all_caps_given_name_joins_a_surname() {
         ("Judge", &["Judge"], &["Judge"]),
         ("Mary Judge agreed.", &["Mary Judge"], &["Mary Judge"]),
         ("Then Mr Judge agreed.", &["Mr Judge"], &["Judge"]),
-        (
-            "Judge Reinhold agreed.",
-            &["Judge Reinhold"],
-            &["Judge Reinhold"],
-        ),
+        ("Judge Reinhold agreed.", &["Judge Reinhold"], &["Reinhold"]),
     ] {
         assert_eq!(proposed_people(source, model), expected, "{source}");
     }
@@ -1343,12 +1339,16 @@ fn probe_role_surnames_stay_names() {
             "{name}"
         );
     }
-    // A role inside a longer model span cannot veto the whole name.
-    for name in ["Trustee Edda Brannock", "Руководитель Лада Брюн"] {
+    // A role inside a longer model span cannot veto the whole name; a
+    // role the pack knows comes off it (#382).
+    for (source, name) in [
+        ("Trustee Edda Brannock", "Edda Brannock"),
+        ("Руководитель Лада Брюн", "Руководитель Лада Брюн"),
+    ] {
         assert_eq!(
-            shown(name, &[(name, "person")]),
+            shown(source, &[(source, "person")]),
             pairs(&[(name, "PERSON")]),
-            "{name}"
+            "{source}"
         );
     }
     for name in ["Brannock Leader", "Trustee Brannock Ltd"] {
@@ -1358,4 +1358,256 @@ fn probe_role_surnames_stay_names() {
             "{name}"
         );
     }
+}
+
+/// #382: a title, rank, office or party role the model took into a
+/// person's span comes off it, chained, with a determiner or "late" or
+/// "former" before it, in mixed case or capitals, before a lone surname
+/// too; in Russian a court officer's or a party's role in its case forms.
+#[test]
+fn a_role_before_a_name_comes_off() {
+    for (source, model, expected) in [
+        (
+            "Defendant HOLLOWAY struck him.",
+            "Defendant HOLLOWAY",
+            "HOLLOWAY",
+        ),
+        (
+            "Then Defendant Holloway struck him.",
+            "Defendant Holloway",
+            "Holloway",
+        ),
+        (
+            "Then Plaintiff Ostrander fell.",
+            "Plaintiff Ostrander",
+            "Ostrander",
+        ),
+        ("Then Deputy Calloway came.", "Deputy Calloway", "Calloway"),
+        ("Then DEPUTY CALLOWAY came.", "DEPUTY CALLOWAY", "CALLOWAY"),
+        (
+            "Then Officer Calloway came.",
+            "Officer Calloway",
+            "Calloway",
+        ),
+        (
+            "Then officer Calloway came.",
+            "officer Calloway",
+            "Calloway",
+        ),
+        ("Then Sgt. Calloway came.", "Sgt. Calloway", "Calloway"),
+        (
+            "Then Colonel Wendell P. Ashgrove came.",
+            "Colonel Wendell P. Ashgrove",
+            "Wendell P. Ashgrove",
+        ),
+        ("Then Senator Pruett spoke.", "Senator Pruett", "Pruett"),
+        (
+            "Before Employment Judge Pemberton sitting alone.",
+            "Employment Judge Pemberton",
+            "Pemberton",
+        ),
+        (
+            "Before Employment Judge R Pemberton sitting alone.",
+            "Employment Judge R Pemberton",
+            "R Pemberton",
+        ),
+        (
+            "BEFORE HIS HONOUR JUDGE TALBOT\n",
+            "HIS HONOUR JUDGE TALBOT",
+            "TALBOT",
+        ),
+        (
+            "BEFORE HER HONOUR JUDGE TALBOT\n",
+            "HER HONOUR JUDGE TALBOT",
+            "TALBOT",
+        ),
+        ("Heard by HHJ Talbot today.", "HHJ Talbot", "Talbot"),
+        ("BEFORE JUDGE TALBOT\n", "JUDGE TALBOT", "TALBOT"),
+        ("BEFORE JUSTICE MARLOWE\n", "JUSTICE MARLOWE", "MARLOWE"),
+        (
+            "Heard by Justice Marlowe today.",
+            "Justice Marlowe",
+            "Marlowe",
+        ),
+        (
+            "Heard by Mr Justice Marlowe today.",
+            "Mr Justice Marlowe",
+            "Marlowe",
+        ),
+        (
+            "Heard by Deputy District Judge Rowe.",
+            "Deputy District Judge Rowe",
+            "Rowe",
+        ),
+        (
+            "As former President Hargrove said.",
+            "former President Hargrove",
+            "Hargrove",
+        ),
+        (
+            "As the late Mr Hargrove said.",
+            "the late Mr Hargrove",
+            "Hargrove",
+        ),
+        (
+            "Протокол вела с/з Мухиным П.Е. в зале.",
+            "с/з Мухиным П.Е.",
+            "Мухиным П.Е.",
+        ),
+        ("Дело рассмотрел судья Мухин один.", "судья Мухин", "Мухин"),
+        (
+            "Судья Мухин П.Е. огласил решение.",
+            "Судья Мухин П.Е.",
+            "Мухин П.Е.",
+        ),
+        (
+            "при секретаре судебного заседания Мухиной М.С. дело слушалось",
+            "секретаре судебного заседания Мухиной М.С.",
+            "Мухиной М.С.",
+        ),
+        (
+            "допрошен старший лейтенант полиции Мухин",
+            "старший лейтенант полиции Мухин",
+            "Мухин",
+        ),
+        ("Истец Мухин пояснил.", "Истец Мухин", "Мухин"),
+    ] {
+        assert_eq!(
+            shown(source, &[(model, "person")]),
+            pairs(&[(expected, "PERSON")]),
+            "{source}"
+        );
+    }
+    // A role alone, a role after a given name or a title and a surname
+    // made of a role's stem stay as they were; a role after a role is a
+    // role phrase, no one's name, and neither is a team's name.
+    for (source, model, expected) in [
+        ("Mary Judge agreed.", "Mary Judge", &["Mary Judge"][..]),
+        ("Then Mr Officer spoke.", "Mr Officer", &["Officer"]),
+        ("Then Mr Judge agreed.", "Mr Judge", &["Judge"]),
+        ("The Magistrate Judge ruled.", "Magistrate Judge", &[]),
+        ("The Deputy Director left.", "Deputy Director", &[]),
+        ("The Justice League met.", "Justice League", &[]),
+        (
+            "Прокуроров Иван пояснил.",
+            "Прокуроров Иван",
+            &["Прокуроров Иван"],
+        ),
+        ("Майоров Иван пояснил.", "Майоров Иван", &["Майоров Иван"]),
+    ] {
+        let found: Vec<String> = shown(source, &[(model, "person")])
+            .into_iter()
+            .map(|(text, _)| text)
+            .collect();
+        assert_eq!(found, expected, "{source}");
+    }
+    // A doubled word is a title and its surname: the span is the second.
+    assert_eq!(
+        fixed("Judge Judge ruled.", &[("Judge Judge", Category::Person)]),
+        ["Judge"]
+    );
+}
+
+/// #382, item 2: a common role word ("Defendant", "Judge") is a name only
+/// where a person span holds it beside a name; a role the trim took off
+/// unlocks no bare mention of it.
+#[test]
+fn a_trimmed_role_unlocks_no_bare_role() {
+    for (source, model, expected) in [
+        (
+            "Employment Judge Pemberton heard the claim. Then the Judge said no.",
+            &[("Employment Judge Pemberton", 0), ("Judge", 1)][..],
+            &["Pemberton"][..],
+        ),
+        (
+            "Defendant HOLLOWAY struck him. Defendant then fled.",
+            &[("Defendant HOLLOWAY", 0), ("Defendant", 1)],
+            &["HOLLOWAY"],
+        ),
+        (
+            "Истец Мухин подал иск. Истец пояснил суду.",
+            &[("Истец Мухин", 0), ("Истец", 1)],
+            &["Мухин"],
+        ),
+    ] {
+        let raw: Vec<(&str, usize, &str)> =
+            model.iter().map(|&(text, n)| (text, n, "person")).collect();
+        let found: Vec<String> = shown_at(source, &raw)
+            .into_iter()
+            .map(|(text, category)| {
+                assert_eq!(category, "PERSON");
+                text
+            })
+            .collect();
+        assert_eq!(found, expected, "{source}");
+    }
+    // A name beside the word still unlocks it ("Dawn French").
+    let source = "Ivo Defendant signed. Defendant agreed.";
+    let found: Vec<String> = shown_at(
+        source,
+        &[("Ivo Defendant", 0, "person"), ("Defendant", 1, "person")],
+    )
+    .into_iter()
+    .map(|(text, _)| text)
+    .collect();
+    assert_eq!(found, ["Ivo Defendant", "Defendant"]);
+}
+
+/// A pleading's text, its lines numbered 1 to `lines` inline as an import
+/// keeps them, with `line` in place of line `at`'s text.
+fn pleading(lines: u8, at: u8, line: &str) -> String {
+    (1..=lines)
+        .map(|n| {
+            if n == at {
+                line.to_owned()
+            } else {
+                format!(
+                    "{n} The parties met on the date set out in the schedule to this complaint."
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// #382: a pleading's line number between two parts of a name is inside
+/// it, as the guide's annotators keep it: "DESMOND 4 ARKWRIGHT" is one span,
+/// and its forms spread. Only in a pleading, and only a line number: a
+/// number between two names elsewhere keeps them apart.
+#[test]
+fn a_pleading_line_number_inside_a_name_joins_it() {
+    let mut source = pleading(12, 3, "3 Plaintiff DESMOND 4 ARKWRIGHT alleges as follows.");
+    source = source.replacen("4 The parties", "The parties", 1);
+    source.push_str(" Later Ms. Arkwright testified.");
+    let found: Vec<String> = shown_at(
+        &source,
+        &[("DESMOND", 0, "person"), ("ARKWRIGHT", 0, "person")],
+    )
+    .into_iter()
+    .map(|(text, _)| text)
+    .collect();
+    assert_eq!(found, ["DESMOND 4 ARKWRIGHT", "Arkwright"]);
+    // Prose, and a number that is no line's in a pleading.
+    let prose = "The list names Smith 2 Jones and others.";
+    let in_pleading = pleading(
+        12,
+        8,
+        "8 Witnesses: Smith 2 Jones and others were heard on the day.",
+    );
+    // Its 12 line numbers, without the list's "2".
+    assert_eq!(crate::rules::people::line_numbers(&in_pleading).len(), 12);
+    for source in [prose, in_pleading.as_str()] {
+        let found: Vec<String> =
+            shown_at(source, &[("Smith", 0, "person"), ("Jones", 0, "person")])
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect();
+        assert_eq!(found, ["Smith", "Jones"], "{source}");
+    }
+    // A short run of numbers is no pleading's.
+    assert!(crate::rules::people::line_numbers("1 a 2 b 3 c 4 d").is_empty());
+    assert_eq!(
+        crate::rules::people::line_numbers(&pleading(12, 0, "")).len(),
+        12
+    );
 }
