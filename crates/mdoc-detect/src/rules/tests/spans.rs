@@ -2502,6 +2502,12 @@ fn a_russian_address_keeps_the_city_and_index_after_the_house() {
             "ул. Ольховая, д. 3, г. Нижний Кедровск, 603999",
             "ул. Ольховая, д. 3",
         ),
+        // Any adjective opens a two-word city (review).
+        ("ул. Ольховая, д. 3, г. Сосновый Бор", "ул. Ольховая, д. 3"),
+        (
+            "ул. Ольховая, д. 3, г. Горячий Ключ, 353999",
+            "ул. Ольховая, д. 3",
+        ),
     ] {
         let source = format!("Адрес: {address}. Подпись");
         assert_eq!(
@@ -2618,6 +2624,23 @@ fn a_house_first_address_runs_from_the_house_to_the_settlement() {
             "Жильцы дома 3 по улице Малой Полевой давно ждут ремонта.",
             "дома 3 по улице Малой Полевой",
         ),
+        // A genitive given name or title opens a two-word street (review).
+        (
+            "У дома 5 по ул. Льва Толстого был ремонт.",
+            "дома 5 по ул. Льва Толстого",
+        ),
+        (
+            "Собственник дома 7 по ул. Адмирала Кедрова г. Энска обратился.",
+            "дома 7 по ул. Адмирала Кедрова г. Энска",
+        ),
+        (
+            "Жильцы дома 2 по ул. Розы Ольховской г. Кедровска пишут.",
+            "дома 2 по ул. Розы Ольховской г. Кедровска",
+        ),
+        (
+            "Возле дома 4 по улице имени Героев Кедровска собрались.",
+            "дома 4 по улице имени Героев Кедровска",
+        ),
     ] {
         assert_eq!(
             shown(source, &[]),
@@ -2625,6 +2648,12 @@ fn a_house_first_address_runs_from_the_house_to_the_settlement() {
             "{source}"
         );
     }
+    // The model's person on a two-word street's name is the address's own.
+    let source = "Собственник дома 7 по ул. Адмирала Кедрова г. Энска обратился.";
+    assert_eq!(
+        shown(source, &[("Адмирала Кедрова", "person")]),
+        pairs(&[("дома 7 по ул. Адмирала Кедрова г. Энска", "ADDRESS")]),
+    );
     // The model's person on the settlement's name is the address's own; a
     // surname after the street is no part of it and stays a name.
     let source = "Пожар в доме 41 по ул. Кедровая пос. Ольховый произошёл ночью.";

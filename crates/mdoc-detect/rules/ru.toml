@@ -1469,17 +1469,25 @@ parts.after_house = '{sep}(?:{town}(?:{sep}{index}\b)?|{bare_city}{sep}{index}\b
 # the house is a person's initial ("кв. 3, Г.И. Петрова пояснила"; the
 # capitals of an extract are `caps_area`'s, after an index). Its name is
 # two letters or more, one word with its hyphens' parts ("Нарьян-Маре",
-# "Ростов-на-Дону"), or two after a city's own adjective (`town_word`:
-# "г. Нижний Новгород", "в г. Нижнем Новгороде"), so a surname after it
-# stays out ("г. Видное Петрова явилась"). A region in the genitive after
+# "Ростов-на-Дону"), or two: an adjective, any in its case forms
+# (`town_word`), then a word with no surname's ending (`town_tail`): "г.
+# Нижний Новгород", "в г. Нижнем Новгороде", "г. Сосновый Бор", "г.
+# Горячий Ключ"; so a surname after it stays out ("г. Видное Петрова
+# явилась", "г. Энск Петрову"). A region in the genitive after
 # it goes with it whole ("г. Жуковский Московской области", "в г.
 # Раменском Энской Республики").
 parts.town = '(?:\bг\.[\p{Zs}\t]*|\b(?:город|городе)[\p{Zs}\t]+){town_name}(?:[\p{Zs}\t]+{town_region})?'
-parts.town_name = '{town_word}[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}]+|[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]+(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+parts.town_name = '{town_word}[\p{Zs}\t]+{town_tail}|[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]+(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
 parts.town_region = '[\p{Lu}&&[\p{Cyrillic}]][\p{Cyrillic}-]*(?:ой|ей|ого|его)[\p{Zs}\t]+(?:области|края|Республики|республики)\b|\bРеспублики[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}]][\p{Cyrillic}-]+'
-# The adjectives that open a city's two-word name, in their case forms:
-# "Нижний", "Великие", "Старого", "Набережных", "Сергиевом".
-parts.town_word = '\b(?:(?:Нижн|Верхн|Вышн|Средн)(?:ий|его|ему|им|ем|яя|ей|юю|ие|их|ими)|(?:Велик|Стар|Нов|Набережн|Минеральн|Больш|Мал|Красн|Бел|Советск|Павловск)(?:ий|ый|ой|ая|ое|ие|ые|ого|ому|ым|им|ом|ую|ей|их|ых|ыми|ими)|Сергиев(?:а|у|ом|е)?)'
+# An adjective that opens a city's two-word name, in its case forms:
+# "Нижний", "Великие", "Старого", "Сосновом", "Набережных".
+parts.town_word = '\b[\p{Lu}&&[\p{Cyrillic}]]\p{Ll}*(?:ый|ий|ой|ая|яя|ое|ее|ие|ые|ого|его|ому|ему|ым|им|ом|ем|ую|юю|ых|их|ей)\b'
+# The second word, capitalised, with no surname's ending (-ов, -ев, -ин,
+# -ын, -ова, -ева, -ина, -ына, -ская) and no adjective's -ой, -ей, -ий,
+# -ый, -ого, -его, so a genitive region after the city is
+# `town_region`'s: "Бор", "Ключ", "Новгороде", "Луки", but not "Петрова",
+# "Кедровский", "Ольховской" (of "Ольховской области").
+parts.town_tail = '[\p{Lu}&&[\p{Cyrillic}]][\p{Ll}-]*(?:[\p{Ll}--[внайяо]]|[\p{Ll}--[г]]о|[\p{Ll}--[ое]]го|[\p{Ll}--[оеё]]в|[\p{Ll}--[иы]]н|[\p{Ll}--[вн]]а|[\p{Ll}--[оеё]]ва|[\p{Ll}--[иы]]на|[\p{Ll}--[оеиы]]й|[\p{Ll}--[а]]я|[\p{Ll}--[к]]ая|[\p{Ll}--[с]]кая)\b'
 # A register extract's place in capitals with a dotless type, after an
 # index only (#362, run 4): "Г ЭНСК", "Х КЕДРОВЫЙ", "ПОС КЕДРОВЫЙ", "С
 # КЕДРОВКА", "СТ-ЦА КЕДРОВСКАЯ", "Р-Н КЕДРОВСКИЙ", and a depersonalised
@@ -1627,24 +1635,30 @@ parts.street = '{street_type}[\p{Zs}\t]*{street_name}|{street_name}[\p{Zs}\t]+{s
 # «проспекту», «переулку».
 parts.street_type = '\b(?:ул|пр|пер|наб|пл|ш)\.|\b(?:ул|пр-ту|пр-кту|б-ру)\b|\b(?:улице|проспекту|переулку|бульвару|шоссе|набережной|площади|проезду|тупику|аллее|линии|тракту)\b'
 parts.street_after = '(?:улице|проспекту|переулку|бульвару|шоссе|набережной|площади|проезду|тупику|аллее|линии|тракту)\b|(?:ул|пр|пер|наб|пл)\.'
-# A street's name: a number before it ("3-й Луговой"), one capitalised
-# word, or two after an adjective that opens a street's name
-# (`street_prefix`: "Малой Садовой", "Верхней Луговой"), so a surname
-# after the street ("по улице Садовой Петров", "по ул. Садовой
-# Петровой") is no part of it.
-parts.street_name = '(?:\d{1,3}(?:-?\p{Ll}{1,2})?[\p{Zs}\t]+)?(?:{street_prefix}[\p{Zs}\t]+)?\p{Lu}[\p{Alphabetic}\d-]*'
+# A street's name: a number before it ("3-й Луговой"), «им.» or «имени»,
+# one capitalised word, or two after an adjective that opens a street's
+# name (`street_prefix`: "Малой Садовой", "Верхней Луговой") or a
+# genitive given name or title (`street_title`: "Льва Толстого",
+# "Адмирала Кедрова", "Розы Ольховской", "Героев Кедровска"); an
+# adjective in the dative is neither, so a surname after the street ("по
+# улице Садовой Петров", "по ул. Садовой Петровой") is no part of it.
+parts.street_name = '(?:\d{1,3}(?:-?\p{Ll}{1,2})?[\p{Zs}\t]+)?(?:(?:им|ИМ)\.[\p{Zs}\t]*|имени[\p{Zs}\t]+)?(?:(?:{street_prefix}|{street_title})[\p{Zs}\t]+)?\p{Lu}[\p{Alphabetic}\d-]*'
 parts.street_prefix = '\b(?:Мал|Больш|Верхн|Нижн|Нов|Стар|Средн|Ближн|Дальн|Красн)(?:ая|ой|ую|ий|ый|ого|ому|ей|яя|юю|его|ему)\b'
+# A capitalised genitive: -а, -я (not an adjective's -ая, -яя), -ы, -и,
+# -ов, -ев ("Маршала", "Льва", "Розы", "Героев").
+parts.street_title = '\b\p{Lu}\p{Ll}*(?:[\p{Ll}--[ая]][ая]|ы|и|ов|ев)\b'
 # A settlement by its lowercase type, in the genitive too ("г. Энска",
 # "города Энска", "пос. Ольховый", "в г. Энске"), one capitalised word
 # and its hyphens' parts.
 parts.place = '(?:в[\p{Zs}\t]+)?(?:\b(?:г|п|пос|с|х|д|ст|дер)\.[\p{Zs}\t]*|\b(?:пгт|рп|города|городе|посёлка|поселка|села|деревни|станицы|хутора)[\p{Zs}\t]+){place_name}'
 parts.place_name = '[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
-# The model's person on the settlement's name, or on a one-word street's
-# with the settlement after it, is the address's own part ("Ольховый" of
-# "дома 41 по ул. Кедровая пос. Ольховый"): this entry's match stands
+# The model's person on the settlement's name, or on a street's name of
+# one or two words with the settlement after it, is the address's own part
+# ("Ольховый" of "дома 41 по ул. Кедровая пос. Ольховый", "Адмирала
+# Кедрова" of "дома 5 по ул. Адмирала Кедрова"): this entry's match stands
 # over it; another entry's never does ("кв. 12, д. 5, ул. Садовая,
 # Петров" keeps the person).
-absorbs.PERSON = '(?P<span>{place_name})(?:,?[\p{Zs}\t]+{place})?$'
+absorbs.PERSON = '(?P<span>{place_name}(?:[\p{Zs}\t]+{place_name})?)(?:,?[\p{Zs}\t]+{place})?$'
 
 # A settlement's type before a place is no person's initial (guide rule 1,
 # #482): a model person "а. Новый Хутор" in "уроженец а. Новый Хутор", "г.
