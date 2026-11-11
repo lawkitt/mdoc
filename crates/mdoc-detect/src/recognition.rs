@@ -1447,8 +1447,19 @@ mod tests {
 
     /// Contact labels end a continuation even without model name evidence;
     /// with evidence both the recipient and its repeated mention survive.
+    /// The city, state and ZIP after the recipient may be an address of
+    /// their own (guide rule 3, #506 item 6), never one with the field or
+    /// the name.
     #[test]
     fn address_continuations_stop_at_contact_fields() {
+        let city = "Slocombe, NY 10999";
+        let without_city = |source: &str, proposed: Vec<Span>| -> Vec<Span> {
+            let at = source.find(city).unwrap();
+            proposed
+                .into_iter()
+                .filter(|span| span.category != "ADDRESS" || span.range != (at..at + city.len()))
+                .collect()
+        };
         for field in [
             "Attn",
             "Attention",
@@ -1470,12 +1481,31 @@ mod tests {
                         let source = format!(
                             "{prefix}, {field}{colon} {name}, Slocombe, NY 10999.\n{name} signed."
                         );
-                        assert_address_proposals(
-                            &source,
-                            &[(model_address, "address"), (name, label)],
-                            &[(prefix, "ADDRESS"), (name, category)],
+                        let raw: Vec<_> = [(model_address, "address"), (name, label)]
+                            .into_iter()
+                            .map(|(text, label)| {
+                                let start = source.find(text).unwrap();
+                                RawEntity {
+                                    start,
+                                    end: start + text.len(),
+                                    label: label.into(),
+                                    score: 0.8,
+                                    text: text.into(),
+                                }
+                            })
+                            .collect();
+                        let mut expected: Vec<_> = source
+                            .match_indices(name)
+                            .map(|(start, _)| span(start..start + name.len(), category))
+                            .chain([span(0..prefix.len(), "ADDRESS")])
+                            .collect();
+                        expected.sort();
+                        assert_eq!(
+                            without_city(&source, proposals(&source, &raw).unwrap()),
+                            expected,
+                            "{source}"
                         );
-                        let proposed = proposals(&source, &[]).unwrap();
+                        let proposed = without_city(&source, proposals(&source, &[]).unwrap());
                         assert!(
                             proposed
                                 .iter()
@@ -1487,6 +1517,64 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// #498 round 3: a city, state and ZIP with no street or box before
+    /// them are guessed whole, so their city takes in no recipient: no
+    /// contact label and no name the model found, its repeat included. A
+    /// name or label before the city stays outside it, and the city after
+    /// it is found again.
+    #[test]
+    fn a_city_alone_takes_no_recipient() {
+        for (field, name, label, category) in [
+            ("Attn", "Jane Quenby", "person", "PERSON"),
+            ("Attention", "Jane Quenby", "person", "PERSON"),
+            ("To", "Jane Quenby", "person", "PERSON"),
+            ("Attn", "Larkfield Supply", "organization", "ORG"),
+        ] {
+            let source = format!("{field} {name}, NY 10999.\n{name} signed.");
+            assert_address_proposals(&source, &[(name, label)], &[(name, category)]);
+            // After a recipient's label a name follows, even unmodelled.
+            if field != "To" {
+                let proposed = proposals(&source, &[]).unwrap();
+                assert!(
+                    proposed.iter().all(|span| span.category != "ADDRESS"),
+                    "{source}: {proposed:?}"
+                );
+            }
+        }
+        for (source, address) in [
+            ("Ship To Ashby Falls, OH 45999", "Ashby Falls, OH 45999"),
+            ("Bill To Corrow, OH 44999", "Corrow, OH 44999"),
+            ("Contact Ashby Falls, OH 45999", "Ashby Falls, OH 45999"),
+        ] {
+            assert_address_proposals(source, &[], &[(address, "ADDRESS")]);
+        }
+        assert_address_proposals(
+            "Defendant Quenby Ashby Falls, OH 45999.\nQuenby signed.",
+            &[("Quenby", "person")],
+            &[("Quenby", "PERSON"), ("Ashby Falls, OH 45999", "ADDRESS")],
+        );
+        // The trade-off: a model's name that is a city's own word costs
+        // the city, which cannot be told from a recipient before ", NY".
+        assert_address_proposals(
+            "Port Calder, IN 46999",
+            &[("Calder", "person")],
+            &[("Calder", "PERSON")],
+        );
+        assert_address_proposals(
+            "Jane Quenby Ashby Falls, OH 45999.\nJane Quenby signed.",
+            &[("Jane Quenby", "person")],
+            &[
+                ("Jane Quenby", "PERSON"),
+                ("Ashby Falls, OH 45999", "ADDRESS"),
+            ],
+        );
+        assert_address_proposals(
+            "Larkfield Supply, NY 10999.\nLarkfield Supply signed.",
+            &[("Larkfield Supply", "organization")],
+            &[("Larkfield Supply", "ORG")],
+        );
     }
 
     /// #498 gate review P2: the bare-street veto requires absence of house

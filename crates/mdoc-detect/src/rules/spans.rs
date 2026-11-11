@@ -155,11 +155,44 @@ impl Pack {
                     span_ranges_sized(pattern, source, line_length.as_ref())
                         .into_iter()
                         .map(move |(mut range, whole)| {
-                            if let Some(core) = continuation_after
-                                .as_ref()
-                                .and_then(|pattern| pattern.find(&source[range.clone()]))
-                            {
-                                let tail = range.start + core.end();
+                            if let Some(after) = continuation_after.as_ref() {
+                                let core = after.find(&source[range.clone()]);
+                                // A match with no definite component (a
+                                // city, state and ZIP alone) is guessed
+                                // whole: its city takes no name or field
+                                // after its start, and the pattern is
+                                // searched again after them ("Ship To
+                                // Ashby Falls, OH 45999"); a name at its
+                                // front edge is `address_beside`'s.
+                                if core.is_none() {
+                                    let stop = continuation_stop.as_ref();
+                                    while let Some((_, resume)) =
+                                        guessed_cut(source, names, &range, range.start, false, stop)
+                                    {
+                                        // A recipient's label (Attn) is
+                                        // followed by a name, not a city.
+                                        let Some(found) = resume
+                                            .and_then(|resume| pattern.captures_at(source, resume))
+                                        else {
+                                            range.end = range.start;
+                                            break;
+                                        };
+                                        let matched = found.get(0).expect("group 0 is the match");
+                                        let start = found
+                                            .name("lead")
+                                            .map_or(matched.start(), |lead| lead.end());
+                                        let end = found
+                                            .name("tail")
+                                            .map_or(matched.end(), |tail| tail.start());
+                                        if end > range.end || start >= end {
+                                            range.end = range.start;
+                                            break;
+                                        }
+                                        range = start..end;
+                                    }
+                                    return (range, whole);
+                                }
+                                let tail = range.start + core.map_or(0, |core| core.end());
                                 // A name crossing the definite component's
                                 // edge ("Broadway Show") invalidates the
                                 // guessed street; never cut it to a fragment.
@@ -174,22 +207,14 @@ impl Pack {
                                     range.end = range.start;
                                     return (range, whole);
                                 }
-                                let name = names
-                                    .iter()
-                                    .filter(|name| {
-                                        matches!(
-                                            name.category,
-                                            Category::Person | Category::Organization
-                                        ) && tail <= name.range.start
-                                            && name.range.start < range.end
-                                    })
-                                    .map(|name| name.range.start)
-                                    .min();
-                                let field = continuation_stop
-                                    .as_ref()
-                                    .and_then(|pattern| pattern.find(&source[tail..range.end]))
-                                    .map(|field| tail + field.start());
-                                if let Some(end) = name.into_iter().chain(field).min() {
+                                if let Some((end, _)) = guessed_cut(
+                                    source,
+                                    names,
+                                    &range,
+                                    tail,
+                                    true,
+                                    continuation_stop.as_ref(),
+                                ) {
                                     range.end = range.start
                                         + source[range.start..end]
                                             .trim_end_matches(|c: char| {
@@ -197,13 +222,23 @@ impl Pack {
                                             })
                                             .len();
                                     // Cutting before a recipient must not
-                                    // promote a bare street ("Broadway").
-                                    if !self.shaped_named_after(
-                                        &source[range.clone()],
-                                        category,
-                                        &|_| false,
-                                        &source[..range.start],
-                                    ) {
+                                    // promote a bare street ("Broadway")
+                                    // or a house number alone ("1720"),
+                                    // which the shape takes for a
+                                    // postcode.
+                                    let text = &source[range.clone()];
+                                    let digits = text.trim_end_matches(char::is_alphabetic);
+                                    let number_alone = !digits.is_empty()
+                                        && digits.chars().all(|c| c.is_ascii_digit())
+                                        && text[digits.len()..].chars().count() <= 1;
+                                    if number_alone
+                                        || !self.shaped_named_after(
+                                            text,
+                                            category,
+                                            &|_| false,
+                                            &source[..range.start],
+                                        )
+                                    {
                                         range.end = range.start;
                                     }
                                 }
@@ -263,6 +298,43 @@ impl Pack {
             )
             .collect()
     }
+}
+
+/// Where the guessed part of an address match `range`, from `tail`, ends:
+/// at the first person's or company's name (from `tail` on where
+/// `at_tail`, after it otherwise) or the first `stop` field, with where a
+/// search may go on after it: the end of that name or field, or none after
+/// a field the `stop` regex's `recipient` group holds (Attn).
+fn guessed_cut(
+    source: &str,
+    names: &[Detection],
+    range: &std::ops::Range<usize>,
+    tail: usize,
+    at_tail: bool,
+    stop: Option<&Regex>,
+) -> Option<(usize, Option<usize>)> {
+    let name = names
+        .iter()
+        .filter(|name| {
+            matches!(name.category, Category::Person | Category::Organization)
+                && (tail < name.range.start || (at_tail && tail == name.range.start))
+                && name.range.start < range.end
+        })
+        .map(|name| (name.range.start, Some(name.range.end)))
+        .min();
+    let field = stop
+        .and_then(|pattern| pattern.captures(&source[tail..range.end]))
+        .map(|found| {
+            let field = found.get(0).expect("group 0 is the match");
+            let resume = found
+                .name("recipient")
+                .is_none()
+                .then_some(tail + field.end());
+            (tail + field.start(), resume)
+        });
+    name.into_iter()
+        .chain(field)
+        .min_by_key(|(start, _)| *start)
 }
 
 /// A span pattern's matches without their `lead` and `tail` groups, the

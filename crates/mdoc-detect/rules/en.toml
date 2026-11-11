@@ -1828,7 +1828,7 @@ min_digits = 3
 # Brindlecombe, GA 30999"). A US state may be spelled out or dotted before
 # its ZIP, which may wrap to the next line ("Brindlecombe, Georgia 30999",
 # "Wexford D.C. 20999"). A country after the postcode is no part of it
-# ("Slocombe SL9 7ZZ, UK"). A town with its postcode alone waits for #506.
+# ("Slocombe SL9 7ZZ, UK").
 # Suite separators may be a space or hyphen; a town after only a space
 # needs a postcode, or the explicit end "Township". A word-number house
 # (One through Ten) still needs a street suffix. A single-word numbered
@@ -1839,37 +1839,117 @@ min_digits = 3
 # ("Harrow House" of "Harrow House, 12 Pellin Street\nSlocombe SL9
 # 9ZZ"): a company span that is just the match's building name, with a
 # comma or a line break and a house number (a flat or suite between) after
-# it, within the match, is the address's own (`absorbs`): the match stands
+# it, within the match, is the address's own (`absorbs`); so is a Plaza's
+# name before its number, and a building with a dash and a named suite, a
+# box or a street after it ("Kestrel Plaza" of "Kestrel Plaza No. 15,
+# Granby Road"; #498). A person's span is never absorbed so ("Jane House,
+# 12 Oak Road" names her). The match stands
 # over it, and the review takes the address, or the company where it turns
 # the address down. A company named so but with no
 # street after it ("Harrow House Ltd agreed", "Harrow House agreed") or
 # not ending in a building word ("Tower Records") stays a company.
+#
+# The shapes of #498's third round (ADR 0108):
+# - A city, a state and a ZIP with no street are an address (guide rule 3,
+#   #506 item 6), on a line of their own or after a body's name ("Bureau of
+#   Records, Haddon, VA 20170": the name stays out): the last form. Its
+#   state is a real state's code or name, after a comma or a space
+#   ("Washington DC 20017", "Boise Idaho 83702"), so "CASE NO 12345" is
+#   none; a city and state with no ZIP ("Haddon, VA") are none either. Its
+#   city is one place, so a body's last word before the comma ("Records,
+#   Haddon") stays out. A field's word before the state and a number
+#   ("Account ID 12345", "Claim No CA 90210", `skip`) makes no city.
+# - Any ZIP may be a ZIP+4 broken after its hyphen ("82070- 0042"), follow
+#   its state after a comma ("Coral Bend, FL, 33999"), and have one OCR
+#   look-alike letter for a digit ("02l39").
+# - A floor written "Lower Ground Floor", "38th Fl." or "2F" opens or ends
+#   the address like any floor, and a "Plaza" with its number ("Kestrel
+#   Plaza No. 15") is a building that opens one.
+# - A building, a dash and a named suite may come before a box ("Wexford
+#   Tower – Administration Suite 220, P. O. Box 4410, …").
+# - A unit's street before the street ("4B Larkspur Place 220 Mill Street
+#   Hadley, TN 37999") and a street name cut from its type by a stray comma
+#   ("1720 Pemberton, Ave., NW, Washington, DC 20599") open an address
+#   that runs to its ZIP.
+# - The city line may come after a pleading's line number ("… Blvd #204 3
+#   Las Vegas, Nevada 89999": the number stays inside), when its ZIP
+#   follows. Not after a blank line: the review never proposes a span over
+#   one, whose token would join two paragraphs, so the city line stays an
+#   address of its own there.
+# - A street with a floor or a NW, NE, SW or SE part is an address alone
+#   ("418 N. Larch Ave., 27th Fl.", "1640 Q St., N.W."), a letterhead's
+#   street line.
+# - A corner of two streets with its city and ZIP ("20th Street and
+#   Quillon Avenue, NW Wexford, DC 20999", #553 item 3), two names sharing
+#   a plural type too ("Tolliver and Mill Roads Ashby Falls, AL 35999"): a form of
+#   this entry, so its city is not an address of its own as well.
 [[span]]
 category = "ADDRESS"
-# The pattern is a list of its four forms, which match as their
-# alternation would: as one regex it comes near the regex size limit.
+# The pattern is a list of its forms, which match as their alternation
+# would: as one regex it comes near the regex size limit.
 pattern = [
     '(?:(?:(?:{flat}|{building})(?:{sep}|{nl})){1,3}{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}|{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){1,3}|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|(?:{flat}(?:{sep}|{nl})){0,2}{building}(?:{sep}|{nl}){named}(?:(?:{sep}|{nl}){flat}){0,3})(?:{after})?',
     '{street}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?{after}',
-    '{box}{after}',
-    '{named}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl}|[\p{Zs}\t]+)(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode})',
+    '(?:{building}(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?)?(?:{flat}(?:{sep}|{nl})){0,2}{box}{after}',
+    '{named}{after_zip}',
+    '{street}(?:{nl}|[\p{Zs}\t]+){street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}{after_zip}',
+    '\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?{after_zip}',
+    '{street_core},?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b)',
+    '\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners}),?[\p{Zs}\t]+(?:(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)?[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2},[\p{Zs}\t]*[A-Z]{2}[\p{Zs}\t]+{zip}\b',
+    '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}\b',
 ]
-parts.after = '(?:{sep}|\s+){postcode}|(?:{sep}|{nl}|[\p{Zs}\t]+)(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|[\p{Zs}\t]+(?:\p{Uppercase}[\p{Ll}\x27’-]+[\p{Zs}\t]+){1,2}Township\b|{sep}{town}'
+# A corner's street, without a house number: the corner needs its city
+# and ZIP (#553 item 3), so a bare pair of street names cannot match. The
+# alphabet and suffixes stay bounded to these English street forms rather
+# than guessing arbitrary named properties.
+parts.corner = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?:Street|Avenue|Road|St\.?|Ave\.?|Rd\.?)'
+# Two names sharing one plural type ("Tolliver and Mill Roads").
+parts.corners = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,2}and[\p{Zs}\t]+(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,2}(?:Streets|Avenues|Roads|Sts\.?|Aves\.?|Rds\.?)'
+parts.after = '{after_zip}|[\p{Zs}\t]+(?:\p{Uppercase}[\p{Ll}\x27’-]+[\p{Zs}\t]+){1,2}Township\b|{sep}{town}'
+# The end with its postcode, after a pleading's line number too.
+parts.after_zip = '(?:{sep}|\s+){postcode}|(?:{sep}|{nl}|[\p{Zs}\t]+)(?:\d{1,2}[\p{Zs}\t]+)?(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}'
 parts.box = '\b(?i:P\.?[\p{Zs}\t]*O\.?[\p{Zs}\t]+Box)[\p{Zs}\t]+\d+[A-Za-z]?\b'
-parts.flat = '\b(?:(?:Flat|Unit|Apartment|Suite|Room|Floor|Building|FLAT|UNIT|APARTMENT|SUITE|ROOM|FLOOR|BUILDING|Apt\.?|APT\.?|Ste\.?|STE\.?|Rm\.?|RM\.?|Fl\.|FL\.|Bldg\.?|BLDG\.?|Mail[\p{Zs}\t]?Stop|MAIL[\p{Zs}\t]?STOP)(?:[\p{Zs}\t]*#[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\d+[A-Za-z]?(?:[-.][\dA-Za-z]+)?|[A-Z])\b|\d+(?:st|nd|rd|th)[\p{Zs}\t]+(?:Floor|FLOOR)\b|(?:Ground|First|Second|Third|Lower|Upper|GROUND|FIRST|SECOND|THIRD|LOWER|UPPER)[\p{Zs}\t]+(?:Floor|FLOOR)\b)|\#[\p{Zs}\t]*\d+[A-Za-z]?\b'
-parts.building = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:House|Building|Buildings|Tower|Towers|Mansions|HOUSE|BUILDING|BUILDINGS|TOWER|TOWERS|MANSIONS)\b'
-parts.street = '\b(?:\d+[A-Za-z]?(?:[-–]\d+[A-Za-z]?)?[\p{Zs}\t]+|(?:One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)[\p{Zs}\t]+|\d+(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)(?:(?:[NSEW]\.?[\p{Zs}\t]+\d+[\p{Zs}\t]+)|(?:(?:[NS]\.[EW]\.|\p{Uppercase}[\p{Alphabetic}\x27’-]*\.?|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,4})(?:(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Boulevard|Parkway|Highway|Freeway|Expressway|Plaza|Circle|Trail|Quay|Wharf|Vale|Pike|Turnpike|Embankment|ROAD|STREET|LANE|AVENUE|MEWS|CLOSE|COURT|DRIVE|WAY|PLACE|SQUARE|CRESCENT|GARDENS|TERRACE|YARD|ROW|HILL|GROVE|WALK|PARADE|BOULEVARD|PARKWAY|HIGHWAY|FREEWAY|EXPRESSWAY|PLAZA|CIRCLE|TRAIL|QUAY|WHARF|VALE|PIKE|TURNPIKE|EMBANKMENT)\b|\b(?:Rd|St|Ave|Blvd|Ln|Dr|Pkwy|Hwy|Fwy|Expy|Pl|Ct|Cir|Sq|Ter|Trl|RD|ST|AVE|BLVD|LN|DR|PKWY|HWY|FWY|EXPY|PL|CT|CIR|SQ|TER|TRL)\b\.?)(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NSEW]\.|(?:[NS][EW]|[NSEW]|North|South|East|West)\b))?'
+parts.flat = '\b(?:(?:Flat|Unit|Apartment|Suite|Room|Floor|Building|FLAT|UNIT|APARTMENT|SUITE|ROOM|FLOOR|BUILDING|Apt\.?|APT\.?|Ste\.?|STE\.?|Rm\.?|RM\.?|Fl\.|FL\.|Bldg\.?|BLDG\.?|Mail[\p{Zs}\t]?Stop|MAIL[\p{Zs}\t]?STOP)(?:[\p{Zs}\t]*#[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\d+[A-Za-z]?(?:[-.][\dA-Za-z]+)?|[A-Z])\b|\d+(?:st|nd|rd|th)[\p{Zs}\t]+(?:Floor\b|FLOOR\b|Fl\.|FL\.|Fl\b|FL\b)|(?:(?:Lower|Upper|LOWER|UPPER)[\p{Zs}\t]+)?(?:Ground|First|Second|Third|Lower|Upper|GROUND|FIRST|SECOND|THIRD|LOWER|UPPER)[\p{Zs}\t]+(?:Floor|FLOOR)\b|\d{1,2}/?F\b)|\#[\p{Zs}\t]*\d+[A-Za-z]?\b'
+parts.building = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:House|Building|Buildings|Tower|Towers|Mansions|HOUSE|BUILDING|BUILDINGS|TOWER|TOWERS|MANSIONS)\b|\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?\b'
+parts.street = '{street_core}(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NSEW]\.|(?:[NS][EW]|[NSEW]|North|South|East|West)\b))?'
+# A street without its compass part after its type.
+parts.street_core = '\b(?:\d+[A-Za-z]?(?:[-–]\d+[A-Za-z]?)?[\p{Zs}\t]+|(?:One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)[\p{Zs}\t]+|\d+(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)(?:(?:[NSEW]\.?[\p{Zs}\t]+\d+[\p{Zs}\t]+)|(?:(?:[NS]\.[EW]\.|\p{Uppercase}[\p{Alphabetic}\x27’-]*\.?|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,4})(?:(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Boulevard|Parkway|Highway|Freeway|Expressway|Plaza|Circle|Trail|Quay|Wharf|Vale|Pike|Turnpike|Embankment|ROAD|STREET|LANE|AVENUE|MEWS|CLOSE|COURT|DRIVE|WAY|PLACE|SQUARE|CRESCENT|GARDENS|TERRACE|YARD|ROW|HILL|GROVE|WALK|PARADE|BOULEVARD|PARKWAY|HIGHWAY|FREEWAY|EXPRESSWAY|PLAZA|CIRCLE|TRAIL|QUAY|WHARF|VALE|PIKE|TURNPIKE|EMBANKMENT)\b|\b(?:Rd|St|Ave|Blvd|Ln|Dr|Pkwy|Hwy|Fwy|Expy|Pl|Ct|Cir|Sq|Ter|Trl|RD|ST|AVE|BLVD|LN|DR|PKWY|HWY|FWY|EXPY|PL|CT|CIR|SQ|TER|TRL)\b\.?)'
 parts.named = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,2}(?:Road|Street|Lane|Avenue|Drive|Boulevard|Parkway|Highway|Place|Square|Crescent|Terrace|Gardens|Mews|ROAD|STREET|LANE|AVENUE|DRIVE|BOULEVARD|PARKWAY|HIGHWAY|PLACE|SQUARE|CRESCENT|TERRACE|GARDENS|MEWS)\b|\b(?:The[\p{Zs}\t]+)?(?:Strand|Aldwych|Broadway|Kingsway|Piccadilly|Haymarket)\b'
 parts.sep = ',\s*|\s*<br\s*/?>\s*'
 parts.nl = '[\p{Zs}\t]*\\?\r?\n[\p{Zs}\t]*'
 parts.town = '(?:(?:St|Ft|Mt)\.?[\p{Zs}\t]+)?\p{Uppercase}[\p{Ll}\d][\p{Alphabetic}\d\x27’-]*(?:[\p{Zs}\t]+(?:upon[\p{Zs}\t]+)?\p{Uppercase}\p{Ll}[\p{Alphabetic}\x27’-]*){0,2}(?:[\p{Zs}\t]+AFB)?'
 parts.caps_town = '\b\p{Uppercase}{2,}(?:[\p{Zs}\t]+\p{Uppercase}{2,}){0,2}\b'
-parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2}|(?:[A-Z]{2}|[A-Z]\.[A-Z]\.|(?i:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new[\p{Zs}\t]+hampshire|new[\p{Zs}\t]+jersey|new[\p{Zs}\t]+mexico|new[\p{Zs}\t]+york|north[\p{Zs}\t]+carolina|north[\p{Zs}\t]+dakota|ohio|oklahoma|oregon|pennsylvania|rhode[\p{Zs}\t]+island|south[\p{Zs}\t]+carolina|south[\p{Zs}\t]+dakota|tennessee|texas|utah|vermont|virginia|washington|west[\p{Zs}\t]+virginia|wisconsin|wyoming|district[\p{Zs}\t]+of[\p{Zs}\t]+columbia))(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{5}(?:-\d{4})?)\b'
-absorbs.ORG = '(?P<span>{building})(?:{sep}|{nl})(?:{flat}(?:{sep}|{nl})){0,3}\d'
-# The street/units or box are definite components; the guessed town after
-# them is not allowed to absorb a model name or an attention/contact field.
-continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}'
-continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
+parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2}|(?:[A-Z]{2}|[A-Z]\.[A-Z]\.|{state_name})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip})\b'
+# A US state's code, for a city with no street before it.
+parts.state = '(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|GU|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|PR|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\b'
+# A US state's name.
+parts.state_name = '(?i:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new[\p{Zs}\t]+hampshire|new[\p{Zs}\t]+jersey|new[\p{Zs}\t]+mexico|new[\p{Zs}\t]+york|north[\p{Zs}\t]+carolina|north[\p{Zs}\t]+dakota|ohio|oklahoma|oregon|pennsylvania|rhode[\p{Zs}\t]+island|south[\p{Zs}\t]+carolina|south[\p{Zs}\t]+dakota|tennessee|texas|utah|vermont|virginia|washington|west[\p{Zs}\t]+virginia|wisconsin|wyoming|district[\p{Zs}\t]+of[\p{Zs}\t]+columbia)'
+# A ZIP, or a ZIP+4 broken after its hyphen; one OCR look-alike letter
+# may stand for a digit.
+parts.zip = '(?:\d{5}|[OoIliB]\d{4}|\d[OoIliB]\d{3}|\d{2}[OoIliB]\d{2}|\d{3}[OoIliB]\d|\d{4}[OoIliB])(?:-[\p{Zs}\t]?\d{4})?'
+absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)|{building})(?:[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?)?(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box}|{named})'
+# The street/units, box, stray-comma street or corner are definite
+# components; the guessed town after them is not allowed to absorb a model
+# name or an attention/contact field. A match with none of them (a city,
+# state and ZIP alone, #498) is guessed whole, and the pattern is searched
+# again after such a name or field: "Ship To Ashby Falls, OH 45999" is
+# "Ashby Falls, OH 45999", and "Attn Jane Quenby, NY 10999" with "Jane
+# Quenby" a model's person is no address. A capitalised "To" ends a guessed
+# town as Attn does; after a recipient's label (Attn, Attention, c/o, the
+# `recipient` group) a name follows, not a city, so the pattern is not
+# searched again: "Attn Jane Quenby, NY 10999" is no address even without
+# the model. A model's name that is a city's own word
+# ("Calder" of "Port Calder, IN 46999") still costs the city: it cannot be
+# told from a recipient's name before ", NY".
+continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}|\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners})'
+continuation_stop = '(?P<recipient>\b(?i:attn|attention|c/o)\b)|\b(?i:contact|email|e-mail|phone|telephone|tel|fax)\b|\bTo\b'
+# A field's label and its value are no city, state and ZIP: "Account ID
+# 12345", "Claim No CA 90999", "Policy Form New York 10999" (a word that
+# names a field, then "No", "Number" or a second such word and a state, or
+# "ID" or "I.D." for the state, with the state, separators and ZIP the city
+# form reads, at the match's start or one or two words in). A city named like
+# such a word stays a city ("Page AZ 86040", "Model CO 81999").
+skip = '\A(?:[^\s,]+[\p{Zs}\t]+){0,2}(?i:account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|tel|phone|fax|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:(?i:no|nr|number|account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})|I\.?D\.?)(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}'
 
 # A UK flat's "24, Pellin Court, Harrow Place, Worcester" has two
 # street parts before its town (#498). The comma after the number is
@@ -1880,14 +1960,6 @@ pattern = '\b\d+[A-Za-z]?,[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:C
 # The town after the two street components still cannot take a recipient.
 continuation_after = '\b\d+[A-Za-z]?,[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street),[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street)\b'
 continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
-
-# A corner needs its city AND ZIP (#553 item 3). A bare pair of street
-# names cannot match. Keep the alphabet and suffixes bounded to these
-# English street forms rather than guessing arbitrary named properties.
-[[span]]
-category = "ADDRESS"
-pattern = '\b{street}[\p{Zs}\t]+and[\p{Zs}\t]+{street},?[\p{Zs}\t]+(?:(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)?[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2},[\p{Zs}\t]*[A-Z]{2}[\p{Zs}\t]+\d{5}(?:-\d{4})?\b'
-parts.street = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?:Street|Avenue|Road|St\.?|Ave\.?|Rd\.?)'
 
 # The Cyrillic box label has the same boundary as P.O. Box (#506 item 7):
 # its number through the city or index. Restrict city words to Cyrillic;
@@ -1901,13 +1973,14 @@ continuation_after = '(?i:а/я)[\p{Zs}\t]*\d+\b'
 continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
 
 # Bare street names and bare corners are unmarked, including a model's
-# ADDRESS guess (#553 item 3). A numeric house number, unit, city or postcode
+# ADDRESS guess (#553 item 3), two names sharing a plural type too ("Shaw
+# and Mill Roads", #498). A numeric house number, unit, city or postcode
 # prevents this whole-value veto; numbered ordinals can name streets.
 # Spelled-out house numbers are house numbers too. An explicit private-home
 # naming cue distinguishes a house from a bare street (#553 item 2).
 [[shape]]
 category = "ADDRESS"
-forbid = ['^[\s\p{P}]*(?:(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?)(?:[\p{Zs}\t]+and[\p{Zs}\t]+(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?))?|Strand|Aldwych|Broadway|Kingsway|Piccadilly|Haymarket)[\s\p{P}]*$']
+forbid = ['^[\s\p{P}]*(?:(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?)(?:[\p{Zs}\t]+and[\p{Zs}\t]+(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?))?|(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,2}and[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,2}(?i:roads|streets|avenues)|Strand|Aldwych|Broadway|Kingsway|Piccadilly|Haymarket)[\s\p{P}]*$']
 forbid_unless = ['^[\s\p{P}]*(?i:one|two|three|four|five|six|seven|eight|nine|ten)[\p{Zs}\t]+']
 forbid_unless_after = ['(?i)\b(?:home|house|residence|cottage|chalet)[\p{Zs}\t]+(?:(?:is|was)[\p{Zs}\t]+)?(?:called|named)[\p{Zs}\t]+["“‘*_]*\z']
 
@@ -1926,11 +1999,20 @@ trim = [
 
 # A building, floor, room or mail-stop part of an address alone is no
 # company: "Bldg 499", "10th Floor", "Suite 210, 3rd Floor", "Mail Stop
-# K9-24" (#498). A company named with one of the words stays ("Harrow Floor
-# Services", "Brindle Building Society").
+# K9-24", "Lower Ground Floor", "27th Fl.", "Unit 7, 2F" (#498), and nor is
+# a Plaza with its number ("Kestrel Plaza No. 15"), a building no company
+# owns by that name. A company named with one of the words stays ("Harrow
+# Floor Services", "Brindle Building Society").
 [[shape]]
 category = "ORG"
-forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+floor|(?:ground|first|second|third|lower|upper)\s+floor)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+floor|(?:ground|first|second|third|lower|upper)\s+floor))*\s*$']
+forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b))*\s*$', '(?i)^\s*(?:[\p{Alphabetic}\x27’-]+\s+){1,3}plaza\s+(?:no\.?|#)\s*\d+[a-z]?\s*$']
+
+# Nor is a floor, unit or other such part of an address a person: the model
+# may read "Lower Ground Floor" or "3rd Floor" as a name, which would cut
+# the address that opens with it (#498).
+[[shape]]
+category = "PERSON"
+forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b))*\s*$']
 
 # Nor is such a part, anywhere in the span, a bank account or an identity
 # document: "Room 2.104", "Building 179A", "Mail Stop K9-24".

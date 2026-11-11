@@ -1736,12 +1736,12 @@ fn us_and_uk_addresses_over_two_lines_are_found_whole() {
         // After a line break a town needs its postcode.
         "12 Oak Road\nLeeds",
         "12 Oak Road\nJohn Smith AB will call",
-        // No street: a building and a town, a court, a town and its
-        // postcode alone (#506 item 6).
+        // No street: a building and a town, a US city and state with no
+        // ZIP. A US city, state and ZIP alone are an address (#506 item 6,
+        // `a_us_city_state_and_zip_alone_are_an_address`).
         "Brindle House, Leeds",
-        "High Court, Slocombe WC2A 9ZZ",
-        "BRANWICK, CO 81999",
-        "Brindlecombe, OH 45999",
+        "BRANWICK, CO",
+        "Brindlecombe, OH",
         // A street without a number needs its postcode.
         "Brindle Road, Leeds",
         "Strand, Leeds",
@@ -1961,6 +1961,301 @@ fn address_decisions_keep_bodies_and_bare_streets_outside() {
         "Summerhill Rd. and Richmond Rd. meet near the park.",
     ] {
         assert!(pack().spans(source).is_empty(), "{source}");
+    }
+}
+
+/// The addresses the review proposes for `source` without a model.
+fn proposed_addresses(source: &str) -> Vec<String> {
+    crate::recognition::proposals(source, &[])
+        .unwrap()
+        .into_iter()
+        .filter(|span| span.category == "ADDRESS")
+        .map(|span| source[span.range].to_owned())
+        .collect()
+}
+
+/// #498 round 3, guide rule 3 (#506 item 6): a US city, state and ZIP
+/// with no street are an address, alone or after a body's name, which
+/// stays out; with no ZIP they are none.
+#[test]
+fn a_us_city_state_and_zip_alone_are_an_address() {
+    for (source, address) in [
+        ("Ashby Falls, OH 45999", "Ashby Falls, OH 45999"),
+        ("Washington, DC 20017", "Washington, DC 20017"),
+        ("Washington DC 20017-4410", "Washington DC 20017-4410"),
+        ("WASHINGTON, D.C. 20017", "WASHINGTON, D.C. 20017"),
+        ("Laramie, WY 82070- 0042", "Laramie, WY 82070- 0042"),
+        ("TALLOWAY, OK 74501", "TALLOWAY, OK 74501"),
+        ("Boise, Idaho 83702", "Boise, Idaho 83702"),
+        ("Hartwell, MA 02l39", "Hartwell, MA 02l39"),
+        ("Ostrand,NJ 07999", "Ostrand,NJ 07999"),
+        ("Ashby Falls, OH\n45999", "Ashby Falls, OH\n45999"),
+        // No comma before the state, its code or its name.
+        ("Ashby Falls OH 45999", "Ashby Falls OH 45999"),
+        ("Pellam Falls OH 45999-4410", "Pellam Falls OH 45999-4410"),
+        ("Corrow Idaho 83999", "Corrow Idaho 83999"),
+        ("TALLOWAY OK 74999", "TALLOWAY OK 74999"),
+        (
+            "Brindle Falls New Mexico 87999",
+            "Brindle Falls New Mexico 87999",
+        ),
+        // A city named like a field's word, with no field's label after it.
+        ("Page AZ 86040", "Page AZ 86040"),
+        ("Model CO 81999", "Model CO 81999"),
+        ("Mail to Page, AZ 86040.", "Page, AZ 86040"),
+        // A letterhead's or a signature's line.
+        (
+            "Quenby & Rook LLP\nAshby Falls, OH 45999\n(555) 010-4477",
+            "Ashby Falls, OH 45999",
+        ),
+        // After a body's name, which stays out.
+        ("Bureau of Records, Haddon, VA 20170", "Haddon, VA 20170"),
+        (
+            "Filed with the Bureau of Records, Haddon, VA 20170, on 3 May.",
+            "Haddon, VA 20170",
+        ),
+    ] {
+        assert_eq!(proposed_addresses(source), [address], "{source}");
+    }
+    assert_eq!(
+        shown(
+            "Larkfield Supply LLC, Haddon, VA 20170",
+            &[("Larkfield Supply LLC", "organization")]
+        ),
+        pairs(&[
+            ("Larkfield Supply LLC", "ORG"),
+            ("Haddon, VA 20170", "ADDRESS")
+        ])
+    );
+    for source in [
+        "Haddon, VA",
+        "Bureau of Records, Haddon, VA, on 3 May.",
+        "CASE NO 12345",
+        "Account ID 12345 was closed.",
+        "Haddon, ZZ 20170",
+        "Haddon, VA 201701",
+        // A field's label and its value, a number before a state code.
+        "Claim No CA 90999 was paid.",
+        "Policy Form OH 45999 applies.",
+        "Customer Account ID 12345",
+        "Account I.D. 12345",
+        "Customer Account I.D. 12345",
+        "Policy No 4410 OH 45999",
+        "Exhibit 12 PA 19999",
+        // The state, separators and ZIP the city form reads.
+        "Policy Form New York 10999",
+        "Claim No CA, 90999",
+        "Claim Number OH\n45999",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #498 round 3: an address that opens with a floor, a suite, a unit or a
+/// building opens there, not at its street.
+#[test]
+fn an_address_opens_at_its_floor_suite_unit_or_building() {
+    for address in [
+        "Lower Ground Floor, 12 Quill Lane, London WC2A 9ZZ",
+        "3rd Floor, 40 Mercer Street, Ashby Falls, OH 45999",
+        "Suite 410, 88 Harbor Way, Ashby Falls, OH 45999",
+        "Unit 7, 2F, Kestrel Plaza No. 15, Pellow Road, Kowloon",
+        "Wexford Tower – Administration Suite 220, P. O. Box 4410, Ashby Falls, OH 45999",
+        "4B Larkspur Place 220 Mill Street Hadley, TN 37999-4417",
+    ] {
+        let source = format!("Deliveries go to {address}.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    // The model's company or person on the floor, unit or building that
+    // opens the address is the address's own part, never a cut in it.
+    for (address, model) in [
+        (
+            "Lower Ground Floor, 12 Quill Lane, London WC2A 9ZZ",
+            "Lower Ground Floor",
+        ),
+        (
+            "27th Fl., 418 N. Larch Ave., Ashby Falls, OH 45999",
+            "27th Fl.",
+        ),
+        ("2F, Kestrel Plaza No. 15, Pellow Road, Kowloon", "2F"),
+        (
+            "Unit 7, 2F, Kestrel Plaza No. 15, Pellow Road, Kowloon",
+            "Unit 7, 2F",
+        ),
+        (
+            "Kestrel Plaza No. 15, Pellow Road, Kowloon",
+            "Kestrel Plaza",
+        ),
+        (
+            "Kestrel Plaza No. 15, 12 Pellow Road, Kowloon",
+            "Kestrel Plaza No. 15",
+        ),
+        (
+            "Wexford Tower – Administration Suite 220, P. O. Box 4410, Ashby Falls, OH 45999",
+            "Wexford Tower",
+        ),
+        (
+            "Wexford Tower – Administration Suite 220, P. O. Box 4410, Ashby Falls, OH 45999",
+            "Administration Suite 220",
+        ),
+    ] {
+        let source = format!("Deliveries go to {address}.");
+        assert_eq!(
+            shown(&source, &[(model, "organization")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    for (address, model) in [
+        (
+            "Lower Ground Floor, 12 Quill Lane, London WC2A 9ZZ",
+            "Lower Ground Floor",
+        ),
+        (
+            "3rd Floor, 40 Mercer Street, Ashby Falls, OH 45999",
+            "3rd Floor",
+        ),
+        (
+            "Unit 7, 2F, Kestrel Plaza No. 15, Pellow Road, Kowloon",
+            "Unit 7",
+        ),
+    ] {
+        let source = format!("Deliveries go to {address}.");
+        assert_eq!(
+            shown(&source, &[(model, "person")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    // A person named like a building stays a person before her address.
+    let source = "Jane House, 12 Quill Lane, London WC2A 9ZZ";
+    assert_eq!(
+        shown(source, &[("Jane House", "person")]),
+        pairs(&[
+            ("Jane House", "PERSON"),
+            ("12 Quill Lane, London WC2A 9ZZ", "ADDRESS")
+        ])
+    );
+}
+
+/// #498 round 3: an address runs on to its ZIP after a comma, from its
+/// number over a stray comma, and from a corner of two streets to its city
+/// and ZIP; bare corners stay unmarked.
+#[test]
+fn an_address_runs_from_its_number_to_its_zip() {
+    for address in [
+        "6182 NW 4th Ct, Coral Bend, FL, 33999",
+        "1720 Pemberton, Ave., NW, Washington, DC 20599",
+        "Tolliver and Mill Roads Ashby Falls, AL 35999",
+        "20th Street and Quillon Avenue, NW Wexford, DC 20999",
+    ] {
+        let source = format!("The office is at {address}.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    for street in ["Tolliver and Mill Roads", "Summerhill Rd. and Richmond Rd."] {
+        assert!(shown(street, &[(street, "address")]).is_empty(), "{street}");
+        let source = format!("Turn at {street} and go on.");
+        assert!(proposed_addresses(&source).is_empty(), "{source}");
+    }
+    // The stray-comma street and the corner are the address's definite
+    // part: a model name in them is the address's, and one in the city
+    // after them ends it there.
+    for (address, model, label) in [
+        (
+            "1720 Pemberton, Ave., NW, Washington, DC 20599",
+            "Pemberton",
+            "person",
+        ),
+        (
+            "1720 Pemberton, Ave., NW, Washington, DC 20599",
+            "Pemberton",
+            "organization",
+        ),
+        (
+            "Tolliver and Mill Roads Ashby Falls, AL 35999",
+            "Mill Roads",
+            "organization",
+        ),
+        (
+            "20th Street and Quillon Avenue, NW Wexford, DC 20999",
+            "Quillon",
+            "person",
+        ),
+    ] {
+        let source = format!("The office is at {address}.");
+        assert_eq!(
+            shown(&source, &[(model, label)]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    let source = "The office is at 1720 Pemberton, Ave., NW, Washington, DC 20599.";
+    assert_eq!(
+        shown(source, &[("Washington", "person")]),
+        pairs(&[
+            ("1720 Pemberton, Ave., NW", "ADDRESS"),
+            ("Washington", "PERSON")
+        ])
+    );
+    // A bare corner left before the name is no address (#553 item 3).
+    let source = "The office is at Tolliver and Mill Roads Ashby Falls, AL 35999.";
+    assert_eq!(
+        shown(source, &[("Ashby", "person")]),
+        pairs(&[("Ashby", "PERSON")])
+    );
+}
+
+/// #498 round 3: a pleading's line number between the street and the city
+/// stays inside the address. Over a blank line the review proposes no
+/// span, whose token would join two paragraphs: the city line is an
+/// address of its own there.
+#[test]
+fn an_address_keeps_a_line_number_between_its_lines() {
+    for address in [
+        "6331 S. Garnet Blvd #418 3 Las Vegas, Nevada 89999",
+        "6331 S. Garnet Blvd #418\n3 Las Vegas, Nevada 89999",
+    ] {
+        let source = format!("Counsel: {address}\n");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    assert_eq!(
+        proposed_addresses("2716 Quarry Avenue\n\nBoise, Idaho 83999\n"),
+        ["Boise, Idaho 83999"]
+    );
+}
+
+/// #498 round 3: a firm's street line with a floor or a compass part is an
+/// address with no city after it.
+#[test]
+fn a_letterhead_street_line_is_an_address() {
+    for address in [
+        "418 N. Larch Ave., 27th Fl.",
+        "1640 Q St., N.W.",
+        "1640 Q St. NW",
+        "40 Mercer Street, 2nd Floor",
+    ] {
+        let source = format!("QUENBY & ROOK LLP\n{address}\nTel. (555) 010-4477");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+}
+
+/// #498 round 3's guards: a section number before a capitalised word, an
+/// area or an equipment id, a city or county alone and a building alone
+/// are no address.
+#[test]
+fn numbers_ids_places_and_buildings_alone_are_no_address() {
+    for source in [
+        "See section 4 Board of Directors.",
+        "Paragraph 12 Fire Area 41 describes the hazard.",
+        "Fire Area 41 and Board 7C were inspected.",
+        "The County of Harlan, Nevada, filed it.",
+        "Wexford Tower was sold.",
+        "Kestrel Plaza No. 15 was let.",
+        "There are 224 W 299 St. references in the index.",
+        "Unit 7, 2F was inspected.",
+        "The 3rd Floor, Suite 410 was let.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
     }
 }
 
