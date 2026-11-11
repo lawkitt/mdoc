@@ -543,6 +543,26 @@ impl Pack {
             })
     }
 
+    /// Whether `text` holds a company's legal form by any of the pack's
+    /// rules: an abbreviated or spelled-out form ([`Self::company_form`]:
+    /// "Ltd", "Corporation", «общество»), a name with its form as an ORG
+    /// `extend` reads it ("АНО «Кедр»", "Harbor Lane Bank, N.A"), or a form
+    /// before nested quotes («АНО», «коллегия адвокатов»). A span with one
+    /// is a whole company, never a piece of the next one's name (#502).
+    pub(super) fn own_legal_form(&self, text: &str) -> bool {
+        self.company_form(text)
+            || self.spans.iter().any(|span| match span {
+                Span::Fix(fix) if fix.category == Category::Organization => {
+                    fix.extend.iter().any(|pattern| pattern.is_match(text))
+                        || fix
+                            .nested_quotes
+                            .iter()
+                            .any(|(_, anywhere)| anywhere.is_match(text))
+                }
+                _ => false,
+            })
+    }
+
     /// Whether `rest`, the text after a role and its code, carries on a
     /// company or other name, so the code opens a name rather than
     /// defining a party code: more capitalized words ("C1 Holdings"), a

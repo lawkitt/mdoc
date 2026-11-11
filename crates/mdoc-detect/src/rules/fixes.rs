@@ -649,8 +649,9 @@ impl Pack {
                         // joins it to another company in the match: «ООО
                         // «Кедр» и Банк «Ольховый» (ПАО)» are two (#502).
                         // Pieces of one name, only spaces between and no
-                        // legal form in either, are one: the model's
-                        // "Pellam" and "Quenby" of "Pellam Quenby, Inc".
+                        // legal form in either (`own_legal_form`), are one:
+                        // the model's "Pellam" and "Quenby" of "Pellam
+                        // Quenby, Inc".
                         || fix.category == Category::Organization
                             && *tailed
                             && order.iter().any(|&j| {
@@ -665,8 +666,8 @@ impl Pack {
                                     && other.end <= m.end
                                     && (other.end <= range.start || range.end <= other.start)
                                     && !(source[gap].chars().all(horizontal)
-                                        && !self.legal_form(&source[range.clone()])
-                                        && !self.legal_form(&source[other.clone()]))
+                                        && !self.own_legal_form(&source[range.clone()])
+                                        && !self.own_legal_form(&source[other.clone()]))
                             })
                         || *led
                         && detections.iter().any(|other| {

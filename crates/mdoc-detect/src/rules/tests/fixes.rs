@@ -1020,6 +1020,29 @@ fn a_legal_form_after_a_comma_or_in_brackets_joins_the_company() {
         ),
         ["АО «Кедр»", "Банк Ольховый (ПАО)"]
     );
+    // A company with its own legal form, by any of the pack's rules, is
+    // never a piece of the next one's name: «АНО» and ", APC" are no
+    // `guess_words` but forms the pack's extensions read.
+    assert_eq!(
+        fixed(
+            "Ответчики АНО «Кедр» Банк Ольховый (ПАО) возражали.",
+            &[
+                ("АНО «Кедр»", Category::Organization),
+                ("Банк Ольховый", Category::Organization),
+            ]
+        ),
+        ["АНО «Кедр»", "Банк Ольховый (ПАО)"]
+    );
+    assert_eq!(
+        fixed(
+            "Paid by Kestrel Partners, APC Harbor Lane Bank, N.A. today.",
+            &[
+                ("Kestrel Partners, APC", Category::Organization),
+                ("Harbor Lane Bank", Category::Organization),
+            ]
+        ),
+        ["Kestrel Partners, APC", "Harbor Lane Bank, N.A"]
+    );
     // Pieces of one name the model split, only spaces between, grow to
     // the whole name with its form, in English and Russian.
     assert_eq!(
