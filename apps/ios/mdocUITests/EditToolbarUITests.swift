@@ -65,6 +65,11 @@ final class EditToolbarUITests: XCTestCase {
         // Bold between words: an empty pair, the caret inside it.
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(bold.waitUntilHittable(timeout: 5))
+        // The toolbar sits just above the keyboard: its margin, then the
+        // system's 44 pt prediction bar, then the keys. On `rc.7` a home
+        // indicator's room lay between them too (82 pt to the keys).
+        let gap = app.keyboards.firstMatch.frame.minY - bold.frame.maxY
+        XCTAssertTrue((0...60).contains(gap), "\(gap) pt between the toolbar and the keys")
         bold.tap()
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Pay **"), timeout: 5))
         app.typeText("monthly")

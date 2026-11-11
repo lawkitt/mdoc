@@ -9,8 +9,6 @@ enum CandidateAction: Hashable {
     case keep
     /// Replace this mention only, from the long press.
     case replaceThisOne
-    /// A replaced name's original wording, in a toast.
-    case showOriginal
     case keepInstead
     case replaceInstead
     /// The next undecided name, or Done.
@@ -46,7 +44,7 @@ extension CandidateAction {
         switch self {
         case .replace, .replaceThisOne, .replaceInstead: .replace
         case .keep, .keepInstead: .keep
-        case .showOriginal, .next, .sameAs, .changeCategory: nil
+        case .next, .sameAs, .changeCategory: nil
         }
     }
 }
@@ -57,16 +55,12 @@ extension DocumentViewModel {
     static let sameAsListLimit = 8
 
     /// The long press's actions on a name, in menu order: its decisions
-    /// (with Just this one while proposed, Show original first once
-    /// replaced), Same as… when there is another identity and the name is
-    /// not kept, then Change category.
+    /// (with Just this one while proposed), Same as… when there is another
+    /// identity and the name is not kept, then Change category. A replaced
+    /// name's original wording is the menu's header (`CandidateMenu`).
     func actions(for candidate: Candidate) -> [CandidateAction] {
         var actions = CandidateAction.decisions(for: candidate.state)
-        switch candidate.state {
-        case .proposed: actions.append(.replaceThisOne)
-        case .replaced: actions.insert(.showOriginal, at: 0)
-        case .kept: break
-        }
+        if candidate.state == .proposed { actions.append(.replaceThisOne) }
         if candidate.state != .kept && !sameAsTargets(for: candidate).all.isEmpty {
             actions.append(.sameAs)
         }
@@ -101,8 +95,6 @@ extension DocumentViewModel {
             decideCurrent(.replace)
         case .next:
             goToNextUndecided()
-        case .showOriginal:
-            if let candidate = reviewedCandidate { showOriginal(of: candidate) }
         case .sameAs, .changeCategory:
             // Submenus: their choices run `sameAs` and `setCategory`.
             break
@@ -111,12 +103,7 @@ extension DocumentViewModel {
 
     /// A long-press menu's choice on `id`: the bar goes onto it in scope
     /// All (This one for Just this one) and then acts, as the card would.
-    /// Show original only says the wording.
     func perform(_ action: CandidateAction, fromMenuOn id: CandidateID) {
-        if action == .showOriginal {
-            if let candidate = snapshot.candidate(id) { showOriginal(of: candidate) }
-            return
-        }
         prepareMenuChoice(on: id)
         perform(action)
     }
@@ -149,9 +136,5 @@ extension DocumentViewModel {
             $0.select(id)
             $0.setScope(.all)
         }
-    }
-
-    private func showOriginal(of candidate: Candidate) {
-        toast = ToastMessage(text: String(localized: "Original: \(candidate.original)"))
     }
 }

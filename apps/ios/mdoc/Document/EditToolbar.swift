@@ -60,7 +60,9 @@ struct EditToolbar: View {
             }
         }
         .padding(.horizontal, Space.xs)
-        .padding(.vertical, Space.xxs)
+        .padding(.top, Space.xxs)
+        // As far from the keyboard's top edge as from the screen's sides.
+        .padding(.bottom, Space.xs)
     }
 
     /// Undo and Redo keep a capsule of their own (ADR 0110). At an
@@ -282,13 +284,19 @@ final class EditToolbarHost: UIView {
         backgroundColor = .clear
         hosting.view.backgroundColor = .clear
         hosting.sizingOptions = .intrinsicContentSize
+        // Above the keyboard there is no home indicator to clear, yet a
+        // hosting controller with no parent takes the window's bottom
+        // inset and left that much empty under the toolbar. The host's own
+        // inset is right (none above the keyboard, the home indicator's
+        // with a hardware keyboard), so the toolbar ends at its guide.
+        hosting.safeAreaRegions = []
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting.view)
         NSLayoutConstraint.activate([
             hosting.view.leadingAnchor.constraint(equalTo: leadingAnchor),
             hosting.view.trailingAnchor.constraint(equalTo: trailingAnchor),
             hosting.view.topAnchor.constraint(equalTo: topAnchor),
-            hosting.view.bottomAnchor.constraint(equalTo: bottomAnchor),
+            hosting.view.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
         ])
     }
 
@@ -301,10 +309,16 @@ final class EditToolbarHost: UIView {
         CGSize(width: UIView.noIntrinsicMetric, height: height)
     }
 
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        setNeedsLayout()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         // The toolbar's own height, as the text size and the chip make it.
         let fitted = hosting.sizeThatFits(in: CGSize(width: bounds.width > 0 ? bounds.width : 400, height: .infinity)).height
+            + safeAreaInsets.bottom
         if abs(fitted - height) > 0.5 {
             height = fitted
             invalidateIntrinsicContentSize()

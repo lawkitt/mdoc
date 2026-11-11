@@ -129,6 +129,34 @@ final class EditToolbarTests: XCTestCase {
         XCTAssertNil(harness.view.inputView)
     }
 
+    /// The toolbar is as tall as its buttons and margins wherever it is not
+    /// at the screen's bottom, and at the bottom, with a hardware keyboard,
+    /// it clears the home indicator. (`rc.7`'s gap above the keyboard came
+    /// from the keyboard's own window: `EditToolbarUITests` measures it.)
+    func testTheToolbarLeavesHomeIndicatorRoomOnlyAtTheScreensBottom() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.isHidden = false
+        let indicator = window.safeAreaInsets.bottom
+        try XCTSkipIf(indicator == 0, "a device with no home indicator")
+        let host = EditToolbarHost(model: EditToolbarModel())
+        func height(at y: CGFloat) -> CGFloat {
+            // Twice: the first pass finds the toolbar's height, the second
+            // lays it out at that height.
+            for _ in 0..<2 {
+                host.frame = CGRect(x: 0, y: y - host.intrinsicContentSize.height, width: window.bounds.width, height: host.intrinsicContentSize.height)
+                host.setNeedsLayout()
+                window.layoutIfNeeded()
+            }
+            return host.intrinsicContentSize.height
+        }
+        window.addSubview(host)
+        let own = Size.target + Space.xxs + Space.xs
+        XCTAssertEqual(height(at: window.bounds.midY), own, accuracy: 0.5, "above a keyboard")
+        XCTAssertEqual(height(at: window.bounds.maxY), own + indicator, accuracy: 0.5, "at the screen's bottom")
+        XCTAssertEqual(height(at: window.bounds.midY), own, accuracy: 0.5, "and back")
+    }
+
     func testBoldWrapsTheCaretsWordAndComesOffInsideBold() throws {
         let harness = try harness()
         caret(harness, at: "tenant", offset: 2)

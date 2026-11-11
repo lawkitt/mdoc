@@ -23,6 +23,23 @@ extension Category {
 
     var color: Color { Color(uiColor: uiColor) }
 
+    /// The tint behind an alias, as the document draws a replaced name:
+    /// the category's colour, stronger in dark mode (`MarkdownStyler.fill`).
+    var aliasFill: UIColor {
+        let colour = uiColor
+        return UIColor { traits in
+            let fill = MarkdownStyler.fill(dark: traits.userInterfaceStyle == .dark)
+            return colour.resolvedColor(with: traits).withAlphaComponent(fill.replaced)
+        }
+    }
+
+    /// The category's symbol in its colour, for a row of a system menu. A
+    /// menu draws every title in its own colour and font; only an image
+    /// keeps a colour, so the row's icon carries the category's.
+    var menuIcon: UIImage? {
+        UIImage(systemName: symbol)?.withTintColor(uiColor, renderingMode: .alwaysOriginal)
+    }
+
     var symbol: String {
         switch self {
         case .person: "person"

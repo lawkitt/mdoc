@@ -367,7 +367,9 @@ final class ReviewBarModelTests: XCTestCase {
 
         var replaced = proposed
         replaced.state = .replaced
-        XCTAssertEqual(model.actions(for: replaced), [.showOriginal, .keepInstead, .sameAs, .changeCategory])
+        XCTAssertEqual(
+            model.actions(for: replaced), [.keepInstead, .sameAs, .changeCategory],
+            "no Show original: the menu's header says the wording")
         XCTAssertTrue(model.cardActions(for: replaced) == (.keepInstead, .next))
         XCTAssertEqual(model.keyAction(.return, for: replaced), .next, "Return is the filled Next")
         XCTAssertEqual(model.keyAction(.keep, for: replaced), .keepInstead)
@@ -405,8 +407,6 @@ final class ReviewBarModelTests: XCTestCase {
         model.setScope(.this)
         model.perform(.keep, fromMenuOn: again[0].id)
         XCTAssertTrue(model.sortedMentions(of: repeated.id).allSatisfy { $0.state == .kept }, "the menu acts in scope All")
-        model.perform(.showOriginal, fromMenuOn: again[0].id)
-        XCTAssertEqual(model.toast?.text, "Original: \(again[0].original)")
     }
 
     /// Opening a name's menu is the long press found: its hint goes. The

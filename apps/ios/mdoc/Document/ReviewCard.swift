@@ -139,17 +139,20 @@ struct ReviewCard: View {
                     model.setCategory(choice.category)
                 } label: {
                     Label {
-                        // "Organization → ORG_3", the outcome before the tap.
+                        // "Organization → ORG_3", the outcome before the
+                        // tap. A menu's title takes no colour: the icon
+                        // has the category's, and the alias stays whole.
                         if let alias = choice.alias {
-                            Text(verbatim: "\(choice.category.label) → \(alias)")
+                            Text(verbatim: "\(choice.category.label) → \(alias.unbrokenAlias)")
                         } else {
                             Text(verbatim: choice.category.label)
                         }
                     } icon: {
-                        Image(systemName: choice.category.symbol)
+                        MenuIcon(category: choice.category)
                     }
                 }
                 .disabled(choice.current)
+                .accessibilityLabel(Text(verbatim: choice.alias.map { "\(choice.category.label) → \($0)" } ?? choice.category.label))
             }
             // Belongs to… for contacts and identifiers, or once an owner is
             // set (ADR 0032).
@@ -250,8 +253,13 @@ struct ReviewCard: View {
         Button {
             model.sameAs(target.id)
         } label: {
-            Text(verbatim: "\(target.primaryWording) · \(target.alias) · \(target.mentionCount)")
+            Label {
+                Text(verbatim: "\(target.primaryWording) · \(target.alias.unbrokenAlias) · \(target.mentionCount)")
+            } icon: {
+                MenuIcon(category: target.category)
+            }
         }
+        .accessibilityLabel(Text(verbatim: "\(target.primaryWording), \(target.alias), \(target.mentionCount)"))
     }
 
     private var scopeMenu: some View {
@@ -413,9 +421,9 @@ struct SameAsPicker: View {
                         LabeledContent {
                             Text("\(target.mentionCount)")
                         } label: {
-                            VStack(alignment: .leading) {
+                            VStack(alignment: .leading, spacing: Space.xxs) {
                                 Text(target.primaryWording)
-                                Text(target.alias).font(Typography.alias).foregroundStyle(.secondary)
+                                AliasTag(alias: target.alias, category: target.category)
                             }
                         }
                     }
