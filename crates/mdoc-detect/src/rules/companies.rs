@@ -689,6 +689,20 @@ impl Pack {
                 return false;
             }
             let after = &source[found.end()..];
+            // A comma may stand before the legal form, as is conventional
+            // ("Pellam and Quenby, LLP"): only the form right after it, on
+            // the same line.
+            if let Some(rest) = after.strip_prefix(',') {
+                return rest
+                    .split('\n')
+                    .next()
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|word| {
+                        self.legal_form(word.trim_end_matches(['.', ',', ';', ')', '»', '”', '"']))
+                    });
+            }
             if !after.starts_with(char::is_whitespace) {
                 return false;
             }

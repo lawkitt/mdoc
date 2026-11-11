@@ -144,6 +144,28 @@ fn surnames_after_a_plural_title_are_people() {
             ],
             &["ORG⟦Hartrow and Vensel LLP⟧", "ORG⟦Hartrow and Vensel⟧"],
         ),
+        // A comma before the legal form: the list is still the firm's
+        // short name, with no model span over the firm's whole name; the
+        // wording spreads to the firm's name too.
+        (
+            "Hartrow and Vensel, LLP signed.\nSignatories: Hartrow and Vensel",
+            &[("organization", "Hartrow and Vensel")],
+            &["ORG⟦Hartrow and Vensel⟧", "ORG⟦Hartrow and Vensel⟧"],
+        ),
+        // A company holding one surname of a people list keeps only that
+        // name an organization: the rest of the list are people.
+        (
+            "Hartrow Holdings Ltd appealed.\nSenators Hartrow and Vensel opposed it.",
+            &[
+                ("organization", "Hartrow Holdings Ltd"),
+                ("organization", "Hartrow and Vensel"),
+            ],
+            &[
+                "ORG⟦Hartrow Holdings Ltd⟧",
+                "ORG⟦Hartrow⟧",
+                "PERSON⟦Vensel⟧",
+            ],
+        ),
         // No plural title: a company's list stays.
         (
             "Clients: Kestrel, Pellam and Quenby renewed.",
@@ -411,7 +433,66 @@ fn russian_initials_forms_are_the_name() {
             &[("organization", "Белоть Е. Р.")],
             &["ORG⟦Белоть Е. Р.⟧"],
         ),
+        // Any operative verb of a court order stays outside, whether the
+        // model gave the initials alone, the verb with them as a person,
+        // or as an organization.
+        (
+            "Выдать Е. Р. копию решения.",
+            &[("person", "Е. Р.")],
+            &["PERSON⟦Е. Р.⟧"],
+        ),
+        (
+            "Выплатить Е. Р. Тулиной компенсацию.",
+            &[("person", "Е. Р.")],
+            &["PERSON⟦Е. Р. Тулиной⟧"],
+        ),
+        (
+            "Возместить Е. Р. расходы.",
+            &[("person", "Возместить Е. Р.")],
+            &["PERSON⟦Е. Р.⟧"],
+        ),
+        (
+            "Зачесть Е. Р. срок содержания.",
+            &[("organization", "Зачесть Е. Р.")],
+            &["PERSON⟦Е. Р.⟧"],
+        ),
         // A place before initials is no double surname.
         ("г. Санкт-Петербург Т.Т. Колобова", &[], &[]),
     ]);
+}
+
+/// #793: the court order's operative verbs that come off before initials
+/// are the same in the code's organization check (`OPERATIVE_VERBS`), the
+/// Russian pack's PERSON trim and its initials join's `unless_over`.
+#[test]
+fn operative_verbs_agree_with_the_russian_pack() {
+    let verbs = crate::rules::person_forms::OPERATIVE_VERBS;
+    let pack: toml::Table =
+        toml::from_str(include_str!("../../../rules/ru.toml")).expect("ru.toml");
+    let spans = pack["span"].as_array().expect("spans");
+    let trimmed = spans.iter().any(|span| {
+        span.get("trim_start")
+            .and_then(toml::Value::as_array)
+            .is_some_and(|trims| {
+                trims.iter().any(|trim| {
+                    trim.as_str()
+                        .is_some_and(|t| t.contains(&format!("(?:{verbs})")))
+                })
+            })
+    });
+    assert!(trimmed, "no PERSON trim_start lists OPERATIVE_VERBS");
+    let lower: Vec<String> = verbs.split('|').map(str::to_lowercase).collect();
+    let joined = spans.iter().any(|span| {
+        span.get("unless_over")
+            .and_then(toml::Value::as_array)
+            .is_some_and(|words| {
+                words
+                    .iter()
+                    .filter_map(toml::Value::as_str)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+                    == lower
+            })
+    });
+    assert!(joined, "no unless_over lists OPERATIVE_VERBS in lowercase");
 }

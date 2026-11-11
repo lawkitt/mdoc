@@ -65,10 +65,11 @@ fn name_range(source: &str, range: &Range<usize>) -> Range<usize> {
 }
 
 /// Capitalised infinitives that open a court order's operative part,
-/// as the PERSON trim before initials in `ru.toml` lists them: «Обязать
-/// Е. Р. …». Only these, never any capitalised word in -ть, which may be
-/// a surname («Свидетель Локоть Е. Р.»).
-const OPERATIVE_VERBS: &str = "Обязать|Взыскать|Признать|Отказать|Возложить|Запретить|Освободить|Назначить|Вернуть|Возвратить|Предоставить|Восстановить|Выселить|Вселить|Истребовать|Прекратить|Отменить|Удовлетворить|Оставить|Направить|Привлечь|Передать|Расторгнуть|Лишить|Ограничить|Отстранить|Утвердить|Включить|Исключить|Допросить|Вызвать|Уведомить|Разрешить|Определить";
+/// as the PERSON trim before initials in `ru.toml` lists them, and its
+/// initials join's `unless_over` in lowercase: «Обязать Е. Р. …». Only
+/// these, never any capitalised word in -ть, which may be a surname
+/// («Свидетель Локоть Е. Р.»). A test keeps the three lists equal.
+pub(super) const OPERATIVE_VERBS: &str = "Обязать|Взыскать|Признать|Отказать|Возложить|Запретить|Освободить|Назначить|Вернуть|Возвратить|Выдать|Выплатить|Возместить|Оплатить|Перечислить|Погасить|Компенсировать|Предоставить|Передать|Восстановить|Прекратить|Приостановить|Возобновить|Расторгнуть|Отменить|Изменить|Удовлетворить|Оставить|Отклонить|Направить|Привлечь|Наложить|Выселить|Вселить|Истребовать|Изъять|Конфисковать|Лишить|Ограничить|Отстранить|Утвердить|Включить|Исключить|Зачесть|Уменьшить|Снизить|Обратить|Разъяснить|Установить|Объявить|Допросить|Вызвать|Уведомить|Предупредить|Разрешить|Определить|Снять|Продлить|Отсрочить|Рассрочить|Произвести|Обеспечить|Поручить|Применить|Избрать|Поместить|Зарегистрировать|Аннулировать|Разделить|Выделить|Присудить|Принять|Устранить";
 
 /// Initials in Cyrillic after lowercase words or an operative verb
 /// ([`OPERATIVE_VERBS`]), the whole of a model organization: «к Е. Р.»,
@@ -325,31 +326,28 @@ impl Pack {
         (opened || pieces.len() > 1).then_some(pieces)
     }
 
-    /// Whether the model's organization over a list (`pieces`, by
-    /// [`Self::list_pieces`]) is a company's, as the relabelling of a lone
-    /// surname checks: a legal form or a body word in it, its wording or a
-    /// piece's written with a legal form after it ("Pellam and Quenby" of
-    /// "Pellam and Quenby LLP", its short name), or a piece's surname a
-    /// company of the document holds (`companies`, by
-    /// [`Self::company_words`]).
-    fn company_list(
-        &self,
-        source: &str,
-        range: &Range<usize>,
-        pieces: &[Range<usize>],
-        companies: &HashSet<String>,
-    ) -> bool {
+    /// Whether the model's organization over a list is a company's by its
+    /// whole wording: a legal form or a body word in it, or the wording
+    /// written with a legal form after it ("Pellam and Quenby" of "Pellam
+    /// and Quenby LLP" or "Pellam and Quenby, LLP", its short name). Then
+    /// the list is no list of people and stays whole.
+    fn company_list(&self, source: &str, range: &Range<usize>) -> bool {
         let text = &source[name_range(source, range)];
-        self.company_named(text)
-            || self.company_short_name(source, text)
-            || pieces.iter().any(|piece| {
-                let piece = &source[piece.clone()];
-                piece
-                    .split_whitespace()
-                    .next_back()
-                    .is_some_and(|surname| companies.contains(&bare(surname).to_lowercase()))
-                    || self.company_short_name(source, piece)
-            })
+        self.company_named(text) || self.company_short_name(source, text)
+    }
+
+    /// Whether one name of a model organization's list is a company's, as
+    /// the relabelling of a lone surname checks: its surname a company of
+    /// the document holds (`companies`, by [`Self::company_words`]), or its
+    /// wording written with a legal form after it. Only that name stays an
+    /// organization; the others of the list are people ("Senators Hartrow
+    /// and Vensel" beside "Hartrow Holdings Ltd": "Vensel" is a person).
+    fn company_piece(&self, source: &str, piece: &str, companies: &HashSet<String>) -> bool {
+        piece
+            .split_whitespace()
+            .next_back()
+            .is_some_and(|surname| companies.contains(&bare(surname).to_lowercase()))
+            || self.company_short_name(source, piece)
     }
 
     /// A person's other name forms the model proposed as an organization,
@@ -404,17 +402,26 @@ impl Pack {
                 continue;
             }
             // A list after a plural title: one span per surname, unless the
-            // model's organization is a company's name or short name.
+            // model's organization is a company's name or short name; a
+            // name of it a company holds stays an organization alone.
             let person = detection.category == Category::Person;
             if let Some(pieces) = self.list_pieces(source, &detection.range, &lists, person)
-                && (person || !self.company_list(source, &detection.range, &pieces, &companies))
+                && (person || !self.company_list(source, &detection.range))
             {
-                detection.category = Category::Person;
-                detection.range = pieces[0].clone();
+                let category = |piece: &Range<usize>| {
+                    if !person && self.company_piece(source, &source[piece.clone()], &companies) {
+                        Category::Organization
+                    } else {
+                        Category::Person
+                    }
+                };
                 added.extend(pieces[1..].iter().map(|piece| Detection {
                     range: piece.clone(),
+                    category: category(piece),
                     ..detection.clone()
                 }));
+                detection.category = category(&pieces[0]);
+                detection.range = pieces[0].clone();
                 continue;
             }
             let range = name_range(source, &detection.range);
