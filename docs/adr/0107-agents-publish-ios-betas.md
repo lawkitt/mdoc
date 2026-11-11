@@ -41,6 +41,13 @@ What to Test's 4,000 characters.
   step 1 (on `main`'s tip), step 3, an export to a file and `altool
   --validate-app`, without uploading, so a pipeline fault burns no `rc.N`.
   It skips step 2: `main`'s commits passed the merge queue's tests.
+- **Finish mode** (2026-11-11). Dispatched from `main` with a tag in
+  `finish`, the workflow runs step 1 on that tag and then only steps 5
+  and 6, with `main`'s scripts. It is for a run that uploaded and then
+  failed: Apple refuses a second upload of one build number, so a re-run
+  cannot help. `ios-v0.2.0-rc.6` (878) failed so: Apple answered 401
+  seven minutes into step 5. The script now makes a new token every 5
+  minutes and once more on a 401.
 - **No local release path** (ADR 0091 stands). If hosted macOS runners are
   down, the hub retries later. The maintainer's manual Xcode archive stays
   in [release-run.md](../release-run.md) as the last resort.

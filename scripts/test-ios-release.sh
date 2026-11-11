@@ -206,8 +206,14 @@ class H(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(n)) if n else None
     def do_GET(self):
         p = self.path.split("?")[0]
-        assert self.headers["Authorization"] == "Bearer test-token"
+        token = self.headers["Authorization"]
         log.write("GET " + self.path + "\n"); log.flush()
+        # "expires": the first made token stops working at the build lookup
+        # ("always": so does every later one).
+        if state.get("expires") and p == "/v1/builds" and (state["expires"] == "always" or token.endswith(".1")):
+            log.write("401 " + token + "\n"); log.flush()
+            return self.send({"errors": [{"code": "NOT_AUTHORIZED", "detail": "expired"}]}, 401)
+        assert token == "Bearer test-token" or (state.get("expires") and token.startswith("Bearer eyJ0.a."))
         if p == "/v1/apps": return self.send({"data": [{"id": "6830176855", "attributes": {"name": "mdoc"}}]})
         if p == "/v1/builds":
             polls["n"] += 1
@@ -238,11 +244,12 @@ with open(sys.argv[1], "w") as f:
     f.write(str(server.server_port))
 server.serve_forever()
 PY
-# fake <processing> <internal> <group builds as JSON>: starts the fake API.
+# fake <processing> <internal> <group builds as JSON> [first|always]: starts
+# the fake API; the last argument makes it refuse made tokens.
 fake() {
   stop_fake
   rm -f "$tmp/port" "$tmp/api.log"
-  printf '{"processing": "%s", "internal": "%s", "group": %s}' "$1" "$2" "$3" >"$tmp/state.json"
+  printf '{"processing": "%s", "internal": "%s", "group": %s, "expires": "%s"}' "$1" "$2" "$3" "${4:-}" >"$tmp/state.json"
   python3 "$tmp/mock.py" "$tmp/port" "$tmp/state.json" "$tmp/api.log" &
   mock_pid=$!
   local n=0
@@ -269,6 +276,31 @@ if grep -q '^POST /v1/betaGroups' "$tmp/api.log"; then fail "added a build autom
 fake VALID READY_FOR_BETA_TESTING '[]'
 asc finish --version 0.2.0 --build 830 --notes "$tmp/good.txt" >"$tmp/out" 2>&1 || fail "finish with an add failed: $(cat "$tmp/out")"
 grep -q '^POST /v1/betaGroups/G1/relationships/builds' "$tmp/api.log" || fail "the build was not added to the group"
+
+# A made token Apple stops taking: one new token and the run goes on; a
+# second refusal is an error.
+mkdir -p "$tmp/bin"
+cat >"$tmp/bin/xcrun" <<'SH'
+#!/bin/bash
+n=$(($(cat "$TOKENS" 2>/dev/null || echo 0) + 1))
+echo "$n" >"$TOKENS"
+echo "eyJ0.a.$n"
+SH
+chmod +x "$tmp/bin/xcrun"
+made() {
+  rm -f "$tmp/tokens"
+  PATH="$tmp/bin:$PATH" TOKENS="$tmp/tokens" ASC_KEY_ID=ABC123 ASC_ISSUER_ID=issuer ASC_KEY_PATH="$tmp/full.p8" \
+    ASC_API_BASE="http://127.0.0.1:$(cat "$tmp/port")" ASC_POLL_SECONDS=0.05 ASC_GROUP_WAIT_SECONDS=0.5 \
+    python3 scripts/ios-testflight.py "$@"
+}
+fake VALID IN_BETA_TESTING '["B1"]' first
+made finish --version 0.2.0 --build 830 --notes "$tmp/good.txt" >"$tmp/out" 2>&1 || fail "finish with a refused token failed: $(cat "$tmp/out")"
+[ "$(cat "$tmp/tokens")" = 2 ] || fail "made $(cat "$tmp/tokens") tokens, not 2: $(cat "$tmp/out")"
+[ "$(grep -c '^401 ' "$tmp/api.log")" = 1 ] || fail "the refused request was not repeated once: $(cat "$tmp/api.log")"
+fake VALID IN_BETA_TESTING '["B1"]' always
+refuses "a token refused twice" made finish --version 0.2.0 --build 830 --notes "$tmp/good.txt"
+grep -q "HTTP 401" "$tmp/out" || fail "refused twice: $(cat "$tmp/out")"
+[ "$(cat "$tmp/tokens")" = 2 ] || fail "refused twice: made $(cat "$tmp/tokens") tokens"
 
 # Failures: Apple's processing ends INVALID; export compliance missing; a timeout.
 fake INVALID IN_BETA_TESTING '["B1"]'
