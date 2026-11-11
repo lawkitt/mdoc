@@ -304,7 +304,7 @@ extension MarkdownTextView.Coordinator {
         if moved, view.selectedRange != lastSelection { modeAnchor = nil }
         if moved, parent.rendered, !snapping {
             // In a drawn table the caret stays in a cell (ADR 0109).
-            let snapped = keptInCell(view)
+            let snapped = view.handleDragged(from: lastSelection) ?? keptInCell(view)
                 ?? CaretSnap.snap(view.selectedRange, from: lastSelection, in: view.textStorage)
             if snapped != view.selectedRange {
                 snapping = true

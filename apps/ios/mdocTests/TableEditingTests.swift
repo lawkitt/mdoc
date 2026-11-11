@@ -460,6 +460,92 @@ final class TableEditingTests: XCTestCase {
 
     // MARK: Show Markdown, VoiceOver
 
+    /// With the caret in a cell UIKit scrolls to its selection where the
+    /// table's hidden source lies; the text view keeps the cell in view
+    /// instead, so a cell in view moves nothing and one out of view comes
+    /// back.
+    func testScrollingToTheSelectionKeepsTheCaretsCell() throws {
+        let rows = String(repeating: "|  |  |\n", count: 40)
+        let text = "# Rent\n\n| Item | Amount |\n| --- | ---: |\n| Rent | £1,150 |\n\(rows)\nAfter the table.\n"
+        let harness = try harness(text: text)
+        let view = harness.view
+        try tap(harness, row: 1, column: 0)
+        view.layoutIfNeeded()
+        let end = try XCTUnwrap(view.selectedTextRange?.end)
+        let cellCaret = view.caretRect(for: end)
+        XCTAssertTrue(view.bounds.contains(cellCaret), "the tapped cell is in view")
+        let offset = view.contentOffset
+        // UIKit's rect: the hidden source, at the end of the grid.
+        let grid = try grid(harness)
+        XCTAssertGreaterThan(grid.frame.maxY, view.bounds.maxY, "the table is longer than the view")
+        view.scrollRectToVisible(CGRect(x: 17, y: grid.frame.maxY - 1, width: 0.01, height: 0.1), animated: false)
+        XCTAssertEqual(view.contentOffset, offset, "a cell in view moves nothing")
+        // Scrolled away, the same call brings the cell back.
+        view.setContentOffset(CGPoint(x: 0, y: cellCaret.maxY + 200), animated: false)
+        view.scrollRectToVisible(CGRect(x: 17, y: grid.frame.maxY - 1, width: 0.01, height: 0.1), animated: false)
+        let visible = view.bounds.inset(by: view.adjustedContentInset)
+        let now = view.caretRect(for: try XCTUnwrap(view.selectedTextRange?.end))
+        XCTAssertTrue(visible.minY <= now.minY && now.maxY <= visible.maxY, "the caret's cell is back in view: \(now) in \(visible)")
+        // Outside a table the rect asked for is the one shown.
+        caret(harness, at: "Rent")
+        view.setContentOffset(.zero, animated: false)
+        view.scrollRectToVisible(CGRect(x: 17, y: grid.frame.maxY - 1, width: 1, height: 1), animated: false)
+        XCTAssertGreaterThan(view.contentOffset.y, 0)
+    }
+
+    /// A double tap or a long press on a cell selects the word there (the
+    /// text view's own gestures do not reach a grid), within the cell.
+    func testADoubleTapSelectsTheWordInACell() throws {
+        let harness = try harness()
+        let table = try grid(harness)
+        let cell = table.cells[2][0]
+        let point = CGPoint(x: cell.frame.minX + 30, y: cell.frame.midY)
+        // A long press as it begins, then as it ends: one selection.
+        for ended in [false, true] {
+            harness.view.onTableSelect?(table, point, ended)
+            harness.coordinator.textViewDidChangeSelection(harness.view)
+            XCTAssertEqual(harness.string.substring(with: harness.view.selectedRange), "Deposit")
+        }
+        // An amount: the word under the tap, not its neighbours' cells.
+        let amount = table.cells[1][1]
+        harness.view.onTableSelect?(table, CGPoint(x: amount.frame.maxX - 20, y: amount.frame.midY), false)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        let selected = harness.string.substring(with: harness.view.selectedRange)
+        XCTAssertFalse(selected.isEmpty)
+        XCTAssertTrue("£1,150".contains(selected), selected)
+        // Bold on the selection edits that cell only.
+        let before = harness.shown
+        harness.view.onTableSelect?(table, point, false)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        harness.coordinator.refreshToolbar(harness.view)
+        assertOneStep(harness) { harness.toolbar.run(.format(.bold)) }
+        XCTAssertEqual(harness.shown, before.replacingOccurrences(of: "Deposit", with: "**Deposit**"))
+        // A handle dragged over the grid: UIKit asks for the cell's
+        // character under the finger, then moves the selection's end by
+        // the hidden source; the end goes to the character asked for.
+        harness.view.onTableSelect?(table, point, false)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        let word = harness.view.selectedRange
+        XCTAssertEqual(harness.string.substring(with: word), "Deposit")
+        let inWord = table.convert(CGPoint(x: cell.frame.minX + 30, y: cell.frame.midY), to: harness.view)
+        let hit = try XCTUnwrap(harness.view.closestPosition(to: inWord))
+        let offset = harness.view.offset(from: harness.view.beginningOfDocument, to: hit)
+        XCTAssertTrue(word.location < offset && offset < NSMaxRange(word), "\(offset) in \(word)")
+        harness.view.selectedRange = NSRange(location: word.location - 4, length: 4)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        XCTAssertEqual(harness.view.selectedRange, NSRange(location: word.location, length: offset - word.location))
+        // The hit is used once: a key that changes the selection right
+        // after the drag is kept as the key made it.
+        let keyed = NSRange(location: word.location, length: offset - word.location + 2)
+        harness.view.selectedRange = keyed
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        XCTAssertEqual(harness.view.selectedRange, keyed)
+        // Outside edit mode the grids take no such gesture.
+        harness.model.doneEditing()
+        show(harness)
+        XCTAssertNil(harness.view.onTableSelect)
+    }
+
     func testWithShowMarkdownOnTablesAreSourceText() throws {
         let harness = try harness(rendered: false)
         XCTAssertTrue(harness.view.tableViews.isEmpty)

@@ -405,6 +405,23 @@ final class EditToolbarTests: XCTestCase {
         caret(harness, at: "about the lease")
         step(.task)
         try check("one task")
+        // Bold over the alias and the words after it, in the task: only
+        // the markers are edited, on and off.
+        func selectFromTheAlias() throws {
+            let alias = try XCTUnwrap(harness.coordinator.livePreview.candidates.first { $0.state == .replaced })
+            let start = UTF8Map(harness.shown).range(of: alias.range).location
+            let end = NSMaxRange(harness.string.range(of: "about the lease"))
+            select(harness, NSRange(location: start, length: end - start))
+        }
+        try selectFromTheAlias()
+        step(.format(.bold))
+        XCTAssertTrue(harness.shown.contains(" about the lease**."), harness.shown)
+        try check("bold")
+        try selectFromTheAlias()
+        step(.format(.bold))
+        XCTAssertFalse(harness.shown.contains("**"), harness.shown)
+        try check("bold off")
+        caret(harness, at: "about the lease")
         step(.turnInto(.heading2))
         try check("a heading")
     }

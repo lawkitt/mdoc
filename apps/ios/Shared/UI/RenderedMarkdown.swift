@@ -1207,6 +1207,41 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
         }
     }
 
+    /// Edit mode: a double tap or a long press on the grid runs this with
+    /// where it landed, to select the word there (the text view's own
+    /// selection gestures do not reach a grid), and whether the touch has
+    /// ended, when the edit menu can show.
+    var onSelect: ((CGPoint, Bool) -> Void)? {
+        didSet {
+            let editing = onSelect != nil
+            if editing, doubleTap == nil {
+                let doubleTap = UITapGestureRecognizer(target: self, action: #selector(selected(_:)))
+                doubleTap.numberOfTapsRequired = 2
+                addGestureRecognizer(doubleTap)
+                self.doubleTap = doubleTap
+                let press = UILongPressGestureRecognizer(target: self, action: #selector(selected(_:)))
+                addGestureRecognizer(press)
+                longPress = press
+            }
+            doubleTap?.isEnabled = editing
+            longPress?.isEnabled = editing
+        }
+    }
+
+    private var doubleTap: UITapGestureRecognizer?
+    private var longPress: UILongPressGestureRecognizer?
+
+    @objc private func selected(_ recognizer: UIGestureRecognizer) {
+        // A tap when it ends; a press as soon as it is long, and again
+        // when the finger lifts, which would close a menu shown under it.
+        if recognizer is UILongPressGestureRecognizer {
+            guard recognizer.state == .began || recognizer.state == .ended else { return }
+        } else if recognizer.state != .ended {
+            return
+        }
+        onSelect?(recognizer.location(in: self), recognizer.state == .ended)
+    }
+
     /// The grid scrolled sideways: edit mode draws its caret again.
     var onScroll: (() -> Void)?
 
@@ -1457,6 +1492,14 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         }
     }
 
+    /// A double tap or a long press on a table in edit mode, with where in
+    /// the table it landed and whether the touch has ended.
+    var onTableSelect: ((MarkdownTableView, CGPoint, Bool) -> Void)? {
+        didSet {
+            for view in tableViews { connectTap(view) }
+        }
+    }
+
     /// A table scrolled sideways (edit mode draws its caret again).
     var onTableScroll: ((MarkdownTableView) -> Void)? {
         didSet {
@@ -1466,6 +1509,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
 
     private func connectTap(_ view: MarkdownTableView) {
         view.onTap = onTableTap.map { tap in { [weak view] point in if let view { tap(view, point) } } }
+        view.onSelect = onTableSelect.map { select in { [weak view] point, ended in if let view { select(view, point, ended) } } }
         view.onScroll = onTableScroll.map { scrolled in { [weak view] in if let view { scrolled(view) } } }
     }
 
