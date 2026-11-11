@@ -345,6 +345,9 @@ impl Pack {
         {
             return true;
         }
+        if self.head_after_public_name(span, after, category, titled) {
+            return true;
+        }
         if span.ends_with(['’', '\''])
             && let Some(found) = tail.find(after)
             && self.public_body(
@@ -363,6 +366,54 @@ impl Pack {
                 false,
             )
         })
+    }
+
+    /// Whether a span of capitalized words is a local body's name cut
+    /// before its head, read with the whole run of capitalized words after
+    /// it on the line (#788): "⟦Elko⟧ County Sheriff's Office", "⟦Ashby⟧
+    /// Police Department". The run must open with a local body's head and
+    /// be a public body by the `never` patterns as a whole, so "Harlow
+    /// County Bank" keeps its "Harlow".
+    fn head_after_public_name(
+        &self,
+        span: &str,
+        after: &str,
+        category: Category,
+        titled: bool,
+    ) -> bool {
+        static HEAD: OnceLock<Regex> = OnceLock::new();
+        static RUN: OnceLock<Regex> = OnceLock::new();
+        let head = HEAD.get_or_init(|| {
+            Regex::new(r"^[\p{Zs}\t]+(?:County|Parish|Borough|Township|Police|Sheriff['’]s|Fire[\p{Zs}\t]+Department|(?:City|Town|Borough|District|Parish)[\p{Zs}\t]+Council|(?:Housing|Transit)[\p{Zs}\t]+Authority|(?:School|Water)[\p{Zs}\t]+District)\b")
+                .expect("local body head pattern")
+        });
+        let run = RUN.get_or_init(|| {
+            Regex::new(r"^(?:[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}'’.-]*|of|and|&|the)){1,8}")
+                .expect("capitalized run pattern")
+        });
+        let words: Vec<&str> = span.split_whitespace().collect();
+        if words.is_empty()
+            || words.len() > 3
+            || self.legal_form(span)
+            || !words.iter().all(|word| {
+                word.chars().next().is_some_and(char::is_uppercase)
+                    && word.chars().all(|c| c.is_alphabetic() || c == '-')
+            })
+            || !head.is_match(after)
+        {
+            return false;
+        }
+        let Some(found) = run.find(after) else {
+            return false;
+        };
+        let mut tail = found.as_str();
+        while let Some(rest) = ["of", "and", "&", "the"].iter().find_map(|joiner| {
+            tail.strip_suffix(joiner)
+                .filter(|rest| rest.ends_with([' ', '\t']))
+        }) {
+            tail = rest.trim_end();
+        }
+        self.public_body_by(&format!("{span}{tail}"), category, titled, false)
     }
 }
 
