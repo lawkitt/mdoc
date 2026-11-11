@@ -1674,7 +1674,13 @@ fn a_uid_is_a_case_number_by_its_shape() {
 /// case number, CASE, whatever it guessed (#364), its label outside.
 #[test]
 fn a_model_value_of_a_uids_shape_is_a_case_number() {
-    for label in ["tax_id", "bank_account", "passport_number", "phone_number"] {
+    for label in [
+        "tax_id",
+        "bank_account",
+        "passport_number",
+        "phone_number",
+        "organization",
+    ] {
         assert_eq!(
             shown(
                 "Судья Ракитина О.Л. № 33-5120/2031\n\n99RS0644-01-2030-007312-81\n",
@@ -1699,4 +1705,25 @@ fn a_model_value_of_a_uids_shape_is_a_case_number() {
         shown("ИНН 7707083893", &[("7707083893", "tax_id")]),
         pairs(&[("7707083893", "TAX")])
     );
+}
+
+/// The word before a label is read past spaces and inline markup on its
+/// line or the one above, never across a blank line, and a backslash
+/// before a space is no markup (the #364 review): a paragraph's first
+/// label keeps its value.
+#[test]
+fn the_word_before_a_label_stops_at_a_blank_line() {
+    assert!(
+        proposed("Member ID\n\n**Card:** 4111 1111 1111 1111")
+            .contains(&("4111 1111 1111 1111".to_owned(), "BANK".to_owned()))
+    );
+    assert_eq!(cases("Intended use\n\n**Case 12-34567**"), ["12-34567"]);
+    assert_eq!(
+        cases("Сводное\n\n**Производство № 2-5818/2031**"),
+        ["2-5818/2031"]
+    );
+    assert_eq!(cases(r"Filed in\ case 2:23-cv-01234"), ["2:23-cv-01234"]);
+    // A word wrapped onto the line above still counts.
+    assert!(cases("в рамках исполнительного\nпроизводства № 4821/31/99001-ИП").is_empty());
+    assert!(cases("в рамках **исполнительного**\n*производства* № 4821/31/99001-ИП").is_empty());
 }
