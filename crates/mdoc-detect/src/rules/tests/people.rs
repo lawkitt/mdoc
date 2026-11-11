@@ -137,7 +137,7 @@ fn a_surnames_particle_joins_the_name() {
     }
 }
 
-/// The person proposals for the model's `people`             shown.len() >= 12 && shown.iter().all(|span| !span.contains(char::is_numeric)),s in `source`,
+/// The person proposals for the model's `people` spans in `source`,
 /// each found after the one before it, as the user would be shown them.
 fn proposed_people_in_order(source: &str, people: &[&str]) -> Vec<String> {
     let model: Vec<_> = people.iter().map(|text| ("person", *text)).collect();
@@ -1604,6 +1604,39 @@ fn a_pleading_line_number_inside_a_name_joins_it() {
                 .collect();
         assert_eq!(found, ["Smith", "Jones"], "{source}");
     }
+    // A role the model gave a span of its own beside the left part is no
+    // name's word: the parts still join (#382 review).
+    for (at, line, model, joined) in [
+        (
+            3,
+            "3 Plaintiff DESMOND 4 ARKWRIGHT alleges as follows.",
+            &[("Plaintiff", 0), ("DESMOND", 0), ("ARKWRIGHT", 0)][..],
+            "DESMOND 4 ARKWRIGHT",
+        ),
+        (
+            11,
+            "11 Defendant LORNA 12 PEMBROKE-HALE struck him without warning.",
+            &[("Defendant", 0), ("LORNA", 0), ("PEMBROKE-HALE", 0)],
+            "LORNA 12 PEMBROKE-HALE",
+        ),
+        (
+            3,
+            "3 Judge DESMOND 4 ARKWRIGHT heard the motion.",
+            &[("Judge", 0), ("DESMOND", 0), ("ARKWRIGHT", 0)],
+            "DESMOND 4 ARKWRIGHT",
+        ),
+    ] {
+        let source =
+            pleading(12, at, line).replacen(&format!("{} The parties", at + 1), "The parties", 1);
+        let shown = people_shown(&source, model);
+        assert!(shown.iter().any(|span| span == joined), "{line}: {shown:?}");
+        assert!(
+            shown
+                .iter()
+                .all(|span| span == joined || !span.contains(char::is_numeric)),
+            "{line}: {shown:?}"
+        );
+    }
     // A short run of numbers is no pleading's.
     assert!(crate::rules::people::line_numbers("1 a 2 b 3 c 4 d").is_empty());
     assert_eq!(
@@ -1693,7 +1726,7 @@ fn a_line_number_joins_no_wrapped_name_and_no_roster() {
         let model: Vec<(&str, usize)> = words.iter().map(|word| (*word, 0)).collect();
         let shown = people_shown(&roster, &model);
         assert!(
-            shown.iter().all(|span| !span.contains(char::is_numeric)),
+            shown.len() >= 12 && shown.iter().all(|span| !span.contains(char::is_numeric)),
             "{roster}: {shown:?}"
         );
     }

@@ -386,7 +386,8 @@ impl Pack {
     /// opening its line ("3 DESMOND 4 ARKWRIGHT") stays two spans. Nor
     /// does a part with another person span right beside it on its far
     /// side: a whole name's word, as in a roster read word by word ("Ivo
-    /// Ashgrove 2 Edda Brannock"). Across a line's end the parts stay apart:
+    /// Ashgrove 2 Edda Brannock"); a role's span there is none ("Plaintiff
+    /// DESMOND 4 ARKWRIGHT"). Across a line's end the parts stay apart:
     /// the review takes no wrapped name with prose after its last line.
     pub(super) fn join_line_numbers(&self, source: &str, detections: &mut Vec<Detection>) {
         let mut people: Vec<usize> = (0..detections.len())
@@ -417,8 +418,11 @@ impl Pack {
         // A part with another person span beside it on its far side, only
         // spaces between, is a whole name's first or last word: "Ashgrove"
         // of "1 Ivo Ashgrove 2 Edda Brannock", a roster the model read word
-        // by word, joins nothing.
-        let beside = |from: usize, to: usize| from < to && blank(&source[from..to]);
+        // by word, joins nothing. A role there is no name's word but a span
+        // the checks after the fixes drop ("Plaintiff DESMOND 4 ARKWRIGHT").
+        let beside = |neighbour: &std::ops::Range<usize>, from: usize, to: usize| {
+            from < to && blank(&source[from..to]) && !role(&source[neighbour.clone()])
+        };
         let mut first_at = 0;
         for at in 1..people.len() {
             let (first, next) = (people[first_at], people[at]);
@@ -450,10 +454,12 @@ impl Pack {
                 && !(follow > 0 && number_at(right.end + follow))
                 && !first_at
                     .checked_sub(1)
-                    .is_some_and(|k| beside(detections[people[k]].range.end, left.start))
+                    .map(|k| &detections[people[k]].range)
+                    .is_some_and(|neighbour| beside(neighbour, neighbour.end, left.start))
                 && !people
                     .get(at + 1)
-                    .is_some_and(|&k| beside(right.end, detections[k].range.start));
+                    .map(|&k| &detections[k].range)
+                    .is_some_and(|neighbour| beside(neighbour, right.end, neighbour.start));
             if joins {
                 detections[first].range.end = right.end;
                 gone[next] = true;
