@@ -4287,3 +4287,310 @@ fn a_list_patterns_forms_search_a_text_about_once() {
         text.len()
     );
 }
+
+/// #498 follow-ups: an address that opens with a floor named without a
+/// number ("Upper Ground", "Mezzanine", "Basement") opens there, the
+/// model's company or person on the floor included.
+#[test]
+fn an_address_opens_at_a_floor_named_without_a_number() {
+    for address in [
+        "Upper Ground, 12 Marrow Lane, London EC9 9ZZ",
+        "Lower Ground Floor, 7 Pellin Row, Brindlecombe BX9 9ZZ",
+        "Mezzanine, 41 Harrow Street, Leeds LS9 9ZZ",
+        "Mezzanine Floor, 41 Harrow Street, Leeds LS9 9ZZ",
+        "Basement, 4 Kestrel Street, Ashby Falls, OH 45999",
+        "Ground Floor, 12 Marrow Lane, London EC9 9ZZ",
+    ] {
+        let source = format!("Deliveries go to {address}.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    let source = "Deliveries go to Upper Ground, 12 Marrow Lane, London EC9 9ZZ.";
+    for label in ["organization", "person"] {
+        assert_eq!(
+            shown(source, &[("Upper Ground", label)]),
+            pairs(&[("Upper Ground, 12 Marrow Lane, London EC9 9ZZ", "ADDRESS")]),
+            "{label}"
+        );
+    }
+    for source in [
+        "The basement flooded and the mezzanine was closed.",
+        "Upper Ground was cleared before the hearing.",
+        "Basement, 12 boxes were stored.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #498 follow-ups: a Hong Kong district after the road with no comma
+/// before it runs on to the territory; a Malaysian list of lot numbers,
+/// an "Off Jalan" street and a comma with no space stay inside the
+/// address; a number before a Brazilian farm is its house number, and
+/// "Cep" may be in mixed case.
+#[test]
+fn foreign_address_follow_ups_run_from_their_first_element() {
+    for address in [
+        "Unit 07, 5F, Harrow Plaza No. 41, Pellow Road Kestrel Point Kowloon, Hong Kong",
+        "Unit 07, 5F, Harrow Plaza No. 41, Pellow Road Kestrel Point, Kowloon, Hong Kong",
+        "12-1, 12-2, 12-3, Wisma Larch, Jalan Pellow,Taman Pellow, Off Jalan Kestrel Baru, 59999 Kuala Lumpur",
+        "Wisma Larch, Jalan Pellow, Off Jalan Kestrel Baru, 59999 Kuala Lumpur",
+        "3 Fazenda Santa Pellow, Kestrelândia, Cep 37999-000",
+    ] {
+        let source = format!("Write to {address}.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    for (address, model, label) in [
+        (
+            "Unit 07, 5F, Harrow Plaza No. 41, Pellow Road Kestrel Point Kowloon, Hong Kong",
+            "Harrow Plaza No. 41",
+            "organization",
+        ),
+        (
+            "12-1, 12-2, 12-3, Wisma Larch, Jalan Pellow,Taman Pellow, Off Jalan Kestrel Baru, 59999 Kuala Lumpur",
+            "Wisma Larch",
+            "organization",
+        ),
+        (
+            "3 Fazenda Santa Pellow, Kestrelândia, Cep 37999-000",
+            "Fazenda Santa Pellow",
+            "organization",
+        ),
+    ] {
+        let source = format!("Write to {address}.");
+        assert_eq!(
+            shown(&source, &[(model, label)]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    for source in [
+        "Wisma Larch was let and Harrow Plaza No. 41 was sold.",
+        "Pages 12-1, 12-2 and 12-3 were read.",
+        "Kestrel Point Kowloon is a district.",
+        "In 3 Fazenda cases the court agreed.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #498 follow-ups: a Pacific building written "Haus" (Bislama) or
+/// misspelt "Hous" opens the address like "House", its road after it with
+/// no comma, or none before the capital; the model's company on it is the
+/// address's own. A company named so stays a company.
+#[test]
+fn pacific_haus_and_hous_buildings_open_the_address() {
+    for address in [
+        "2nd Floor, Pellow Haus Kestrel Highway, Port Vila",
+        "2nd Floor, Pellow Hous, Port Vila",
+        "2nd Floor, Pellow House, Port Vila",
+    ] {
+        let source = format!("Write to {address}, Vanuatu.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+        let building = address
+            .split(", ")
+            .nth(1)
+            .unwrap()
+            .trim_end_matches(" Kestrel Highway");
+        assert_eq!(
+            shown(&source, &[(building, "organization")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {building}"
+        );
+    }
+    for source in [
+        "Kestrel Haus Ltd agreed to pay.",
+        "Pellow Haus was sold.",
+        "2nd Floor, Pellow Hous was let.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #498 follow-ups: a Washington street with no type before its quadrant
+/// keeps its number, with the model's address on the quadrant on or
+/// without it.
+#[test]
+fn a_washington_street_with_no_type_keeps_its_number() {
+    let address = "1999 Kestrel, NW, Washington, DC 20999";
+    let source = format!("Write to {address}.");
+    assert_eq!(proposed_addresses(&source), [address]);
+    assert_eq!(
+        shown(&source, &[("NW, Washington, DC 20999", "address")]),
+        pairs(&[(address, "ADDRESS")])
+    );
+    for source in [
+        "In 1999 Kestrel, NW of the river, grew.",
+        "Since 1999 Kestrel, NW, has traded.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #498 follow-ups: a named building and its street that markup closes
+/// and reopens between ("Larch Building</u> <u>Pellow Lane") are one
+/// address from the building, the model's company on the building
+/// included. Not over other tags, nor a building alone.
+#[test]
+fn a_building_and_its_street_split_by_underline_tags_are_one_address() {
+    let source = "Write to <u>Larch Building</u> <u>Pellow Lane, London, EC9 9ZZ</u>.";
+    let address = "Larch Building</u> <u>Pellow Lane, London, EC9 9ZZ";
+    assert_eq!(proposed_addresses(source), [address]);
+    assert_eq!(
+        shown(source, &[("Larch Building", "organization")]),
+        pairs(&[(address, "ADDRESS")])
+    );
+    // Without the markup too.
+    assert_eq!(
+        proposed_addresses("Write to Larch Building Pellow Lane, London, EC9 9ZZ."),
+        ["Larch Building Pellow Lane, London, EC9 9ZZ"]
+    );
+    for source in [
+        "<u>Larch Building</u> <u>was sold</u>.",
+        "Larch Building Pellow Lane was closed.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #498 follow-ups: a letterhead body's last words before its city, on
+/// its line or the line before, stay outside the address, with the
+/// model's name on the body or without it ("…, International" after a
+/// comma too, which opens no city but "International Falls").
+#[test]
+fn a_letterhead_bodys_words_stay_before_its_city() {
+    for (source, address) in [
+        (
+            "Kestrel Transport Safety Board\nWashington, DC 20999\n",
+            "Washington, DC 20999",
+        ),
+        (
+            "PELLOW RAIL INSPECTORATE BRINDLECOMBE, OH 45999",
+            "BRINDLECOMBE, OH 45999",
+        ),
+        (
+            "Office of Larch Standards Washington, D.C. 20999",
+            "Washington, D.C. 20999",
+        ),
+        (
+            "Larch County Police Department Brindlecombe, NY 11999",
+            "Brindlecombe, NY 11999",
+        ),
+        (
+            "Pilots Union, International Slocombe, VA 20999",
+            "Slocombe, VA 20999",
+        ),
+        // A real city with the word keeps it.
+        (
+            "Pilots Union, International Falls, MN 56999",
+            "International Falls, MN 56999",
+        ),
+    ] {
+        assert_eq!(proposed_addresses(source), [address], "{source}");
+    }
+    for (source, model, expected) in [
+        (
+            "Pilots Union, International Slocombe, VA 20999",
+            "Pilots Union, International",
+            &[
+                ("Pilots Union, International", "ORG"),
+                ("Slocombe, VA 20999", "ADDRESS"),
+            ][..],
+        ),
+        // A public body's name, which the model's name goes with.
+        (
+            "PELLOW RAIL INSPECTORATE BRINDLECOMBE, OH 45999",
+            "PELLOW RAIL INSPECTORATE",
+            &[("BRINDLECOMBE, OH 45999", "ADDRESS")][..],
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(model, "organization")]),
+            pairs(expected),
+            "{source}"
+        );
+    }
+}
+
+/// #386, #792: a city or county and its state with no street or ZIP, and
+/// a plant's locations and equipment, are no address, the model's address
+/// on them dropped.
+#[test]
+fn cities_with_states_and_plant_locations_are_no_address() {
+    for (source, model) in [
+        ("The plant in Kestrel Bay, NY closed.", "Kestrel Bay, NY"),
+        (
+            "The County of Larch, Nevada sued.",
+            "County of Larch, Nevada",
+        ),
+        ("Fire Area 12 burned.", "Fire Area 12"),
+        ("See Fire Area 9, Cable Vault.", "Fire Area 9, Cable Vault"),
+        (
+            "Turbine Building Elevation 580 flooded.",
+            "Turbine Building Elevation 580",
+        ),
+        ("The 480 V Pump Board 2B tripped.", "480 V Pump Board 2B"),
+        (
+            "He parked in the 41st Street parking lot.",
+            "41st Street parking lot",
+        ),
+        ("He parked in the 41st Street parking lot.", "41st Street"),
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+        assert!(
+            shown(source, &[(model, "address")])
+                .iter()
+                .all(|(_, category)| category != "ADDRESS"),
+            "{source}: {model}"
+        );
+    }
+    // With a ZIP, or a street, they are addresses.
+    for (source, model) in [
+        ("Write to Kestrel Bay, NY 11999.", "Kestrel Bay, NY 11999"),
+        (
+            "Write to 1100 V Street NW, Washington, DC 20999.",
+            "1100 V Street NW, Washington, DC 20999",
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(model, "address")]),
+            pairs(&[(model, "ADDRESS")]),
+            "{source}"
+        );
+    }
+}
+
+/// #498 follow-ups' guards: a building or estate name alone, a statute's
+/// section or a list's number, a company named with "Jalan", "Haus" or
+/// "Tower", and a paragraph that opens with a city after a blank line
+/// are no address; a model's person on a street named after one stays
+/// the address's.
+#[test]
+fn address_follow_ups_keep_names_numbers_and_paragraphs_apart() {
+    for source in [
+        "Wisma Larch was let and Taman Pellow was sold.",
+        "Larch Building and Pellow Haus were let.",
+        "Section 2 of the Act and No. 41 of the list apply.",
+        "Kestrel Haus Ltd, Jalan Mas Sdn Bhd and Larch Tower Records Inc signed.",
+        "4410 Quarry Parkway\n\nBrindlecombe agreed to the terms.",
+        "The upper ground was wet; Upper Ground, the field, flooded.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+    for (address, person) in [
+        (
+            "2nd Floor, Pellow Haus Jane Quill Highway, Port Vila",
+            "Jane Quill",
+        ),
+        (
+            "Unit 07, 5F, Harrow Plaza No. 41, Pellow Road Kestrel Point Kowloon, Hong Kong",
+            "Pellow",
+        ),
+        ("1999 Quill, NW, Washington, DC 20999", "Quill"),
+    ] {
+        let source = format!("Write to {address}.");
+        assert_eq!(
+            shown(&source, &[(person, "person")]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {person}"
+        );
+    }
+}
