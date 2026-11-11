@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":78,"end":95,"label":"full_name","score":0.7409249,"text":"Hartwell Vane LLP"},
+    {"start":78,"end":95,"label":"organization","score":0.98421544,"text":"Hartwell Vane LLP"},
+    {"start":105,"end":133,"label":"email","score":0.99635005,"text":"notices@hartwellvane.invalid"},
+    {"start":168,"end":179,"label":"person","score":0.974869,"text":"Ms Brannock"},
+    {"start":193,"end":213,"label":"organization","score":0.9910146,"text":"Corrowby Trading Ltd"},
+    {"start":507,"end":538,"label":"address","score":0.83960253,"text":"Vennickstrasse 27, 8099 Zürich"},
+    {"start":1385,"end":1416,"label":"organization","score":0.53567535,"text":"Edda Brannock\nHartwell Vane LLP"}
+  ]
+}
