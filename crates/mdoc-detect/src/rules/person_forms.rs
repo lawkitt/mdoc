@@ -4,9 +4,10 @@
 //! ("Dr. Pellow"), surnames listed after a plural title ("Senators
 //! Quillfeather, Brannock and Ostley"), a name with a noun after it ("the
 //! Pellow family") and initials after a preposition («к Е. Р.»).
+use super::context::CONTEXT_SCORE;
 use super::shapes::bare;
 use super::{Pack, Span};
-use mdoc_pii::{Category, Detection};
+use mdoc_pii::{Category, Detection, Recognizer};
 use regex::Regex;
 use std::collections::HashSet;
 use std::ops::Range;
@@ -81,6 +82,25 @@ static GLUED_INITIALS: LazyLock<Regex> = LazyLock::new(|| {
     ))
     .expect("constant glued initials pattern")
 });
+
+/// A Russian name of two initials and a surname, in either order: the
+/// initials after the surname («Верхов-Залесский Р.Р.», `after`) or before
+/// it, glued or spaced («Е. Р. Тулину», «Т.Т.Ольшанская», `before`); a
+/// hyphenated surname too (guide rule 1: initials are a person's).
+static INITIALS_NAME: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^(?:(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*[\p{Zs}\t]+(?P<after>[А-ЯЁ]\.[\p{Zs}\t]?[А-ЯЁ]\.)|(?P<before>[А-ЯЁ]\.[\p{Zs}\t]?[А-ЯЁ]\.)[\p{Zs}\t]*(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*)$",
+    )
+    .expect("constant initials name pattern")
+});
+
+/// Two Cyrillic initials, spaced or not («Е. Р.», «Е.Р.»).
+static BARE_INITIALS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[А-ЯЁ]\.[\p{Zs}\t]?[А-ЯЁ]\.").expect("constant bare initials pattern")
+});
+
+/// Quotes that set off a company's name («ООО «Р.Р. Групп»»).
+const QUOTES: [char; 6] = ['«', '»', '"', '“', '”', '„'];
 
 /// What the document says of people, read from the model's person spans.
 struct People {
@@ -326,6 +346,97 @@ impl Pack {
         (opened || pieces.len() > 1).then_some(pieces)
     }
 
+    /// The initials of a Russian name of initials and a surname at `range`
+    /// of `source` ([`INITIALS_NAME`]), letters only: "ЕР" of «Е. Р.
+    /// Тулину» and of «Тулина Е.Р.». `None` for other text and for a
+    /// company's: a legal form, a body word or a public body in it, or
+    /// quotes in it or around it («ООО «Р.Р. Групп»»).
+    fn initials_name(&self, source: &str, range: &Range<usize>) -> Option<String> {
+        let text = &source[range.clone()];
+        let found = INITIALS_NAME.captures(text)?;
+        let quote = |c: Option<char>| c.is_some_and(|c| QUOTES.contains(&c));
+        if text.contains(QUOTES)
+            || quote(source[..range.start].chars().next_back())
+            || quote(source[range.end..].chars().next())
+            || self.company_named(text)
+        {
+            return None;
+        }
+        let initials = found.name("after").or_else(|| found.name("before"))?;
+        Some(
+            initials
+                .as_str()
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .collect(),
+        )
+    }
+
+    /// Bare Cyrillic initials the model left unmarked are a known person's
+    /// other name form (#503) where a person span of the document is those
+    /// initials and a surname: «Требования к Е. Р.» beside «Е. Р. Тулину».
+    /// Only two initials standing alone on their line: no letter, digit or
+    /// period glued on, no capitalised word right before them (a surname
+    /// first, a verb) or after them (a surname, the next initial), and no
+    /// span over them. Initials no person of the document has stay
+    /// unmarked.
+    fn bare_initials(&self, source: &str, detections: &mut Vec<Detection>) {
+        let known: HashSet<String> = detections
+            .iter()
+            .filter(|d| d.category == Category::Person)
+            .filter_map(|d| self.initials_name(source, &name_range(source, &d.range)))
+            .collect();
+        if known.is_empty() {
+            return;
+        }
+        let mut added = Vec::new();
+        for found in BARE_INITIALS.find_iter(source) {
+            let range = found.range();
+            let after = &source[range.end..];
+            if source[..range.start]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric() || c == '.')
+                || after.starts_with(char::is_alphanumeric)
+            {
+                continue;
+            }
+            let line = source[..range.start]
+                .rsplit('\n')
+                .next()
+                .unwrap_or_default();
+            let capitalised = line.split_whitespace().next_back().is_some_and(|word| {
+                word.starts_with(char::is_uppercase) && word.ends_with(char::is_alphabetic)
+            });
+            if capitalised
+                || after
+                    .trim_start_matches([' ', '\t', '\u{a0}'])
+                    .starts_with(char::is_uppercase)
+            {
+                continue;
+            }
+            let letters: String = found
+                .as_str()
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .collect();
+            if !known.contains(&letters)
+                || detections
+                    .iter()
+                    .any(|d| d.range.start < range.end && range.start < d.range.end)
+            {
+                continue;
+            }
+            added.push(Detection {
+                range,
+                category: Category::Person,
+                score: CONTEXT_SCORE,
+                recognizer: Recognizer::Span,
+            });
+        }
+        detections.extend(added);
+    }
+
     /// The wording of a model organization's list (`pieces`, by
     /// [`Self::list_pieces`]), from its first name to its last, a heading
     /// or title before it left out, if it is a company's by its whole
@@ -372,13 +483,18 @@ impl Pack {
     ///   Lab"): the name, the noun and a "the" before it outside, as an
     ///   organization only where the document names the person so;
     /// - Cyrillic initials after a lowercase word or a verb («к Е. Р.»):
-    ///   the initials.
+    ///   the initials;
+    /// - a Russian surname with two initials («Верхов-Залесский Р.Р.») the
+    ///   model gave as a person and an organization, and bare initials of a
+    ///   person the document names with them and a surname («к Е. Р.»
+    ///   beside «Е. Р. Тулину»).
     ///
     /// Never an organization with a legal form or a body word ("Ostrander
     /// Holdings Ltd", "Ostrander Foundation"), one whose surname such a
     /// company of the document holds or the document writes with a legal
     /// form after it (its short name, #506 item 10), nor one the model also
-    /// gave as a person (the review chooses); a programme or prize named
+    /// gave as a person (the review chooses) unless it is a surname with
+    /// initials; a programme or prize named
     /// after a person ("Pellow Prize") is no surname alone, so it stays.
     pub(super) fn person_forms(&self, source: &str, detections: &mut Vec<Detection>) {
         if !detections
@@ -464,6 +580,18 @@ impl Pack {
                 }
                 continue;
             }
+            // A Russian surname with initials the model gave as a person and
+            // an organization at once is the person: initials are a
+            // person's (guide rule 1, #503). An organization alone stays as
+            // the model gave it: an entrepreneur's rule decides that.
+            if detection.category == Category::Organization
+                && both.contains(&detection.range)
+                && self.initials_name(source, &range).is_some()
+            {
+                detection.range = range;
+                detection.category = Category::Person;
+                continue;
+            }
             if detection.category != Category::Organization || both.contains(&detection.range) {
                 continue;
             }
@@ -514,5 +642,9 @@ impl Pack {
             }
         }
         detections.extend(added);
+        // A span relabelled to the person the model also gave is one span.
+        let mut seen = HashSet::new();
+        detections.retain(|d| seen.insert((d.range.clone(), d.category)));
+        self.bare_initials(source, detections);
     }
 }

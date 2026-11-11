@@ -453,7 +453,8 @@ fn russian_initials_forms_are_the_name() {
             &["PERSON⟦Е. Р. Тулиной⟧"],
         ),
         // A surname in -ть before initials is no verb: it stays after a
-        // role, surname first and mid-sentence.
+        // role, surname first and mid-sentence, and the model's
+        // organization is never cut to the initials.
         (
             "Свидетель Белоть Е. Р. подписал.",
             &[("person", "Белоть Е. Р.")],
@@ -499,6 +500,106 @@ fn russian_initials_forms_are_the_name() {
         ),
         // A place before initials is no double surname.
         ("г. Санкт-Петербург Т.Т. Колобова", &[], &[]),
+    ]);
+}
+
+/// What the user is shown when the model gives `name` in `source` as a
+/// person and as an organization at once, the organization scored higher.
+fn both_labels(source: &str, name: &str) -> Vec<String> {
+    let start = source.find(name).unwrap();
+    let raw: Vec<crate::RawEntity> = [("person", 0.5), ("organization", 0.8)]
+        .into_iter()
+        .map(|(label, score)| crate::RawEntity {
+            start,
+            end: start + name.len(),
+            label: label.into(),
+            score,
+            text: name.into(),
+        })
+        .collect();
+    crate::recognition::proposals(source, &raw)
+        .unwrap()
+        .into_iter()
+        .map(|span| format!("{}⟦{}⟧", span.category, &source[span.range]))
+        .collect()
+}
+
+/// #503: a Russian surname with initials the model gave as a person and
+/// an organization at once is the person (initials are a person's, guide
+/// rule 1), before or after the surname, glued or spaced, a hyphenated
+/// surname too. A company's name with initials-like letters stays a
+/// company, and an organization alone stays as the model gave it (an
+/// entrepreneur's rule decides that, `people.rs`).
+#[test]
+fn a_surname_with_initials_given_both_labels_is_a_person() {
+    for (source, name) in [
+        (
+            "Акт подписал Корнев-Ясный Д.Д., а затем ушёл.",
+            "Корнев-Ясный Д.Д.",
+        ),
+        (
+            "Акт подписала Д. А. Мирошина в тот же день.",
+            "Д. А. Мирошина",
+        ),
+        ("Акт подписала Д.А.Мирошина в тот же день.", "Д.А.Мирошина"),
+    ] {
+        assert_eq!(
+            both_labels(source, name),
+            [format!("PERSON⟦{name}⟧")],
+            "{source}"
+        );
+    }
+    // A company: its legal form and quotes keep it an organization.
+    let source = "Поставщик ООО «Р.Р. Групп» отгрузил товар.";
+    assert!(
+        !both_labels(source, "Р.Р. Групп")
+            .iter()
+            .any(|shown| shown.starts_with("PERSON")),
+        "{source}"
+    );
+    check(&[
+        (
+            "Акт подписал Корнев-Ясный Д.Д., а затем ушёл.",
+            &[("organization", "Корнев-Ясный Д.Д.")],
+            &["ORG⟦Корнев-Ясный Д.Д.⟧"],
+        ),
+        (
+            "Поставщик ООО «Р.Р. Групп» отгрузил товар.",
+            &[("organization", "ООО «Р.Р. Групп»")],
+            &["ORG⟦ООО «Р.Р. Групп»⟧"],
+        ),
+        (
+            "Поставщик ООО «Р.Р. Групп» отгрузил товар.",
+            &[("organization", "Р.Р. Групп")],
+            &["ORG⟦ООО «Р.Р. Групп»⟧"],
+        ),
+    ]);
+}
+
+/// #503: bare initials the model left unmarked are the person the
+/// document names with those initials and a surname; initials no person of
+/// the document has stay unmarked.
+#[test]
+fn bare_initials_of_a_known_person_are_the_person() {
+    check(&[
+        (
+            "Обязать Д. А. Сухову вернуть ключи. Требования к Д. А. в остальной части оставить.",
+            &[("person", "Д. А. Сухову")],
+            &["PERSON⟦Д. А. Сухову⟧", "PERSON⟦Д. А.⟧"],
+        ),
+        (
+            "Расписку дал Сухов Д.А., а позже к Д.А. претензий не было.",
+            &[("person", "Сухов Д.А.")],
+            &["PERSON⟦Сухов Д.А.⟧", "PERSON⟦Д.А.⟧"],
+        ),
+        // Other initials: no person of the document has them.
+        (
+            "Обязать Д. А. Сухову вернуть ключи. Требования к В. Г. оставить.",
+            &[("person", "Д. А. Сухову")],
+            &["PERSON⟦Д. А. Сухову⟧"],
+        ),
+        // No known person with initials: nothing is added.
+        ("Требования к Д. А. оставить без рассмотрения.", &[], &[]),
     ]);
 }
 
