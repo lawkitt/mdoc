@@ -1913,10 +1913,12 @@ absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,
 continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}'
 continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
 # A field's label and its value are no city, state and ZIP: "Account ID
-# 12345", "Claim No CA 90210", "Policy Form OH 45999" (a word that names a
-# field, then two letters or a state's name and five digits, at the
-# match's start or one or two words in).
-skip = '(?i)\A(?:[^\s,]+[\p{Zs}\t]+){0,2}(?:account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|number|no|id|tel|phone|fax|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?[\p{Zs}\t]+(?:[a-z]\.[a-z]\.|[a-z]{2,})[\p{Zs}\t]+[\dOoIliB]{5}'
+# 12345", "Claim No CA 90999", "Policy Form New York 10999" (a word that
+# names a field, then "No", "Number" or a second such word and a state, or
+# "ID" for the state, with the state, separators and ZIP the city form
+# reads, at the match's start or one or two words in). A city named like
+# such a word stays a city ("Page AZ 86040", "Model CO 81999").
+skip = '\A(?:[^\s,]+[\p{Zs}\t]+){0,2}(?i:account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|tel|phone|fax|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:(?i:no|nr|number|account|acct|policy|claim|case|docket|file|form|exhibit|model|serial|ref|reference|item|order|invoice|page|part|section|schedule|code|ticket|batch|lot|patent|application|loan|contract|member|customer|employee|badge|license|licence|permit|tracking)\.?(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})|ID)(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}'
 
 # A UK flat's "24, Pellin Court, Harrow Place, Worcester" has two
 # street parts before its town (#498). The comma after the number is

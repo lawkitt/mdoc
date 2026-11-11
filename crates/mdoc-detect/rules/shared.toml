@@ -152,7 +152,7 @@
 #                             groups named `mark`, `mark2`, … (a
 #                             blockquote's marks, a label)
 #   skip        = regex       a span in which it matches is not proposed (a
-#                             masked name, "XXXXX")
+#                             masked name, "XXXXX"); the parts work here too
 #   gaps_only   = true        a match that a span of its category already
 #                             overlaps (the model's, a name cell's) is not
 #                             proposed: the pattern only fills gaps

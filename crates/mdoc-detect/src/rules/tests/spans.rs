@@ -1999,6 +1999,10 @@ fn a_us_city_state_and_zip_alone_are_an_address() {
             "Brindle Falls New Mexico 87999",
             "Brindle Falls New Mexico 87999",
         ),
+        // A city named like a field's word, with no field's label after it.
+        ("Page AZ 86040", "Page AZ 86040"),
+        ("Model CO 81999", "Model CO 81999"),
+        ("Mail to Page, AZ 86040.", "Page, AZ 86040"),
         // A letterhead's or a signature's line.
         (
             "Quenby & Rook LLP\nAshby Falls, OH 45999\n(555) 010-4477",
@@ -2036,6 +2040,10 @@ fn a_us_city_state_and_zip_alone_are_an_address() {
         "Customer Account ID 12345",
         "Policy No 4410 OH 45999",
         "Exhibit 12 PA 19999",
+        // The state, separators and ZIP the city form reads.
+        "Policy Form New York 10999",
+        "Claim No CA, 90999",
+        "Claim Number OH\n45999",
     ] {
         assert!(proposed_addresses(source).is_empty(), "{source}");
     }

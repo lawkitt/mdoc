@@ -1223,10 +1223,17 @@ impl Pack {
                         Some([least, most]) => Some(least..=most),
                         None => None,
                     };
+                    // The parts work in a skip too, as in a continuation.
                     let skip = entry
                         .skip
                         .as_ref()
-                        .map(|skip| Regex::new(&rust_classes(skip)).map_err(|e| e.to_string()))
+                        .map(|skip| {
+                            let skip =
+                                entry.parts.iter().fold(skip.clone(), |skip, (name, part)| {
+                                    skip.replace(&format!("{{{name}}}"), &format!("(?:{part})"))
+                                });
+                            Regex::new(&rust_classes(&skip)).map_err(|e| e.to_string())
+                        })
                         .transpose()
                         .map_err(at)?;
                     if skip.as_ref().is_some_and(|skip| skip.is_match("")) {
