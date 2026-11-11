@@ -14,7 +14,8 @@ finish      After the upload: waits until Apple has processed the build
             distribution has not.
 
 Auth: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH (a .p8 file); the token
-comes from `xcrun altool --generate-jwt` and is renewed every 10 minutes.
+comes from `xcrun altool --generate-jwt`, is renewed every 5 minutes, and once
+more when Apple answers 401 (a token can end sooner than it says).
 ASC_TOKEN, when set, is used as is; ASC_API_BASE replaces the API's address,
 and ASC_POLL_SECONDS and ASC_GROUP_WAIT_SECONDS the waits
 (scripts/test-ios-release.sh sets them). Prints no secret.
@@ -36,6 +37,8 @@ BUNDLE_ID = "io.github.lawkitt.mdoc"
 LOCALE = "en-US"
 POLL_SECONDS = float(os.environ.get("ASC_POLL_SECONDS", "30"))
 GROUP_WAIT_SECONDS = float(os.environ.get("ASC_GROUP_WAIT_SECONDS", "600"))
+TOKEN_SECONDS = 300
+RETRY_SECONDS = 5
 
 
 class Fail(Exception):
@@ -52,7 +55,7 @@ class Api:
         fixed = os.environ.get("ASC_TOKEN")
         if fixed:
             return fixed
-        if self.token is None or time.time() - self.token_time > 600:
+        if self.token is None or time.time() - self.token_time > TOKEN_SECONDS:
             self.token = generate_jwt()
             self.token_time = time.time()
         return self.token
@@ -62,7 +65,9 @@ class Api:
         if params:
             url += "?" + urllib.parse.urlencode(params)
         data = json.dumps(body).encode() if body is not None else None
-        for attempt in range(4):
+        renewed = False
+        attempt = 0
+        while attempt < 4:
             request = urllib.request.Request(url, data=data, method=method)
             request.add_header("Authorization", "Bearer " + self.bearer())
             if data is not None:
@@ -73,13 +78,21 @@ class Api:
                     return json.loads(text) if text else {}
             except urllib.error.HTTPError as error:
                 detail = error.read().decode(errors="replace")
+                # A token Apple no longer takes: one new token, then it is an error.
+                if error.code == 401 and not renewed and not os.environ.get("ASC_TOKEN"):
+                    log("App Store Connect refused the token; making a new one")
+                    renewed = True
+                    self.token = None
+                    continue
                 if error.code >= 500 and attempt < 3:
-                    time.sleep(5 * (attempt + 1))
+                    attempt += 1
+                    time.sleep(RETRY_SECONDS * attempt)
                     continue
                 raise Fail(f"{method} {path}: HTTP {error.code}: {apple_errors(detail)}")
             except (urllib.error.URLError, TimeoutError) as error:
                 if attempt < 3:
-                    time.sleep(5 * (attempt + 1))
+                    attempt += 1
+                    time.sleep(RETRY_SECONDS * attempt)
                     continue
                 raise Fail(f"{method} {path}: {error}")
         raise Fail(f"{method} {path}: no answer")
