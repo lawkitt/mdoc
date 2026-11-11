@@ -2422,6 +2422,281 @@ fn a_building_name_before_its_street_is_the_address_not_a_company() {
     }
 }
 
+/// #551: a Canadian address runs from its number to its province and
+/// postal code ("A9A 9A9"), a compass word after the street type, a suite
+/// without a comma and a province in brackets included; a city, province
+/// and postal code are an address alone. A province the model reads as a
+/// company costs no address.
+#[test]
+fn a_canadian_address_runs_to_its_province_and_postal_code() {
+    for address in [
+        "151 Pellin Avenue East Brindleton, Ontario K9Z 9Z9",
+        "65 Larch Street West Suite 300 Marlow Falls, Ontario M9Z 9Z9",
+        "1 Quillon Street East, Suite 2000, Marlow Falls, Ontario M9Z 9Z9",
+        "88 Tarrow Crescent, Unit 4, Dartbridge, NS B2Z 9Z9",
+        "1475 Rue Saint-Pellin Ouest, Montréal (Québec) H2Z 9Z9",
+        "1290, rue Kestrel Est, Brindleville (Québec) H9Z 9Z9",
+        "40 Vennick Road, Montréal, Québec H2Z 9Z9",
+        "Brindleton, Ontario K9Z 9Z9",
+        "Marlow Falls, ON M9Z 9Z9",
+    ] {
+        let source = format!("Notices go to {address}, Canada.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    let source = "Larkfield Supply Ltd, 151 Pellin Avenue East Brindleton, Ontario K9Z 9Z9.";
+    assert_eq!(
+        shown(source, &[("Larkfield Supply Ltd", "organization")]),
+        pairs(&[
+            ("Larkfield Supply Ltd", "ORG"),
+            (
+                "151 Pellin Avenue East Brindleton, Ontario K9Z 9Z9",
+                "ADDRESS"
+            ),
+        ])
+    );
+    let address = "1 Quillon Street East, Suite 2000, Marlow Falls, Ontario M9Z 9Z9";
+    let source = format!("Notices go to {address}.");
+    assert_eq!(
+        shown(&source, &[("Ontario", "organization")]),
+        pairs(&[(address, "ADDRESS")])
+    );
+    for source in [
+        "The firm moved to Marlow Falls, Ontario, last year.",
+        "Ontario and Québec signed the accord.",
+        "Form K9Z 9Z9 was filed.",
+        "Brindleton, Ontario M9Z.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #551: a Swiss address opens at its street, its type first ("Rue du Lac
+/// 4") or a German one ("Vennickstrasse 27"), or at its house's name
+/// ("Chalet …"), and ends at the town after its postcode; the country
+/// stays outside. The model's company on the house and its person on a
+/// street named after one are the address's own parts.
+#[test]
+fn a_swiss_address_runs_from_its_street_or_house_to_its_town() {
+    for address in [
+        "Vennickstrasse 27, 8099 Zürich",
+        "Seefeld Strasse 9a, 8099 Zürich",
+        "Kirchweg 3, 3099 Brindlingen",
+        "Rue du Lac 4, CH-1299 Genève",
+        "Avenue de la Gare 12, 1099 Lausanne",
+        "Via Pellow 5, 6999 Brindlano",
+        "Chalet Les Ostrands, Route de Penrow 12, 1999 Brindlex",
+        "Chalet Les Ostrands, 1999 Brindlex",
+    ] {
+        let source = format!("The house is at {address}, Switzerland.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    for (address, model, label) in [
+        (
+            "Chalet Les Ostrands, Route de Penrow 12, 1999 Brindlex",
+            "Chalet Les Ostrands",
+            "organization",
+        ),
+        (
+            "Chalet Les Ostrands, 1999 Brindlex",
+            "Chalet Les Ostrands",
+            "organization",
+        ),
+        (
+            "Rue Jeanne Kestrel 4, CH-1299 Brindlex",
+            "Jeanne Kestrel",
+            "person",
+        ),
+    ] {
+        let source = format!("The house is at {address}.");
+        assert_eq!(
+            shown(&source, &[(model, label)]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    for source in [
+        "The chalet is called Chalet Les Ostrands.",
+        "Spring 2026 was wet in Zürich.",
+        "In 1999 Brindlex sold the chalet.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #551: a Taiwanese address opens at its floor or "No." and runs over
+/// its section, lane and road to its district, city and postcode; a Hong
+/// Kong one opens at its unit and floor, a named commercial building
+/// between, and ends at its territory; a Malaysian one opens at its lot,
+/// "No." or "Wisma"/"Menara" building and runs over its "Jalan" street and
+/// "Taman" estate to the city after its postcode. The country stays out.
+#[test]
+fn asian_addresses_run_from_their_unit_to_their_city() {
+    for address in [
+        "7th Floor, No. 118, Section 2, Kestrel East Road, Zhongshan District, Taipei City 10499",
+        "9th Floor, No. 7, Lane 25, Section 3, Pellin North Road, Da'an District, Taipei City 10699",
+        "No. 52, Sec. 3, Quillon S. Rd., Songshan Dist., Taipei City 10599",
+        "No. 7, Kestrel Road, Taipei City 10699",
+        "Unit 12, 9/F, Larkspur Centre, 33 Pellow Road, Wan Chai, Hong Kong",
+        "Flat B, 12/F, Kestrel Court, 8 Pellow Street, Kowloon",
+        "Lot 8-2, Wisma Pellow, Jalan Kestrel 3, Taman Larkspur, 50999 Kuala Lumpur",
+        "Level 12, Menara Pellow, No. 8, Jalan Kestrel, 50999 Kuala Lumpur",
+        "No. 8, Jalan Kestrel 3/4, Taman Desa 2, 50999 Kuala Lumpur",
+    ] {
+        for country in ["Taiwan", "Malaysia"] {
+            let source = format!("Write to {address}, {country}.");
+            assert_eq!(proposed_addresses(&source), [address], "{source}");
+        }
+    }
+    for (address, model, label) in [
+        (
+            "Unit 12, 9/F, Larkspur Centre, 33 Pellow Road, Wan Chai, Hong Kong",
+            "Larkspur Centre",
+            "organization",
+        ),
+        (
+            "Unit 12, 9/F, Larkspur Centre, 33 Pellow Road, Wan Chai, Hong Kong",
+            "Pellow",
+            "person",
+        ),
+        (
+            "Wisma Pellow, Jalan Kestrel 3, Taman Larkspur, 50999 Kuala Lumpur",
+            "Wisma Pellow",
+            "organization",
+        ),
+        (
+            "No. 8, Jalan Tun Pellow, 50999 Kuala Lumpur",
+            "Tun Pellow",
+            "person",
+        ),
+        (
+            "7th Floor, No. 118, Section 2, Kestrel East Road, Zhongshan District, Taipei City 10499",
+            "Kestrel",
+            "person",
+        ),
+        (
+            "Level 12, Menara Pellow, No. 8, Jalan Kestrel, 50999 Kuala Lumpur",
+            "Level 12",
+            "organization",
+        ),
+    ] {
+        let source = format!("Write to {address}.");
+        assert_eq!(
+            shown(&source, &[(model, label)]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    for source in [
+        "Wisma Pellow was leased and Larkspur Centre was sold.",
+        "The Zhongshan District office and Taipei City agreed.",
+        "Wan Chai, Hong Kong is busy.",
+        "Under No. 118, Section 2 of the Act applies.",
+        "See No. 118, Section 2, and Section 4 of the Act.",
+        "Section 2, Kestrel East Road was closed.",
+        "Jalan Kestrel 3 is a road in Kuala Lumpur.",
+        "Kestrel Medical Centre opened.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+    // A commercial building opens an address only after its unit: before
+    // a street alone it may be a company's name.
+    assert_eq!(
+        proposed_addresses("Kestrel Medical Centre, 12 Oak Road, Leeds LS1 4AB"),
+        ["12 Oak Road, Leeds LS1 4AB"]
+    );
+}
+
+/// #551: a Brazilian address runs from its street, its type first and its
+/// number after a comma, over its district to its city, state and CEP; a
+/// farm with its town and CEP is an address with no street. A Vanuatu
+/// address opens at its floor and building and ends at the capital. The
+/// country stays out.
+#[test]
+fn brazilian_and_pacific_addresses_run_to_their_postcode_or_city() {
+    for (address, after) in [
+        (
+            "Rua das Acácias, 412, Bairro Jardim Kestrel, São Paulo - SP, CEP 01999-000",
+            ", Brazil",
+        ),
+        ("Rua das Acácias, 412, São Paulo", ", Brazil"),
+        ("Avenida Kestrel, 1999, Brasília - DF", ", Brazil"),
+        ("Av. Pellow, 77, Curitiba/PR, CEP 80999-000", ""),
+        ("Fazenda Boa Vista, Kestrelândia, CEP 37999-000", ", Brazil"),
+        (
+            "2nd Floor, Pellow House, Kestrel Highway, Port Vila",
+            ", Vanuatu",
+        ),
+    ] {
+        let source = format!("Write to {address}{after}.");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+    }
+    for (address, model, label) in [
+        (
+            "Rua Ana Pellow, 412, São Paulo - SP, CEP 01999-000",
+            "Ana Pellow",
+            "person",
+        ),
+        (
+            "Fazenda Boa Vista, Kestrelândia, CEP 37999-000",
+            "Fazenda Boa Vista",
+            "organization",
+        ),
+        (
+            "2nd Floor, Pellow House, Kestrel Highway, Port Vila",
+            "Pellow House",
+            "organization",
+        ),
+    ] {
+        let source = format!("Write to {address}.");
+        assert_eq!(
+            shown(&source, &[(model, label)]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    for source in [
+        "The Fazenda Boa Vista harvest was late.",
+        "São Paulo - SP hosted the hearing.",
+        "Port Vila is the capital.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+}
+
+/// #551: a company named with a street type that comes first ("Rua",
+/// "Jalan", "Avenue") is no street, with the model or without it; an
+/// address after it is found on its own.
+#[test]
+fn a_company_named_like_a_foreign_street_is_no_address() {
+    for source in [
+        "Rua Holdings Ltd and Jalan Mas Sdn Bhd signed.",
+        "Rua Holdings Ltd, 2024, London.",
+        "Jalan Mas Sdn Bhd, 12, Kuala Lumpur.",
+        "Avenue Capital 2, Inc and Avenue Partners 3, LLC signed.",
+        "In 2024, Avenue Capital, Kestrel Partners and Pellow Ltd agreed.",
+    ] {
+        assert!(proposed_addresses(source).is_empty(), "{source}");
+    }
+    for (company, address) in [
+        (
+            "Jalan Mas Sdn Bhd",
+            "Lot 8-2, Jalan Kestrel 3, 50999 Kuala Lumpur",
+        ),
+        (
+            "Rua Kestrel Ltda",
+            "Rua das Acácias, 412, São Paulo - SP, CEP 01999-000",
+        ),
+    ] {
+        let source = format!("{company}, {address}");
+        assert_eq!(proposed_addresses(&source), [address], "{source}");
+        assert_eq!(
+            shown(&source, &[(company, "organization")]),
+            pairs(&[(company, "ORG"), (address, "ADDRESS")]),
+            "{source}"
+        );
+    }
+}
+
 /// Rules win the review's conflicts, but a span pattern's match gives
 /// way wherever it is not the widest evidence, so it never cuts what the
 /// model or another rule found; a model address inside it grows to it.
