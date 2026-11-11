@@ -1908,14 +1908,21 @@ parts.state_name = '(?i:alabama|alaska|arizona|arkansas|california|colorado|conn
 # may stand for a digit.
 parts.zip = '(?:\d{5}|[OoIliB]\d{4}|\d[OoIliB]\d{3}|\d{2}[OoIliB]\d{2}|\d{3}[OoIliB]\d|\d{4}[OoIliB])(?:-[\p{Zs}\t]?\d{4})?'
 absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)|{building})(?:[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?)?(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box}|{named})'
-# The street/units or box are definite components; the guessed town after
-# them is not allowed to absorb a model name or an attention/contact field.
-# A match with none of them (a city, state and ZIP alone, #498) is guessed
-# whole: "Attn Jane Quenby, NY 10999" is no address, and with "Jane Quenby"
-# a model's person the city does not take her in. A capitalised "To" opens
-# a recipient's line as Attn does.
-continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}'
-continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b|\bTo\b'
+# The street/units, box, stray-comma street or corner are definite
+# components; the guessed town after them is not allowed to absorb a model
+# name or an attention/contact field. A match with none of them (a city,
+# state and ZIP alone, #498) is guessed whole, and the pattern is searched
+# again after such a name or field: "Ship To Ashby Falls, OH 45999" is
+# "Ashby Falls, OH 45999", and "Attn Jane Quenby, NY 10999" with "Jane
+# Quenby" a model's person is no address. A capitalised "To" ends a guessed
+# town as Attn does; after a recipient's label (Attn, Attention, c/o, the
+# `recipient` group) a name follows, not a city, so the pattern is not
+# searched again: "Attn Jane Quenby, NY 10999" is no address even without
+# the model. A model's name that is a city's own word
+# ("Calder" of "Port Calder, IN 46999") still costs the city: it cannot be
+# told from a recipient's name before ", NY".
+continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}|\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners})'
+continuation_stop = '(?P<recipient>\b(?i:attn|attention|c/o)\b)|\b(?i:contact|email|e-mail|phone|telephone|tel|fax)\b|\bTo\b'
 # A field's label and its value are no city, state and ZIP: "Account ID
 # 12345", "Claim No CA 90999", "Policy Form New York 10999" (a word that
 # names a field, then "No", "Number" or a second such word and a state, or

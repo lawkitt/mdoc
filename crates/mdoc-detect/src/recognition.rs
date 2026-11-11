@@ -1522,7 +1522,8 @@ mod tests {
     /// #498 round 3: a city, state and ZIP with no street or box before
     /// them are guessed whole, so their city takes in no recipient: no
     /// contact label and no name the model found, its repeat included. A
-    /// name before the city stays outside it.
+    /// name or label before the city stays outside it, and the city after
+    /// it is found again.
     #[test]
     fn a_city_alone_takes_no_recipient() {
         for (field, name, label, category) in [
@@ -1533,12 +1534,34 @@ mod tests {
         ] {
             let source = format!("{field} {name}, NY 10999.\n{name} signed.");
             assert_address_proposals(&source, &[(name, label)], &[(name, category)]);
-            let proposed = proposals(&source, &[]).unwrap();
-            assert!(
-                proposed.iter().all(|span| span.category != "ADDRESS"),
-                "{source}: {proposed:?}"
-            );
+            // After a recipient's label a name follows, even unmodelled.
+            if field != "To" {
+                let proposed = proposals(&source, &[]).unwrap();
+                assert!(
+                    proposed.iter().all(|span| span.category != "ADDRESS"),
+                    "{source}: {proposed:?}"
+                );
+            }
         }
+        for (source, address) in [
+            ("Ship To Ashby Falls, OH 45999", "Ashby Falls, OH 45999"),
+            ("Bill To Corrow, OH 44999", "Corrow, OH 44999"),
+            ("Contact Ashby Falls, OH 45999", "Ashby Falls, OH 45999"),
+        ] {
+            assert_address_proposals(source, &[], &[(address, "ADDRESS")]);
+        }
+        assert_address_proposals(
+            "Defendant Quenby Ashby Falls, OH 45999.\nQuenby signed.",
+            &[("Quenby", "person")],
+            &[("Quenby", "PERSON"), ("Ashby Falls, OH 45999", "ADDRESS")],
+        );
+        // The trade-off: a model's name that is a city's own word costs
+        // the city, which cannot be told from a recipient before ", NY".
+        assert_address_proposals(
+            "Port Calder, IN 46999",
+            &[("Calder", "person")],
+            &[("Calder", "PERSON")],
+        );
         assert_address_proposals(
             "Jane Quenby Ashby Falls, OH 45999.\nJane Quenby signed.",
             &[("Jane Quenby", "person")],

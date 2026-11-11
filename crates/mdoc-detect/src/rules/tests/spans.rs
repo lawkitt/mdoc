@@ -2157,6 +2157,52 @@ fn an_address_runs_from_its_number_to_its_zip() {
         let source = format!("Turn at {street} and go on.");
         assert!(proposed_addresses(&source).is_empty(), "{source}");
     }
+    // The stray-comma street and the corner are the address's definite
+    // part: a model name in them is the address's, and one in the city
+    // after them ends it there.
+    for (address, model, label) in [
+        (
+            "1720 Pemberton, Ave., NW, Washington, DC 20599",
+            "Pemberton",
+            "person",
+        ),
+        (
+            "1720 Pemberton, Ave., NW, Washington, DC 20599",
+            "Pemberton",
+            "organization",
+        ),
+        (
+            "Tolliver and Mill Roads Ashby Falls, AL 35999",
+            "Mill Roads",
+            "organization",
+        ),
+        (
+            "20th Street and Quillon Avenue, NW Wexford, DC 20999",
+            "Quillon",
+            "person",
+        ),
+    ] {
+        let source = format!("The office is at {address}.");
+        assert_eq!(
+            shown(&source, &[(model, label)]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}: {model}"
+        );
+    }
+    let source = "The office is at 1720 Pemberton, Ave., NW, Washington, DC 20599.";
+    assert_eq!(
+        shown(source, &[("Washington", "person")]),
+        pairs(&[
+            ("1720 Pemberton, Ave., NW", "ADDRESS"),
+            ("Washington", "PERSON")
+        ])
+    );
+    // A bare corner left before the name is no address (#553 item 3).
+    let source = "The office is at Tolliver and Mill Roads Ashby Falls, AL 35999.";
+    assert_eq!(
+        shown(source, &[("Ashby", "person")]),
+        pairs(&[("Ashby", "PERSON")])
+    );
 }
 
 /// #498 round 3: a pleading's line number between the street and the city
