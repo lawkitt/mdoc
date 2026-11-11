@@ -92,12 +92,14 @@ jobs:
       # font-kit's fontconfig/freetype. It takes about 15 s; a stalled mirror
       # fails in minutes, after one retry (ADR 0100). The retry leaves the
       # runner's Azure mirror for archive.ubuntu.com: on 2026-11-10 the Azure
-      # mirror stalled on single packages for hours, on both attempts.
+      # mirror stalled on single packages for hours, on both attempts. A third
+      # attempt goes to kernel.org's mirror over HTTPS: on 2026-11-11 the
+      # runners reached neither Ubuntu host for over an hour.
       - &linux-deps
         name: Install Linux build deps
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
-          for attempt in 1 2; do
+          for attempt in 1 2 3; do
             if sudo timeout 60 apt-get update &&
               sudo timeout 80 apt-get install -y -o DPkg::Lock::Timeout=20 \
                 -o Acquire::Retries=2 -o Acquire::http::Timeout=15 \
@@ -109,7 +111,12 @@ jobs:
             fi
             echo "::warning::Linux build deps: attempt $attempt failed"
             for list in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors.txt; do
-              [ -f "$list" ] && sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' "$list"
+              [ -f "$list" ] || continue
+              if [ "$attempt" = 1 ]; then
+                sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' "$list"
+              else
+                sudo sed -i -E 's#http://(archive|security)\.ubuntu\.com/ubuntu#https://mirrors.edge.kernel.org/ubuntu#g' "$list"
+              fi
             done
           done
           exit 1

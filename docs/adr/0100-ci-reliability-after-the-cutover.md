@@ -83,7 +83,9 @@ issue #614):
 - **The Android job builds the core for x86_64 and the host only** in CI.
   aarch64 stays compile-checked by `just mobile --ffi` and is built for
   devices and releases.
-- Linux package installs have a 5-minute limit and one retry.
+- Linux package installs have an 8-minute limit and two retries: the
+  first on `archive.ubuntu.com`, the second on kernel.org's mirror over
+  HTTPS (2026-11-11, when the runners reached neither Ubuntu host).
 - The queue keeps building 2 groups at once. A dedicated CI Mac is
   reconsidered only if capacity re-runs still fail more than about once a
   week.
