@@ -2084,12 +2084,23 @@ fn a_city_after_a_body_or_company_name_starts_at_the_city() {
             "Brackwater Police Department Ostley, NY 11998",
             "Ostley, NY 11998",
         ),
-        (
-            "Dock Pilots Union, International Ostley, VA 20198",
-            "Ostley, VA 20198",
-        ),
         ("Corvane Holdings LLC Tarrow, VA 20998", "Tarrow, VA 20998"),
-        // A real city's name with such a word, or with "Union" or "Park".
+        // A real city's name with such a word, or with "Union" or "Park":
+        // the word opens its line, an element after a comma, or follows
+        // a function word.
+        ("Council Grove, KS 66899", "Council Grove, KS 66899"),
+        (
+            "Ship it to Council Grove, KS 66899 by Friday.",
+            "Council Grove, KS 66899",
+        ),
+        (
+            "12 Mill Street, Council Grove, KS 66899",
+            "12 Mill Street, Council Grove, KS 66899",
+        ),
+        (
+            "Corvane Holdings LLC, Council Grove, KS 66899",
+            "Council Grove, KS 66899",
+        ),
         ("Union City, NJ 07998", "Union City, NJ 07998"),
         ("Park City, UT 84098", "Park City, UT 84098"),
         ("Council Bluffs, IA 51598", "Council Bluffs, IA 51598"),
@@ -2126,11 +2137,13 @@ fn a_city_after_a_body_or_company_name_starts_at_the_city() {
             "Harbor Permits Tribunal",
             &[("Wexmoor, DC 20598", "ADDRESS")][..],
         ),
+        // After a comma "International" may open a city's name, so only
+        // the model's name over it keeps it out of the city.
         (
             "Dock Pilots Union, International Ostley, VA 20198",
-            "Dock Pilots Union",
+            "Dock Pilots Union, International",
             &[
-                ("Dock Pilots Union", "ORG"),
+                ("Dock Pilots Union, International", "ORG"),
                 ("Ostley, VA 20198", "ADDRESS"),
             ][..],
         ),

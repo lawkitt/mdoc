@@ -993,6 +993,33 @@ fn a_legal_form_after_a_comma_or_in_brackets_joins_the_company() {
     ] {
         assert_eq!(proposed_orgs(source, &[model]), [expected], "{source}");
     }
+    // A conjunction or another company's span ends the bracketed form's
+    // name: two companies stay two, the second with its form.
+    assert_eq!(
+        proposed_orgs(
+            "Ответчики ООО «Кедр» и Банк «Ольховый» (ПАО) возражали.",
+            &["ООО «Кедр»", "Банк «Ольховый»"]
+        ),
+        ["ООО «Кедр»", "Банк «Ольховый» (ПАО)"]
+    );
+    assert_eq!(
+        proposed_orgs(
+            "Ответчики АО «Кедр» или Банк Ольховый (ПАО) возражали.",
+            &["АО «Кедр»"]
+        ),
+        ["АО «Кедр»"]
+    );
+    // The span fixes never grow one company's span over another's.
+    assert_eq!(
+        fixed(
+            "Ответчики АО «Кедр» Банк Ольховый (ПАО) возражали.",
+            &[
+                ("АО «Кедр»", Category::Organization),
+                ("Банк Ольховый", Category::Organization),
+            ]
+        ),
+        ["АО «Кедр»", "Банк Ольховый (ПАО)"]
+    );
     // "and" joins two companies, not one name.
     assert_eq!(
         proposed_orgs(

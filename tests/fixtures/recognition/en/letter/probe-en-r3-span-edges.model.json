@@ -1,0 +1,26 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":131,"end":151,"label":"organization","score":0.961606,"text":"Harbor Permits Board"},
+    {"start":78,"end":90,"label":"organization","score":0.9309621,"text":"PELLWICK LAW"},
+    {"start":92,"end":95,"label":"organization","score":0.7483523,"text":"APC"},
+    {"start":105,"end":129,"label":"email","score":0.9975656,"text":"desk@pellwicklaw.invalid"},
+    {"start":247,"end":271,"label":"full_name","score":0.6326162,"text":"Estate of Corwin Ashdale"},
+    {"start":313,"end":336,"label":"organization","score":0.9828891,"text":"Larkmoor Advisors, L.P."},
+    {"start":294,"end":308,"label":"organization","score":0.9795115,"text":"DARROWAY, INC."},
+    {"start":428,"end":441,"label":"organization","score":0.9792353,"text":"Pellam Mutual"},
+    {"start":374,"end":391,"label":"organization","score":0.9736446,"text":"Brannoch Quay Ltd"},
+    {"start":557,"end":575,"label":"organization","score":0.9480584,"text":"Velling Party 2031"},
+    {"start":485,"end":506,"label":"organization","score":0.9408985,"text":"Corran Air Flight 418"},
+    {"start":707,"end":735,"label":"organization","score":0.91862637,"text":"Brackwater Police Department"},
+    {"start":649,"end":677,"label":"organization","score":0.8338665,"text":"COASTAL TRANSIT SAFETY BOARD"},
+    {"start":247,"end":271,"label":"organization","score":0.7804952,"text":"Estate of Corwin Ashdale"},
+    {"start":606,"end":623,"label":"organization","score":0.6798167,"text":"Bureau of Permits"},
+    {"start":1082,"end":1095,"label":"person","score":0.9882221,"text":"Mara Pellwick"},
+    {"start":862,"end":879,"label":"organization","score":0.9705206,"text":"Brannoch Quay Ltd"},
+    {"start":900,"end":917,"label":"organization","score":0.9474783,"text":"Quellmark Freight"},
+    {"start":1096,"end":1113,"label":"organization","score":0.7699462,"text":"PELLWICK LAW, APC"},
+    {"start":801,"end":832,"label":"organization","score":0.7685595,"text":"CIRCUIT COURT OF ASHMOOR COUNTY"}
+  ]
+}

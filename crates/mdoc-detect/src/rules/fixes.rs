@@ -636,14 +636,24 @@ impl Pack {
                 // over any part of another category's span either: "ACME
                 // LLC" stays the company's. Others may: a person's
                 // institution grows over the model's organization in it.
-                let crosses = |(m, led, _): &(std::ops::Range<usize>, bool, bool)| {
+                let crosses = |(m, led, tailed): &(std::ops::Range<usize>, bool, bool)| {
                     order.iter().any(|&j| {
                         let other = &detections[j].range;
                         j != i
                             && other.start < m.end
                             && m.start < other.end
                             && !(m.start <= other.start && other.end <= m.end)
-                    }) || *led
+                    })
+                        // An organization's tail (its legal form) never
+                        // takes in another company after it: «ООО «Кедр» и
+                        // Банк «Ольховый» (ПАО)» are two (#502).
+                        || fix.category == Category::Organization
+                            && *tailed
+                            && order.iter().any(|&j| {
+                                let other = &detections[j].range;
+                                j != i && range.end <= other.start && other.end <= m.end
+                            })
+                        || *led
                         && detections.iter().any(|other| {
                             other.category != fix.category
                                 && other.range.start < m.end
@@ -687,14 +697,17 @@ impl Pack {
                 // it, or the rest of a name whose start is a span: the
                 // model's "Penrow" and "J. L." in "Penrow, J. L." are one
                 // name, its "J.R." alone in "Thereafter, J.R., a minor"
-                // never takes the word before the comma (#414).
+                // never takes the word before the comma (#414). An
+                // organization's tail grows only the span it starts with:
+                // a company before it is another one (#502).
                 let starts = |m: &std::ops::Range<usize>, tailed: bool| {
                     !tailed
                         || range.start == m.start
-                        || order.iter().any(|&j| {
-                            let other = &detections[j].range;
-                            j != i && other.start == m.start && other.end <= m.end
-                        })
+                        || fix.category == Category::Person
+                            && order.iter().any(|&j| {
+                                let other = &detections[j].range;
+                                j != i && other.start == m.start && other.end <= m.end
+                            })
                 };
                 let grown = matches
                     .iter()

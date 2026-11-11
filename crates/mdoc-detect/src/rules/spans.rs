@@ -167,13 +167,17 @@ impl Pack {
         };
         let own = cut(&[], range.clone());
         let line = source[..own.start].rfind('\n').map_or(0, |at| at + 1);
-        let before = source[line..own.start].trim_end_matches([' ', '\t', ',']);
-        let body = stop.is_some_and(|stop| {
-            stop.captures_iter(before).any(|found| {
-                found.name("body").is_some()
-                    && found.get(0).is_some_and(|word| word.end() == before.len())
-            })
-        });
+        // A `body` word right before the city, only spaces between, that
+        // goes on a name (`named_before`).
+        let before = source[line..own.start].trim_end_matches([' ', '\t']);
+        let body = before.len() < own.start - line
+            && stop.is_some_and(|stop| {
+                stop.captures_iter(before).any(|found| {
+                    found.name("body").is_some_and(|word| {
+                        word.end() == before.len() && named_before(source, line + word.start())
+                    })
+                })
+            });
         if !own.is_empty() && (own == range && whole.start < range.start || body) {
             return (cut(names, own), true);
         }
@@ -399,12 +403,18 @@ fn guessed_cut(
         .map(|name| (name.range.start, Some(name.range.end)))
         .min();
     // A `place` group is a real place with a stop word in its name
-    // ("Council Bluffs"), no stop.
+    // ("Council Bluffs"), no stop; a `body` word stops only where it goes
+    // on a name (`named_before`).
     let field = stop
         .and_then(|pattern| {
             pattern
                 .captures_iter(&source[tail..range.end])
-                .find(|found| found.name("place").is_none())
+                .find(|found| {
+                    found.name("place").is_none()
+                        && found
+                            .name("body")
+                            .is_none_or(|body| named_before(source, tail + body.start()))
+                })
         })
         .map(|found| {
             let field = found.get(0).expect("group 0 is the match");
@@ -417,6 +427,26 @@ fn guessed_cut(
     name.into_iter()
         .chain(field)
         .min_by_key(|(start, _)| *start)
+}
+
+/// Whether a capitalized word stands before `at` of `source` on its line,
+/// only spaces between: a stop's `body` word there goes on a name ("Review
+/// Board", "Brackwater Police", #502). Opening the line or an element after
+/// a comma, or after a sentence's function word ("In Council Grove"), it
+/// may be a city's own first word ("Council Grove, KS 66899").
+fn named_before(source: &str, at: usize) -> bool {
+    const FUNCTION_WORDS: [&str; 12] = [
+        "in", "at", "to", "from", "the", "and", "for", "by", "on", "of", "near", "via",
+    ];
+    let before = source[..at].trim_end_matches([' ', '\t']);
+    let word = before
+        .rsplit(char::is_whitespace)
+        .next()
+        .unwrap_or_default();
+    before.len() < at
+        && word.starts_with(char::is_uppercase)
+        && word.ends_with(char::is_alphanumeric)
+        && !FUNCTION_WORDS.contains(&word.to_lowercase().as_str())
 }
 
 /// A span pattern's matches without their `lead` and `tail` groups, the

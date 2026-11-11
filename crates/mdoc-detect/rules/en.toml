@@ -2201,16 +2201,20 @@ absorbs.PERSON = '(?P<span>{fhouse})\z'
 # the model. A model's name that is a city's own word
 # ("Calder" of "Port Calder, IN 46999") still costs the city: it cannot be
 # told from a recipient's name before ", NY".
-# A public body's or a company's word is no city's either (#502): a guessed
-# town ends before one and is searched again after it, so "Appeals Review
-# Board Washington, DC 20599", "TRANSIT SAFETY WASHINGTON, DC 20599" and
-# "Ferry Crews Union, International Corrow, VA 20199" are "Washington, DC
-# 20599", "WASHINGTON, DC 20599" and "Corrow, VA 20199". A real city with
-# such a word in its name is the `place` group, no stop ("Council Bluffs",
-# "Safety Harbor", "International Falls"); "Union" and "Park" are no such
-# words ("Union City", "Park City"). A city after such a word (the `body`
-# group), or after a body's name the pattern's `lead` holds, stands though
-# a model name runs into it: the name ends before the city (in code).
+# A public body's or a company's word (the `body` group) is no city's
+# either where it goes on a name (#502): after a capitalized word on its
+# line, only spaces between, a guessed town ends before it and is searched
+# again after it, so "Appeals Review Board Washington, DC 20599" and
+# "TRANSIT SAFETY WASHINGTON, DC 20599" are "Washington, DC 20599" and
+# "WASHINGTON, DC 20599". Opening its line, or an element after a comma,
+# or after a function word ("In", "To") it is a city's own first word:
+# "Council Grove, KS 66899", "12 Mill Street, Council Grove, KS 66899" (in
+# code). A real city named so after a name is the `place` group, no stop
+# ("Council Bluffs", "Safety Harbor", "International Falls"); "Union" and
+# "Park" are no such words ("Union City", "Park City"). A city after such
+# a word on a name, or after a body's name the pattern's `lead` holds,
+# stands though a model name runs into it: the name ends before the city
+# (in code).
 # A foreign street (#551) is definite too: a Taiwanese "No." street, a
 # street whose type comes first or a German one, a bare one after the
 # unit, house or "No." before it ("No. 8, Jalan Kestrel"). A model's
