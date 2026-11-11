@@ -2528,8 +2528,27 @@ fn a_swiss_address_runs_from_its_street_or_house_to_its_town() {
             "Chalet Les Ostrands",
         ),
         ("They summer at Villa Kestrel.", "Villa Kestrel"),
+        // A venue's name gives way to the address after it.
+        (
+            "Book Villa Kestrel Hotel, Rue du Lac 4, 1299 Genève.",
+            "Rue du Lac 4, 1299 Genève",
+        ),
+        (
+            "Book Casa Pellow Restaurant, Via Pellow 5, 6999 Brindlano.",
+            "Via Pellow 5, 6999 Brindlano",
+        ),
     ] {
         assert_eq!(proposed_addresses(source), [house], "{source}");
+    }
+    // The model's company or person on the whole of a house alone is the
+    // address's own part.
+    let source = "They summer at Chalet Les Ostrands.";
+    for label in ["organization", "person"] {
+        assert_eq!(
+            shown(source, &[("Chalet Les Ostrands", label)]),
+            pairs(&[("Chalet Les Ostrands", "ADDRESS")]),
+            "{label}"
+        );
     }
     for source in [
         "Spring 2026 was wet in Zürich.",

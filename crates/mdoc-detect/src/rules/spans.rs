@@ -152,7 +152,7 @@ impl Pack {
                     (split, skip, gaps_only),
                     line_length,
                 )| {
-                    span_ranges_sized(pattern, source, line_length.as_ref())
+                    span_ranges_sized(pattern, source, line_length.as_ref(), skip.as_ref())
                         .into_iter()
                         .map(move |(mut range, whole)| {
                             if let Some(after) = continuation_after.as_ref() {
@@ -342,7 +342,7 @@ fn guessed_cut(
 /// where the last span ended, so one address's tail ("; ") can be the next
 /// one's lead.
 pub(super) fn span_ranges(pattern: &impl Search, source: &str) -> Vec<std::ops::Range<usize>> {
-    span_ranges_sized(pattern, source, None)
+    span_ranges_sized(pattern, source, None, None)
         .into_iter()
         .map(|(range, _)| range)
         .collect()
@@ -352,11 +352,15 @@ pub(super) fn span_ranges(pattern: &impl Search, source: &str) -> Vec<std::ops::
 /// `lead` and `tail` included, has `line_length` characters, without the
 /// whitespace at its ends, its backslashes (Markdown's escapes and hard
 /// breaks) and its `mark` groups (a blockquote's or a table's marks, a
-/// label), each with its whole match.
+/// label), each with its whole match. A match the `skip` regex finds in
+/// is searched again after what it found, so a venue's name that opened
+/// it gives way to the address after it ("Villa Kestrel Hotel, Rue du Lac
+/// 4, …" is "Rue du Lac 4, …").
 fn span_ranges_sized(
     pattern: &impl Search,
     source: &str,
     line_length: Option<&std::ops::RangeInclusive<usize>>,
+    skip: Option<&Regex>,
 ) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
     let marks: Vec<&str> = pattern
         .capture_names()
@@ -402,6 +406,16 @@ fn span_ranges_sized(
                     .chars()
                     .next()
                     .map_or(1, char::len_utf8);
+            continue;
+        }
+        if let Some(skipped) = skip.and_then(|skip| skip.find(&source[start..end])) {
+            at = (start + skipped.end()).max(
+                whole.start()
+                    + source[whole.start()..]
+                        .chars()
+                        .next()
+                        .map_or(1, char::len_utf8),
+            );
             continue;
         }
         if start < end {
