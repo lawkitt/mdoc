@@ -704,18 +704,22 @@ impl Pack {
             // ("Pellam and Quenby, LLP", ", Inc.", ", Co."): only the form
             // right after it, on the same line. An address is no company:
             // a US state's code after a town's comma ("Pellam, CO 80501":
-            // "CO" is no "Co") and a form with a ZIP or postcode after it.
+            // "CO" is no "Co", also in brackets) and a form with a ZIP or
+            // postcode right after it. A form with its own comma may have
+            // the firm's address after it ("…, LLP, 18 Alder Road").
             if let Some(rest) = after.strip_prefix(',') {
                 let line = rest.split('\n').next().unwrap_or_default();
                 let mut words = line.split_whitespace();
                 let Some(word) = words.next() else {
                     return false;
                 };
-                let form = word.trim_end_matches(['.', ',', ';', ')', '»', '”', '"']);
-                let state = form == word.trim_end_matches(',') && US_STATES.contains(&form);
-                let postcode = words
-                    .next()
-                    .is_some_and(|next| next.starts_with(|c: char| c.is_ascii_digit()));
+                let bare = word.trim_end_matches([',', ';', ')', '»', '”', '"']);
+                let form = bare.trim_end_matches('.');
+                let state = form == bare && US_STATES.contains(&form);
+                let postcode = bare == word
+                    && words
+                        .next()
+                        .is_some_and(|next| next.starts_with(|c: char| c.is_ascii_digit()));
                 return !state && !postcode && self.legal_form(form);
             }
             if !after.starts_with(char::is_whitespace) {

@@ -108,6 +108,12 @@ fn a_known_persons_surname_is_no_organization() {
                 "PERSON⟦Hartrow⟧",
             ],
         ),
+        // So is a state's code in brackets.
+        (
+            "Senator Hartrow testified.\nMailing location: (Hartrow, CO)\nHartrow objected.",
+            &[("organization", "Hartrow")],
+            &["PERSON⟦Hartrow⟧", "PERSON⟦Hartrow⟧", "PERSON⟦Hartrow⟧"],
+        ),
     ]);
 }
 
@@ -161,6 +167,12 @@ fn surnames_after_a_plural_title_are_people() {
         // wording spreads to the firm's name too.
         (
             "Hartrow and Vensel, LLP signed.\nSignatories: Hartrow and Vensel",
+            &[("organization", "Hartrow and Vensel")],
+            &["ORG⟦Hartrow and Vensel⟧", "ORG⟦Hartrow and Vensel⟧"],
+        ),
+        // The firm's address after its form's own comma leaves the form.
+        (
+            "Hartrow and Vensel, LLP, 18 Alder Road\nSignatories: Hartrow and Vensel",
             &[("organization", "Hartrow and Vensel")],
             &["ORG⟦Hartrow and Vensel⟧", "ORG⟦Hartrow and Vensel⟧"],
         ),
