@@ -511,6 +511,16 @@ fn ends_with_initial(text: &str) -> bool {
         && chars.next().is_none_or(|c| c.is_whitespace() || c == '.')
 }
 
+/// Whether `text` holds an initial: a capital alone, with its period or
+/// without ("Кредиторов И. П.", "J Seller"). A joiner's spelling ("И",
+/// "A") is then a name's letter, never a generic word.
+fn initialed(text: &str) -> bool {
+    text.split_whitespace().any(|word| {
+        let mut chars = word.trim_end_matches('.').chars();
+        chars.next().is_some_and(char::is_uppercase) && chars.next().is_none()
+    })
+}
+
 impl Pack {
     /// The `span` fixes on `detections` in `source`: each grows to an
     /// `extend` match it lies inside, loses `trim` words at either edge and
@@ -904,8 +914,15 @@ impl Pack {
                     &view.text[..view.view_range(d.range.clone()).start],
                 )
                 && !field_code(source, d)
-                && !(d.category == Category::Organization
+                // A term the document defines in generic words is no one,
+                // whichever category the model gave it (#390): "(the
+                // “Distributor”)" proposed as a person goes too, at the
+                // definition and at each mention, so it never seeds the
+                // review's repeats. A title keeps a surname ("Mr Seller"),
+                // and initials or a given name keep a name ("Ann Seller").
+                && !(matches!(d.category, Category::Organization | Category::Person)
                     && !defined.is_empty()
+                    && !(d.category == Category::Person && (titled || initialed(text)))
                     && self.defined_generic(text, &defined))
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && abbreviations.contains(

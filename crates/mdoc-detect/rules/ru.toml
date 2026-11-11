@@ -512,12 +512,13 @@ words = [
 # Generic nouns a document defines as a term after «далее –» or «именуемое
 # в дальнейшем»: «(далее – Положение)», «(далее – Учреждение)», «Займодавец»,
 # «Заёмщик». Once the document defines one, every mention of it, in any case,
-# is a defined term and no organization (guide rule 2, issue #390). Only
-# where the document defines it: elsewhere a company may share the word, and
-# a term with any coined or real word («Кедровое») defines none. As stems
-# with up to three letters of ending, including genitive plurals
-# («Кредиторов»). Other surname endings remain excluded. This filter
-# applies only to ORG; the separate PERSON surname guards are unchanged.
+# is a defined term and no organization and no person, whichever the model
+# called it (guide rules 1, 2 and 8, issue #390). Only where the document
+# defines it: elsewhere a company or a person may share the word, and a term
+# with any coined or real word («Кедровое») defines none. As stems with up
+# to three letters of ending, including genitive plurals («Кредиторов»).
+# Other surname endings remain excluded, and a title or an initial keeps a
+# person's surname («г-н Кредиторов», «Кредиторов И. П.»; in code).
 [[defined]]
 match = "stem"
 ending = 3
@@ -531,6 +532,20 @@ words = [
     "грузоотправител", "грузополучател", "наймодател", "нанимател",
     "лицензиат", "лицензиар", "цедент", "цессионари", "правообладател",
     "пользовател", "оператор", "организатор", "корпораци", "фирм",
+]
+
+# The parties of common contracts, defined the same way: «именуемое в
+# дальнейшем «Поставщик»», «(далее – Покупатель)», «Заказчику», «Арендатора»
+# (issue #390, run 4). They are `never` roles too, which drop them alone
+# unless a name in the document has the word; a definition drops them even
+# then. Same stems and endings as above.
+[[defined]]
+match = "stem"
+ending = 3
+not_endings = ["ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
+words = [
+    "поставщик", "покупател", "заказчик", "исполнител", "подрядчик",
+    "арендатор", "арендодател",
 ]
 
 # Category words and identifier labels: "СНИЛС", "ИНН", "Телефон", "Адрес"
