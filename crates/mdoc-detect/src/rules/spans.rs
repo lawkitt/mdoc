@@ -155,22 +155,27 @@ impl Pack {
                     span_ranges_sized(pattern, source, line_length.as_ref())
                         .into_iter()
                         .map(move |(mut range, whole)| {
-                            if let Some(core) = continuation_after
-                                .as_ref()
-                                .and_then(|pattern| pattern.find(&source[range.clone()]))
-                            {
-                                let tail = range.start + core.end();
+                            if let Some(after) = continuation_after.as_ref() {
+                                // A match with no definite component (a
+                                // city, state and ZIP alone) is guessed
+                                // whole: its city takes no name or field
+                                // after its start; a name at its front edge
+                                // is `address_beside`'s.
+                                let core = after.find(&source[range.clone()]);
+                                let tail = range.start + core.map_or(0, |core| core.end());
                                 // A name crossing the definite component's
                                 // edge ("Broadway Show") invalidates the
                                 // guessed street; never cut it to a fragment.
-                                if names.iter().any(|name| {
-                                    matches!(
-                                        name.category,
-                                        Category::Person | Category::Organization
-                                    ) && name.range.start < tail
-                                        && tail < name.range.end
-                                        && range.start < name.range.end
-                                }) {
+                                if core.is_some()
+                                    && names.iter().any(|name| {
+                                        matches!(
+                                            name.category,
+                                            Category::Person | Category::Organization
+                                        ) && name.range.start < tail
+                                            && tail < name.range.end
+                                            && range.start < name.range.end
+                                    })
+                                {
                                     range.end = range.start;
                                     return (range, whole);
                                 }
@@ -180,7 +185,8 @@ impl Pack {
                                         matches!(
                                             name.category,
                                             Category::Person | Category::Organization
-                                        ) && tail <= name.range.start
+                                        ) && (tail < name.range.start
+                                            || (core.is_some() && tail == name.range.start))
                                             && name.range.start < range.end
                                     })
                                     .map(|name| name.range.start)

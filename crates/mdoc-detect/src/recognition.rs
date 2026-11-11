@@ -1519,6 +1519,41 @@ mod tests {
         }
     }
 
+    /// #498 round 3: a city, state and ZIP with no street or box before
+    /// them are guessed whole, so their city takes in no recipient: no
+    /// contact label and no name the model found, its repeat included. A
+    /// name before the city stays outside it.
+    #[test]
+    fn a_city_alone_takes_no_recipient() {
+        for (field, name, label, category) in [
+            ("Attn", "Jane Quenby", "person", "PERSON"),
+            ("Attention", "Jane Quenby", "person", "PERSON"),
+            ("To", "Jane Quenby", "person", "PERSON"),
+            ("Attn", "Larkfield Supply", "organization", "ORG"),
+        ] {
+            let source = format!("{field} {name}, NY 10999.\n{name} signed.");
+            assert_address_proposals(&source, &[(name, label)], &[(name, category)]);
+            let proposed = proposals(&source, &[]).unwrap();
+            assert!(
+                proposed.iter().all(|span| span.category != "ADDRESS"),
+                "{source}: {proposed:?}"
+            );
+        }
+        assert_address_proposals(
+            "Jane Quenby Ashby Falls, OH 45999.\nJane Quenby signed.",
+            &[("Jane Quenby", "person")],
+            &[
+                ("Jane Quenby", "PERSON"),
+                ("Ashby Falls, OH 45999", "ADDRESS"),
+            ],
+        );
+        assert_address_proposals(
+            "Larkfield Supply, NY 10999.\nLarkfield Supply signed.",
+            &[("Larkfield Supply", "organization")],
+            &[("Larkfield Supply", "ORG")],
+        );
+    }
+
     /// #498 gate review P2: the bare-street veto requires absence of house
     /// numbering and explicit private-home context (GUIDE #553 item 2).
     #[test]

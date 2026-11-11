@@ -159,6 +159,9 @@ enum Span {
         /// where the match holds it: a building's name in an address is no
         /// company ("Harrow House" of "Harrow House, 12 Pellin Street").
         absorbs: Vec<(Category, Regex)>,
+        /// The match's definite component, found first in it: the guessed
+        /// text after it ends before a model name or a `continuation_stop`
+        /// field. A match where it finds none is guessed whole.
         continuation_after: Option<Regex>,
         continuation_stop: Option<Regex>,
         /// Cuts a match into its spans: the pieces between its matches.

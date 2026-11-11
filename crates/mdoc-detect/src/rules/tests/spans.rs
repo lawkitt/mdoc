@@ -2038,6 +2038,8 @@ fn a_us_city_state_and_zip_alone_are_an_address() {
         "Claim No CA 90999 was paid.",
         "Policy Form OH 45999 applies.",
         "Customer Account ID 12345",
+        "Account I.D. 12345",
+        "Customer Account I.D. 12345",
         "Policy No 4410 OH 45999",
         "Exhibit 12 PA 19999",
         // The state, separators and ZIP the city form reads.
