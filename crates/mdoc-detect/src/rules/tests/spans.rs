@@ -2439,6 +2439,8 @@ fn a_canadian_address_runs_to_its_province_and_postal_code() {
         "40 Vennick Road, Montréal, Québec H2Z 9Z9",
         "Brindleton, Ontario K9Z 9Z9",
         "Marlow Falls, ON M9Z 9Z9",
+        // A suite after a French street with no comma keeps the number.
+        "1475 Rue Saint-Pellin Ouest Suite 300, Montréal (Québec) H2Z 9Z9",
         // A box after the street's suite, before the city.
         "77 Quillon Street West Suite 3000, P.O. Box 95, Brindleton, Ontario K9Z 9Z9",
     ] {
@@ -3381,6 +3383,30 @@ fn text_with_fillers_that_is_no_machine_readable_zone_proposes_nothing() {
     ] {
         assert!(mrz_names(&source).is_empty(), "{source}");
     }
+}
+
+/// #495, #551 review: a masked name part of a machine-readable line is
+/// skipped alone; the parts left unmasked, beside it, are still names, a
+/// passport's (TD3) and an ID card's (TD1) alike.
+#[test]
+fn a_masked_name_part_leaves_the_unmasked_parts_of_its_line() {
+    let passport = format!(
+        "{}\n7605318428RUS9104123F3102154<<<<<<<<<<<<<<06\n",
+        mrz_line("P<RUSVARNEK<<XXXXX", 44)
+    );
+    assert_eq!(mrz_names(&passport), ["VARNEK"]);
+    let passport = format!(
+        "{}\n7605318428RUS9104123F3102154<<<<<<<<<<<<<<06\n",
+        mrz_line("P<RUSXXXXX<<TOLVA<MIRENA", 44)
+    );
+    assert_eq!(mrz_names(&passport), ["TOLVA", "MIRENA"]);
+    let lines = [
+        mrz_line("I<NORD231458907", 30),
+        mrz_line("8807145F3307019NOR", 29) + "6",
+        mrz_line("BRENNOW<<XXXXX<SOLVI", 30),
+    ];
+    let td1 = format!("Оборот карты:\n{}\n", lines.join("\n"));
+    assert_eq!(mrz_names(&td1), ["BRENNOW", "SOLVI"]);
 }
 
 /// #495: the zone rules' states are mdoc-pii's, which reads a

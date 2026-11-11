@@ -152,7 +152,11 @@ impl Pack {
                     (split, skip, gaps_only),
                     line_length,
                 )| {
-                    span_ranges_sized(pattern, source, line_length.as_ref(), skip.as_ref())
+                    // A split match's pieces are skipped one by one below
+                    // ("KRENC<<XXXXX" keeps "KRENC"); only a whole match is
+                    // searched again after what its skip found.
+                    let skip_whole = skip.as_ref().filter(|_| split.is_none());
+                    span_ranges_sized(pattern, source, line_length.as_ref(), skip_whole)
                         .into_iter()
                         .map(move |(mut range, whole)| {
                             if let Some(after) = continuation_after.as_ref() {

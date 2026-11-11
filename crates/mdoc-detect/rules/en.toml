@@ -1890,7 +1890,8 @@ min_digits = 3
 # - Canadian: a compass word after the street type, a province and an
 #   "A9A 9A9" postal code, the province in brackets too ("1475 Rue
 #   Saint-Pellin Ouest, Montréal (Québec) H2Z 9Z9"); a city, province and
-#   postal code alone.
+#   postal code alone. A unit after a foreign street needs no comma, as
+#   after an English one ("… Ouest Suite 300, Montréal …").
 # - Swiss and other Continental: the street type first and the number
 #   after ("Rue du Lac 4", "Via Pellow 5"), a German street ("Kirchweg
 #   3"), a house named type first ("Chalet …"), the postcode before the
@@ -1928,16 +1929,16 @@ pattern = [
     # city or postcode after it. Each foreign form comes twice, its
     # foreign end first and the English one after, as their alternation
     # would match: as one regex it would pass the size budget.
-    '(?:(?:{flat}|{fbuilding})(?:{sep}|{nl})){1,3}{numbered}(?:(?:{sep}|{nl}){flat}){0,2}{beyond}',
-    '(?:(?:{flat}|{fbuilding})(?:{sep}|{nl})){1,3}{numbered}(?:(?:{sep}|{nl}){flat}){0,2}(?:{after})?',
-    '{numbered}(?:(?:{sep}|{nl}){flat}){0,2}{beyond}',
+    '(?:(?:{flat}|{fbuilding})(?:{sep}|{nl})){1,3}{numbered}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
+    '(?:(?:{flat}|{fbuilding})(?:{sep}|{nl})){1,3}{numbered}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}(?:{after})?',
+    '{numbered}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
     # A street whose type comes first, or a German one (#551): after a
     # floor, unit, lot, house or building named type first or "No.", or
     # with its town after it.
-    '(?:(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl})){1,3}(?:{fstreet}|{ftype}{fword})(?:(?:{sep}|{nl}){flat}){0,2}{beyond}',
-    '(?:(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl})){1,3}(?:{fstreet}|{ftype}{fword})(?:(?:{sep}|{nl}){flat}){0,2}(?:{after})?',
-    '{fstreet}(?:(?:{sep}|{nl}){flat}){0,2}{beyond}',
-    '{fstreet}(?:(?:{sep}|{nl}){flat}){0,2}{after}',
+    '(?:(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl})){1,3}(?:{fstreet}|{ftype}{fword})(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
+    '(?:(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl})){1,3}(?:{fstreet}|{ftype}{fword})(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}(?:{after})?',
+    '{fstreet}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
+    '{fstreet}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{after}',
     # A named house or farm with its postcode and town, no street (#551).
     '{fbuilding}(?:(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|{sep}{village}[\p{Zs}\t]+\d{4}\b|(?:{sep}{village}){1,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep})',
     # A named private house is an address alone (guide rule 3, #551):
@@ -1953,7 +1954,7 @@ pattern = [
     '{commercial},[\p{Zs}\t]*{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}{after}',
     # A Hong Kong unit and floor in a named commercial building before its
     # street (#551).
-    '(?:{flat}(?:{sep}|{nl})){1,3}{place}(?:{sep}|{nl})(?:{street}|{named})(?:(?:{sep}|{nl}){flat}){0,2}(?:{after})?',
+    '(?:{flat}(?:{sep}|{nl})){1,3}{place}(?:{sep}|{nl})(?:{street}|{named})(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}(?:{after})?',
     '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:{state}|[A-Z]\.[A-Z]\.|{state_name})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){zip}\b',
     # A Canadian city, province and postal code with no street (#551).
     '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\({province}\)|{province})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){postcode_ca}',
