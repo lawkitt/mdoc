@@ -110,8 +110,11 @@ CI, not on the PRs ([interview](../design/ci-redesign-grill-2026-11-02.md)):
   | `recognition` | fixtures on their snapshots | 30 s | 2 min |
   | `scripts` | the script suites, also under macOS `/bin/bash` 3.2 | — | job limit |
 
-- **Job limits:** fast tier 15 minutes, macOS desktop 30, iOS 40, Windows
-  30, Android 40, each detection-gate shard 10.
+- **Job limits:** fast tier 15 minutes, macOS desktop 30, iOS 55, Windows
+  30, Android 40, each detection-gate shard 10. iOS was 40 until
+  2026-11-11: with the editor's tests the job took 29 to 38 minutes when
+  it passed and was twice cancelled at 40. The time itself is the thing
+  to bring down; the limit only stops it failing sound changes.
 - **Test builds never call OS security or identity services**
   (code-signing queries, Gatekeeper, Keychain, the real profile): a seam
   tests replace, and a guard test that fails when a test binary reaches
