@@ -100,19 +100,39 @@ trim = [
 ]
 list_letter = true
 
-# A judge's or an officer's title before a full name comes off it too:
-# the model's "Judge K Ashdale" is "K Ashdale", "Justice Mary Ashdale" is
-# "Mary Ashdale" (guide rule 1, #387). Only before an initial and a
-# surname or a given name and a surname (the `rest` it leaves): these
-# words are also surnames and given names (`role_surnames` above), so
-# "Judge" alone, "Mary Judge", "Mr Judge" and "Judge Reinhold" stay as
-# they are. "Hon" only with its period: "Hon Wai Keung" is a surname
-# first. Not `trim` words: those also mark a titled surname.
+# A judge's, an officer's or a party's title or role before a name comes
+# off it too, with a determiner or "late" or "former" before it: the
+# model's "Judge K Ashdale" is "K Ashdale", "Justice Mary Ashdale" is
+# "Mary Ashdale" (guide rule 1, #387), and "Defendant HOLLOWAY", "Deputy
+# Calloway", "Employment Judge R Pemberton", "HIS HONOUR JUDGE TALBOT",
+# "HHJ Talbot", "Colonel Wendell P. Ashgrove" and "the late Mr Hargrove"
+# are "HOLLOWAY", "Calloway", "R Pemberton", "TALBOT", "Talbot", "Wendell
+# P. Ashgrove" and "Hargrove" (#382). Several words may chain ("Deputy
+# District Judge", "Mr Justice"), in any letter case; the `rest` they
+# leave must be a name: capitalised words or capitals, initials between,
+# the last a word (a possessive "'s" allowed). These words are also
+# surnames and given names (`role_surnames` above), so "Judge" alone,
+# "Mary Judge" and "Mr Judge" stay as they are, and "Judge Judge" is
+# "Judge"; a lone surname after a title is the name ("Judge Reinhold" is
+# "Reinhold"). Given names that are also titles stay out of the list
+# ("Earl", "Dean", "Duke", "Baron", "Prince", "Gen"), and "Sen" (a
+# surname) counts only with its period. "Hon" only with its period: "Hon
+# Wai Keung" is a surname first; "HHJ", "DJ" and "DDJ" only in capitals.
+# Not `trim` words: those also mark a titled surname.
 [[span]]
 category = "PERSON"
 trim_start = [
-    '(?:(?:Judge|Justice|Magistrate|Master|Recorder|Registrar|Dear|Officer|Detective|Constable|Sergeant|Inspector|Sheriff|Senator|Councillor|Commissioner)\.?|Hon\.)[ \t]+(?P<rest>(?:[A-HJ-Z]\.?|[A-Z][a-z]+)[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*)\z',
+    '(?:(?i:the)[ \t]+)?(?:(?:(?i:late|former|then|acting|deputy|assistant|associate|chief|senior|vice|lord|lady|mr|mrs|ms|miss|mx|dr|sir|dame|dear|honourable|honorable|(?:his|her)[ \t]+hono(?:u)?r|employment|district|circuit|county|high|regional|presiding|retired|immigration|defendants?|plaintiffs?|claimant|respondent|petitioner|appellant|appellee|complainant|intervenor|movant|witness|decedent|officer|ofc|dep|sheriff|undersheriff|sergeant|sgt|lieutenant|lt|captain|capt|colonel|col|major|maj|corporal|cpl|private|pvt|admiral|commander|cmdr|detective|det|trooper|tpr|constable|inspector|insp|superintendent|supt|agent|marshal|warden|investigator|attorney|senator|sen\.|representative|rep|congressman|congresswoman|assemblyman|assemblywoman|governor|gov|mayor|president|councillor|councilor|councilman|councilwoman|commissioner|secretary|ambassador|minister|chancellor|speaker|alderman|judge|justice|magistrate|master|recorder|registrar|referee|coroner|bailiff|trustee|examiner|viscount|viscountess|marquess|baroness)\.?|HHJ|DJ|DDJ|Hon\.|HON\.)[ \t]+)+(?P<rest>(?:(?:(?:\p{Lu}[\x27’])?\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+)(?:-\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+))*|\p{Lu}\.?)[ \t]+)*(?:\p{Lu}[\x27’])?\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+)(?:-\p{Lu}(?:\p{L}*\p{Ll}|\p{Lu}+))*(?:[\x27’]s)?)\z',
 ]
+
+# The head noun of a team's or a body's name is no one alone: the model's
+# "Justice League" loses its title by the trim above, and the "League"
+# left goes (guide rules 1 and 8, #382). A title or a person span with the
+# word beside a name keeps it ("Mr League", "Ivo League").
+[[never]]
+match = "plural"
+words = ["league"]
+unless_named = true
 
 # Two initials before a surname belong to the name: the model's "Quill" in
 # "J. R. Quill" grows to the whole of it (guide rule 1, #391). Not after

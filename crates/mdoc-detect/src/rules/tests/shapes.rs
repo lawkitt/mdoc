@@ -1836,9 +1836,10 @@ fn cross_provider_review_verified_safe_names_stay() {
         ("Начальник", "Начальник"),
         ("Кузнецов", "Кузнецов"),
         ("Должников", "Должников"),
-        // The title comes off a full name (guide rule 1, #387).
+        // The title comes off a full name (guide rule 1, #387), and off a
+        // lone surname too (#382).
         ("Judge Edda Brannock", "Edda Brannock"),
-        ("Sheriff Brannock", "Sheriff Brannock"),
+        ("Sheriff Brannock", "Brannock"),
         ("John Smith, Chief", "John Smith, Chief"),
         ("ИП ФИО3 К-Л.М.", "К-Л.М."),
     ] {
