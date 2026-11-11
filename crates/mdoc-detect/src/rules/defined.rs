@@ -472,10 +472,13 @@ impl Pack {
     /// words, one of them a term the document `defined` (#390):
     /// "Distributor", "the Sponsor’s", "RESELLER AGREEMENT", «Положение».
     /// A word that is not generic, a legal form included, makes it a name.
-    /// So does a company word that ends it after a word of its own ("The
-    /// Venue Company", "Supplier Group"), unless the document defines that
-    /// very term (`phrases`); and in a `person`'s span a stem's surname
-    /// ending («Подрядчиков», #450).
+    /// So does a spelled-out legal form that ends it right after a word
+    /// other than a joiner ("The Venue Company", "Purchaser Corporation"),
+    /// unless the document defines that very term (`phrases`); "Group" is
+    /// no legal form, so a defined party's group goes ("the Purchaser
+    /// Group"), and so do joined parties ("Seller and the Company"). In a
+    /// `person`'s span a stem's surname ending makes a name too
+    /// («Подрядчиков», #450).
     pub(super) fn defined_generic(
         &self,
         text: &str,
@@ -488,9 +491,10 @@ impl Pack {
         let named = words
             .iter()
             .position(|word| !JOINERS.contains(&word.as_str()));
-        if let (Some(first), Some(last)) = (named, words.last())
+        if let (Some(first), [.., before, last]) = (named, words.as_slice())
             && words.len() - first > 1
-            && (SPELLED_FORMS.contains(&last.as_str()) || last == "group")
+            && !JOINERS.contains(&before.as_str())
+            && SPELLED_FORMS.contains(&last.as_str())
             && !phrases.contains(&words[first..].to_vec())
         {
             return false;

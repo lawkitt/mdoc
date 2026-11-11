@@ -727,7 +727,9 @@ impl Pack {
                 if entry.form != Form::Stem
                     && !(entry.not_endings.is_empty() && entry.person_not_endings.is_empty())
                 {
-                    return Err(at("only a stem takes not_endings".into()));
+                    return Err(at(
+                        "only a stem takes not_endings or person_not_endings".into()
+                    ));
                 }
                 if entry.words.is_empty() {
                     return Err(at("no words".into()));

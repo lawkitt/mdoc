@@ -791,13 +791,18 @@ fn defined_party_noun_guards_keep_names() {
             "{source}"
         );
     }
-    // A company word after a word of its own ends a company's name, though
-    // the document defines both words; a term it defines whole goes.
+    // A spelled-out legal form right after a word of its own ends a
+    // company's name, though the document defines both words ("The Venue
+    // Company", "Purchaser Corporation"); a term it defines whole goes, and
+    // so do a defined party's group (no legal form) and joined parties.
     let source = concat!(
         "Brackwater Hall (the “Venue”) and Acme Ltd (the “Company”) hire The ",
-        "Venue Company. Pellow LLC (the “Supplier”) and Orrin LLC (the ",
-        "“Principal”) join the Supplier Group and the Principal Group. Tarn ",
-        "LLC (the “Sponsor Group”) pays; the Sponsor Group and the Company agree.",
+        "Venue Company. Pellow LLC (the “Supplier”), Orrin LLC (the ",
+        "“Principal”) and Kell Ltd (the “Purchaser”) join the Supplier Group, ",
+        "the Principal Group and the Purchaser Group; Purchaser Corporation ",
+        "objects. Tarn LLC (the “Sponsor”) and Wyle LLC (the “Seller”) and the ",
+        "Sponsor’s Group pay. Vane LLC (the “Agency Group”) pays; the Agency ",
+        "Group, Seller and the Company agree.",
     );
     assert_eq!(
         shown_at(
@@ -807,11 +812,17 @@ fn defined_party_noun_guards_keep_names() {
                 ("The Venue Company", 0, "organization"),
                 ("Pellow LLC", 0, "organization"),
                 ("Orrin LLC", 0, "organization"),
+                ("Kell Ltd", 0, "organization"),
                 ("Supplier Group", 0, "organization"),
                 ("Principal Group", 0, "organization"),
+                ("the Purchaser Group", 0, "organization"),
+                ("Purchaser Corporation", 0, "organization"),
                 ("Tarn LLC", 0, "organization"),
-                ("Sponsor Group", 1, "organization"),
-                ("Company", 2, "organization"),
+                ("Wyle LLC", 0, "organization"),
+                ("Sponsor’s Group", 0, "organization"),
+                ("Vane LLC", 0, "organization"),
+                ("Agency Group", 1, "organization"),
+                ("Seller and the Company", 0, "organization"),
             ]
         ),
         pairs(&[
@@ -819,9 +830,11 @@ fn defined_party_noun_guards_keep_names() {
             ("The Venue Company", "ORG"),
             ("Pellow LLC", "ORG"),
             ("Orrin LLC", "ORG"),
-            ("Supplier Group", "ORG"),
-            ("Principal Group", "ORG"),
+            ("Kell Ltd", "ORG"),
+            ("Purchaser Corporation", "ORG"),
             ("Tarn LLC", "ORG"),
+            ("Wyle LLC", "ORG"),
+            ("Vane LLC", "ORG"),
         ])
     );
     // A coined or real word in the term defines nothing: the person and

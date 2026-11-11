@@ -477,6 +477,24 @@ fn mistakes_in_a_rule_file_are_named() {
     }
 }
 
+/// #390: a `defined` entry's surname endings, for a person's span, need a
+/// stem, and the error names the field.
+#[test]
+fn person_not_endings_need_a_stem() {
+    for source in [
+        "[[defined]]\nmatch = \"plural\"\nperson_not_endings = [\"ов\"]\nwords = [\"agent\"]\n",
+        "[[defined]]\nmatch = \"whole\"\nperson_not_endings = [\"ов\"]\nwords = [\"agent\"]\n",
+    ] {
+        let Err(error) = Pack::load(&[("test.toml", source)]) else {
+            panic!("accepted {source:?}");
+        };
+        assert!(error.contains("person_not_endings"), "{error}");
+        assert!(error.starts_with("test.toml: defined #1"), "{error}");
+    }
+    let source = "[[defined]]\nmatch = \"stem\"\nending = 3\nperson_not_endings = [\"ов\"]\nwords = [\"агент\"]\n";
+    assert!(Pack::load(&[("test.toml", source)]).is_ok());
+}
+
 /// ADR 0094: a public domain's subdomain is never listed beside it, in
 /// one file or across files.
 #[test]
