@@ -1,9 +1,10 @@
 ---
-status: pass
+status: known-flaw
 flaw: ru-address split-full-name
 issue: 362
 kind: letter
 source: probe-r3
+expect: false hit: ORG "ФИО"
 ---
 <!-- SPDX-License-Identifier: CC0-1.0; synthetic, invented values only. -->
 # Письмо о передаче документов
