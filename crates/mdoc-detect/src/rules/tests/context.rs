@@ -1579,3 +1579,83 @@ fn state_register_labels_take_nothing_else() {
     ];
     assert_eq!(shown(source, &raw), pairs(&[]));
 }
+
+/// A court's proceeding number, the first-instance number an appeal cites
+/// and an appeal header's bare «№» after the judge are CASE, the label
+/// outside, a Cyrillic or look-alike Latin letter in the first part
+/// (guide rule 5, #364).
+#[test]
+fn russian_proceeding_instance_and_judge_labels_take_case_numbers() {
+    for (source, number) in [
+        ("производство № 2-5817/2031", "2-5817/2031"),
+        ("Производство № 13а-904/2031 прекращено.", "13а-904/2031"),
+        ("по производству №3а-1146/2031", "3а-1146/2031"),
+        ("1 инстанция № 2а-3381/2030", "2а-3381/2030"),
+        (
+            "Номер дела в суде первой инстанции 2-7720/2030",
+            "2-7720/2030",
+        ),
+        (
+            "номер дела в суде 1 инстанции: 2a-7720/2030",
+            "2a-7720/2030",
+        ),
+        ("Судья Веретенникова З.Ю. № 33-4475/2031", "33-4475/2031"),
+        (
+            "Судья: З. Ю. Веретенникова № 33а-4475/2031",
+            "33а-4475/2031",
+        ),
+        (
+            "**Судья Ольхина-Брод А.А.**   № 33А-128/2031",
+            "33А-128/2031",
+        ),
+    ] {
+        assert_eq!(cases(source), [number], "{source}");
+    }
+    for source in [
+        // A bailiff's enforcement proceeding is no court case.
+        "исполнительное производство № 4821/31/99001-ИП",
+        "в рамках сводного исполнительного производства № 4821/31/99001-СД",
+        // A short number or a date is none.
+        "производство № 12 цеха",
+        "производство № 01.03.2031",
+        // A judge mid-sentence, or without initials, opens no number.
+        "Как указала судья Веретенникова З.Ю. № 33-4475 не присвоен",
+        "Судья Веретенникова № 33-4475/2031",
+        "инстанции 2-7720/2030",
+    ] {
+        assert!(cases(source).is_empty(), "{source}");
+    }
+}
+
+/// A УИД is CASE by its fixed shape alone, with no label, at a line's start
+/// or before «Дело №» (guide rule 5, #484 item 7, #364); a code of another
+/// shape is none.
+#[test]
+fn a_uid_is_a_case_number_by_its_shape() {
+    for (source, number) in [
+        ("99RS0731-01-2031-008812-47", "99RS0731-01-2031-008812-47"),
+        (
+            "Уникальный идентификатор:\n99RS0731-01-2031-008812-47",
+            "99RS0731-01-2031-008812-47",
+        ),
+        // Cyrillic «Р» and «Ѕ» for the Latin letters.
+        ("99РЅ0731-02-2030-000417-09", "99РЅ0731-02-2030-000417-09"),
+    ] {
+        assert_eq!(cases(source), [number], "{source}");
+    }
+    assert_eq!(
+        cases("99RS0731-01-2031-008812-47 Дело № 2-6120/2031"),
+        ["99RS0731-01-2031-008812-47", "2-6120/2031"]
+    );
+    for source in [
+        "99RS0731-01-2031-008812-470",
+        "199RS0731-01-2031-008812-47",
+        "99RS731-01-2031-008812-47",
+        "99RU0731-01-2031-008812-47",
+        "99RS0731-01-2031-08812-47",
+        "99RS0731-01-3031-008812-47",
+        "GUID 3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    ] {
+        assert!(cases(source).is_empty(), "{source}");
+    }
+}
