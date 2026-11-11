@@ -80,6 +80,7 @@ lists were faint and uneven.
   empty line; text and the caret's line under the floating toolbar; an
   empty table column too narrow to tap; a long title cut at its head.
 - The Android editor (ROADMAP Android item 10) starts from these rules.
-- Ships in five slices (ROADMAP iOS item 24), then one TestFlight build.
+- Shipped in five slices (#777, #778, #779, #783, #784), then one TestFlight
+  build, `ios-v0.2.0-rc.5` (873), on 2026-11-11.
 
 References: [list look variants](../evidence/mobile-editor/2026-11-10/list-look-variants.png).
