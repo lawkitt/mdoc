@@ -86,6 +86,55 @@ extension CandidateTextView {
         return nil
     }
 
+    /// The selection a handle dragged over a grid makes. UIKit moves a
+    /// selection's end with TextKit's own hit test, which finds the
+    /// table's hidden source, not the cell drawn over it; it asks
+    /// `closestPosition(to:)` for the same point first, so the cell's
+    /// character there is known (`lastCellHit`). When the selection in a
+    /// cell changes at one end only, just after such a hit in that cell,
+    /// the moved end is the hit.
+    func handleDragged(from previous: NSRange?) -> NSRange? {
+        let new = selectedRange
+        guard let previous, previous.length > 0, new != previous, let hit = lastCellHit,
+              CACurrentMediaTime() - hit.time < 0.5, let cell = cell(at: previous.location),
+              self.cell(at: hit.offset)?.view === cell.view else { return nil }
+        let ends = [new.location, NSMaxRange(new)]
+        let kept = [previous.location, NSMaxRange(previous)].filter(ends.contains)
+        guard kept.count == 1, let fixed = kept.first else { return nil }
+        return NSRange(location: min(fixed, hit.offset), length: abs(fixed - hit.offset))
+    }
+
+    /// Selects the word at the text's UTF-16 `offset` (in a cell); a place
+    /// with no word keeps the caret.
+    func selectWord(at offset: Int) {
+        guard let position = position(from: beginningOfDocument, offset: offset) else { return }
+        let word = tokenizer.rangeEnclosingPosition(position, with: .word, inDirection: .storage(.forward))
+            ?? tokenizer.rangeEnclosingPosition(position, with: .word, inDirection: .storage(.backward))
+        if let word, let cell = cell(at: offset) {
+            // Only the part in the tapped cell: a word never spans cells,
+            // but its range is clamped to be sure.
+            let start = self.offset(from: beginningOfDocument, to: word.start)
+            let end = self.offset(from: beginningOfDocument, to: word.end)
+            let lower = cell.view.location
+            let upper = lower + cell.view.textStorage.length
+            let range = NSRange(location: max(start, lower), length: max(0, min(end, upper) - max(start, lower)))
+            if range.length > 0 { selectedRange = range }
+        }
+    }
+
+    /// The edit menu over the selection in a cell, or at its caret (Paste,
+    /// Select All).
+    func showCellMenu() {
+        guard caretCell != nil, let shown = selectedTextRange else { return }
+        // Every line of the selection, its handles too.
+        let rect = shown.isEmpty
+            ? caretRect(for: shown.start)
+            : selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
+        guard !rect.isNull, !rect.isInfinite else { return }
+        cellMenuTarget = rect.insetBy(dx: 0, dy: -Space.s)
+        cellMenu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: rect.midX, y: rect.minY)))
+    }
+
     /// Shows the caret's cell: the grid scrolls sideways to it, the text up
     /// or down. A new row or column gives the table a new grid, which has
     /// no frame and no scroll offset until a layout pass: it is laid out
@@ -97,11 +146,8 @@ extension CandidateTextView {
         guard let inCell = position(in: hit.view, at: hit.offset) else { return }
         let caret = hit.view.convert(hit.view.caretRect(for: inCell), to: hit.table)
         hit.table.reveal(caret)
-        let shown = hit.table.convert(caret, to: self)
-        let visible = bounds.inset(by: adjustedContentInset)
-        if !visible.contains(shown) {
-            scrollRectToVisible(shown.insetBy(dx: 0, dy: -Space.xs), animated: false)
-        }
+        // The caret's cell, wherever `rect` is (`scrollRectToVisible`).
+        scrollRectToVisible(hit.table.convert(caret, to: self), animated: false)
     }
 }
 
@@ -135,6 +181,7 @@ extension MarkdownTextView.Coordinator {
     func connectTables(_ view: CandidateTextView) {
         guard parent.edit != nil else {
             view.onTableTap = nil
+            view.onTableSelect = nil
             view.onTableScroll = nil
             view.onCellPaste = nil
             return
@@ -143,6 +190,20 @@ extension MarkdownTextView.Coordinator {
             guard let view, let offset = table.offset(at: point) else { return }
             if !view.isFirstResponder { view.becomeFirstResponder() }
             view.selectedRange = NSRange(location: offset, length: 0)
+        }
+        // A double tap or a long press on a cell selects the word there
+        // and offers the edit menu: the text view's own gestures do not
+        // reach a grid, which takes its touches to scroll sideways.
+        view.onTableSelect = { [weak view] table, point, ended in
+            guard let view, let offset = table.offset(at: point) else { return }
+            if !view.isFirstResponder { view.becomeFirstResponder() }
+            // A long press selects as it begins and shows the menu as it
+            // ends, on the selection it made (the finger may have moved).
+            if !ended || view.selectedRange.length == 0 {
+                view.selectedRange = NSRange(location: offset, length: 0)
+                view.selectWord(at: offset)
+            }
+            if ended { view.showCellMenu() }
         }
         view.onTableScroll = { [weak view] table in
             // The caret is drawn by the text view: it follows the grid.

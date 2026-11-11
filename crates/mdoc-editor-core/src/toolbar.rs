@@ -278,7 +278,7 @@ pub fn toggle_format(
     if !sel.is_empty() {
         let (range, text, selection) = format::toggle_wrap_pair(source, sel, open, close)?;
         return Some(EditResult {
-            edits: vec![Edit { range, text }],
+            edits: marker_edits(source, range, text, open, close),
             selection,
         });
     }
@@ -288,13 +288,57 @@ pub fn toggle_format(
         word_char(source[..caret].chars().next_back()) && word_char(source[caret..].chars().next());
     if inside_word && let Some(word) = crate::words::word_range_at(source, caret) {
         let text = format!("{open}{}{close}", &source[word.clone()]);
-        return Some(EditResult::one(word, text, caret + open.len()));
+        let caret = caret + open.len();
+        return Some(EditResult {
+            edits: marker_edits(source, word, text, open, close),
+            selection: caret..caret,
+        });
     }
     Some(EditResult::one(
         caret..caret,
         format!("{open}{close}"),
         caret + open.len(),
     ))
+}
+
+/// A wrap or unwrap of `range` as edits of its markers only, so the text
+/// between them is in no edit: a name proposed there stays proposed (an
+/// edit that runs into a candidate drops it). One whole edit when the
+/// change is not a pair of markers put on or taken off.
+fn marker_edits(
+    source: &str,
+    range: Range<usize>,
+    text: String,
+    open: &str,
+    close: &str,
+) -> Vec<Edit> {
+    let old = &source[range.clone()];
+    let at = |position: usize, text: &str| Edit {
+        range: position..position,
+        text: text.to_string(),
+    };
+    let wrapped = |outer: &str, inner: &str| {
+        outer.len() == open.len() + inner.len() + close.len()
+            && outer.starts_with(open)
+            && outer.ends_with(close)
+            && outer[open.len()..].starts_with(inner)
+    };
+    if !old.is_empty() && wrapped(&text, old) {
+        vec![at(range.start, open), at(range.end, close)]
+    } else if !text.is_empty() && wrapped(old, &text) {
+        vec![
+            Edit {
+                range: range.start..range.start + open.len(),
+                text: String::new(),
+            },
+            Edit {
+                range: range.end - close.len()..range.end,
+                text: String::new(),
+            },
+        ]
+    } else {
+        vec![Edit { range, text }]
+    }
 }
 
 /// The list button: every block the selection touches becomes a bulleted
@@ -436,6 +480,49 @@ mod tests {
 
     fn at(source: &str, needle: &str) -> usize {
         source.find(needle).unwrap()
+    }
+
+    /// A wrap or unwrap edits its markers only: a name proposed in the
+    /// text between them is in no edit, so it stays proposed.
+    #[test]
+    fn a_format_edits_only_its_markers() {
+        let s = "- [ ] call PHONE_2 12.10.2026 soon";
+        let name = at(s, "PHONE_2")..at(s, "PHONE_2") + 7;
+        let clear = |r: &EditResult| {
+            r.edits
+                .iter()
+                .all(|e| e.range.end <= name.start || e.range.start >= name.end)
+        };
+        let sel = name.start..at(s, " soon");
+        let on = toggle_format(s, sel.clone(), Bold).unwrap();
+        assert_eq!(on.edits.len(), 2);
+        assert!(clear(&on));
+        let bold = on.apply(s);
+        assert_eq!(bold, "- [ ] call **PHONE_2 12.10.2026** soon");
+        assert_eq!(&bold[on.selection.clone()], "PHONE_2 12.10.2026");
+        // Off again: the markers outside the selection, then inside it.
+        let name = name.start + 2..name.end + 2;
+        let clear = |r: &EditResult| {
+            r.edits
+                .iter()
+                .all(|e| e.range.end <= name.start || e.range.start >= name.end)
+        };
+        let off = toggle_format(&bold, on.selection.clone(), Bold).unwrap();
+        assert!(clear(&off));
+        assert_eq!(off.apply(&bold), s);
+        let off = format::toggle_wrap_pair(&bold, sel.start..sel.end + 4, "**", "**").unwrap();
+        let edits = marker_edits(&bold, off.0, off.1, "**", "**");
+        assert_eq!(edits.len(), 2);
+        let off = EditResult {
+            edits,
+            selection: off.2,
+        };
+        assert!(clear(&off));
+        assert_eq!(off.apply(&bold), s);
+        // A caret in a word wraps the word by its markers too.
+        let word = toggle_format(s, caret(name.start), Italic).unwrap();
+        assert_eq!(word.edits.len(), 2);
+        assert_eq!(word.apply(s), "- [ ] call *PHONE_2* 12.10.2026 soon");
     }
 
     #[test]
