@@ -1020,6 +1020,19 @@ fn a_legal_form_after_a_comma_or_in_brackets_joins_the_company() {
         ),
         ["АО «Кедр»", "Банк Ольховый (ПАО)"]
     );
+    // Pieces of one name the model split, only spaces between, grow to
+    // the whole name with its form, in English and Russian.
+    assert_eq!(
+        proposed_orgs("Pellam Quenby, Inc filed.", &["Pellam", "Quenby"]),
+        ["Pellam Quenby, Inc"]
+    );
+    assert_eq!(
+        proposed_orgs(
+            "Ответчик Банк Ольховый Кедр (ПАО) возражал.",
+            &["Банк Ольховый", "Кедр"]
+        ),
+        ["Банк Ольховый Кедр (ПАО)"]
+    );
     // "and" joins two companies, not one name.
     assert_eq!(
         proposed_orgs(

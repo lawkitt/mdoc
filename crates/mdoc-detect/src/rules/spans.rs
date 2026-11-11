@@ -168,8 +168,17 @@ impl Pack {
         let own = cut(&[], range.clone());
         let line = source[..own.start].rfind('\n').map_or(0, |at| at + 1);
         // A `body` word right before the city, only spaces between, that
-        // goes on a name (`named_before`).
-        let before = source[line..own.start].trim_end_matches([' ', '\t']);
+        // goes on a name (`named_before`); or before a comma there that a
+        // model name runs over into the city ("Corvane Holdings LLC,
+        // Tarrow" of the model before ", VA 20998").
+        let mut before = source[line..own.start].trim_end_matches(horizontal);
+        if let Some(head) = before.strip_suffix(',')
+            && model
+                .iter()
+                .any(|name| name.start < line + head.len() && own.start < name.end)
+        {
+            before = head.trim_end_matches(horizontal);
+        }
         let body = before.len() < own.start - line
             && stop.is_some_and(|stop| {
                 stop.captures_iter(before).any(|found| {
@@ -429,16 +438,28 @@ fn guessed_cut(
         .min_by_key(|(start, _)| *start)
 }
 
+/// Whether `c` is a space within a line, as the pack's `[\p{Zs}\t]` reads
+/// it: a tab or a space separator, a no-break space included.
+pub(super) fn horizontal(c: char) -> bool {
+    c == '\t'
+        || c.is_whitespace()
+            && !matches!(
+                c,
+                '\n' | '\u{b}' | '\u{c}' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}'
+            )
+}
+
 /// Whether a capitalized word stands before `at` of `source` on its line,
 /// only spaces between: a stop's `body` word there goes on a name ("Review
 /// Board", "Brackwater Police", #502). Opening the line or an element after
 /// a comma, or after a sentence's function word ("In Council Grove"), it
 /// may be a city's own first word ("Council Grove, KS 66899").
 fn named_before(source: &str, at: usize) -> bool {
+    // (A space a pattern's `[\p{Zs}\t]` takes, a no-break one too.)
     const FUNCTION_WORDS: [&str; 12] = [
         "in", "at", "to", "from", "the", "and", "for", "by", "on", "of", "near", "via",
     ];
-    let before = source[..at].trim_end_matches([' ', '\t']);
+    let before = source[..at].trim_end_matches(horizontal);
     let word = before
         .rsplit(char::is_whitespace)
         .next()

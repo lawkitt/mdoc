@@ -3,6 +3,7 @@
 //! every other rule on the model's spans.
 use super::context::field_code;
 use super::people::company_line_numbers;
+use super::spans::horizontal;
 use super::{Pack, Span, SpanFix};
 use mdoc_pii::{Category, Detection};
 use regex::Regex;
@@ -645,13 +646,27 @@ impl Pack {
                             && !(m.start <= other.start && other.end <= m.end)
                     })
                         // An organization's tail (its legal form) never
-                        // takes in another company after it: «ООО «Кедр» и
-                        // Банк «Ольховый» (ПАО)» are two (#502).
+                        // joins it to another company in the match: «ООО
+                        // «Кедр» и Банк «Ольховый» (ПАО)» are two (#502).
+                        // Pieces of one name, only spaces between and no
+                        // legal form in either, are one: the model's
+                        // "Pellam" and "Quenby" of "Pellam Quenby, Inc".
                         || fix.category == Category::Organization
                             && *tailed
                             && order.iter().any(|&j| {
                                 let other = &detections[j].range;
-                                j != i && range.end <= other.start && other.end <= m.end
+                                let gap = if range.end <= other.start {
+                                    range.end..other.start
+                                } else {
+                                    other.end.min(range.start)..range.start
+                                };
+                                j != i
+                                    && m.start <= other.start
+                                    && other.end <= m.end
+                                    && (other.end <= range.start || range.end <= other.start)
+                                    && !(source[gap].chars().all(horizontal)
+                                        && !self.legal_form(&source[range.clone()])
+                                        && !self.legal_form(&source[other.clone()]))
                             })
                         || *led
                         && detections.iter().any(|other| {
@@ -697,17 +712,16 @@ impl Pack {
                 // it, or the rest of a name whose start is a span: the
                 // model's "Penrow" and "J. L." in "Penrow, J. L." are one
                 // name, its "J.R." alone in "Thereafter, J.R., a minor"
-                // never takes the word before the comma (#414). An
-                // organization's tail grows only the span it starts with:
-                // a company before it is another one (#502).
+                // never takes the word before the comma (#414). A company
+                // before an organization's span is another one unless it
+                // is a piece of the same name (`crosses`, #502).
                 let starts = |m: &std::ops::Range<usize>, tailed: bool| {
                     !tailed
                         || range.start == m.start
-                        || fix.category == Category::Person
-                            && order.iter().any(|&j| {
-                                let other = &detections[j].range;
-                                j != i && other.start == m.start && other.end <= m.end
-                            })
+                        || order.iter().any(|&j| {
+                            let other = &detections[j].range;
+                            j != i && other.start == m.start && other.end <= m.end
+                        })
                 };
                 let grown = matches
                     .iter()

@@ -2085,6 +2085,11 @@ fn a_city_after_a_body_or_company_name_starts_at_the_city() {
             "Ostley, NY 11998",
         ),
         ("Corvane Holdings LLC Tarrow, VA 20998", "Tarrow, VA 20998"),
+        // A no-break space is a space.
+        (
+            "Harbor Permits Review\u{a0}Board Wexmoor, DC 20598",
+            "Wexmoor, DC 20598",
+        ),
         // A real city's name with such a word, or with "Union" or "Park":
         // the word opens its line, an element after a comma, or follows
         // a function word.
@@ -2169,6 +2174,15 @@ fn a_city_after_a_body_or_company_name_starts_at_the_city() {
         (
             "Corvane Holdings LLC Tarrow, VA 20998",
             "Corvane Holdings LLC Tarrow",
+            &[
+                ("Corvane Holdings LLC", "ORG"),
+                ("Tarrow, VA 20998", "ADDRESS"),
+            ][..],
+        ),
+        // Over the comma after the company's name too.
+        (
+            "Corvane Holdings LLC, Tarrow, VA 20998",
+            "Corvane Holdings LLC, Tarrow",
             &[
                 ("Corvane Holdings LLC", "ORG"),
                 ("Tarrow, VA 20998", "ADDRESS"),
