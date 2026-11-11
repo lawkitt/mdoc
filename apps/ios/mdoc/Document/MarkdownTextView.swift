@@ -711,6 +711,22 @@ final class CandidateTextView: RenderedTextView {
     /// there, as the cell's own bytes.
     var onCellPaste: ((String) -> Bool)?
 
+    /// The edit menu for a selection made in a cell by a double tap or a
+    /// long press on its grid: its actions are the text view's.
+    lazy var cellMenu: UIEditMenuInteraction = {
+        let menu = UIEditMenuInteraction(delegate: self)
+        addInteraction(menu)
+        return menu
+    }()
+
+    /// The cell character UIKit last asked for by a point on a grid, and
+    /// when (`handleDragged`).
+    var lastCellHit: (offset: Int, time: CFTimeInterval)?
+
+    /// What `cellMenu` is shown for: the selection's lines, which the
+    /// menu keeps clear of.
+    var cellMenuTarget = CGRect.null
+
     /// Edit mode's shortcuts, listed when ⌘ is held (ADR 0109). ⌘E is the
     /// Edit and Done button's, and ⌘Z and ⇧⌘Z the system's Undo and Redo,
     /// which reach the core through `CoreUndoManager`.
@@ -802,6 +818,22 @@ final class CandidateTextView: RenderedTextView {
 
     // MARK: The caret in a table cell (ADR 0109)
 
+    /// With the caret in a cell, UIKit scrolls to its selection where the
+    /// table's hidden source lies (the end of the grid), so a tap on a
+    /// cell of a long table threw it out of view as the keyboard came up.
+    /// The caret is drawn in the cell: that is what is kept in view, and
+    /// a cell in view already moves nothing.
+    override func scrollRectToVisible(_ rect: CGRect, animated: Bool) {
+        guard let end = selectedTextRange?.end, let cell = cellCaretRect(for: end) else {
+            super.scrollRectToVisible(rect, animated: animated)
+            return
+        }
+        let line = CGRect(x: bounds.minX, y: cell.minY - Space.xs, width: 1, height: cell.height + 2 * Space.xs)
+        let visible = bounds.inset(by: adjustedContentInset)
+        if line.minY >= visible.minY, line.maxY <= visible.maxY { return }
+        super.scrollRectToVisible(line, animated: animated)
+    }
+
     override func caretRect(for position: UITextPosition) -> CGRect {
         if let cell = cellCaretRect(for: position) { return cell }
         return emptyLineCaret(super.caretRect(for: position), at: position)
@@ -833,7 +865,9 @@ final class CandidateTextView: RenderedTextView {
     }
 
     override func closestPosition(to point: CGPoint) -> UITextPosition? {
-        cellPosition(at: point) ?? super.closestPosition(to: point)
+        guard let cell = cellPosition(at: point) else { return super.closestPosition(to: point) }
+        lastCellHit = (offset(from: beginningOfDocument, to: cell), CACurrentMediaTime())
+        return cell
     }
 
     /// The caret is drawn where UIKit last asked for it: after its cell is
@@ -977,5 +1011,13 @@ final class CandidateTextView: RenderedTextView {
               let end = view.position(from: start, offset: item.range.length),
               let range = view.textRange(from: start, to: end) else { return nil }
         return UIAccessibilityCustomRotorItemResult(targetElement: view, targetRange: range)
+    }
+}
+
+extension CandidateTextView: @preconcurrency UIEditMenuInteractionDelegate {
+    func editMenuInteraction(
+        _ interaction: UIEditMenuInteraction, targetRectFor configuration: UIEditMenuConfiguration
+    ) -> CGRect {
+        cellMenuTarget
     }
 }

@@ -505,20 +505,19 @@ fn line_edits(old: &str, new: &str, start: usize) -> Vec<Edit> {
     // to remove, before a pair comes.
     let ahead = |a: Option<&str>, b: Option<&str>, i: usize, j: usize| -> Option<(usize, usize)> {
         let (a, b) = (a?, b?);
-        let added = now[j + 1..]
-            .iter()
-            .position(|next| pairs(a, next))
-            .map(|k| k + 1);
-        let removed = was[i + 1..]
-            .iter()
-            .position(|next| pairs(next, b))
-            .map(|k| k + 1);
-        match (added, removed) {
-            (Some(n), Some(m)) if m <= n => Some((0, m)),
-            (Some(n), _) => Some((n, 0)),
-            (None, Some(m)) => Some((0, m)),
-            (None, None) => None,
+        // Both runs are tried a line at a time, so the search ends at the
+        // shorter one: a run that never pairs is not walked to the end
+        // for every line (thousands of paragraphs made a list took
+        // seconds). Of two equal runs the removed one wins.
+        for k in 1..was.len().saturating_sub(i).max(now.len().saturating_sub(j)) {
+            if was.get(i + k).is_some_and(|next| pairs(next, b)) {
+                return Some((0, k));
+            }
+            if now.get(j + k).is_some_and(|next| pairs(a, next)) {
+                return Some((k, 0));
+            }
         }
+        None
     };
     let mut edits: Vec<Edit> = Vec::new();
     let mut push = |range: Range<usize>, text: &str| match edits.last_mut() {
