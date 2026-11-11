@@ -718,7 +718,7 @@ impl Pack {
             }
         }
         // After the trims, so a role before either part is gone first.
-        super::people::join_line_numbers(source, detections);
+        self.join_line_numbers(source, detections);
         self.person_documents(source, detections);
         // Before citations drop a precedent's parties: "Spiliada Maritime
         // Corp" there still makes "Spiliada" a company's short name.

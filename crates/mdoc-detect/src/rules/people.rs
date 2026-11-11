@@ -372,49 +372,85 @@ pub(super) fn line_numbers(source: &str) -> Vec<std::ops::Range<usize>> {
         .collect()
 }
 
-/// Two person spans with only a pleading line number between them, spaces
-/// and one line end at most around it, are one name the line's end cut:
-/// the model's "DESMOND" and "ARKWRIGHT" in "DESMOND 4 ARKWRIGHT" are
-/// "DESMOND 4 ARKWRIGHT", the number inside (the fixture guide's annotators
-/// keep it so, #382). Only in a pleading ([`line_numbers`]).
-pub(super) fn join_line_numbers(source: &str, detections: &mut Vec<Detection>) {
-    let mut people: Vec<usize> = (0..detections.len())
-        .filter(|&i| detections[i].category == Category::Person)
-        .collect();
-    if people.len() < 2 {
-        return;
-    }
-    people.sort_by_key(|&i| detections[i].range.start);
-    let mut numbers: Option<Vec<std::ops::Range<usize>>> = None;
-    let mut gone = vec![false; detections.len()];
-    let mut first = people[0];
-    for &next in &people[1..] {
-        let (end, start) = (detections[first].range.end, detections[next].range.start);
-        let between = source.get(end..start).unwrap_or_default();
-        let digits = between.trim();
-        let joins = end < start
-            && (1..=2).contains(&digits.len())
-            && digits.bytes().all(|b| b.is_ascii_digit())
-            && between.starts_with(char::is_whitespace)
-            && between.ends_with(char::is_whitespace)
-            && between.matches('\n').count() <= 1
-            && {
-                let at = end + (between.len() - between.trim_start().len());
-                numbers
-                    .get_or_insert_with(|| line_numbers(source))
-                    .iter()
-                    .any(|number| number.start == at)
-            };
-        if joins {
-            detections[first].range.end = detections[next].range.end;
-            gone[next] = true;
-        } else {
-            first = next;
+impl Pack {
+    /// Two person spans with only a pleading line number between them on
+    /// one line are one name the line's end cut: the model's "DESMOND" and
+    /// "ARKWRIGHT" in "Plaintiff DESMOND 4 ARKWRIGHT alleges" are "DESMOND
+    /// 4 ARKWRIGHT", the number inside (the fixture guide's annotators keep
+    /// it so, #382). Only in a pleading ([`line_numbers`]), and only where
+    /// the number splits a name: the part before it is one word, and
+    /// neither part is a role or title alone ("Defendant 4 Holloway" keeps
+    /// the role out, to be dropped). A roster's entries are whole names,
+    /// each between two numbers ("1 Ivo 2 Edda 3 …"): a part right after
+    /// or right before another line number joins nothing, so a name
+    /// opening its line ("3 DESMOND 4 ARKWRIGHT") stays two spans. Across a line's end the
+    /// parts stay apart: the review takes no wrapped name with prose after
+    /// its last line.
+    pub(super) fn join_line_numbers(&self, source: &str, detections: &mut Vec<Detection>) {
+        let mut people: Vec<usize> = (0..detections.len())
+            .filter(|&i| detections[i].category == Category::Person)
+            .collect();
+        if people.len() < 2 {
+            return;
         }
+        people.sort_by_key(|&i| detections[i].range.start);
+        let blank = |text: &str| !text.is_empty() && text.chars().all(|c| c == ' ' || c == '\t');
+        // A role, title or determiner alone, by any `never` entry.
+        let role = |text: &str| {
+            let word = bare(text.trim()).to_lowercase();
+            !word.contains(char::is_whitespace)
+                && self
+                    .never
+                    .iter()
+                    .any(|entry| entry.anywhere_in.is_empty() && entry.has(&word))
+        };
+        let mut numbers: Option<Vec<std::ops::Range<usize>>> = None;
+        let mut number_at = |at: usize| {
+            numbers
+                .get_or_insert_with(|| line_numbers(source))
+                .iter()
+                .any(|number| number.start == at)
+        };
+        let mut gone = vec![false; detections.len()];
+        let mut first = people[0];
+        for &next in &people[1..] {
+            let (left, right) = (
+                detections[first].range.clone(),
+                detections[next].range.clone(),
+            );
+            let between = source.get(left.end..right.start).unwrap_or_default();
+            let digits = between.trim_matches([' ', '\t']);
+            let lead = between.len() - between.trim_start_matches([' ', '\t']).len();
+            let before = source[..left.start].trim_end_matches([' ', '\t']);
+            // A line number right before the left part opens a roster entry.
+            let trailing =
+                before.len() - before.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+            let number_before =
+                before.len() < left.start && trailing > 0 && number_at(before.len() - trailing);
+            let after = &source[right.end..];
+            let follow = after.len() - after.trim_start_matches([' ', '\t']).len();
+            let joins = left.end < right.start
+                && (1..=2).contains(&digits.len())
+                && digits.bytes().all(|b| b.is_ascii_digit())
+                && blank(&between[..lead])
+                && blank(&between[lead + digits.len()..])
+                && !source[left.clone()].trim().contains(char::is_whitespace)
+                && !role(&source[left.clone()])
+                && !role(&source[right.clone()])
+                && number_at(left.end + lead)
+                && !number_before
+                && !(follow > 0 && number_at(right.end + follow));
+            if joins {
+                detections[first].range.end = right.end;
+                gone[next] = true;
+            } else {
+                first = next;
+            }
+        }
+        let mut index = 0;
+        detections.retain(|_| {
+            index += 1;
+            !gone[index - 1]
+        });
     }
-    let mut index = 0;
-    detections.retain(|_| {
-        index += 1;
-        !gone[index - 1]
-    });
 }

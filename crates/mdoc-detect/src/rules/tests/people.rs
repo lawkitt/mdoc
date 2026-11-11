@@ -1611,3 +1611,85 @@ fn a_pleading_line_number_inside_a_name_joins_it() {
         12
     );
 }
+
+/// What the review shows for the model's person spans `model` (each text
+/// with its place from 0) in `source`, texts only.
+fn people_shown(source: &str, model: &[(&str, usize)]) -> Vec<String> {
+    let raw: Vec<(&str, usize, &str)> =
+        model.iter().map(|&(text, n)| (text, n, "person")).collect();
+    shown_at(source, &raw)
+        .into_iter()
+        .map(|(text, _)| text)
+        .collect()
+}
+
+/// #382 review: a line end between the parts keeps both, as the review
+/// takes no wrapped name with prose after it; a roster's numbered entries
+/// are whole names, each its own span, on one line or on several.
+#[test]
+fn a_line_number_joins_no_wrapped_name_and_no_roster() {
+    let mut source = pleading(
+        12,
+        3,
+        "3 Plaintiff DESMOND\n4 ARKWRIGHT alleges as follows.",
+    );
+    source = source.replacen("4 The parties", "The parties", 1);
+    assert_eq!(
+        people_shown(&source, &[("DESMOND", 0), ("ARKWRIGHT", 0)]),
+        ["DESMOND", "ARKWRIGHT"]
+    );
+    let given = [
+        "Ivo", "Edda", "Rhea", "Oren", "Lida", "Bram", "Tova", "Quin", "Sela", "Arno", "Fenn",
+        "Juno",
+    ];
+    let surnames = [
+        "Ashgrove",
+        "Brannock",
+        "Calloway",
+        "Draycott",
+        "Elsworth",
+        "Fairlie",
+        "Gorran",
+        "Hollins",
+        "Isherwood",
+        "Jessop",
+        "Kettering",
+        "Larkfield",
+    ];
+    let full: Vec<String> = given
+        .iter()
+        .zip(surnames)
+        .map(|(given, surname)| format!("{given} {surname}"))
+        .collect();
+    for (names, separator) in [
+        (full.clone(), " "),
+        (full.clone(), "\n"),
+        (given.iter().map(|name| (*name).to_owned()).collect(), " "),
+    ] {
+        let roster: String = names
+            .iter()
+            .enumerate()
+            .map(|(n, name)| format!("{} {name}", n + 1))
+            .collect::<Vec<_>>()
+            .join(separator);
+        assert_eq!(crate::rules::people::line_numbers(&roster).len(), 12);
+        let model: Vec<(&str, usize)> = names.iter().map(|name| (name.as_str(), 0)).collect();
+        assert_eq!(people_shown(&roster, &model), names, "{roster}");
+    }
+}
+
+/// #382 review: a role alone before a pleading's line number joins no
+/// name, so it unlocks no bare mention of the role either.
+#[test]
+fn a_role_before_a_line_number_joins_no_name() {
+    let mut source = pleading(12, 3, "3 Defendant 4 Holloway struck him without warning.");
+    source = source.replacen("4 The parties", "The parties", 1);
+    source.push_str(" Defendant then fled.");
+    assert_eq!(
+        people_shown(
+            &source,
+            &[("Defendant", 0), ("Holloway", 0), ("Defendant", 1)]
+        ),
+        ["Holloway"]
+    );
+}
