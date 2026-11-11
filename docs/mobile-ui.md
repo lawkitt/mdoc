@@ -137,7 +137,9 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   choices at their natural width, centred. It stays in edit mode. On
   iPhone's Reply pane the bottom bar is Share, Copy and Paste for the
   reply, in place of Review and Replace N and the review bar; on iPad
-  those stay while names wait, the text being in view.
+  those stay while names wait, the text being in view. Asking for review
+  on iPhone (a name in Identities, Review this identity, a Find match)
+  selects Text first (`showTextForReview`).
 
 ## Sidebar
 

@@ -99,6 +99,60 @@ final class PanesRowTests: XCTestCase {
         XCTAssertNotNil(model.share)
     }
 
+    /// A name tapped in Identities while the Reply pane covers the text
+    /// opens its review on the Text pane: under the reply nothing would
+    /// show (ADR 0103's full view, ADR 0111).
+    func testANameTappedInIdentitiesFromReplyShowsTheText() throws {
+        let seeded = try Fixture.seeded()
+        let model = try seeded.model(seeded.letter)
+        model.restore(reply: "Thanks.")
+        XCTAssertTrue(model.replyCoversText)
+        model.showIdentities(true)
+        let identity = try XCTUnwrap(model.snapshot.identities.first)
+        model.showIdentities(false)
+        model.openIdentity(identity.id)
+        XCTAssertEqual(model.pane, .text)
+        XCTAssertTrue(model.isReviewing)
+        XCTAssertTrue(model.barExpanded, "the bar's full view")
+        XCTAssertFalse(model.replyCoversText, "the review bar shows")
+        XCTAssertFalse(model.barActsOnReply)
+    }
+
+    /// Review this identity from the Reply pane does the same; so does a
+    /// tap on a name and the Review button, from the Original too.
+    func testAFocusedReviewFromReplyShowsTheText() throws {
+        let seeded = try Fixture.seeded()
+        let model = try seeded.model(seeded.letter)
+        model.restore(reply: "Thanks.")
+        let identity = try XCTUnwrap(model.snapshot.identities.first)
+        model.beginReview(focus: .identity(identity.id))
+        XCTAssertEqual(model.pane, .text)
+        XCTAssertTrue(model.isReviewing)
+        XCTAssertEqual(model.focus, .identity(identity.id))
+        XCTAssertFalse(model.replyCoversText)
+
+        model.endReview()
+        model.show(.reply)
+        let candidate = try XCTUnwrap(model.snapshot.candidates.first)
+        model.open(candidate.id)
+        XCTAssertEqual(model.pane, .text)
+        XCTAssertEqual(model.reviewing, candidate.id)
+    }
+
+    /// Beside the text (iPad) the reply stays where it is when review
+    /// starts: the bar shows under both.
+    func testReviewBesideTheReplyKeepsThePaneOnIPad() throws {
+        let seeded = try Fixture.seeded()
+        let model = try seeded.model(seeded.letter)
+        model.windowChanged(to: .wide)
+        model.restore(reply: "Thanks.")
+        let identity = try XCTUnwrap(model.snapshot.identities.first)
+        model.openIdentity(identity.id)
+        XCTAssertEqual(model.pane, .reply)
+        XCTAssertTrue(model.isReviewing)
+        XCTAssertFalse(model.replyCoversText)
+    }
+
     /// On iPad the text stands beside the reply: Review and Replace N stay
     /// until every name is decided, then the bar follows the pane
     /// (ADR 0087).

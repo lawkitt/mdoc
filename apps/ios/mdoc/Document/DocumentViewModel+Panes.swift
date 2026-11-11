@@ -40,6 +40,14 @@ extension DocumentViewModel {
         }
     }
 
+    /// Review is asked for: a name tapped in the text or in Identities, the
+    /// Review button, a focused review, a match revealed. It acts on the
+    /// text, so where one pane shows at a time the Text pane comes back;
+    /// under the Reply pane the review bar would not show at all (ADR 0111).
+    func showTextForReview() {
+        if !layout.isRegular && pane != .text { show(.text) }
+    }
+
     /// The reply covers the text: the Reply pane of a compact window.
     var replyCoversText: Bool {
         pane == .reply && snapshot.reply != nil && !layout.isRegular

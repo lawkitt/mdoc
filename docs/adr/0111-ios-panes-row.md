@@ -40,6 +40,11 @@ depending on the document.
   in place of Review and Replace N and of the review bar, which act on
   text the reply covers. Back on Text they return. Copy confirms with the
   notice "Copied reply".
+- **Asking for review brings the text back.** On iPhone a name tapped in
+  Identities, Review this identity, or a match revealed by Find, from the
+  Reply or the Original pane, selects Text before the review bar opens
+  ([ADR 0103](0103-mobile-identities-drawer.md): a tapped name opens its
+  full view).
 - **Wide layout:** the text stays in view beside the reply, so Review and
   Replace N stay until every name is decided; then the bar follows the
   pane as before (ADR 0087).

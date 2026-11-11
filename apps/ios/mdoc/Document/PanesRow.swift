@@ -32,3 +32,15 @@ struct PanesRow: View {
         .padding(.bottom, Space.xs)
     }
 }
+
+#Preview("Panes row") {
+    @Previewable @State var phone = DocumentViewModel.Shown.pane(.text)
+    @Previewable @State var pad = DocumentViewModel.Shown.pane(.original)
+    PreviewMatrix {
+        VStack(spacing: Space.xs) {
+            PanesRow(panes: [.pane(.text), .pane(.original), .pane(.reply)], selection: $phone, natural: false)
+            // iPad: the right column's choices at their natural width.
+            PanesRow(panes: [.pane(.original), .identities, .pane(.reply)], selection: $pad, natural: true)
+        }
+    }
+}
