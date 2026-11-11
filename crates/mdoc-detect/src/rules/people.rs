@@ -383,9 +383,11 @@ impl Pack {
     /// the role out, to be dropped). A roster's entries are whole names,
     /// each between two numbers ("1 Ivo 2 Edda 3 …"): a part right after
     /// or right before another line number joins nothing, so a name
-    /// opening its line ("3 DESMOND 4 ARKWRIGHT") stays two spans. Across a line's end the
-    /// parts stay apart: the review takes no wrapped name with prose after
-    /// its last line.
+    /// opening its line ("3 DESMOND 4 ARKWRIGHT") stays two spans. Nor
+    /// does a part with another person span right beside it on its far
+    /// side: a whole name's word, as in a roster read word by word ("Ivo
+    /// Ashgrove 2 Edda Brannock"). Across a line's end the parts stay apart:
+    /// the review takes no wrapped name with prose after its last line.
     pub(super) fn join_line_numbers(&self, source: &str, detections: &mut Vec<Detection>) {
         let mut people: Vec<usize> = (0..detections.len())
             .filter(|&i| detections[i].category == Category::Person)
@@ -412,8 +414,14 @@ impl Pack {
                 .any(|number| number.start == at)
         };
         let mut gone = vec![false; detections.len()];
-        let mut first = people[0];
-        for &next in &people[1..] {
+        // A part with another person span beside it on its far side, only
+        // spaces between, is a whole name's first or last word: "Ashgrove"
+        // of "1 Ivo Ashgrove 2 Edda Brannock", a roster the model read word
+        // by word, joins nothing.
+        let beside = |from: usize, to: usize| from < to && blank(&source[from..to]);
+        let mut first_at = 0;
+        for at in 1..people.len() {
+            let (first, next) = (people[first_at], people[at]);
             let (left, right) = (
                 detections[first].range.clone(),
                 detections[next].range.clone(),
@@ -439,12 +447,18 @@ impl Pack {
                 && !role(&source[right.clone()])
                 && number_at(left.end + lead)
                 && !number_before
-                && !(follow > 0 && number_at(right.end + follow));
+                && !(follow > 0 && number_at(right.end + follow))
+                && !first_at
+                    .checked_sub(1)
+                    .is_some_and(|k| beside(detections[people[k]].range.end, left.start))
+                && !people
+                    .get(at + 1)
+                    .is_some_and(|&k| beside(right.end, detections[k].range.start));
             if joins {
                 detections[first].range.end = right.end;
                 gone[next] = true;
             } else {
-                first = next;
+                first_at = at;
             }
         }
         let mut index = 0;

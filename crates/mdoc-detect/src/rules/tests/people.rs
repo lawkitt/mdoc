@@ -137,7 +137,7 @@ fn a_surnames_particle_joins_the_name() {
     }
 }
 
-/// The person proposals for the model's `people` spans in `source`,
+/// The person proposals for the model's `people`             shown.len() >= 12 && shown.iter().all(|span| !span.contains(char::is_numeric)),s in `source`,
 /// each found after the one before it, as the user would be shown them.
 fn proposed_people_in_order(source: &str, people: &[&str]) -> Vec<String> {
     let model: Vec<_> = people.iter().map(|text| ("person", *text)).collect();
@@ -1675,6 +1675,27 @@ fn a_line_number_joins_no_wrapped_name_and_no_roster() {
         assert_eq!(crate::rules::people::line_numbers(&roster).len(), 12);
         let model: Vec<(&str, usize)> = names.iter().map(|name| (name.as_str(), 0)).collect();
         assert_eq!(people_shown(&roster, &model), names, "{roster}");
+    }
+    // A roster the model read word by word, given names and surnames as
+    // spans of their own, joins no surname to the next given name.
+    for separator in [" ", "\n"] {
+        let roster: String = full
+            .iter()
+            .enumerate()
+            .map(|(n, name)| format!("{} {name}", n + 1))
+            .collect::<Vec<_>>()
+            .join(separator);
+        let words: Vec<&str> = given
+            .iter()
+            .zip(surnames)
+            .flat_map(|(given, surname)| [*given, surname])
+            .collect();
+        let model: Vec<(&str, usize)> = words.iter().map(|word| (*word, 0)).collect();
+        let shown = people_shown(&roster, &model);
+        assert!(
+            shown.iter().all(|span| !span.contains(char::is_numeric)),
+            "{roster}: {shown:?}"
+        );
     }
 }
 
