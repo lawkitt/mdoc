@@ -4417,8 +4417,17 @@ fn a_washington_street_with_no_type_keeps_its_number() {
         shown(&source, &[("NW, Washington, DC 20999", "address")]),
         pairs(&[(address, "ADDRESS")])
     );
+    // A lettered street, as Washington names them.
+    let lettered = "1999 K, NW, Washington, DC 20999";
+    let source = format!("Write to {lettered}.");
+    assert_eq!(proposed_addresses(&source), [lettered]);
+    assert_eq!(
+        shown(&source, &[("NW, Washington, DC 20999", "address")]),
+        pairs(&[(lettered, "ADDRESS")])
+    );
     for source in [
         "In 1999 Kestrel, NW of the river, grew.",
+        "In 1999 K, NW of the river, grew.",
         "Since 1999 Kestrel, NW, has traded.",
     ] {
         assert!(proposed_addresses(source).is_empty(), "{source}");
