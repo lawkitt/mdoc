@@ -54,6 +54,10 @@ lists were faint and uneven.
   list and task buttons give way to row below, column right and a ⋯ menu:
   Row above, Column left, Delete row, Delete column, Align column (left,
   centre, right), Delete table. Nothing is drawn in the document.
+- Undo and Redo sit in a capsule of their own at the toolbar's start and
+  never scroll away; the buttons after them scroll (2026-11-11, after
+  `rc.5`: in a cell Undo was cut off, and outside one Undo left the screen
+  once the capsule was scrolled).
 - The table panel goes: Aa is the formatting keyboard in a table too, so
   strikethrough, code and link work in cells. Duplicate row and the move
   keys leave the phone; the core keeps its commands.
@@ -66,7 +70,9 @@ lists were faint and uneven.
   edge; their text shares one column 24 pt in, and each nested level adds
   24 pt. Bullets and numbers take the text colour, the bullet at body size.
 - The caret's line draws its marker in the same column, so its text does
-  not move. A heading still shifts when its `#` shows (Later).
+  not move. A task keeps its box there: `- [ ]` fits the column only at an
+  unreadable size, and the task button checks it (2026-11-11). A heading
+  still shifts when its `#` shows (Later).
 
 ## Invariants
 

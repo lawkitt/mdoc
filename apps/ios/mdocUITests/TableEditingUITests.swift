@@ -82,6 +82,12 @@ final class TableEditingUITests: XCTestCase {
             let frame = app.buttons[id].frame
             XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 44, id)
         }
+        // Undo and Redo have a capsule of their own: they show whole in a
+        // cell too, left of the buttons that scroll.
+        let undo = app.buttons["toolbar-undo"].frame, redo = app.buttons["toolbar-redo"].frame
+        XCTAssertGreaterThanOrEqual(undo.minX, 4, "Undo shows whole")
+        XCTAssertEqual(redo.minX, undo.maxX, accuracy: 1, "Redo beside it")
+        XCTAssertGreaterThanOrEqual(min(undo.width, redo.width), 44)
         below.tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells + 2 }, "a row of two cells")
         // The caret is in the new row, in the same column (ADR 0110).

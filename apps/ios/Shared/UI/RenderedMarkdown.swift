@@ -539,7 +539,9 @@ struct BlockLayout {
                 let x = starts.last ?? 0
                 let column = item.list.flatMap { columns[$0] } ?? step
                 starts.append(x + column)
-                let source = shows(range)
+                // A task keeps its box on the caret's line: its `- [ ] ` does
+                // not fit the column at a readable size (ADR 0110).
+                let source = item.task == nil && shows(range)
                 if source {
                     // The caret's line draws its marker in the same column,
                     // so its text stays where it was.
@@ -693,6 +695,10 @@ struct BlockLayout {
     /// and a task; this only finds the characters: a marker runs to the
     /// first space after it, and a task's box is the four after that.
     private func listMarker(of item: MarkdownListItem, at start: Int) -> (indent: NSRange, glyphs: NSRange) {
+        Self.listMarker(of: item, at: start, in: source)
+    }
+
+    static func listMarker(of item: MarkdownListItem, at start: Int, in source: NSString) -> (indent: NSRange, glyphs: NSRange) {
         let end = NSMaxRange(source.lineRange(for: NSRange(location: start, length: 0)))
         var index = start
         while index < end, [0x20, 0x09].contains(source.character(at: index)) { index += 1 }
@@ -716,8 +722,9 @@ struct BlockLayout {
     /// Sets the caret line's source marker in its list's column (ADR 0110),
     /// so the item's text starts where it does beside a drawn label: the
     /// indent takes no width, and the spare room goes after the marker. A
-    /// marker wider than the column (a task's `- [ ] `, at most text sizes)
-    /// has its inner spaces narrowed, then its size reduced, until it fits.
+    /// marker wider than the column has its inner spaces narrowed, then its
+    /// size reduced, until it fits. A task's line is not set this way: it
+    /// keeps its box.
     private func fit(_ marker: (indent: NSRange, glyphs: NSRange), into column: CGFloat) {
         if marker.indent.length > 0 {
             text.addAttribute(.font, value: MarkdownStyler.hiddenFont, range: marker.indent)
@@ -1548,6 +1555,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         let start = content.documentRange.location
         let x = textContainerInset.left + textContainer.lineFragmentPadding
         let column = textWidth
+        let viewport = layout.textViewportLayoutController.viewportRange
         for view in tableViews {
             guard let location = content.location(start, offsetBy: view.table.anchor),
                   let fragment = layout.textLayoutFragment(for: location) else { continue }
@@ -1567,6 +1575,16 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
             let frame = CGRect(x: x + offset, y: y, width: width, height: view.table.height)
             if view.frame != frame {
                 view.frame = frame
+            }
+            // A table below the viewport has an estimated place, and after
+            // an edit above it that estimate can fall on screen, over the
+            // text there (a list made of the paragraphs above drew a grid
+            // screens away over the next heading). Its line is not in the
+            // viewport's laid-out range, so it is not drawn until it is.
+            let estimated = viewport.map { !$0.contains(location) && $0.endLocation.compare(location) != .orderedSame } ?? false
+            let ghost = estimated && frame.intersects(bounds)
+            if view.isHidden != ghost {
+                view.isHidden = ghost
             }
         }
     }

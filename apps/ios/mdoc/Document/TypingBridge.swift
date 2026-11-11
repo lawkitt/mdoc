@@ -20,6 +20,10 @@ struct AppliedEdit: Equatable {
     var range: NSRange
     var source: SourceRange
     var text: String
+    /// A command's edits one by one, each in the text the one before it
+    /// left, when this is the stretch they span: what lies between them
+    /// was not edited, and a candidate there stays.
+    var pieces: [AppliedEdit] = []
 
     /// What it replaced with, in UTF-16 and UTF-8 units.
     var length: Int { (text as NSString).length }
@@ -258,9 +262,21 @@ final class TypingBridge {
         let span = NSRange(location: first.range.location, length: NSMaxRange(last.range) - first.range.location)
         let grown = edits.reduce(0) { $0 + ($1.text as NSString).length - $1.range.length }
         let source0 = SourceRange(start: Int(change.edits[0].range.start), end: Int(change.edits[change.edits.count - 1].range.end))
+        var pieces: [AppliedEdit] = []
+        var moved = (utf16: 0, utf8: 0)
+        for (edit, core) in zip(edits, change.edits) where edits.count > 1 {
+            let piece = AppliedEdit(
+                range: NSRange(location: edit.range.location + moved.utf16, length: edit.range.length),
+                source: SourceRange(start: Int(core.range.start) + moved.utf8, end: Int(core.range.end) + moved.utf8),
+                text: edit.text)
+            moved.utf16 += piece.length - piece.range.length
+            moved.utf8 += piece.sourceLength - (piece.source.end - piece.source.start)
+            pieces.append(piece)
+        }
         onApplied([AppliedEdit(
             range: span, source: source0,
-            text: mirror.substring(with: NSRange(location: span.location, length: span.length + grown)))])
+            text: mirror.substring(with: NSRange(location: span.location, length: span.length + grown)),
+            pieces: pieces)])
         return true
     }
 

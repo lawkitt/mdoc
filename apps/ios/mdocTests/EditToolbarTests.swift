@@ -38,10 +38,15 @@ final class EditToolbarTests: XCTestCase {
         var toolbar: EditToolbarModel { coordinator.toolbar }
     }
 
-    func harness(text: String = text, rendered: Bool = true) throws -> Harness {
+    /// `scanned`: the names are found and the first is replaced, so the
+    /// text holds an alias and a proposed name.
+    func harness(text: String = text, rendered: Bool = true, scanned: Bool = false) throws -> Harness {
         let (core, storage) = try Fixture.core()
         let session = try core.library.importDocument(.text(text), title: "Lease", into: .newCase(name: "Lease"))
         _ = try session.recognize(observer: TestObserver())
+        if scanned, let first = try session.scan(observer: TestObserver()).candidates.first {
+            _ = try session.decide(first.id, .replace, scope: .this)
+        }
         let model = DocumentViewModel(
             session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
@@ -320,6 +325,88 @@ final class EditToolbarTests: XCTestCase {
         let removing = try XCTUnwrap(harness.model.linkDraft)
         assertOneStep(harness) { removing.finish(removing.text, "") }
         XCTAssertTrue(harness.shown.contains("rent to Riverside Ltd."), harness.shown)
+    }
+
+    // MARK: Block commands keep names and tables
+
+    /// A list or task made of several paragraphs edits their line prefixes
+    /// only, so the names in them stay candidates, in the core and in the
+    /// view, and a table below stays on its own lines.
+    func testListAndTaskKeepNamesAndTheTableBelow() throws {
+        let text = """
+            # Page 1
+
+            Write to anna.smith@example.com about the lease.
+
+            A
+
+            Then to john.doe@example.org, long enough to wrap onto a second line of the screen.
+
+            ## Details of the document
+
+            | Name | Files |
+            | --- | --- |
+            | Passport | 1 |
+
+            Last line.
+            """
+        let harness = try harness(text: text, scanned: true)
+        let names = harness.session.snapshot().candidates.map(\.original).sorted()
+        XCTAssertEqual(names, ["anna.smith@example.com", "john.doe@example.org"])
+        XCTAssertEqual(harness.session.snapshot().candidates.filter { $0.state == .replaced }.count, 1)
+        XCTAssertFalse(harness.shown.contains("anna.smith@example.com"), "an alias in the text")
+        func check(_ what: String) throws {
+            harness.view.layoutIfNeeded()
+            XCTAssertEqual(harness.session.snapshot().candidates.map(\.original).sorted(), names, "\(what): the core's")
+            let shown = harness.coordinator.livePreview.candidates
+            XCTAssertEqual(shown.map(\.original).sorted(), names, "\(what): the view's")
+            let map = UTF8Map(harness.shown)
+            for candidate in shown {
+                XCTAssertEqual(
+                    harness.string.substring(with: map.range(of: candidate.range)),
+                    candidate.state == .replaced ? candidate.alias : candidate.original, what)
+            }
+            XCTAssertEqual(coreText(harness), harness.shown, what)
+            // The grid sits on its table's lines, below the heading.
+            let grid = try XCTUnwrap(harness.view.tableViews.first, what)
+            XCTAssertEqual(grid.table.anchor, harness.string.range(of: "| Name").location, "\(what): the grid's anchor")
+            let heading = harness.string.range(of: "Details of the document")
+            let from = try XCTUnwrap(harness.view.position(from: harness.view.beginningOfDocument, offset: heading.location))
+            let to = try XCTUnwrap(harness.view.position(from: from, offset: heading.length))
+            let line = harness.view.firstRect(for: try XCTUnwrap(harness.view.textRange(from: from, to: to)))
+            XCTAssertGreaterThanOrEqual(grid.frame.minY, line.maxY - 1, "\(what): the grid is below the heading")
+        }
+        func selectParagraphs() {
+            let start = harness.string.range(of: "Write to").location
+            let end = NSMaxRange(harness.string.range(of: "of the screen."))
+            select(harness, NSRange(location: start, length: end - start))
+        }
+        // Checked as the command leaves the view, before anything shows the
+        // core's snapshot again.
+        func step(_ command: EditCommand) {
+            let sent = harness.coordinator.bridge.sent
+            run(harness, command)
+            XCTAssertEqual(harness.coordinator.bridge.sent, sent + 1, "one core edit")
+        }
+        try check("as opened")
+        selectParagraphs()
+        step(.task)
+        XCTAssertTrue(harness.shown.contains(" about the lease.\n- [ ] A\n- [ ] Then to"), harness.shown)
+        XCTAssertTrue(harness.shown.contains("- [ ] Write to "), harness.shown)
+        try check("tasks")
+        step(.list)
+        XCTAssertTrue(harness.shown.contains(" about the lease.\n- A\n- Then to"), harness.shown)
+        XCTAssertTrue(harness.shown.contains("- Write to "), harness.shown)
+        try check("a list")
+        step(.list)
+        XCTAssertTrue(harness.shown.contains("lease.\n\nA\n\nThen to"), harness.shown)
+        try check("paragraphs again")
+        // One paragraph, the caret in it.
+        caret(harness, at: "about the lease")
+        step(.task)
+        try check("one task")
+        step(.turnInto(.heading2))
+        try check("a heading")
     }
 
     // MARK: Hardware keys

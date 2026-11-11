@@ -57,11 +57,15 @@ final class LivePreview {
         defer { editingSignposter.endInterval("Restyle", interval) }
         var intact = edits.count == 1
         for edit in edits {
-            candidates = candidates.compactMap { candidate in
-                Self.moved(candidate.range, by: edit).map { range in
-                    var moved = candidate
-                    moved.range = range
-                    return moved
+            // A command's edits move the candidates one by one: one between
+            // two of them was not edited (a list made of its paragraphs).
+            for piece in edit.pieces.isEmpty ? [edit] : edit.pieces {
+                candidates = candidates.compactMap { candidate in
+                    Self.moved(candidate.range, by: piece).map { range in
+                        var moved = candidate
+                        moved.range = range
+                        return moved
+                    }
                 }
             }
             fences = fences.map { $0.compactMap { Self.grown($0, by: edit) } }

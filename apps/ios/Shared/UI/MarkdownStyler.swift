@@ -187,10 +187,18 @@ struct MarkdownStyler {
         // Markers last, so they stay dimmed, or hidden, whatever they sit in.
         var hidden: [NSRange] = []
         let shown = revealed.compactMap { clamp($0) }
+        // A task's line prefix stays hidden on the caret's line too: its box
+        // is drawn there as on any other line (ADR 0110).
+        let taskPrefixes: [NSRange] = rendered && !shown.isEmpty
+            ? styling.listItems.filter { $0.task != nil }.map {
+                let marker = BlockLayout.listMarker(of: $0, at: offsets.nsRange($0.range).location, in: source)
+                return NSUnionRange(marker.indent, marker.glyphs)
+            } : []
         for span in styling.spans where span.marker {
             guard let range = clamp(span.range) else { continue }
             let covered = shown.reduce(0) { $0 + NSIntersectionRange($1, range).length }
-            if rendered && covered < range.length {
+            let boxed = taskPrefixes.contains { $0.location <= range.location && NSMaxRange(range) <= NSMaxRange($0) }
+            if rendered && (covered < range.length || boxed) {
                 text.addAttributes(Self.hiddenAttributes, range: range)
                 text.removeAttribute(.backgroundColor, range: range)
                 hidden.append(range)
