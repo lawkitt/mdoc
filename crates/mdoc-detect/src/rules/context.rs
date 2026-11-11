@@ -6,6 +6,30 @@ use mdoc_pii::{Category, Detection, Recognizer};
 /// A labelled value's score: rule evidence, like the structured rules'.
 pub(super) const CONTEXT_SCORE: f32 = 0.95;
 
+/// `text` without the spaces and inline markup at its end (emphasis,
+/// strike-through, code, and a backslash escaping one of them), then at
+/// most one line break and the same again: the text whose last word is the
+/// one before a label ("**исполнительное** производство", a wrapped
+/// "исполнительного" above "производства"). Across a blank line it ends
+/// with a line break, so the label has no word before it ("Сводное", a
+/// blank line, "**Производство"). A backslash before a space is no markup.
+fn word_before(text: &str) -> &str {
+    fn inline(mut text: &str) -> &str {
+        loop {
+            let trimmed = text.trim_end_matches([' ', '\t', '\u{a0}']);
+            match trimmed.strip_suffix(['*', '_', '~', '`']) {
+                Some(rest) => text = rest.strip_suffix('\\').unwrap_or(rest),
+                None => return trimmed,
+            }
+        }
+    }
+    let text = inline(text);
+    match text.strip_suffix('\n') {
+        Some(line) => inline(line.strip_suffix('\r').unwrap_or(line)),
+        None => text,
+    }
+}
+
 impl Pack {
     /// Where the label before the `context` value at `value` starts, on the
     /// value's line of `source` ("паспорт" of "Иванов Иван, паспорт 4510
@@ -90,8 +114,11 @@ impl Pack {
                             .next()
                             .is_none_or(|c| "\r\n.,;:)]»\"'”’".contains(c));
                     let start = found.get(0)?.start();
-                    let before = source[..start]
-                        .trim_end()
+                    // The word before the label, past spaces and inline
+                    // markup closing it ("**исполнительное** производство",
+                    // "_in_ case"), on its line or the one above, never
+                    // across a blank line.
+                    let before = word_before(&source[..start])
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()

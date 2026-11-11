@@ -1579,3 +1579,151 @@ fn state_register_labels_take_nothing_else() {
     ];
     assert_eq!(shown(source, &raw), pairs(&[]));
 }
+
+/// A court's proceeding number, the first-instance number an appeal cites
+/// and an appeal header's bare «№» after the judge are CASE, the label
+/// outside, a Cyrillic or look-alike Latin letter in the first part
+/// (guide rule 5, #364).
+#[test]
+fn russian_proceeding_instance_and_judge_labels_take_case_numbers() {
+    for (source, number) in [
+        ("производство № 2-5817/2031", "2-5817/2031"),
+        ("Производство № 13а-904/2031 прекращено.", "13а-904/2031"),
+        ("по производству №3а-1146/2031", "3а-1146/2031"),
+        ("**Производство** № 13а-905/2031", "13а-905/2031"),
+        ("*гражданское* производство № 2-5818/2031", "2-5818/2031"),
+        ("1 инстанция № 2а-3381/2030", "2а-3381/2030"),
+        (
+            "Номер дела в суде первой инстанции 2-7720/2030",
+            "2-7720/2030",
+        ),
+        (
+            "номер дела в суде 1 инстанции: 2a-7720/2030",
+            "2a-7720/2030",
+        ),
+        ("Судья Веретенникова З.Ю. № 33-4475/2031", "33-4475/2031"),
+        (
+            "Судья: З. Ю. Веретенникова № 33а-4475/2031",
+            "33а-4475/2031",
+        ),
+        (
+            "**Судья Ольхина-Брод А.А.**   № 33А-128/2031",
+            "33А-128/2031",
+        ),
+    ] {
+        assert_eq!(cases(source), [number], "{source}");
+    }
+    for source in [
+        // A bailiff's enforcement proceeding is no court case.
+        "исполнительное производство № 4821/31/99001-ИП",
+        "в рамках сводного исполнительного производства № 4821/31/99001-СД",
+        // The same in emphasis, the label split from its word by markup.
+        "**исполнительное** производство № 4821/31/99001-ИП",
+        "*исполнительное* производство № 4821/31/99001-ИП",
+        "_исполнительного_ производства № 4821/31/99001-ИП",
+        "**исполнительное производство** № 4821/31/99001-ИП",
+        "исполнительное **производство** № 4821/31/99001-ИП",
+        "***Исполнительное*** ~~производство~~ № 4821/31/99001-ИП",
+        "`исполнительное` производство № 4821/31/99001-ИП",
+        // A short number or a date is none.
+        "производство № 12 цеха",
+        "производство № 01.03.2031",
+        // A judge mid-sentence, or without initials, opens no number.
+        "Как указала судья Веретенникова З.Ю. № 33-4475 не присвоен",
+        "Судья Веретенникова № 33-4475/2031",
+        "инстанции 2-7720/2030",
+    ] {
+        assert!(cases(source).is_empty(), "{source}");
+    }
+}
+
+/// A УИД is CASE by its fixed shape alone, with no label, at a line's start
+/// or before «Дело №» (guide rule 5, #484 item 7, #364); a code of another
+/// shape is none.
+#[test]
+fn a_uid_is_a_case_number_by_its_shape() {
+    for (source, number) in [
+        ("99RS0731-01-2031-008812-47", "99RS0731-01-2031-008812-47"),
+        (
+            "Уникальный идентификатор:\n99RS0731-01-2031-008812-47",
+            "99RS0731-01-2031-008812-47",
+        ),
+        // Cyrillic «Р» and «Ѕ» for the Latin letters.
+        ("99РЅ0731-02-2030-000417-09", "99РЅ0731-02-2030-000417-09"),
+    ] {
+        assert_eq!(cases(source), [number], "{source}");
+    }
+    assert_eq!(
+        cases("99RS0731-01-2031-008812-47 Дело № 2-6120/2031"),
+        ["99RS0731-01-2031-008812-47", "2-6120/2031"]
+    );
+    for source in [
+        "99RS0731-01-2031-008812-470",
+        "199RS0731-01-2031-008812-47",
+        "99RS731-01-2031-008812-47",
+        "99RU0731-01-2031-008812-47",
+        "99RS0731-01-2031-08812-47",
+        "99RS0731-01-3031-008812-47",
+        "GUID 3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    ] {
+        assert!(cases(source).is_empty(), "{source}");
+    }
+}
+
+/// The model's tax, bank, identity or phone span of a УИД's shape is that
+/// case number, CASE, whatever it guessed (#364), its label outside.
+#[test]
+fn a_model_value_of_a_uids_shape_is_a_case_number() {
+    for label in [
+        "tax_id",
+        "bank_account",
+        "passport_number",
+        "phone_number",
+        "organization",
+    ] {
+        assert_eq!(
+            shown(
+                "Судья Ракитина О.Л. № 33-5120/2031\n\n99RS0644-01-2030-007312-81\n",
+                &[("99RS0644-01-2030-007312-81", label)]
+            ),
+            pairs(&[
+                ("33-5120/2031", "CASE"),
+                ("99RS0644-01-2030-007312-81", "CASE")
+            ]),
+            "{label}"
+        );
+    }
+    assert_eq!(
+        shown(
+            "УИД 99RS0644-01-2030-007312-81",
+            &[("УИД 99RS0644-01-2030-007312-81", "tax_id")]
+        ),
+        pairs(&[("99RS0644-01-2030-007312-81", "CASE")])
+    );
+    // A tax value of another shape stays a tax value.
+    assert_eq!(
+        shown("ИНН 7707083893", &[("7707083893", "tax_id")]),
+        pairs(&[("7707083893", "TAX")])
+    );
+}
+
+/// The word before a label is read past spaces and inline markup on its
+/// line or the one above, never across a blank line, and a backslash
+/// before a space is no markup (the #364 review): a paragraph's first
+/// label keeps its value.
+#[test]
+fn the_word_before_a_label_stops_at_a_blank_line() {
+    assert!(
+        proposed("Member ID\n\n**Card:** 4111 1111 1111 1111")
+            .contains(&("4111 1111 1111 1111".to_owned(), "BANK".to_owned()))
+    );
+    assert_eq!(cases("Intended use\n\n**Case 12-34567**"), ["12-34567"]);
+    assert_eq!(
+        cases("Сводное\n\n**Производство № 2-5818/2031**"),
+        ["2-5818/2031"]
+    );
+    assert_eq!(cases(r"Filed in\ case 2:23-cv-01234"), ["2:23-cv-01234"]);
+    // A word wrapped onto the line above still counts.
+    assert!(cases("в рамках исполнительного\nпроизводства № 4821/31/99001-ИП").is_empty());
+    assert!(cases("в рамках **исполнительного**\n*производства* № 4821/31/99001-ИП").is_empty());
+}
