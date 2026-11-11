@@ -1,0 +1,21 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":2,"end":19,"label":"full_name","score":0.8583628,"text":"Quenby & Rook LLP"},
+    {"start":74,"end":91,"label":"organization","score":0.9744834,"text":"Bureau of Records"},
+    {"start":2,"end":19,"label":"organization","score":0.95022655,"text":"Quenby & Rook LLP"},
+    {"start":46,"end":72,"label":"email","score":0.9887988,"text":"records@quenbyrook.invalid"},
+    {"start":92,"end":110,"label":"address","score":0.7243831,"text":"TALLOWAY, OK 74501"},
+    {"start":165,"end":185,"label":"organization","score":0.97939354,"text":"Larkfield Supply LLC"},
+    {"start":389,"end":398,"label":"organization","score":0.6228035,"text":"Hong Kong"},
+    {"start":918,"end":935,"label":"organization","score":0.97399324,"text":"Bureau of Records"},
+    {"start":1105,"end":1123,"label":"address","score":0.64946747,"text":"Hartwell, MA 02l39"},
+    {"start":1419,"end":1430,"label":"person","score":0.9946981,"text":"Mara Quenby"},
+    {"start":1431,"end":1448,"label":"organization","score":0.86036915,"text":"Quenby & Rook LLP"},
+    {"start":1311,"end":1323,"label":"organization","score":0.79470384,"text":"Fire Area 41"},
+    {"start":1266,"end":1294,"label":"organization","score":0.69233,"text":"Section 4 Board of Directors"},
+    {"start":1328,"end":1336,"label":"organization","score":0.67006874,"text":"Board 7C"},
+    {"start":1366,"end":1390,"label":"organization","score":0.6395109,"text":"County of Harlan, Nevada"}
+  ]
+}
