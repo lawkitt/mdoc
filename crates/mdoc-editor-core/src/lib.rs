@@ -65,6 +65,24 @@ impl EditResult {
         }
     }
 
+    /// The edits as one: the stretch from the first to the last, with what
+    /// lies between them kept. `None` without edits. For a caller that makes
+    /// one replacement (desktop's text input).
+    pub fn joined(&self, source: &str) -> Option<Edit> {
+        let (first, last) = (self.edits.first()?, self.edits.last()?);
+        let mut text = String::new();
+        let mut at = first.range.start;
+        for edit in &self.edits {
+            text.push_str(&source[at..edit.range.start]);
+            text.push_str(&edit.text);
+            at = edit.range.end;
+        }
+        Some(Edit {
+            range: first.range.start..last.range.end,
+            text,
+        })
+    }
+
     /// `source` with the edits applied.
     pub fn apply(&self, source: &str) -> String {
         let edits: Vec<(Range<usize>, String)> = self

@@ -501,6 +501,25 @@ fn line_edits(old: &str, new: &str, start: usize) -> Vec<Edit> {
         (n > 1 && a.len() - n <= MARKER && b.len() - n <= MARKER).then_some(n)
     };
     let pairs = |a: &str, b: &str| a == b || shared(a, b).is_some();
+    // From lines that do not pair: how many new lines to add, or old ones
+    // to remove, before a pair comes.
+    let ahead = |a: Option<&str>, b: Option<&str>, i: usize, j: usize| -> Option<(usize, usize)> {
+        let (a, b) = (a?, b?);
+        let added = now[j + 1..]
+            .iter()
+            .position(|next| pairs(a, next))
+            .map(|k| k + 1);
+        let removed = was[i + 1..]
+            .iter()
+            .position(|next| pairs(next, b))
+            .map(|k| k + 1);
+        match (added, removed) {
+            (Some(n), Some(m)) if m <= n => Some((0, m)),
+            (Some(n), _) => Some((n, 0)),
+            (None, Some(m)) => Some((0, m)),
+            (None, None) => None,
+        }
+    };
     let mut edits: Vec<Edit> = Vec::new();
     let mut push = |range: Range<usize>, text: &str| match edits.last_mut() {
         Some(last) if last.range.end == range.start => {
@@ -527,16 +546,23 @@ fn line_edits(old: &str, new: &str, start: usize) -> Vec<Edit> {
                 at += a.len();
                 (i, j) = (i + 1, j + 1);
             }
-            // A line added: the old line pairs with the one after it.
-            (a, Some(b)) if a.is_none_or(|a| now.get(j + 1).is_some_and(|next| pairs(a, next))) => {
-                push(at..at, b);
-                j += 1;
-            }
-            // A line removed: the one after it pairs with the new line.
-            (Some(a), b) if b.is_none_or(|b| was.get(i + 1).is_some_and(|next| pairs(next, b))) => {
-                push(at..at + a.len(), "");
-                at += a.len();
-                i += 1;
+            // Lines added (the old line pairs with a later new one) or
+            // removed (a later old line pairs with the new one): whichever
+            // run is shorter, so the lines that pair stay out of the edit.
+            (a, b) if a.is_none() || b.is_none() || ahead(a, b, i, j).is_some() => {
+                let (added, removed) = match (a, b) {
+                    (None, _) => (1, 0),
+                    (_, None) => (0, 1),
+                    _ => ahead(a, b, i, j).unwrap_or((0, 0)),
+                };
+                for line in &now[j..j + added] {
+                    push(at..at, line);
+                }
+                for line in &was[i..i + removed] {
+                    push(at..at + line.len(), "");
+                    at += line.len();
+                }
+                (i, j) = (i + removed, j + added);
             }
             (Some(a), Some(b)) => {
                 push(at..at + a.len(), b);
@@ -544,7 +570,7 @@ fn line_edits(old: &str, new: &str, start: usize) -> Vec<Edit> {
                 (i, j) = (i + 1, j + 1);
             }
             (None, None) => break,
-            // Guarded out above: `is_none_or` takes each lone side.
+            // Guarded out above: a lone side is a line added or removed.
             (Some(_), None) | (None, Some(_)) => return whole(),
         }
     }
@@ -629,6 +655,18 @@ mod tests {
                     .all(|w| w[0].range.end < w[1].range.start)
             );
         }
+        // Blank lines in a run between two paragraphs go as a run.
+        let source = "Alice\n\n\n\nPay Anna";
+        let scan = BlockScan::new(source);
+        let r = turn_selection(source, scan.view(), 0..source.len(), Todo).unwrap();
+        assert_eq!(r.apply(source), "- [ ] Alice\n- [ ] Pay Anna");
+        for edit in &r.edits {
+            assert!(!source[edit.range.clone()].contains("Anna"), "{edit:?}");
+        }
+        assert_eq!(
+            r.joined(source).unwrap().range,
+            0..source.len() - "Pay Anna".len()
+        );
         // One paragraph: only its prefix is put, and taken away again.
         let scan = BlockScan::new("Pay Anna");
         let r = turn_selection("Pay Anna", scan.view(), 3..3, Todo).unwrap();
