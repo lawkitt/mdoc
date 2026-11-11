@@ -1831,6 +1831,26 @@ fn a_russian_full_name_split_on_one_line_is_one_span() {
                 ("person", "Пахомов Илья Кузьмич"),
             ],
         ),
+        // A given name with a patronymic between two one-word spans may
+        // be either's: no join (review).
+        (
+            "Пахомов Илья Тимурович Коврижкин\n",
+            vec![
+                ("person", "Пахомов"),
+                ("person", "Илья Тимурович"),
+                ("person", "Коврижкин"),
+            ],
+        ),
+        // A woman's surname with a man's patronymic, and a man's with a
+        // woman's (review).
+        (
+            "ФИО\nКоврижкина Илья Тимурович\n",
+            vec![("person", "Коврижкина"), ("person", "Илья Тимурович")],
+        ),
+        (
+            "ФИО\nПахомов Елена Тарасовна\n",
+            vec![("person", "Пахомов"), ("person", "Елена Тарасовна")],
+        ),
     ] {
         let expected: Vec<String> = model
             .iter()
@@ -1838,4 +1858,21 @@ fn a_russian_full_name_split_on_one_line_is_one_span() {
             .collect();
         assert_eq!(proposed_marks(source, &model), expected, "{source}");
     }
+    // Two split full names in a row are two names: the second's surname
+    // opens a name of its own (review).
+    assert_eq!(
+        proposed_marks(
+            "Коврижкина Елена Тарасовна Пахомов Илья Тимурович\n",
+            &[
+                ("person", "Коврижкина"),
+                ("person", "Елена Тарасовна"),
+                ("person", "Пахомов"),
+                ("person", "Илья Тимурович"),
+            ]
+        ),
+        [
+            "PERSON⟦Коврижкина Елена Тарасовна⟧",
+            "PERSON⟦Пахомов Илья Тимурович⟧"
+        ]
+    );
 }

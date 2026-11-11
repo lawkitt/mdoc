@@ -180,6 +180,8 @@ enum Span {
 pub(crate) struct SpanMatch {
     pub(crate) detection: Detection,
     pub(crate) whole: Option<std::ops::Range<usize>>,
+    /// The `span` entry that found it, for its own `absorbs`.
+    pub(crate) entry: usize,
 }
 
 /// A boundary fix for one category's spans.

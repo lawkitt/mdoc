@@ -2652,6 +2652,88 @@ fn a_house_first_address_runs_from_the_house_to_the_settlement() {
     }
 }
 
+/// #362 run 4 review: an address's new ends take no person's initial, no
+/// surname after a city, street or settlement, and no company after a
+/// dotless capital; a region in the genitive after a city goes whole.
+#[test]
+fn a_russian_addresss_new_ends_take_no_names() {
+    let has_address_with = |shown: &[(String, String)], word: &str| {
+        shown
+            .iter()
+            .any(|(text, category)| category == "ADDRESS" && text.contains(word))
+    };
+    // A capital «Г.» after the house is an initial, with the model's
+    // person or without.
+    let source = "Адрес: ул. Ольховая, д. 5, кв. 3, Г.И. Пахомова пояснила.";
+    assert_eq!(
+        shown(source, &[("Г.И. Пахомова", "person")]),
+        pairs(&[
+            ("ул. Ольховая, д. 5, кв. 3", "ADDRESS"),
+            ("Г.И. Пахомова", "PERSON")
+        ]),
+    );
+    assert!(!has_address_with(&shown(source, &[]), "Г.И"));
+    // A surname after a one-word city stays a name.
+    let source = "Адрес: ул. Ольховая, д. 5, г. Кедровое Пахомова явилась.";
+    assert_eq!(
+        shown(source, &[("Пахомова", "person")]),
+        pairs(&[
+            ("ул. Ольховая, д. 5, г. Кедровое", "ADDRESS"),
+            ("Пахомова", "PERSON")
+        ]),
+    );
+    let source = "Адрес: ул. Ольховая, д. 5, г. Кедровое Пахомова Анна явилась.";
+    assert_eq!(
+        shown(source, &[("Пахомова Анна", "person")]),
+        pairs(&[
+            ("ул. Ольховая, д. 5, г. Кедровое", "ADDRESS"),
+            ("Пахомова Анна", "PERSON")
+        ]),
+    );
+    // A region in the genitive after the city goes with it whole.
+    for address in [
+        "ул. Ольховая, д. 5, г. Кедровский Ольховской области",
+        "ул. Ольховая, 5 в г. Кедровском Ольховской области",
+        "ул. Ольховая, д. 5, г. Кедровск Ольховской Республики, 160999",
+    ] {
+        let source = format!("Адрес: {address}. Подпись");
+        assert_eq!(
+            shown(&source, &[]),
+            pairs(&[(address, "ADDRESS")]),
+            "{source}"
+        );
+    }
+    // Another entry's address never absorbs a bare name after its street.
+    let shown_witness = shown(
+        "Свидетель: кв. 12, д. 5, ул. Ольховая, Пахомов.",
+        &[("Пахомов", "person")],
+    );
+    assert!(shown_witness.contains(&("Пахомов".to_owned(), "PERSON".to_owned())));
+    assert!(!has_address_with(&shown_witness, "Пахомов"));
+    // A feminine surname after a house-first address's street stays a name.
+    assert_eq!(
+        shown(
+            "У дома 5 по ул. Садовой Пахомовой был причинён вред.",
+            &[("Пахомовой", "person")]
+        ),
+        pairs(&[
+            ("дома 5 по ул. Садовой", "ADDRESS"),
+            ("Пахомовой", "PERSON")
+        ]),
+    );
+    // A company after a dotless «С» is no place.
+    for (source, company) in [
+        ("Адрес: 354999, С ООО КЕДР, УЛ ПОЛЕВАЯ, Д. 5\n", "ООО КЕДР"),
+        (
+            "Адрес: 354999, С ИП ПАХОМОВ, УЛ ПОЛЕВАЯ, Д. 5\n",
+            "ИП ПАХОМОВ",
+        ),
+    ] {
+        let shown = shown(source, &[(company, "organization")]);
+        assert!(!has_address_with(&shown, company), "{source}: {shown:?}");
+    }
+}
+
 /// The names the review shows for `source` with the model's `entities`
 /// (`label` and text): what the machine-readable zone rules propose
 /// (#495).

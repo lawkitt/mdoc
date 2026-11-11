@@ -481,13 +481,18 @@ impl Pack {
     /// heading, in a table cell or a signature line, are one span, and so
     /// are "Олеся Викторовна" and "Ракитина" in the reverse order. One part
     /// is one capitalised word (a surname in -вич too: "Рабинович"), the
-    /// other a given name and a patronymic ([`patronymic`]), in any case form ("Ракитиной
-    /// Олесе Викторовне"); neither is a role alone. A line's end, a comma
-    /// or a table cell's "|" between them joins nothing. Nor does a
-    /// one-word part with another person span right beside it on its far
-    /// side, which may be the next name's surname ("Олеся Викторовна
-    /// Ракитина Иван Петрович" stays three spans), so two full names are
-    /// never joined.
+    /// other a given name and a patronymic ([`patronymic`]), in any case
+    /// form ("Ракитиной Олесе Викторовне"); neither is a role alone, and
+    /// the surname's gender is the patronymic's ("Петрова Роман
+    /// Абрамович" stays apart, [`genders_differ`]). A line's end, a comma or
+    /// a table cell's "|" between them joins nothing. Where the surname
+    /// may be another name's the parts stay apart, so two full names are
+    /// never joined: a one-word part with an open person span (not yet a
+    /// full name) right beside it on its far side ("Олеся Викторовна
+    /// Ракитина Иван Петрович"), and a given name with a patronymic between
+    /// two one-word spans ("Петров Иван Иванович Сидоров"), unless the
+    /// second opens the next full name ("Ракитина Олеся Викторовна Иванов
+    /// Пётр Петрович" is two names).
     pub(super) fn join_full_names(&self, source: &str, detections: &mut Vec<Detection>) {
         let mut people: Vec<usize> = (0..detections.len())
             .filter(|&i| detections[i].category == Category::Person)
@@ -509,15 +514,24 @@ impl Pack {
                 && word.chars().all(|c| c.is_alphabetic() || c == '-')
         };
         let surname = |text: &str| capitalised(text) && !role(text);
-        let given_patronymic = |text: &str| {
+        // The patronymic, lowercase, of a given name with a patronymic.
+        let given_patronymic = |text: &str| -> Option<String> {
             let words: Vec<&str> = text.split([' ', '\t']).filter(|w| !w.is_empty()).collect();
-            matches!(words.as_slice(), [given, father]
-                if capitalised(given)
-                    && capitalised(father)
-                    && !role(given)
-                    && patronymic(&father.to_lowercase()))
+            match words.as_slice() {
+                [given, father]
+                    if capitalised(given)
+                        && capitalised(father)
+                        && !role(given)
+                        && patronymic(&father.to_lowercase()) =>
+                {
+                    Some(father.to_lowercase())
+                }
+                _ => None,
+            }
         };
+        let words = |text: &str| text.split_whitespace().count();
         let mut gone = vec![false; detections.len()];
+        let mut merged = vec![false; detections.len()];
         for at in 1..people.len() {
             let (first, next) = (people[at - 1], people[at]);
             if gone[first] {
@@ -530,26 +544,57 @@ impl Pack {
             if left.end >= right.start || !blank(&source[left.end..right.start]) {
                 continue;
             }
-            // Another person span on the one-word part's far side, only
-            // spaces between.
-            let beside_before = at
-                .checked_sub(2)
-                .map(|k| &detections[people[k]].range)
-                .is_some_and(|other| {
+            let text = |k: usize| &source[detections[k].range.clone()];
+            // The live person span right before the left part, only spaces
+            // between: open if no merged or full name yet.
+            let before = people[..at - 1]
+                .iter()
+                .rev()
+                .copied()
+                .find(|&k| !gone[k])
+                .filter(|&k| {
+                    let other = &detections[k].range;
                     other.end <= left.start && blank(&source[other.end..left.start])
                 });
-            let beside_after = people
-                .get(at + 1)
-                .map(|&k| &detections[k].range)
-                .is_some_and(|other| {
-                    right.end <= other.start && blank(&source[right.end..other.start])
-                });
-            let (left_text, right_text) = (&source[left.clone()], &source[right.clone()]);
-            let joins = surname(left_text) && given_patronymic(right_text) && !beside_before
-                || given_patronymic(left_text) && surname(right_text) && !beside_after;
+            let open_before = before.is_some_and(|k| !merged[k] && words(text(k)) < 3);
+            let one_word_before = before.is_some_and(|k| !merged[k] && surname(text(k)));
+            // The person span `k` if it starts right after `from`, only
+            // spaces between.
+            let beside = |from: usize, k: Option<&usize>| {
+                k.copied().filter(|&k| {
+                    let other = &detections[k].range;
+                    from <= other.start && blank(&source[from..other.start])
+                })
+            };
+            let after = beside(right.end, people.get(at + 1));
+            let open_after = after.is_some_and(|k| words(text(k)) < 3);
+            // A one-word span after that opens no full name of its own may
+            // be the given name's surname, as the left part may.
+            let orphan_after = after.is_some_and(|k| {
+                surname(text(k))
+                    && beside(detections[k].range.end, people.get(at + 2))
+                        .is_none_or(|n| given_patronymic(text(n)).is_none())
+            });
+            let (left_text, right_text) = (text(first), text(next));
+            let joins = match (given_patronymic(left_text), given_patronymic(right_text)) {
+                (None, Some(father)) => {
+                    surname(left_text)
+                        && !genders_differ(left_text, &father)
+                        && !open_before
+                        && !orphan_after
+                }
+                (Some(father), None) => {
+                    surname(right_text)
+                        && !genders_differ(right_text, &father)
+                        && !open_after
+                        && !one_word_before
+                }
+                _ => false,
+            };
             if joins {
                 detections[first].range.end = right.end;
                 gone[next] = true;
+                merged[first] = true;
             }
         }
         let mut index = 0;
@@ -558,6 +603,20 @@ impl Pack {
             !gone[index - 1]
         });
     }
+}
+
+/// Whether `surname` and a lowercase `patronymic`, both in the nominative,
+/// are of different genders: a woman's surname in -ова, -ева, -ина, -ая
+/// with a man's patronymic ("Петрова Роман Абрамович"), or a man's in -ов,
+/// -ев, -ин, -ий with a woman's ("Петров Анна Ивановна"). Other case forms
+/// prove nothing ("Петрова Ивана Ивановича" is a man's genitive).
+fn genders_differ(surname: &str, patronymic: &str) -> bool {
+    let surname = surname.to_lowercase();
+    let ends = |word: &str, endings: &[&str]| endings.iter().any(|ending| word.ends_with(ending));
+    let man = ends(patronymic, &["вич", "ьич", "мич", "кич"]);
+    let woman = ends(patronymic, &["вна", "ична"]);
+    man && ends(&surname, &["ова", "ева", "ёва", "ина", "ына", "ая", "яя"])
+        || woman && ends(&surname, &["ов", "ев", "ёв", "ин", "ын", "ий", "ый", "ой"])
 }
 
 /// Whether lowercase `word` is a Russian patronymic in any case form: a
