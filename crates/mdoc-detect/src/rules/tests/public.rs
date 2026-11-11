@@ -2,7 +2,7 @@
 use super::*;
 use crate::rules::load::category;
 use crate::rules::public::unquoted;
-use crate::rules::test_support::{fixed, pairs, proposed_orgs, shown};
+use crate::rules::test_support::{fixed, pairs, proposed_marks, proposed_orgs, shown};
 use mdoc_pii::Recognizer;
 
 /// Courts, public bodies, state institutions and laws in their case
@@ -1503,4 +1503,244 @@ fn public_bodies_misclassified_as_people_still_go_after_role_changes() {
     ] {
         assert!(shown(body, &[(body, "person")]).is_empty(), "{body}");
     }
+}
+
+/// #788: public bodies other than courts, by name, as both categories the
+/// model uses: US and UK agencies, commissions, authorities and districts,
+/// their units, local government and police, NHS bodies and regulators,
+/// the armed forces, Russian services, centres, councils, hospitals and
+/// units, and a public body's generic word alone.
+#[test]
+fn public_bodies_other_than_courts_are_no_names() {
+    let mut missed = Vec::new();
+    for text in [
+        // Agencies and their units.
+        "Coastal Fisheries Commission",
+        "Pellow River Basin Commission",
+        "Pellow Port Commission",
+        "Northvale Housing Authority",
+        "Pellow Transit Authority",
+        "Civil Aviation Authority",
+        "Pellow Local Authority",
+        "Emergency Management Agency",
+        "Food Standards Agency",
+        "Science Advisory Panel",
+        "Grants Review Subcommittee",
+        "Subcommittee on Fisheries",
+        "Planning Inspectorate",
+        "Bureau of Tidal Surveys",
+        "Office of Coastal Programs",
+        "Division of Reactor Safety",
+        "FEMA",
+        "the NRC",
+        "DVLA",
+        "Ofsted",
+        // Local government and police.
+        "County of Harlow, Nevada",
+        "Harlow County Sheriff’s Office",
+        "Ashby Police Department",
+        "Pellow Water District",
+        "Pellow Unified School District",
+        "Pellow Highway Patrol",
+        // UK bodies and the armed forces.
+        "Pellow Clinical Commissioning Group",
+        "Kestrel Valley NHS Foundation Trust",
+        "Health Practitioners Council",
+        "General Medical Council",
+        "Nursing and Midwifery Council",
+        "the Royal Navy",
+        "the Army",
+        "Royal Air Force",
+        "the U.S. Navy",
+        "U.S. Coast Guard",
+        "Marine Corps",
+        "Army Aeromedical Laboratory",
+        "Naval Research Laboratory",
+        // Generic words alone.
+        "Agency",
+        "the Agency's",
+        "the Commission",
+        "the Council",
+        "the Panel",
+        "the County",
+        "the Bureau",
+        "the Authority",
+        "the Trust",
+        "the Inspectorate",
+        "the Secretariat",
+        "the City",
+        "the Borough",
+        "the Crown",
+        // Russian.
+        "Энскстат",
+        "Энскоблстат",
+        "Министерствообороны",
+        "Министерствофинансов Российской Федерации",
+        "МФЦ",
+        "Многофункциональный центр",
+        "ОГИБДД",
+        "Госавтоинспекция",
+        "Гостехнадзор",
+        "Энскжилинспекция",
+        "Росаккредитация",
+        "Росавиация",
+        "ФТС России",
+        "Энская таможня",
+        "Военный комиссариат Энской области",
+        "войсковая часть 12345",
+        "Энская городская Дума",
+        "Совет депутатов",
+        "Законодательное Собрание Энской области",
+        "Энский горисполком",
+        "Энская районная больница",
+        "ЦРБ",
+        "ФГУП «Энский завод»",
+        "ИК-4",
+        "СИЗО-1",
+        "СУ СК России по Энской области",
+        "Казначейство",
+        "Энская избирательная комиссия",
+        "КУМИ г. Энска",
+        "Энский сельсовет",
+        "Энское сельское поселение",
+        "Центр занятости населения",
+        "Орган опеки и попечительства",
+        "Пограничная служба",
+        "пожарная часть № 3",
+        "ПЧ-3",
+    ] {
+        for (category, label) in [("ORG", "organization"), ("PERSON", "person")] {
+            if !shown(text, &[(text, label)]).is_empty() {
+                missed.push(format!("{category}: {text}"));
+            }
+        }
+    }
+    assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+}
+
+/// #788 in context: an acronym the document defines for a public body,
+/// its defined generic word, a place cut off a local body's name and the
+/// Russian equivalents go; the company, the person after a title, the
+/// people and a bank that shares a county's name stay.
+#[test]
+fn public_bodies_acronyms_generic_words_and_cut_names_in_context() {
+    /// A source, the model's spans in order and what the user is shown.
+    type Case<'a> = (&'a str, &'a [(&'a str, &'a str)], &'a [&'a str]);
+    let cases: [Case; 9] = [
+        (
+            "The Bureau of Tidal Surveys (BTS) wrote to Quillon Freight LLC. The BTS then fined Quillon Freight LLC.",
+            &[
+                ("organization", "Bureau of Tidal Surveys"),
+                ("organization", "BTS"),
+                ("organization", "Quillon Freight LLC"),
+                ("person", "BTS"),
+                ("organization", "Quillon Freight LLC"),
+            ],
+            &["ORG⟦Quillon Freight LLC⟧", "ORG⟦Quillon Freight LLC⟧"],
+        ),
+        (
+            "The Federal Harbor Agency (“FHA”) wrote. FHA replied to Ivo Penrow.",
+            &[
+                ("organization", "Federal Harbor Agency"),
+                ("person", "FHA"),
+                ("person", "Ivo Penrow"),
+            ],
+            &["PERSON⟦Ivo Penrow⟧"],
+        ),
+        (
+            "The Coastal Fisheries Commission (the “Commission”) met. The Commission denied the permit.",
+            &[
+                ("organization", "Coastal Fisheries Commission"),
+                ("organization", "Commission"),
+                ("organization", "Commission"),
+            ],
+            &[],
+        ),
+        (
+            "Commissioner Ostrander of the Commission wrote.",
+            &[("person", "Ostrander"), ("organization", "Commission")],
+            &["PERSON⟦Ostrander⟧"],
+        ),
+        (
+            "Officers of the Elko County Sheriff's Office arrested Ivo Penrow.",
+            &[
+                ("organization", "Elko"),
+                ("organization", "County"),
+                ("person", "Ivo Penrow"),
+            ],
+            &["PERSON⟦Ivo Penrow⟧"],
+        ),
+        (
+            "The Ashby Police Department held Ivo Penrow.",
+            &[("person", "Ashby"), ("person", "Ivo Penrow")],
+            &["PERSON⟦Ivo Penrow⟧"],
+        ),
+        (
+            "Harlow County Bank lent to Ivo Penrow.",
+            &[("organization", "Harlow"), ("person", "Ivo Penrow")],
+            &["ORG⟦Harlow⟧", "PERSON⟦Ivo Penrow⟧"],
+        ),
+        (
+            "Управление Росреестра по Энской области (далее – Управление) ответило ООО «Кедровый бор». Управление отказало.",
+            &[
+                ("organization", "Управление Росреестра по Энской области"),
+                ("organization", "Управление"),
+                ("organization", "ООО «Кедровый бор»"),
+                ("person", "Управление"),
+            ],
+            &["ORG⟦ООО «Кедровый бор»⟧"],
+        ),
+        (
+            "Многофункциональный центр (МФЦ) принял документы Олега Думова. МФЦ выдал расписку.",
+            &[
+                ("organization", "Многофункциональный центр"),
+                ("organization", "МФЦ"),
+                ("person", "Олега Думова"),
+                ("person", "МФЦ"),
+            ],
+            &["PERSON⟦Олега Думова⟧"],
+        ),
+    ];
+    for (source, model, expected) in cases {
+        assert_eq!(proposed_marks(source, model), expected, "{source}");
+    }
+}
+
+/// The guards of #788: universities, state-owned companies with a legal
+/// form, private bodies that share a public body's word and surnames like
+/// its words stay, and so do a public body's own contact details.
+#[test]
+fn public_bodies_788_keep_private_names_and_details() {
+    for (text, label, category) in [
+        ("Ashby State University", "organization", "ORG"),
+        ("Harbor Rail Ltd", "organization", "ORG"),
+        ("Kestrel Advisory Board LLC", "organization", "ORG"),
+        ("Harlow County Bank", "organization", "ORG"),
+        ("Navy Federal Credit Union", "organization", "ORG"),
+        ("Salvation Army", "organization", "ORG"),
+        ("Acme Talent Agency", "organization", "ORG"),
+        ("Acme Insurance Agency", "organization", "ORG"),
+        ("Better Business Bureau", "organization", "ORG"),
+        ("Agency Partners", "organization", "ORG"),
+        ("АО «Энскэнерго»", "organization", "ORG"),
+        (
+            "ФГБОУ ВО «Энский государственный университет»",
+            "organization",
+            "ORG",
+        ),
+        ("Олег Думов", "person", "PERSON"),
+        ("Анна Палатова", "person", "PERSON"),
+        ("Полина Мэрина", "person", "PERSON"),
+    ] {
+        assert_eq!(
+            shown(text, &[(text, label)]),
+            pairs(&[(text, category)]),
+            "{text}"
+        );
+    }
+    let source = "The Wexley Water District, email records@wexley-water.invalid.";
+    assert_eq!(
+        shown(source, &[("Wexley Water District", "organization")]),
+        pairs(&[("records@wexley-water.invalid", "EMAIL")])
+    );
 }

@@ -676,6 +676,15 @@ words = [
     "минспорт", "минстро", "росреестр", "росгварди", "роспотребнадзор",
     "ростехнадзор", "роскомнадзор", "росприроднадзор", "росимуществ",
     "росстат", "роструд", "росатом", "роскосмос",
+    # More federal services and agencies, customs, the Treasury, military
+    # commissariats and local councils (#788): "Росаккредитация",
+    # "Энская таможня", "таможенного поста", "Казначейство", "военкомат",
+    # "Военный комиссариат", "горисполком", "сельсовет".
+    "росаккредитаци", "росавиаци", "росморречфлот", "росрыболовств",
+    "росгидромет", "рослесхоз", "росархив", "росфинмониторинг", "роснедр",
+    "росводресурс", "роспатент", "росалкоголь", "таможн", "таможенн",
+    "казначейств", "военкомат", "комиссариат", "исполком", "горисполком",
+    "райисполком", "облисполком", "сельсовет", "горсовет",
 ]
 anywhere_in = ["ORG", "PERSON"]
 person_endings = [
@@ -703,6 +712,15 @@ words = [
     "мсэ", "аас", "депнедра", "минэнерго", "минэкономразвития", "минобороны",
     "минприроды", "минцифры", "минкультуры", "минпросвещения", "минобрнауки",
     "мэрия", "мэрии", "мэрию", "мэрией",
+    # More bodies' abbreviations in #788: traffic police units, the
+    # multifunctional and employment centres, election commissions,
+    # property committees, the inventory bureau, the old police
+    # directorates, customs, the medical agency, migration units, federal
+    # enterprises, state hospitals, the labour inspectorate and the Duma.
+    "огибдд", "угибдд", "мфц", "цзн", "цик", "тик", "уик", "избирком",
+    "куми", "бти", "гувд", "увд", "фтс", "фмба", "увм", "овм", "гувм",
+    "оуфмс", "фгуп", "фгу", "црб", "гкб", "гит", "сизо", "дума", "думы",
+    "думе", "думу", "думой",
 ]
 anywhere_in = ["ORG", "PERSON"]
 unless_titled = true
@@ -738,6 +756,46 @@ patterns = [
     '(?i)\bналогов\p{Alphabetic}{0,3}[\p{Zs}\t]+орган',
     '\bВАС\b',
     '^[\s\p{P}]*(?:\d+[\p{Zs}\t]*)?(?:АС|ФАС|ААС)[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:ой|ого|ей|ы|и|а|я)\b',
+]
+anywhere_in = ["ORG", "PERSON"]
+
+# More public bodies by their phrases, as an organization or a person
+# (guide rules 2 and 8, issue #788): a ministry glued to its portfolio by
+# OCR, regional statistics offices, supervision services and
+# inspectorates in one word, the multifunctional and employment centres,
+# guardianship bodies, councils and dumas, election commissions,
+# settlements, border and military units, fire stations, state hospitals
+# and penal institutions by number, and an investigative department. A
+# legal form keeps a company; words in quotes are a name.
+[[never]]
+match = "pattern"
+patterns = [
+    # "Министерствообороны", "Министерствафинансов Российской Федерации".
+    '(?i)\bминистерств(?:о|а|у|ом|е)\p{Ll}{4,}',
+    # "Энскстат", "Энскоблстат", "Мосгорстат".
+    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат\p{Alphabetic}{0,2}\b',
+    # "Гостехнадзор", "Энскгосстройнадзор", "Госавтоинспекция",
+    # "Энскжилинспекция".
+    '(?i)\b\p{Alphabetic}*надзор\p{Alphabetic}{0,3}\b|\b\p{Alphabetic}+инспекци\p{Alphabetic}{0,2}\b',
+    # "многофункциональный центр", "Центр занятости населения", "Орган
+    # опеки и попечительства", "Совет депутатов".
+    '(?i)\bмногофункциональн\p{Alphabetic}*[\p{Zs}\t]+центр|\bцентр\p{Alphabetic}{0,2}[\p{Zs}\t]+занятости\b|\bорган\p{Alphabetic}{0,2}[\p{Zs}\t]+опеки\b|\bсовет\p{Alphabetic}{0,2}[\p{Zs}\t]+депутатов\b',
+    # "Энская городская Дума", "Законодательное Собрание Энской области",
+    # "Энская избирательная комиссия", "Энское сельское поселение",
+    # "городского округа".
+    '(?i)\b(?:городск|областн|краев|районн|законодательн|народн)\p{Alphabetic}*[\p{Zs}\t]+(?:дум|собрани|хурал|курултай)\p{Alphabetic}{0,2}\b',
+    '(?i)\bизбирательн\p{Alphabetic}*[\p{Zs}\t]+комисси|\b(?:сельск|городск)\p{Alphabetic}*[\p{Zs}\t]+(?:поселени|округ)',
+    # "Пограничная служба", "войсковая часть 12345", "пожарная часть № 3".
+    '(?i)\bпогранич\p{Alphabetic}*[\p{Zs}\t]+(?:служб|управлени|отдел|застав)|\b(?:войсков|пожарн)\p{Alphabetic}*[\p{Zs}\t]+част',
+    # State and municipal hospitals: "Энская районная больница",
+    # "городская клиническая больница № 5", "Энская городская поликлиника".
+    '(?i)\b(?:центральн|районн|межрайонн|городск|областн|краев|республиканск|окружн)\p{Alphabetic}*(?:[\p{Zs}\t]+\p{Alphabetic}+){0,2}[\p{Zs}\t]+(?:больниц|поликлиник|госпитал)',
+    # Penal institutions, temporary detention and fire stations by number:
+    # "ИК-4", "СИЗО-1", "ИВС № 2", "ПЧ-3".
+    '(?:^|[^\p{Alphabetic}])(?:ИК|СИЗО|ИВС|ЛИУ|ПЧ)[\p{Zs}\t]*-?[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?\d',
+    # An investigative department of the Investigative Committee: "СУ СК
+    # России по Энской области".
+    '\bСУ[\p{Zs}\t]+СК\b|\bСК[\p{Zs}\t]+(?:России|РФ)\b',
 ]
 anywhere_in = ["ORG", "PERSON"]
 
