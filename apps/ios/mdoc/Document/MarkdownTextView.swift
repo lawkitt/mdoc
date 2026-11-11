@@ -138,6 +138,11 @@ struct MarkdownTextView: UIViewRepresentable {
         let base: [NSAttributedString.Key: Any]
     }
 
+    /// A reveal the model asked for, with the name then under review.
+    struct RevealOrigin {
+        let selected: CandidateID?
+    }
+
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextView
         /// What the view shows.
@@ -158,6 +163,10 @@ struct MarkdownTextView: UIViewRepresentable {
         /// The scroll owed once the next layout is done: the model's
         /// request, or a newly selected name.
         var pendingReveal: RevealRequest.Target?
+        /// The pending reveal is the model's request, and the name that
+        /// was under review when it was made: a name selected later is a
+        /// newer wish, and takes its place.
+        var pendingRequest: RevealOrigin?
         /// Where each candidate is in the shown text (UTF-16), as last
         /// built: a rebuild finds the same place in the new text by it.
         private var shownRanges: [CandidateID: NSRange] = [:]
@@ -256,6 +265,7 @@ struct MarkdownTextView: UIViewRepresentable {
             if let reveal = parent.reveal, reveal.id != takenReveal {
                 takenReveal = reveal.id
                 pendingReveal = reveal.target
+                pendingRequest = RevealOrigin(selected: parent.selected)
             }
             if content != self.content {
                 // iOS draws a backgrounded app again in light and dark for

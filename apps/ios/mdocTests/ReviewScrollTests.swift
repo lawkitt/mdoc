@@ -219,14 +219,30 @@ final class ReviewScrollTests: XCTestCase {
             view.layoutIfNeeded()
         }
 
-        /// One action of the bar, as `DocumentViewModel` runs it.
+        /// One action of the bar, as `DocumentViewModel` runs it, and the
+        /// text until it has stopped scrolling.
         func act(_ action: Action) throws -> Step? {
-            guard let current = state.reviewedCandidate else { return nil }
-            let index = state.order.index(of: current.id)
+            guard state.reviewedCandidate != nil else { return nil }
             var before: [CandidateID: CGFloat] = [:]
             for candidate in state.order.candidates {
                 if let top = shownTop(of: candidate) { before[candidate.id] = top }
             }
+            try perform(action)
+            settle()
+            guard let now = state.reviewedCandidate else { return nil }
+            let after = shownTop(of: now)
+            // Where it is, for a failure's message.
+            let place = "\(drawnRect(of: now).map { "\($0)" } ?? "not laid out") in \(view.bounds)"
+            return Step(
+                action: action, name: "\(now.original) (\(now.state)) at \(place)", before: before[now.id], after: after,
+                inView: after != nil)
+        }
+
+        /// The action alone, shown: the run loop has not turned, so a
+        /// reveal it owes has not run, and a scroll on its way goes on.
+        func perform(_ action: Action) throws {
+            guard let current = state.reviewedCandidate else { return }
+            let index = state.order.index(of: current.id)
             switch action {
             case .replace, .keep, .replaceThis:
                 if action == .replaceThis { state.setScope(.this) }
@@ -244,10 +260,22 @@ final class ReviewScrollTests: XCTestCase {
             case .nextUndecided: _ = state.advance(from: index)
             }
             show()
+        }
+
+        /// The run loop for a moment: a reveal owed runs, a scroll gets
+        /// part of its way.
+        func turn(_ seconds: TimeInterval) {
+            RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        }
+
+        /// The name under review shows whole and, a while later, has not
+        /// moved.
+        func assertTheNameRests(_ message: String, file: StaticString = #filePath, line: UInt = #line) throws {
             settle()
-            guard let now = state.reviewedCandidate else { return nil }
-            let after = shownTop(of: now)
-            return Step(action: action, name: "\(now.original) (\(now.state))", before: before[now.id], after: after, inView: after != nil)
+            let now = try XCTUnwrap(state.reviewedCandidate, message, file: file, line: line)
+            let top = try XCTUnwrap(shownTop(of: now), "\(message): \(now.original) is in view", file: file, line: line)
+            turn(0.6)
+            XCTAssertEqual(shownTop(of: now) ?? -1, top, accuracy: 0.5, "\(message): \(now.original) has stopped", file: file, line: line)
         }
     }
 
@@ -311,6 +339,76 @@ final class ReviewScrollTests: XCTestCase {
         }
         // Keep instead and Replace instead stay on a name in view: 16 of them.
         check(steps, visibleBefore: 16)
+    }
+
+    /// Two swipes before the run loop turns: the reveal owed to the first
+    /// name is the second's. It stayed the first's, and the name the bar
+    /// was on ended off screen (review of #814).
+    func testASecondSwipeBeforeTheRevealRunsWins() throws {
+        let review = try Review()
+        // Onto names further and further down, none in view from the one
+        // before: each swipe alone scrolls.
+        for swipes in [2, 3, 5] {
+            for _ in 0..<swipes { try review.perform(.next) }
+            XCTAssertNotNil(review.coordinator.pendingReveal, "the reveal has not run")
+            try review.assertTheNameRests("\(swipes) swipes at once")
+        }
+        for _ in 0..<6 { try review.perform(.previous) }
+        try review.assertTheNameRests("six swipes back at once")
+    }
+
+    /// A swipe to a distant name and, while the text is on its way there,
+    /// a swipe back to the name still in view: the scroll stops, and the
+    /// name stays in view. It went on to the name let go and carried the
+    /// one under review off screen (review of #814).
+    func testSwipingBackDuringTheScrollStopsIt() throws {
+        let review = try Review()
+        let view = review.view
+        var checked = 0
+        for _ in 0..<12 {
+            guard let from = review.state.reviewedCandidate, review.shownTop(of: from) != nil else { break }
+            let start = view.contentOffset.y
+            try review.perform(.next)
+            // Until the scroll is on its way: a name in view scrolls nothing.
+            let deadline = Date().addingTimeInterval(0.25)
+            while abs(view.contentOffset.y - start) < 4, Date() < deadline { review.turn(0.01) }
+            let onItsWay = abs(view.contentOffset.y - start) >= 4
+            if onItsWay, review.shownTop(of: from) != nil {
+                try review.perform(.previous)
+                let stopped = view.contentOffset.y
+                try review.assertTheNameRests("back during the scroll")
+                XCTAssertEqual(review.state.reviewing, from.id)
+                XCTAssertEqual(view.contentOffset.y, stopped, accuracy: 40, "the scroll stopped about where the swipe back found it")
+                checked += 1
+                // On again, to try the next pair.
+                _ = try review.act(.next)
+            } else {
+                review.settle()
+            }
+        }
+        XCTAssertGreaterThanOrEqual(checked, 2, "swipes back while a scroll ran")
+    }
+
+    /// Taps and swipes faster than the text settles: several actions with
+    /// the run loop not turning between them, or turning only part of a
+    /// scroll, then the name the bar ends on is in view and stays.
+    func testAnUnsettledWalkEndsWithTheNameInViewAndStill() throws {
+        let bursts: [[Action]] = [
+            [.next, .next, .previous], [.replace, .next], [.next, .keep, .previous], [.previous, .previous, .next, .next, .next],
+            [.replaceThis, .previous, .keepInstead], [.replaceInstead, .nextUndecided, .next], [.keep, .replace, .previous, .next],
+            [.next, .next, .next, .next], [.previous, .replaceInstead, .previous, .keepInstead, .nextUndecided],
+        ]
+        for pause: TimeInterval in [0, 0.05, 0.12] {
+            let review = try Review()
+            for (number, burst) in bursts.enumerated() where review.state.isReviewing {
+                for action in burst where review.state.isReviewing {
+                    try review.perform(action)
+                    if pause > 0 { review.turn(pause) }
+                }
+                guard review.state.isReviewing else { break }
+                try review.assertTheNameRests("burst \(number + 1), \(pause) s between actions")
+            }
+        }
     }
 
     /// The review bar grows (a hint line, the mentions pulled up) and the

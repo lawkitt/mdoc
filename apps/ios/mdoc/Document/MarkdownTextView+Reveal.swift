@@ -14,17 +14,31 @@ import UIKit
 /// again once a scroll has landed.
 extension MarkdownTextView.Coordinator {
     /// A newly selected name scrolls into view once laid out, unless
-    /// the model asked for another place; with none selected, no
-    /// correction is owed.
+    /// the model asked for another place with this name under review;
+    /// with none selected, no correction is owed. The name before is
+    /// let go: a scroll still on its way to it stops where it is, and a
+    /// reveal still owed to it (two quick taps, or swipes) is this
+    /// name's now.
     func afterSelection(from previous: CandidateID?, in view: CandidateTextView) {
         if let selected = decoration.selected, selected != previous {
-            // A correction owed to the name before is no longer wanted.
-            landing = nil
-            if pendingReveal == nil { pendingReveal = .candidate(selected) }
+            stopReveal(in: view)
+            if pendingRequest?.selected != selected {
+                pendingReveal = .candidate(selected)
+                pendingRequest = nil
+            }
             view.setNeedsLayout()
         } else if decoration.selected == nil {
             endReveal()
         }
+    }
+
+    /// Stops a reveal's scroll where it is, with no correction owed. Left
+    /// running after the bar moved on, it went on to the name before and
+    /// could carry the new one out of view.
+    private func stopReveal(in view: CandidateTextView) {
+        if scrolling { view.setContentOffset(view.contentOffset, animated: false) }
+        scrolling = false
+        landing = nil
     }
 
     /// The room the text has changed (the review bar grew a line or
@@ -88,6 +102,9 @@ extension MarkdownTextView.Coordinator {
             return
         }
         pendingReveal = nil
+        pendingRequest = nil
+        // A scroll on its way elsewhere ends here.
+        stopReveal(in: view)
         switch reveal {
         case .candidate(let id):
             self.reveal(id, in: view)
@@ -193,9 +210,8 @@ extension MarkdownTextView.Coordinator {
     /// Where `range` (UTF-16, in the shown text) is drawn, in the text
     /// view's coordinates, from its first line to its last (a name
     /// wraps, most of all in a narrow table cell): in the text, or in
-    /// the table cell that draws it (`cell`, with its first line's rect
-    /// in the cell's own coordinates, where the grid scrolls sideways
-    /// to). `onlyShown` answers only for a name the viewport has laid
+    /// the table cell that draws it (`cell`, with the rect in the cell's
+    /// own coordinates, where the grid scrolls sideways to). `onlyShown` answers only for a name the viewport has laid
     /// out, and lays nothing out.
     func place(
         of range: NSRange, in view: CandidateTextView, onlyShown: Bool = false
@@ -217,8 +233,11 @@ extension MarkdownTextView.Coordinator {
         guard view.laidOutRect(of: NSRange(location: anchor, length: 0), onlyShown: onlyShown) != nil,
               let local = Self.firstRect(in: cell, location: range.location - cell.location, length: range.length)
         else { return nil }
+        // To its last line: a later line can be the wider one, and the
+        // grid scrolls sideways to all of the name.
         let last = range.length > 1 ? Self.firstRect(in: cell, location: end.location - cell.location, length: end.length) : nil
-        return (cell.convert(local.union(last ?? local), to: view), cell, local)
+        let whole = local.union(last ?? local)
+        return (cell.convert(whole, to: view), cell, whole)
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
@@ -240,16 +259,11 @@ extension MarkdownTextView.Coordinator {
         scrolling = false
     }
 
+    /// The first line of a cell's range, in the cell's coordinates, from
+    /// the cell's own text layout: a cell whose grid is hidden for a pass
+    /// (`placeTables`) has no `firstRect(for:)` to give, and the two
+    /// differ by a point, which read as the name moving.
     private static func firstRect(in view: UITextView, location: Int, length: Int) -> CGRect? {
-        guard
-            let start = view.position(from: view.beginningOfDocument, offset: location),
-            let end = view.position(from: start, offset: length),
-            let textRange = view.textRange(from: start, to: end)
-        else { return nil }
-        let rect = view.firstRect(for: textRange)
-        if !rect.isNull, !rect.isInfinite { return rect }
-        // A cell whose grid is hidden for a pass (`placeTables`) has no
-        // rect to give: its text's own layout has.
         guard let layout = view.textLayoutManager, let content = layout.textContentManager,
               let from = content.location(content.documentRange.location, offsetBy: location),
               let to = content.location(from, offsetBy: length), let target = NSTextRange(location: from, end: to)
