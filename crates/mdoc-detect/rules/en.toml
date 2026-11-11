@@ -1182,18 +1182,22 @@ anywhere_in = ["ORG", "PERSON"]
 [[never]]
 match = "pattern"
 patterns = [
-    # Commissions of a state or a city: "Coastal Fisheries Commission",
-    # "Pellow River Basin Commission", "Port Commission", "Racing
-    # Commission", "Care Quality Commission".
-    '(?i)\b(?:fisheries|fish(?:[\p{Zs}\t]+and[\p{Zs}\t]+game)?|game|wildlife|water|river(?:[\p{Zs}\t]+basin)?|basin|harbou?r|ports?|coastal|parks?(?:[\p{Zs}\t]+and[\p{Zs}\t]+recreation)?|highways?|tax|revenue|housing|health|power|railroad|transit|crime|police|fire|historic(?:al)?[\p{Zs}\t]+preservation|land|conservation|environmental[\p{Zs}\t]+quality|aviation|tourism|resources|care[\p{Zs}\t]+quality|law[\p{Zs}\t]+reform|pay|wage|salary|workers[\x27’]?[\p{Zs}\t]+compensation|industrial|alcoholic[\p{Zs}\t]+beverages?|racing|athletic|boxing|banking|financial[\p{Zs}\t]+services)[\p{Zs}\t]+commissions?\b',
-    # Authorities: "Northvale Housing Authority", "Transit Authority",
-    # "Civil Aviation Authority", "Local Authority", "Financial Conduct
-    # Authority", "Solicitors Regulation Authority", "Valley Authority".
-    '(?i)\b(?:housing|transit|transportation|airports?|aviation|water|turnpike|power|(?:re)?development|financial[\p{Zs}\t]+conduct|regulation|regulatory|health|local|parking|sewer(?:age)?|toll(?:way)?|gaming|gambling|revenue|tax|food[\p{Zs}\t]+safety|competition(?:[\p{Zs}\t]+and[\p{Zs}\t]+markets)?|planning|harbou?r|ports?|river|valley|bridge|waste|utilit(?:y|ies)|energy|maritime|broadcasting|communications|data[\p{Zs}\t]+protection|pensions?|statistics|highways?|roads?|rail|marine|fire|police|education|school|library|parks?|building|public[\p{Zs}\t]+service|environmental[\p{Zs}\t]+protection|monetary|securities|banking)[\p{Zs}\t]+authorit(?:y|ies)\b',
+    # Commissions of a state or a city by a subject only a state has:
+    # "Coastal Fisheries Commission", "Pellow River Basin Commission",
+    # "Port Commission", "Care Quality Commission". An industry word is no
+    # evidence ("Quillon Tourism Commission" may be a trading name).
+    '(?i)\b(?:fisheries|fish(?:[\p{Zs}\t]+and[\p{Zs}\t]+game)?|game|wildlife|river[\p{Zs}\t]+basin|harbou?r|ports?|coastal|parks[\p{Zs}\t]+and[\p{Zs}\t]+recreation|highways?|railroad|historic(?:al)?[\p{Zs}\t]+preservation|conservation|environmental[\p{Zs}\t]+quality|care[\p{Zs}\t]+quality|law[\p{Zs}\t]+reform|workers[\x27’]?[\p{Zs}\t]+compensation|alcoholic[\p{Zs}\t]+beverages?|athletic)[\p{Zs}\t]+commissions?\b',
+    # Authorities by a public subject: "Northvale Housing Authority",
+    # "Transit Authority", "Civil Aviation Authority", "Local Authority",
+    # "Financial Conduct Authority", "Solicitors Regulation Authority",
+    # "Valley Authority"; "Quillon Shipping Authority" and "Quillon Energy
+    # Authority" stay.
+    '(?i)\b(?:housing|transit|transportation|airports?|civil[\p{Zs}\t]+aviation|turnpike|redevelopment|financial[\p{Zs}\t]+conduct|regulation|regulatory|health|local|toll(?:way)?|gaming|gambling|revenue|tax|food[\p{Zs}\t]+safety|competition(?:[\p{Zs}\t]+and[\p{Zs}\t]+markets)?|planning|harbou?r|ports?|river|valley|bridge|data[\p{Zs}\t]+protection|highways?|police|public[\p{Zs}\t]+service|environmental[\p{Zs}\t]+protection|monetary)[\p{Zs}\t]+authorit(?:y|ies)\b',
     # Agencies with a public head ("Emergency Management Agency", "Food
-    # Standards Agency", "Child Support Agency"); a talent, insurance,
-    # travel, employment, licensing or home health agency stays.
-    '(?i)\b(?:emergency(?:[\p{Zs}\t]+management)?|safety|standards|highways?|medicines|child[\p{Zs}\t]+support|logistics|housing[\p{Zs}\t]+finance|public[\p{Zs}\t]+housing|transit|water|public[\p{Zs}\t]+health|statistics|statistical|pollution[\p{Zs}\t]+control|conservation|veterans|benefits|crime|resources|research[\p{Zs}\t]+projects|meteorological|forestry|fisheries|wildlife|vehicle[\p{Zs}\t]+licensing|(?:consumer|child|coastal|data|radiation)[\p{Zs}\t]+protection)[\p{Zs}\t]+agenc(?:y|ies)\b',
+    # Standards Agency", "Child Support Agency"); a logistics, talent,
+    # insurance, travel, employment, licensing or home health agency
+    # stays, and so does any other trading name.
+    '(?i)\b(?:emergency[\p{Zs}\t]+management|food[\p{Zs}\t]+standards|medicines(?:[\p{Zs}\t]+and[\p{Zs}\t]+healthcare[\p{Zs}\t]+products[\p{Zs}\t]+regulatory)?|child[\p{Zs}\t]+support|housing[\p{Zs}\t]+finance|public[\p{Zs}\t]+housing|public[\p{Zs}\t]+health|pollution[\p{Zs}\t]+control|veterans|research[\p{Zs}\t]+projects|meteorological|vehicle[\p{Zs}\t]+licensing|(?:consumer|child|coastal|data|radiation)[\p{Zs}\t]+protection)[\p{Zs}\t]+agenc(?:y|ies)\b',
     # A public body's units: any subcommittee, an advisory or review
     # panel or council, an inspectorate or a directorate ("Grants Review
     # Subcommittee", "Science Advisory Panel", "Planning Inspectorate").

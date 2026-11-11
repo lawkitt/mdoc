@@ -761,8 +761,7 @@ anywhere_in = ["ORG", "PERSON"]
 
 # More public bodies by their phrases, as an organization or a person
 # (guide rules 2 and 8, issue #788): a ministry glued to its portfolio by
-# OCR, regional statistics offices, supervision services and
-# inspectorates in one word, the multifunctional and employment centres,
+# OCR, the multifunctional and employment centres,
 # guardianship bodies, councils and dumas, election commissions,
 # settlements, border and military units, fire stations, state hospitals
 # and penal institutions by number, and an investigative department. A
@@ -772,11 +771,6 @@ match = "pattern"
 patterns = [
     # "Министерствообороны", "Министерствафинансов Российской Федерации".
     '(?i)\bминистерств(?:о|а|у|ом|е)\p{Ll}{4,}',
-    # "Энскстат", "Энскоблстат", "Мосгорстат".
-    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат\p{Alphabetic}{0,2}\b',
-    # "Гостехнадзор", "Энскгосстройнадзор", "Госавтоинспекция",
-    # "Энскжилинспекция".
-    '(?i)\b\p{Alphabetic}*надзор\p{Alphabetic}{0,3}\b|\b\p{Alphabetic}+инспекци\p{Alphabetic}{0,2}\b',
     # "многофункциональный центр", "Центр занятости населения", "Орган
     # опеки и попечительства", "Совет депутатов".
     '(?i)\bмногофункциональн\p{Alphabetic}*[\p{Zs}\t]+центр|\bцентр\p{Alphabetic}{0,2}[\p{Zs}\t]+занятости\b|\bорган\p{Alphabetic}{0,2}[\p{Zs}\t]+опеки\b|\bсовет\p{Alphabetic}{0,2}[\p{Zs}\t]+депутатов\b',
@@ -798,6 +792,33 @@ patterns = [
     '\bСУ[\p{Zs}\t]+СК\b|\bСК[\p{Zs}\t]+(?:России|РФ)\b',
 ]
 anywhere_in = ["ORG", "PERSON"]
+
+# Regional statistics offices, supervision services and inspectorates in
+# one word, as an organization (#788): "Энскстат", "Энскоблстат",
+# "Гостехнадзор", "Энскгосстройнадзора", "Госавтоинспекция",
+# "Энскжилинспекции". Only the bodies' own case endings count, so a
+# surname built on the word ("Надзоров", "Надзорова") is no body.
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат(?:а|у|ом|е)?\b',
+    '(?i)\b\p{Alphabetic}*надзор(?:а|у|ом|е)?\b',
+    '(?i)\b\p{Alphabetic}+инспекци(?:я|и|ю|ей|ею)\b',
+]
+anywhere_in = ["ORG"]
+
+# The same as a person, unless a title or the document's other person span
+# makes the word a surname ("г-н Роснадзор").
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)\b\p{Alphabetic}+(?:ск|обл|гор)стат(?:а|у|ом|е)?\b',
+    '(?i)\b\p{Alphabetic}*надзор(?:а|у|ом|е)?\b',
+    '(?i)\b\p{Alphabetic}+инспекци(?:я|и|ю|ей|ею)\b',
+]
+anywhere_in = ["PERSON"]
+unless_titled = true
+unless_last_named = true
 
 # Never public bodies, whoever owns them: a span that names a university
 # or college itself, after its abbreviations and adjectives, a state one
