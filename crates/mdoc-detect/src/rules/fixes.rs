@@ -557,6 +557,9 @@ impl Pack {
             Regex::new(r"(?i)\b(?:сотрудник|офицер|инспектор)\p{Alphabetic}{0,3}[\p{Zs}\t]+$")
                 .expect("employee affiliation pattern")
         });
+        // Before the fixes, so a title left in a relabelled name comes off
+        // as any person's does (#503).
+        self.person_forms(source, detections);
         let fixes = self.spans.iter().filter_map(|span| match span {
             Span::Fix(fix) => Some(fix),
             Span::Pattern { .. } => None,

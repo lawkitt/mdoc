@@ -240,6 +240,14 @@ fn mistakes_in_a_rule_file_are_named() {
             "not lowercase",
         ),
         (
+            "[[span]]\ncategory = \"ORG\"\nperson_nouns = [\"family\"]",
+            "only a PERSON fix takes person_titles, person_lists or person_nouns",
+        ),
+        (
+            "[[span]]\ncategory = \"PERSON\"\nperson_titles = [\"Senator\"]",
+            "not lowercase",
+        ),
+        (
             "[[span]]\ncategory = \"PERSON\"\nextend = ['(?P<name>x)y']",
             "extend group \"name\" is not `lead` or `tail`",
         ),
@@ -782,6 +790,9 @@ fn pack_regexes<'p>(pack: &'p Pack) -> Vec<(String, &'p Regex)> {
                 org_before: _,
                 org_after: _,
                 person_after: _,
+                person_titles: _,
+                person_lists: _,
+                person_nouns: _,
                 list_letter: _,
                 unless_over: _,
                 nested_quotes,

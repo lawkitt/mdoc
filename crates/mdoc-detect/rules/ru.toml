@@ -351,14 +351,62 @@ trim = [
 
 # Two initials beside a surname belong to the name: the model's "Ветлин" in
 # "Ветлин Н. О." grows to the whole of it, as "Брюн" does in "Л.И. Брюн"
-# (guide rule 1, #391). Only spaces between: never across a sentence's
-# period ("Ветлин. Н. Иванов"), a comma or a line.
+# (the next entry but one; guide rule 1, #391). Only spaces between: never
+# across a sentence's period ("Ветлин. Н. Иванов"), a comma or a line.
 [[span]]
 category = "PERSON"
 extend = [
     '\b(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*[ \t]+[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.',
-    '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
 ]
+
+# A word glued before initials is no part of the name: the model's
+# «Обязать Е. Р.» and «к Е. Р.» are «Е. Р.» (guide rule 1, #793): a
+# lowercase word (a preposition, a verb mid-sentence) or a capitalised
+# verb's infinitive opening a sentence. A surname's particle is lowercase
+# too, but stands before a surname («де Лаваль»), never before initials.
+# The model's organization of such words and Cyrillic initials is the
+# person's initials (`person_forms` in rules/). After the join above,
+# which reads a capitalised verb as a surname, and before the one below,
+# so the initials left grow to a surname after them («Е. Р. Тулину»).
+[[span]]
+category = "PERSON"
+trim_start = [
+    '(?:(?:\p{Ll}+|\p{Lu}\p{Ll}*(?:ть|ться))[\p{Zs}\t]+)+(?P<rest>\p{Lu}\.[\p{Zs}\t]?\p{Lu}\.)',
+]
+
+# Two initials before a surname belong to the name, as above: the model's
+# "Брюн" in "Л.И. Брюн" grows to the whole of it (#391). Initials glued to
+# the surname are the name too: the model's «Т.Т.» in «Т.Т.Колобова» grows
+# to the whole of it (#503).
+[[span]]
+category = "PERSON"
+extend = [
+    '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]*(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
+]
+
+# A double surname with two initials after it is a person's name, whatever
+# the model made of it: «Ростов-Кедров Т.Т.», «Ростов-Кедровой Т. Т.»
+# (guide rule 1, #503). Two capitalised parts joined by a hyphen, then the
+# initials with their periods. Only a gap: where a name span overlaps the
+# match it is not proposed (`gaps_only`), so the model's own span stays. A
+# hyphenated place before initials is no surname («Санкт-Петербург Т.Т.»,
+# «Улан-Удэ», «Нью-Йорк»): skipped.
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>(?m:^)|[^\p{Alphabetic}\-])[А-ЯЁ][а-яё]+-[А-ЯЁ][а-яё]+[\p{Zs}\t]+[А-ЯЁ]\.[\p{Zs}\t]?[А-ЯЁ]\.(?P<tail>[^\p{Alphabetic}]|$)'
+skip = '(?:Санкт|Улан|Йошкар|Ханты|Нарьян|Горно|Усть|Алма|Буэнос|Нью|Лос|Сан|Санта|Рио|Пуэрто|Коста|Шри|Абу|Тель|Эль)-'
+gaps_only = true
+
+# Initials and a surname after a court officer's or a party's role are a
+# person's name, whatever the model made of it: «судья Л. Н. Кедрин»,
+# «секретарём Л.Н. Кедриной» (guide rule 1, #503). The role, in its case
+# forms and any letter case, stays outside (`lead`); the initials keep
+# their periods, with spaces or none between them and the surname. Only a
+# gap (`gaps_only`), as above.
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>\b(?i:судь(?:я|и|е|ю|ей|ёй|ею)|секретар(?:ь|я|ю|ём|ем|е)|помощник(?:а|у|ом|е)?|прокурор(?:а|у|ом|е)?|следовател(?:ь|я|ю|ем|е)|дознавател(?:ь|я|ю|ем|е)|адвокат(?:а|у|ом|е)?|защитник(?:а|у|ом|е)?|эксперт(?:а|у|ом|е)?|свидетел(?:ь|я|ю|ем|е)|нотариус(?:а|у|ом|е)?|истц(?:а|у|ом|е)|истец|ответчик(?:а|у|ом|е)?)[\p{Zs}\t]+)[А-ЯЁ]\.[\p{Zs}\t]?[А-ЯЁ]\.[\p{Zs}\t]*[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?P<tail>[^\p{Alphabetic}]|$)'
+gaps_only = true
 
 # A surname-first name is one span, comma included: the model's "Иванов"
 # in "Иванов, И. И., 1999" grows to "Иванов, И. И.", and its "Иванов" and

@@ -417,6 +417,22 @@ pub(super) struct SpanEntry {
     /// them a person's ("estate of" before "Desmond Arkwright").
     #[serde(default)]
     person_after: Vec<String>,
+    /// For PERSON: lowercase titles only a person holds ("senator"), each
+    /// a word or single-spaced words, its period kept where it is one
+    /// ("sen."): a model organization on a titled surname, or on the
+    /// surname after one, is the person (#503).
+    #[serde(default)]
+    person_titles: Vec<String>,
+    /// For PERSON: lowercase plural titles before a list of surnames
+    /// ("senators"): each name in the list is a person's (#503).
+    #[serde(default)]
+    person_lists: Vec<String>,
+    /// For PERSON: lowercase nouns after a person's name that are no part
+    /// of it ("family", "campaign"): a person's span loses one, and a
+    /// model organization of a known person's name and one is the person
+    /// (#503).
+    #[serde(default)]
+    person_nouns: Vec<String>,
     /// A lowercase list marker at a line or list break is no initial.
     #[serde(default)]
     list_letter: bool,
@@ -1165,13 +1181,16 @@ impl Pack {
                     || !entry.org_before.is_empty()
                     || !entry.org_after.is_empty()
                     || !entry.person_after.is_empty()
+                    || !entry.person_titles.is_empty()
+                    || !entry.person_lists.is_empty()
+                    || !entry.person_nouns.is_empty()
                     || entry.list_letter
                     || !entry.unless_over.is_empty()
                     || !entry.nested_quotes.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, trim_start, trim_end, extend, strip_end, person_before, org_before, org_after, person_after, list_letter, unless_over or nested_quotes".into(),
+                            "a pattern takes no trim, trim_start, trim_end, extend, strip_end, person_before, org_before, org_after, person_after, person_titles, person_lists, person_nouns, list_letter, unless_over or nested_quotes".into(),
                         ));
                     }
                     // A sized pattern's `mark` groups are what its lines'
@@ -1288,7 +1307,7 @@ impl Pack {
                 }
                 if !fixes {
                     return Err(at(
-                        "needs a pattern, trim words, trim_start, trim_end, extend patterns, strip_end, person_before, org_before, org_after or person_after"
+                        "needs a pattern, trim words, trim_start, trim_end, extend patterns, strip_end, person_before, org_before, org_after, person_after, person_titles, person_lists or person_nouns"
                             .into(),
                     ));
                 }
@@ -1306,6 +1325,16 @@ impl Pack {
                 {
                     return Err(at("only a PERSON fix takes org_before or org_after".into()));
                 }
+                if (!entry.person_titles.is_empty()
+                    || !entry.person_lists.is_empty()
+                    || !entry.person_nouns.is_empty())
+                    && category != Category::Person
+                {
+                    return Err(at(
+                        "only a PERSON fix takes person_titles, person_lists or person_nouns"
+                            .into(),
+                    ));
+                }
                 if entry.list_letter
                     && !matches!(category, Category::Person | Category::Organization)
                 {
@@ -1322,6 +1351,9 @@ impl Pack {
                     .chain(&entry.org_before)
                     .chain(&entry.org_after)
                     .chain(&entry.person_after)
+                    .chain(&entry.person_titles)
+                    .chain(&entry.person_lists)
+                    .chain(&entry.person_nouns)
                 {
                     if word
                         .split(' ')
@@ -1345,6 +1377,9 @@ impl Pack {
                     .chain(&entry.org_before)
                     .chain(&entry.org_after)
                     .chain(&entry.person_after)
+                    .chain(&entry.person_titles)
+                    .chain(&entry.person_lists)
+                    .chain(&entry.person_nouns)
                     .chain(&entry.unless_over)
                 {
                     if *word != word.to_lowercase() {
@@ -1450,6 +1485,9 @@ impl Pack {
                     org_before: entry.org_before.clone(),
                     org_after: entry.org_after.clone(),
                     person_after: entry.person_after.clone(),
+                    person_titles: entry.person_titles.clone(),
+                    person_lists: entry.person_lists.clone(),
+                    person_nouns: entry.person_nouns.clone(),
                     list_letter: entry.list_letter,
                     unless_over: entry.unless_over.clone(),
                     nested_quotes,
