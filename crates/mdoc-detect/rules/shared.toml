@@ -61,7 +61,12 @@
 #                                just before or after it, spaces aside
 #                                ("ИНН/ОГРН"): the list's values are one run
 #                                left to the model; not with `after`
-#   after          = true        the labels follow the value instead ("a
+#   glued          = true        the label matches inside a longer word,
+#                                touching the text before it and the value
+#                                after it ("PMINDEX NO." of a running
+#                                header), so `value` is the number's own
+#                                strict shape; not with `after`
+#   after          = true       the labels follow the value instead ("a
 #                                March 9, 1984 birth date"): `between` is
 #                                what sits after the value; the labels are
 #                                lowercase and match as written, a space in
