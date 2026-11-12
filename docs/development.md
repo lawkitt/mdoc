@@ -287,7 +287,8 @@ prints their output after them.
 ([ADR 0095](adr/0095-ci-on-a-merge-queue.md)): `unit` (the crates, without
 the recognition fixtures, and the doctests), `app` (the app package without
 the render test), `renders`, `recognition` (the fixtures on their
-snapshots), `scripts` (the suites and the quarantine check), or
+snapshots), `rust` (those four in one nextest run, then the doctests: the
+PC's `ci/windows`), `scripts` (the suites and the quarantine check), or
 `quarantined`. Tests never retry. A test that flakes twice goes into
 `.config/quarantine.txt` (`<nextest filter>  #<issue>  <expires
 YYYY-MM-DD>`) by PR, with its issue: every tier leaves it out, `just
@@ -520,10 +521,10 @@ wait for.
 | Job (status) | Areas | Runs on | Limit |
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
-| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test` | 30 min |
+| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui)`, the same of the UI tests (`mdocUITests`), without the timing tests, which only the nightly runs | 35 min (unit), 45 min (UI) |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
-| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 4 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
+| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
 
 | `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
 
@@ -591,6 +592,22 @@ and any line past its date fails the scripts tier. A lane runs what it touched b
 profile's `gate`) and may dispatch the full hosted desktop job on its
 branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
 
+**Unrelated failures and re-queues** ([ADR 0112](adr/0112-ci-speed-after-the-first-fortnight.md)).
+A queue failure is unrelated when it is an infrastructure failure, when
+the same test failed the same way on another PR's queue commit, on `main`
+or in the nightly within 14 days, or when the failing test is in an area
+the PR does not touch; anything else goes to the PR's lane. The hub
+re-queues a PR once after an unrelated failure and, on a test's second
+unrelated failure, quarantines it with its issue, without asking; its PR
+comment names the rule that matched. A second drop of the same PR goes to
+the maintainer.
+
+**iOS tests on the Mac.** Agents run only the test classes they touched
+(`xcodebuild test -only-testing:<target>/<class>`) and leave the full
+suite to the queue: on the fanless Air it takes 25 to 30 minutes, and
+parallel runs overheat it. One heavy build at a time; check `uptime`
+first.
+
 **Tests and OS services.** A test never asks the OS's security or identity
 services: the build's code signature (`SecCodeCopySelf`), the case key
 (Keychain, Windows data protection, Secret Service) or the build identity
@@ -613,7 +630,7 @@ so the shards set `MDOC_DETECT_THREADS=4`.
 A recognition-area PR runs the gate on its head
 ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)), so a stale
 snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
-4 shards, on every push (a newer push cancels it), drafts included. Its
+6 shards, on every push (a newer push cancels it), drafts included. Its
 head `merge-gate` waits for `detection-head / ci/detection` beside the fast
 tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
 PR is one with a file on a recognition line of `scripts/ci-areas.txt`
@@ -651,7 +668,7 @@ every 4 minutes: the heartbeat `merge-gate` reads. While the PC is off,
 A job's folder holds `log.txt`, `summary.txt` and, for a failure,
 `failed-tests.txt`. A failed or timed-out job's `summary.txt` ends with the
 log's last 60 lines, without colours. Failing tests are named in the status
-("Failed in just test: mdoc-core tests::broken and 1 more"): nextest's from
+("Failed in just test-tier rust: mdoc-core tests::broken and 1 more"): nextest's from
 the log, the Android job's from Gradle's JUnit XML as
 `android:<class>#<method>`, the form `.config/quarantine.txt` takes, since
 Gradle's log names no emulator test. Android folders also hold the Gradle

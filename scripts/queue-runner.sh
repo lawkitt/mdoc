@@ -3,8 +3,9 @@
 #
 # The PC's runner for merge-queue commits (ADR 0095). One job per instance:
 # QUEUE_CI_JOB=windows posts ci/windows (scripts/setup.sh, just lint, just
-# test), QUEUE_CI_JOB=android posts ci/android (scripts/setup.sh, just
-# android). The PC runs both side by side, each in its own home
+# test-tier rust: the Rust tests and doctests, not the script suites, which
+# hosted Linux and macOS run; ADR 0112), QUEUE_CI_JOB=android posts
+# ci/android (scripts/setup.sh, just android). The PC runs both side by side, each in its own home
 # ($LOCAL_CI_HOME/queue-<job>, E:\ci\queue-<job>) with its own CI checkout,
 # target/ and state. It tests only queue commits, the branches under
 # gh-readonly-queue/main/ and ci-shadow/main/ (the shadow trial), never PR
@@ -103,9 +104,26 @@ config() {
   tailnet_s=600
 }
 
-log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+# Git Bash starts a process in about 0.1 s on the idle PC and several times
+# that beside a build, and a command substitution is one too, so what the
+# loop does every tick or for every listed commit asks bash itself: the time
+# from EPOCHSECONDS and printf (bash 5; macOS /bin/bash 3.2 runs date), a
+# commit's short name by expansion, the done list from memory.
 
-short() { printf '%s' "${1:0:7}"; }
+# Sets utc to the time now, as logs and status.txt write it.
+utc_now() {
+  if [ -n "${EPOCHSECONDS:-}" ]; then
+    TZ=UTC0 printf -v utc '%(%Y-%m-%dT%H:%M:%SZ)T' -1
+  else
+    utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  fi
+}
+
+log() {
+  local utc
+  utc_now
+  printf '%s %s\n' "$utc" "$*"
+}
 
 duration() { printf '%dm%02ds' $(($1 / 60)) $(($1 % 60)); }
 
@@ -114,6 +132,7 @@ label() {
   case "$1" in
     checkout) echo checkout ;;
     setup) echo scripts/setup.sh ;;
+    test) echo "just test-tier rust" ;;
     *) echo "just $1" ;;
   esac
 }
@@ -164,24 +183,36 @@ post() { # sha state description [target url]
   post_ok=true
   for try in 1 2 3; do
     if bounded gh "${args[@]}" >/dev/null; then
-      log "$2 $context on $(short "$1"): $3"
+      log "$2 $context on ${1:0:7}: $3"
       return 0
     fi
     [ "$try" -eq 3 ] || sleep "$tick_s"
   done
   post_ok=false
-  log "warning: could not post $2 $context on $(short "$1"): $3"
+  log "warning: could not post $2 $context on ${1:0:7}: $3"
 }
 
 # --- settling new commits -----------------------------------------------------
 
-is_done() { grep -qxF "$1" "$state/done" 2>/dev/null; }
+# Sets done_list to the commits of $state/done, one per line: every poll
+# asks is_done about every listed commit.
+read_done() {
+  done_list=''
+  [ ! -f "$state/done" ] || done_list=$(tr -d '\r' <"$state/done")
+  done_count=0
+  [ -z "$done_list" ] || done_count=$(($(wc -l <<<"$done_list")))
+}
+
+is_done() { [[ $'\n'$done_list$'\n' == *$'\n'"$1"$'\n'* ]]; }
 
 # A commit with a final status (or none to post) is never looked at again.
 mark_done() {
   echo "$1" >>"$state/done"
-  if [ "$(wc -l <"$state/done")" -gt 1000 ]; then
+  done_list+="${done_list:+$'\n'}$1"
+  done_count=$((done_count + 1))
+  if [ "$done_count" -gt 1000 ]; then
     tail -n 500 "$state/done" >"$state/done.new" && mv -f "$state/done.new" "$state/done"
+    read_done
   fi
 }
 
@@ -236,11 +267,11 @@ third_party() { # merge-base sha
 settle() { # branch sha
   local branch=$1 sha=$2 mb areas text=''
   if ! mb=$(g merge-base refs/queue-ci/main "$sha"); then
-    log "warning: $(short "$sha") shares no history with main; building it"
+    log "warning: ${sha:0:7} shares no history with main; building it"
     mb=$sha
   fi
   if ! areas=$(commit_areas "$sha" "$mb"); then
-    log "warning: $(short "$sha"): could not read its areas; building it"
+    log "warning: ${sha:0:7}: could not read its areas; building it"
     areas=$every_area
   fi
   if [ -z "$areas" ]; then
@@ -257,17 +288,17 @@ settle() { # branch sha
   third_party "$mb" "$sha" || rc=$?
   case "$rc" in
     0)
-      log "$(short "$sha") $branch: third-party code ($third_why); left to hosted CI"
+      log "${sha:0:7} $branch: third-party code ($third_why); left to hosted CI"
       mark_done "$sha"
       return 0
       ;;
     2)
-      log "warning: $(short "$sha") $branch: $third_why; retrying at the next poll"
-      unsettled+="${unsettled:+, }$(short "$sha") ($third_why)"
+      log "warning: ${sha:0:7} $branch: $third_why; retrying at the next poll"
+      unsettled+="${unsettled:+, }${sha:0:7} ($third_why)"
       return 0
       ;;
   esac
-  log "$(short "$sha") $branch: queued ($areas)"
+  log "${sha:0:7} $branch: queued ($areas)"
   queued+="$(g log -1 --format=%ct "$sha") $(g rev-list --count "$sha") $sha $branch"$'\n'
 }
 
@@ -286,7 +317,7 @@ poll() {
     unreachable "could not fetch main from origin"
     return 1
   fi
-  [ -z "$offline_since" ] || log "GitHub reachable again after $(duration $(($(date +%s) - offline_since)))"
+  [ -z "$offline_since" ] || log "GitHub reachable again after $(duration $((${EPOCHSECONDS:-$(date +%s)} - offline_since)))"
   offline_since='' offline_why='' unsettled=''
   listed=$listing
   polled=true
@@ -302,8 +333,8 @@ poll() {
     [[ $queued != *" $sha "* ]] || continue
     if ! fetch "+refs/heads/$branch:refs/queue-ci/c/$sha" ||
       [ "$(g rev-parse "refs/queue-ci/c/$sha")" != "$sha" ]; then
-      log "warning: could not fetch $branch at $(short "$sha")"
-      unsettled+="${unsettled:+, }$(short "$sha") (could not fetch it)"
+      log "warning: could not fetch $branch at ${sha:0:7}"
+      unsettled+="${unsettled:+, }${sha:0:7} (could not fetch it)"
       continue
     fi
     settle "$branch" "$sha"
@@ -322,7 +353,11 @@ is_listed() { [[ $'\n'$listed$'\n' == *" $1"$'\n'* ]]; }
 # that cannot see GitHub (the PC lost its route to GitHub for hours on
 # 2026-11-04 while its status page looked idle).
 unreachable() { # why
-  [ -n "$offline_since" ] || offline_since=$(date +%s) offline_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ -z "$offline_since" ]; then
+    local utc
+    utc_now
+    offline_since=${EPOCHSECONDS:-$(date +%s)} offline_at=$utc
+  fi
   offline_why=$1
 }
 
@@ -365,10 +400,11 @@ toolchain_reason() { # sha
 # Standard input without colours, cursor moves or carriage returns at line ends.
 plain() { sed -e "s/$(printf '\033')\[[0-9;?]*[A-Za-z]//g" -e "s/$(printf '\r')\$//"; }
 
-# The failing tests nextest named in a log, one per line.
+# The failing tests nextest named in a log, one per line, without its retry
+# count or padded progress counter ("( 958/1944)", as on the PC).
 failed_tests() { # log
   plain <"$1" |
-    sed -nE 's/^ *(FAIL|TIMEOUT|SIG[A-Z]+) +\[[^]]*\] +(\([0-9]+\/[0-9]+\) +)?//p' | sort -u
+    sed -nE 's/^ *(FAIL|TIMEOUT|SIG[A-Z]+) +\[[^]]*\] +(\( *[0-9]+\/[0-9]+\) +)?//p' | sort -u
 }
 
 # The failing tests in Gradle's JUnit XML under the folders, as
@@ -410,7 +446,7 @@ job() { # sha dir clean-reason
   local sha=$1 dir=$2 why=$3 step start rc kb
   cd "$checkout" || exit 3
   unset CARGO_TARGET_DIR RUSTFLAGS MDOC_HEADLESS_ARTIFACTS
-  printf 'checkout %s\n' "$(date +%s)" >"$dir/.step"
+  printf 'checkout %s\n' "${EPOCHSECONDS:-$(date +%s)}" >"$dir/.step"
   if [ -z "$why" ] && [ -d target ]; then
     kb=$(dir_kb target)
     [ "${kb:-0}" -le $((target_max_gb * 1048576)) ] || why="target/ is $((kb / 1048576)) GB, over $target_max_gb GB"
@@ -432,7 +468,7 @@ job() { # sha dir clean-reason
     checkout_clean "$sha" || exit 3
   fi
   for step in $steps; do
-    start=$(date +%s)
+    start=${EPOCHSECONDS:-$(date +%s)}
     printf '%s %s\n' "$step" "$start" >"$dir/.step"
     echo "queue-runner: $(label "$step")"
     rc=0
@@ -446,16 +482,16 @@ job() { # sha dir clean-reason
           bash scripts/setup.sh </dev/null || rc=$?
         fi
         ;;
-      test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just test || rc=$? ;;
+      test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just test-tier rust || rc=$? ;;
       android) MDOC_ANDROID_JOB=always just android || rc=$? ;;
       *) just "$step" || rc=$? ;;
     esac
     # The Android job's Gradle reports and test results, passed or failed.
     [ "$step" != android ] || copy_android_outputs "$dir"
     if [ "$rc" -eq 0 ]; then
-      echo "$(label "$step"): passed in $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
+      echo "$(label "$step"): passed in $(duration $((${EPOCHSECONDS:-$(date +%s)} - start)))" >>"$dir/summary.txt"
     else
-      echo "$(label "$step"): failed (exit $rc) after $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
+      echo "$(label "$step"): failed (exit $rc) after $(duration $((${EPOCHSECONDS:-$(date +%s)} - start)))" >>"$dir/summary.txt"
       exit 1
     fi
   done
@@ -470,11 +506,11 @@ job() { # sha dir clean-reason
 
 start_job() { # branch sha
   local branch=$1 sha=$2 name why
-  name=$(short "$sha")
+  name=${sha:0:7}
   why=$(toolchain_reason "$sha")
   rm -rf "${out:?}/${name:?}"
   mkdir -p "$out/$name"
-  run_sha=$sha run_branch=$branch run_dir=$out/$name run_start=$(date +%s) run_step=checkout run_beat=0
+  run_sha=$sha run_branch=$branch run_dir=$out/$name run_start=${EPOCHSECONDS:-$(date +%s)} run_step=checkout run_beat=0
   run_url=''
   [ -z "$url" ] || run_url=$url/$name/
   cat >"$run_dir/summary.txt" <<EOF
@@ -490,7 +526,7 @@ EOF
   run_pid=$!
   set +m
   echo "$run_pid" >"$state/job.pid"
-  log "started $(short "$sha") $branch (pid $run_pid)"
+  log "started ${sha:0:7} $branch (pid $run_pid)"
 }
 
 # Stops the job's whole process group (cargo, rustc, test binaries).
@@ -533,12 +569,12 @@ finish() { # state description
 
 check_job() {
   local step now rc=0 elapsed tests first more
-  now=$(date +%s)
+  now=${EPOCHSECONDS:-$(date +%s)}
   elapsed=$((now - run_start))
   if kill -0 "$run_pid" 2>/dev/null; then
     read -r step _ 2>/dev/null <"$run_dir/.step" || step=$run_step
     if [ "$elapsed" -gt "$limit_s" ]; then
-      log "$(short "$run_sha"): the job passed its $((limit_s / 60)) min limit in $(label "$step")"
+      log "${run_sha:0:7}: the job passed its $((limit_s / 60)) min limit in $(label "$step")"
       echo "queue-runner: timed out after $(duration "$limit_s") in $(label "$step")" >>"$run_dir/log.txt"
       kill_job "$run_pid"
       finish failure "Timed out in $(label "$step") after $(duration "$limit_s")"
@@ -589,7 +625,7 @@ check_job() {
 stop_dropped() {
   local why="the queue dropped this commit"
   ! g merge-base --is-ancestor "$run_sha" refs/queue-ci/main 2>/dev/null || why="merged before this job finished"
-  log "$(short "$run_sha") $run_branch: left the queue ($why); stopping its job"
+  log "${run_sha:0:7} $run_branch: left the queue ($why); stopping its job"
   echo "queue-runner: stopped: $why" >>"$run_dir/log.txt"
   kill_job "$run_pid"
   finish error "Stopped: $why"
@@ -653,11 +689,11 @@ self_update() { # mode
     fi
   done
   if [ -n "$(outdated_files)" ]; then
-    log "warning: could not update this runner's $files from main@$(short "$main")"
+    log "warning: could not update this runner's $files from main@${main:0:7}"
     update_failed=$main
     return 0
   fi
-  log "updated this runner's $files from main@$(short "$main"); restarting"
+  log "updated this runner's $files from main@${main:0:7}; restarting"
   rm -rf "$state/lock"
   trap - EXIT
   exec bash "$runner_dir/queue-runner.sh" "$1"
@@ -684,7 +720,7 @@ page_answers() {
 # tailnet_s seconds.
 check_tailnet() {
   local now rc=0
-  now=$(date +%s)
+  now=${EPOCHSECONDS:-$(date +%s)}
   [ $((now - tailnet_at)) -ge "$tailnet_s" ] || return 0
   tailnet_at=$now
   ci_served || rc=$?
@@ -693,14 +729,16 @@ check_tailnet() {
 }
 
 write_status() {
-  local next=$out/.status.txt q
-  q=$(queue_sorted | awk '{ printf "%s%s %s", (NR > 1 ? ", " : ""), substr($3, 1, 7), $4 }')
+  local next=$out/.status.txt q='' utc
+  [ -z "$queued" ] || q=$(queue_sorted | awk '{ printf "%s%s %s", (NR > 1 ? ", " : ""), substr($3, 1, 7), $4 }')
   check_tailnet
+  : "${host:=$(hostname)}"
+  utc_now
   {
-    echo "$context queue runner on $(hostname)"
-    echo "heartbeat: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "$context queue runner on $host"
+    echo "heartbeat: $utc"
     if [ -n "$run_pid" ]; then
-      echo "running: $(short "$run_sha") $run_branch, $(label "$run_step") for $(duration $(($(date +%s) - run_start))) ${run_url:-$run_dir}"
+      echo "running: ${run_sha:0:7} $run_branch, $(label "$run_step") for $(duration $((${EPOCHSECONDS:-$(date +%s)} - run_start))) ${run_url:-$run_dir}"
     else
       echo "running: nothing"
     fi
@@ -712,7 +750,7 @@ write_status() {
     fi
     [ -z "$waiting" ] || echo "waiting: $waiting"
     [ -z "$unsettled" ] || echo "retrying: $unsettled"
-    [ -z "${update_failed:-}" ] || echo "outdated: could not update from main@$(short "$update_failed")"
+    [ -z "${update_failed:-}" ] || echo "outdated: could not update from main@${update_failed:0:7}"
     [ -z "$tailnet" ] || echo "$tailnet"
   } >"$next" && mv -f "$next" "$out/status.txt"
 }
@@ -752,7 +790,7 @@ kill_stale_job() {
 # shellcheck disable=SC2317,SC2329 # the EXIT trap
 on_exit() {
   if [ -n "${run_pid:-}" ]; then
-    log "stopping; $(short "$run_sha") runs again when the runner starts"
+    log "stopping; ${run_sha:0:7} runs again when the runner starts"
     kill_job "$run_pid"
     rm -f "$state/job.pid"
   fi
@@ -771,6 +809,7 @@ cmd_run() { # run|once
   trap on_exit EXIT
   trap 'exit 0' TERM INT HUP
   log "runner started: $context for $repo ($prefixes), checkout $checkout, copy in $runner_dir"
+  read_done
   kill_stale_job
   queued='' listed='' polled=false run_pid='' run_sha='' run_branch='' run_step='' run_dir='' run_url=''
   waiting='' disk_noted='' next_poll=0 post_ok=true update_failed='' offline_since='' offline_at='' offline_why='' unsettled=''
@@ -778,7 +817,7 @@ cmd_run() { # run|once
   prune_out
   while :; do
     [ -z "$run_pid" ] || check_job
-    now=$(date +%s)
+    now=${EPOCHSECONDS:-$(date +%s)}
     if [ "$now" -ge "$next_poll" ]; then
       next_poll=$((now + poll_s))
       if poll && [ -z "$run_pid" ]; then
@@ -839,7 +878,7 @@ cmd_status() {
     echo "unhealthy: the runner cannot read GitHub"
     return 1
   fi
-  age=$(($(date +%s) - $(file_epoch "$out/status.txt")))
+  age=$((${EPOCHSECONDS:-$(date +%s)} - $(file_epoch "$out/status.txt")))
   if [ "$age" -gt $((poll_s * 3)) ]; then
     echo "stale: last heartbeat ${age}s ago; the runner is not running"
     return 1

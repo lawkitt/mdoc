@@ -70,7 +70,7 @@ jobs:
     if: needs.areas.outputs.detection == 'true'
     uses: ./.github/workflows/ci-detection.yml
     with:
-      shards: 4
+      shards: 6
 
   # The ci area (ADR 0100): a change to only the CI machinery runs the script
   # suites on Linux and under bash 3.2, not the desktop jobs.
