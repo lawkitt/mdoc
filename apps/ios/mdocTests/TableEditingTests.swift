@@ -588,6 +588,9 @@ final class TableEditingTests: XCTestCase {
         XCTAssertEqual(lines.start.midX, rects[0].minX, accuracy: 0.5)
         XCTAssertEqual(lines.start.minY, rects[0].minY, accuracy: 0.5)
         XCTAssertEqual(lines.end.midX, try XCTUnwrap(rects.last).maxX, accuracy: 0.5)
+        let drawn = try drawnHandles(harness)
+        XCTAssertEqual(lines.start.midX, drawn.start, accuracy: 1.5, "where UIKit draws the start's handle")
+        XCTAssertEqual(lines.end.midX, drawn.end, accuracy: 1.5, "where UIKit draws the end's handle")
         // The carets UIKit asks for are the cell's too, and so is the
         // character under a point on the highlight.
         let range = try XCTUnwrap(view.selectedTextRange)
@@ -656,6 +659,125 @@ final class TableEditingTests: XCTestCase {
         let typed = harness.string.substring(with: word)
         assertOneStep(harness) { harness.toolbar.run(.format(.bold)) }
         XCTAssertEqual(harness.shown, before.replacingOccurrences(of: typed, with: "**\(typed)**"))
+    }
+
+    /// The two-column table whose first body row's left cell holds `cell`,
+    /// with `selected` (a part of it) selected: the harness, the cell's
+    /// text's range and the grid's frame.
+    func selection(_ selected: String, inACellOf cell: String) throws -> (Harness, NSRange, CGRect) {
+        let harness = try harness(text: "Before.\n\n| One | Two |\n| --- | --- |\n| \(cell) | other |\n\nAfter.\n")
+        let table = try grid(harness)
+        let view = table.cells[1][0]
+        let span = NSRange(location: view.location, length: view.textStorage.length)
+        let range = harness.string.range(of: selected, range: span)
+        XCTAssertNotEqual(range.location, NSNotFound, "\(selected) is in the cell")
+        select(harness, range)
+        XCTAssertEqual(harness.view.selectedRange, range, "the selection stands on caret stops")
+        return (harness, span, table.frame)
+    }
+
+    /// Handles that cross keep one caret stop selected, not one UTF-16
+    /// unit: an escaped pipe and a `<br>` are one stop each, and half of
+    /// one would be snapped away by the core, the selection with it.
+    func testCrossedHandlesKeepAWholeEscapeOrBreakSelected() throws {
+        for (cell, unit, head, tail) in [(#"a \| b"#, #"\|"#, #"a \|"#, #"\| b"#), ("x<br>y", "<br>", "x<br>", "<br>y")] {
+            // The start dragged past the end: the unit before the end.
+            var (harness, span, frame) = try selection(head, inACellOf: cell)
+            let selected = harness.view.selectedRange
+            let whole = harness.string.range(of: unit, range: span)
+            XCTAssertEqual(NSMaxRange(selected), NSMaxRange(whole), "the selection ends after \(unit)")
+            var now = try drag(harness, .start, to: CGPoint(x: frame.midX, y: frame.maxY + 40), in: span)
+            XCTAssertEqual(now, whole, "\(unit) stays selected whole")
+            XCTAssertNotNil(harness.view.cellHandleLines, "the handles are still there")
+            // And back: the drag recovers.
+            now = try drag(harness, .start, to: CGPoint(x: frame.midX, y: frame.minY - 40), in: span)
+            XCTAssertEqual(now, selected)
+            // The end dragged before the start: the unit after the start.
+            (harness, span, frame) = try selection(tail, inACellOf: cell)
+            let after = harness.view.selectedRange
+            XCTAssertEqual(after.location, harness.string.range(of: unit, range: span).location)
+            now = try drag(harness, .end, to: CGPoint(x: frame.midX, y: frame.minY - 40), in: span)
+            XCTAssertEqual(now, harness.string.range(of: unit, range: span), "\(unit) stays selected whole")
+            now = try drag(harness, .end, to: CGPoint(x: frame.midX, y: frame.maxY + 40), in: span)
+            XCTAssertEqual(now, after)
+        }
+    }
+
+    /// Where UIKit draws the selection's two handles: each handle view's
+    /// leading edge is its stem.
+    func drawnHandles(_ harness: Harness) throws -> (start: CGFloat, end: CGFloat) {
+        let view = harness.view
+        view.becomeFirstResponder()
+        view.layoutIfNeeded()
+        let display = try XCTUnwrap(view.interactions.compactMap { $0 as? UITextSelectionDisplayInteraction }.first)
+        display.setNeedsSelectionUpdate()
+        display.layoutManagedSubviews()
+        let handles = display.handleViews.map { $0.convert($0.bounds, to: view) }
+        XCTAssertEqual(handles.count, 2)
+        return (handles[0].minX, handles[1].minX)
+    }
+
+    /// In right-to-left text a selection's start is at its right edge and
+    /// its end at its left: the handles are taken where UIKit draws them,
+    /// and a drag follows the finger in the text's own order.
+    func testHandlesInRightToLeftText() throws {
+        // A Hebrew word in a Hebrew cell.
+        var (harness, span, _) = try selection("עולם", inACellOf: "שלום עולם טוב מאוד")
+        var view = harness.view
+        var word = view.selectedRange
+        var lines = try XCTUnwrap(view.cellHandleLines)
+        var rect = try XCTUnwrap(view.selectionRects(for: try XCTUnwrap(view.selectedTextRange)).map(\.rect).first { $0.width > 0 })
+        XCTAssertEqual(lines.start.midX, rect.maxX, accuracy: 0.5, "the start is at the word's right")
+        XCTAssertEqual(lines.end.midX, rect.minX, accuracy: 0.5, "the end is at its left")
+        var drawn = try drawnHandles(harness)
+        XCTAssertEqual(lines.start.midX, drawn.start, accuracy: 1.5, "where UIKit draws the start's handle")
+        XCTAssertEqual(lines.end.midX, drawn.end, accuracy: 1.5, "where UIKit draws the end's handle")
+        XCTAssertEqual(view.cellHandle(at: CGPoint(x: lines.start.midX, y: lines.start.minY - 8))?.end, .start)
+        XCTAssertEqual(view.cellHandle(at: CGPoint(x: lines.end.midX, y: lines.end.maxY + 8))?.end, .end)
+        // The end's handle dragged left takes the next word; the start's
+        // dragged right the one before.
+        var now = try drag(harness, .end, to: CGPoint(x: lines.end.midX - 25, y: lines.end.midY), in: span)
+        XCTAssertEqual(now.location, word.location)
+        XCTAssertGreaterThan(NSMaxRange(now), NSMaxRange(word))
+        now = try drag(harness, .start, to: CGPoint(x: lines.start.midX + 25, y: lines.start.midY), in: span)
+        XCTAssertLessThan(now.location, word.location)
+        // Back onto the word's own edges.
+        now = try drag(harness, .end, to: CGPoint(x: lines.end.midX, y: lines.end.midY), in: span)
+        now = try drag(harness, .start, to: CGPoint(x: lines.start.midX, y: lines.start.midY), in: span)
+        XCTAssertEqual(now, word)
+
+        // Mixed directions. TextKit gives a selection rect its paragraph's
+        // direction, not its run's, and UIKit draws the handles by it: a
+        // Latin word in a Hebrew sentence has its start's handle at its
+        // right, a Hebrew word in a Latin sentence at its left. The
+        // handles are taken where they are drawn.
+        for (selected, cell, startsAtRight) in [("Mark", "שלום Mark עולם", true), ("עולם", "one עולם two", false)] {
+            (harness, span, _) = try selection(selected, inACellOf: cell)
+            view = harness.view
+            word = view.selectedRange
+            lines = try XCTUnwrap(view.cellHandleLines)
+            rect = try XCTUnwrap(view.selectionRects(for: try XCTUnwrap(view.selectedTextRange)).map(\.rect).first { $0.width > 0 })
+            drawn = try drawnHandles(harness)
+            XCTAssertEqual(lines.start.midX, drawn.start, accuracy: 1.5, "\(cell): the start's handle as drawn")
+            XCTAssertEqual(lines.end.midX, drawn.end, accuracy: 1.5, "\(cell): the end's handle as drawn")
+            XCTAssertEqual(lines.start.midX, startsAtRight ? rect.maxX : rect.minX, accuracy: 0.5, cell)
+            XCTAssertEqual(view.cellHandle(at: CGPoint(x: lines.start.midX, y: lines.start.minY - 8))?.end, .start)
+            XCTAssertEqual(view.cellHandle(at: CGPoint(x: lines.end.midX, y: lines.end.maxY + 8))?.end, .end)
+            // Either handle dragged out past the word takes its
+            // neighbour in, and dragged back gives the word again; each
+            // step is one selection, in the cell (`drag`).
+            let out: CGFloat = startsAtRight ? 25 : -25
+            now = try drag(harness, .start, to: CGPoint(x: lines.start.midX + out, y: lines.start.midY), in: span)
+            XCTAssertLessThan(now.location, word.location, cell)
+            XCTAssertEqual(NSMaxRange(now), NSMaxRange(word), cell)
+            now = try drag(harness, .start, to: CGPoint(x: lines.start.midX, y: lines.start.midY), in: span)
+            XCTAssertEqual(now, word, cell)
+            now = try drag(harness, .end, to: CGPoint(x: lines.end.midX - out, y: lines.end.midY), in: span)
+            XCTAssertEqual(now.location, word.location, cell)
+            XCTAssertGreaterThan(NSMaxRange(now), NSMaxRange(word), cell)
+            now = try drag(harness, .end, to: CGPoint(x: lines.end.midX, y: lines.end.midY), in: span)
+            XCTAssertEqual(now, word, cell)
+        }
     }
 
     /// A selection in a cell that UIKit stretches itself (a range it

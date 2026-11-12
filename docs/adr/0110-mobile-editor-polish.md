@@ -70,8 +70,12 @@ lists were faint and uneven.
   of the finger sets the selection once, to the cell's character under
   it, and UIKit draws the highlight, the handles and the loupe for it.
   Beside the cell the handle stops at the end of that line, above or below
-  the cell's text at its start or end; the two ends keep one character
-  between them; a finger held at the top or bottom edge scrolls the text.
+  the cell's text at its start or end; a finger held at the top or bottom
+  edge scrolls the text. Both ends stand on the core's caret stops and
+  keep one stop between them (a letter, a whole `\|` or `<br>`), so the
+  core has nothing to correct. The handles are taken where UIKit draws
+  them, by each selection rect's writing direction: in right-to-left text
+  the start's is at the right.
   A selection UIKit stretches some other way (⇧ with an arrow) keeps only
   its part in the cell. Select All with the caret in a cell selects that
   cell's text, as in one field of a form.

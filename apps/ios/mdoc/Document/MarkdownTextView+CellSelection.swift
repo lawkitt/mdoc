@@ -1,3 +1,4 @@
+import MdocFFI
 import UIKit
 
 /// A selection in a table cell in edit mode (ADR 0110): its handles are
@@ -43,18 +44,26 @@ extension CandidateTextView {
         return kept.length > 0 ? kept : previous
     }
 
-    /// Where the two handles of the selection in a cell stand: the leading
-    /// edge of its first line and the trailing edge of its last, as UIKit
-    /// draws them from `selectionRects(for:)`. (An end at a soft line
-    /// break has its caret on the next line; its handle is on this one.)
+    /// Where the two handles of the selection in a cell stand, as UIKit
+    /// draws them from `selectionRects(for:)`: the start's on the leading
+    /// edge of the rect that holds the selection's start, the end's on
+    /// the trailing edge of the one that holds its end. In right-to-left
+    /// text the leading edge is the right one, so a Hebrew word's start
+    /// handle is at its right. TextKit gives a rect its paragraph's
+    /// direction, not its run's, and UIKit draws by that: the handles are
+    /// taken where they are drawn. (An end at a soft line break has its
+    /// caret on the next line; its handle is on this one.)
     var cellHandleLines: (start: CGRect, end: CGRect)? {
         guard editsCells, selectedRange.length > 0, let range = selectedTextRange,
-              let rects = cellSelectionRects(for: range)?.map(\.rect).filter({ !$0.isNull && !$0.isInfinite }),
-              let first = rects.first(where: { $0.width > 0 }) ?? rects.first,
-              let last = rects.last(where: { $0.width > 0 }) ?? rects.last else { return nil }
+              let rects = cellSelectionRects(for: range)?.filter({ !$0.rect.isNull && !$0.rect.isInfinite }),
+              let first = rects.first(where: \.containsStart) ?? rects.first(where: { $0.rect.width > 0 }) ?? rects.first,
+              let last = rects.last(where: \.containsEnd) ?? rects.last(where: { $0.rect.width > 0 }) ?? rects.last
+        else { return nil }
+        let leading = first.writingDirection == .rightToLeft ? first.rect.maxX : first.rect.minX
+        let trailing = last.writingDirection == .rightToLeft ? last.rect.minX : last.rect.maxX
         return (
-            CGRect(x: first.minX - 1, y: first.minY, width: 2, height: first.height),
-            CGRect(x: last.maxX - 1, y: last.minY, width: 2, height: last.height))
+            CGRect(x: leading - 1, y: first.rect.minY, width: 2, height: first.rect.height),
+            CGRect(x: trailing - 1, y: last.rect.minY, width: 2, height: last.rect.height))
     }
 
     /// The handle of the selection in a cell that a touch at `point` takes
@@ -84,26 +93,71 @@ extension CandidateTextView {
         }
     }
 
+    /// The caret stops of the text in table cells, as the editor core
+    /// has them (`editor_table_selection`): an offset inside an escape
+    /// (`\\|`) or a `<br>` is no stop, and goes to the one after it.
+    private struct CellStops {
+        private let text: String
+        private let string: NSString
+        private let map: UTF8Map
+
+        init(_ source: String) {
+            var text = source
+            text.makeContiguousUTF8()
+            self.text = text
+            string = text as NSString
+            map = UTF8Map(text)
+        }
+
+        /// The stop at `offset` (UTF-16), or the next one.
+        func at(_ offset: Int) -> Int {
+            let caret = TypingBridge.sourceRange(NSRange(location: offset, length: 0).clamped(to: string.length), in: string)
+            guard let kept = editorTableSelection(text: text, selection: caret.textRange) else { return offset }
+            return map.range(of: SourceRange(kept)).location
+        }
+
+        /// The first stop after `offset`, a stop itself.
+        func after(_ offset: Int) -> Int {
+            guard offset < string.length else { return offset }
+            return at(NSMaxRange(string.rangeOfComposedCharacterSequence(at: offset)))
+        }
+
+        /// The last stop before `offset`, a stop itself, not before `floor`.
+        func before(_ offset: Int, floor: Int) -> Int {
+            var candidate = offset
+            while candidate > floor {
+                candidate = string.rangeOfComposedCharacterSequence(at: candidate - 1).location
+                if at(candidate) < offset { return at(candidate) }
+            }
+            return floor
+        }
+    }
+
     /// The selection in a cell with one end moved to the character at
     /// `point` (this view's coordinates), kept in that cell: a point
     /// outside it gives the nearest character of the cell, above or below
-    /// its text the text's start or end. The ends never cross: one
-    /// character stays selected. Nil with no selection in one cell.
+    /// its text the text's start or end. Both ends stand on the core's
+    /// caret stops, and they never cross: one stop's worth stays selected
+    /// (a letter, a whole `\\|` or `<br>`), so nothing corrects the
+    /// selection after it is set. Nil with no selection in one cell.
     func cellSelection(moving end: SelectionEnd, to point: CGPoint) -> NSRange? {
         let selected = selectedRange
         guard editsCells, selected.length > 0, let cell = cellText(holding: selected) else { return nil }
-        let offset = cell.table.offset(at: convert(point, to: cell.table), in: cell.view)
-        let text = textStorage.string as NSString
+        let stops = CellStops(textStorage.string)
+        let offset = stops.at(cell.table.offset(at: convert(point, to: cell.table), in: cell.view))
+        let range: NSRange
         switch end {
         case .start:
-            let last = text.rangeOfComposedCharacterSequence(at: NSMaxRange(selected) - 1).location
+            let last = stops.before(NSMaxRange(selected), floor: cell.span.location)
             let start = max(min(offset, last), cell.span.location)
-            return NSRange(location: start, length: NSMaxRange(selected) - start)
+            range = NSRange(location: start, length: NSMaxRange(selected) - start)
         case .end:
-            let first = NSMaxRange(text.rangeOfComposedCharacterSequence(at: selected.location))
+            let first = stops.after(selected.location)
             let finish = min(max(offset, first), NSMaxRange(cell.span))
-            return NSRange(location: selected.location, length: finish - selected.location)
+            range = NSRange(location: selected.location, length: finish - selected.location)
         }
+        // A cell with one stop only cannot give less than what it has.
+        return range.length > 0 ? range : selected
     }
 
     /// Moves one end of the selection in a cell to `point`: one selection
