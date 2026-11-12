@@ -451,7 +451,6 @@ fork=$(qc 4 fork src/lib.rs)
 bot=$(qc 5 bot src/lib.rs)
 unknown=$(qc 6 unknown src/lib.rs)
 beat=$(prefix=ci-shadow/main/ qc 8 beat src/lib.rs)
-slow=$(qc 9 slow src/lib.rs)
 vanish=$(qc 10 vanish src/lib.rs)
 toolchain=$(qc 11 toolchain rust-toolchain.toml src/lib.rs)
 merged=$(qc 12 merged src/lib.rs)
@@ -474,7 +473,8 @@ export LOCAL_CI_HOME="$tmp/ci" LOCAL_CI_URL=https://ci.example/ci QUEUE_CI_REPO=
 # A 60 s job limit, for the whole job: on the PC beside nextest (scripts/test.sh)
 # the heartbeat job's checkout, setup and lint took 16 s and its refreshed
 # status came 12 s after the first (c066ec0, #585), so 30 s left too little.
-# The slow, dropped and merged ones sleep 120 s, past it.
+# The dropped and merged ones sleep 120 s, past it; the slow one, too, on a
+# pass of its own below.
 export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=60 QUEUE_CI_MIN_FREE_GB=0
 # A stalled gh call ends after 20 s (the fake stalls for 30). Not 3: on the
 # PC beside a test build that ended three to five of the first poll's
@@ -556,15 +556,10 @@ check "a failed job keeps its renders" [ -f "$wout/${fail:0:7}/renders/summary.j
 check "its summary ends with the log's last lines, after the result" \
   eval 'sed -n "/^result: failure/,\$p" "$wout/${fail:0:7}/summary.txt" | sed -n 2p | grep -q "^--- log.txt, last 60 lines" &&
   grep -q "FAIL \[   0.010s\] mdoc-core tests::broken" "$wout/${fail:0:7}/summary.txt"'
-check "as does a timed-out job's" grep -q "^--- log.txt, last 60 lines" "$wout/${slow:0:7}/summary.txt"
 check "status.txt has no tailnet line while /ci is served" not grep -q "^tailnet:" "$wout/status.txt"
 check "a job refreshes its pending status while it runs (the heartbeat)" \
   [ "$(posts "$beat" "$W" | grep -c "pending	Running just test-tier rust (")" -ge 2 ]
 check "a ci-shadow/main/ commit is tested too" has "$beat" "$W" "success	Passed in *"
-check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test-tier rust after 1m00s	*"
-check "a stalled gh call during it is ended, and the next poll goes on" \
-  grep -q "warning: could not list the queue" "$tmp/windows.log"
-check "the next poll that reads GitHub says it is back" grep -q "GitHub reachable again after " "$tmp/windows.log"
 check "a setup that fails once is retried, logged" eval '[ "$(ran setupflake)" = "setup setup lint test-tier-rust " ] &&
   grep -q "^scripts/setup.sh: failed once; retried" "$wout/${flake:0:7}/summary.txt"'
 check "and the job passes" has "$flake" "$W" "success	Passed in *"
@@ -572,7 +567,7 @@ check "a commit the queue dropped stops its job" has "$vanish" "$W" "error	Stopp
 check "before its next step (ran: $(ran vanish))" [ "$(ran vanish)" = "setup lint " ]
 check "a commit merged on another result stops too" has "$merged" "$W" "error	Stopped: merged before this job finished	*"
 check "oldest commit first" eval '[ "$(first pass)" -lt "$(first fail)" ] && [ "$(first fail)" -lt "$(first beat)" ] &&
-  [ "$(first beat)" -lt "$(first slow)" ] && [ "$(first slow)" -lt "$(first vanish)" ] &&
+  [ "$(first beat)" -lt "$(first vanish)" ] &&
   [ "$(first vanish)" -lt "$(first toolchain)" ] && [ "$(first toolchain)" -lt "$(first merged)" ]'
 check "a job keeps target/" grep -q "^pass lint .* target=kept" "$FAKE/just.log"
 check "a changed rust-toolchain.toml deletes it first" grep -q "^toolchain lint .* target=gone" "$FAKE/just.log"
@@ -605,6 +600,20 @@ check "and passes where there is no tailscale, saying so" \
   grep -q "^tailnet: no .*no-tailscale here; /ci not checked" "$tmp/status.out"'
 rm -f "$FAKE/serve-off"
 check "the job's refs are cleaned up" [ -z "$(git -C "$LOCAL_CI_HOME/queue-windows/mdoc" for-each-ref refs/queue-ci/c/)" ]
+
+# --- a job over its limit ---------------------------------------------------------
+
+# A pass of its own, with its own limit: in the pass above, this job waited
+# out the 60 s the heartbeat job needs, most of the suite's time (ADR 0112's
+# sweep). 20 s still holds the checkout, setup and lint before the test step
+# it times out in (16 s on the PC beside nextest, above).
+slow=$(qc 9 slow src/lib.rs)
+QUEUE_CI_TIMEOUT=20 run_once windows "$tmp/slow.log"
+check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test-tier rust after 0m20s	*"
+check "its summary ends with the log's last lines too" grep -q "^--- log.txt, last 60 lines" "$wout/${slow:0:7}/summary.txt"
+check "a stalled gh call during it is ended, and the next poll goes on" \
+  grep -q "warning: could not list the queue" "$tmp/slow.log"
+check "the next poll that reads GitHub says it is back" grep -q "GitHub reachable again after " "$tmp/slow.log"
 
 # --- the Android job, beside it ----------------------------------------------------
 
