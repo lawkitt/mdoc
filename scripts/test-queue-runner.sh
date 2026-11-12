@@ -106,13 +106,14 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
   done
   check "no job is refused" eval '! (QUEUE_CI_JOB=macos config) 2>/dev/null'
 
-  # nextest's failing tests, once each, without colours or retry counts.
+  # nextest's failing tests, once each, without colours, retry counts or its
+  # progress counter, which it pads with spaces ("( 958/1944)").
   esc=$(printf '\033')
   {
     echo "        PASS [   0.010s] mdoc-core tests::fine"
     echo "        FAIL [   0.010s] mdoc-core tests::broken"
     echo "${esc}[31;1m        FAIL${esc}[0m [   0.020s] (1/2) mdoc workspace::tests::flaky"
-    echo "     TIMEOUT [ 120.000s] mdoc workspace::tests::slow"
+    echo "     TIMEOUT [ 120.000s] ( 958/1944) mdoc workspace::tests::slow"
     echo "        FAIL [   0.010s] mdoc-core tests::broken"
   } >"$tmp/nextest.log"
   check "the failing tests are named once each" \

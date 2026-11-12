@@ -367,10 +367,11 @@ toolchain_reason() { # sha
 # Standard input without colours, cursor moves or carriage returns at line ends.
 plain() { sed -e "s/$(printf '\033')\[[0-9;?]*[A-Za-z]//g" -e "s/$(printf '\r')\$//"; }
 
-# The failing tests nextest named in a log, one per line.
+# The failing tests nextest named in a log, one per line, without its retry
+# count or padded progress counter ("( 958/1944)", as on the PC).
 failed_tests() { # log
   plain <"$1" |
-    sed -nE 's/^ *(FAIL|TIMEOUT|SIG[A-Z]+) +\[[^]]*\] +(\([0-9]+\/[0-9]+\) +)?//p' | sort -u
+    sed -nE 's/^ *(FAIL|TIMEOUT|SIG[A-Z]+) +\[[^]]*\] +(\( *[0-9]+\/[0-9]+\) +)?//p' | sort -u
 }
 
 # The failing tests in Gradle's JUnit XML under the folders, as
