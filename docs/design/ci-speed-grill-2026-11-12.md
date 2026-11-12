@@ -83,3 +83,43 @@ From the last 25 Queue runs (job times from the API), the PC's
 8. **Agents on the Mac run only the iOS test classes they touched**
    (`-only-testing`) and leave the full suite to the queue; one heavy build
    at a time, `uptime` first. Goes into `docs/development.md`.
+
+## Facts found before round 2
+
+- The survey, explore and device UI tests already skip on CI, so round 1
+  item 3's second half moves nothing today. The accessibility-size UI
+  tests check scrolling (behaviour) and stay.
+- `Install Linux build deps` takes 12 to 19 s on a normal PR run; the
+  75-minute mirror outage of 2026-11-11 was one event, and #811 added the
+  kernel.org HTTPS fallback.
+- The PC overrides the Windows job limit to 45 min (`QUEUE_CI_TIMEOUT=2700`);
+  ADR 0095 and `queue-runner.sh`'s default say 30.
+- Plain unit tests taking 22 to 31 s on the PC fit CPU contention from the
+  script suites, which run beside nextest and start thousands of processes.
+
+## Round 2 (all recommendations accepted)
+
+9. **The PC stays the main Windows runner**, hosted Windows its fallback as
+   now. Re-measured for a week after round 1 item 1 lands; if the PC still
+   causes more than 1 queue drop a week, hosted Windows (about 24 min
+   cached, 32 cold) becomes the main runner.
+10. **The Windows limit goes back to 30 min**: the PC's 45-minute override
+    is removed, so `queue-runner.sh`'s default applies.
+11. **The PC's slow bursts wait a week.** Only if the Rust tests still pass
+    12 min more than once after item 1 lands: Defender exclusions (the
+    maintainer, as admin) and one run with the VPN off.
+12. **The iOS Release build folds into the iOS unit job** (about 7 + 5 =
+    12 min, under the UI job), so iOS keeps 2 macOS runners.
+13. **"Unrelated" failure** (for item 5) is any of: an infrastructure
+    failure (ADR 0100); the same test failed on another PR's queue commit,
+    on `main` or in the nightly within 14 days; a failing test in an area
+    the PR does not touch. Anything else is related and goes to the lane.
+    The hub names the rule that matched in its PR comment.
+14. **New targets**, measured by `scripts/ci-stats.sh`: median queue commit
+    to green 25 min or less; Windows job 15 min or less; iOS UI job 20 min
+    or less; at most 1 queue drop a week not caused by the PR. They replace
+    ADR 0100's 13-minute target.
+15. **The sweep has four parts, one PR each, iOS first**: iOS UI and slow
+    unit tests; Rust tests over 10 s on hosted macOS; script suites over
+    60 s on Linux (the simulated runners); Android instrumented tests.
+16. **No change for Linux packages.**
