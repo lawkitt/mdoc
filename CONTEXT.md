@@ -525,6 +525,11 @@ so a missed event never leaves a status stale
 while: a nextest filter, its issue and an expiry date past which the fast
 tier fails ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
+**Timing test**: a test that measures how fast something runs rather than
+whether it works (the iOS typing-time UI tests). Runs nightly, never in the
+merge queue, where a shared runner makes its numbers meaningless
+([grill](docs/design/ci-speed-grill-2026-11-12.md)).
+
 **Release gate**: checks a release must pass on every shipped target: the OCR
 smoke test before packaging, and the packaged-app self-test (`just
 smoke-package`) on the built artifact itself.
