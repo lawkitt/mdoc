@@ -158,7 +158,9 @@ What implementing it settled (#616–#621):
 - **The detection gate keeps 4 shards.** On 3 shards each model run took
   248–253 s of the 300 s budget (84%), so the 80% warning fired at once.
   The decision above ("3 shards") was the plan; 4 is what holds. Manual runs
-  default to 4 too.
+  default to 4 too. From 2026-11-12 it is 6: the fixtures grew to 64 a
+  shard, and a model run went over the budget twice in two days (305 s
+  and 315 s), each time dropping an unrelated change from the queue.
 - **`ci/ios` takes about 18 minutes, not 10–12.** The hosted image ships no
   iOS 26.1 Simulator runtime (only 26.2, 26.4.1 and 26.5), so every run
   still downloads it. Parallel testing on 2 Simulators was twice as slow
