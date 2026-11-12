@@ -61,12 +61,34 @@ lists were faint and uneven.
   `rc.5`: in a cell Undo was cut off, and outside one Undo left the screen
   once the capsule was scrolled).
 - A double tap or a long press on a cell selects the word there and shows
-  the edit menu, and a selection handle dragged over the grid moves its
-  end to the character under the finger (2026-11-11, after `rc.6`). The
-  grid takes its own touches, to scroll sideways, so the text view's
-  selection gestures never reached a cell; and UIKit moves a handle by
-  TextKit's hit test, which finds the table's hidden source. The text
-  view answers with the cell's character instead.
+  the edit menu (2026-11-11, after `rc.6`): the grid takes its own
+  touches, to scroll sideways, so the text view's selection gestures
+  never reached a cell.
+- A selection in a cell behaves as one in ordinary text and never leaves
+  its cell (2026-11-12, after build 893). The text view drags its handles
+  itself: a touch on a handle is taken before UIKit's gesture, each move
+  of the finger sets the selection once, to the cell's character under
+  it, and UIKit draws the highlight, the handles and the loupe for it.
+  Beside the cell the handle stops at the end of that line, above or below
+  the cell's text at its start or end; a finger held at the top or bottom
+  edge scrolls the text. Both ends stand on the core's caret stops and
+  keep one stop between them (a letter, a whole `\|` or `<br>`), so the
+  core has nothing to correct. The handles are taken where UIKit draws
+  them, by each selection rect's writing direction: in right-to-left text
+  the start's is at the right.
+  A selection UIKit stretches some other way (⇧ with an arrow) keeps only
+  its part in the cell. Select All with the caret in a cell selects that
+  cell's text, as in one field of a form.
+  - Why not UIKit's gesture: on iOS 26 it asks `closestPosition(to:)`,
+    which the text view answers with the cell's character, and then takes
+    the range from TextKit's own hit test of the point
+    (`NSTextSelectionNavigation`, through a private call), which finds the
+    table's hidden source under the grid. While the finger moved the
+    selection shown ran from the table's first line (the whole grid grey,
+    the handles apart from the highlight), and it was set only as the
+    finger lifted and corrected after that. The first fix (2026-11-11)
+    rewrote that last selection from the point UIKit had asked for; it
+    could not reach what was drawn during the drag.
 - With the caret in a cell, the text scrolls only to keep that cell in
   view (2026-11-11): UIKit scrolled to the hidden source, at the end of
   the grid, so a tap in a long table threw the cell out of view.
@@ -94,8 +116,9 @@ lists were faint and uneven.
 **Names**
 
 - A command edits only what it changes: a list, task, heading or quote
-  its line prefixes, and bold, italic and the other wraps their markers
-  (2026-11-11, after `rc.5` and `rc.6`). An edit that runs into a
+  its line prefixes, bold, italic and the other wraps their markers, and
+  a checked or unchecked task its box's one character (2026-11-11, after
+  `rc.5`, `rc.6` and `rc.7`). An edit that runs into a
   proposed name drops it, so a command that replaced the whole selection
   dropped every name and alias in it.
 

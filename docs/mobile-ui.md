@@ -310,6 +310,13 @@ that only the view model changes; views send intents
 - **The Original while editing** (iPhone): the switch stays; Original
   hides the keyboard and keeps edit mode on, and Text brings the keyboard
   back at the same caret.
+- **A selection in a table's cell** is made by a double tap or a long
+  press on a word and stretched by its handles, as in the text: the
+  highlight follows the finger with the loupe on the handle, the edit
+  menu shows when the finger lifts, and typing or the toolbar acts on it.
+  It stays in its cell: a handle dragged past the cell stops at the end
+  of that line, or at the cell's start or end, and Select All selects the
+  cell's text ([ADR 0110](adr/0110-mobile-editor-polish.md)).
 - **Identities are hidden:** on iPhone no button and no right-edge swipe,
   and an open drawer closes; on iPad the inspector or the right column
   gives way to the Original and comes back on Done if it was showing.
@@ -324,6 +331,7 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Review card | Swipe sideways, or tap a peek | Previous or next candidate |
 | Review bar grabber, progress line, card | Drag up or down | Full or compact, following the finger; × ends review |
 | A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category) |
+| A table's cell, editing | Double tap or long press; drag a handle | Selects the word; stretches the selection inside the cell |
 | Identities row | Swipe right or left, or tap its round button | Replace (a full swipe too); Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
 | Identities row, in Select | Drag ≡ onto another row | Same as: the two names become one |
 | Anywhere | Shake, three-finger swipe | Undo and redo |

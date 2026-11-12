@@ -670,9 +670,8 @@ final class CandidateTextView: RenderedTextView {
         return menu
     }()
 
-    /// The cell character UIKit last asked for by a point on a grid, and
-    /// when (`handleDragged`).
-    var lastCellHit: (offset: Int, time: CFTimeInterval)?
+    /// Drags the handles of a selection in a cell (`CellHandleDragger`).
+    lazy var cellHandles = CellHandleDragger(view: self)
 
     /// What `cellMenu` is shown for: the selection's lines, which the
     /// menu keeps clear of.
@@ -775,6 +774,9 @@ final class CandidateTextView: RenderedTextView {
     /// The caret is drawn in the cell: that is what is kept in view, and
     /// a cell in view already moves nothing.
     override func scrollRectToVisible(_ rect: CGRect, animated: Bool) {
+        // A handle dragged in a cell scrolls the text itself, under the
+        // finger: the selection's end may be the one left behind.
+        if cellHandles.isDragging { return }
         guard let end = selectedTextRange?.end, let cell = cellCaretRect(for: end) else {
             super.scrollRectToVisible(rect, animated: animated)
             return
@@ -816,9 +818,21 @@ final class CandidateTextView: RenderedTextView {
     }
 
     override func closestPosition(to point: CGPoint) -> UITextPosition? {
-        guard let cell = cellPosition(at: point) else { return super.closestPosition(to: point) }
-        lastCellHit = (offset(from: beginningOfDocument, to: cell), CACurrentMediaTime())
-        return cell
+        cellPosition(at: point) ?? super.closestPosition(to: point)
+    }
+
+    override func selectAll(_ sender: Any?) {
+        if !selectCellText() { super.selectAll(sender) }
+    }
+
+    /// UIKit's view for one of the selection's handles (the loupe rises
+    /// from it).
+    func handleView(for end: SelectionEnd) -> UIView? {
+        for case let display as UITextSelectionDisplayInteraction in interactions {
+            let views = display.handleViews
+            return end == .start ? views.first : views.last
+        }
+        return nil
     }
 
     /// The caret is drawn where UIKit last asked for it: after its cell is

@@ -455,6 +455,14 @@ final class EditToolbarTests: XCTestCase {
         caret(harness, at: "about the lease")
         step(.task)
         try check("one task")
+        // The task button on a task checks its box: one character, and the
+        // names on the line stay.
+        step(.task)
+        XCTAssertTrue(harness.shown.contains("- [x] Write to "), harness.shown)
+        try check("checked")
+        step(.task)
+        XCTAssertTrue(harness.shown.contains("- [ ] Write to "), harness.shown)
+        try check("unchecked")
         // Bold over the alias and the words after it, in the task: only
         // the markers are edited, on and off.
         func selectFromTheAlias() throws {
