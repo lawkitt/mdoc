@@ -75,7 +75,7 @@ struct MarkdownTextView: UIViewRepresentable {
     func updateUIView(_ view: CandidateTextView, context: Context) {
         context.coordinator.update(
             view, with: self, dynamicTypeSize: context.environment.dynamicTypeSize,
-            colorScheme: context.environment.colorScheme)
+            colorScheme: context.environment.colorScheme, inViewUpdate: true)
     }
 
     /// What the styled document is built from: a change here builds it
@@ -194,6 +194,8 @@ struct MarkdownTextView: UIViewRepresentable {
         var restyleAfterComposing = false
         /// The find bar request last shown.
         var shownFindBar = 0
+        /// A `followResponder` waits for SwiftUI's update to end.
+        private var responderWaits = false
         /// Whether the text last showed in edit mode; nil before it first
         /// showed. A change keeps the place and the selection (ADR 0110).
         var shownEditing: Bool?
@@ -257,7 +259,13 @@ struct MarkdownTextView: UIViewRepresentable {
             }
         }
 
-        func update(_ view: CandidateTextView, with parent: MarkdownTextView, dynamicTypeSize: DynamicTypeSize, colorScheme: ColorScheme) {
+        /// `inViewUpdate` is true from SwiftUI's own update of the view:
+        /// what moves the first responder then waits for the update to
+        /// end (`followResponder`).
+        func update(
+            _ view: CandidateTextView, with parent: MarkdownTextView, dynamicTypeSize: DynamicTypeSize,
+            colorScheme: ColorScheme, inViewUpdate: Bool = false
+        ) {
             self.parent = parent
             view.onReviewNext = parent.onReviewNext
             connectEditing(view)
@@ -289,6 +297,30 @@ struct MarkdownTextView: UIViewRepresentable {
                 }
             }
             if pendingReveal != nil { view.setNeedsLayout() }
+            if inViewUpdate {
+                // Noted now: by the time the update has ended the Original
+                // may cover the text, and the keyboard is gone with it.
+                if parent.editing, !parent.shown, view.isFirstResponder { focusOnReturn = true }
+                guard !responderWaits else { return }
+                responderWaits = true
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self else { return }
+                    self.responderWaits = false
+                    if let view { self.followResponder(view) }
+                }
+            } else {
+                followResponder(view)
+            }
+        }
+
+        /// Edit mode, the keyboard and the find bar follow the model.
+        /// Never inside SwiftUI's update of the view: making the text
+        /// editable or not resigns the first responder, UIKit then asks
+        /// each view above whether it can take over, and a hosting view
+        /// answers from its view graph, which is in the middle of that
+        /// update. On iOS 27 that never returned and iOS stopped mdoc
+        /// (build 882, twice on 2026-11-12).
+        func followResponder(_ view: CandidateTextView) {
             view.setEditMode(parent.editing, shown: parent.shown)
             followShown(view)
             if parent.findBar != shownFindBar {
