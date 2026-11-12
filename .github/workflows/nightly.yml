@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       drill:
-        description: "Drill: run only the CI targets job, with the queue target forced red (0 minutes), so it opens or comments on its issue."
+        description: "Drill: run only the CI targets job, with every window forced red (CI_STATS_DRILL), so it opens or comments on its issue."
         type: boolean
         default: false
 
@@ -113,7 +113,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          CI_STATS_QUEUE_MIN: ${{ inputs.drill && '0' || '' }}
+          CI_STATS_DRILL: ${{ inputs.drill && '1' || '' }}
 
   report:
     name: report

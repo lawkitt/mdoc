@@ -806,7 +806,7 @@ cache cleanup keeps its newest key.
 - a queue commit's time to a green `merge-gate`: median 25 minutes or less;
 - a green `ci/windows` run, the PC's "Passed in" or a hosted fallback's job time: median 15 minutes or less;
 - a green `ci/ios (ui)` job: median 20 minutes or less;
-- queue drops not caused by the PR (an infrastructure failure, or a PC job whose failing test is quarantined or failed on another PR's queue commit within 14 days): at most 1 a week, each listed with the rule that matched.
+- queue drops not caused by the PR (an infrastructure failure, or a PC job whose one failing test is quarantined or failed on another PR's queue commit within 14 days, among the commits read): at most 1 a week, each listed with the rule that matched.
 
 Its header says exactly what each counts. It exits 2 when a target fails, 3 when one fails in each of `--nights K` windows (ending now, a day ago and so on), 1 on an error. `--since` measures only what ran after a change landed.
 
@@ -820,7 +820,7 @@ red", or comments on the open one; a green night closes it
 opens one issue, "CI targets missed", or comments on the open one; a night
 that meets them all closes it. A missed target alone does not make the night
 red. Run it by hand with `gh workflow run nightly.yml --repo lawkitt/mdoc`;
-`-f drill=true` runs only the targets job with the queue target forced red.
+`-f drill=true` runs only the targets job, every window forced red.
 
 **cargo-deny.** `lint (ubuntu)` checks licences, bans and sources on every
 change, and advisories only when `Cargo.lock` or `deny.toml` changes

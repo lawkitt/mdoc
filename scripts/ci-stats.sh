@@ -22,27 +22,35 @@
 # drops its PR). It counts as not caused by the PR when every job its first
 # failing merge-gate status names is one of:
 #   - an infrastructure failure (ADR 0100), as merge-gate words it: "no macOS
-#     runner, 3 attempts" or "did not run";
-#   - a PC job (ci/windows, ci/android) whose failing status names a test
-#     (the first it names) that is on the quarantine list
-#     (.config/quarantine.txt: an app UI line by name, a Rust line whose
-#     nextest filter contains the test's path), or that the PC named as
-#     failing on another PR's queue commit within 14 days either side,
-#     among the queue commits this run reads.
+#     runner, 3 attempts", "cancelled on macOS, 3 attempts" or "did not run";
+#   - a PC job (ci/windows, ci/android) whose failing status names one test
+#     (not "<test> and 2 more": the others are unknown) that is on the
+#     quarantine list (.config/quarantine.txt as it is now: an app UI line by
+#     name, a Rust line whose nextest filter names the test's path, and its
+#     package if the filter names one), or that the PC named as failing on
+#     another PR's queue commit within 14 days either side. That evidence
+#     comes only from the queue commits this run reads (the window, or with
+#     --nights the oldest window onwards), nothing older.
 # Anything else counts as caused by the PR: a hosted job's failure (it names
 # no test), a PC timeout or a failure naming no test. Failures on main or in
 # the nightly, and a failing test outside the PR's areas, are not read.
 # Unrelated drops are listed under the drops line, with the rule that matched.
 #
 # --nights K measures K windows, ending now, a day ago and so on (each N days
-# long, from the same reads), as the nightly saw them on its last K nights.
+# long), from one read, as the nightly saw them on its last K nights: a
+# window counts only what had happened by its end (a commit green by then, a
+# drop and the failures that explain it posted by then). Only the quarantine
+# list is today's.
 #
 # Exits 0 when every target holds (a target with no samples holds), 2 when
 # one fails in the latest window, 3 when one fails in every one of K >= 2
-# windows, 1 on an error. The limits can be overridden for a drill:
-# CI_STATS_QUEUE_MIN, CI_STATS_WINDOWS_MIN, CI_STATS_IOS_UI_MIN (minutes),
-# CI_STATS_DROPS_WEEK. GH_REPO picks the repository (default lawkitt/mdoc);
-# `gh` must be signed in. Read-only. Bash 3.2 compatible;
+# windows, 1 on an error. CI_STATS_DRILL=1 fails every window with a `drill`
+# line, to drill the nightly's issue; CI_STATS_QUEUE_MIN, CI_STATS_WINDOWS_MIN,
+# CI_STATS_IOS_UI_MIN (minutes) and CI_STATS_DROPS_WEEK override the limits.
+# GH_REPO picks the repository (default lawkitt/mdoc); `gh` must be signed
+# in. Read-only: a week's read is about 300 statuses reads, one jobs read per
+# queue commit that ran iOS and per hosted Windows run, and two run lists a
+# day, inside the nightly token's 1,000 an hour. Bash 3.2 compatible;
 # scripts/test-ci-stats.sh checks it against fakes.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -52,6 +60,7 @@ queue_min=${CI_STATS_QUEUE_MIN:-25}
 windows_min=${CI_STATS_WINDOWS_MIN:-15}
 ios_ui_min=${CI_STATS_IOS_UI_MIN:-20}
 drops_week=${CI_STATS_DROPS_WEEK:-1}
+drill=${CI_STATS_DRILL:-}
 # The repeat rule's reach either side of a drop.
 repeat_s=$((14 * 86400))
 
@@ -93,13 +102,6 @@ fetch_jobs() { # run id
     --jq '.jobs[] | "\(.conclusion // "none") \(.started_at // "" | if . == "" then 0 else fromdateiso8601 end) \(.completed_at // "" | if . == "" then 0 else fromdateiso8601 end) \(.name)"'
 }
 
-# The ids of a workflow's dispatched runs for a commit (merge-gate's hosted
-# fallbacks).
-fetch_dispatched() { # workflow sha
-  gh_api --paginate "repos/$repo/actions/workflows/$1/runs?per_page=100&event=workflow_dispatch&head_sha=$2" \
-    --jq '.workflow_runs[].id'
-}
-
 # --- decisions (pure) ----------------------------------------------------------
 
 # `<n> <median> <p90>` of numbers on stdin (seconds), unrounded; `0 - -` for
@@ -130,17 +132,17 @@ within() { # median-seconds limit-minutes
   awk -v m="$1" -v l="$2" 'BEGIN { exit !(m <= l * 60) }'
 }
 
-# A queue commit's seconds from its Queue run's start to its first green
-# merge-gate (its merge-gate lines, `<state> <epoch> <description>` oldest
-# first, on stdin), or nothing.
+# A queue commit's first green merge-gate (its merge-gate lines, `<state>
+# <epoch> <description>` oldest first, on stdin): `<seconds from start>
+# <epoch>`, or nothing.
 queue_seconds() { # start
-  awk -v s="$1" '$1 == "success" { print $2 - s; exit }'
+  awk -v s="$1" '$1 == "success" { print $2 - s, $2; exit }'
 }
 
-# The description of a commit's first failing merge-gate status (the same
-# lines on stdin), or nothing: the queue dropped it.
+# A commit's first failing merge-gate status (the same lines on stdin):
+# `<epoch> <description>`, or nothing: the queue dropped it.
 gate_failure() {
-  awk '$1 == "failure" { $1 = ""; $2 = ""; sub(/^  /, ""); print; exit }'
+  awk '$1 == "failure" { $1 = ""; sub(/^ /, ""); print; exit }'
 }
 
 # The jobs a failing merge-gate description names, `<job> <where>` lines:
@@ -154,19 +156,23 @@ failed_jobs() { # description
 }
 
 # Whether a job's place (from failed_jobs) is merge-gate's wording for an
-# infrastructure failure (ADR 0100).
+# infrastructure failure (ADR 0100): a job with no runner, one cancelled
+# after it started (not by its own timeout, which merge-gate words as a
+# plain failure), or one that never ran.
 infra_where() { # where
-  [[ $1 =~ ^no\ [A-Za-z]+\ runner || $1 =~ ^did\ not\ run ]]
+  [[ $1 =~ ^no\ [A-Za-z]+\ runner || $1 =~ ^cancelled\ on\  || $1 =~ ^did\ not\ run ]]
 }
 
-# The test a PC failure status names ("Failed in just test: ( 714/1634)
-# mdoc-markdown from_html::tests::x and 2 more" gives `mdoc-markdown
-# from_html::tests::x`), or nothing.
+# The test a PC failure status names, after whether it names more: "Failed
+# in just test: ( 714/1634) mdoc-markdown from_html::tests::x and 2 more"
+# gives `1 mdoc-markdown from_html::tests::x`, one test alone `0 <test>`;
+# nothing when it names none.
 pc_test() { # description
-  local d=$1
+  local d=$1 more=0
   case "$d" in "Failed in "*": "*) ;; *) return 0 ;; esac
   d=${d#*: }
-  sed -E 's/ and [0-9]+ more$//; s/^\( *[0-9]+\/[0-9]+\) //' <<<"$d"
+  [[ ! $d =~ \ and\ [0-9]+\ more$ ]] || more=1
+  echo "$more $(sed -E 's/ and [0-9]+ more$//; s/^\( *[0-9]+\/[0-9]+\) //' <<<"$d")"
 }
 
 # Seconds from the PC's "Passed in 13m45s", or nothing.
@@ -175,42 +181,49 @@ pc_seconds() { # description
   echo $((10#${BASH_REMATCH[1]} * 60 + 10#${BASH_REMATCH[2]}))
 }
 
-# A hosted Windows fallback's seconds from its jobs (fetch_jobs lines on
-# stdin): the first `ci/windows (hosted, ...)` job's start to the last one's
-# end, when all of them passed; otherwise nothing.
+# A hosted Windows fallback's time from its jobs (fetch_jobs lines on stdin):
+# `<seconds> <end epoch>` from the first `ci/windows (hosted, ...)` job's
+# start to the last one's end, when all of them passed; otherwise nothing.
 hosted_windows_seconds() {
   awk '{ name = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", name) }
     index(name, "ci/windows (hosted, ") == 1 {
       n++; if ($1 != "success" || $2 == 0 || $3 == 0) bad = 1
       if (s == "" || $2 < s) s = $2; if ($3 > e) e = $3
     }
-    END { if (n && !bad) print e - s }'
+    END { if (n && !bad) print e - s, e }'
 }
 
-# A green `ci/ios (ui)` job's seconds from a Queue run's jobs on stdin (named
-# `ios / ci/ios (ui)` there), or nothing.
+# A green `ci/ios (ui)` job's `<seconds> <end epoch>` from a Queue run's jobs
+# on stdin (named `ios / ci/ios (ui)` there), or nothing.
 ios_ui_seconds() {
   awk '{ name = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", name) }
-    name ~ /(^|\/ )ci\/ios \(ui\)$/ && $1 == "success" && $2 > 0 && $3 > 0 { print $3 - $2; exit }'
+    name ~ /(^|\/ )ci\/ios \(ui\)$/ && $1 == "success" && $2 > 0 && $3 > 0 { print $3 - $2, $3; exit }'
 }
 
 # Whether a test is on the quarantine list: an app UI line (android:, ios:)
-# by its name, a Rust line when its nextest filter contains the test's path
-# (the last word of `<binary> <path>`) as a whole name.
+# by its name; a Rust line when its nextest filter contains the test's path
+# (the last word of `<binary> <path>`) as a whole name, `::` included, and
+# names the test's package (its binary's name before any `::`) if it names
+# a package.
 quarantined() { # test
   [ -f "$quarantine" ] || return 1
   awk -v t="$1" '
-    BEGIN { app = (t ~ /^(android|ios):/); p = t; sub(/.* /, "", p) }
+    BEGIN {
+      app = (t ~ /^(android|ios):/)
+      p = t; sub(/.* /, "", p)
+      pkg = t; sub(/ .*/, "", pkg); sub(/::.*/, "", pkg)
+    }
     /^[ \t]*(#|$)/ { next }
     {
       f = $0; sub(/  +#.*/, "", f); sub(/[ \t]+$/, "", f)
       if (app) { if (f == t) found = 1; next }
       if (f ~ /^(android|ios):/) next
+      if (f ~ /package\(/ && index(f, "package(" pkg ")") == 0) next
       s = f
       while ((i = index(s, p)) > 0) {
         c = substr(s, i + length(p), 1)
         b = (i > 1) ? substr(s, i - 1, 1) : ""
-        if (c !~ /[A-Za-z0-9_]/ && b !~ /[A-Za-z0-9_]/) { found = 1; break }
+        if (c !~ /[A-Za-z0-9_:]/ && b !~ /[A-Za-z0-9_:]/) { found = 1; break }
         s = substr(s, i + 1)
       }
     }
@@ -218,12 +231,13 @@ quarantined() { # test
 }
 
 # Why a drop was not caused by its PR, or `related`: every job its failing
-# merge-gate description names is infrastructure, or a PC job whose failing
-# test is quarantined or failed on another PR's queue commit within 14 days
-# (tests file lines: `<created> <sha> <pr> <job> <test>`). The first job's
-# rule names the drop.
-drop_reason() { # sha pr created description tests-file
-  local sha=$1 pr=$2 at=$3 desc=$4 tests=$5 job where test why='' rule n=0
+# merge-gate description names is infrastructure, or a PC job naming one
+# failing test that is quarantined or failed on another PR's queue commit
+# within 14 days. Only PC failures posted by the cutoff count (tests file
+# lines: `<epoch> <sha> <pr> <job> <more> <test>`). The first job's rule
+# names the drop.
+drop_reason() { # sha pr created description tests-file cutoff
+  local sha=$1 pr=$2 at=$3 desc=$4 tests=$5 cut=$6 job where line more test why='' rule n=0
   while read -r job where; do
     [ -n "$job" ] || continue
     n=$((n + 1))
@@ -231,12 +245,15 @@ drop_reason() { # sha pr created description tests-file
     if infra_where "$where"; then
       rule="infrastructure ($job $where)"
     elif [ "$where" = PC ] && { [ "$job" = windows ] || [ "$job" = android ]; }; then
-      test=$(awk -v s="$sha" -v j="$job" '$2 == s && $4 == j { $1 = $2 = $3 = $4 = ""; sub(/^ +/, ""); print; exit }' "$tests")
-      if [ -n "$test" ] && quarantined "$test"; then
+      line=$(awk -v s="$sha" -v j="$job" -v c="$cut" '$2 == s && $4 == j && $1 <= c { $1 = $2 = $3 = $4 = ""; sub(/^ +/, ""); print; exit }' "$tests")
+      more=${line%% *} test=${line#* }
+      if [ -z "$line" ] || [ "$more" != 0 ]; then
+        :
+      elif quarantined "$test"; then
         rule="quarantined ($test)"
-      elif [ -n "$test" ] && awk -v p="$pr" -v a="$at" -v r="$repeat_s" -v j="$job" -v t="$test" '
-        { x = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ [^ ]+ /, "", x) }
-        $3 != p && $4 == j && x == t && ($1 - a <= r) && (a - $1 <= r) { found = 1; exit }
+      elif awk -v p="$pr" -v a="$at" -v r="$repeat_s" -v j="$job" -v t="$test" -v c="$cut" '
+        { x = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ [^ ]+ [^ ]+ /, "", x) }
+        $3 != p && $4 == j && x == t && $1 <= c && ($1 - a <= r) && (a - $1 <= r) { found = 1; exit }
         END { exit !found }' "$tests"; then
         rule="repeated ($test, on another PR's queue commit)"
       fi
@@ -272,14 +289,16 @@ runs_between() { # workflow from to event
 # --- reading GitHub once ---------------------------------------------------------
 
 # Reads the queue commits whose first Queue run started from $1 to $2 into
-# files in $3, one sample a line, `<created>` first: queue (seconds to green),
-# windows (`<seconds> PC|hosted`), ios-ui (seconds), drops (`<sha> <pr>
-# <description>`) and tests (`<sha> <pr> <job> <test>`, every PC failure
-# naming one).
+# files in $3, one line each, `<created> <value> <when>` first (when it was
+# known): queue (seconds to green), windows (`... PC|hosted`), ios-ui
+# (seconds), drops (`<created> <sha> <pr> <when> <description>`) and tests
+# (`<when> <sha> <pr> <job> <more> <test>`, every PC failure naming one).
 gather() { # from to dir
-  local dir=$3 runs id sha at branch pr st gate desc line ctx state t rest secs jobs rid rids
+  local dir=$3 runs disp id sha at branch pr st gate desc line ctx state t rest jobs rid rids
   : >"$dir/queue" && : >"$dir/windows" && : >"$dir/ios-ui" && : >"$dir/drops" && : >"$dir/tests"
   runs=$(runs_between queue.yml "$1" "$2" merge_group) || die "could not list the Queue runs"
+  # merge-gate's hosted Windows fallbacks, read once for the whole range.
+  disp=$(runs_between ci-desktop.yml "$1" "$2" workflow_dispatch) || die "could not list the hosted Windows runs"
   # Each commit once, with its first run.
   while read -r id sha at branch; do
     [ -n "$sha" ] || continue
@@ -287,43 +306,43 @@ gather() { # from to dir
     st=$(fetch_statuses "$sha") || die "could not read the statuses of $sha"
     st=$(sort -s -k3,3n <<<"$st")
     gate=$(awk '$1 == "merge-gate" { $1 = ""; sub(/^ /, ""); print }' <<<"$st")
-    secs=$(queue_seconds "$at" <<<"$gate")
-    [ -z "$secs" ] || echo "$at $secs" >>"$dir/queue"
+    line=$(queue_seconds "$at" <<<"$gate")
+    [ -z "$line" ] || echo "$at $line" >>"$dir/queue"
     desc=$(gate_failure <<<"$gate")
     [ -z "$desc" ] || echo "$at $sha $pr $desc" >>"$dir/drops"
     while read -r ctx state t rest; do
       case "$ctx $state" in
         "ci/windows success")
-          secs=$(pc_seconds "$rest")
-          [ -z "$secs" ] || echo "$at $secs PC" >>"$dir/windows"
+          line=$(pc_seconds "$rest")
+          [ -z "$line" ] || echo "$at $line $t PC" >>"$dir/windows"
           ;;
         "ci/windows failure" | "ci/android failure")
           line=$(pc_test "$rest")
-          [ -z "$line" ] || echo "$at $sha $pr ${ctx#ci/} $line" >>"$dir/tests"
+          [ -z "$line" ] || echo "$t $sha $pr ${ctx#ci/} $line" >>"$dir/tests"
           ;;
       esac
     done <<<"$st"
     if grep -q 'windows (hosted)' <<<"$gate"; then
-      rids=$(fetch_dispatched ci-desktop.yml "$sha") || die "could not list the hosted Windows runs of $sha"
+      rids=$(awk -v s="$sha" '$2 == s { print $1 }' <<<"$disp")
       for rid in $rids; do
         jobs=$(fetch_jobs "$rid") || die "could not read run $rid's jobs"
-        secs=$(hosted_windows_seconds <<<"$jobs")
-        [ -z "$secs" ] || echo "$at $secs hosted" >>"$dir/windows"
+        line=$(hosted_windows_seconds <<<"$jobs")
+        [ -z "$line" ] || echo "$at $line hosted" >>"$dir/windows"
       done
     fi
-    if grep -q 'ios' <<<"$gate"; then
+    if grep -q 'ios (' <<<"$gate"; then
       jobs=$(fetch_jobs "$id") || die "could not read run $id's jobs"
-      secs=$(ios_ui_seconds <<<"$jobs")
-      [ -z "$secs" ] || echo "$at $secs" >>"$dir/ios-ui"
+      line=$(ios_ui_seconds <<<"$jobs")
+      [ -z "$line" ] || echo "$at $line" >>"$dir/ios-ui"
     fi
   done < <(sort -k3,3n <<<"$runs" | awk '!seen[$2]++')
 }
 
 # --- the report --------------------------------------------------------------
 
-# The second field of a sample file's lines whose time is from $2 to $3.
+# A sample file's values from commits started from $2 to $3 and known by $3.
 samples() { # file from to
-  awk -v f="$2" -v t="$3" '$1 >= f && $1 <= t { print $2 }' "$1"
+  awk -v f="$2" -v t="$3" '$1 >= f && $1 <= t && $3 <= t { print $2 }' "$1"
 }
 
 # One line per target over the samples from $1 to $2 (the files gather
@@ -336,7 +355,7 @@ report() { # from to dir
   within "$m" "$queue_min" || verdict=FAIL rc=1
   echo "queue    $verdict  queue commit to green gate: $n commits, median $(minutes "$m") min, p90 $(minutes "$p") min (target: median $queue_min or less)"
   read -r n m p <<<"$(samples "$dir/windows" "$from" "$to" | summary)"
-  pc=$(awk -v f="$from" -v t="$to" '$1 >= f && $1 <= t && $3 == "PC"' "$dir/windows" | wc -l | tr -d ' ')
+  pc=$(awk -v f="$from" -v t="$to" '$1 >= f && $1 <= t && $3 <= t && $4 == "PC"' "$dir/windows" | wc -l | tr -d ' ')
   hosted=$((n - pc))
   verdict=pass
   within "$m" "$windows_min" || verdict=FAIL rc=1
@@ -345,10 +364,10 @@ report() { # from to dir
   verdict=pass
   within "$m" "$ios_ui_min" || verdict=FAIL rc=1
   echo "ios-ui   $verdict  green ci/ios (ui) jobs: $n, median $(minutes "$m") min, p90 $(minutes "$p") min (target: median $ios_ui_min or less)"
-  while read -r at sha pr desc; do
+  while read -r at sha pr _ desc; do
     [ -n "$sha" ] || continue
     drops=$((drops + 1))
-    why=$(drop_reason "$sha" "$pr" "$at" "$desc" "$dir/tests")
+    why=$(drop_reason "$sha" "$pr" "$at" "$desc" "$dir/tests" "$to")
     case "$why" in
       related) continue ;;
       infrastructure*) infra=$((infra + 1)) ;;
@@ -357,7 +376,7 @@ report() { # from to dir
     esac
     unrelated=$((unrelated + 1))
     list+="         $(iso "$at") ${sha:0:7} PR #$pr: $why"$'\n'
-  done < <(awk -v f="$from" -v t="$to" '$1 >= f && $1 <= t' "$dir/drops")
+  done < <(awk -v f="$from" -v t="$to" '$1 >= f && $1 <= t && $4 <= t' "$dir/drops")
   # The rate over the window's real length, compared unrounded.
   days=$(awk -v w=$((to - from)) 'BEGIN { printf "%.1f", w / 86400 }')
   per_week=$(awk -v i="$unrelated" -v w=$((to - from)) 'BEGIN { printf "%.2f", i * 7 * 86400 / w }')
@@ -365,6 +384,10 @@ report() { # from to dir
   awk -v i="$unrelated" -v w=$((to - from)) -v l="$drops_week" 'BEGIN { exit !(i * 7 * 86400 <= l * w) }' || verdict=FAIL rc=1
   echo "drops    $verdict  queue drops not caused by the PR: $unrelated of $drops drops in $days days ($infra infrastructure, $quar quarantined test, $rep repeated test), $per_week a week (target: $drops_week or fewer)"
   printf '%s' "$list"
+  if [ -n "$drill" ]; then
+    echo "drill    FAIL  forced red by CI_STATS_DRILL, a drill of the nightly's issue"
+    rc=1
+  fi
   return "$rc"
 }
 
