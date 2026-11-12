@@ -40,3 +40,7 @@ ios:mdocUITests/EditModeUITests/testTypeUndoLeaveAndRelaunch  #818  2026-11-25
 # Failed the PC's Android job on unrelated queue commits at least 5 times,
 # 2026-11-11/12 (ADR 0112's sweep, ROADMAP CI speed item 18).
 android:io.github.lawkitt.mdoc.IdentitiesTest#aLongPressKeepsAllOfAnIdentity  #709  2026-12-10
+
+# Failed the PC's Android job on two unrelated queue commits, 2026-11-11/12
+# (ADR 0112: the same failure on another PR's queue commit within 14 days).
+android:io.github.lawkitt.mdoc.ReviewFlowTest#openReviewShareRestore  #827  2026-12-10
