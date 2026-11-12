@@ -261,10 +261,10 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of CI |
 | `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of CI |
 | `just android-core` | Windows, macOS or Linux: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
-| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (tests)` runs those recipes after the core, with a 40-minute limit. Neither: both |
+| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (unit)` and `ci/ios (ui)` run those recipes after the core, a test target each. Neither: both |
 | `just local-ci [command]` | The retired local CI runner (ADR 0082): `uninstall` and `status` only matter now; the scripts go with CI redesign item 7 |
-| `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.2 Simulator (Xcode 26.2) (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
-| `just ios-release` | macOS: the iOS core, then the app and extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles; `ci/ios-release` runs it |
+| `just ios-app` / `just ios-test [device] [only...]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.2 Simulator (Xcode 26.2); `only`, xcodebuild's `-only-testing` identifiers (`mdocTests`, `mdocUITests/LivePreviewUITests`), runs just those (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
+| `just ios-release` | macOS: the iOS core, then the app and extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles; `ci/ios (unit)` runs it after the unit tests |
 | `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
 | `just disk` | Size of each worktree's `target/` |
@@ -287,7 +287,8 @@ prints their output after them.
 ([ADR 0095](adr/0095-ci-on-a-merge-queue.md)): `unit` (the crates, without
 the recognition fixtures, and the doctests), `app` (the app package without
 the render test), `renders`, `recognition` (the fixtures on their
-snapshots), `scripts` (the suites and the quarantine check), or
+snapshots), `rust` (those four in one nextest run, then the doctests: the
+PC's `ci/windows`), `scripts` (the suites and the quarantine check), or
 `quarantined`. Tests never retry. A test that flakes twice goes into
 `.config/quarantine.txt` (`<nextest filter>  #<issue>  <expires
 YYYY-MM-DD>`) by PR, with its issue: every tier leaves it out, `just
@@ -520,8 +521,8 @@ wait for.
 | Job (status) | Areas | Runs on | Limit |
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
-| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test` | 30 min |
-| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs: `ci/ios (tests)`, `just ios-app ios-test` on the pinned Xcode (as `just mobile --ios`), and `ci/ios-release`, `just ios-release` | 55 min (tests), 30 min (Release) |
+| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
+| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui)`, the same of the UI tests (`mdocUITests`), without the timing tests, which only the nightly runs | 35 min (unit), 45 min (UI) |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
 | `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
 
@@ -533,10 +534,15 @@ CI machinery (the ci area) needs only `ci/scripts`, beside `lint (ubuntu)`
 change, `ci/macos (checks)` runs the same suites instead.
 
 **The iOS jobs.** `ci/ios` is a summary job, green only when both of its
-parts ran and passed: `ci/ios (tests)` (job id `ios`) and `ci/ios-release`.
-Both build the core with `just ios-core` and restore one cargo cache
-(`cache-key: ios`), which `main-caches.yml`'s build-only run of the tests
-job saves. Xcode needs a Simulator runtime of the SDK's version for any
+parts ran and passed: `ci/ios (unit)` and `ci/ios (ui)`, one matrix job
+(id `ios`) split by test target (ADR 0112). Both build the core
+with `just ios-core` and restore one cargo cache (`cache-key: ios`), which
+`main-caches.yml`'s build-only run of the unit part saves. The timing tests
+(`LivePreviewUITests`' `testTypingRestyleTime` and `testReturnTime`,
+`CoreWiringTests`' `testAReviewTapsTime`) skip
+unless `TEST_RUNNER_MDOC_TIMING_TESTS=1`, which `ci-ios.yml`'s `timing`
+input sets: the nightly passes it, the queue does not. A second UI part,
+sharded by test class, comes only if `ci/ios (ui)` stays over 20 minutes. Xcode needs a Simulator runtime of the SDK's version for any
 app build, Release included, so each job runs `scripts/ios-toolchain.sh
 --start`: it uses the installed runtime of build `IOS_SIM_RUNTIME_BUILD`
 (of version `IOS_SIM_RUNTIME`), or downloads that build (about 8 GB) in
@@ -662,7 +668,7 @@ every 4 minutes: the heartbeat `merge-gate` reads. While the PC is off,
 A job's folder holds `log.txt`, `summary.txt` and, for a failure,
 `failed-tests.txt`. A failed or timed-out job's `summary.txt` ends with the
 log's last 60 lines, without colours. Failing tests are named in the status
-("Failed in just test: mdoc-core tests::broken and 1 more"): nextest's from
+("Failed in just test-tier rust: mdoc-core tests::broken and 1 more"): nextest's from
 the log, the Android job's from Gradle's JUnit XML as
 `android:<class>#<method>`, the form `.config/quarantine.txt` takes, since
 Gradle's log names no emulator test. Android folders also hold the Gradle
@@ -752,7 +758,7 @@ it is not the status itself.
   merged first can take the desktop area off the gate's diff (#665).
   A job that ran and failed, or timed out, still fails at once, and beside
   it nothing is re-run on that commit. A summary's parts are its caller's jobs
-  named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`
+  named after it: `ci/detection (2)` for `ci/detection`, `ci/ios (ui)`
   for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `ci/scripts (bash 3.2)`
   for `ci/scripts`, `fast (unit)` for `fast (ubuntu)`; name new parts that way, or their capacity cancels count
   as failures.

@@ -303,9 +303,12 @@ final class CoreWiringTests: XCTestCase {
 
     /// One review tap, the core call and the app's snapshot of its result:
     /// Replace on a name, then Undo, on a longer document. Reported with
-    /// the os_signpost interval "Review tap"; prints its median.
+    /// the os_signpost interval "Review tap"; prints its median. Nightly
+    /// only (`TEST_RUNNER_MDOC_TIMING_TESTS=1`, ADR 0112): it only measures
+    /// speed.
     @MainActor
     func testAReviewTapsTime() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_TIMING_TESTS"] == "1", "timing tests run nightly")
         let sample = SampleDocument.english
         let text = Array(repeating: sample.text, count: 12).joined(separator: "\n\n")
         let session = try core().library.importDocument(.text(text), title: sample.title, into: .newCase(name: "Timing"))

@@ -6,6 +6,10 @@ import XCTest
 /// 37-page legal opinion (ADR 0109's budgets: restyle under 8 ms a
 /// keystroke, structural core calls under 16 ms).
 final class LivePreviewUITests: XCTestCase {
+    /// Whether the timing tests run: the nightly sets it (ci-ios.yml's
+    /// `timing`).
+    private static let timing = ProcessInfo.processInfo.environment["MDOC_TIMING_TESTS"] == "1"
+
     override func setUp() {
         continueAfterFailure = false
     }
@@ -138,8 +142,11 @@ final class LivePreviewUITests: XCTestCase {
     }
 
     /// A keystroke's restyle on the legal opinion ("Restyle" signposts).
+    /// Nightly only (`TEST_RUNNER_MDOC_TIMING_TESTS=1`, ADR 0112): it only
+    /// measures speed.
     @MainActor
     func testTypingRestyleTime() throws {
+        try XCTSkipUnless(Self.timing, "timing tests run nightly")
         let (app, _) = edit(seed: MdocUITest.longDocx, title: MdocUITest.longDocxTitle, pages: 8)
         let restyle = XCTOSSignpostMetric(subsystem: "io.github.lawkitt.mdoc", category: "Editing", name: "Restyle")
         let typing = XCTOSSignpostMetric(subsystem: "io.github.lawkitt.mdoc", category: "Editing", name: "Typing")
@@ -151,9 +158,10 @@ final class LivePreviewUITests: XCTestCase {
     }
 
     /// Return on the legal opinion: the editor core's call ("Structural")
-    /// and the restyle after it.
+    /// and the restyle after it. Nightly only, as the typing time.
     @MainActor
     func testReturnTime() throws {
+        try XCTSkipUnless(Self.timing, "timing tests run nightly")
         let (app, _) = edit(seed: MdocUITest.longDocx, title: MdocUITest.longDocxTitle, pages: 8)
         let structural = XCTOSSignpostMetric(subsystem: "io.github.lawkitt.mdoc", category: "Editing", name: "Structural")
         let restyle = XCTOSSignpostMetric(subsystem: "io.github.lawkitt.mdoc", category: "Editing", name: "Restyle")

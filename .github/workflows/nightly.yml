@@ -30,8 +30,11 @@ jobs:
     with:
       os: windows
 
+  # With the timing tests, which the queue skips (ADR 0112).
   ios:
     uses: ./.github/workflows/ci-ios.yml
+    with:
+      timing: true
 
   android:
     uses: ./.github/workflows/ci-android.yml
