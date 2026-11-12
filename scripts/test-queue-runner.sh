@@ -170,6 +170,29 @@ XML
   check "and no more" eval '[ -d "$out/b" ] && [ -d "$out/c" ] && [ -f "$out/status.txt" ]'
   check "each deletion is logged" [ "$(grep -c '^.* deleting ' "$tmp/prune.log")" = 2 ]
 
+  # The done list: read once (a CRLF file reads the same), asked from
+  # memory, cut to its last 500 past 1000.
+  # shellcheck disable=SC2034 # read by read_done and mark_done
+  state=$tmp/done-state
+  mkdir -p "$state"
+  seq 1 999 | sed 's/$/\r/' >"$state/done"
+  read_done
+  check "a commit in the done file is done" is_done 999
+  check "part of one is not" not is_done 00
+  check "nor one not in it" not is_done abc
+  mark_done abc
+  check "a commit marked done is, in memory and in the file" eval 'is_done abc && [ "$(tail -n 1 "$state/done")" = abc ]'
+  mark_done def
+  check "past 1000 commits the list keeps its last 500" \
+    eval '[ "$(wc -l <"$state/done" | tr -d " ")" = 500 ] && is_done def && is_done abc && is_done 502 && ! is_done 501'
+  # Without date where bash has the time itself (5.0 on).
+  # The hour before or after the line, should it be written as one ends.
+  # shellcheck disable=SC2034 # read in the eval
+  hour=$(date -u +%Y-%m-%dT%H) line=$(log said) hour_after=$(date -u +%Y-%m-%dT%H)
+  check "a log line starts with the time in UTC" \
+    eval '[[ $line =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\ said$ ]] &&
+    { [ "${line:0:13}" = "$hour" ] || [ "${line:0:13}" = "$hour_after" ]; }'
+
   # status.txt while the queue cannot be read, then once it can.
   # shellcheck disable=SC2034 # read by write_status
   out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed='' unsettled=''

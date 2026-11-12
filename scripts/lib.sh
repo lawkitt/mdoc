@@ -170,6 +170,16 @@ for r in json.load(sys.stdin)["runtimes"]:
 # A GitHub filter glob as an anchored extended regex: ** crosses directories,
 # * and ? do not.
 glob_regex() {
+  local glob_re
+  set_glob_re "$1"
+  printf '%s' "$glob_re"
+}
+
+# The same, into the caller's glob_re, without a subshell: on Windows each
+# one is a process, and changed_areas reading the table's 60-odd lines that
+# way took 5 s a call on an idle PC and over 20 s beside nextest, which is
+# where the script suites' time went there.
+set_glob_re() {
   local glob=$1 re='' c i=0
   while [ "$i" -lt "${#glob}" ]; do
     c=${glob:i:1}
@@ -190,7 +200,7 @@ glob_regex() {
     esac
     i=$((i + 1))
   done
-  printf '^%s$' "$re"
+  glob_re="^$re\$"
 }
 
 # The areas the files on stdin touch, NUL-separated as `git diff -z` prints
@@ -207,7 +217,7 @@ glob_regex() {
 # gate or PC runner) makes its line core, so the file runs every job rather
 # than none.
 changed_areas() { # table-text
-  local areas glob f i match seen=' ' a out=''
+  local areas glob f i match seen=' ' a out='' glob_re
   local -a line_areas=() line_res=()
   while read -r areas glob _; do
     case "$areas" in '' | '#'*) continue ;; esac
@@ -216,7 +226,8 @@ changed_areas() { # table-text
       case "$a" in none | core | desktop | recognition | ios | android | ci) ;; *) areas=core ;; esac
     done
     line_areas+=("$areas")
-    line_res+=("$(glob_regex "$glob")")
+    set_glob_re "$glob"
+    line_res+=("$glob_re")
   done <<<"${1//$'\r'/}"
   while IFS= read -r -d '' f; do
     [ -n "$f" ] || continue
