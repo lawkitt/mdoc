@@ -171,15 +171,15 @@ release-ios version notes *flags:
 ios-app: ios-core
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/DerivedData -quiet build-for-testing
 
-# Build the iOS app and its extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles (ci/ios-release)
+# Build the iOS app and its extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles (ci/ios (unit))
 [macos]
 ios-release: ios-core
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/ReleaseData -quiet build CODE_SIGNING_ALLOWED=NO
 
-# Run the iOS unit, parity and UI tests on a Simulator device of the pinned runtime (scripts/tools.env), without the quarantined ones (.config/quarantine.txt); MDOC_IOS_TEST_WORKERS=<n> runs them on n clones of it
+# Run the iOS unit, parity and UI tests on a Simulator device of the pinned runtime (scripts/tools.env), without the quarantined ones (.config/quarantine.txt); `only`, xcodebuild's -only-testing identifiers (mdocTests, mdocUITests/LivePreviewUITests), narrows them; MDOC_IOS_TEST_WORKERS=<n> runs them on n clones of it
 [macos]
-ios-test device="iPhone 17": ios-core
-    os=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env); skip=$(bash scripts/quarantine.sh ios) || exit 1; workers=${MDOC_IOS_TEST_WORKERS:-}; xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet ${workers:+-parallel-testing-enabled YES -parallel-testing-worker-count "$workers"} test $skip
+ios-test device="iPhone 17" *only: ios-core
+    os=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env); skip=$(bash scripts/quarantine.sh ios) || exit 1; workers=${MDOC_IOS_TEST_WORKERS:-}; only=; for t in {{only}}; do only="$only -only-testing:$t"; done; xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet ${workers:+-parallel-testing-enabled YES -parallel-testing-worker-count "$workers"} test $only $skip
 
 # The device UI tests on a connected iPhone: the review flow, then the long jobs or, below the floor, the below-floor test (ADR 0088)
 [macos]

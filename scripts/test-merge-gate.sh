@@ -298,31 +298,31 @@ eq "$(failure_kind 15 <<<"$(jobs_json "$(job 13 "detection / ci/detection (1)" "
 # or a job that timed out (conclusion timed_out), is a result.
 cut='{"id": 0, "conclusion": "cancelled", "runner_name": "GitHub Actions 1000010371", "steps": [{"status": "completed", "conclusion": "success"}, {"status": "completed", "conclusion": "cancelled"}], "labels": ["macos-26"]}'
 eq "$(failure_kind 11 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$cut")")")" "cancelled macOS 11"
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$ok")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31"
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31"
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$cut")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31 32"
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$ran")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$ok")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$cut")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31 32"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$ran")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
 # A summary cancelled itself: its parts are looked at too.
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ok")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "cancelled Linux 30"
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ran")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "result"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$ok")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "cancelled Linux 30"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$ran")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "result"
 eq "$(failure_kind 11 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$(jq -c '.conclusion = "timed_out"' <<<"$cut")")")")" "result"
 # A summary that timed out itself, over cancelled parts: a result (Codex
 # review on #636).
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 30 "ios / ci/ios" "$(jq -c '.conclusion = "timed_out"' <<<"$ran")")")")" "result"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 30 "ios / ci/ios" "$(jq -c '.conclusion = "timed_out"' <<<"$ran")")")")" "result"
 # A missing summary's parts: the first real failure, else those cut.
-eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$never")" "$(job 11 "macos / ci/macos" "$ran")")")" "cut 31"
-eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 32 "ios / ci/ios-release" "$never")")")" "cut "
-eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$(jq -c '.html_url = "https://r"' <<<"$ran")")")")" "result https://r"
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 11 "macos / ci/macos" "$ran")")")" "cut 31"
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 32 "ios / ci/ios (unit)" "$never")")")" "cut "
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$(jq -c '.html_url = "https://r"' <<<"$ran")")")")" "result https://r"
 printf 'The job running on runner GitHub Actions 3 has exceeded the maximum execution time of 40 minutes.\n' | timed_out || fail "a timeout not seen"
 if printf 'GitHub Actions has encountered an internal error when running your job.\n' | timed_out; then fail "an internal error taken for a timeout"; fi
-# Summaries over parts named after them (ci/macos's two jobs, ci/ios with
-# ci/ios-release): infra only when every failing part never ran; another
+# Summaries over parts named after them (ci/macos's two jobs, ci/ios's
+# unit and UI parts): infra only when every failing part never ran; another
 # caller's jobs, and jobs not named after it, are not its parts.
 eq "$(failure_kind 20 <<<"$(jobs_json "$(job 21 "macos / ci/macos (lint)" "$never")" \
   "$(job 22 "macos / ci/macos (tests)" "$ok")" "$(job 20 "macos / ci/macos" "$ran")")")" "infra macOS"
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ran")" \
-  "$(job 32 "ios / ci/ios-release" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
-eq "$(failure_kind 30 <<<"$(jobs_json "$(job 32 "ios / ci/ios-release" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "infra macOS"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$ran")" \
+  "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "infra macOS"
 eq "$(failure_kind 30 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
 eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "lint (ubuntu)" "$never")" "$(job 40 "fast (ubuntu)" "$ran")")")" "result"
 eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "fast (unit)" "${never/macos-26/ubuntu-latest}")" "$(job 40 "fast (ubuntu)" "$ran")")")" "infra Linux"
@@ -680,7 +680,7 @@ fetch_check_runs() {
     {"id": 3, "name": "detection / ci/detection", "status": "completed", "conclusion": "success", "html_url": "https://d", "completed_at": "2026-11-02T11:21:00Z"},
     {"id": 901, "name": "ios / ci/ios", "status": "completed", "conclusion": "failure", "html_url": "%s", "completed_at": "2026-11-02T11:40:00Z"}]}\n' "$url901"
 }
-fetch_run_jobs() { jobs_json "$(job 902 "ios / ci/ios (tests)" "$cut")" "$(job 903 "ios / ci/ios-release" "$ok")" "$(job 901 "ios / ci/ios" "$ran")"; }
+fetch_run_jobs() { jobs_json "$(job 902 "ios / ci/ios (ui)" "$cut")" "$(job 903 "ios / ci/ios (unit)" "$ok")" "$(job 901 "ios / ci/ios" "$ran")"; }
 notes_read="$tmp/notes-read"
 fetch_annotations() {
   echo "$1" >>"$notes_read"
