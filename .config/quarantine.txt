@@ -31,3 +31,8 @@ ios:mdocUITests/ReviewToolsUITests/testFindMarkAndTheBarsTools  #700  2026-12-08
 # Flaked twice on hosted ci/ios in the merge queue on unrelated changes,
 # 2026-11-10 (#775, #778): a doubled keystroke in Identities' search.
 ios:mdocUITests/IdentitiesGesturesUITests/testDraggingAHandleOntoAnotherNameMakesThemOne  #781  2026-12-10
+
+# Failed on hosted ci/ios in the merge queue on an unrelated change,
+# 2026-11-11 (#814), and twice locally under load (#812, #813): ⌘Z after
+# typing did not undo; the first hardware key can be lost.
+ios:mdocUITests/EditModeUITests/testTypeUndoLeaveAndRelaunch  #818  2026-11-25
