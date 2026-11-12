@@ -338,10 +338,6 @@ case "$behavior $cmd" in
       sleep 1
     done
     ;;
-  "slow test-tier-rust")
-    touch "$FAKE/stall"
-    sleep 120
-    ;;
   "vanish lint")
     drop_branch
     sleep 120
@@ -415,6 +411,12 @@ cat >"$tmp/work/scripts/setup.sh" <<'EOF'
 ! read -r -t 1 _ || exit 5
 behavior=$({ cat apps/android/ci-behavior ci-behavior 2>/dev/null || true; } | head -n 1)
 echo "${behavior:-none} setup" >>"$FAKE/just.log"
+# Over the time limit from its first step, so only the checkout comes before
+# it; GitHub stops answering once, mid-job.
+if [ "$behavior" = slow ]; then
+  touch "$FAKE/stall"
+  sleep 120
+fi
 # A download that fails once.
 if [ "$behavior" = setupflake ] && [ ! -e "$FAKE/setup-flaked" ]; then
   touch "$FAKE/setup-flaked"
@@ -605,11 +607,10 @@ check "the job's refs are cleaned up" [ -z "$(git -C "$LOCAL_CI_HOME/queue-windo
 
 # A pass of its own, with its own limit: in the pass above, this job waited
 # out the 60 s the heartbeat job needs, most of the suite's time (ADR 0112's
-# sweep). 20 s still holds the checkout, setup and lint before the test step
-# it times out in (16 s on the PC beside nextest, above).
+# sweep). It stalls in setup, so only its checkout has to fit in 20 s.
 slow=$(qc 9 slow src/lib.rs)
 QUEUE_CI_TIMEOUT=20 run_once windows "$tmp/slow.log"
-check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test-tier rust after 0m20s	*"
+check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in scripts/setup.sh after 0m20s	*"
 check "its summary ends with the log's last lines too" grep -q "^--- log.txt, last 60 lines" "$wout/${slow:0:7}/summary.txt"
 check "a stalled gh call during it is ended, and the next poll goes on" \
   grep -q "warning: could not list the queue" "$tmp/slow.log"
