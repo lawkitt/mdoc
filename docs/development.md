@@ -586,6 +586,22 @@ and any line past its date fails the scripts tier. A lane runs what it touched b
 profile's `gate`) and may dispatch the full hosted desktop job on its
 branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
 
+**Unrelated failures and re-queues** ([ADR 0112](adr/0112-ci-speed-after-the-first-fortnight.md)).
+A queue failure is unrelated when it is an infrastructure failure, when
+the same test failed the same way on another PR's queue commit, on `main`
+or in the nightly within 14 days, or when the failing test is in an area
+the PR does not touch; anything else goes to the PR's lane. The hub
+re-queues a PR once after an unrelated failure and, on a test's second
+unrelated failure, quarantines it with its issue, without asking; its PR
+comment names the rule that matched. A second drop of the same PR goes to
+the maintainer.
+
+**iOS tests on the Mac.** Agents run only the test classes they touched
+(`xcodebuild test -only-testing:<target>/<class>`) and leave the full
+suite to the queue: on the fanless Air it takes 25 to 30 minutes, and
+parallel runs overheat it. One heavy build at a time; check `uptime`
+first.
+
 **Tests and OS services.** A test never asks the OS's security or identity
 services: the build's code signature (`SecCodeCopySelf`), the case key
 (Keychain, Windows data protection, Secret Service) or the build identity

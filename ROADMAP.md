@@ -262,10 +262,47 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
     8–14, recorded in ADR 0100 (the script is #627; the parallel-testing
     verdict, off, is in #617). *Done when:* the measurement is recorded.
 
+## CI speed
+
+The queue's long jobs get shorter and its unrelated drops stop needing the
+maintainer ([ADR 0112](docs/adr/0112-ci-speed-after-the-first-fortnight.md),
+[CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)). Items 16–18
+run in parallel; 19–22 follow item 17.
+
+16. **[CI] Windows job: Rust tests only.** `ci/windows` runs the test tiers
+    and doctests, not the script suites; the PC's 45-minute override goes,
+    so the limit is 30. Shadow-branch run first. *Done when:* a week of
+    queue traffic is measured against ADR 0112's Windows target, and the
+    PC's place (main or fallback) is decided by it.
+17. **[CI] iOS job in two.** `ci/ios (unit)` (unit and parity tests, then
+    the Release build, replacing `ci/ios-release`) and `ci/ios (ui)` in
+    parallel; the timing tests run nightly. *Done when:* `ci/ios (ui)`'s
+    median is measured; a second UI shard follows if it is over 20 minutes.
+18. **[CI] Quarantine the Android long-press flake**
+    (`IdentitiesTest#aLongPressKeepsAllOfAnIdentity`). *Done when:* the
+    line and its issue are on `main`.
+19. **[CI] iOS test sweep.** ADR 0112's rule applied to the iOS UI tests
+    and the slow unit tests (`ReviewScrollTests`), one PR with a reason per
+    test. *Done when:* merged.
+20. **[CI] Rust, script and Android sweeps.** Rust tests over 10 s on
+    hosted macOS, script suites over 60 s on Linux, Android instrumented
+    tests; one PR each. *Done when:* all three merged.
+21. **[CI] Targets in the nightly.** The nightly runs `scripts/ci-stats.sh`
+    with ADR 0112's targets and opens an issue after 3 red nights.
+    *Done when:* a drill with a red target opens the issue.
+22. **[CI] The PC's slow bursts.** Only if the Rust tests still pass 12
+    minutes more than once in the week after item 16: Defender exclusions
+    (the maintainer, as admin) and one run with the VPN off. *Done when:*
+    measured, or not needed.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
+
+- **[Perf]** Consider gpui-fast (longbridge's GPUI fork with frame-to-frame
+  caching) for the app's per-frame CPU. Costs a newer GPUI and porting the
+  three vendored patches ([CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)).
 
 - **[Recognition]** Real-text fixtures: commit public real documents as
   fixtures, each with a licence check, which loosens ADR 0093's CC0 rule.
