@@ -85,7 +85,7 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
   export QUEUE_RUNNER_SOURCED=1
   # shellcheck source=queue-runner.sh
   source scripts/queue-runner.sh
-  check "the steps read as their commands" [ "$(label setup), $(label lint), $(label test), $(label android)" = "scripts/setup.sh, just lint, just test, just android" ]
+  check "the steps read as their commands" [ "$(label setup), $(label lint), $(label test), $(label android)" = "scripts/setup.sh, just lint, just test-tier rust, just android" ]
   check "durations read as minutes and seconds" [ "$(duration 1805)" = 30m05s ]
   for j in windows android; do
     (
@@ -282,7 +282,10 @@ set -eu
 behavior=$({ cat apps/android/ci-behavior ci-behavior 2>/dev/null || true; } | head -n 1)
 target=gone
 [ ! -e target/kept ] || target=kept
-echo "${behavior:-none} $* renders=${MDOC_HEADLESS_ARTIFACTS:-} job=${MDOC_ANDROID_JOB:-} target=$target" >>"$FAKE/just.log"
+# One word for the command (test-tier rust reads test-tier-rust).
+cmd="$*"
+cmd=${cmd// /-}
+echo "${behavior:-none} $cmd renders=${MDOC_HEADLESS_ARTIFACTS:-} job=${MDOC_ANDROID_JOB:-} target=$target" >>"$FAKE/just.log"
 [ -z "${CARGO_TARGET_DIR:-}" ] || exit 8
 drop_branch() {
   local r
@@ -291,12 +294,12 @@ drop_branch() {
   done
 }
 # Before a step fails: a failed job keeps its renders.
-case "$1" in
-  test) mkdir -p "$MDOC_HEADLESS_ARTIFACTS" && echo '{}' >"$MDOC_HEADLESS_ARTIFACTS/summary.json" ;;
+case "$cmd" in
+  test-tier-rust) mkdir -p "$MDOC_HEADLESS_ARTIFACTS" && echo '{}' >"$MDOC_HEADLESS_ARTIFACTS/summary.json" ;;
   android) mkdir -p apps/android/app/build/reports && echo report >apps/android/app/build/reports/index.html ;;
 esac
-case "$behavior $1" in
-  "fail test")
+case "$behavior $cmd" in
+  "fail test-tier-rust")
     echo "        FAIL [   0.010s] mdoc-core tests::broken"
     echo "        FAIL [   0.020s] mdoc workspace::tests::flaky"
     exit 100
@@ -304,14 +307,14 @@ case "$behavior $1" in
   # Runs until the runner has refreshed its pending status once (or 50 s,
   # under the 60 s limit): a fixed sleep raced the runner's polls, which
   # take seconds each on Windows beside nextest (#532, #585).
-  "beat test")
+  "beat test-tier-rust")
     sha=$(git rev-parse HEAD)
     for _ in $(seq 1 50); do
-      [ "$(awk -F'\t' -v h="$sha" '$1 == h && index($4, "Running just test (") == 1' "$FAKE/statuses.tsv" | wc -l)" -lt 2 ] || break
+      [ "$(awk -F'\t' -v h="$sha" '$1 == h && index($4, "Running just test-tier rust (") == 1' "$FAKE/statuses.tsv" | wc -l)" -lt 2 ] || break
       sleep 1
     done
     ;;
-  "slow test")
+  "slow test-tier-rust")
     touch "$FAKE/stall"
     sleep 120
     ;;
@@ -496,9 +499,9 @@ first() { grep -n "^$1 " "$FAKE/just.log" | head -1 | cut -d: -f1; }
 check "a passing commit gets success with its time and log folder" \
   has "$pass" "$W" "success	Passed in *	https://ci.example/ci/queue-windows/${pass:0:7}/"
 check "it was pending from the start" grep -q "^$pass	$W	pending	Running checkout (0m00s)	https://ci.example/ci/queue-windows/${pass:0:7}/" "$FAKE/statuses.tsv"
-check "setup, lint, then test" [ "$(ran pass)" = "setup lint test " ]
+check "setup, lint, then the Rust tests, not the script suites" [ "$(ran pass)" = "setup lint test-tier-rust " ]
 check "lint gets no renders" grep -q "^pass lint renders= job=" "$FAKE/just.log"
-check "test writes its renders in the run folder" grep -q "^pass test renders=$wout/${pass:0:7}/renders job=" "$FAKE/just.log"
+check "test writes its renders in the run folder" grep -q "^pass test-tier-rust renders=$wout/${pass:0:7}/renders job=" "$FAKE/just.log"
 check "which a passing job deletes" [ ! -e "$wout/${pass:0:7}/renders" ]
 check "saying so in the summary" grep -q "^upkeep: deleted renders/ (the job passed)" "$wout/${pass:0:7}/summary.txt"
 check "the log and summary are kept" eval '[ -s "$wout/${pass:0:7}/log.txt" ] && grep -q "^result: success" "$wout/${pass:0:7}/summary.txt"'
@@ -519,7 +522,7 @@ check "a PR GitHub cannot be read for is retried at the next poll" \
 check "not taken for third-party code" not grep -q "${unread:0:7} .*third-party code" "$tmp/windows.log"
 check "and is built once it can be read" has "$unread" "$W" "success	Passed in *"
 check "a failing test fails, naming the step and the tests" \
-  has "$fail" "$W" "failure	Failed in just test: mdoc* and 1 more	https://ci.example/ci/queue-windows/${fail:0:7}/"
+  has "$fail" "$W" "failure	Failed in just test-tier rust: mdoc* and 1 more	https://ci.example/ci/queue-windows/${fail:0:7}/"
 check "which are listed in the run folder" [ "$(wc -l <"$wout/${fail:0:7}/failed-tests.txt" | tr -d ' ')" = 2 ]
 check "a failed job keeps its renders" [ -f "$wout/${fail:0:7}/renders/summary.json" ]
 check "its summary ends with the log's last lines, after the result" \
@@ -528,13 +531,13 @@ check "its summary ends with the log's last lines, after the result" \
 check "as does a timed-out job's" grep -q "^--- log.txt, last 60 lines" "$wout/${slow:0:7}/summary.txt"
 check "status.txt has no tailnet line while /ci is served" not grep -q "^tailnet:" "$wout/status.txt"
 check "a job refreshes its pending status while it runs (the heartbeat)" \
-  [ "$(posts "$beat" "$W" | grep -c "pending	Running just test (")" -ge 2 ]
+  [ "$(posts "$beat" "$W" | grep -c "pending	Running just test-tier rust (")" -ge 2 ]
 check "a ci-shadow/main/ commit is tested too" has "$beat" "$W" "success	Passed in *"
-check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 1m00s	*"
+check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test-tier rust after 1m00s	*"
 check "a stalled gh call during it is ended, and the next poll goes on" \
   grep -q "warning: could not list the queue" "$tmp/windows.log"
 check "the next poll that reads GitHub says it is back" grep -q "GitHub reachable again after " "$tmp/windows.log"
-check "a setup that fails once is retried, logged" eval '[ "$(ran setupflake)" = "setup setup lint test " ] &&
+check "a setup that fails once is retried, logged" eval '[ "$(ran setupflake)" = "setup setup lint test-tier-rust " ] &&
   grep -q "^scripts/setup.sh: failed once; retried" "$wout/${flake:0:7}/summary.txt"'
 check "and the job passes" has "$flake" "$W" "success	Passed in *"
 check "a commit the queue dropped stops its job" has "$vanish" "$W" "error	Stopped: the queue dropped this commit	*"

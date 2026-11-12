@@ -110,8 +110,15 @@ CI, not on the PRs ([interview](../design/ci-redesign-grill-2026-11-02.md)):
   | `recognition` | fixtures on their snapshots | 30 s | 2 min |
   | `scripts` | the script suites, also under macOS `/bin/bash` 3.2 | — | job limit |
 
+  The PC's Windows job runs every Rust tier and the doctests (`just
+  test-tier rust`), not the script suites, since 2026-11-12 (ADR 0112):
+  beside the Rust tests they took about 25 of its 30 to 45 minutes and
+  failed most of its runs.
+
 - **Job limits:** fast tier 15 minutes, macOS desktop 30, iOS 55, Windows
-  30, Android 40, each detection-gate shard 10. iOS was 40 until
+  30, Android 40, each detection-gate shard 10. The PC set Windows to 45
+  (`QUEUE_CI_TIMEOUT=2700` in its `runner.env`) until 2026-11-12, when the
+  script suites left the job (ADR 0112). iOS was 40 until
   2026-11-11: with the editor's tests the job took 29 to 38 minutes when
   it passed and was twice cancelled at 40. The time itself is the thing
   to bring down; the limit only stops it failing sound changes.

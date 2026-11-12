@@ -3,8 +3,9 @@
 #
 # The PC's runner for merge-queue commits (ADR 0095). One job per instance:
 # QUEUE_CI_JOB=windows posts ci/windows (scripts/setup.sh, just lint, just
-# test), QUEUE_CI_JOB=android posts ci/android (scripts/setup.sh, just
-# android). The PC runs both side by side, each in its own home
+# test-tier rust: the Rust tests and doctests, not the script suites, which
+# hosted Linux and macOS run; ADR 0112), QUEUE_CI_JOB=android posts
+# ci/android (scripts/setup.sh, just android). The PC runs both side by side, each in its own home
 # ($LOCAL_CI_HOME/queue-<job>, E:\ci\queue-<job>) with its own CI checkout,
 # target/ and state. It tests only queue commits, the branches under
 # gh-readonly-queue/main/ and ci-shadow/main/ (the shadow trial), never PR
@@ -114,6 +115,7 @@ label() {
   case "$1" in
     checkout) echo checkout ;;
     setup) echo scripts/setup.sh ;;
+    test) echo "just test-tier rust" ;;
     *) echo "just $1" ;;
   esac
 }
@@ -446,7 +448,7 @@ job() { # sha dir clean-reason
           bash scripts/setup.sh </dev/null || rc=$?
         fi
         ;;
-      test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just test || rc=$? ;;
+      test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just test-tier rust || rc=$? ;;
       android) MDOC_ANDROID_JOB=always just android || rc=$? ;;
       *) just "$step" || rc=$? ;;
     esac

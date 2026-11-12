@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: scripts/test.sh [--tier unit|app|renders|recognition|scripts|quarantined]
+# Usage: scripts/test.sh [--tier unit|app|renders|recognition|rust|scripts|quarantined]
 # (`just test`, `just test-tier <tier>`)
 #
 # The workspace tests through cargo-nextest (.config/nextest.toml), then
@@ -16,6 +16,9 @@
 #   app          the app package's tests without the render test
 #   renders      the render test
 #   recognition  the recognition fixtures on their snapshots
+#   rust         unit, app, renders and recognition in one nextest run, then
+#                the doctests: the PC's ci/windows (ADR 0112), which leaves
+#                the script suites to hosted Linux and macOS
 #   scripts      the script suites and the quarantine list's expiry check
 #   quarantined  only the quarantined tests (.config/quarantine.txt); reports
 #                and never fails
@@ -30,11 +33,11 @@ case "${1:-}" in
   --tier)
     tier=${2:-}
     case "$tier" in
-      unit | app | renders | recognition | scripts | quarantined) ;;
-      *) die "unknown tier '${tier}': unit, app, renders, recognition, scripts or quarantined" ;;
+      unit | app | renders | recognition | rust | scripts | quarantined) ;;
+      *) die "unknown tier '${tier}': unit, app, renders, recognition, rust, scripts or quarantined" ;;
     esac
     ;;
-  *) die "usage: scripts/test.sh [--tier unit|app|renders|recognition|scripts|quarantined]" ;;
+  *) die "usage: scripts/test.sh [--tier unit|app|renders|recognition|rust|scripts|quarantined]" ;;
 esac
 
 # Each tier's nextest filterset; `all` is their union.
@@ -68,11 +71,17 @@ unit() {
   nextest "$unit_filter" && doctests
 }
 
+# shellcheck disable=SC2317,SC2329 # run through only
+rust() {
+  nextest "all()" && doctests
+}
+
 case "$tier" in
   unit) only unit ;;
   app) only nextest "$app_filter" ;;
   renders) only nextest "$renders_filter" ;;
   recognition) only nextest "$recognition_filter" ;;
+  rust) only rust ;;
   quarantined)
     if [ -z "$quarantined" ]; then
       echo "quarantine: no tests listed"
