@@ -48,7 +48,9 @@ final class PanesRowUITests: XCTestCase {
         }
 
         // A reply: its segment joins the row, and its pane's bar shares and
-        // copies it in place of the document's buttons.
+        // copies it in place of the document's buttons. Copy, and the bar
+        // acting on the document again away from the reply, are
+        // PanesRowTests' (ADR 0112's sweep).
         restoreReply(app)
         XCTAssertEqual(picker.buttons.count, 3)
         XCTAssertTrue(picker.buttons["Reply"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
@@ -57,21 +59,6 @@ final class PanesRowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["share-reply"].exists)
         XCTAssertTrue(app.buttons["copy-reply"].exists)
         XCTAssertFalse(app.buttons["primary-action"].exists, "the document's buttons are away")
-        app.buttons["copy-reply"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["notice"].firstMatch.waitForExistence(timeout: 5))
-
-        // Away from the reply the bar acts on the document again.
-        picker.buttons[isPad ? "Original" : "Text"].tap()
-        XCTAssertTrue(app.buttons["primary-action"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["share-reply"].exists)
-    }
-
-    /// A document with one pane has no row.
-    @MainActor
-    func testOnePaneHasNoRow() throws {
-        let app = open(seed: MdocUITest.defaultSeed)
-        XCTAssertTrue(app.buttons["title-menu"].exists)
-        XCTAssertFalse(app.segmentedControls["pane-picker"].exists)
     }
 
     /// A guide: the row's states as PNGs in `TEST_RUNNER_MDOC_SHOTS_DIR`,

@@ -54,9 +54,27 @@ final class TableEditingUITests: XCTestCase {
         app.textViews.matching(NSPredicate(format: "value == %@", text)).firstMatch
     }
 
+    /// Done, then edit mode again with the caret still in the cell: the new
+    /// toolbar starts scrolled to ⋯ as well (review finding on #783; its own
+    /// test until ADR 0112's sweep, which saved the launch). Then typing
+    /// goes into the cell, Tab moves to the next, Row below adds a row
+    /// with the caret in it, and the toolbar's Undo takes both back.
     @MainActor
     func testTypingIntoACellAndAddingARow() throws {
-        let (app, _) = Self.editCell("Депозит")
+        let (app, target) = Self.editCell("Депозит")
+        let more = app.buttons["table-more"]
+        let shown = { more.exists && more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 }
+        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole")
+        app.buttons["done-editing"].tap()
+        XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
+        app.buttons["edit-button"].tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        if !app.buttons["toolbar-bold"].waitForExistence(timeout: 2) {
+            target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 10), "the caret is in the cell again")
+        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole again")
+
         app.typeText(" paid")
         let typed = Self.cell(app, "Депозит paid")
         XCTAssertTrue(typed.waitForExistence(timeout: 5), "the typed text shows in its cell")
@@ -74,7 +92,6 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertFalse(app.buttons["toolbar-task"].exists, "no task button in a cell")
         XCTAssertFalse(app.buttons["toolbar-indent"].exists, "no indent in a cell, where it never applies")
         // The capsule scrolled to its end: ⋯ shows whole, left of Aa.
-        let more = app.buttons["table-more"]
         XCTAssertTrue(
             MdocUITest.wait(timeout: 5) { more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 },
             "⋯ shows whole")
@@ -137,25 +154,6 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count < cells }, "the column is gone")
         XCTAssertFalse(Self.cell(app, "Сумма").exists)
         XCTAssertTrue(app.buttons["toolbar-bold"].exists, "the toolbar stays up")
-    }
-
-    /// Done, then edit mode again with the caret still in the cell: the new
-    /// toolbar starts scrolled to ⋯ as well (review finding on #783).
-    @MainActor
-    func testTheTableMenuShowsWholeAfterEditingAgain() throws {
-        let (app, target) = Self.editCell("Депозит")
-        let more = app.buttons["table-more"]
-        let shown = { more.exists && more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 }
-        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole")
-        app.buttons["done-editing"].tap()
-        XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
-        app.buttons["edit-button"].tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
-        if !app.buttons["toolbar-bold"].waitForExistence(timeout: 2) {
-            target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
-        }
-        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 10), "the caret is in the cell again")
-        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole again")
     }
 
     /// Aa in a cell (ADR 0110): the ordinary formatting keyboard, its

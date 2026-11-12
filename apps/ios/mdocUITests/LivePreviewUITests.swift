@@ -106,16 +106,18 @@ final class LivePreviewUITests: XCTestCase {
     }
 
     /// Edit mode in live preview at the largest accessibility text size: it
-    /// opens, types and continues a list (ADR 0109's acceptance).
+    /// opens, Done takes taps and typing reaches the text (ADR 0109's
+    /// acceptance). A list continued with Return is the same at any size:
+    /// `testAListTypedWithReturnAndUndone` and LivePreviewTests type one
+    /// (ADR 0112's sweep took it, and moving the caret to the end, out).
     @MainActor
     func testEditingAtAnAccessibilitySize() throws {
         let (app, text) = edit(
             seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle,
             contentSize: "UICTContentSizeCategoryAccessibilityXXXL")
         XCTAssertTrue(app.buttons["done-editing"].isHittable)
-        toTheEnd(app, text)
-        app.typeText("\n- Milk\n")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Milk\n- "), timeout: 5))
+        app.typeText("Zephyrine")
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine"), timeout: 5))
     }
 
     /// The accessibility audit in live-preview edit mode (ADR 0109): no

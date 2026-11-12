@@ -174,33 +174,56 @@ final class ReviewScrollTests: XCTestCase {
             view.layoutIfNeeded()
         }
 
-        /// Runs the run loop until the text has stopped scrolling.
+        /// Runs the run loop until the text has stopped scrolling: the
+        /// offset has held for 0.1 s since the coordinator last owed a
+        /// reveal, ran a scroll or had a landing to check (a landed
+        /// scroll's correction animates without a flag, a few frames
+        /// later), or for 0.3 s whatever the coordinator says. A fixed
+        /// 0.3 s after every step made this suite take three minutes on
+        /// hosted runners (ADR 0112: a slow unit test is a bug).
         func settle() {
             let deadline = Date().addingTimeInterval(4)
             var last = view.contentOffset
             var still = Date()
+            var idleSince: Date?
             while Date() < deadline {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                let now = Date()
                 if view.contentOffset != last {
                     last = view.contentOffset
-                    still = Date()
-                } else if Date().timeIntervalSince(still) > 0.3 {
-                    return
+                    still = now
                 }
+                if !idle {
+                    idleSince = nil
+                } else if idleSince == nil {
+                    idleSince = now
+                }
+                let quiet = idleSince.map { now.timeIntervalSince(max(still, $0)) > 0.1 } ?? false
+                if quiet || now.timeIntervalSince(still) > 0.3 { return }
             }
         }
 
+        /// Nothing the coordinator owes or runs moves the text.
+        private var idle: Bool {
+            coordinator.pendingReveal == nil && !coordinator.revealQueued && !coordinator.scrolling
+                && coordinator.landing == nil
+        }
+
         /// Where the candidate is drawn now, in the text view's coordinates.
-        func drawnRect(of candidate: Candidate) -> CGRect? {
-            view.setNeedsLayout()
-            view.layoutIfNeeded()
+        /// `layOut`: after a whole layout pass, which measuring several
+        /// names in a row needs only before the first.
+        func drawnRect(of candidate: Candidate, layOut: Bool = true) -> CGRect? {
+            if layOut {
+                view.setNeedsLayout()
+                view.layoutIfNeeded()
+            }
             return coordinator.place(of: TextOffsets(snapshot.markdown).nsRange(candidate.range), in: view, onlyShown: true)?.rect
         }
 
         /// The candidate's top below the top bar, when it shows whole
         /// between the bars and inside the view's width.
-        func shownTop(of candidate: Candidate) -> CGFloat? {
-            guard let rect = drawnRect(of: candidate) else { return nil }
+        func shownTop(of candidate: Candidate, layOut: Bool = true) -> CGFloat? {
+            guard let rect = drawnRect(of: candidate, layOut: layOut) else { return nil }
             let top = view.contentOffset.y + ReviewScrollTests.topBar
             let bottom = view.contentOffset.y + view.bounds.height - ReviewScrollTests.bar
             guard rect.minY >= top - 0.5, rect.maxY <= bottom + 0.5, rect.minX >= 0, rect.maxX <= view.bounds.width else { return nil }
@@ -223,9 +246,12 @@ final class ReviewScrollTests: XCTestCase {
         /// text until it has stopped scrolling.
         func act(_ action: Action) throws -> Step? {
             guard state.reviewedCandidate != nil else { return nil }
+            // One layout pass for all of them: measuring lays nothing out.
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
             var before: [CandidateID: CGFloat] = [:]
             for candidate in state.order.candidates {
-                if let top = shownTop(of: candidate) { before[candidate.id] = top }
+                if let top = shownTop(of: candidate, layOut: false) { before[candidate.id] = top }
             }
             try perform(action)
             settle()
@@ -274,7 +300,9 @@ final class ReviewScrollTests: XCTestCase {
             settle()
             let now = try XCTUnwrap(state.reviewedCandidate, message, file: file, line: line)
             let top = try XCTUnwrap(shownTop(of: now), "\(message): \(now.original) is in view", file: file, line: line)
-            turn(0.6)
+            // Longer than a scroll animation's first frames: a scroll
+            // still on its way moves the name by then.
+            turn(0.3)
             XCTAssertEqual(shownTop(of: now) ?? -1, top, accuracy: 0.5, "\(message): \(now.original) has stopped", file: file, line: line)
         }
     }
