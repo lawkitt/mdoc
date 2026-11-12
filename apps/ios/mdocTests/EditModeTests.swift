@@ -95,6 +95,33 @@ final class EditModeTests: XCTestCase {
     /// letter, typed fast) are two steps on the window's undo stack too: ⌘Z
     /// takes back one. Grouped by event, they joined one group and one ⌘Z
     /// undid both (the hosted runner's `testAListTypedWithReturnAndUndone`).
+    /// Inside SwiftUI's update the switch waits for the update to end:
+    /// making the view editable resigns the first responder, and a
+    /// hosting view asked to take over reads the view graph being updated
+    /// (a hang on iOS 27, build 882).
+    func testASwiftUIUpdateSwitchesEditModeAfterIt() throws {
+        let harness = try harness()
+        func update() {
+            harness.coordinator.update(
+                harness.view, with: textView(harness.model), dynamicTypeSize: .large, colorScheme: .light,
+                inViewUpdate: true)
+        }
+        // First responder in review, as after a long press on a name.
+        XCTAssertTrue(harness.view.becomeFirstResponder())
+        harness.model.enterEditMode()
+        update()
+        update()
+        XCTAssertFalse(harness.view.isEditable, "not inside the update")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(harness.view.isEditable)
+        // Done leaves edit mode itself, from its tap; the update after it
+        // has nothing left to switch.
+        harness.model.doneEditing()
+        update()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(harness.view.isEditable)
+    }
+
     func testStepsMadeInOneTurnAreSeparateSystemUndoSteps() throws {
         let harness = try harness()
         edit(harness)
