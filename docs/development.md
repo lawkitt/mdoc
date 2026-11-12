@@ -287,7 +287,8 @@ prints their output after them.
 ([ADR 0095](adr/0095-ci-on-a-merge-queue.md)): `unit` (the crates, without
 the recognition fixtures, and the doctests), `app` (the app package without
 the render test), `renders`, `recognition` (the fixtures on their
-snapshots), `scripts` (the suites and the quarantine check), or
+snapshots), `rust` (those four in one nextest run, then the doctests: the
+PC's `ci/windows`), `scripts` (the suites and the quarantine check), or
 `quarantined`. Tests never retry. A test that flakes twice goes into
 `.config/quarantine.txt` (`<nextest filter>  #<issue>  <expires
 YYYY-MM-DD>`) by PR, with its issue: every tier leaves it out, `just
@@ -520,7 +521,7 @@ wait for.
 | Job (status) | Areas | Runs on | Limit |
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
-| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test` | 30 min |
+| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs: `ci/ios (tests)`, `just ios-app ios-test` on the pinned Xcode (as `just mobile --ios`), and `ci/ios-release`, `just ios-release` | 55 min (tests), 30 min (Release) |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
 | `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
@@ -662,7 +663,7 @@ every 4 minutes: the heartbeat `merge-gate` reads. While the PC is off,
 A job's folder holds `log.txt`, `summary.txt` and, for a failure,
 `failed-tests.txt`. A failed or timed-out job's `summary.txt` ends with the
 log's last 60 lines, without colours. Failing tests are named in the status
-("Failed in just test: mdoc-core tests::broken and 1 more"): nextest's from
+("Failed in just test-tier rust: mdoc-core tests::broken and 1 more"): nextest's from
 the log, the Android job's from Gradle's JUnit XML as
 `android:<class>#<method>`, the form `.config/quarantine.txt` takes, since
 Gradle's log names no emulator test. Android folders also hold the Gradle

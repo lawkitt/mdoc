@@ -55,6 +55,17 @@ FAKE_CARGO_RC=4 tier 4 unit
 [ "$(wc -l <"$CARGO_LOG" | tr -d ' ')" = 1 ] || fail "unit ran doctests after a failure: $(cat "$CARGO_LOG")"
 FAKE_DOCTEST_RC=5 tier 5 unit
 
+# rust: every Rust tier in one nextest run, then the doctests; no script
+# suites and no quarantine check (the expired entry above would fail it).
+tier 0 rust
+[ "$(wc -l <"$CARGO_LOG" | tr -d ' ')" = 2 ] || fail "rust ran: $(cat "$CARGO_LOG")"
+head -n1 "$CARGO_LOG" | grep -qF -- '-E (all()) - ((test(=flaky)))' || fail "rust's filter: $(cat "$CARGO_LOG")"
+tail -n1 "$CARGO_LOG" | grep -q '^test --doc' || fail "rust's doctests: $(cat "$CARGO_LOG")"
+! grep -q 'scripts/\|quarantine' "$tmp/out" || fail "rust ran a script suite: $(cat "$tmp/out")"
+FAKE_CARGO_RC=6 tier 6 rust
+[ "$(wc -l <"$CARGO_LOG" | tr -d ' ')" = 1 ] || fail "rust ran doctests after a failure: $(cat "$CARGO_LOG")"
+FAKE_DOCTEST_RC=2 tier 2 rust
+
 # quarantined: only the listed tests, and never a failure.
 FAKE_CARGO_RC=3 tier 0 quarantined
 grep -qF -- '-E (test(=flaky))' "$CARGO_LOG" || fail "quarantined's filter: $(cat "$CARGO_LOG")"
