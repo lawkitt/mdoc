@@ -123,3 +123,29 @@ From the last 25 Queue runs (job times from the API), the PC's
     unit tests; Rust tests over 10 s on hosted macOS; script suites over
     60 s on Linux (the simulated runners); Android instrumented tests.
 16. **No change for Linux packages.**
+
+## Facts found before round 3
+
+- No workflow runs `scripts/ci-stats.sh`; ADR 0100's "later the nightly
+  runs it" was never built.
+
+## Round 3 (all recommendations accepted)
+
+17. **Areas are unchanged**: a core change runs every job (core crates
+    feed the desktop app, and the Windows job will take about 14 min), and
+    every iOS change runs both iOS jobs (almost all iOS code is UI).
+18. **The nightly runs `ci-stats.sh`** with the new targets and opens an
+    issue after 3 red nights, so next week's checkpoint (items 9 and 11)
+    needs nobody to remember it.
+19. **Rollout**: ROADMAP's CI speed section (items 16–22) and
+    [ADR 0112](../adr/0112-ci-speed-after-the-first-fortnight.md) land in
+    one docs PR with this record and `docs/development.md`'s rules for
+    unrelated failures and local iOS tests. Then separate sessions started
+    from this one: Windows job (with a shadow-branch run and Codex review),
+    iOS split, and the Android quarantine line now, in parallel; the sweeps
+    and the nightly measurement after the iOS split merges. Item 10's
+    approval covers removing the PC's override.
+20. **gpui-fast goes to ROADMAP's Later list** as an app-performance idea,
+    with its cost.
+
+The tree closed after round 3.
