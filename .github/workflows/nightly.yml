@@ -39,7 +39,7 @@ jobs:
   detection:
     uses: ./.github/workflows/ci-detection.yml
     with:
-      shards: 4
+      shards: 6
 
   # Reports and never fails: a quarantined test still failing is expected.
   quarantined:

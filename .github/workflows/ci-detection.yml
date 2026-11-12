@@ -6,7 +6,8 @@ name: Detection gate
 # over `shards` parallel jobs, `ci/detection (<k>)`: the 3-core M1 runs about
 # 50 fixtures in 3 minutes, and a model run over 5 minutes fails, so the
 # queue, the nightly and recognition-area PR heads (ci.yml's
-# `detection-head`) run 4 shards: 3 took 84% of the budget (ADR 0100). A
+# `detection-head`) run 6 shards: with 4, a shard held 64 fixtures on
+# 2026-11-12 and ran over the budget twice in two days (305 s, 315 s). A
 # shard warns past 80% of it, the signal to add one. `ci/detection` sums the shards up and is the context merge-gate
 # reads. A failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
@@ -56,7 +57,7 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 4 }}
+          SHARDS: ${{ inputs.shards || 6 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:

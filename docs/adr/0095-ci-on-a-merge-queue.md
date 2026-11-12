@@ -225,7 +225,7 @@ What implementing it settled, by the CI redesign hub:
   offline, #584 otherwise waited for the queue's 2-hour timeout).
 - **Detection snapshots are re-recorded on hosted `macos-26`** at the
   cutover (#534): scores only, at most 0.00193 from the M4's, every entity
-  the same. The existing 1e-4 check stays. The queue runs 4 shards, and
+  the same. The existing 1e-4 check stays. The queue runs 6 shards (4 until 2026-11-12), and
   CI sets `MDOC_DETECT_THREADS=4`, the count they are recorded with.
 - **The PC's heartbeat** is a pending status refreshed at least every 4
   minutes; `target/` goes only past 60 GB or on a toolchain change.
