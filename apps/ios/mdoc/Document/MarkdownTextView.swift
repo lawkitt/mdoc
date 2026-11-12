@@ -138,6 +138,11 @@ struct MarkdownTextView: UIViewRepresentable {
         let base: [NSAttributedString.Key: Any]
     }
 
+    /// A reveal the model asked for, with the name then under review.
+    struct RevealOrigin {
+        let selected: CandidateID?
+    }
+
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextView
         /// What the view shows.
@@ -155,21 +160,32 @@ struct MarkdownTextView: UIViewRepresentable {
         private(set) var pending: ContentKey?
         /// The last reveal request taken, so each runs once.
         private var takenReveal: Int?
-        /// The scroll owed once the next layout is done. `always` scrolls
-        /// even when the target is in view already: a request does, a newly
-        /// selected name only when it is out of view.
-        private(set) var pendingReveal: (target: RevealRequest.Target, always: Bool)?
+        /// The scroll owed once the next layout is done: the model's
+        /// request, or a newly selected name.
+        var pendingReveal: RevealRequest.Target?
+        /// The pending reveal is the model's request, and the name that
+        /// was under review when it was made: a name selected later is a
+        /// newer wish, and takes its place.
+        var pendingRequest: RevealOrigin?
+        /// Where each candidate is in the shown text (UTF-16), as last
+        /// built: a rebuild finds the same place in the new text by it.
+        private var shownRanges: [CandidateID: NSRange] = [:]
+        /// The room the text had at the last layout pass: the view's
+        /// height and the bars inside it.
+        var shownRoom: (height: CGFloat, insets: UIEdgeInsets)?
         /// Each candidate's stretches, as built, for recolouring in place.
-        private var runs: [CandidateID: [DecoratedRun]] = [:]
+        private(set) var runs: [CandidateID: [DecoratedRun]] = [:]
         /// Inside `render`, whose own layout pass shows a scroll it will
         /// undo: no reveal runs there.
-        private var rendering = false
+        private(set) var rendering = false
         /// A reveal's scroll on its way: once it lands, the name is measured
         /// again and the scroll corrected once, if the layout the scroll
-        /// brought moved it out of the band.
-        private(set) var landing: (range: SourceRange, offset: CGFloat)?
+        /// brought moved it out of view.
+        var landing: (range: SourceRange, offset: CGFloat)?
         /// An animated reveal's scroll is running: it lands at its end.
-        private var scrolling = false
+        var scrolling = false
+        /// A reveal waits for the end of this turn of the run loop.
+        var revealQueued = false
         nonisolated(unsafe) private var foreground: NSObjectProtocol?
         /// Edit mode's typing path to the core (ADR 0109).
         let bridge = TypingBridge()
@@ -248,7 +264,8 @@ struct MarkdownTextView: UIViewRepresentable {
             let decoration = DecorationKey(selected: parent.selected, scoped: parent.scoped)
             if let reveal = parent.reveal, reveal.id != takenReveal {
                 takenReveal = reveal.id
-                pendingReveal = (reveal.target, true)
+                pendingReveal = reveal.target
+                pendingRequest = RevealOrigin(selected: parent.selected)
             }
             if content != self.content {
                 // iOS draws a backgrounded app again in light and dark for
@@ -312,150 +329,6 @@ struct MarkdownTextView: UIViewRepresentable {
             afterSelection(from: previous, in: view)
         }
 
-        /// A newly selected name scrolls into view once laid out; with none
-        /// selected, the room a reveal added below the text goes.
-        private func afterSelection(from previous: CandidateID?, in view: CandidateTextView) {
-            if let selected = decoration.selected, selected != previous {
-                // A correction owed to the name before is no longer wanted.
-                landing = nil
-                if pendingReveal?.always != true { pendingReveal = (.candidate(selected), false) }
-                view.setNeedsLayout()
-            } else if decoration.selected == nil {
-                dropRevealRoom(in: view)
-            }
-        }
-
-        /// The end of a layout pass: the pending reveal runs, once, when the
-        /// view is on screen with a size to measure in.
-        func layoutDone(_ view: CandidateTextView) {
-            guard !rendering, pending == nil, view.window != nil, view.textWidth > 0, view.bounds.height > 0 else { return }
-            guard let reveal = pendingReveal else {
-                // The scroll has landed: measured again, corrected once.
-                if let landing, !scrolling {
-                    self.landing = nil
-                    // Unless something else scrolled the text meanwhile.
-                    guard abs(view.contentOffset.y - landing.offset) < view.bounds.height / 2 else { return }
-                    self.reveal(range: landing.range, in: view, always: false, correcting: true)
-                }
-                return
-            }
-            pendingReveal = nil
-            switch reveal.target {
-            case .candidate(let id):
-                self.reveal(id, in: view, always: reveal.always)
-            case .range(let range):
-                self.reveal(range: range, in: view)
-                // The match selected, so the reader sees which words.
-                let found = offsets.nsRange(range)
-                if found.location + found.length <= view.attributedText.length { view.selectedRange = found }
-            }
-        }
-
-        /// Scrolls the candidate under review into the top third of the
-        /// text, the part the candidate sheet leaves in view, so Next
-        /// proposal never opens one hidden under the sheet. In a table the
-        /// grid scrolls sideways to it too. Near the end of the document the
-        /// text gets room below its end while the sheet is up.
-        func reveal(_ id: CandidateID, in view: CandidateTextView, always: Bool = false) {
-            guard let candidate = parent.snapshot.candidate(id) else { return }
-            reveal(range: candidate.range, in: view, always: always)
-        }
-
-        /// Scrolls a source range into the top third of the text left in
-        /// view above the bar, briefly selecting it when it is no candidate
-        /// (a Find match). It is measured where the laid-out text draws it
-        /// (`laidOutRect`), not at TextKit 2's estimate. Once the scroll
-        /// lands, it is measured again and, if still out of the band,
-        /// corrected once (`correcting`).
-        func reveal(range source: SourceRange, in view: CandidateTextView, always: Bool = true, correcting: Bool = false) {
-            modeAnchor = nil
-            let range = offsets.nsRange(source)
-            let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
-                NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
-            }
-            let rect: CGRect
-            if let cell {
-                // The grid's place is the text's, laid out through it.
-                _ = view.laidOutRect(of: NSRange(location: cell.location, length: 0))
-                guard let local = Self.firstRect(in: cell, location: range.location - cell.location, length: range.length) else { return }
-                if let table = cell.superview as? MarkdownTableView {
-                    table.scrollRectToVisible(cell.convert(local, to: table).insetBy(dx: -12, dy: 0), animated: false)
-                }
-                rect = cell.convert(local, to: view)
-            } else {
-                guard let found = view.laidOutRect(of: range) else { return }
-                rect = found
-            }
-            let insets = view.adjustedContentInset
-            let top = view.contentOffset.y + insets.top
-            // The text left in view above the bar, compact or full: the room
-            // added below the end is no bar.
-            let band = (view.bounds.height - insets.top - (insets.bottom - revealRoom)) / 3
-            guard always || rect.minY < top + 8 || rect.maxY > top + band else { return }
-            let highest = -insets.top
-            let target = max(rect.minY - insets.top - band / 3, highest)
-            // Room below the end, so a candidate there can rise above the sheet.
-            let lowest = view.laidOutContentHeight + insets.bottom - view.bounds.height
-            if target > lowest {
-                let more = target - lowest
-                view.contentInset.bottom += more
-                revealRoom += more
-            }
-            let animated = !UIAccessibility.isReduceMotionEnabled && abs(target - view.contentOffset.y) > 0.5
-            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: animated)
-            guard !correcting else { return }
-            landing = (source, target)
-            scrolling = animated
-            // Without an animation it has landed: the next pass measures.
-            if !animated { view.setNeedsLayout() }
-        }
-
-        func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-            guard scrolling else { return }
-            scrolling = false
-            scrollView.setNeedsLayout()
-        }
-
-        /// The reader took the text: no correction follows.
-        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-            landing = nil
-            scrolling = false
-            modeAnchor = nil
-        }
-
-        /// The room `reveal` added below the text, taken away once no
-        /// candidate is under review.
-        var revealRoom: CGFloat = 0
-
-        func dropRevealRoom(in view: CandidateTextView) {
-            // Review ended: no correction brings the room back.
-            landing = nil
-            scrolling = false
-            guard revealRoom > 0 else { return }
-            view.contentInset.bottom -= revealRoom
-            revealRoom = 0
-            let lowest = Self.lowestOffset(in: view)
-            if view.contentOffset.y > lowest {
-                view.setContentOffset(CGPoint(x: view.contentOffset.x, y: lowest), animated: !UIAccessibility.isReduceMotionEnabled)
-            }
-        }
-
-        /// How far down the text can rest, its top when all of it fits.
-        private static func lowestOffset(in view: UIScrollView) -> CGFloat {
-            let insets = view.adjustedContentInset
-            return max(-insets.top, view.contentSize.height + insets.bottom - view.bounds.height)
-        }
-
-        private static func firstRect(in view: UITextView, location: Int, length: Int) -> CGRect? {
-            guard
-                let start = view.position(from: view.beginningOfDocument, offset: location),
-                let end = view.position(from: start, offset: length),
-                let textRange = view.textRange(from: start, to: end)
-            else { return nil }
-            let rect = view.firstRect(for: textRange)
-            return rect.isNull || rect.isInfinite ? nil : rect
-        }
-
         func restyleOnReturn(_ content: ContentKey, _ view: CandidateTextView) {
             pending = content
             guard foreground == nil else { return }
@@ -490,6 +363,10 @@ struct MarkdownTextView: UIViewRepresentable {
             // goes back to where they were.
             if switching { modeAnchor = modeAnchor ?? view.scrollAnchor() }
             let anchor = switching || widthChanged ? modeAnchor : nil
+            // A decision changes the text: a name under review that shows
+            // whole keeps its place on screen, and otherwise the line at
+            // the top of the view does (ADR 0098, amended 2026-11-11).
+            let held = keepsScroll && anchor == nil && !parent.editing ? heldPlace(in: view) : nil
             let selection = view.selectedRange
             // A selection survives a change of mode or width (Identities
             // coming back on iPad) when the text is the same.
@@ -542,6 +419,9 @@ struct MarkdownTextView: UIViewRepresentable {
                 if case .cell(let table, let row, let column) = place { document.tables[table].rows[row][column].text = cell }
             }
             view.show(document, width: width)
+            // A review scrolls to names all over the text: laid out whole,
+            // no place in it is an estimate that a later pass corrects.
+            if keepsScroll { view.layOutAll() }
             var items: [CandidateTextView.RotorItem] = []
             for (order, candidate) in snapshot.candidates.enumerated() {
                 let range = offsets.nsRange(candidate.range)
@@ -555,6 +435,9 @@ struct MarkdownTextView: UIViewRepresentable {
                 }
             }
             view.rotorItems = items.sorted { $0.order < $1.order }
+            let ranges = shownRanges
+            shownRanges = Dictionary(
+                snapshot.candidates.map { ($0.id, offsets.nsRange($0.range)) }, uniquingKeysWith: { first, _ in first })
             if let shownText, shownText == view.textStorage.string, NSMaxRange(selection) <= view.textStorage.length {
                 // The same text, so the same selection.
                 view.selectedRange = selection
@@ -565,7 +448,28 @@ struct MarkdownTextView: UIViewRepresentable {
                 view.layoutIfNeeded()
                 // Replacing can shorten the text below the old place; left
                 // there, a text that now fits is stuck, as it doesn't pan.
-                view.setContentOffset(CGPoint(x: offset.x, y: min(offset.y, Self.lowestOffset(in: view))), animated: false)
+                let insets = view.adjustedContentInset
+                let lowest = max(-insets.top, view.laidOutContentHeight + insets.bottom - view.bounds.height)
+                view.setContentOffset(CGPoint(x: offset.x, y: min(max(offset.y, -insets.top), lowest)), animated: false)
+                switch held {
+                case .name(let id, let above):
+                    guard let candidate = snapshot.candidate(id) else { break }
+                    let range = offsets.nsRange(candidate.range)
+                    hold(above, in: view) { self.place(of: range, in: view, onlyShown: $0)?.rect }
+                    // A name that grew may run past its table's edge.
+                    if let place = place(of: range, in: view, onlyShown: true), let cell = place.cell,
+                       let table = cell.superview as? MarkdownTableView {
+                        table.reveal(cell.convert(place.local, to: table))
+                    }
+                case .line(let line):
+                    let location = Self.moved(line.location, from: ranges, to: shownRanges)
+                    guard location <= view.textStorage.length else { break }
+                    hold(line.delta + insets.top, in: view) {
+                        view.laidOutRect(of: NSRange(location: location, length: 0), onlyShown: $0)
+                    }
+                case nil:
+                    break
+                }
             }
         }
 
@@ -607,6 +511,9 @@ struct MarkdownTextView: UIViewRepresentable {
                 return storage
             }
             for storage in edited.values { storage.endEditing() }
+            // The recolouring is an edit: what it turned back into
+            // estimates is laid out again, so nothing moves.
+            if edited[.text] != nil { view.layOutAll() }
         }
 
         /// Sets the decoration keys of each candidate whose decoration

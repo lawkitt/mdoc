@@ -1600,6 +1600,8 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         let x = textContainerInset.left + textContainer.lineFragmentPadding
         let column = textWidth
         let viewport = layout.textViewportLayoutController.viewportRange
+        var ghosts = false
+        defer { if ghosts { checkGhosts() } }
         for view in tableViews {
             guard let location = content.location(start, offsetBy: view.table.anchor),
                   let fragment = layout.textLayoutFragment(for: location) else { continue }
@@ -1630,6 +1632,31 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
             if view.isHidden != ghost {
                 view.isHidden = ghost
             }
+            ghosts = ghosts || ghost
+        }
+    }
+
+    private var ghostCheckQueued = false
+    /// Where the text was scrolled when a ghost was last checked, and the
+    /// passes asked for since.
+    private var ghostChecked: (offset: CGPoint, passes: Int)?
+
+    /// A grid was hidden as a ghost by the viewport range this pass saw.
+    /// UIKit lays out the text's viewport after this view's own layout, so
+    /// on the last pass of a scroll that range is one frame old: a table
+    /// that had just scrolled into view stayed hidden, with no pass left
+    /// to show it. So a pass that hides a grid is followed by another,
+    /// twice at most where the text rests: a grid whose place really is an
+    /// estimate stays hidden until the text moves.
+    private func checkGhosts() {
+        if ghostChecked?.offset != contentOffset { ghostChecked = (contentOffset, 0) }
+        guard !ghostCheckQueued, let checked = ghostChecked, checked.passes < 2 else { return }
+        ghostCheckQueued = true
+        ghostChecked?.passes += 1
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.ghostCheckQueued = false
+            self.setNeedsLayout()
         }
     }
 
@@ -1642,8 +1669,13 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     /// `ensureLayout(for:)`, kept the estimate; only the whole text gives
     /// the place it is drawn at once scrolled there. So a range outside the
     /// viewport lays out the whole text first; one inside it is measured
-    /// where it is drawn.
-    func laidOutRect(of range: NSRange) -> CGRect? {
+    /// where it is drawn. That layout corrects the estimated heights above
+    /// the viewport, and UIKit moves the content offset by as much only in
+    /// its own viewport layout, in the next pass: until then the rect and
+    /// the content offset do not agree, so a caller that compares them
+    /// lays the view out and measures again. `onlyShown` answers only for
+    /// a range the viewport has laid out, laying nothing out.
+    func laidOutRect(of range: NSRange, onlyShown: Bool = false) -> CGRect? {
         guard let layout = textLayoutManager, let content = layout.textContentManager else { return nil }
         let start = content.documentRange.location
         // The storage's length: `attributedText` copies the whole text.
@@ -1652,6 +1684,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         let viewport = layout.textViewportLayoutController.viewportRange
         let shown = viewport.map { $0.contains(from) && layout.textLayoutFragment(for: from)?.state == .layoutAvailable } ?? false
         if !shown {
+            guard !onlyShown else { return nil }
             layout.ensureLayout(for: content.documentRange)
             if !tableViews.isEmpty { placeTables() }
         }
@@ -1669,6 +1702,17 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
             x: frame.minX + bounds.minX + min(x, end) + textContainerInset.left,
             y: frame.minY + bounds.minY + textContainerInset.top,
             width: abs(end - x), height: bounds.height)
+    }
+
+    /// Lays out the whole text, so no place in it is an estimate. After a
+    /// change to the text storage, a recolouring too, TextKit 2 estimates
+    /// what is outside the viewport again, and the content size with it:
+    /// near the end of a long text the smaller estimate made the scroll
+    /// view pull the text down, with nothing asking for a scroll.
+    func layOutAll() {
+        guard let layout = textLayoutManager, let content = layout.textContentManager else { return }
+        layout.ensureLayout(for: content.documentRange)
+        if !tableViews.isEmpty { placeTables() }
     }
 
     /// The text's height as laid out so far: the content size lags behind

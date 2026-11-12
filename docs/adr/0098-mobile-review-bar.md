@@ -1,7 +1,8 @@
 # Mobile review bar
 
 Status: Accepted, 2026-11-05; expanding, the expanded view, a decided
-card's buttons and tips amended by [ADR 0101](0101-mobile-review-bar-polish.md).
+card's buttons and tips amended by [ADR 0101](0101-mobile-review-bar-polish.md);
+how far the text scrolls to a name amended 2026-11-11 (Stepping).
 Amends [ADR 0085](0085-mobile-apps.md)'s review screen and
 [ADR 0087](0087-ios-ui-polish.md)'s candidate sheet. Written for iOS first;
 Android follows the same decisions. "Never: … any other editing" is
@@ -62,6 +63,15 @@ document history ([ADR 0079](0079-decision-history.md)).
   *Amended 2026-11-08 (#723):* the card no longer cross-fades: the previous, current
   and next cards sit in one strip that follows the finger and settles on
   the neighbor with one spring; Reduce Motion cross-fades.
+  *Amended 2026-11-11:* the text no longer keeps the name in its top
+  third. A name wholly visible between the bars above the text and the
+  review bar leaves the text where it is; any other scrolls just far
+  enough to show it, at the nearer edge with a small margin, and a table
+  scrolls sideways to a name in it without moving the text when its row
+  is visible. A decision that changes the text keeps a visible name
+  under review where it is on screen. The top third pulled up a name
+  the reader could already see, which read as random scrolling: the text
+  moved after some decisions and swipes and not after others.
 - **Focus.** "Review this identity" or "Review 3 people" (from Identities)
   limits stepping to that group; the progress line shows it with ×. When the
   group is done, or on ×, review returns to the whole document.
