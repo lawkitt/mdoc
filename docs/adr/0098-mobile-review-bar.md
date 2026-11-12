@@ -131,10 +131,20 @@ document history ([ADR 0079](0079-decision-history.md)).
 
 ### Long press and expanded view
 
-- **Long-press menu by state,** under a preview header: proposed: Replace,
-  Keep, Just this one, Same as…, Change category; replaced: Show original,
-  Keep instead, Same as…, Change category; kept: Replace instead, Change
-  category.
+- **Long-press menu by state,** under a header that says the name and its
+  alias ("Maya Bennett → PERSON_1"): proposed: Replace, Keep, Just this
+  one, Same as…, Change category; replaced: Keep instead, Same as…, Change
+  category; kept: Replace instead, Change category. *Amended 2026-11-11
+  (after `rc.7`):* Show original is gone from the replaced name's menu,
+  since the header says its wording.
+- **An alias takes its category's colour** wherever the app draws it:
+  monospaced on the category's tint, as a replaced name is in the text.
+  That is the long-press menu's header and the Same as… sheet's rows,
+  where an alias too long for its row is cut in the middle. A system menu
+  draws every row's words in one colour, so in the menus (Change category,
+  Same as…) the row's icon takes the category's colour instead. There an
+  alias is never hyphenated: one of up to 12 characters stays whole, and a
+  longer one breaks only after a separator such as `_` (2026-11-11).
 - **Expanded view:** the compact card, then the identity's mentions with
   context and state, Looks like…, Category, Alias, Belongs to…, and Keep
   all n / Replace all n for the identity.

@@ -129,6 +129,56 @@ final class EditToolbarTests: XCTestCase {
         XCTAssertNil(harness.view.inputView)
     }
 
+    /// The toolbar is as tall as its buttons and margins wherever it is not
+    /// at the screen's bottom, and at the bottom, with a hardware keyboard,
+    /// it clears the home indicator. (`rc.7`'s gap above the keyboard came
+    /// from the keyboard's own window: `EditToolbarUITests` measures it.)
+    func testTheToolbarLeavesHomeIndicatorRoomOnlyAtTheScreensBottom() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.isHidden = false
+        let indicator = window.safeAreaInsets.bottom
+        try XCTSkipIf(indicator == 0, "a device with no home indicator")
+        let host = EditToolbarHost(model: EditToolbarModel())
+        func height(at y: CGFloat) -> CGFloat {
+            // Twice: the first pass finds the toolbar's height, the second
+            // lays it out at that height.
+            for _ in 0..<2 {
+                host.frame = CGRect(x: 0, y: y - host.intrinsicContentSize.height, width: window.bounds.width, height: host.intrinsicContentSize.height)
+                host.setNeedsLayout()
+                window.layoutIfNeeded()
+            }
+            return host.intrinsicContentSize.height
+        }
+        window.addSubview(host)
+        let own = Size.target + Space.xxs + Space.xs
+        XCTAssertEqual(height(at: window.bounds.midY), own, accuracy: 0.5, "above a keyboard")
+        XCTAssertEqual(height(at: window.bounds.maxY), own + indicator, accuracy: 0.5, "at the screen's bottom")
+        XCTAssertEqual(height(at: window.bounds.midY), own, accuracy: 0.5, "and back")
+    }
+
+    /// On a landscape phone the toolbar's buttons stay out of the notch
+    /// and the home indicator's side: the toolbar fills the host's safe
+    /// area, not its bounds.
+    func testTheToolbarKeepsToTheSafeAreaAtTheSides() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        controller.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 62, bottom: 0, right: 48)
+        window.rootViewController = controller
+        window.isHidden = false
+        let host = EditToolbarHost(model: EditToolbarModel())
+        host.frame = CGRect(x: 0, y: 200, width: controller.view.bounds.width, height: 60)
+        controller.view.addSubview(host)
+        window.layoutIfNeeded()
+        let sides = host.safeAreaInsets
+        XCTAssertGreaterThanOrEqual(sides.left, 62)
+        XCTAssertGreaterThanOrEqual(sides.right, 48)
+        let toolbar = try XCTUnwrap(host.subviews.first).frame
+        XCTAssertEqual(toolbar.minX, sides.left, accuracy: 0.5)
+        XCTAssertEqual(toolbar.maxX, host.bounds.width - sides.right, accuracy: 0.5)
+    }
+
     func testBoldWrapsTheCaretsWordAndComesOffInsideBold() throws {
         let harness = try harness()
         caret(harness, at: "tenant", offset: 2)

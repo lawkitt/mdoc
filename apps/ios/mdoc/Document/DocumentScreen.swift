@@ -208,7 +208,7 @@ struct DocumentScreen: View {
             onReplace: { model.markSelection($0) },
             onReviewNext: { model.reviewNext() },
             onMenu: { model.menuOpened(on: $0) },
-            menu: { id in CandidateMenu.make(for: id, model: model) { sameAsCandidate = $0 } },
+            menu: { id in CandidateMenu.configuration(for: id, model: model) { sameAsCandidate = $0 } },
             edit: model.isEditing ? EditActions(model) : nil,
             findBar: model.findBarRequest,
             shown: textShows)

@@ -37,7 +37,7 @@ Android: `apps/android/.../ui/theme` under the same names (to come).
 | Token | Values | Use |
 |---|---|---|
 | `Space` | 4, 8, 12, 16, 24 (`xxs`…`l`) | Padding and gaps; nothing off the 4 pt grid |
-| `Radius` | chip (capsule), control 12, card 20, tile 8, screen 44 | Continuous corners; screen for the sliding screen beside a drawer |
+| `Radius` | chip (capsule), control 12, card 20, tile 8, tag 4, screen 44 | Continuous corners; screen for the sliding screen beside a drawer |
 | `Size` | target 44, bar button 44, chip 30, tile 30 | Every big button is 44 pt high (bar button); hit targets never under 44 pt |
 | `Palette` | accent, on accent, swipe accent, surface, background, chip fill, separator; to review (orange), ready (green), restored (blue) | Only named colors; system colors adapt to dark mode and Increase Contrast |
 | `Typography` | title, body, caption, chip, alias (monospaced), progress | Dynamic Type text styles only |
@@ -45,8 +45,10 @@ Android: `apps/android/.../ui/theme` under the same names (to come).
 
 Category colors and symbols live in
 [`Shared/UI/Palette.swift`](../apps/ios/Shared/UI/Palette.swift) (the
-same hues as desktop's highlights). A case's color marks the case only,
-never a state.
+same hues as desktop's highlights), with the tint behind an alias
+(`aliasFill`, the document's for a replaced name) and the symbol in its
+color for a system menu's row (`menuIcon`). A case's color marks the case
+only, never a state.
 
 ## Components
 
@@ -55,6 +57,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | Component | Rule |
 |---|---|
 | `Chip` | Anything tappable that isn't a button is a filled capsule. A chip that opens a menu ends in a chevron; plain text never acts. Neutral fill, or tinted by category or state. At least 44 pt of target. |
+| `AliasTag` | An alias as the text draws a replaced name: monospaced, the text's color on its category's tint, one line, cut in the middle when too long for its row (VoiceOver hears it whole). For an alias in a list or a sheet (the Same as… sheet). A system menu cannot draw it: there the row's icon is `MenuIcon` (the category's symbol in its color) and the alias is `unbrokenAlias`, so the menu cannot hyphenate it: whole up to 12 characters, longer broken only after a separator. |
 | `card()` | A raised surface: the review card, empty-state tiles. |
 | `StatusPill` | State as an icon and words in the state's color. |
 | `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. Open, a drag moves it only from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); over the panel, the content owns the drag. While a drawer inside its screen shows, its own edge leaves the swipe to that drawer. |
@@ -62,7 +65,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
 | `ReviewHintLine` | A hint line: symbol, words, ×. The review bar's, and Identities' one. |
-| `EditToolbar` / `ToolbarKey` | Edit mode's bar above the keyboard (ADR 0109): a glass capsule of icon buttons (undo to outdent) that scrolls sideways when they don't fit, then Aa and hide keyboard as glass circles that always show; every button is a 44 pt square target that grows with the text. A button that is on is an ink circle (VoiceOver: selected); one that can't apply is secondary and disabled. A link chip (glass capsule) sits above it while the caret is in a link. The host never becomes first responder. The text keeps room below it for as much of the screen as the toolbar covers plus 12 pt, so the caret's line stays above the toolbar with every keyboard (ADR 0110); on an empty line the caret is a body line tall. |
+| `EditToolbar` / `ToolbarKey` | Edit mode's bar above the keyboard (ADR 0109): a glass capsule of icon buttons (undo to outdent) that scrolls sideways when they don't fit, then Aa and hide keyboard as glass circles that always show; every button is a 44 pt square target that grows with the text. A button that is on is an ink circle (VoiceOver: selected); one that can't apply is secondary and disabled. A link chip (glass capsule) sits above it while the caret is in a link. The host never becomes first responder, and ends 8 pt above the keyboard (above the home indicator with a hardware keyboard), inside the safe area at a landscape phone's sides. The text keeps room below it for as much of the screen as the toolbar covers plus 12 pt, so the caret's line stays above the toolbar with every keyboard (ADR 0110); on an empty line the caret is a body line tall. |
 | `TableMenu` | The table controls (ADR 0110): with the caret in a drawn table's cell, Row below, Column right and a ⋯ button take the place of the list, task, indent and outdent buttons in the `EditToolbar` capsule, which scrolls to its end so ⋯ shows whole (and back to Undo on leaving the cell). ⋯ is a system menu: Row above, Column left, Delete row, Delete column, Align column (a submenu, the column's alignment checked), then Delete table (destructive). A control that cannot apply there (a row above or deleted in the header, the last column deleted) is off; after a new column the grid scrolls to the caret's cell. Nothing is drawn in the document. |
 | `FormattingKeyboard` / `FormattingKey` | Aa's keys in place of the keyboard, grouped Turn into, Format, Insert: a symbol over its name on a keyboard-coloured key, the selected block in ink, scrolling at large text sizes. It is the same in a table's cell, where Turn into, Rule and Table are off. Aa brings the system keyboard back. |
 | `Haptics` | `selection` per card, `decision` on Replace, Keep and Same as, `edge` at the end of a list, `success` on All reviewed, `warning` on undo. Off when Settings › Review › Haptics is off. |
@@ -223,8 +226,10 @@ that only the view model changes; views send intents
   Undo button's long press, ⇧⌘Z and a VoiceOver action, and its toast
   offers Undo ([ADR 0106](adr/0106-mobile-identities-gestures.md)).
 - **Menus:** the long press on a name, the card's buttons and the keys
-  take their actions from `actions(for:)`, so they agree. The long press
-  and the chips' menus show the outcome before the tap ("Organization → ORG_3"); Same as… lists hints
+  take their actions from `actions(for:)`, so they agree. The long
+  press's header says the name and its alias, the alias on its category's
+  tint. The chips' menus show the outcome before the tap ("Organization →
+  ORG_3"), each row's icon in its category's color; Same as… lists hints
   first, then the same category, then the rest, and a long list becomes a
   searchable sheet.
 - **Tips** (`ReviewHint`): no popovers or cards. One line per document at

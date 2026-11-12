@@ -22,6 +22,8 @@ enum Radius {
     static let card: CGFloat = 20
     /// Icon tiles.
     static let tile: CGFloat = 8
+    /// An alias on its category's tint (`AliasTag`).
+    static let tag: CGFloat = 4
     /// The screen's corners while a drawer slides it aside.
     static let screen: CGFloat = 44
 }

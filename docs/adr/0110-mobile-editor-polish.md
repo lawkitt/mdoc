@@ -70,6 +70,11 @@ lists were faint and uneven.
 - With the caret in a cell, the text scrolls only to keep that cell in
   view (2026-11-11): UIKit scrolled to the hidden source, at the end of
   the grid, so a tap in a long table threw the cell out of view.
+- The toolbar sits 8 pt above the keyboard's top edge, as far as from the
+  screen's sides (2026-11-11, after `rc.7`: it left a home indicator's
+  room, 38 pt, above the system and the formatting keyboard). With a
+  hardware keyboard it is alone at the screen's bottom, clear of the home
+  indicator.
 - The table panel goes: Aa is the formatting keyboard in a table too, so
   strikethrough, code and link work in cells. Duplicate row and the move
   keys leave the phone; the core keeps its commands.

@@ -29,8 +29,9 @@ struct MarkdownTextView: UIViewRepresentable {
     let onReviewNext: () -> Void
     /// A candidate's long press opens its menu.
     var onMenu: (CandidateID) -> Void = { _ in }
-    /// A candidate's long-press menu (ADR 0098); nil leaves none.
-    var menu: (CandidateID) -> UIMenu? = { _ in nil }
+    /// A candidate's long-press menu and its header (ADR 0098); nil leaves
+    /// none.
+    var menu: (CandidateID) -> UITextItem.MenuConfiguration? = { _ in nil }
     /// Edit mode (ADR 0109), in live preview or with Show Markdown on: the
     /// text is editable and typing reaches the core through these. Nil in
     /// review.
@@ -555,9 +556,20 @@ struct MarkdownTextView: UIViewRepresentable {
             // A candidate's tap opens the bar; its long press, its menu.
             if !textView.isEditable, case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) {
                 parent.onMenu(id)
-                return parent.menu(id).map { UITextItem.MenuConfiguration(menu: $0) }
+                return parent.menu(id)
             }
             return UITextItem.MenuConfiguration(menu: defaultMenu)
+        }
+
+        /// Under the menu's own header (not the system's lifted text) UIKit
+        /// leaves the pressed name selected when the menu closes: no
+        /// selection stays behind.
+        func textView(_ textView: UITextView, textItemMenuWillEndFor textItem: UITextItem, animator: any UIContextMenuInteractionAnimating) {
+            guard !textView.isEditable else { return }
+            animator.addCompletion { [weak textView] in
+                guard let textView, !textView.isEditable else { return }
+                textView.selectedTextRange = nil
+            }
         }
 
         /// Only Replace…: text leaves mdoc through Copy for AI and Share,

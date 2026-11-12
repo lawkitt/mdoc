@@ -36,6 +36,24 @@ final class ComponentSnapshotTests: XCTestCase {
         }
     }
 
+    /// Aliases on their category's tint, as the text draws a replaced name
+    /// (ADR 0098). At AX5 a long alias is cut in the middle, inside its
+    /// row, never clipped or hyphenated.
+    func testAliasTags() {
+        let tags = VStack(alignment: .leading, spacing: Space.xs) {
+            AliasTag(alias: "PERSON_2", category: .person)
+            AliasTag(alias: "ORG_1", category: .organization)
+            AliasTag(alias: "ADDRESS_3", category: .address)
+            AliasTag(alias: "CLIENT_HOLDING_COMPANY_REGISTERED_IN_ENGLAND_AND_WALES_2", category: .organization)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        for appearance in Snapshot.Appearance.allCases {
+            Snapshot.assert(tags, named: "alias-tags", appearance: appearance)
+        }
+        Snapshot.assert(tags, named: "alias-tags-ax5", size: .accessibility5)
+    }
+
     func testIconTiles() {
         let tiles = HStack(spacing: Space.s) {
             IconTile(systemImage: "paintbrush", color: .blue)
