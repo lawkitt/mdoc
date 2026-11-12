@@ -522,9 +522,9 @@ wait for.
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
-| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs: `ci/ios (tests)`, `just ios-app ios-test` on the pinned Xcode (as `just mobile --ios`), and `ci/ios-release`, `just ios-release` | 40 min (tests), 30 min (Release) |
+| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs: `ci/ios (tests)`, `just ios-app ios-test` on the pinned Xcode (as `just mobile --ios`), and `ci/ios-release`, `just ios-release` | 55 min (tests), 30 min (Release) |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
-| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 4 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
+| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
 
 | `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
 
@@ -587,6 +587,22 @@ and any line past its date fails the scripts tier. A lane runs what it touched b
 profile's `gate`) and may dispatch the full hosted desktop job on its
 branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
 
+**Unrelated failures and re-queues** ([ADR 0112](adr/0112-ci-speed-after-the-first-fortnight.md)).
+A queue failure is unrelated when it is an infrastructure failure, when
+the same test failed the same way on another PR's queue commit, on `main`
+or in the nightly within 14 days, or when the failing test is in an area
+the PR does not touch; anything else goes to the PR's lane. The hub
+re-queues a PR once after an unrelated failure and, on a test's second
+unrelated failure, quarantines it with its issue, without asking; its PR
+comment names the rule that matched. A second drop of the same PR goes to
+the maintainer.
+
+**iOS tests on the Mac.** Agents run only the test classes they touched
+(`xcodebuild test -only-testing:<target>/<class>`) and leave the full
+suite to the queue: on the fanless Air it takes 25 to 30 minutes, and
+parallel runs overheat it. One heavy build at a time; check `uptime`
+first.
+
 **Tests and OS services.** A test never asks the OS's security or identity
 services: the build's code signature (`SecCodeCopySelf`), the case key
 (Keychain, Windows data protection, Secret Service) or the build identity
@@ -609,7 +625,7 @@ so the shards set `MDOC_DETECT_THREADS=4`.
 A recognition-area PR runs the gate on its head
 ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)), so a stale
 snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
-4 shards, on every push (a newer push cancels it), drafts included. Its
+6 shards, on every push (a newer push cancels it), drafts included. Its
 head `merge-gate` waits for `detection-head / ci/detection` beside the fast
 tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
 PR is one with a file on a recognition line of `scripts/ci-areas.txt`
