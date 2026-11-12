@@ -25,7 +25,7 @@ on:
         type: boolean
         default: false
       timing:
-        description: Run the timing tests too (LivePreviewUITests' typing and Return times), as the nightly does.
+        description: Run the timing tests too (LivePreviewUITests' typing and Return times, CoreWiringTests' review tap), as the nightly does.
         type: boolean
         default: false
   workflow_dispatch:
@@ -75,9 +75,9 @@ jobs:
     env:
       # The test target `just ios-test` runs: unit and parity, or UI.
       TARGET: ${{ matrix.part == 'ui' && 'mdocUITests' || 'mdocTests' }}
-      # The timing tests (LivePreviewUITests' typing and Return times) skip
-      # unless set: they only measure speed, about 4 minutes, so only the
-      # nightly runs them. xcodebuild passes TEST_RUNNER_<name> to the tests
+      # The timing tests (LivePreviewUITests' typing and Return times,
+      # CoreWiringTests' review tap) skip unless set: they only measure
+      # speed, about 4 minutes, so only the nightly runs them. xcodebuild passes TEST_RUNNER_<name> to the tests
       # as <name>.
       TEST_RUNNER_MDOC_TIMING_TESTS: ${{ inputs.timing && '1' || '' }}
     steps:

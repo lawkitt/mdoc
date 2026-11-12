@@ -537,7 +537,8 @@ parts ran and passed: `ci/ios (unit)` and `ci/ios (ui)`, one matrix job
 (id `ios`) split by test target (ADR 0112). Both build the core
 with `just ios-core` and restore one cargo cache (`cache-key: ios`), which
 `main-caches.yml`'s build-only run of the unit part saves. The timing tests
-(`LivePreviewUITests`' `testTypingRestyleTime` and `testReturnTime`) skip
+(`LivePreviewUITests`' `testTypingRestyleTime` and `testReturnTime`,
+`CoreWiringTests`' `testAReviewTapsTime`) skip
 unless `TEST_RUNNER_MDOC_TIMING_TESTS=1`, which `ci-ios.yml`'s `timing`
 input sets: the nightly passes it, the queue does not. A second UI part,
 sharded by test class, comes only if `ci/ios (ui)` stays over 20 minutes. Xcode needs a Simulator runtime of the SDK's version for any
