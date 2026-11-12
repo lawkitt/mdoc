@@ -116,8 +116,9 @@ lists were faint and uneven.
 **Names**
 
 - A command edits only what it changes: a list, task, heading or quote
-  its line prefixes, and bold, italic and the other wraps their markers
-  (2026-11-11, after `rc.5` and `rc.6`). An edit that runs into a
+  its line prefixes, bold, italic and the other wraps their markers, and
+  a checked or unchecked task its box's one character (2026-11-11, after
+  `rc.5`, `rc.6` and `rc.7`). An edit that runs into a
   proposed name drops it, so a command that replaced the whole selection
   dropped every name and alias in it.
 

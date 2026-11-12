@@ -381,8 +381,17 @@ pub fn toggle_task(source: &str, selection: Range<usize>) -> Option<EditResult> 
     let row = row_col(source, caret).0;
     let range = line_starts(source)[row]..line_end(source, row);
     let line = toggle_task_checkbox(&source[range.clone()])?;
+    // Only the box's byte is edited: an edit over the whole line would run
+    // into the line's names and drop them.
+    let at = source[range.clone()]
+        .bytes()
+        .zip(line.bytes())
+        .position(|(was, now)| was != now)?;
     Some(EditResult {
-        edits: vec![crate::Edit { range, text: line }],
+        edits: vec![crate::Edit {
+            range: range.start + at..range.start + at + 1,
+            text: line[at..at + 1].to_string(),
+        }],
         selection,
     })
 }
@@ -797,6 +806,12 @@ mod tests {
         assert_eq!(
             run(s, toggle_task(s, caret(7))),
             Some(("- [x] t".into(), caret(7)))
+        );
+        let edits = toggle_task(s, caret(7)).unwrap().edits;
+        assert_eq!(edits.len(), 1);
+        assert_eq!(
+            (edits[0].range.clone(), edits[0].text.as_str()),
+            (3..4, "x")
         );
         assert_eq!(toggle_task("t", caret(1)), None);
     }
