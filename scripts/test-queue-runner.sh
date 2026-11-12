@@ -170,6 +170,29 @@ XML
   check "and no more" eval '[ -d "$out/b" ] && [ -d "$out/c" ] && [ -f "$out/status.txt" ]'
   check "each deletion is logged" [ "$(grep -c '^.* deleting ' "$tmp/prune.log")" = 2 ]
 
+  # The done list: read once (a CRLF file reads the same), asked from
+  # memory, cut to its last 500 past 1000.
+  # shellcheck disable=SC2034 # read by read_done and mark_done
+  state=$tmp/done-state
+  mkdir -p "$state"
+  seq 1 999 | sed 's/$/\r/' >"$state/done"
+  read_done
+  check "a commit in the done file is done" is_done 999
+  check "part of one is not" not is_done 00
+  check "nor one not in it" not is_done abc
+  mark_done abc
+  check "a commit marked done is, in memory and in the file" eval 'is_done abc && [ "$(tail -n 1 "$state/done")" = abc ]'
+  mark_done def
+  check "past 1000 commits the list keeps its last 500" \
+    eval '[ "$(wc -l <"$state/done" | tr -d " ")" = 500 ] && is_done def && is_done abc && is_done 502 && ! is_done 501'
+  # Without date where bash has the time itself (5.0 on).
+  # The hour before or after the line, should it be written as one ends.
+  # shellcheck disable=SC2034 # read in the eval
+  hour=$(date -u +%Y-%m-%dT%H) line=$(log said) hour_after=$(date -u +%Y-%m-%dT%H)
+  check "a log line starts with the time in UTC" \
+    eval '[[ $line =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\ said$ ]] &&
+    { [ "${line:0:13}" = "$hour" ] || [ "${line:0:13}" = "$hour_after" ]; }'
+
   # status.txt while the queue cannot be read, then once it can.
   # shellcheck disable=SC2034 # read by write_status
   out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed='' unsettled=''
@@ -361,7 +384,7 @@ esac
 EOF
 chmod +x "$tmp/bin/gh" "$tmp/bin/just" "$tmp/bin/tailscale" "$tmp/bin/curl"
 # macOS checks a new executable on its first run, which took 0.1-0.5 s on an
-# idle M4; under load that passed the runner's 3 s bound on tailscale, whose
+# idle M4; under load that passed the runner's bound on tailscale (3 s then), whose
 # "not served" then stood for 10 minutes (#658). A first run here keeps it
 # out of the runner's calls.
 "$tmp/bin/tailscale" serve status --json >/dev/null
@@ -449,8 +472,12 @@ export LOCAL_CI_HOME="$tmp/ci" LOCAL_CI_URL=https://ci.example/ci QUEUE_CI_REPO=
 # status came 12 s after the first (c066ec0, #585), so 30 s left too little.
 # The slow, dropped and merged ones sleep 120 s, past it.
 export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=60 QUEUE_CI_MIN_FREE_GB=0
-# A stalled gh call ends after 3 s (the fake stalls for 30).
-export QUEUE_CI_NET_TIMEOUT=3
+# A stalled gh call ends after 20 s (the fake stalls for 30). Not 3: on the
+# PC beside a test build that ended three to five of the first poll's
+# fetches too (debc761, 66fe1fe). Their commits were settled a poll later,
+# out of order and while the first job ran, and the loop, held up by them,
+# found that job past its 60 s limit without a heartbeat.
+export QUEUE_CI_NET_TIMEOUT=20
 export CARGO_TARGET_DIR="$tmp/shared-target"
 # As in hosted CI: only the runner's test step may name the renders folder.
 export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
