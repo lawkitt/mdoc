@@ -90,8 +90,8 @@ final class EditToolbarUITests: XCTestCase {
         XCTAssertTrue(app.buttons["done-editing"].exists)
     }
 
-    /// ⌘B, Tab and ⌘K from a hardware keyboard (ADR 0109's iPad keys). The
-    /// link's chip, Open and Edit, is EditToolbarTests' (ADR 0112's sweep).
+    /// ⌘B, Tab and ⌘K from a hardware keyboard (ADR 0109's iPad keys), and
+    /// the link's chip, whose Edit opens the sheet on the link.
     @MainActor
     func testHardwareKeys() throws {
         let (app, text) = edit()
@@ -115,6 +115,13 @@ final class EditToolbarUITests: XCTestCase {
         url.typeText("https://example.org")
         app.buttons["link-done"].tap()
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "[site](https://example.org)"), timeout: 5))
+        // The caret is at the link: its chip offers Open and Edit.
+        XCTAssertTrue(app.buttons["link-edit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["link-open"].isEnabled)
+        app.buttons["link-edit"].tap()
+        XCTAssertTrue(app.textFields["link-url"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["link-url"].value as? String, "https://example.org")
+        app.buttons["link-cancel"].tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 5), "the keyboard and toolbar come back")
     }
 
