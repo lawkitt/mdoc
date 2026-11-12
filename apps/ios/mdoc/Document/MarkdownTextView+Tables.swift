@@ -75,7 +75,7 @@ extension CandidateTextView {
     }
 
     /// The text position under `point` when it falls on a grid: the
-    /// nearest cell's character there (drags, the loupe, the space bar's
+    /// nearest cell's character there (the loupe, the space bar's
     /// trackpad).
     func cellPosition(at point: CGPoint) -> UITextPosition? {
         guard editsCells else { return nil }
@@ -84,27 +84,6 @@ extension CandidateTextView {
             return position(from: beginningOfDocument, offset: offset)
         }
         return nil
-    }
-
-    /// The selection a handle dragged over a grid makes. UIKit moves a
-    /// selection's end with TextKit's own hit test, which finds the
-    /// table's hidden source, not the cell drawn over it; it asks
-    /// `closestPosition(to:)` for the same point first, so the cell's
-    /// character there is known (`lastCellHit`). When the selection in a
-    /// cell changes at one end only, just after such a hit in that cell,
-    /// the moved end is the hit, which is used once.
-    func handleDragged(from previous: NSRange?) -> NSRange? {
-        let new = selectedRange
-        // One hit moves one selection change: a key that changes the
-        // selection just after a drag is not a drag.
-        defer { lastCellHit = nil }
-        guard let previous, previous.length > 0, new != previous, let hit = lastCellHit,
-              CACurrentMediaTime() - hit.time < 0.5, let cell = cell(at: previous.location),
-              self.cell(at: hit.offset)?.view === cell.view else { return nil }
-        let ends = [new.location, NSMaxRange(new)]
-        let kept = [previous.location, NSMaxRange(previous)].filter(ends.contains)
-        guard kept.count == 1, let fixed = kept.first else { return nil }
-        return NSRange(location: min(fixed, hit.offset), length: abs(fixed - hit.offset))
     }
 
     /// Selects the word at the text's UTF-16 `offset` (in a cell); a place
@@ -143,7 +122,8 @@ extension CandidateTextView {
     /// no frame and no scroll offset until a layout pass: it is laid out
     /// first, so the grid scrolls to a new column's cell (ADR 0110).
     func revealCaretCell() {
-        guard let hit = caretCell else { return }
+        // A handle being dragged is under the finger, and in view.
+        guard !cellHandles.isDragging, let hit = caretCell else { return }
         if hit.table.bounds.width == 0 { layoutIfNeeded() }
         hit.table.layoutIfNeeded()
         guard let inCell = position(in: hit.view, at: hit.offset) else { return }
@@ -182,6 +162,7 @@ extension MarkdownTextView.Coordinator {
     /// Points the grids' taps and scrolls at the caret (ADR 0109): a tap
     /// puts the caret in the cell's source at the character tapped.
     func connectTables(_ view: CandidateTextView) {
+        view.cellHandles.press.isEnabled = parent.edit != nil
         guard parent.edit != nil else {
             view.onTableTap = nil
             view.onTableSelect = nil

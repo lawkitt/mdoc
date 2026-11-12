@@ -1273,6 +1273,22 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
         return view.location + view.offset(from: view.beginningOfDocument, to: position)
     }
 
+    /// The document's UTF-16 offset of the character of `view`'s text at
+    /// `point`, wherever the point is: beside the cell the character on
+    /// that line nearest it, above the cell's text its start, below it its
+    /// end. A selection handle dragged out of its cell stops there.
+    func offset(at point: CGPoint, in view: CellTextView) -> Int {
+        let inside = convert(point, to: view)
+        let length = view.textStorage.length
+        let top = view.caretRect(for: view.beginningOfDocument)
+        let bottom = view.caretRect(for: view.endOfDocument)
+        if length == 0 || inside.y < top.minY { return view.location }
+        if inside.y > bottom.maxY { return view.location + length }
+        let x = min(max(inside.x, 0), view.bounds.width)
+        let position = view.closestPosition(to: CGPoint(x: x, y: inside.y)) ?? view.endOfDocument
+        return view.location + view.offset(from: view.beginningOfDocument, to: position)
+    }
+
     /// The cell whose span holds the document's UTF-16 `offset`, and where
     /// in its text that is: a caret in the cell's spaces sits at its text's
     /// edge.
