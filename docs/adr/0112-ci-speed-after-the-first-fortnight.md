@@ -4,6 +4,8 @@ Status: Accepted, 2026-11-12. Amends [ADR 0095](0095-ci-on-a-merge-queue.md)
 (the Windows job's steps and limit, the iOS job's shape, flakes) and
 [ADR 0100](0100-ci-reliability-after-the-cutover.md) (`ci/ios`, the
 targets, measuring them). Rolled out by ROADMAP's CI speed section.
+Amended by [ADR 0113](0113-ci-targets-by-commit-and-detection-off-macos.md)
+(the targets, the iOS UI job, retries, where detection runs).
 
 ## Problem
 
