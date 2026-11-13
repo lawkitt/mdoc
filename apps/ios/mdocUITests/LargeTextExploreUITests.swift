@@ -44,7 +44,7 @@ final class LargeTextExploreUITests: XCTestCase {
         }
         if MdocUITest.showIdentities(app) {
             save(app, "07-identities")
-            if app.buttons["identities-done"].exists { app.buttons["identities-done"].tap() }
+            if app.buttons["Close Identities"].exists { app.buttons["Close Identities"].tap() }
         }
         let primary = app.buttons["primary-action"]
         if primary.exists && primary.label.hasPrefix("Replace") { primary.tap() }

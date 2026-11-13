@@ -21,9 +21,7 @@ final class ReviewBarLayoutTests: XCTestCase {
 
     func testTheCompactBarKeepsOneHeightWhetherTheNameRepeatsOrNot() throws {
         // A hint line would change the height as cards are seen.
-        let hints = ReviewHint.enabled
-        ReviewHint.enabled = false
-        defer { ReviewHint.enabled = hints }
+        Hints.shared.setAvailableForTesting([])
         let (core, _) = try Fixture.core()
         let session = try core.library.importDocument(
             .text("Maya Bennett signs for Daniel Okafor.\n\nLater Maya Bennett signs again.\n"),

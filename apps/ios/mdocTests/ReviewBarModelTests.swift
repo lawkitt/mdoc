@@ -334,13 +334,8 @@ final class ReviewBarModelTests: XCTestCase {
     }
 
     func testOneHintPerDocumentAtItsMoment() throws {
-        let wasEnabled = ReviewHint.enabled
-        ReviewHint.resetAll()
-        ReviewHint.enabled = true
-        defer {
-            ReviewHint.resetAll()
-            ReviewHint.enabled = wasEnabled
-        }
+        Hints.shared.setAvailableForTesting(Set(ReviewHint.allCases))
+        defer { Hints.shared.setAvailableForTesting([]) }
         let model = try model()
         model.beginReview()
         XCTAssertNil(model.hint, "not on the first card")
@@ -412,13 +407,8 @@ final class ReviewBarModelTests: XCTestCase {
     /// Opening a name's menu is the long press found: its hint goes. The
     /// menu itself is built without changing anything.
     func testOpeningTheMenuLearnsTheLongPress() throws {
-        let wasEnabled = ReviewHint.enabled
-        ReviewHint.resetAll()
-        ReviewHint.enabled = true
-        defer {
-            ReviewHint.resetAll()
-            ReviewHint.enabled = wasEnabled
-        }
+        Hints.shared.setAvailableForTesting(Set(ReviewHint.allCases))
+        defer { Hints.shared.setAvailableForTesting([]) }
         let model = try model()
         let candidate = try XCTUnwrap(model.snapshot.candidates.first)
         _ = CandidateMenu.make(for: candidate.id, model: model) { _ in }

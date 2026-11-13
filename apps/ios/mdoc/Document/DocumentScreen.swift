@@ -297,31 +297,63 @@ struct DocumentScreen: View {
         }
     }
 
+    /// The document's one menu, under its title (ADR 0114), in groups:
+    /// finding, Show Markdown, what leaves mdoc, the file, Delete.
     @ViewBuilder
     private var titleMenu: some View {
-        if model.offersFindNamesAgain {
-            // Only outside edit mode, the same job as Find names (ADR 0109).
+        let document = app.flatMap { $0.library.document(model.id) }
+        Section {
             Button {
-                Task { await model.findNamesAgain() }
+                // Editing: the system find bar, with Replace (ADR 0109).
+                if model.isEditing { model.findBarRequest += 1 } else { model.showsFind = true }
             } label: {
-                Label("Find names again", systemImage: "text.magnifyingglass")
-                if let reason = model.findNamesAgainBlockedReason {
-                    Text(reason)
+                Label("Find in document", systemImage: "magnifyingglass")
+            }
+            .disabled(model.snapshot.markdown.isEmpty)
+            .accessibilityIdentifier("find-in-document")
+            if model.offersFindNamesAgain {
+                // Only outside edit mode, the same job as Find names (ADR 0109).
+                Button {
+                    Task { await model.findNamesAgain() }
+                } label: {
+                    Label("Find names again", systemImage: "text.magnifyingglass")
+                    if let reason = model.findNamesAgainBlockedReason {
+                        Text(reason)
+                    }
+                }
+                .disabled(model.findNamesAgainBlockedReason != nil)
+                .accessibilityHint(Text("Looks for names in the text as it is now, typed text too."))
+                .accessibilityIdentifier("find-names-again")
+            }
+        }
+        Section {
+            // The source as Copy for AI sends it, markers dimmed (ADR 0096).
+            Toggle(isOn: Bindable(preferences).showsSource) {
+                Label("Show Markdown", systemImage: "number")
+            }
+            .accessibilityIdentifier("show-markdown")
+        }
+        // The review bar takes the action bar's place while reviewing, so
+        // these are here too (ADR 0114).
+        Section {
+            if model.snapshot.phase == .ready {
+                Button {
+                    model.copyForAI { UIPasteboard.general.string = $0 }
+                } label: {
+                    Label("Copy for AI", systemImage: "doc.on.doc")
                 }
             }
-            .disabled(model.findNamesAgainBlockedReason != nil)
-            .accessibilityHint(Text("Looks for names in the text as it is now, typed text too."))
-            .accessibilityIdentifier("find-names-again")
-        }
-        if model.snapshot.phase == .ready {
-            Button {
-                model.copyForAI { UIPasteboard.general.string = $0 }
-            } label: {
-                Label("Copy for AI", systemImage: "doc.on.doc")
+            if let app, let document {
+                DocumentShareButton(app: app, document: document)
             }
         }
-        if let app, let document = app.library.document(model.id) {
-            DocumentMenuItems(app: app, document: document)
+        if let app, let document {
+            Section {
+                DocumentFileItems(app: app, document: document)
+            }
+            Section {
+                DocumentDeleteButton(app: app, document: document)
+            }
         }
     }
 
@@ -353,21 +385,17 @@ struct DocumentScreen: View {
                 .foregroundStyle(.primary)
             }
             .accessibilityLabel(Text(model.snapshot.title))
-            .accessibilityHint(Text("Rename, move, share or delete the document."))
+            .accessibilityHint(Text("Find, show Markdown, share, rename, move or delete the document."))
             .accessibilityIdentifier("title-menu")
         }
         if model.isEditing {
-            // Editing: the checkmark in its own capsule, apart from ⋯, and
-            // no Identities (ADR 0110).
+            // Editing: ☰, the title and the checkmark in its own capsule;
+            // no Identities (ADR 0110, 0114).
             ToolbarItem(placement: .topBarTrailing) {
                 doneButton
             }
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) {
-                moreMenu
-            }
         } else {
-            // One group: beside a title menu, separate items overflow into More.
+            // One capsule: the pencil and Identities (ADR 0114).
             ToolbarItemGroup(placement: .topBarTrailing) {
                 editButton
                 Button {
@@ -377,7 +405,6 @@ struct DocumentScreen: View {
                 }
                 .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
                 .accessibilityIdentifier("identities-button")
-                moreMenu
             }
         }
     }
@@ -386,37 +413,15 @@ struct DocumentScreen: View {
     /// ☰ and the trailing buttons (ADR 0110). The bar offers a title any
     /// width and centres it, and a toolbar item's place can't be read, so
     /// the room comes from the screen's width less the bar's fixed
-    /// buttons: ☰ with its margin, and the trailing capsules (the review
-    /// capsule 48 pt a button, edit mode's checkmark and ⋯ capsules), a gap
-    /// either side and the chevron. The buttons keep their size at every
-    /// text size.
+    /// buttons: ☰ with its margin, and the trailing capsule (the review
+    /// capsule 48 pt a button, edit mode's checkmark), a gap either side and
+    /// the chevron. The buttons keep their size at every text size.
     private var titleWidth: CGFloat {
         let cap: CGFloat = isRegular ? 420 : 300
         guard screenWidth > 0 else { return isRegular ? 420 : 140 }
         let leading: CGFloat = 60
-        let trailing: CGFloat = model.isEditing ? 120 : 16 + 14 + 48 * (offersEdit ? 3 : 2)
+        let trailing: CGFloat = model.isEditing ? 76 : 16 + 14 + 48 * (offersEdit ? 2 : 1)
         return min(cap, max(60, screenWidth - leading - trailing - 2 * Space.xs - 22))
-    }
-
-    private var moreMenu: some View {
-        Menu {
-            Button {
-                // Editing: the system find bar, with Replace (ADR 0109).
-                if model.isEditing { model.findBarRequest += 1 } else { model.showsFind = true }
-            } label: {
-                Label("Find in document", systemImage: "magnifyingglass")
-            }
-            .disabled(model.snapshot.markdown.isEmpty)
-            .accessibilityIdentifier("find-in-document")
-            // The source as Copy for AI sends it, markers dimmed (ADR 0096).
-            Toggle(isOn: Bindable(preferences).showsSource) {
-                Label("Show Markdown", systemImage: "number")
-            }
-            .accessibilityIdentifier("show-markdown")
-        } label: {
-            Label("More", systemImage: "ellipsis.circle")
-        }
-        .accessibilityIdentifier("document-menu")
     }
 
     private var paneBinding: Binding<DocumentViewModel.Shown> {

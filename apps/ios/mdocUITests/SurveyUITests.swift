@@ -252,7 +252,7 @@ final class SurveyUITests: XCTestCase {
         row.tap()
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
-        app.buttons["document-menu"].tap()
+        app.buttons["title-menu"].tap()
         let showMarkdown = app.descendants(matching: .any)["show-markdown"].firstMatch
         XCTAssertTrue(showMarkdown.waitForExistence(timeout: MdocUITest.timeout))
         showMarkdown.tap()
@@ -588,9 +588,9 @@ final class SurveyUITests: XCTestCase {
 
     @MainActor
     private func closeSheet(_ app: XCUIApplication) {
-        // Identities is a drawer on iPhone: its own close button.
+        // Identities is a drawer on iPhone: its sliver closes it.
         // The drawer's panel goes once it has slid shut.
-        let drawer = app.buttons["identities-done"].firstMatch
+        let drawer = app.buttons["Close Identities"].firstMatch
         if drawer.exists {
             drawer.tap()
             XCTAssertTrue(drawer.waitForNonExistence(timeout: 5), "Identities stayed open")

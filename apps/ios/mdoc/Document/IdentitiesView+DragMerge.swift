@@ -59,6 +59,12 @@ extension IdentitiesView {
 
     /// The handle's finger, from down to up.
     func handleDrag(_ event: HandleDragEvent) {
+        // A finger on a handle ends the Select demo; until it lifts the
+        // demo's ghost is not its drag.
+        if drag?.isDemo == true {
+            guard case .began = event else { return }
+            endDemo(dismissed: true)
+        }
         switch event {
         case let .began(id, point):
             guard selecting, drag == nil || drag?.returning == true, let frame = dragTracking.rows[id] else { return }

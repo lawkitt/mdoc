@@ -139,56 +139,60 @@ final class IdentitiesModelTests: XCTestCase {
         }
     }
 
-    /// "In Select, drag ≡ onto a name to make them one" shows while two
-    /// names share a category or Looks like has a card, and goes for good
-    /// after the first drag-merge or Same as (ADR 0106); Reset tips brings
-    /// it back.
-    func testTheDragHintShowsUntilTheFirstMerge() throws {
-        XCTAssertEqual(String(localized: ReviewHint.dragMerge.text), "In Select, drag ≡ onto a name to make them one")
-        let wasEnabled = ReviewHint.enabled
-        ReviewHint.resetAll()
-        ReviewHint.enabled = true
-        defer {
-            ReviewHint.resetAll()
-            ReviewHint.enabled = wasEnabled
-        }
+    /// The Select demo (ADR 0114) is due with two names or more, until the
+    /// first drag-merge or Same as; Reset tips brings it back, and it is
+    /// off where TipKit hides the tips (UI tests).
+    func testTheSelectDemoIsDueUntilTheFirstMerge() throws {
+        XCTAssertEqual(
+            String(localized: ReviewHint.dragMerge.text),
+            "Tick names to act on them, or drag ≡ onto another name to make them one")
+        Hints.shared.setAvailableForTesting(Set(ReviewHint.allCases))
+        defer { Hints.shared.setAvailableForTesting([]) }
         let model = try model()
-        XCTAssertTrue(model.showsDragMergeHint, "the letter has several people")
+        XCTAssertTrue(model.offersSelectDemo, "the letter has several names")
         let people = model.snapshot.identities.filter { $0.category == .person }
         XCTAssertGreaterThanOrEqual(people.count, 4)
         model.dragMerge(people[1].id, into: people[0].id)
-        XCTAssertFalse(model.showsDragMergeHint, "learned by the first drag-merge")
+        XCTAssertFalse(model.offersSelectDemo, "learned by the first drag-merge")
         model.undo()
-        XCTAssertFalse(model.showsDragMergeHint, "gone for good")
+        XCTAssertFalse(model.offersSelectDemo, "gone for good")
         ReviewHint.resetAll()
-        XCTAssertTrue(model.showsDragMergeHint)
+        XCTAssertTrue(model.offersSelectDemo)
         // Select › Same as learns it too.
         model.merge([people[2].id, people[3].id])
-        XCTAssertFalse(model.showsDragMergeHint, "learned by Same as")
-        ReviewHint.enabled = false
-        ReviewHint.resetAll()
-        XCTAssertFalse(model.showsDragMergeHint, "off in UI tests")
+        XCTAssertFalse(model.offersSelectDemo, "learned by Same as")
+        Hints.shared.setAvailableForTesting([])
+        XCTAssertFalse(model.offersSelectDemo, "off where TipKit hides the tips")
     }
 
-    /// Names that are all of different categories, with no Looks like card,
-    /// have nothing to drag together: no hint.
-    func testTheDragHintNeedsTwoNamesThatCouldBeOne() throws {
-        let wasEnabled = ReviewHint.enabled
-        ReviewHint.resetAll()
-        ReviewHint.enabled = true
-        defer {
-            ReviewHint.resetAll()
-            ReviewHint.enabled = wasEnabled
-        }
+    /// One name has nothing to drag onto: no demo. Two of any categories
+    /// have.
+    func testTheSelectDemoNeedsTwoNames() throws {
+        Hints.shared.setAvailableForTesting(Set(ReviewHint.allCases))
+        defer { Hints.shared.setAvailableForTesting([]) }
         let seeded = try Fixture.seeded()
-        let document = try seeded.library.importDocument(
+        let one = try seeded.library.importDocument(
+            .text("Write to maya.ellison@example.com."), title: "One name", into: .existing(seeded.ellison))
+        _ = try one.recognize(observer: TestObserver())
+        _ = try one.propose(Letters.names.filter { $0.category == .email })
+        let alone = try seeded.model(one.id)
+        XCTAssertEqual(alone.snapshot.identities.count, 1)
+        XCTAssertFalse(alone.offersSelectDemo)
+        let two = try seeded.library.importDocument(
             .text("Write to maya.ellison@example.com or call 01632 960 418."), title: "Two names", into: .existing(seeded.ellison))
-        _ = try document.recognize(observer: TestObserver())
-        _ = try document.propose(Letters.names.filter { $0.category == .email || $0.category == .phone })
-        let model = try seeded.model(document.id)
-        XCTAssertEqual(Set(model.snapshot.identities.map(\.category)), [.email, .phone])
-        XCTAssertTrue(model.identityHints.isEmpty)
-        XCTAssertFalse(model.showsDragMergeHint)
+        _ = try two.recognize(observer: TestObserver())
+        _ = try two.propose(Letters.names.filter { $0.category == .email || $0.category == .phone })
+        XCTAssertTrue(try seeded.model(two.id).offersSelectDemo, "names of two categories are enough")
+    }
+
+    /// While the demo shows, the review bar's hints wait: one at a time.
+    func testTheDemoKeepsTheBarsHintsBack() {
+        Hints.shared.setAvailableForTesting(Set(ReviewHint.allCases))
+        defer { Hints.shared.setAvailableForTesting([]) }
+        Hints.shared.show(.dragMerge)
+        XCTAssertEqual(ReviewHint.teachable, [.dragMerge])
+        Hints.shared.learn(.dragMerge, closed: true)
+        XCTAssertEqual(ReviewHint.teachable, [.swipe, .longPress], "dismissed: learned, and the others are back")
     }
 
     func testCountsSayHowManyAreLeft() throws {

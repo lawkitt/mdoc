@@ -72,6 +72,8 @@ struct IdentityDragState: Equatable {
     var target: IdentityID?
     /// Let go away from a name: the copy slides back to its row.
     var returning = false
+    /// The Select demo's ghost (ADR 0114): no finger, and never a merge.
+    var isDemo = false
 
     /// The lifted copy's frame: the row's, moved up or down with the finger.
     var copyFrame: CGRect {

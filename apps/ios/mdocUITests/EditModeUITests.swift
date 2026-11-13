@@ -22,7 +22,7 @@ final class EditModeUITests: XCTestCase {
 
         // Edit is offered with Show Markdown on, as in live preview.
         XCTAssertTrue(app.buttons["edit-button"].waitForExistence(timeout: MdocUITest.timeout))
-        app.buttons["document-menu"].tap()
+        app.buttons["title-menu"].tap()
         let showMarkdown = app.descendants(matching: .any)["show-markdown"].firstMatch
         XCTAssertTrue(showMarkdown.waitForExistence(timeout: MdocUITest.timeout))
         showMarkdown.tap()

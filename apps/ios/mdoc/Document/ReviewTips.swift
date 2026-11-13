@@ -1,16 +1,20 @@
 import SwiftUI
+import TipKit
 
-/// The review's hints (docs/mobile-ui.md, Tips): one quiet line inside the
-/// bar, at most one per document, gone once the gesture is used, and one in
-/// Identities (`dragMerge`). No popovers and no tip cards. Settings ›
-/// Review › Reset tips shows them again; UI tests turn them off.
-enum ReviewHint: String, CaseIterable, Identifiable {
+/// The hints (docs/mobile-ui.md, Tips; ADR 0114): TipKit decides whether a
+/// hint may show (learned, reset, the UI tests' switch) and mdoc draws it.
+/// No `TipView` and no popovers: the card swipe and the long press are one
+/// quiet line inside the review bar, at most one per document; drag-merge
+/// is Identities' Select demo. Doing the action, or ×, learns a hint for
+/// good; Settings › Review › Reset tips shows them all again.
+enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
     /// After the second card: the card swipes.
     case swipe
     /// After a few decisions: a name's long-press menu.
     case longPress
-    /// In Identities, while two names could be one: drag-to-merge (ADR
-    /// 0106). Learned by the first drag-merge or Same as.
+    /// The first time Select opens with two names or more: the Select demo,
+    /// a ghost row dragged onto the next (ADR 0114). Learned by the first
+    /// drag-merge or Same as, or by dismissing the demo.
     case dragMerge
 
     var id: String { rawValue }
@@ -19,7 +23,7 @@ enum ReviewHint: String, CaseIterable, Identifiable {
         switch self {
         case .swipe: "Swipe the card for the next name"
         case .longPress: "Long-press any name for more"
-        case .dragMerge: "In Select, drag ≡ onto a name to make them one"
+        case .dragMerge: "Tick names to act on them, or drag ≡ onto another name to make them one"
         }
     }
 
@@ -31,7 +35,17 @@ enum ReviewHint: String, CaseIterable, Identifiable {
         }
     }
 
-    private var learnedKey: Preferences.Key {
+    /// The TipKit tip that decides whether this hint may show.
+    var tip: any Tip {
+        switch self {
+        case .swipe: SwipeTip()
+        case .longPress: LongPressTip()
+        case .dragMerge: DragMergeTip()
+        }
+    }
+
+    /// rc.9 and earlier kept a learned hint in `Preferences`.
+    fileprivate var oldKey: Preferences.Key {
         switch self {
         case .swipe: .swipeLearned
         case .longPress: .longPressLearned
@@ -39,27 +53,144 @@ enum ReviewHint: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Used once, or dismissed: never shown again (`Preferences`).
-    var isLearned: Bool { Preferences.shared.isLearned(learnedKey) }
+    /// Used once, or dismissed: never shown again, until Reset tips.
+    @MainActor var isLearned: Bool { !Hints.shared.available.contains(self) }
 
-    func learn() { Preferences.shared.learn(learnedKey) }
+    @MainActor func learn() { Hints.shared.learn(self) }
 
-    /// Off in UI tests, whose layout a hint would shift.
-    nonisolated(unsafe) static var enabled = true
+    /// The hints still to teach: those TipKit lets show. While the Select
+    /// demo plays, only it, so two hints never show at once on iPad.
+    @MainActor static var teachable: Set<ReviewHint> { Hints.shared.teachable }
 
-    /// The hints still to teach: none while hints are off, else those not
-    /// yet learned. `ReviewState` shows one of them at its moment.
-    static var teachable: Set<ReviewHint> {
-        enabled ? Set(allCases.filter { !$0.isLearned }) : []
+    /// Off in UI tests (`Tips.hideAllTipsForTesting()`), whose layout a hint
+    /// or a one-time motion would shift.
+    @MainActor static var enabled: Bool { Hints.shared.mode == .live }
+
+    /// Settings › Review › Reset tips: every hint shows again.
+    @MainActor static func resetAll() { Hints.shared.resetAll() }
+}
+
+// The tips themselves: TipKit's record of each, with no rules of their own.
+// When within a document is mdoc's (`ReviewState`, the Select demo).
+
+struct SwipeTip: Tip {
+    var title: Text { Text(ReviewHint.swipe.text) }
+    var image: Image? { Image(systemName: ReviewHint.swipe.symbol) }
+}
+
+struct LongPressTip: Tip {
+    var title: Text { Text(ReviewHint.longPress.text) }
+    var image: Image? { Image(systemName: ReviewHint.longPress.symbol) }
+}
+
+struct DragMergeTip: Tip {
+    var title: Text { Text(ReviewHint.dragMerge.text) }
+    var image: Image? { Image(systemName: ReviewHint.dragMerge.symbol) }
+}
+
+/// What TipKit says about the hints, as mdoc's views read it: the hints
+/// whose tip may show (`statusUpdates`), kept here so a view hears of a
+/// change and a learned hint goes at once.
+@MainActor @Observable
+final class Hints {
+    static let shared = Hints()
+
+    enum Mode: Equatable {
+        /// The app: TipKit with its own store.
+        case live
+        /// UI tests: TipKit with every tip hidden, or every tip shown for a
+        /// test of a hint (`MDOC_SHOW_TIPS`).
+        case uiTesting(showsTips: Bool)
+        /// Unit tests: no TipKit; tests say what is available.
+        case unitTesting
     }
 
-    static func configure(testing: Bool) {
-        enabled = !testing
+    private(set) var mode: Mode = .unitTesting
+    /// The hints whose tip TipKit lets show now.
+    private(set) var available: Set<ReviewHint> = []
+    /// The hint on screen that keeps the others back: the Select demo.
+    private(set) var showing: ReviewHint?
+    @ObservationIgnored private var watchers: [Task<Void, Never>] = []
+
+    var teachable: Set<ReviewHint> {
+        if let showing { return available.intersection([showing]) }
+        return available
     }
 
-    /// Settings › Review › Reset tips: every hint shows again, at once.
-    static func resetAll() {
+    /// At launch: TipKit, with each tip watched. Reset tips and the UI
+    /// tests' switch go through TipKit too.
+    func start(_ mode: Mode) {
+        self.mode = mode
+        guard mode != .unitTesting, watchers.isEmpty else { return }
+        if case .uiTesting(let showsTips) = mode {
+            if showsTips { Tips.showAllTipsForTesting() } else { Tips.hideAllTipsForTesting() }
+        }
+        do {
+            // One at a time is mdoc's: one line per document, the demo only
+            // in Select. TipKit's frequency would hold a tip back for a day
+            // once the one before it was eligible, not shown.
+            try Tips.configure([.displayFrequency(.immediate)])
+        } catch {
+            return
+        }
+        moveLearnedHints()
+        for hint in ReviewHint.allCases {
+            watchers.append(Task { [weak self] in
+                for await status in hint.tip.statusUpdates {
+                    self?.update(hint, available: status == .available)
+                }
+            })
+        }
+    }
+
+    private func update(_ hint: ReviewHint, available shows: Bool) {
+        if shows { available.insert(hint) } else { available.remove(hint) }
+    }
+
+    /// The action was done (`closed`: the hint was dismissed): never again.
+    func learn(_ hint: ReviewHint, closed: Bool = false) {
+        available.remove(hint)
+        if showing == hint { showing = nil }
+        guard mode != .unitTesting else { return }
+        hint.tip.invalidate(reason: closed ? .tipClosed : .actionPerformed)
+    }
+
+    /// The Select demo shows (`hint`) or went (nil).
+    func show(_ hint: ReviewHint?) {
+        showing = hint
+    }
+
+    /// Settings › Review › Reset tips. `Tips.resetDatastore()` works only
+    /// before `Tips.configure`, so each tip's eligibility is reset instead
+    /// (iOS 26), and the hints come back through `statusUpdates`.
+    func resetAll() {
         Preferences.shared.resetTips()
+        showing = nil
+        switch mode {
+        case .live:
+            Task {
+                for hint in ReviewHint.allCases { await hint.tip.resetEligibility() }
+            }
+        case .uiTesting:
+            break
+        case .unitTesting:
+            available = Set(ReviewHint.allCases)
+        }
+    }
+
+    /// Unit tests: these hints may show, and none is on screen.
+    func setAvailableForTesting(_ hints: Set<ReviewHint>) {
+        precondition(mode == .unitTesting)
+        available = hints
+        showing = nil
+    }
+
+    /// A hint learned before TipKit kept them stays learned.
+    private func moveLearnedHints() {
+        for hint in ReviewHint.allCases where Preferences.shared.isLearned(hint.oldKey) {
+            hint.tip.invalidate(reason: .actionPerformed)
+            Preferences.shared.forget(hint.oldKey)
+        }
     }
 }
 

@@ -8,7 +8,10 @@ struct MdocApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        ReviewHint.configure(testing: LaunchConfiguration.current.isUITesting)
+        // Unit tests run in the app as their host: no TipKit there.
+        let unitTesting = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        let launch = LaunchConfiguration.current
+        Hints.shared.start(unitTesting ? .unitTesting : launch.isUITesting ? .uiTesting(showsTips: launch.showsTips) : .live)
     }
 
     private var theme: AppTheme { app.preferences.theme }
