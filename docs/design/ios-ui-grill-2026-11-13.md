@@ -143,8 +143,10 @@ lost).
   demo and the three existing hints become TipKit tips read through
   `shouldDisplay` / `statusUpdates`, drawn by mdoc (no `TipView`, no
   popovers): on the thing they explain, covering no control, one at a time
-  (`.tipsDisplayFrequency`), invalidated by doing the action. Reset tips
-  calls `Tips.resetDatastore()`; UI tests `Tips.hideAllTipsForTesting()`.
+  (mdoc holds the others back; TipKit's display frequency stays
+  immediate), invalidated by doing the action. Reset tips resets each
+  tip's eligibility (`resetEligibility()`); UI tests
+  `Tips.hideAllTipsForTesting()`.
   Amends ADR 0101's "TipKit leaves the app".
 
 The tree is closed: [ADR 0114](../adr/0114-ios-menu-swipes-and-name-words.md),

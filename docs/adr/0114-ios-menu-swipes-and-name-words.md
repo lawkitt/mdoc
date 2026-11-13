@@ -88,10 +88,13 @@ From the maintainer's use of TestFlight rc.9 on the iPhone 17 Pro:
   review bar. Drag-merge has no line of its own any more: its tip gates
   the Select demo, which teaches it.
 - Tips appear on the thing they explain, cover no control and leave every
-  button live, show one at a time (`.tipsDisplayFrequency`), and are
-  invalidated by doing the action (TipKit events).
-- Settings › Reset tips calls `Tips.resetDatastore()`; UI tests call
-  `Tips.hideAllTipsForTesting()`.
+  button live, and are invalidated by doing the action (TipKit events).
+- One at a time: mdoc holds the others back. TipKit's display frequency
+  stays immediate, since its daily limit would hold back a tip that never
+  showed.
+- Settings › Reset tips resets each tip's eligibility (`resetEligibility()`;
+  `Tips.resetDatastore()` works only before `Tips.configure`); UI tests
+  call `Tips.hideAllTipsForTesting()`.
 
 ### Hide name and Fix the words
 
