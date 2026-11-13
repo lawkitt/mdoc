@@ -303,9 +303,10 @@ git -C "$repo" checkout -q -- apps/ios/ui-class-times.tsv
 # That moves B and C (A 100, B 90, C 60, D 90 as the median before; now A
 # 10, B 90, C 60, D 30): a new push over the old one, naming them.
 refresh 0
-[ -n "$(pushed)" ] && [ "$(pushed)" != "$first" ] || fail "not pushed again: $(cat "$tmp/out")"
+second=$(pushed)
+if [ -z "$second" ] || [ "$second" = "$first" ]; then fail "not pushed again: $(cat "$tmp/out")"; fi
 grep -q 'Moved: BUITests (2 → 1), CUITests (1 → 2)\.' "$tmp/out" || fail "moved: $(cat "$tmp/out")"
-[ "$(git -C "$tmp/origin.git" rev-parse "$(pushed)~1")" = "$main" ] || fail "not on main"
+[ "$(git -C "$tmp/origin.git" rev-parse "$second~1")" = "$main" ] || fail "not on main"
 [ "$(git -C "$tmp/origin.git" rev-parse main)" = "$main" ] || fail "main moved"
 refresh 1 --days x
 cd "$root"
