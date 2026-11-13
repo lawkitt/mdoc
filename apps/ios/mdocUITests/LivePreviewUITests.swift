@@ -59,7 +59,7 @@ final class LivePreviewUITests: XCTestCase {
         app.typeKey("z", modifierFlags: .command)
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: MdocUITest.timeout))
         app.typeKey("z", modifierFlags: .command)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value CONTAINS %@)", "Bread"), timeout: MdocUITest.timeout))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value CONTAINS %@)", "Bread"), timeout: 5))
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Milk\n- "), timeout: MdocUITest.timeout))
         app.typeKey("z", modifierFlags: [.command, .shift])
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: MdocUITest.timeout))

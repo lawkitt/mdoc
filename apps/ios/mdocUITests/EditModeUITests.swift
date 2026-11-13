@@ -50,7 +50,7 @@ final class EditModeUITests: XCTestCase {
         let undone = NSPredicate(format: "NOT (value CONTAINS %@)", "Zephyrine")
         app.typeKey("z", modifierFlags: .command)
         if !text.wait(until: undone, timeout: 3) { app.typeKey("z", modifierFlags: .command) }
-        XCTAssertTrue(text.wait(until: undone, timeout: MdocUITest.timeout))
+        XCTAssertTrue(text.wait(until: undone, timeout: 5))
         let redone = NSPredicate(format: "value CONTAINS %@", Self.marker)
         app.typeKey("z", modifierFlags: [.command, .shift])
         if !text.wait(until: redone, timeout: 3) { app.typeKey("z", modifierFlags: [.command, .shift]) }

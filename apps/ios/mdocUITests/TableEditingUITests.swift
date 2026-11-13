@@ -118,7 +118,7 @@ final class TableEditingUITests: XCTestCase {
         app.buttons["toolbar-undo"].tap()
         XCTAssertTrue(typedZ.wait(until: NSPredicate(format: "exists == false"), timeout: 5), "Undo takes the typing back")
         app.buttons["toolbar-undo"].tap()
-        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout) { app.textViews.count == cells }, "Undo takes the row back")
+        XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells }, "Undo takes the row back")
         XCTAssertTrue(Self.cell(app, "!£1,725").exists)
     }
 
