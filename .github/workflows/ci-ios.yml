@@ -181,8 +181,7 @@ jobs:
               if n.get("nodeType") == "Test Case": print(n["nodeIdentifier"])
               for c in n.get("children", []): walk(c)
           for t in json.load(open(sys.argv[1]))["testNodes"]: walk(t)' "trial-out/$n-tests.json" | while read -r id; do
-              xcrun xcresulttool get test-results activities --test-id "$id" --path "$r" >"trial-out/$n-$(echo "$id" | tr -c 'A-Za-z0-9
-' _).json" || true
+              xcrun xcresulttool get test-results activities --test-id "$id" --path "$r" >"trial-out/$n-$(printf %s "$id" | tr -c A-Za-z0-9 _).json" || true
             done
           done
           ls -la trial-out
