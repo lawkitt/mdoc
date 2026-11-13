@@ -55,6 +55,9 @@ class SetupFixesTest {
             compose.waitUntil(10_000) {
                 compose.onAllNodes(hasText("mdoc could not open its documents")).fetchSemanticsNodes().isNotEmpty()
             }
+            // With the reason, and not as an empty library.
+            compose.onNodeWithText("The stored case key is damaged.").assertExists()
+            compose.onNodeWithText("No documents yet").assertDoesNotExist()
         }
     }
 
