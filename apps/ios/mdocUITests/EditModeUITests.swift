@@ -174,7 +174,15 @@ final class EditModeUITests: XCTestCase {
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine "), timeout: MdocUITest.timeout))
         let original = app.segmentedControls.buttons["Original"].firstMatch
         XCTAssertTrue(original.exists, "the switch stays in edit mode")
-        original.tap()
+        // A tap on the switch can be lost on a slow runner while the
+        // keyboard is up (queue run 43386960651): tap until Original is
+        // chosen, then the keyboard goes.
+        let chosen = NSPredicate(format: "isSelected == true")
+        for _ in 0..<3 {
+            original.tap()
+            if original.wait(until: chosen, timeout: MdocUITest.probeTimeout) { break }
+        }
+        XCTAssertTrue(original.isSelected, "Original is chosen")
         XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5), "Original hides the keyboard")
         XCTAssertTrue(app.buttons["done-editing"].exists, "edit mode stays on")
         app.segmentedControls.buttons["Text"].firstMatch.tap()
