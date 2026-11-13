@@ -438,6 +438,8 @@ struct DocumentScreen: View {
             // Not under a reply that covers the text: its bar acts on the
             // reply there (ADR 0111).
             ReviewBar(model: model, detailsHeight: ReviewBarMetrics.detailsHeight(screen: screenHeight))
+                // The cards swipe sideways; no drawer opens from the bar (ADR 0114).
+                .keepsSideSwipes()
         } else {
             actionBottomBar
         }

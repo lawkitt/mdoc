@@ -40,7 +40,12 @@ struct RootView: View {
     /// iPhone and a narrow iPad: the sidebar lies under the screen, which
     /// slides aside to show it (docs/mobile-ui.md, Sidebar).
     private var drawer: some View {
-        SideDrawer(isOpen: Bindable(app.navigator).showsSidebar) {
+        // Editing, only the edge opens it: a sideways drag in the text
+        // is the text's (ADR 0114).
+        SideDrawer(
+            isOpen: Bindable(app.navigator).showsSidebar,
+            opens: app.openModel?.isEditing == true ? .edge : .anywhere
+        ) {
             SidebarView(app: app)
         } content: {
             IdentitiesDrawer(model: app.openModel, layout: layout) {
