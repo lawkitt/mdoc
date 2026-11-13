@@ -7,7 +7,9 @@ import SwiftUI
 /// are left, Replace N and search; then Looks like cards, a category filter,
 /// and the names by what is left: To review, Replaced, Kept. Each row's
 /// round button replaces or keeps that name; a tap opens the review bar's
-/// full view on it; Select acts on several at once.
+/// full view on it; Select acts on several at once (ADR 0114: no close
+/// button and no hint line; the sliver, a swipe, 🪪 and VoiceOver's escape
+/// close the drawer).
 struct IdentitiesView: View {
     @Bindable var model: DocumentViewModel
     /// The bar's full view on a name (and the drawer closed on iPhone).
@@ -16,17 +18,18 @@ struct IdentitiesView: View {
     var onFocus: (ReviewFocus) -> Void = { _ in }
     /// Same as… for one identity: the shared picker, hints first.
     var onPickSameAs: (IdentityID) -> Void = { _ in }
-    /// × where the list is a drawer (iPhone); nil beside the text.
-    var onClose: (() -> Void)?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var query = ""
+    @State var query = ""
     @State private var searching = false
     @FocusState private var searchFocused: Bool
     @State private var category: Category?
+    /// The Select demo shows (`IdentitiesView+Select`), and its beats.
+    @State var demoShows = false
+    @State var demoTask: Task<Void, Never>?
     @State var selecting = false
     @State var selection: Set<IdentityID> = []
-    @State private var showsKept = false
+    @State var showsKept = false
     /// Names just decided, at the state whose section they stay in while
     /// their marks turn (`IdentitiesView+Gestures`).
     @State var held: [IdentityID: MentionState] = [:]
@@ -38,7 +41,7 @@ struct IdentitiesView: View {
 
     var identities: [Identity] { model.snapshot.identities }
 
-    private var shown: [Identity] {
+    var shown: [Identity] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         return identities.filter { identity in
             (category == nil || identity.category == category)
@@ -84,6 +87,10 @@ struct IdentitiesView: View {
             .scrollContentBackground(.hidden)
             .contentMargins(.bottom, selecting ? 72 : Space.m, for: .scrollContent)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.list = $0 }
+            // A scroll moves the rows under the demo's ghost: it ends the demo.
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { endDemo(dismissed: true) }
+            }
             .overlay { liftedCopy }
         }
         .background(Palette.background)
@@ -92,53 +99,62 @@ struct IdentitiesView: View {
         }
         .animation(Motion.snappy, value: selecting)
         .animation(Motion.snappy, value: searching)
+        .animation(Motion.fade, value: demoShows)
+        // Any tap ends the Select demo, and still does what it taps.
+        .simultaneousGesture(TapGesture().onEnded { endDemo(dismissed: true) }, including: demoShows ? .all : .subviews)
         // The handles drag only in Select; leaving it ends a drag.
         .onChange(of: selecting, initial: true) { _, now in
             dragTracking.active = now
-            if !now { endDrag() }
+            if now {
+                startDemoIfDue()
+            } else {
+                endDemo(dismissed: false)
+                endDrag()
+            }
         }
-        .onDisappear { forgetDrag() }
+        .onDisappear {
+            endDemo(dismissed: false)
+            forgetDrag()
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("identities-panel")
     }
 
     // MARK: Header
 
-    /// "15 names · 4 to review" beside a ring; Replace N; search and Select.
+    /// "15 names · 4 to review" beside a ring, search and Select; in Select,
+    /// Cancel, "3 selected" and Select All, as in Mail. Then Replace N.
     private var header: some View {
         let counts = model.identityCounts
         return VStack(alignment: .leading, spacing: Space.s) {
-            HStack(spacing: Space.s) {
-                ProgressRing(fraction: counts.total == 0 ? 1 : Double(counts.total - counts.toReview) / Double(counts.total))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Identities")
-                        .font(Typography.title)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(summary(counts))
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-                circleButton(searching ? "xmark" : "magnifyingglass", label: searching ? "Cancel search" : "Search names") {
-                    searching.toggle()
-                    if searching { searchFocused = true } else { query = "" }
-                }
-                .accessibilityIdentifier("identities-search-button")
-                if !identities.isEmpty {
-                    Button(selecting ? "Done" : "Select") {
-                        selecting.toggle()
-                        selection = []
+            if selecting {
+                selectHeader
+            } else {
+                HStack(spacing: Space.s) {
+                    ProgressRing(fraction: counts.total == 0 ? 1 : Double(counts.total - counts.toReview) / Double(counts.total))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Identities")
+                            .font(Typography.title)
+                            .accessibilityAddTraits(.isHeader)
+                        Text(summary(counts))
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
-                    .font(Typography.chip)
-                    .textAction()
-                    .frame(minWidth: Size.target, minHeight: Size.target)
-                    .accessibilityIdentifier("identities-select")
+                    Spacer(minLength: 0)
+                    circleButton(searching ? "xmark" : "magnifyingglass", label: searching ? "Cancel search" : "Search names") {
+                        searching.toggle()
+                        if searching { searchFocused = true } else { query = "" }
+                    }
+                    .accessibilityIdentifier("identities-search-button")
+                    if !identities.isEmpty {
+                        selectButton
+                    }
                 }
-                if let onClose {
-                    circleButton("chevron.right", label: "Close Identities", action: onClose)
-                        .accessibilityIdentifier("identities-done")
-                }
+            }
+            if demoShows {
+                SelectDemoCaption()
+                    .transition(.opacity)
             }
             if searching {
                 HStack(spacing: Space.xs) {
@@ -150,6 +166,19 @@ struct IdentitiesView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("identities-search")
+                    if selecting {
+                        // Select's header has no search button: the field's own.
+                        Button {
+                            searching = false
+                            query = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                                .frame(width: Size.target, height: Size.target)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Cancel search"))
+                    }
                 }
                 .padding(.horizontal, Space.s)
                 .frame(minHeight: Size.target)
@@ -168,9 +197,6 @@ struct IdentitiesView: View {
                 .secondaryAction()
                 .accessibilityLabel(Text("Replace all \(counts.toReview) names left"))
                 .accessibilityIdentifier("identities-replace-all")
-            }
-            if model.showsDragMergeHint && !selecting {
-                ReviewHintLine(hint: .dragMerge) { model.learn(.dragMerge) }
             }
         }
         .padding(.horizontal, Space.m)

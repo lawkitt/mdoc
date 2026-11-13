@@ -99,32 +99,28 @@ final class Preferences: @unchecked Sendable {
         set { withMutation(keyPath: \.nudged) { store.set(newValue, forKey: name(.nudged)) } }
     }
 
-    /// The hints' keys: each set once its hint is learned.
+    /// The hints' keys from before TipKit kept them (ADR 0114): each set
+    /// once its hint was learned. Read once at launch, moved into TipKit,
+    /// then forgotten (`Hints`).
     static let hintKeys: [Key] = [.swipeLearned, .longPressLearned, .dragMergeLearned]
 
-    /// Changes whenever a hint is learned or reset, so a view showing a hint
-    /// line hears of it.
-    private var hintsRevision = 0
-
-    /// A hint's key (`hintKeys`) is set: the hint was used once, or
-    /// dismissed, and never shows again.
+    /// A hint's old key (`hintKeys`) is set: the hint was learned before
+    /// TipKit.
     func isLearned(_ key: Key) -> Bool {
-        _ = hintsRevision
-        return bool(key)
+        bool(key)
     }
 
-    func learn(_ key: Key) {
-        guard !bool(key) else { return }
-        store.set(true, forKey: name(key))
-        hintsRevision += 1
+    /// The old key, moved into TipKit.
+    func forget(_ key: Key) {
+        store.removeObject(forKey: name(key))
     }
 
-    /// Settings › Review › Reset tips: every hint shows again, at once.
+    /// Settings › Review › Reset tips: the one-time motions show again
+    /// (the hints themselves are TipKit's, `Hints.resetAll`).
     func resetTips() {
         for key in Self.hintKeys {
             store.removeObject(forKey: name(key))
         }
-        hintsRevision += 1
         withMutation(keyPath: \.grabberBounced) { store.removeObject(forKey: name(.grabberBounced)) }
         withMutation(keyPath: \.nudged) { store.removeObject(forKey: name(.nudged)) }
     }

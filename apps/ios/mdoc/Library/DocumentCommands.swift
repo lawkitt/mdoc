@@ -1,9 +1,22 @@
 import SwiftUI
 
-/// A document's menu, the same on its sidebar row, its Documents page row
-/// and its title (ADR 0102): Rename…, Move to case, Share, Delete. What a
-/// command asks for is presented by `Presenter`.
+/// A document's menu on its sidebar row and its Documents page row (ADR
+/// 0102): Rename…, Move to case, Share, Delete. The title's menu has the
+/// same items in its own groups (ADR 0114). What a command asks for is
+/// presented by `Presenter`.
 struct DocumentMenuItems: View {
+    let app: AppModel
+    let document: LibraryDocument
+
+    var body: some View {
+        DocumentFileItems(app: app, document: document)
+        DocumentShareButton(app: app, document: document)
+        DocumentDeleteButton(app: app, document: document)
+    }
+}
+
+/// Rename… and Move to case ›.
+struct DocumentFileItems: View {
     let app: AppModel
     let document: LibraryDocument
 
@@ -38,8 +51,16 @@ struct DocumentMenuItems: View {
         } label: {
             Label("Move to case", systemImage: "folder")
         }
-        // Only a reviewed document leaves mdoc, through Copy for AI's export
-        // path (ADR 0085).
+    }
+}
+
+/// Share: only a reviewed document leaves mdoc, through Copy for AI's
+/// export path (ADR 0085).
+struct DocumentShareButton: View {
+    let app: AppModel
+    let document: LibraryDocument
+
+    var body: some View {
         if document.phase == .ready {
             Button {
                 app.share(document.id)
@@ -47,7 +68,15 @@ struct DocumentMenuItems: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
         }
-        // The toast offers Undo (Q17).
+    }
+}
+
+/// Delete; the toast offers Undo (Q17).
+struct DocumentDeleteButton: View {
+    let app: AppModel
+    let document: LibraryDocument
+
+    var body: some View {
         Button(role: .destructive) {
             app.delete(document.id)
         } label: {

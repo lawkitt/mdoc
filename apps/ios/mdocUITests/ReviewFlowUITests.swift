@@ -100,13 +100,15 @@ enum MdocUITest {
 
     /// Launches with a fresh library that imports `seed` from the repository.
     /// `slowToasts`: a toast stays 15 s, for a test that checks a lot before
-    /// it taps Undo.
+    /// it taps Undo. `showsTips`: TipKit shows every tip, for a test of a
+    /// hint (the others see none).
     @MainActor
-    static func launch(seed: String = defaultSeed, slowToasts: Bool = false) -> XCUIApplication {
+    static func launch(seed: String = defaultSeed, slowToasts: Bool = false, showsTips: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mdoc-ui-testing"]
         app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent(seed).path
         if slowToasts { app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1" }
+        if showsTips { app.launchEnvironment["MDOC_SHOW_TIPS"] = "1" }
         app.launch()
         return app
     }

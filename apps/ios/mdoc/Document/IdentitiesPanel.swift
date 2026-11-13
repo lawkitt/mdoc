@@ -6,10 +6,8 @@ import SwiftUI
 struct IdentitiesPanel: View {
     @Bindable var model: DocumentViewModel
     @State private var sameAsSource: IdentityID?
-    /// The drawer's own close, which slides it shut.
-    @Environment(\.closeDrawer) private var closeDrawer
 
-    /// In the drawer: a row closes it, and it has its own close button.
+    /// In the drawer: a row closes it.
     private var inDrawer: Bool { model.identitiesPlacement == .drawer }
 
     var body: some View {
@@ -23,8 +21,7 @@ struct IdentitiesPanel: View {
                 if inDrawer { model.showIdentities(false) }
                 model.beginReview(focus: focus)
             },
-            onPickSameAs: { sameAsSource = $0 },
-            onClose: inDrawer ? closeDrawer ?? { model.showIdentities(false) } : nil)
+            onPickSameAs: { sameAsSource = $0 })
         // In the drawer the document's own toast is under the panel.
         .modifier(DrawerToast(model: model, enabled: inDrawer && model.identitiesDrawerOpen))
         .sheet(item: Binding(get: { sameAsSource.map(Source.init) }, set: { if $0 == nil { sameAsSource = nil } })) { source in

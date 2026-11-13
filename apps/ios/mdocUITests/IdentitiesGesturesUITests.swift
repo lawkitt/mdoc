@@ -50,7 +50,8 @@ final class IdentitiesGesturesUITests: XCTestCase {
     func testRowsOwnTheirSwipesInTheDrawer() throws {
         let app = try openDocument()
         XCTAssertTrue(MdocUITest.showIdentities(app))
-        let close = app.buttons["identities-done"].firstMatch
+        // Select shows while the drawer is open (no close button, ADR 0114).
+        let close = app.buttons["identities-select"].firstMatch
         XCTAssertTrue(close.waitUntilHittable(timeout: MdocUITest.timeout))
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'identity-row' AND label ENDSWITH ', proposed'")).firstMatch
@@ -108,7 +109,8 @@ final class IdentitiesGesturesUITests: XCTestCase {
         let width = app.frame.width
 
         // Identities: the panel on the right; its inner edge on the left.
-        let close = app.buttons["identities-done"].firstMatch
+        // Select shows while the drawer is open (no close button, ADR 0114).
+        let close = app.buttons["identities-select"].firstMatch
         let panel = app.descendants(matching: .any)["identities-panel"].firstMatch
         func openIdentities() {
             XCTAssertTrue(MdocUITest.showIdentities(app))
@@ -163,7 +165,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
     func testDraggingAHandleOntoAnotherNameMakesThemOne() throws {
         // The agreement's email, and its surname marked from Find: two names.
         let app = try openDocument(slowToasts: true, phoneOnly: false)
-        app.buttons["document-menu"].tap()
+        app.buttons["title-menu"].tap()
         app.buttons["find-in-document"].tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))

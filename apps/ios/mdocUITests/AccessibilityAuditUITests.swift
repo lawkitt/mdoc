@@ -29,7 +29,7 @@ final class AccessibilityAuditExploreUITests: XCTestCase {
         }
         if MdocUITest.showIdentities(app) {
             audit(app, "identities")
-            if app.buttons["identities-done"].exists { app.buttons["identities-done"].tap() }
+            if app.buttons["Close Identities"].exists { app.buttons["Close Identities"].tap() }
         }
         let primary = app.buttons["primary-action"]
         if primary.label.hasPrefix("Replace") { primary.tap() }

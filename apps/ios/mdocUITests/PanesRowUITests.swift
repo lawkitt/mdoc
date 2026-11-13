@@ -30,13 +30,13 @@ final class PanesRowUITests: XCTestCase {
         XCTAssertEqual(picker.buttons.count, 2)
         assertRowIsClear(picker, of: title, in: app)
 
-        // More holds its own items only; the document's menu is the title's.
-        app.buttons["document-menu"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertFalse(app.buttons["Rename…"].exists, "More does not repeat the title's menu")
-        dismissMenu(app)
+        // One document menu, the title's (ADR 0114): no ⋯ beside it, and
+        // Find in document and Show Markdown are in it with Rename….
+        XCTAssertFalse(app.buttons["document-menu"].exists, "no ⋯ in the bar")
         title.tap()
-        XCTAssertTrue(app.buttons["Rename…"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["show-markdown"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["Rename…"].firstMatch.exists)
         dismissMenu(app)
 
         if !isPad {
@@ -149,7 +149,7 @@ final class PanesRowUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(row.minY, title.frame.maxY, "the row is under the title", file: file, line: line)
         XCTAssertGreaterThanOrEqual(row.minX, window.minX, file: file, line: line)
         XCTAssertLessThanOrEqual(row.maxX, window.maxX, file: file, line: line)
-        for id in ["show-sidebar", "edit-button", "identities-button", "document-menu"] {
+        for id in ["show-sidebar", "edit-button", "identities-button"] {
             let button = app.buttons[id].firstMatch
             if button.exists {
                 XCTAssertFalse(button.frame.intersects(row), "\(id) covers the row", file: file, line: line)

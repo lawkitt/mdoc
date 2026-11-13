@@ -19,7 +19,7 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
 
         // Find in document, then Hide name: the bar opens on the proposal.
-        app.buttons["document-menu"].tap()
+        app.buttons["title-menu"].tap()
         let find = app.buttons["find-in-document"]
         XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
         find.tap()
@@ -93,7 +93,7 @@ final class ReviewToolsUITests: XCTestCase {
         document.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         // Repeats to step through: Find and Hide name on the surname.
-        app.buttons["document-menu"].tap()
+        app.buttons["title-menu"].tap()
         app.buttons["find-in-document"].tap()
         typeInFindField(app, "Bennett")
         let hide = app.buttons["find-hide-name"]

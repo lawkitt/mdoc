@@ -88,14 +88,11 @@ extension DocumentViewModel {
         link(dragged, into: target) { from, into in String(localized: "\(from.alias) is now \(into.alias)") }
     }
 
-    /// Identities' hint line, "In Select, drag ≡ onto a name to make them one":
-    /// while Looks like has a card or two names share a category, until the
-    /// first drag-merge or Same as (ADR 0106).
-    var showsDragMergeHint: Bool {
-        guard ReviewHint.teachable.contains(.dragMerge) else { return false }
-        if !identityHints.isEmpty { return true }
-        var categories = Set<Category>()
-        return snapshot.identities.contains { !categories.insert($0.category).inserted }
+    /// The Select demo (ADR 0114): the first time Select opens with two
+    /// names or more, until the first drag-merge or Same as, or until it is
+    /// dismissed.
+    var offersSelectDemo: Bool {
+        snapshot.identities.count >= 2 && ReviewHint.teachable.contains(.dragMerge)
     }
 
     /// A tap on a name in the list: the bar's full view on its first
