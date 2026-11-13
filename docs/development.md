@@ -524,7 +524,7 @@ wait for.
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 35 min each |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
-| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
+| `ci/detection` | recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
 
 | `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
 
@@ -576,6 +576,10 @@ two of them) and a glob; a file takes the first line that matches it, desktop wh
 none does, and a core change runs every area. Its comment says which
 scripts are desktop, shared (core) or mobile; `crates/mdoc-detect` and
 `crates/mdoc-pii` are `recognition,desktop`, so they skip the mobile jobs.
+`resources/`, the detection gate's script and workflow, and the shared setup
+action are also `recognition,desktop`. App-only files (`src/`, `vendor/`,
+`build/`, and `tests/` outside recognition fixtures) stay desktop and skip
+the detection gate (ADR 0113); core still runs every job.
 `scripts/ci-areas.sh [<from> <to>]` prints the areas a change touches. A new
 script outside `src/` and `tests/` that a mobile job runs needs a line
 there, or it counts as desktop. The ci area is `merge-gate.sh`,
@@ -584,7 +588,7 @@ own `ci-areas.sh`, which is core; `deny-ci.sh`, `nightly-issue.sh`, the
 retired local CI), their suites, and the workflows that build and test
 nothing themselves (`ci.yml`, `ci-scripts.yml`, `main-caches.yml`, the
 gate's two, `nightly.yml`). A workflow that builds or tests the app takes
-the area of what it runs: `ci-desktop.yml`, `ci-detection.yml`, `queue.yml`
+the area of what it runs: `ci-desktop.yml`, `queue.yml`
 (which starts them) and `release.yml` are desktop, `ci-ios.yml` ios. When
 unsure, leave a file desktop. `ci.yml`'s `paths-ignore` repeats the `none`
 lines word for word (`scripts/test-local-ci.sh` checks).
@@ -643,9 +647,10 @@ snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
 head `merge-gate` waits for `detection-head / ci/detection` beside the fast
 tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
 PR is one with a file on a recognition line of `scripts/ci-areas.txt`
-(the fixtures, `crates/mdoc-detect`, `crates/mdoc-pii`;
-`head_detection` in `scripts/lib.sh`); a core or desktop change alone runs
-the gate only in the queue, since hosted macOS runners are scarce. The
+(the fixtures, `crates/mdoc-detect`, `crates/mdoc-pii`, resources and gate
+machinery; `head_detection` in `scripts/lib.sh`); a core change alone runs
+the gate only in the queue, since hosted macOS runners are scarce. App-only
+desktop changes skip it. The
 head run replaces a manual run of the Detection gate workflow, so lanes no
 longer dispatch it. The queue still runs `ci/detection` on the queue
 commit.

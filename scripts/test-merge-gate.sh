@@ -153,12 +153,12 @@ eq "$(printf 'scripts/merge-gate.sh\nsrc/main.rs\n' | areas_of)" "desktop ci"
 echo "ok: areas from a file list"
 
 eq "$(needed_jobs "core desktop recognition ios android ci")" "macos windows ios android detection"
-eq "$(needed_jobs "desktop")" "macos windows detection"
+eq "$(needed_jobs "desktop")" "macos windows"
 eq "$(needed_jobs "ios")" "ios"
 eq "$(needed_jobs "recognition")" "detection"
 eq "$(needed_jobs "ci")" "scripts"
 # ci/macos runs the suites too.
-eq "$(needed_jobs "desktop ci")" "macos windows detection"
+eq "$(needed_jobs "desktop ci")" "macos windows"
 eq "$(needed_jobs "ios ci")" "ios scripts"
 eq "$(needed_jobs "recognition ci")" "detection scripts"
 eq "$(needed_jobs "")" ""
@@ -174,6 +174,26 @@ cp scripts/ci-areas.sh scripts/ci-areas.txt scripts/lib.sh "$repo_dir/scripts/"
   g init -q
   g add -A && g commit -qm base
   g update-ref refs/remotes/origin/main HEAD
+  # App-only changes keep ci/macos and ci/windows, without detection shards.
+  for path in src/main.rs vendor/gpui/src/lib.rs build/windows.rc tests/fixtures/import/a.docx; do
+    mkdir -p "$(dirname "$path")" && echo x >"$path"
+    g add -A && g commit -qm "App-only $path"
+    eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" \
+      "areas=desktop jobs=macos windows macos=true ios=false detection=false scripts=false "
+    g update-ref refs/remotes/origin/main HEAD
+  done
+  # Each detection input still selects the gate, including core dependencies.
+  for path in tests/fixtures/recognition/x.md resources/pseudonymization-model.json crates/mdoc-detect/src/lib.rs crates/mdoc-import/src/lib.rs crates/mdoc-store/src/lib.rs; do
+    mkdir -p "$(dirname "$path")" && echo x >"$path"
+    g add -A && g commit -qm "Detection input $path"
+    case "$path" in
+      tests/*) want="areas=recognition jobs=detection macos=false ios=false detection=true scripts=false " ;;
+      crates/mdoc-import/* | crates/mdoc-store/*) want="areas=core desktop recognition ios android ci jobs=macos windows ios android detection macos=true ios=true detection=true scripts=false " ;;
+      *) want="areas=desktop recognition jobs=macos windows detection macos=true ios=false detection=true scripts=false " ;;
+    esac
+    eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" "$want"
+    g update-ref refs/remotes/origin/main HEAD
+  done
   mkdir -p apps/ios && echo x >apps/ios/App.swift
   g add -A && g commit -qm "iOS (#1)"
   eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" \
@@ -204,6 +224,8 @@ echo "ok: queue.yml's jobs are the ones merge-gate waits for"
 detects() { if tr '\n' '\0' | head_detection "$(cat scripts/ci-areas.txt)"; then echo yes; else echo no; fi; }
 eq "$(printf 'tests/fixtures/recognition/en/letter/x.model.json\n' | detects)" yes
 eq "$(printf 'crates/mdoc-pii/src/lib.rs\n' | detects)" yes
+eq "$(printf 'resources/pseudonymization-model.json\n' | detects)" yes
+eq "$(printf '.github/workflows/ci-detection.yml\n' | detects)" yes
 eq "$(printf 'crates/mdoc-detect/src/lib.rs\nsrc/main.rs\n' | detects)" yes
 eq "$(printf 'crates/mdoc-core/src/lib.rs\ncrates/mdoc-detect/src/lib.rs\n' | detects)" yes
 eq "$(printf 'crates/mdoc-core/src/lib.rs\n' | detects)" no
@@ -1036,7 +1058,7 @@ fetch_workflow_state() { echo active; }
 : >"$posted"
 : >"$dispatched"
 queue_pass
-eq "$(cat "$posted")|$(cut -d' ' -f1 "$dispatched")" "qqqq pending Waiting: macos, windows, detection|ci-desktop.yml"
+eq "$(cat "$posted")|$(cut -d' ' -f1 "$dispatched")" "qqqq pending Waiting: macos, windows|ci-desktop.yml"
 echo "ok: a CI-only queue commit needs only ci/scripts"
 
 # A group member merged first (#665: db601c3, Queue run 42261854020): the
