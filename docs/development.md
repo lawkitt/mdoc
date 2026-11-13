@@ -536,8 +536,12 @@ change, `ci/macos (checks)` runs the same suites instead.
 **The iOS jobs.** `ci/ios` is a summary job, green only when all three
 of its parts ran and passed: `ci/ios (unit)`, `ci/ios (ui 1)` and
 `ci/ios (ui 2)`, one matrix job (id `ios`) split by test target, and the
-UI tests by class (ADR 0112); on a failure its annotation names each part
-that did not pass. Each builds the core
+UI tests by class (ADR 0112); on a failure its annotations name each part
+that did not pass. A failed part names its failing tests from the xcresult
+(`scripts/ios-failed-tests.py`, ADR 0113), as the PC's status does: an
+annotation "Failed in ci/ios (ui 1): ios:mdocUITests/PanesRowUITests/testX
+and 1 more", every name in its job summary, and `ci/ios` repeats them, in
+the quarantine list's `ios:<target>/<class>/<method>` form. Each builds the core
 with `just ios-core` and restore one cargo cache (`cache-key: ios`), which
 `main-caches.yml`'s build-only run of the unit part saves. The timing tests
 (`LivePreviewUITests`' `testTypingRestyleTime` and `testReturnTime`,

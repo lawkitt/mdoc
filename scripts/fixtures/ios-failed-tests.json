@@ -1,0 +1,155 @@
+{
+  "devices": [
+    {
+      "architecture": "arm64",
+      "deviceId": "A4AE0BE4-728E-4C2A-9F65-7F0E95DF3991",
+      "deviceName": "iPhone 17",
+      "modelName": "iPhone 17",
+      "osBuildNumber": "23C54",
+      "osVersion": "26.2",
+      "platform": "iOS Simulator"
+    }
+  ],
+  "testNodes": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "duration": "1m 52s",
+                  "durationInSeconds": 112.54491102695465,
+                  "name": "testIdentitiesHideAndTheOriginalRoundTripKeepsTheCaret()",
+                  "nodeIdentifier": "EditModeUITests/testIdentitiesHideAndTheOriginalRoundTripKeepsTheCaret()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/EditModeUITests/testIdentitiesHideAndTheOriginalRoundTripKeepsTheCaret",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "1m 25s",
+                  "durationInSeconds": 85.48608303070068,
+                  "name": "testPencilAndDoneKeepThePlaceAndTheSelection()",
+                  "nodeIdentifier": "EditModeUITests/testPencilAndDoneKeepThePlaceAndTheSelection()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/EditModeUITests/testPencilAndDoneKeepThePlaceAndTheSelection",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "EditModeUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/EditModeUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "name": "Test skipped - OCR tests not requested",
+                      "nodeType": "Failure Message"
+                    }
+                  ],
+                  "duration": "0.33s",
+                  "durationInSeconds": 0.3337639570236206,
+                  "name": "testOCRResume()",
+                  "nodeIdentifier": "OCRResumeUITests/testOCRResume()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/OCRResumeUITests/testOCRResume",
+                  "nodeType": "Test Case",
+                  "result": "Skipped"
+                }
+              ],
+              "name": "OCRResumeUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/OCRResumeUITests",
+              "nodeType": "Test Suite",
+              "result": "Skipped"
+            },
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "name": "PanesRowUITests.swift:9: failed - planted failure for ci-ios.yml's failing test names; dropped before ready",
+                      "nodeType": "Failure Message"
+                    }
+                  ],
+                  "duration": "0.11s",
+                  "durationInSeconds": 0.11437702178955078,
+                  "name": "testPlantedFailure()",
+                  "nodeIdentifier": "PanesRowUITests/testPlantedFailure()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/PanesRowUITests/testPlantedFailure",
+                  "nodeType": "Test Case",
+                  "result": "Failed"
+                },
+                {
+                  "children": [
+                    {
+                      "name": "Test skipped - exploration only",
+                      "nodeType": "Failure Message"
+                    }
+                  ],
+                  "duration": "0.14s",
+                  "durationInSeconds": 0.13547194004058838,
+                  "name": "testShots()",
+                  "nodeIdentifier": "PanesRowUITests/testShots()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/PanesRowUITests/testShots",
+                  "nodeType": "Test Case",
+                  "result": "Skipped"
+                },
+                {
+                  "duration": "56s",
+                  "durationInSeconds": 56.51757800579071,
+                  "name": "testThePanesHaveARowUnderTheTitle()",
+                  "nodeIdentifier": "PanesRowUITests/testThePanesHaveARowUnderTheTitle()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/PanesRowUITests/testThePanesHaveARowUnderTheTitle",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PanesRowUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/PanesRowUITests",
+              "nodeType": "Test Suite",
+              "result": "Failed"
+            },
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "name": "ReviewPagerUITests.swift:94: XCTAssertTrue failed - past a third steps (-1.0)",
+                      "nodeType": "Failure Message"
+                    }
+                  ],
+                  "duration": "58s",
+                  "durationInSeconds": 58.93047904968262,
+                  "name": "testTheCardSwipesAsACarouselAndStillPullsTheBar()",
+                  "nodeIdentifier": "ReviewPagerUITests/testTheCardSwipesAsACarouselAndStillPullsTheBar()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/ReviewPagerUITests/testTheCardSwipesAsACarouselAndStillPullsTheBar",
+                  "nodeType": "Test Case",
+                  "result": "Failed"
+                }
+              ],
+              "name": "ReviewPagerUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/ReviewPagerUITests",
+              "nodeType": "Test Suite",
+              "result": "Failed"
+            }
+          ],
+          "name": "mdocUITests",
+          "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests",
+          "nodeType": "UI test bundle",
+          "result": "Failed"
+        }
+      ],
+      "name": "mdoc",
+      "nodeType": "Test Plan",
+      "result": "Failed"
+    }
+  ],
+  "testPlanConfigurations": [
+    {
+      "configurationId": "1",
+      "configurationName": "Test Scheme Action"
+    }
+  ]
+}
