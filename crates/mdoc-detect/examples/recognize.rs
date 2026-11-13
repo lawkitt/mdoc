@@ -263,7 +263,14 @@ fn run() -> Result<bool, String> {
                 if let Err(error) = fixture.validate().and_then(|()| fixture.validate_layout()) {
                     problems.push(error);
                 }
+                let lap = Instant::now();
                 let fresh = model.snapshot(&fixture.source)?;
+                // Each fixture's model time, to balance the shards by.
+                println!(
+                    "time {:.2}s {}",
+                    lap.elapsed().as_secs_f64(),
+                    path.display()
+                );
                 let stale = match Snapshot::read(&fixture.snapshot_path()) {
                     Ok(saved) => saved
                         .stale(&fresh)

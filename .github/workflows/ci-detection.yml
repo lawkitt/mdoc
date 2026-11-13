@@ -41,6 +41,10 @@ on:
         description: Set up the model and build only.
         type: boolean
         default: false
+      record:
+        description: Also refresh every shard's snapshots and upload the changed ones, a recording on the reference platform (just snapshots-fetch <run>).
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -63,11 +67,12 @@ jobs:
   detection:
     name: ci/detection (${{ matrix.shard }})
     needs: shards
-    runs-on: macos-26
-    # Job limits (ADR 0095): each shard 10 minutes once `main` saves the
-    # detection build's cache (CI redesign item 7); until then a cold
-    # `just recognize --setup` compiles for about 6 minutes, so 20.
-    timeout-minutes: 20
+    runs-on: windows-latest
+    # TRIAL (ROADMAP CI speed item 31): a cold Windows build, so 40.
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -95,8 +100,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/Library/Application Support/mdoc/pseudonymization
-            ~/Library/Application Support/mdoc/ocr/v1
+            ~/AppData/Local/mdoc/pseudonymization
+            ~/AppData/Local/mdoc/ocr/v1
           key: detection-model-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('resources/pseudonymization-model.json') }}
 
       # mdoc's own verified, pinned download; retried once (ADR 0095).
@@ -111,16 +116,28 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/Library/Application Support/mdoc/pseudonymization
-            ~/Library/Application Support/mdoc/ocr/v1
+            ~/AppData/Local/mdoc/pseudonymization
+            ~/AppData/Local/mdoc/ocr/v1
           key: ${{ steps.model.outputs.cache-primary-key }}
 
       - name: Detection gate
         if: ${{ !inputs.build-only }}
         run: just recognize --check --shard "$SHARD" --out target/detection-snapshots
 
+      # Every fixture of the shard refreshed, and each snapshot whose bytes
+      # changed added to the artifact beside the stale ones.
+      - name: Record the snapshots
+        if: ${{ !cancelled() && inputs.record && !inputs.build-only }}
+        run: |
+          just recognize --refresh-snapshots --shard "$SHARD"
+          git diff --name-only -- tests/fixtures/recognition | while IFS= read -r file; do
+            mkdir -p "target/detection-snapshots/$(dirname "$file")"
+            cp "$file" "target/detection-snapshots/$file"
+          done
+          echo "changed: $(git diff --name-only -- tests/fixtures/recognition | wc -l)"
+
       - name: Regenerated snapshots
-        if: failure()
+        if: ${{ failure() || (!cancelled() && inputs.record && !inputs.build-only) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: detection-snapshots-${{ matrix.shard }}
