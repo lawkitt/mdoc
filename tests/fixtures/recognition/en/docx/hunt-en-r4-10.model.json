@@ -3,8 +3,8 @@
   "threshold": 0.5,
   "entities": [
     {"start":107,"end":121,"label":"person","score":0.99215376,"text":"Evrissa Nolven"},
-    {"start":145,"end":166,"label":"organization","score":0.9936364,"text":"Pale Loom Records Ltd"},
+    {"start":145,"end":166,"label":"organization","score":0.99366105,"text":"Pale Loom Records Ltd"},
     {"start":1038,"end":1051,"label":"person","score":0.9641868,"text":"Avren Caskett"},
-    {"start":1152,"end":1184,"label":"email","score":0.99794126,"text":"evrissa.access@pale-loom.invalid"}
+    {"start":1152,"end":1184,"label":"email","score":0.99793315,"text":"evrissa.access@pale-loom.invalid"}
   ]
 }

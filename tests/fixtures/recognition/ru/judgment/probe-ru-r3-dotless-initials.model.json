@@ -2,12 +2,12 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":43,"end":49,"label":"person","score":0.96281326,"text":"КЛМ"},
-    {"start":119,"end":125,"label":"person","score":0.95430803,"text":"КЛМ"},
-    {"start":214,"end":220,"label":"person","score":0.94417685,"text":"ЛВГ"},
+    {"start":43,"end":49,"label":"person","score":0.9628831,"text":"КЛМ"},
+    {"start":119,"end":125,"label":"person","score":0.9543931,"text":"КЛМ"},
+    {"start":214,"end":220,"label":"person","score":0.94427973,"text":"ЛВГ"},
     {"start":267,"end":279,"label":"person","score":0.9017478,"text":"гр. БАВ"},
-    {"start":346,"end":352,"label":"person","score":0.8904848,"text":"БАВ"},
-    {"start":415,"end":421,"label":"person","score":0.831143,"text":"БАВ"},
+    {"start":346,"end":352,"label":"person","score":0.8906752,"text":"БАВ"},
+    {"start":415,"end":421,"label":"person","score":0.8312801,"text":"БАВ"},
     {"start":73,"end":84,"label":"organization","score":0.96734864,"text":"ИП ДРС"}
   ]
 }

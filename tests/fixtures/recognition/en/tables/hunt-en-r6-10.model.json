@@ -2,14 +2,14 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":252,"end":266,"label":"person","score":0.994292,"text":"Tovira Bennick"},
+    {"start":252,"end":266,"label":"person","score":0.9942697,"text":"Tovira Bennick"},
     {"start":177,"end":192,"label":"person","score":0.98926485,"text":"Nerella Vaskett"},
-    {"start":197,"end":221,"label":"address","score":0.9391366,"text":"38 Celandine Row, Durham"},
-    {"start":273,"end":294,"label":"address","score":0.86669767,"text":"14 Quoin Lane, Exeter"},
+    {"start":197,"end":221,"label":"address","score":0.9390248,"text":"38 Celandine Row, Durham"},
+    {"start":273,"end":294,"label":"address","score":0.8664718,"text":"14 Quoin Lane, Exeter"},
     {"start":307,"end":320,"label":"passport_number","score":0.9945094,"text":"ZR 47.19-6283"},
     {"start":234,"end":247,"label":"passport_number","score":0.9926541,"text":"LP 82-61.4937"},
+    {"start":928,"end":947,"label":"person","score":0.7892337,"text":"nominated recipient"},
     {"start":615,"end":621,"label":"person","score":0.7890712,"text":"person"},
-    {"start":928,"end":947,"label":"person","score":0.78874594,"text":"nominated recipient"},
-    {"start":559,"end":572,"label":"person","score":0.7608284,"text":"administrator"}
+    {"start":559,"end":572,"label":"person","score":0.7604728,"text":"administrator"}
   ]
 }

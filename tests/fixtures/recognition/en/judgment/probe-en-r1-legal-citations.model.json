@@ -3,8 +3,8 @@
   "threshold": 0.5,
   "entities": [
     {"start":139,"end":150,"label":"person","score":0.97225714,"text":"Ivo Ostrand"},
-    {"start":102,"end":128,"label":"organization","score":0.9904775,"text":"Pellow Holdings Ltd & Anor"},
-    {"start":33,"end":46,"label":"address","score":0.8949732,"text":"77 N.E.2d 310"},
-    {"start":11,"end":28,"label":"address","score":0.5556161,"text":"912 F.3d 455, 460"}
+    {"start":102,"end":128,"label":"organization","score":0.9904406,"text":"Pellow Holdings Ltd & Anor"},
+    {"start":33,"end":46,"label":"address","score":0.89533985,"text":"77 N.E.2d 310"},
+    {"start":11,"end":28,"label":"address","score":0.5540784,"text":"912 F.3d 455, 460"}
   ]
 }

@@ -2,8 +2,8 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":219,"end":230,"label":"passport_number","score":0.98799264,"text":"4512 345678"},
-    {"start":127,"end":144,"label":"tax_id","score":0.9307107,"text":"ИНН 7701234567"},
-    {"start":152,"end":172,"label":"bank_account","score":0.5740366,"text":"40702810900000012345"}
+    {"start":219,"end":230,"label":"passport_number","score":0.9879462,"text":"4512 345678"},
+    {"start":127,"end":144,"label":"tax_id","score":0.93083644,"text":"ИНН 7701234567"},
+    {"start":152,"end":172,"label":"bank_account","score":0.57439476,"text":"40702810900000012345"}
   ]
 }

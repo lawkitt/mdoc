@@ -18,8 +18,10 @@
 //! `MDOC_PII_MODEL_ROOT` and `MDOC_ONNX_RUNTIME` point elsewhere);
 //! `--snapshot` reads each fixture's committed `<id>.model.json` instead.
 //! `--scoreboard` prints recall and precision per language × category ×
-//! kind, and exits 0 whatever the documents did. `--refresh-snapshots` rewrites snapshots (on the Mac, the
-//! reference platform). `--check` is the detection gate: it reruns the model
+//! kind, and exits 0 whatever the documents did. `--refresh-snapshots` rewrites snapshots; the
+//! reference platform is CI's hosted Windows (ADR 0113), so elsewhere it makes
+//! a draft that CI's `detection-snapshots-<k>` replace (`just snapshots-fetch`).
+//! `--check` is the detection gate: it reruns the model
 //! over every fixture, fails on a stale snapshot or an unexpected result,
 //! and on a model run over its 5-minute budget. `--shard k/n` checks (or
 //! refreshes) every n-th fixture from the k-th (1-based) in sorted order,

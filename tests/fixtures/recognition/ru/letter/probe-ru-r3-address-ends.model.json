@@ -2,8 +2,8 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":1214,"end":1252,"label":"person","score":0.9656413,"text":"Илья Кузьмич Пахомов"},
-    {"start":1146,"end":1196,"label":"person","score":0.85800624,"text":"Коврижкина Елена Тарасовна"},
-    {"start":1108,"end":1114,"label":"organization","score":0.51231897,"text":"ФИО"}
+    {"start":1214,"end":1252,"label":"person","score":0.9657061,"text":"Илья Кузьмич Пахомов"},
+    {"start":1146,"end":1196,"label":"person","score":0.8581252,"text":"Коврижкина Елена Тарасовна"},
+    {"start":1108,"end":1114,"label":"organization","score":0.5127688,"text":"ФИО"}
   ]
 }

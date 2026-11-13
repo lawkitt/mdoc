@@ -247,7 +247,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the Mac's installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots (Mac); `--record-flaws` writes known-flaw fixtures' `expect:` lines; `--check` is the detection gate (`--shard k/n` for one CI shard, `--out <dir>` for its regenerated snapshots); `--setup` installs the pinned FP16 through mdoc's verified setup (CI's runner, ADR 0095). Any folder of fixtures works (the holdout) |
 | `just import <file>` | What mdoc's own import makes of a file, as Markdown on stdout (warning and errors on stderr); a PDF needing OCR uses the installed OCR models (read only; `MDOC_OCR_ROOT` points elsewhere). Judge probes on this text, not on another converter's (ADR 0093) |
 | `just snapshots-fetch <pr\|run>` | A failing `ci/detection` run's regenerated snapshots (the PR's newest run with them, or that run) into the tree, to review and commit (ADR 0095) |
-| `just detection-gate` | macOS: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides), on this Mac's scores; CI runs `just recognize --check` in shards on hosted `macos-26` instead (`ci/detection`), whose snapshots differ in the fourth decimal place |
+| `just detection-gate` | Windows: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides), on this machine's scores; CI runs `just recognize --check` in shards on hosted `windows-latest`, the reference platform (`ci/detection`), whose scores a developer machine's may miss in the fourth decimal place |
 | `just headless-renders <new-directory>` | macOS/Windows: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
 | `just package` | This machine's installers into `dist/` |
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
@@ -524,7 +524,7 @@ wait for.
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 35 min each |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
-| `ci/detection` | recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
+| `ci/detection` | recognition | hosted `windows-latest` (`ci-detection.yml`, ADR 0113): the detection gate in 5 shards, each warning past 80% of its 5-minute model budget | 20 min a shard |
 
 | `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
 
@@ -632,25 +632,32 @@ proves it. On macOS the signature query of an unsigned test binary read
 every file in `target/debug/deps` and took seconds per test process
 (#510). A new call into such a service goes behind the same guard.
 
-**Detection gate.** Hosted `macos-26` is its reference: the snapshots
-(`tests/fixtures/recognition/**/*.model.json`) are recorded there, not on a
-developer Mac, whose scores differ in the fourth decimal place. A failing shard uploads the
-fixtures it found stale, regenerated, as `detection-snapshots-<k>`.
-`just snapshots-fetch <PR|run>` writes them into the tree; review the
-diff, commit and push. Scores in CI depend on ONNX Runtime's threads,
-so the shards set `MDOC_DETECT_THREADS=4`.
+**Detection gate.** Hosted `windows-latest` is its reference platform
+([ADR 0113](adr/0113-ci-targets-by-commit-and-detection-off-macos.md)):
+the snapshots (`tests/fixtures/recognition/**/*.model.json`) are recorded
+there, with mdoc's pinned Windows x86_64 ONNX Runtime, not on a developer
+machine, whose scores differ in the fourth decimal place (a Mac's in 193
+of the 256 fixtures, 2026-11-13). A failing shard uploads the fixtures it
+found stale, regenerated, as `detection-snapshots-<k>`. **Agents on the
+Mac or the PC never commit their own `--refresh-snapshots` output**: they
+push (a local snapshot is a draft for a new fixture), let the PR head's
+gate fail, then `just snapshots-fetch <PR|run>` writes CI's snapshots into
+the tree; review the diff, commit and push. Scores in CI depend on ONNX
+Runtime's threads, so the shards set `MDOC_DETECT_THREADS=4`. A manual run
+with `record` (`gh workflow run ci-detection.yml --ref <branch> -f
+record=true`) uploads every snapshot whose bytes changed, for a runtime or
+model pin change.
 
 A recognition-area PR runs the gate on its head
 ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)), so a stale
 snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
-6 shards, on every push (a newer push cancels it), drafts included. Its
+5 shards, on every push (a newer push cancels it), drafts included. Its
 head `merge-gate` waits for `detection-head / ci/detection` beside the fast
 tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
 PR is one with a file on a recognition line of `scripts/ci-areas.txt`
 (the fixtures, `crates/mdoc-detect`, `crates/mdoc-pii`, resources and gate
 machinery; `head_detection` in `scripts/lib.sh`); a core change alone runs
-the gate only in the queue, since hosted macOS runners are scarce. App-only
-desktop changes skip it. The
+the gate only in the queue. App-only desktop changes skip it. The
 head run replaces a manual run of the Detection gate workflow, so lanes no
 longer dispatch it. The queue still runs `ci/detection` on the queue
 commit.

@@ -4,9 +4,9 @@
   "entities": [
     {"start":44,"end":57,"label":"person","score":0.9912548,"text":"Edda Brannock"},
     {"start":18,"end":28,"label":"person","score":0.9858276,"text":"Ivo Penrow"},
-    {"start":298,"end":307,"label":"person","score":0.53376204,"text":"b. Penrow"},
+    {"start":298,"end":307,"label":"person","score":0.53400505,"text":"b. Penrow"},
     {"start":89,"end":105,"label":"organization","score":0.99757504,"text":"Pellam Rooke Ltd"},
     {"start":121,"end":135,"label":"organization","score":0.9956176,"text":"Harrow Ostrand"},
-    {"start":321,"end":341,"label":"organization","score":0.8414352,"text":"d. Quillon Media Inc"}
+    {"start":321,"end":341,"label":"organization","score":0.84169555,"text":"d. Quillon Media Inc"}
   ]
 }

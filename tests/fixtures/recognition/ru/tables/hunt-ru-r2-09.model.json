@@ -2,13 +2,13 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":433,"end":439,"label":"person","score":0.5683559,"text":"Ева"},
-    {"start":513,"end":525,"label":"passport_number","score":0.99739885,"text":"46 83 862710"},
-    {"start":463,"end":475,"label":"passport_number","score":0.99732697,"text":"46 82 731609"},
-    {"start":763,"end":782,"label":"email","score":0.9998511,"text":"eva@reyestr.invalid"},
+    {"start":433,"end":439,"label":"person","score":0.56889486,"text":"Ева"},
+    {"start":513,"end":525,"label":"passport_number","score":0.99740905,"text":"46 83 862710"},
+    {"start":463,"end":475,"label":"passport_number","score":0.99733734,"text":"46 82 731609"},
+    {"start":763,"end":782,"label":"email","score":0.9998523,"text":"eva@reyestr.invalid"},
     {"start":855,"end":875,"label":"email","score":0.99958587,"text":"leon@reyestr.invalid"},
     {"start":956,"end":968,"label":"tax_id","score":0.96795994,"text":"508614729031"},
-    {"start":1643,"end":1665,"label":"person","score":0.66985285,"text":"отправителя"},
+    {"start":1643,"end":1665,"label":"person","score":0.6702846,"text":"отправителя"},
     {"start":1309,"end":1329,"label":"person","score":0.6273806,"text":"Получатель"}
   ]
 }

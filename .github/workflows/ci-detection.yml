@@ -1,17 +1,23 @@
 name: Detection gate
 
-# The detection gate on hosted macos-26 (ADR 0095): the pinned FP16 model,
-# downloaded from its pinned Hugging Face revision and cached, reruns over
-# the recognition fixtures (`just recognize --check`). The fixtures split
-# over `shards` parallel jobs, `ci/detection (<k>)`: the 3-core M1 runs about
-# 50 fixtures in 3 minutes, and a model run over 5 minutes fails, so the
+# The detection gate on hosted windows-latest (ADR 0095, ADR 0113): the
+# pinned FP16 model, downloaded from its pinned Hugging Face revision and
+# cached, reruns over the recognition fixtures (`just recognize --check`).
+# Hosted Windows is the reference platform: the snapshots are recorded on
+# it, and the runtime is mdoc's pinned Windows x86_64 ONNX Runtime (Linux
+# has none). The fixtures split over `shards` parallel jobs,
+# `ci/detection (<k>)`, from the 20-job pool Windows shares with Linux, not
+# the 5 macOS slots. A fixture takes 2.5 s on average (0.4 to 16 s; 652 s
+# for all 256, 2026-11-13), and a model run over 5 minutes fails, so the
 # queue, the nightly and recognition-area PR heads (ci.yml's
-# `detection-head`) run 6 shards: with 4, a shard held 64 fixtures on
-# 2026-11-12 and ran over the budget twice in two days (305 s, 315 s). A
-# shard warns past 80% of it, the signal to add one. `ci/detection` sums the shards up and is the context merge-gate
-# reads. A failing shard uploads its stale snapshots, regenerated, as
+# `detection-head`) run 5 shards: the slowest held 147 s (49%), and 4 would
+# hold 202 s. A shard warns past 80% of the budget, the signal to add one.
+# `ci/detection` sums the shards up and is the context merge-gate reads. A
+# failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
-# the tree for review. No workflow writes to PR branches.
+# the tree for review. A manual run with `record` uploads every snapshot
+# whose bytes changed, a re-recording (a runtime or model pin change). No
+# workflow writes to PR branches.
 on:
   workflow_call:
     inputs:
@@ -22,7 +28,7 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 4
+        default: 5
       build-only:
         description: Set up the model and build only, which saves both caches on main (main-caches.yml).
         type: boolean
@@ -34,9 +40,9 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over (4; 3 take 84% of the 5-minute model budget). A manual run takes 4 of the account's 5 macOS runners.
+        description: Parallel jobs the fixtures split over (5; with 4 the slowest takes 67% of the 5-minute model budget).
         type: number
-        default: 4
+        default: 5
       build-only:
         description: Set up the model and build only.
         type: boolean
@@ -61,15 +67,17 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 6 }}
+          SHARDS: ${{ inputs.shards || 5 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
     name: ci/detection (${{ matrix.shard }})
     needs: shards
     runs-on: windows-latest
-    # TRIAL (ROADMAP CI speed item 31): a cold Windows build, so 40.
-    timeout-minutes: 40
+    # Job limits (ADR 0095): a cold build and model download took about 5
+    # minutes and the model run 1 to 2.5 (2026-11-13), so 20.
+    timeout-minutes: 20
+    # Git Bash, as the recipes: the steps are bash.
     defaults:
       run:
         shell: bash

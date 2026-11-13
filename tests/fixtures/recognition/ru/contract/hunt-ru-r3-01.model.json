@@ -2,7 +2,7 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":328,"end":366,"label":"person","score":0.99623454,"text":"Вадим Юрьевич Братош"},
+    {"start":328,"end":366,"label":"person","score":0.99621993,"text":"Вадим Юрьевич Братош"},
     {"start":262,"end":304,"label":"person","score":0.9946568,"text":"Инга Аркадьевна Невель"},
     {"start":171,"end":205,"label":"organization","score":0.93083644,"text":"ООО «Сухой причал»"},
     {"start":1933,"end":1951,"label":"person","score":0.7756048,"text":"Арендатор"},

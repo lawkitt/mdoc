@@ -310,7 +310,8 @@ pub fn annotate(source: &str, spans: &[Span]) -> String {
     out
 }
 
-/// A fixture's committed raw model output (ADR 0093), made on the Mac.
+/// A fixture's committed raw model output (ADR 0093), recorded on the
+/// reference platform, CI's hosted Windows (ADR 0113).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     /// The model it came from: [`crate::model_name`].

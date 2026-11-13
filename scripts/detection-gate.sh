@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Usage: scripts/detection-gate.sh (`just detection-gate`)
 #
-# The detection gate (ADR 0093), macOS only, on this Mac's scores (CI runs
-# `just recognize --check` in shards on hosted macos-26, ADR 0095). It reruns the pinned FP16 model, read
+# The detection gate (ADR 0093), Windows x64 only, the reference platform's
+# OS, on this machine's scores (CI runs `just recognize --check` in shards on
+# hosted windows-latest, whose scores the snapshots record; ADR 0095, ADR
+# 0113). It reruns the pinned FP16 model, read
 # from the app data and never downloaded, over every recognition fixture
 # (`just recognize --check`): a stale snapshot, a fixture not as its status
 # says, or a model run over its 5-minute budget fails. It runs when the
@@ -13,7 +15,8 @@
 # the fixtures on their snapshots on every OS.
 source "$(dirname "$0")/lib.sh"
 
-[ "$(uname -s)" = Darwin ] || die "the detection gate runs on macOS, the reference platform"
+[ "$(platform)" = windows-x64 ] ||
+  die "the detection gate runs on Windows x64, the reference platform; on the Mac, just snapshots-fetch <pr|run> takes CI's snapshots"
 
 affected() {
   case "${MDOC_DETECTION_GATE:-}" in

@@ -4,8 +4,8 @@
   "entities": [
     {"start":289,"end":331,"label":"person","score":0.9769788,"text":"Кира Ярославовна Гельц"},
     {"start":237,"end":265,"label":"organization","score":0.88120663,"text":"АО «Сухой свет»"},
-    {"start":790,"end":814,"label":"email","score":0.9993834,"text":"gelc@prilozhenie.invalid"},
-    {"start":659,"end":671,"label":"national_id_number","score":0.8739697,"text":"508691742303"},
-    {"start":512,"end":524,"label":"national_id_number","score":0.7065955,"text":"508614372930"}
+    {"start":790,"end":814,"label":"email","score":0.99938095,"text":"gelc@prilozhenie.invalid"},
+    {"start":659,"end":671,"label":"national_id_number","score":0.8741847,"text":"508691742303"},
+    {"start":512,"end":524,"label":"national_id_number","score":0.7072025,"text":"508614372930"}
   ]
 }
