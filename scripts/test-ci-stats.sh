@@ -3,6 +3,7 @@
 #
 # Checks scripts/ci-stats.sh against fake GitHub answers: the summaries, each
 # target's verdict at its boundary, what merge-gate and the PC's statuses say,
+# each queue commit's class, the iOS UI shards, each target's start,
 # which drops count as not caused by the PR, the day-by-day run listing, whole
 # reports over one window and several nights, and scripts/ci-targets-issue.sh
 # opening, commenting on and closing its issue. Bash 3.2 compatible.
@@ -64,23 +65,66 @@ eq "$(pc_test 'Failed in just test: ( 714/1634) mdoc-markdown from_html::tests::
 eq "$(pc_test 'Failed in just android: android:a.B#c')" "0 android:a.B#c"
 eq "$(pc_test 'Failed in just test')" ""
 eq "$(pc_test 'Timed out in just test after 30m00s')" ""
-eq "$(pc_seconds 'Passed in 13m45s')" "825"
-eq "$(pc_seconds 'Passed in 0m09s')" "9"
-eq "$(pc_seconds 'Not affected: no core or windows change')" ""
-echo "ok: the PC's failing test and its time"
+echo "ok: the PC's failing test"
 
-jobs='success 1000 1100 ci/windows (hosted, checks)
-success 1010 1900 ci/windows (hosted, tests)
-success 1905 1910 ci/windows (hosted)'
-eq "$(hosted_windows_seconds <<<"$jobs")" "900 1900"
-eq "$(sed 1s/success/failure/ <<<"$jobs" | hosted_windows_seconds)" ""
-eq "$(echo 'success 1 2 ci/macos (tests)' | hosted_windows_seconds)" ""
+# The slower UI shard of a green pair, or the old single job.
 jobs='success 1000 2000 ios / ci/ios (unit)
-success 1000 2140 ios / ci/ios (ui)
+success 1000 1840 ios / ci/ios (ui 1)
+success 1100 1500 ios / ci/ios (ui 2)
 success 2141 2145 ios / ci/ios'
+eq "$(ios_ui_seconds <<<"$jobs")" "840 1840"
+eq "$(sed 3s/1100/1700/ <<<"$jobs" | ios_ui_seconds)" "840 1840"
+eq "$(sed 3s/1500/2200/ <<<"$jobs" | ios_ui_seconds)" "1100 2200"
+eq "$(sed 3s/success/failure/ <<<"$jobs" | ios_ui_seconds)" ""
+eq "$(sed 2s/success/cancelled/ <<<"$jobs" | ios_ui_seconds)" ""
+eq "$(sed 3s/1500/0/ <<<"$jobs" | ios_ui_seconds)" ""
+eq "$(sed 3d <<<"$jobs" | ios_ui_seconds)" ""
+eq "$(printf '%s\n' "$jobs" 'success 1000 1200 ios / ci/ios (ui)' | ios_ui_seconds)" ""
+jobs='success 1000 2000 ios / ci/ios (unit)
+success 1000 2140 ios / ci/ios (ui)'
 eq "$(ios_ui_seconds <<<"$jobs")" "1140 2140"
 eq "$(sed 2s/success/failure/ <<<"$jobs" | ios_ui_seconds)" ""
-echo "ok: a hosted Windows fallback's time and the iOS UI job's"
+eq "$(echo 'success 1 2 macos / ci/macos (tests)' | ios_ui_seconds)" ""
+echo "ok: the slower iOS UI shard, and the single job before it"
+
+# A queue commit's class from the jobs it started.
+eq "$(printf '%s\n' 'success 10 20 ios / ci/ios (unit)' 'failure 11 30 macos / ci/macos (tests)' \
+  'success 12 13 detection / ci/detection (3)' 'success 14 15 detection / detection shards' \
+  'success 16 17 areas' 'skipped 18 18 scripts' | class_jobs)" "10 ios
+11 desktop
+12 desktop"
+eq "$(printf '%s\n' 'skipped 5 5 ios / ci/ios (ui 1)' 'none 0 0 macos / ci/macos (tests)' | class_jobs)" ""
+printf '%s\n' \
+  "100 core 100 other" "100 core 110 ios" "100 core 120 desktop" \
+  "100 desk 100 other" "100 desk 130 desktop" \
+  "200 det 200 other" "200 det 210 desktop" \
+  "200 ios 200 other" "200 ios 210 ios" \
+  "300 docs 300 other" \
+  "300 late 300 other" "300 late 310 ios" "300 late 900 desktop" \
+  "1000 after 1000 other" >"$tmp/classes"
+eq "$(commit_classes "$tmp/classes" 0 899 | tr '\n' ' ')" \
+  "core core desk desktop-only det desktop-only docs other ios iOS-only late iOS-only "
+eq "$(commit_classes "$tmp/classes" 0 2000 | grep late)" "late core"
+eq "$(commit_classes "$tmp/classes" 150 250 | tr '\n' ' ')" "det desktop-only ios iOS-only "
+echo "ok: a queue commit's class (core, desktop-only, iOS-only, other) by the jobs it ran"
+
+# Each target's start: pending reads the whole window and is not judged; a
+# date reads from itself or from the window's start, whichever is later.
+target_start_real=$(declare -f target_start)
+target_start() { echo "$t_start"; }
+t_start=pending
+eq "$(target_from core 500)" "500 not judged: start date pending"
+t_start=1970-01-01T00:10:00Z
+eq "$(target_from core 500)" "600 since 1970-01-01T00:10:00Z"
+eq "$(target_from core 700)" "700 since 1970-01-01T00:10:00Z"
+t_start=1970-13-01
+if (target_from core 0) >/dev/null 2>&1; then fail "a bad start date is an error"; fi
+eval "$target_start_real"
+for t in core desktop queue ios-ui drops; do
+  d=$(target_start "$t")
+  [ "$d" = pending ] || [[ $d =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]] || fail "$t's start is pending or a UTC time: $d"
+done
+echo "ok: each target's start"
 
 quarantined "android:io.github.x.ATest#flaky" || fail "an app UI line by name"
 if quarantined "android:io.github.x.ATest#flak"; then fail "an app UI line by its whole name only"; fi
@@ -146,15 +190,15 @@ eq "$(sed -n 3p "$slices")" "ci.yml 1970-01-03T00:00:00Z 1970-01-03T00:01:00Z pu
 echo "ok: a long window is listed a day at a time"
 
 # A week of fakes, every queue commit an hour into a day:
-#   q1 (PR 1, day 1): green in 20 min; the PC passed Windows in 14m00s, the
-#     iOS UI job took 18 min.
-#   q2 (PR 2, day 2): green in 30 min after a drop the PR did not cause (an
-#     iOS job that never ran); Windows hosted in 16 min (two runs, one red;
-#     a third, for another commit, is not read).
-#   q3 (PR 3, day 3): dropped on a Windows test the PC also failed on q4.
-#   q4 (PR 4, day 4): dropped on the same test, and Android (no test).
-#   q5 (PR 3, day 6): dropped on a quarantined Android test; its re-run
-#     (same commit, later) is read once.
+#   q1 (PR 1, day 1, core): green in 20 min; UI shards of 14 and 8 min.
+#   q2 (PR 2, day 2, desktop-only: macOS and detection): green in 30 min
+#     after a drop the PR did not cause (an iOS job that never ran).
+#   q3 (PR 3, day 3, iOS-only): dropped on a Windows test the PC also failed
+#     on q4; its single `ci/ios (ui)` job (before the shards) took 20 min.
+#   q4 (PR 4, day 4, other: its jobs skipped): dropped on the same test,
+#     and Android (no test).
+#   q5 (PR 3, day 6, other): dropped on a quarantined Android test; its
+#     re-run (same commit, later) is read once.
 q() { echo $((($1 - 1) * day + 3600)); }
 fetch_runs() {
   case "$1 $4" in
@@ -166,9 +210,6 @@ fetch_runs() {
         "4 q4 $(q 4) gh-readonly-queue/main/pr-4-x" \
         "5 q5 $(q 6) gh-readonly-queue/main/pr-3-x" \
         "6 q5 $(($(q 6) + 600)) gh-readonly-queue/main/pr-3-x"
-      ;;
-    "ci-desktop.yml workflow_dispatch")
-      printf '%s\n' "21 q2 $(($(q 2) + 30)) b" "22 q2 $(($(q 2) + 40)) b" "23 other $(($(q 2) + 50)) b"
       ;;
   esac |
     awk -v f="$(jq -rn --arg s "$2" '$s | fromdateiso8601')" -v t="$(jq -rn --arg s "$3" '$s | fromdateiso8601')" '$3 >= f && $3 <= t'
@@ -184,7 +225,7 @@ fetch_statuses() {
     q2)
       s=$(q 2)
       printf '%s\n' "merge-gate failure $((s + 600)) Failed: ios (did not run, 3 attempts); passed: windows (hosted)" \
-        "merge-gate success $((s + 1800)) Passed: ios (hosted), windows (hosted)"
+        "merge-gate success $((s + 1800)) Passed: macos (hosted), detection (hosted)"
       ;;
     q3)
       s=$(q 3)
@@ -209,15 +250,35 @@ fetch_jobs() {
   case "$1" in
     1)
       s=$(q 1)
-      printf '%s\n' "success $((s + 10)) $((s + 1090)) ios / ci/ios (ui)" "success $((s + 10)) $((s + 400)) ios / ci/ios (unit)"
+      printf '%s\n' "success $((s + 10)) $((s + 850)) ios / ci/ios (ui 1)" "success $((s + 10)) $((s + 490)) ios / ci/ios (ui 2)" \
+        "success $((s + 10)) $((s + 400)) ios / ci/ios (unit)" "success $((s + 10)) $((s + 700)) macos / ci/macos (tests)"
       ;;
-    21)
+    2)
       s=$(q 2)
-      printf '%s\n' "success $((s + 60)) $((s + 200)) ci/windows (hosted, checks)" "success $((s + 60)) $((s + 1020)) ci/windows (hosted, tests)"
+      printf '%s\n' "success $((s + 10)) $((s + 900)) macos / ci/macos (tests)" "success $((s + 20)) $((s + 300)) detection / ci/detection (1)" \
+        "skipped $((s + 5)) $((s + 5)) ios"
       ;;
-    22) echo "failure 1 2 ci/windows (hosted, tests)" ;;
-    23) echo "read another commit's hosted run" >>"$tmp/wrong" ;;
+    3)
+      s=$(q 3)
+      printf '%s\n' "success $((s + 10)) $((s + 1210)) ios / ci/ios (ui)" "success $((s + 10)) $((s + 400)) ios / ci/ios (unit)"
+      ;;
+    4)
+      s=$(q 4)
+      printf '%s\n' "success $((s + 1)) $((s + 9)) areas" "skipped $((s + 9)) $((s + 9)) ios / ci/ios (unit)" "skipped $((s + 9)) $((s + 9)) macos"
+      ;;
     *) : ;;
+  esac
+}
+# Every target reads from the epoch unless a case sets its start.
+t_core=1970-01-01T00:00:00Z t_desktop=1970-01-01T00:00:00Z t_queue=1970-01-01T00:00:00Z
+t_ios=1970-01-01T00:00:00Z t_drops=1970-01-01T00:00:00Z
+target_start() {
+  case "$1" in
+    core) echo "$t_core" ;;
+    desktop) echo "$t_desktop" ;;
+    queue) echo "$t_queue" ;;
+    ios-ui) echo "$t_ios" ;;
+    drops) echo "$t_drops" ;;
   esac
 }
 dir=$tmp/week
@@ -226,32 +287,58 @@ week=$((7 * day))
 gather 0 "$week" "$dir"
 eq "$(wc -l <"$dir/queue" | tr -d ' ')" 2
 eq "$(wc -l <"$dir/drops" | tr -d ' ')" 4
-eq "$(cat "$dir/windows")" "$(q 1) 840 $(($(q 1) + 900)) PC
-$(q 2) 960 $(($(q 2) + 1020)) hosted"
-eq "$(cat "$dir/ios-ui")" "$(q 1) 1080 $(($(q 1) + 1090))"
-[ ! -e "$tmp/wrong" ] || fail "read another commit's hosted Windows run"
+eq "$(cat "$dir/ios-ui")" "$(q 1) 840 $(($(q 1) + 850))
+$(q 3) 1200 $(($(q 3) + 1210))"
+eq "$(commit_classes "$dir/classes" 0 "$week" | tr '\n' ' ')" "q1 core q2 desktop-only q3 iOS-only q4 other q5 other "
+since='since 1970-01-01T00:00:00Z'
 out=$(report 0 "$week" "$dir") && rc=0 || rc=$?
 eq "$rc" 1
-eq "$(sed -n 1p <<<"$out")" "queue    pass  queue commit to green gate: 2 commits, median 25.0 min, p90 30.0 min (target: median 25 or less)"
-eq "$(sed -n 2p <<<"$out")" "windows  pass  green ci/windows runs: 2 (1 on the PC, 1 hosted), median 15.0 min, p90 16.0 min (target: median 15 or less)"
-eq "$(sed -n 3p <<<"$out")" "ios-ui   pass  green ci/ios (ui) jobs: 1, median 18.0 min, p90 18.0 min (target: median 20 or less)"
-eq "$(sed -n 4p <<<"$out")" "drops    FAIL  queue drops not caused by the PR: 3 of 4 drops in 7.0 days (1 infrastructure, 1 quarantined test, 1 repeated test), 3.00 a week (target: 1 or fewer)"
-eq "$(sed -n 5p <<<"$out")" "         1970-01-02T01:00:00Z q2 PR #2: infrastructure (ios did not run, 3 attempts)"
-eq "$(sed -n 6p <<<"$out")" "         1970-01-03T01:00:00Z q3 PR #3: repeated (mdoc-core tests::flake, on another PR's queue commit)"
-eq "$(sed -n 7p <<<"$out")" "         1970-01-06T01:00:00Z q5 PR #3: quarantined (android:io.github.x.ATest#flaky)"
-eq "$(wc -l <<<"$out" | tr -d ' ')" 7
-echo "ok: a week's report, each target and the drops the PRs did not cause"
+eq "$(sed -n 1p <<<"$out")" "classes  queue commits: 1 core, 1 desktop-only, 1 iOS-only, 2 other"
+eq "$(sed -n 2p <<<"$out")" "core     pass  core queue commits to green gate: 1, median 20.0 min, p90 20.0 min (target: median 20 or less; $since)"
+eq "$(sed -n 3p <<<"$out")" "desktop  FAIL  desktop-only queue commits to green gate: 1, median 30.0 min, p90 30.0 min (target: median 15 or less; $since)"
+eq "$(sed -n 4p <<<"$out")" "queue    pass  every queue commit to green gate: 2, median 25.0 min, p90 30.0 min (target: median 25 or less; $since)"
+eq "$(sed -n 5p <<<"$out")" "ios-ui   FAIL  green iOS UI runs, the slower shard: 2, median 17.0 min, p90 20.0 min (target: median 15 or less; $since)"
+eq "$(sed -n 6p <<<"$out")" "drops    FAIL  queue drops not caused by the PR: 3 of 4 drops in 7.0 days (1 infrastructure, 1 quarantined test, 1 repeated test), 3.00 a week (target: 1 or fewer; $since)"
+eq "$(sed -n 7p <<<"$out")" "         1970-01-02T01:00:00Z q2 PR #2: infrastructure (ios did not run, 3 attempts)"
+eq "$(sed -n 8p <<<"$out")" "         1970-01-03T01:00:00Z q3 PR #3: repeated (mdoc-core tests::flake, on another PR's queue commit)"
+eq "$(sed -n 9p <<<"$out")" "         1970-01-06T01:00:00Z q5 PR #3: quarantined (android:io.github.x.ATest#flaky)"
+eq "$(wc -l <<<"$out" | tr -d ' ')" 9
+echo "ok: a week's report, each class, each target and the drops the PRs did not cause"
+
+# A pending start reports the target but never fails the window.
+out=$(t_desktop=pending t_ios=pending t_drops=pending report 0 "$week" "$dir") && rc=0 || rc=$?
+eq "$rc" 0
+eq "$(sed -n 3p <<<"$out")" "desktop  FAIL  desktop-only queue commits to green gate: 1, median 30.0 min, p90 30.0 min (target: median 15 or less; not judged: start date pending)"
+eq "$(sed -n 5p <<<"$out" | cut -c1-14)" "ios-ui   FAIL "
+grep -q '^drops    FAIL .*3.00 a week (target: 1 or fewer; not judged: start date pending)$' <<<"$out" || fail "a pending drops line"
+# A start inside the window reads from it: the single job's 20-minute q3
+# alone; the drops from day 4, over 4 days.
+out=$(t_ios=1970-01-03T00:00:00Z t_drops=1970-01-04T00:00:00Z report 0 "$week" "$dir") && rc=0 || rc=$?
+eq "$rc" 1
+eq "$(sed -n 5p <<<"$out")" "ios-ui   FAIL  green iOS UI runs, the slower shard: 1, median 20.0 min, p90 20.0 min (target: median 15 or less; since 1970-01-03T00:00:00Z)"
+eq "$(sed -n 6p <<<"$out")" "drops    FAIL  queue drops not caused by the PR: 1 of 2 drops in 4.0 days (0 infrastructure, 1 quarantined test, 0 repeated test), 1.75 a week (target: 1 or fewer; since 1970-01-04T00:00:00Z)"
+# A window ending before a start holds with no samples.
+out=$(t_core=1970-01-05T00:00:00Z t_drops=1970-01-05T00:00:00Z report 0 "$day" "$dir") && rc=0 || rc=$?
+eq "$rc" 0
+eq "$(sed -n 2p <<<"$out")" "core     pass  core queue commits to green gate: 0, median - min, p90 - min (target: median 20 or less; since 1970-01-05T00:00:00Z)"
+grep -q '^drops    pass  queue drops not caused by the PR: 0 of 0 drops in 0.0 days' <<<"$out" || fail "drops before their start"
+echo "ok: each target from its start, and a pending one not judged"
 
 # Only q1: everything holds. The limits can be forced for a drill.
 out=$(report 0 "$day" "$dir") && rc=0 || rc=$?
 eq "$rc" 0
-eq "$(sed -n 4p <<<"$out")" "drops    pass  queue drops not caused by the PR: 0 of 0 drops in 1.0 days (0 infrastructure, 0 quarantined test, 0 repeated test), 0.00 a week (target: 1 or fewer)"
+eq "$(sed -n 1p <<<"$out")" "classes  queue commits: 1 core, 0 desktop-only, 0 iOS-only, 0 other"
+eq "$(sed -n 5p <<<"$out")" "ios-ui   pass  green iOS UI runs, the slower shard: 1, median 14.0 min, p90 14.0 min (target: median 15 or less; $since)"
+eq "$(sed -n 6p <<<"$out")" "drops    pass  queue drops not caused by the PR: 0 of 0 drops in 1.0 days (0 infrastructure, 0 quarantined test, 0 repeated test), 0.00 a week (target: 1 or fewer; $since)"
+out=$(core_min=19 report 0 "$day" "$dir") && rc=0 || rc=$?
+eq "$rc" 1
+eq "$(sed -n 2p <<<"$out")" "core     FAIL  core queue commits to green gate: 1, median 20.0 min, p90 20.0 min (target: median 19 or less; $since)"
 out=$(queue_min=0 report 0 "$day" "$dir") && rc=0 || rc=$?
 eq "$rc" 1
-eq "$(sed -n 1p <<<"$out")" "queue    FAIL  queue commit to green gate: 1 commits, median 20.0 min, p90 20.0 min (target: median 0 or less)"
+eq "$(sed -n 4p <<<"$out")" "queue    FAIL  every queue commit to green gate: 1, median 20.0 min, p90 20.0 min (target: median 0 or less; $since)"
 out=$(drill=1 report "$day" $((day + 60)) "$dir") && rc=0 || rc=$?
 eq "$rc" 1
-eq "$(sed -n 1p <<<"$out")" "queue    pass  queue commit to green gate: 0 commits, median - min, p90 - min (target: median 25 or less)"
+eq "$(sed -n 4p <<<"$out")" "queue    pass  every queue commit to green gate: 0, median - min, p90 - min (target: median 25 or less; $since)"
 eq "$(tail -n 1 <<<"$out")" "drill    FAIL  forced red by CI_STATS_DRILL, a drill of the nightly's issue"
 echo "ok: a window whose targets hold, a target forced red, and a drill with no samples"
 

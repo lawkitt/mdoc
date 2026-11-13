@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci-targets-issue.sh [scripts/ci-stats.sh arguments]
 #
-# The nightly's check of ADR 0112's CI targets: runs scripts/ci-stats.sh with
+# The nightly's check of ADR 0113's CI targets: runs scripts/ci-stats.sh with
 # the arguments given (the nightly: --days 7 --nights 3) and keeps one issue,
 # "CI targets missed":
 #   - a target missed in every window measured (ci-stats exit 3: the last 3
@@ -40,9 +40,9 @@ if [ "$rc" -eq 0 ]; then
 fi
 
 if [ "$rc" -eq 3 ]; then
-  lead="A target was missed in every window measured: on each of the last nights (ADR 0112)."
+  lead="A target was missed in every window measured: on each of the last nights (ADR 0113)."
 else
-  lead="A target was missed in the latest window (ADR 0112)."
+  lead="A target was missed in the latest window (ADR 0113)."
 fi
 body="$lead Run: ${RUN_URL:-unknown}.
 

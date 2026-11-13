@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci-stats.sh [--days N | --since <UTC time>] [--nights K]
 #
-# ADR 0112's CI targets, measured from GitHub's queue commits (the merge
+# ADR 0113's CI targets, measured from GitHub's queue commits (the merge
 # queue's Queue runs) over the last N days (default 7) or since a time such
 # as 2026-11-05T22:20:00Z (to measure only what ran after a change landed):
 #
-#   queue    a queue commit's time from its Queue run starting to its first
-#            green merge-gate status: median 25 minutes or less;
-#   windows  a green ci/windows run's time: median 15 minutes or less. The
-#            PC's comes from its status ("Passed in 13m45s"); a hosted
-#            fallback's (ci-desktop.yml, dispatched by merge-gate for a
-#            commit whose gate names "windows (hosted)") is its jobs' time,
-#            from the first `ci/windows (hosted, ...)` job starting to the
-#            last finishing, all green;
-#   ios-ui   a green `ci/ios (ui)` job's time on hosted macOS: median 20
-#            minutes or less;
+#   core     a core queue commit's time to green: median 20 minutes or less;
+#   desktop  a desktop-only one's: median 15 minutes or less;
+#   queue    every queue commit's: median 25 minutes or less. A queue
+#            commit's time runs from its Queue run starting to its first
+#            green merge-gate status;
+#   ios-ui   the slower iOS UI shard's time on hosted macOS, per queue
+#            commit whose `ci/ios (ui 1)` and `(ui 2)` jobs both passed (or,
+#            before the second shard, whose single `ci/ios (ui)` did): median
+#            15 minutes or less;
 #   drops    queue drops not caused by the PR: at most 1 a week.
 #
+# A queue commit's class comes from the jobs its Queue run started (not
+# skipped): core when they include an iOS job (`ci/ios ...`) and a macOS or
+# detection job (`ci/macos ...`, `ci/detection ...`), desktop-only with a
+# macOS or detection job and no iOS one, iOS-only with an iOS job alone,
+# other with none (docs, scripts, the PC's jobs). The classes line counts
+# every queue commit in the window, green or not.
 # Each line gives the samples' median and p90; failed and timed-out runs give
 # no time. A drop is a queue commit whose merge-gate failed (the queue then
 # drops its PR). It counts as not caused by the PR when every job its first
@@ -45,24 +50,51 @@
 # Exits 0 when every target holds (a target with no samples holds), 2 when
 # one fails in the latest window, 3 when one fails in every one of K >= 2
 # windows, 1 on an error. CI_STATS_DRILL=1 fails every window with a `drill`
-# line, to drill the nightly's issue; CI_STATS_QUEUE_MIN, CI_STATS_WINDOWS_MIN,
-# CI_STATS_IOS_UI_MIN (minutes) and CI_STATS_DROPS_WEEK override the limits.
+# line, to drill the nightly's issue; CI_STATS_CORE_MIN, CI_STATS_DESKTOP_MIN,
+# CI_STATS_QUEUE_MIN, CI_STATS_IOS_UI_MIN (minutes) and CI_STATS_DROPS_WEEK
+# override the limits. Each target reads only queue commits from its start
+# (target_start below); a target whose start is pending is reported, but its
+# verdict never sets the exit.
 # GH_REPO picks the repository (default lawkitt/mdoc); `gh` must be signed
-# in. Read-only: a week's read is about 300 statuses reads, one jobs read per
-# queue commit that ran iOS and per hosted Windows run, and two run lists a
-# day, inside the nightly token's 1,000 an hour. Bash 3.2 compatible;
+# in. Read-only: a week's read is one statuses and one jobs read per queue
+# commit (about 300 calls) and a run list a day, inside the nightly token's
+# 1,000 an hour. Bash 3.2 compatible;
 # scripts/test-ci-stats.sh checks it against fakes.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 repo=${GH_REPO:-lawkitt/mdoc}
 quarantine=${CI_STATS_QUARANTINE:-$(dirname "${BASH_SOURCE[0]}")/../.config/quarantine.txt}
 queue_min=${CI_STATS_QUEUE_MIN:-25}
-windows_min=${CI_STATS_WINDOWS_MIN:-15}
-ios_ui_min=${CI_STATS_IOS_UI_MIN:-20}
+core_min=${CI_STATS_CORE_MIN:-20}
+desktop_min=${CI_STATS_DESKTOP_MIN:-15}
+ios_ui_min=${CI_STATS_IOS_UI_MIN:-15}
 drops_week=${CI_STATS_DROPS_WEEK:-1}
 drill=${CI_STATS_DRILL:-}
 # The repeat rule's reach either side of a drop.
 repeat_s=$((14 * 86400))
+
+# Each target's start (UTC), the only place to set them: the merge of the
+# last change the target depends on (ROADMAP's CI speed items). A target
+# reads only queue commits from its start on, so the nightly's 3 red nights
+# judge only data from after that change. `pending` (the change has not
+# merged): the line reports every sample and its verdict but never fails
+# the run; set the date when the change merges.
+#   core     items 27 (one rule pack), 28 (UI shards by time) and 31
+#            (detection on hosted Windows)
+#   desktop  item 24 (detection only when its inputs change)
+#   queue    ADR 0112's rollout, the median it keeps as a floor
+#   ios-ui   item 28 (UI shards by time)
+#   drops    ADR 0112's rollout
+target_start() { # target
+  case "$1" in
+    core) echo pending ;;
+    desktop) echo pending ;;
+    queue) echo 2026-11-12T15:21:00Z ;;
+    ios-ui) echo pending ;;
+    drops) echo 2026-11-12T15:21:00Z ;;
+    *) die "unknown target: $1" ;;
+  esac
+}
 
 # --- GitHub (replaced by fakes in scripts/test-ci-stats.sh) -------------------
 
@@ -175,29 +207,54 @@ pc_test() { # description
   echo "$more $(sed -E 's/ and [0-9]+ more$//; s/^\( *[0-9]+\/[0-9]+\) //' <<<"$d")"
 }
 
-# Seconds from the PC's "Passed in 13m45s", or nothing.
-pc_seconds() { # description
-  [[ $1 =~ ^Passed\ in\ ([0-9]+)m([0-9]+)s$ ]] || return 0
-  echo $((10#${BASH_REMATCH[1]} * 60 + 10#${BASH_REMATCH[2]}))
-}
-
-# A hosted Windows fallback's time from its jobs (fetch_jobs lines on stdin):
-# `<seconds> <end epoch>` from the first `ci/windows (hosted, ...)` job's
-# start to the last one's end, when all of them passed; otherwise nothing.
-hosted_windows_seconds() {
-  awk '{ name = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", name) }
-    index(name, "ci/windows (hosted, ") == 1 {
-      n++; if ($1 != "success" || $2 == 0 || $3 == 0) bad = 1
-      if (s == "" || $2 < s) s = $2; if ($3 > e) e = $3
-    }
-    END { if (n && !bad) print e - s, e }'
-}
-
-# A green `ci/ios (ui)` job's `<seconds> <end epoch>` from a Queue run's jobs
-# on stdin (named `ios / ci/ios (ui)` there), or nothing.
+# The slower UI shard's `<seconds> <end epoch>` from a Queue run's jobs.
+# Require the complete green pair, or the old single job. A missing, skipped,
+# failed or unfinished shard gives no sample; use the latest completion so
+# historical windows never see a pair that was only partly finished then.
 ios_ui_seconds() {
   awk '{ name = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", name) }
-    name ~ /(^|\/ )ci\/ios \(ui\)$/ && $1 == "success" && $2 > 0 && $3 > 0 { print $3 - $2, $3; exit }'
+    name ~ /(^|\/ )ci\/ios \(ui( [12])?\)$/ {
+      if ($1 != "success" || $2 <= 0 || $3 <= 0) bad = 1
+      if (name ~ /\(ui 1\)$/) one++
+      else if (name ~ /\(ui 2\)$/) two++
+      else old++
+      if ($3 - $2 > slow) slow = $3 - $2
+      if ($3 > end) end = $3
+    }
+    END {
+      if (!bad && ((one == 1 && two == 1 && !old) || (old == 1 && !one && !two)))
+        print slow + 0, end
+    }'
+}
+
+# Each started job relevant to the class: `<start> ios|desktop`. A reusable
+# workflow prefixes its check name (`ios / ci/ios (ui 1)`, for example).
+# Classification uses the job, not whether a gate merely expected it to run.
+class_jobs() {
+  awk '{ name = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", name) }
+    $1 != "skipped" && $2 > 0 {
+      if (name ~ /(^|\/ )ci\/ios( \(|$)/) print $2, "ios"
+      if (name ~ /(^|\/ )ci\/(macos|detection)( \(|$)/) print $2, "desktop"
+    }'
+}
+
+# `<sha> <class>` for every commit in a window, including non-green ones.
+# Every commit has a `<created> <sha> <created> other` line, so one that
+# started no such job is still counted; a job started after the window's end
+# does not change the commit's class in that window.
+commit_classes() { # file from to
+  awk -v f="$2" -v t="$3" '
+    $1 >= f && $1 <= t && $3 <= t {
+      seen[$2] = 1
+      if ($4 == "ios") ios[$2] = 1
+      if ($4 == "desktop") desktop[$2] = 1
+    }
+    END {
+      for (s in seen) {
+        c = ios[s] ? (desktop[s] ? "core" : "iOS-only") : (desktop[s] ? "desktop-only" : "other")
+        print s, c
+      }
+    }' "$1" | sort
 }
 
 # Whether a test is on the quarantine list: an app UI line (android:, ios:)
@@ -290,15 +347,15 @@ runs_between() { # workflow from to event
 
 # Reads the queue commits whose first Queue run started from $1 to $2 into
 # files in $3, one line each, `<created> <value> <when>` first (when it was
-# known): queue (seconds to green), windows (`... PC|hosted`), ios-ui
-# (seconds), drops (`<created> <sha> <pr> <when> <description>`) and tests
-# (`<when> <sha> <pr> <job> <more> <test>`, every PC failure naming one).
+# known): queue (`... <sha>`, seconds to green), ios-ui (seconds), classes
+# (`<created> <sha> <job start> ios|desktop|other`, one line per class job
+# and one `other` line per commit), drops (`<created> <sha> <pr> <when>
+# <description>`) and tests (`<when> <sha> <pr> <job> <more> <test>`, every
+# PC failure naming one).
 gather() { # from to dir
-  local dir=$3 runs disp id sha at branch pr st gate desc line ctx state t rest jobs rid rids
-  : >"$dir/queue" && : >"$dir/windows" && : >"$dir/ios-ui" && : >"$dir/drops" && : >"$dir/tests"
+  local dir=$3 runs id sha at branch pr st gate desc line ctx state t rest jobs
+  : >"$dir/queue" && : >"$dir/classes" && : >"$dir/ios-ui" && : >"$dir/drops" && : >"$dir/tests"
   runs=$(runs_between queue.yml "$1" "$2" merge_group) || die "could not list the Queue runs"
-  # merge-gate's hosted Windows fallbacks, read once for the whole range.
-  disp=$(runs_between ci-desktop.yml "$1" "$2" workflow_dispatch) || die "could not list the hosted Windows runs"
   # Each commit once, with its first run.
   while read -r id sha at branch; do
     [ -n "$sha" ] || continue
@@ -307,34 +364,21 @@ gather() { # from to dir
     st=$(sort -s -k3,3n <<<"$st")
     gate=$(awk '$1 == "merge-gate" { $1 = ""; sub(/^ /, ""); print }' <<<"$st")
     line=$(queue_seconds "$at" <<<"$gate")
-    [ -z "$line" ] || echo "$at $line" >>"$dir/queue"
+    [ -z "$line" ] || echo "$at $line $sha" >>"$dir/queue"
     desc=$(gate_failure <<<"$gate")
     [ -z "$desc" ] || echo "$at $sha $pr $desc" >>"$dir/drops"
     while read -r ctx state t rest; do
       case "$ctx $state" in
-        "ci/windows success")
-          line=$(pc_seconds "$rest")
-          [ -z "$line" ] || echo "$at $line $t PC" >>"$dir/windows"
-          ;;
         "ci/windows failure" | "ci/android failure")
           line=$(pc_test "$rest")
           [ -z "$line" ] || echo "$t $sha $pr ${ctx#ci/} $line" >>"$dir/tests"
           ;;
       esac
     done <<<"$st"
-    if grep -q 'windows (hosted)' <<<"$gate"; then
-      rids=$(awk -v s="$sha" '$2 == s { print $1 }' <<<"$disp")
-      for rid in $rids; do
-        jobs=$(fetch_jobs "$rid") || die "could not read run $rid's jobs"
-        line=$(hosted_windows_seconds <<<"$jobs")
-        [ -z "$line" ] || echo "$at $line hosted" >>"$dir/windows"
-      done
-    fi
-    if grep -q 'ios (' <<<"$gate"; then
-      jobs=$(fetch_jobs "$id") || die "could not read run $id's jobs"
-      line=$(ios_ui_seconds <<<"$jobs")
-      [ -z "$line" ] || echo "$at $line" >>"$dir/ios-ui"
-    fi
+    jobs=$(fetch_jobs "$id") || die "could not read run $id's jobs"
+    { echo "$at other"; class_jobs <<<"$jobs"; } | sed "s/^/$at $sha /" >>"$dir/classes"
+    line=$(ios_ui_seconds <<<"$jobs")
+    [ -z "$line" ] || echo "$at $line" >>"$dir/ios-ui"
   done < <(sort -k3,3n <<<"$runs" | awk '!seen[$2]++')
 }
 
@@ -345,25 +389,58 @@ samples() { # file from to
   awk -v f="$2" -v t="$3" '$1 >= f && $1 <= t && $3 <= t { print $2 }' "$1"
 }
 
+# The epoch from which target $1 reads samples in a window starting at $2,
+# then its note for the report line: `<epoch> <note>`.
+target_from() { # target window-start
+  local date start
+  date=$(target_start "$1")
+  if [ "$date" = pending ]; then
+    echo "$2 not judged: start date pending"
+    return
+  fi
+  start=$(jq -rn --arg s "$date" '$s | fromdateiso8601') || die "invalid start date for $1: $date"
+  [ "$start" -ge "$2" ] || start=$2
+  echo "$start since $date"
+}
+
 # One line per target over the samples from $1 to $2 (the files gather
-# wrote in $3): 0 when every target holds, 1 when one fails.
+# wrote in $3), after a line counting the window's commits by class: 0 when
+# every judged target holds, 1 when one fails.
 report() { # from to dir
-  local from=$1 to=$2 dir=$3 rc=0 n m p verdict pc hosted days per_week
+  local from=$1 to=$2 dir=$3 rc=0 n m p verdict days per_week target limit what start note
   local at sha pr desc why unrelated=0 drops=0 infra=0 quar=0 rep=0 list=''
-  read -r n m p <<<"$(samples "$dir/queue" "$from" "$to" | summary)"
-  verdict=pass
-  within "$m" "$queue_min" || verdict=FAIL rc=1
-  echo "queue    $verdict  queue commit to green gate: $n commits, median $(minutes "$m") min, p90 $(minutes "$p") min (target: median $queue_min or less)"
-  read -r n m p <<<"$(samples "$dir/windows" "$from" "$to" | summary)"
-  pc=$(awk -v f="$from" -v t="$to" '$1 >= f && $1 <= t && $3 <= t && $4 == "PC"' "$dir/windows" | wc -l | tr -d ' ')
-  hosted=$((n - pc))
-  verdict=pass
-  within "$m" "$windows_min" || verdict=FAIL rc=1
-  echo "windows  $verdict  green ci/windows runs: $n ($pc on the PC, $hosted hosted), median $(minutes "$m") min, p90 $(minutes "$p") min (target: median $windows_min or less)"
-  read -r n m p <<<"$(samples "$dir/ios-ui" "$from" "$to" | summary)"
-  verdict=pass
-  within "$m" "$ios_ui_min" || verdict=FAIL rc=1
-  echo "ios-ui   $verdict  green ci/ios (ui) jobs: $n, median $(minutes "$m") min, p90 $(minutes "$p") min (target: median $ios_ui_min or less)"
+  commit_classes "$dir/classes" "$from" "$to" >"$dir/classes.now"
+  awk '{ n[$2]++ }
+    END { printf "classes  queue commits: %d core, %d desktop-only, %d iOS-only, %d other\n",
+      n["core"], n["desktop-only"], n["iOS-only"], n["other"] }' "$dir/classes.now"
+  for target in core desktop queue ios-ui; do
+    read -r start note <<<"$(target_from "$target" "$from")"
+    case "$target" in
+      core) limit=$core_min what='core queue commits to green gate' ;;
+      desktop) limit=$desktop_min what='desktop-only queue commits to green gate' ;;
+      queue) limit=$queue_min what='every queue commit to green gate' ;;
+      ios-ui) limit=$ios_ui_min what='green iOS UI runs, the slower shard' ;;
+    esac
+    if [ "$target" = ios-ui ]; then
+      read -r n m p <<<"$(samples "$dir/ios-ui" "$start" "$to" | summary)"
+    else
+      # queue lines: `<created> <seconds> <when> <sha>`; classes.now: `<sha> <class>`.
+      read -r n m p <<<"$(awk -v want="$target" -v f="$start" -v t="$to" '
+        FILENAME == ARGV[1] { cls[$1] = $2; next }
+        $1 >= f && $1 <= t && $3 <= t && (want == "queue" ||
+          (want == "core" && cls[$4] == "core") || (want == "desktop" && cls[$4] == "desktop-only")) { print $2 }
+      ' "$dir/classes.now" "$dir/queue" | summary)"
+    fi
+    verdict=pass
+    if ! within "$m" "$limit"; then
+      verdict=FAIL
+      [ "${note%%:*}" = "not judged" ] || rc=1
+    fi
+    printf '%-8s %s  %s: %s, median %s min, p90 %s min (target: median %s or less; %s)\n' \
+      "$target" "$verdict" "$what" "$n" "$(minutes "$m")" "$(minutes "$p")" "$limit" "$note"
+  done
+  read -r start note <<<"$(target_from drops "$from")"
+  [ "$start" -le "$to" ] || start=$to
   while read -r at sha pr _ desc; do
     [ -n "$sha" ] || continue
     drops=$((drops + 1))
@@ -376,13 +453,17 @@ report() { # from to dir
     esac
     unrelated=$((unrelated + 1))
     list+="         $(iso "$at") ${sha:0:7} PR #$pr: $why"$'\n'
-  done < <(awk -v f="$from" -v t="$to" '$1 >= f && $1 <= t && $4 <= t' "$dir/drops")
-  # The rate over the window's real length, compared unrounded.
-  days=$(awk -v w=$((to - from)) 'BEGIN { printf "%.1f", w / 86400 }')
-  per_week=$(awk -v i="$unrelated" -v w=$((to - from)) 'BEGIN { printf "%.2f", i * 7 * 86400 / w }')
+  done < <(awk -v f="$start" -v t="$to" '$1 >= f && $1 <= t && $4 <= t' "$dir/drops")
+  # The rate over the part of the window from the target's start, compared
+  # unrounded: a window ending before the start has none and holds.
+  days=$(awk -v w=$((to - start)) 'BEGIN { printf "%.1f", w / 86400 }')
+  per_week=$(awk -v i="$unrelated" -v w=$((to - start)) 'BEGIN { printf "%.2f", (w > 0 ? i * 7 * 86400 / w : 0) }')
   verdict=pass
-  awk -v i="$unrelated" -v w=$((to - from)) -v l="$drops_week" 'BEGIN { exit !(i * 7 * 86400 <= l * w) }' || verdict=FAIL rc=1
-  echo "drops    $verdict  queue drops not caused by the PR: $unrelated of $drops drops in $days days ($infra infrastructure, $quar quarantined test, $rep repeated test), $per_week a week (target: $drops_week or fewer)"
+  if ! awk -v i="$unrelated" -v w=$((to - start)) -v l="$drops_week" 'BEGIN { exit !(i * 7 * 86400 <= l * w) }'; then
+    verdict=FAIL
+    [ "${note%%:*}" = "not judged" ] || rc=1
+  fi
+  echo "drops    $verdict  queue drops not caused by the PR: $unrelated of $drops drops in $days days ($infra infrastructure, $quar quarantined test, $rep repeated test), $per_week a week (target: $drops_week or fewer; $note)"
   printf '%s' "$list"
   if [ -n "$drill" ]; then
     echo "drill    FAIL  forced red by CI_STATS_DRILL, a drill of the nightly's issue"

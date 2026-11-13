@@ -815,13 +815,14 @@ commit's `Build.xcconfig`. A miss builds the core as before, then
 key does not hash, so a stale core cannot pass. Only `main` saves; the
 cache cleanup keeps its newest key.
 
-**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>] [--nights K]` measures ADR 0112's targets from GitHub's queue commits, read-only, over the last 7 days by default:
-- a queue commit's time to a green `merge-gate`: median 25 minutes or less;
-- a green `ci/windows` run, the PC's "Passed in" or a hosted fallback's job time: median 15 minutes or less;
-- a green `ci/ios (ui)` job: median 20 minutes or less;
+**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>] [--nights K]` measures ADR 0113's targets from GitHub's queue commits, read-only, over the last 7 days by default. It first counts the queue commits by class, from the jobs each Queue run started: core (an iOS job and a macOS or detection job), desktop-only (macOS or detection, no iOS), iOS-only, other. Then one line per target:
+- a core queue commit's time to a green `merge-gate`: median 20 minutes or less;
+- a desktop-only one's: median 15 minutes or less;
+- every queue commit's: median 25 minutes or less;
+- the slower of a green `ci/ios (ui 1)` and `(ui 2)` pair (or the single `ci/ios (ui)` before the second shard): median 15 minutes or less;
 - queue drops not caused by the PR (an infrastructure failure, or a PC job whose one failing test is quarantined or failed on another PR's queue commit within 14 days, among the commits read): at most 1 a week, each listed with the rule that matched.
 
-Its header says exactly what each counts. It exits 2 when a target fails, 3 when one fails in each of `--nights K` windows (ending now, a day ago and so on), 1 on an error. `--since` measures only what ran after a change landed.
+Each target reads only queue commits from its start, set in one place (`target_start` in the script): the merge of the last change it depends on, so the nightly judges only data from after it. A target whose change has not merged is `pending`: reported, never judged. Its header says exactly what each counts. It exits 2 when a judged target fails, 3 when one fails in each of `--nights K` windows (ending now, a day ago and so on), 1 on an error. `--since` measures only what ran after a change landed.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
 desktop jobs on both OSes, iOS, Android (`ci-android.yml`), the detection
