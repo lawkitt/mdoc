@@ -3,6 +3,7 @@ import XCTest
 /// The review card swipes as a carousel (docs/mobile-ui.md, Review bar):
 /// let go past a third of the card, or with a fling, and the strip settles
 /// on the neighbor; a short slow drag springs back. The same both ways.
+/// First, the text ends where the bottom bar starts.
 final class ReviewPagerUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -29,7 +30,15 @@ final class ReviewPagerUITests: XCTestCase {
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
-        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        // The text ends where the bottom bar starts: its last line is
+        // readable and tappable without holding the text up. (Its own
+        // test in ReviewToolsUITests until ADR 0112's sweep, which saved
+        // the launch.)
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 30))
+        XCTAssertLessThanOrEqual(text.frame.maxY, primary.frame.minY, "the text ends at the bottom bar")
         // Names to step through: Find and Hide name on the surname.
         app.buttons["document-menu"].tap()
         let find = app.buttons["find-in-document"]

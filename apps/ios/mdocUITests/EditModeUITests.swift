@@ -147,13 +147,16 @@ final class EditModeUITests: XCTestCase {
         XCTAssertFalse((text.value as? String ?? "").contains("Zephyrine"), "the selection was replaced")
     }
 
-    /// iPhone: no Identities button and no right-edge swipe while editing;
-    /// Done brings the button back.
+    /// iPhone: no Identities button and no right-edge swipe while editing,
+    /// and Done brings the button back; Original while editing hides the
+    /// keyboard and keeps edit mode, and Text brings the keyboard back at
+    /// the same caret. (Two tests until ADR 0112's sweep, which saved a
+    /// launch: Identities' header shows with no names too, so the swipe
+    /// still has a drawer to open.)
     @MainActor
-    func testIdentitiesHiddenWhileEditing() throws {
-        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPhone drawer")
-        let (app, text) = open(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
-        XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
+    func testIdentitiesHideAndTheOriginalRoundTripKeepsTheCaret() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPhone drawer and switch")
+        let (app, text) = open(seed: "tests/fixtures/import/text.pdf", title: nil)
         let identities = app.buttons["identities-button"]
         XCTAssertTrue(identities.exists)
         app.buttons["edit-button"].tap()
@@ -166,18 +169,6 @@ final class EditModeUITests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)))
         XCTAssertFalse(app.staticTexts["Identities"].firstMatch.waitForExistence(timeout: 2), "no drawer while editing")
         XCTAssertTrue(done.isHittable)
-        done.tap()
-        XCTAssertTrue(identities.waitForExistence(timeout: 5))
-    }
-
-    /// iPhone: Original while editing hides the keyboard and keeps edit
-    /// mode; Text brings the keyboard back at the same caret.
-    @MainActor
-    func testTheOriginalRoundTripKeepsTheCaret() throws {
-        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPhone switch")
-        let (app, text) = open(seed: "tests/fixtures/import/text.pdf", title: nil)
-        app.buttons["edit-button"].tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
         MdocUITest.tapIntoText(app)
         app.typeText("Zephyrine ")
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine "), timeout: 5))
@@ -190,5 +181,7 @@ final class EditModeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "Text brings the keyboard back")
         app.typeText("Quillon")
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine Quillon"), timeout: 5), "the same caret")
+        done.tap()
+        XCTAssertTrue(identities.waitForExistence(timeout: 5), "Done brings Identities back")
     }
 }

@@ -174,20 +174,44 @@ final class ReviewScrollTests: XCTestCase {
             view.layoutIfNeeded()
         }
 
-        /// Runs the run loop until the text has stopped scrolling.
+        /// Runs the run loop until the text has stopped scrolling: the
+        /// offset has held for 0.1 s since the coordinator last owed a
+        /// reveal, ran a scroll or had a landing to check (a landed
+        /// scroll's correction animates without a flag, a few frames
+        /// later), or for 0.3 s whatever the coordinator says. Each turn
+        /// lays the view out, as the screen's display cycle does in the
+        /// app: this window has no scene, so nothing else does, and a
+        /// landed scroll's check waited for the next measurement. A fixed
+        /// 0.3 s after every step, a landing never checked, made this suite
+        /// take three minutes on hosted runners (ADR 0112: a slow unit test
+        /// is a bug).
         func settle() {
             let deadline = Date().addingTimeInterval(4)
             var last = view.contentOffset
             var still = Date()
+            var idleSince: Date?
             while Date() < deadline {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                view.layoutIfNeeded()
+                let now = Date()
                 if view.contentOffset != last {
                     last = view.contentOffset
-                    still = Date()
-                } else if Date().timeIntervalSince(still) > 0.3 {
-                    return
+                    still = now
                 }
+                if !idle {
+                    idleSince = nil
+                } else if idleSince == nil {
+                    idleSince = now
+                }
+                let quiet = idleSince.map { now.timeIntervalSince(max(still, $0)) > 0.1 } ?? false
+                if quiet || now.timeIntervalSince(still) > 0.3 { return }
             }
+        }
+
+        /// Nothing the coordinator owes or runs moves the text.
+        private var idle: Bool {
+            coordinator.pendingReveal == nil && !coordinator.revealQueued && !coordinator.scrolling
+                && coordinator.landing == nil
         }
 
         /// Where the candidate is drawn now, in the text view's coordinates.
@@ -274,7 +298,9 @@ final class ReviewScrollTests: XCTestCase {
             settle()
             let now = try XCTUnwrap(state.reviewedCandidate, message, file: file, line: line)
             let top = try XCTUnwrap(shownTop(of: now), "\(message): \(now.original) is in view", file: file, line: line)
-            turn(0.6)
+            // Longer than a scroll animation's first frames: a scroll
+            // still on its way moves the name by then.
+            turn(0.3)
             XCTAssertEqual(shownTop(of: now) ?? -1, top, accuracy: 0.5, "\(message): \(now.original) has stopped", file: file, line: line)
         }
     }

@@ -1,11 +1,11 @@
 import XCTest
 
 /// Edit mode's toolbar, formatting keyboard, links and hardware keys (ADR
-/// 0109, slice 4), in live preview: the capsule above the keyboard makes a
-/// word bold and shows Bold on; Aa swaps in the formatting keyboard, whose
-/// keys turn the line into a heading, and Aa again brings the system
-/// keyboard back (ADR 0110); ⌘B, Tab and ⌘K work from a hardware keyboard; and
-/// the accessibility audit passes with the toolbar up.
+/// 0109, slice 4), in live preview: the capsule sits above the keyboard
+/// with 44 pt targets; Aa swaps in the formatting keyboard, and Aa again
+/// brings the system keyboard back (ADR 0110); ⌘B, Tab and ⌘K work from a
+/// hardware keyboard; and the accessibility audit passes with the toolbar
+/// up. What the buttons do to the text is EditToolbarTests'.
 final class EditToolbarUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -48,11 +48,15 @@ final class EditToolbarUITests: XCTestCase {
         return (app, text)
     }
 
+    /// What only the real screen shows: the toolbar's targets and its
+    /// place above the keys, Aa swapping the system keyboard out and back,
+    /// and Hide keyboard. What Bold, the formatting keys and Undo do to the
+    /// text is EditToolbarTests' (ADR 0112's sweep).
     @MainActor
-    func testToolbarBoldAndTheFormattingKeyboard() throws {
-        let (app, text) = edit()
-        // Typed only on the software keyboard: an arrow key from the hardware
-        // keyboard hides it a moment, and the toolbar moves under the tap.
+    func testTheToolbarAndTheFormattingKeyboard() throws {
+        let (app, _) = edit()
+        // Typed on the software keyboard, so it is up: an arrow key from
+        // the hardware keyboard hides it a moment, and the toolbar moves.
         app.typeText("Pay ")
         let bold = app.buttons["toolbar-bold"]
         XCTAssertFalse(bold.isSelected)
@@ -62,7 +66,6 @@ final class EditToolbarUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 44, id)
         }
         XCTAssertTrue(app.buttons["toolbar-formatting"].isHittable, "Aa always shows")
-        // Bold between words: an empty pair, the caret inside it.
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(bold.waitUntilHittable(timeout: 5))
         // The toolbar sits just above the keyboard: its margin, then the
@@ -70,37 +73,25 @@ final class EditToolbarUITests: XCTestCase {
         // indicator's room lay between them too (82 pt to the keys).
         let gap = app.keyboards.firstMatch.frame.minY - bold.frame.maxY
         XCTAssertTrue((0...60).contains(gap), "\(gap) pt between the toolbar and the keys")
-        bold.tap()
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Pay **"), timeout: 5))
-        app.typeText("monthly")
-        // The caret is in the bold word: its markers show, and Bold is on.
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Pay **monthly**"), timeout: 5))
-        XCTAssertTrue(bold.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
         // Aa: the formatting keyboard in place of the system keyboard.
         app.buttons["toolbar-formatting"].tap()
         let heading = app.buttons["turn-heading2"]
         XCTAssertTrue(heading.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["toolbar-formatting"].isSelected)
-        heading.tap()
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "## Pay **monthly**"), timeout: 5))
-        XCTAssertTrue(heading.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
         // No key back to the system keyboard: Aa switches back (ADR 0110).
         XCTAssertFalse(app.buttons["formatting-keyboard-return"].exists)
         app.buttons["toolbar-formatting"].tap()
         XCTAssertTrue(heading.wait(until: NSPredicate(format: "exists == false"), timeout: 5))
         XCTAssertFalse(app.buttons["toolbar-formatting"].isSelected)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        // The toolbar's Undo takes back the heading, one step.
-        app.buttons["toolbar-undo"].tap()
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value CONTAINS %@)", "## Pay"), timeout: 5))
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "**monthly**"), timeout: 5))
         // Hide keyboard leaves edit mode on.
         app.buttons["toolbar-hide-keyboard"].tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
         XCTAssertTrue(app.buttons["done-editing"].exists)
     }
 
-    /// ⌘B, Tab and ⌘K from a hardware keyboard (ADR 0109's iPad keys).
+    /// ⌘B, Tab and ⌘K from a hardware keyboard (ADR 0109's iPad keys), and
+    /// the link's chip, whose Edit opens the sheet on the link.
     @MainActor
     func testHardwareKeys() throws {
         let (app, text) = edit()
@@ -141,7 +132,7 @@ final class EditToolbarUITests: XCTestCase {
     /// for them ("Audit failed to complete in time"). Run with
     /// `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`; the hub runs it at the phone check.
     /// The 44 pt targets are checked always, by their frames, in
-    /// `testToolbarBoldAndTheFormattingKeyboard`.
+    /// `testTheToolbarAndTheFormattingKeyboard`.
     @MainActor
     func testTheAccessibilityAuditWithTheToolbarUp() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_A11Y_EXPLORE"] == "1", "audits run with MDOC_A11Y_EXPLORE=1")
