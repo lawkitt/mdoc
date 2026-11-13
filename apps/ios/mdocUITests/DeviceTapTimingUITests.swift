@@ -3,20 +3,21 @@ import XCTest
 /// How long a review tap takes on a phone (ADR 0104: core calls stay on the
 /// main actor while a tap stays under about 16 ms): the "Review tap"
 /// signpost around the core call (`RealCore.review`), measured over Replace
-/// and Undo on the seed's email; and a drawer drag's hitches (ADR 0114). A
-/// phone only; run it with
+/// and Undo on the seed's email; and a drawer drag's hitches (ADR 0114),
+/// on a phone or, with the timing tests (`TEST_RUNNER_MDOC_TIMING_TESTS=1`),
+/// on a Simulator. Run them with
 /// `-only-testing:mdocUITests/DeviceTapTimingUITests` after
 /// `scripts/ios-device-test.sh` has copied the fixtures.
 final class DeviceTapTimingUITests: XCTestCase {
     override func setUpWithError() throws {
-        #if targetEnvironment(simulator)
-        throw XCTSkip("Timing a review tap needs a phone.")
-        #endif
         continueAfterFailure = false
     }
 
     @MainActor
     func testAReviewTapsTime() throws {
+        #if targetEnvironment(simulator)
+        try XCTSkipIf(true, "Timing a review tap needs a phone.")
+        #endif
         let app = MdocUITest.launch()
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
@@ -49,6 +50,10 @@ final class DeviceTapTimingUITests: XCTestCase {
     /// closing it from the sliver. XCTest reports its hitches and frame rate.
     @MainActor
     func testADrawerDragsHitches() throws {
+        #if targetEnvironment(simulator)
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["MDOC_TIMING_TESTS"] == "1", "on a Simulator, with the timing tests only")
+        #endif
         let app = MdocUITest.launch()
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
