@@ -524,7 +524,7 @@ wait for.
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 35 min each |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
-| `ci/detection` | recognition | hosted `windows-latest` (`ci-detection.yml`, ADR 0113): the detection gate in 5 shards, each warning past 80% of its 5-minute model budget | 20 min a shard |
+| `ci/detection` | recognition | hosted `windows-latest` (`ci-detection.yml`, ADR 0113): the detection gate in 8 shards, each warning past 80% of its 5-minute model budget | 20 min a shard |
 
 | `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
 
@@ -651,7 +651,7 @@ model pin change.
 A recognition-area PR runs the gate on its head
 ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)), so a stale
 snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
-5 shards, on every push (a newer push cancels it), drafts included. Its
+8 shards, on every push (a newer push cancels it), drafts included. Its
 head `merge-gate` waits for `detection-head / ci/detection` beside the fast
 tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
 PR is one with a file on a recognition line of `scripts/ci-areas.txt`

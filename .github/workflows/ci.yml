@@ -267,14 +267,14 @@ jobs:
   # for) and its shards; a stale snapshot is red here, not in the queue, and
   # `just snapshots-fetch <PR>` fetches the regenerated ones. Skipped, the
   # job is one check, `detection-head`, which merge-gate takes as not needed.
-  # The queue still runs ci/detection on the queue commit. Five shards on
+  # The queue still runs ci/detection on the queue commit. Eight shards on
   # hosted Windows, as queue.yml.
   detection-head:
     needs: areas
     if: needs.areas.outputs.detection-head == 'true'
     uses: ./.github/workflows/ci-detection.yml
     with:
-      shards: 5
+      shards: 8
 
   # The shipped targets: clippy and the full test suite, as parallel jobs so
   # the slow Windows test build doesn't wait for clippy (ADR 0070), when the

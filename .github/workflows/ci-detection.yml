@@ -7,11 +7,15 @@ name: Detection gate
 # it, and the runtime is mdoc's pinned Windows x86_64 ONNX Runtime (Linux
 # has none). The fixtures split over `shards` parallel jobs,
 # `ci/detection (<k>)`, from the 20-job pool Windows shares with Linux, not
-# the 5 macOS slots. A fixture takes 2.5 s on average (0.4 to 16 s; 652 s
-# for all 256, 2026-11-13), and a model run over 5 minutes fails, so the
-# queue, the nightly and recognition-area PR heads (ci.yml's
-# `detection-head`) run 5 shards: the slowest held 147 s (49%), and 4 would
-# hold 202 s. A shard warns past 80% of the budget, the signal to add one.
+# the 5 macOS slots. A fixture takes 2.5 s on a typical runner (0.4 to
+# 16 s; 660 s for all 256, 2026-11-13), but runners differ: of 22 jobs, 3
+# ran 0.6 times as long, 2 1.25 times and one 2.3 times. A model run over 5
+# minutes fails, so the queue, the nightly and recognition-area PR heads
+# (ci.yml's `detection-head`) run 8 shards: the slowest holds about 95 s,
+# 218 s on that 2.3-times runner (73%). With 5 such a runner took 358 s and
+# failed; 9 to 12 gain little, since one fixture takes 16 s. A shard warns
+# past 80% of the budget, the signal to add one; the job logs the runner's
+# CPU.
 # `ci/detection` sums the shards up and is the context merge-gate reads. A
 # failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
@@ -28,7 +32,7 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 5
+        default: 8
       build-only:
         description: Set up the model and build only, which saves both caches on main (main-caches.yml).
         type: boolean
@@ -40,9 +44,9 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over (5; with 4 the slowest takes 67% of the 5-minute model budget).
+        description: Parallel jobs the fixtures split over (8, so a slow runner stays inside the 5-minute model budget).
         type: number
-        default: 5
+        default: 8
       build-only:
         description: Set up the model and build only.
         type: boolean
@@ -67,7 +71,7 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 5 }}
+          SHARDS: ${{ inputs.shards || 8 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
@@ -99,6 +103,12 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           tools: just
+
+      # Hosted runners' CPUs differ, and the model's speed with them: the
+      # first thing to read when a shard nears its budget.
+      - name: Runner CPU
+        shell: pwsh
+        run: (Get-CimInstance Win32_Processor).Name | Select-Object -First 1
 
       # The app-data folders `just recognize` reads, keyed by the model pins.
       # Setup re-verifies every file, so a runtime pin change refetches only
