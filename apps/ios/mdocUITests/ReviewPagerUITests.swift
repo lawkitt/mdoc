@@ -42,17 +42,17 @@ final class ReviewPagerUITests: XCTestCase {
         // Names to step through: Find and Hide name on the surname.
         app.buttons["document-menu"].tap()
         let find = app.buttons["find-in-document"]
-        XCTAssertTrue(find.waitForExistence(timeout: 5))
+        XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
         find.tap()
         let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))
         field.typeText("Bennett")
         let hide = app.buttons["find-hide-name"]
-        XCTAssertTrue(hide.waitForExistence(timeout: 5))
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         hide.tap()
         let card = app.descendants(matching: .any)["review-card"].firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.waitForExistence(timeout: MdocUITest.timeout))
         // The bar's buttons are 44 pt high, Undo a 44 pt circle
         // (ADR 0099, amended 2026-11-08).
         for id in ["review-undo", "review-keep", "review-replace"] {
@@ -101,7 +101,7 @@ final class ReviewPagerUITests: XCTestCase {
         let details = app.descendants(matching: .any)["review-details"].firstMatch
         let shown = { details.exists && details.frame.height > 40 }
         drag(app, by: 0, dy: -220, velocity: 600, hold: 0)
-        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "a drag up on the card shows the mentions")
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout, until: shown), "a drag up on the card shows the mentions")
         MdocUITest.settledScreen()
         drag(app, by: 0, dy: 260, velocity: 600, hold: 0)
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { !shown() }, "a drag down on the card hides them")

@@ -25,18 +25,18 @@ final class PanesRowUITests: XCTestCase {
         let app = open(seed: "tests/fixtures/import/text.pdf")
         let title = app.buttons["title-menu"]
         let picker = app.segmentedControls["pane-picker"]
-        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertTrue(picker.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(title.exists, "the bar's centre is the title's menu with two panes too")
         XCTAssertEqual(picker.buttons.count, 2)
         assertRowIsClear(picker, of: title, in: app)
 
         // More holds its own items only; the document's menu is the title's.
         app.buttons["document-menu"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertFalse(app.buttons["Rename…"].exists, "More does not repeat the title's menu")
         dismissMenu(app)
         title.tap()
-        XCTAssertTrue(app.buttons["Rename…"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Rename…"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         dismissMenu(app)
 
         if !isPad {
@@ -56,7 +56,7 @@ final class PanesRowUITests: XCTestCase {
         // PanesRowTests' (ADR 0112's sweep).
         restoreReply(app)
         XCTAssertEqual(picker.buttons.count, 3)
-        XCTAssertTrue(picker.buttons["Reply"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
+        XCTAssertTrue(picker.buttons["Reply"].wait(until: NSPredicate(format: "isSelected == true"), timeout: MdocUITest.timeout))
         XCTAssertTrue(title.exists)
         assertRowIsClear(picker, of: title, in: app)
         XCTAssertTrue(app.buttons["share-reply"].exists)
@@ -82,7 +82,7 @@ final class PanesRowUITests: XCTestCase {
 
         app = open(seed: "tests/fixtures/import/text.pdf", contentSize: size)
         let picker = app.segmentedControls["pane-picker"]
-        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertTrue(picker.waitForExistence(timeout: MdocUITest.timeout))
         save("2-text-original")
         if !isPad {
             picker.buttons["Original"].tap()
@@ -90,9 +90,9 @@ final class PanesRowUITests: XCTestCase {
             picker.buttons["Text"].tap()
         }
         app.buttons["edit-button"].tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
-        _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
+        _ = app.keyboards.firstMatch.waitForExistence(timeout: MdocUITest.probeTimeout)
         save("4-edit-keyboard")
         app.buttons["done-editing"].tap()
         restoreReply(app)
@@ -132,7 +132,7 @@ final class PanesRowUITests: XCTestCase {
         XCTAssertTrue(paste.waitForExistence(timeout: 10))
         paste.tap()
         let editor = app.textViews["reply-editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
         editor.tap()
         editor.typeText("Thanks. The fixture document reads well.")
         app.buttons["reply-restore"].tap()

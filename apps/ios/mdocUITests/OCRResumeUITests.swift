@@ -32,7 +32,7 @@ final class OCRResumeUITests: XCTestCase {
         download.tap()
         // The Simulator's network can count as cellular: allow it.
         let cellular = app.buttons["Use cellular"]
-        if cellular.waitForExistence(timeout: 5) {
+        if cellular.waitForExistence(timeout: MdocUITest.probeTimeout) {
             cellular.tap()
         }
 

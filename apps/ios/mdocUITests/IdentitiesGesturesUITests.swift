@@ -51,10 +51,10 @@ final class IdentitiesGesturesUITests: XCTestCase {
         let app = try openDocument()
         XCTAssertTrue(MdocUITest.showIdentities(app))
         let close = app.buttons["identities-done"].firstMatch
-        XCTAssertTrue(close.waitUntilHittable(timeout: 5))
+        XCTAssertTrue(close.waitUntilHittable(timeout: MdocUITest.timeout))
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'identity-row' AND label ENDSWITH ', proposed'")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.waitForExistence(timeout: MdocUITest.timeout))
         // The same row, while it is still to review.
         let proposed = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'identity-row' AND label == %@", row.label)).firstMatch
@@ -92,7 +92,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         let replaced = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier == 'identity-row' AND label BEGINSWITH %@ AND label ENDSWITH ', replaced'", name + ",")).firstMatch
         XCTAssertTrue(proposed.waitForNonExistence(timeout: 5), "a full swipe right decides")
-        XCTAssertTrue(replaced.waitForExistence(timeout: 5), "and replaces")
+        XCTAssertTrue(replaced.waitForExistence(timeout: MdocUITest.timeout), "and replaces")
         XCTAssertTrue(close.isHittable, "the drawer stays open")
     }
 
@@ -112,7 +112,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         let panel = app.descendants(matching: .any)["identities-panel"].firstMatch
         func openIdentities() {
             XCTAssertTrue(MdocUITest.showIdentities(app))
-            XCTAssertTrue(close.waitUntilHittable(timeout: 5))
+            XCTAssertTrue(close.waitUntilHittable(timeout: MdocUITest.timeout))
         }
         openIdentities()
         let edge = panel.frame.minX
@@ -124,25 +124,25 @@ final class IdentitiesGesturesUITests: XCTestCase {
         // Over a row: the edge closes the drawer and swipes no row too.
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'identity-row' AND label ENDSWITH ', proposed'")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.waitForExistence(timeout: MdocUITest.timeout))
         let label = row.label
         drag(app, fromX: edge + 8, y: row.frame.midY, by: 280)
         XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a drag from the inner edge closes it")
         openIdentities()
         let same = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'identity-row' AND label == %@", label)).firstMatch
-        XCTAssertTrue(same.waitForExistence(timeout: 5), "the row under the edge stays to review")
+        XCTAssertTrue(same.waitForExistence(timeout: MdocUITest.timeout), "the row under the edge stays to review")
         // From the screen's left edge: Identities closes, the sidebar stays shut.
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
         drag(app, fromX: 6, by: 240)
         XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the swipe from the left edge closes Identities")
-        XCTAssertTrue(app.textViews["document-text"].waitUntilHittable(timeout: 5), "the document shows")
+        XCTAssertTrue(app.textViews["document-text"].waitUntilHittable(timeout: MdocUITest.timeout), "the document shows")
         XCTAssertFalse(sidebar.exists, "the sidebar stays shut")
 
         // The sidebar: the panel on the left; its inner edge on the right.
         func openSidebar() {
             MdocUITest.revealSidebar(app)
-            XCTAssertTrue(sidebar.waitUntilHittable(timeout: 5))
+            XCTAssertTrue(sidebar.waitUntilHittable(timeout: MdocUITest.timeout))
         }
         openSidebar()
         let inner = sidebar.frame.maxX
@@ -166,7 +166,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         app.buttons["document-menu"].tap()
         app.buttons["find-in-document"].tap()
         let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))
         // The Simulator drops a keystroke now and then while matches load:
         // type again until the field holds the whole word.
@@ -179,7 +179,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
         XCTAssertEqual(field.value as? String, "Bennett")
         let hide = app.buttons["find-hide-name"]
-        XCTAssertTrue(hide.waitForExistence(timeout: 5))
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         hide.tap()
         let end = app.buttons["review-end"]
         XCTAssertTrue(end.waitForExistence(timeout: 10))
@@ -188,7 +188,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         app.buttons["identities-select"].firstMatch.tap()
         let rows = app.descendants(matching: .any).matching(identifier: "identity-row")
         let handles = app.descendants(matching: .any).matching(identifier: "identity-drag-handle")
-        XCTAssertTrue(handles.firstMatch.waitForExistence(timeout: 5), "Select shows the handles")
+        XCTAssertTrue(handles.firstMatch.waitForExistence(timeout: MdocUITest.timeout), "Select shows the handles")
         let count = rows.count
         XCTAssertGreaterThanOrEqual(count, 2)
         XCTAssertEqual(handles.count, count, "a handle on every row")
@@ -231,7 +231,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         handles.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.1, thenDragTo: onto, withVelocity: 300, thenHoldForDuration: 0.4)
         let undo = app.buttons["toast-action"].firstMatch
-        XCTAssertTrue(undo.waitForExistence(timeout: 5), "the Undo toast")
+        XCTAssertTrue(undo.waitForExistence(timeout: MdocUITest.timeout), "the Undo toast")
         XCTAssertTrue(app.staticTexts["\(dragged.alias) is now \(target.alias)"].exists)
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { rows.count == count - 1 }, "one name fewer")
         let merged = app.descendants(matching: .any).matching(NSPredicate(
@@ -245,7 +245,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         // Undo: both again. The toast goes after 6 s, so no screenshot
         // before the tap: on a slow runner the toast was gone by then.
         undo.tap()
-        XCTAssertTrue(MdocUITest.wait(timeout: 5) { rows.count == count }, "Undo brings both back")
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout) { rows.count == count }, "Undo brings both back")
         XCTAssertTrue(row(dragged.name).label.contains(", \(dragged.alias),"))
         XCTAssertTrue(row(target.name).label.contains(", \(target.alias),"))
         attach("identities-drag-undone")

@@ -41,7 +41,7 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let note = app.descendants(matching: .any)["below-floor-note"].firstMatch
         for _ in 0..<4 where !note.exists {
             settings.tap()
-            _ = note.waitForExistence(timeout: 5)
+            _ = note.waitForExistence(timeout: MdocUITest.probeTimeout)
         }
         XCTAssertTrue(note.exists, "Settings does not say the phone cannot find names")
         app.buttons["Done"].firstMatch.tap()
@@ -80,17 +80,17 @@ final class DeviceBelowFloorUITests: XCTestCase {
         }
         text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04)).press(forDuration: 1.0)
         let replace = app.menuItems["Hide name"].firstMatch
-        XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Hide name in the edit menu")
+        XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout), "no Hide name in the edit menu")
         replace.tap()
         // The mark is a proposal and the review bar opens on it; Replace applies.
         let confirm = app.buttons["review-replace"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "no review bar on the mark")
+        XCTAssertTrue(confirm.waitForExistence(timeout: MdocUITest.timeout), "no review bar on the mark")
         confirm.tap()
         // The mark is the document's only name, so replacing it ends review
         // (#699): Undo is the toast's, or the bar's when it stays open.
         let undone = app.buttons["review-undo"].exists
             ? app.buttons["review-undo"].isEnabled
-            : app.buttons["toast-action"].waitForExistence(timeout: 5)
+            : app.buttons["toast-action"].waitForExistence(timeout: MdocUITest.timeout)
         XCTAssertTrue(undone, "the selection was not marked")
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 

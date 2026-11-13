@@ -21,27 +21,27 @@ final class EditModeUITests: XCTestCase {
         XCTAssertTrue(text.waitForExistence(timeout: 10))
 
         // Edit is offered with Show Markdown on, as in live preview.
-        XCTAssertTrue(app.buttons["edit-button"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["edit-button"].waitForExistence(timeout: MdocUITest.timeout))
         app.buttons["document-menu"].tap()
         let showMarkdown = app.descendants(matching: .any)["show-markdown"].firstMatch
-        XCTAssertTrue(showMarkdown.waitForExistence(timeout: 5))
+        XCTAssertTrue(showMarkdown.waitForExistence(timeout: MdocUITest.timeout))
         showMarkdown.tap()
         let edit = app.buttons["edit-button"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertEqual(edit.label, "Edit text")
         edit.tap()
 
         // Done shows and the review bar stays away; with no selection the
         // keyboard waits for a tap in the text (ADR 0110).
         let done = app.buttons["done-editing"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertEqual(done.label, "Done editing")
         XCTAssertFalse(app.descendants(matching: .any)["review-bar"].firstMatch.exists)
         XCTAssertFalse(app.keyboards.firstMatch.waitForExistence(timeout: 2), "the keyboard waits for a tap")
         MdocUITest.tapIntoText(app)
 
         app.typeText(Self.marker)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", Self.marker), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", Self.marker), timeout: MdocUITest.timeout))
 
         // ⌘Z undoes the typing as one step; ⇧⌘Z makes it again. The first
         // hardware key after the software keyboard can be lost in the
@@ -54,11 +54,11 @@ final class EditModeUITests: XCTestCase {
         let redone = NSPredicate(format: "value CONTAINS %@", Self.marker)
         app.typeKey("z", modifierFlags: [.command, .shift])
         if !text.wait(until: redone, timeout: 3) { app.typeKey("z", modifierFlags: [.command, .shift]) }
-        XCTAssertTrue(text.wait(until: redone, timeout: 5))
+        XCTAssertTrue(text.wait(until: redone, timeout: MdocUITest.timeout))
 
         // Done, then mdoc leaves the foreground: the typing is saved.
         done.tap()
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         XCUIDevice.shared.press(.home)
         app.terminate()
 
@@ -119,31 +119,31 @@ final class EditModeUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         edit.tap()
         let done = app.buttons["done-editing"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         // No selection: nothing moves and the keyboard waits for a tap.
         XCTAssertFalse(app.buttons["toolbar-bold"].waitForExistence(timeout: 2), "the keyboard waits for a tap")
         done.tap()
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         let after = text.links[label].firstMatch
-        XCTAssertTrue(after.waitForExistence(timeout: 5))
+        XCTAssertTrue(after.waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.settledScreen()
         XCTAssertEqual(after.frame.minY, before, accuracy: 24, "the pencil and Done keep the place")
 
         // A word selected in edit mode stays selected through Done.
         edit.tap()
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
         MdocUITest.caretToTheEnd(app)
         app.typeText("\nZephyrine")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Zephyrine"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Zephyrine"), timeout: MdocUITest.timeout))
         app.typeKey(.leftArrow, modifierFlags: [.option, .shift])
         done.tap()
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         // The next pencil brings the keyboard up on it: typing replaces it.
         edit.tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "a selection brings the keyboard up")
         app.typeText("Quillon")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Quillon"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Quillon"), timeout: MdocUITest.timeout))
         XCTAssertFalse((text.value as? String ?? "").contains("Zephyrine"), "the selection was replaced")
     }
 
@@ -161,7 +161,7 @@ final class EditModeUITests: XCTestCase {
         XCTAssertTrue(identities.exists)
         app.buttons["edit-button"].tap()
         let done = app.buttons["done-editing"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertFalse(identities.exists, "no Identities button while editing")
         // The right edge's swipe opens nothing.
         let window = app.windows.firstMatch
@@ -171,17 +171,25 @@ final class EditModeUITests: XCTestCase {
         XCTAssertTrue(done.isHittable)
         MdocUITest.tapIntoText(app)
         app.typeText("Zephyrine ")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine "), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine "), timeout: MdocUITest.timeout))
         let original = app.segmentedControls.buttons["Original"].firstMatch
         XCTAssertTrue(original.exists, "the switch stays in edit mode")
-        original.tap()
+        // A tap on the switch can be lost on a slow runner while the
+        // keyboard is up (queue run 43386960651): tap until Original is
+        // chosen, then the keyboard goes.
+        let chosen = NSPredicate(format: "isSelected == true")
+        for _ in 0..<3 {
+            original.tap()
+            if original.wait(until: chosen, timeout: MdocUITest.probeTimeout) { break }
+        }
+        XCTAssertTrue(original.isSelected, "Original is chosen")
         XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5), "Original hides the keyboard")
         XCTAssertTrue(app.buttons["done-editing"].exists, "edit mode stays on")
         app.segmentedControls.buttons["Text"].firstMatch.tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "Text brings the keyboard back")
         app.typeText("Quillon")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine Quillon"), timeout: 5), "the same caret")
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine Quillon"), timeout: MdocUITest.timeout), "the same caret")
         done.tap()
-        XCTAssertTrue(identities.waitForExistence(timeout: 5), "Done brings Identities back")
+        XCTAssertTrue(identities.waitForExistence(timeout: MdocUITest.timeout), "Done brings Identities back")
     }
 }

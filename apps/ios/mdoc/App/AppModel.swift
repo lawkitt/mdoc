@@ -40,16 +40,14 @@ final class AppModel {
         downloader: any ModelDownloader,
         network: any NetworkConditions,
         preferences: Preferences = .shared,
-        startupError: String? = nil,
-        findsNamesWithRules: Bool = false
+        startupError: String? = nil
     ) {
         self.startupError = startupError
         self.core = core
         self.storage = storage
         self.preferences = preferences
         let jobs = LongJobRunner(background: background)
-        // The UI tests' stand-in finds names with the rules (`rulesFindNames`).
-        let findsNames = findsNamesWithRules || core.setup.snapshot().tier == .detector
+        let findsNames = core.setup.snapshot().tier == .detector
         let library = LibraryModel(library: core.library, findsNames: findsNames)
         let setup = SetupViewModel(setup: core.setup, downloader: downloader, network: network, jobs: jobs, preferences: preferences)
         self.jobs = jobs
@@ -59,7 +57,7 @@ final class AppModel {
         documents = DocumentStore { id in
             DocumentViewModel(
                 session: try core.library.session(for: id), jobs: jobs, storage: storage,
-                findsNames: findsNamesWithRules || setup.snapshot.tier == .detector
+                findsNames: setup.snapshot.tier == .detector
             ) { [weak library] in
                 library?.refresh()
             }
@@ -92,8 +90,7 @@ final class AppModel {
             #endif
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
-                downloader: models, network: NetworkMonitor(), preferences: preferences,
-                findsNamesWithRules: launch.rulesFindNames)
+                downloader: models, network: NetworkMonitor(), preferences: preferences)
             if let seed = launch.seedFile {
                 UITestSeed.run(UITestSeed.fixture(seed), in: app)
             }

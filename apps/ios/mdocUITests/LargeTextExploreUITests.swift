@@ -24,7 +24,7 @@ final class LargeTextExploreUITests: XCTestCase {
         save(app, "01-home")
         MdocUITest.openSettings(app)
         // Its rows may be below the fold at this size; its title is not.
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: MdocUITest.timeout))
         save(app, "02-settings")
         app.swipeUp()
         save(app, "03-settings-end")
@@ -34,9 +34,9 @@ final class LargeTextExploreUITests: XCTestCase {
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         save(app, "04-review")
         let review = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Review'")).firstMatch
-        if review.waitForExistence(timeout: 5) {
+        if review.waitForExistence(timeout: MdocUITest.timeout) {
             review.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["review-bar"].firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.descendants(matching: .any)["review-bar"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
             save(app, "05-candidate")
             app.swipeUp()
             save(app, "06-candidate-end")
@@ -49,10 +49,10 @@ final class LargeTextExploreUITests: XCTestCase {
         let primary = app.buttons["primary-action"]
         if primary.exists && primary.label.hasPrefix("Replace") { primary.tap() }
         let paste = app.buttons["paste-reply"]
-        if paste.waitForExistence(timeout: 5) {
+        if paste.waitForExistence(timeout: MdocUITest.timeout) {
             save(app, "08-replaced")
             paste.tap()
-            XCTAssertTrue(app.textViews["reply-editor"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.textViews["reply-editor"].waitForExistence(timeout: MdocUITest.timeout))
             save(app, "09-reply-sheet")
         } else {
             save(app, "08-replaced")

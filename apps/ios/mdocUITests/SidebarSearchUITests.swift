@@ -30,12 +30,12 @@ final class SidebarSearchUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.shift.rawValue, modifierFlags: [])
         app.typeKey("k", modifierFlags: .command)
         let field = app.textFields["sidebar-search"].firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "⌘K shows the sidebar")
+        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout), "⌘K shows the sidebar")
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
         XCTAssertEqual(
             XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 10), .completed,
             "⌘K focuses the sidebar's search")
         field.typeText("zzzz")
-        XCTAssertTrue(app.staticTexts["No documents or cases match “zzzz”."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No documents or cases match “zzzz”."].waitForExistence(timeout: MdocUITest.timeout))
     }
 }
