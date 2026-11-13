@@ -32,7 +32,7 @@ expect 0 scripts/ios-ui-shards.sh 1
 one=$(cat "$tmp/out")
 expect 0 scripts/ios-ui-shards.sh 2
 two=$(cat "$tmp/out")
-[ -n "$one" ] && [ -n "$two" ] || fail "a shard is empty"
+if [ -z "$one" ] || [ -z "$two" ]; then fail "a shard is empty"; fi
 # shellcheck disable=SC2086 # one identifier per word
 both=$(printf '%s\n' $one $two | LC_ALL=C sort)
 [ -z "$(printf '%s\n' "$both" | uniq -d)" ] || fail "in both shards: $(printf '%s\n' "$both" | uniq -d)"
@@ -75,12 +75,14 @@ grep -q 'BrandNewUITests .*is in no shard' "$tmp/out" || fail "no shard: $(cat "
 expect 1 "$s" 1
 expect 1 "$s" 2
 # Added to a shard, it passes and runs there.
+# shellcheck disable=SC2016 # an awk program
 edit '{ print } $0 == "2 OCRResumeUITests 0" { print "2 BrandNewUITests 30" }'
 expect 0 "$s" 2
 grep -q 'mdocUITests/BrandNewUITests' "$tmp/out" || fail "not in shard 2: $(cat "$tmp/out")"
 
 # In both shards.
 copy
+# shellcheck disable=SC2016 # an awk program
 edit '{ print } $0 == "1 EditToolbarUITests 208" { print "2 EditToolbarUITests 208" }'
 expect 1 "$s" --check
 grep -q 'EditToolbarUITests is in more than one shard' "$tmp/out" || fail "both: $(cat "$tmp/out")"
@@ -93,6 +95,7 @@ grep -q 'OCRResumeUITests is in a shard but not under' "$tmp/out" || fail "gone:
 
 # A shard past the count.
 copy
+# shellcheck disable=SC2016 # an awk program
 edit '$0 == "2 OCRResumeUITests 0" { $1 = 3 } { print }'
 expect 1 "$s" --check
 grep -q 'shard 3 in scripts/ios-ui-shards.sh' "$tmp/out" || fail "shard 3: $(cat "$tmp/out")"
