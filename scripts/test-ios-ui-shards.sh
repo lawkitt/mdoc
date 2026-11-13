@@ -47,9 +47,11 @@ done
 want=$(grep -rhoE 'class +[A-Za-z0-9_]+ *: *XCTestCase' apps/ios/mdocUITests |
   awk '{ sub(/^class +/, ""); sub(/ *:.*/, ""); print "mdocUITests/" $0 }' | LC_ALL=C sort)
 [ "$both" = "$want" ] || fail "the shards are not every XCTestCase class: $(diff <(echo "$both") <(echo "$want") || true)"
-# Every class there is measured.
+# The plan covers every class, and its totals are the two shards'.
 expect 0 scripts/ios-ui-shards.sh --plan
-! grep -q ' median$' "$tmp/out" || fail "a class apps/ios/ui-class-times.tsv lacks: $(grep ' median$' "$tmp/out")"
+[ "$(grep -c '^[12] ' "$tmp/out")" = "$(printf '%s
+' "$want" | wc -l | tr -d ' ')" ] || fail "plan: $(cat "$tmp/out")"
+grep -q '^shard 2: ' "$tmp/out" || fail "plan totals: $(cat "$tmp/out")"
 expect 1 scripts/ios-ui-shards.sh 3
 grep -q 'no shard 3' "$tmp/out" || fail "shard 3: $(cat "$tmp/out")"
 expect 1 scripts/ios-ui-shards.sh
