@@ -124,7 +124,9 @@ grep -q 'OpenUITests .*is in no shard' "$tmp/out" || fail "OpenUITests: $(cat "$
 grep -q 'SubclassedTests .*is in no shard' "$tmp/out" || fail "SubclassedTests: $(cat "$tmp/out")"
 grep -q 'RegressionCase .*is in no shard' "$tmp/out" || fail "a superclass on the next line: $(cat "$tmp/out")"
 grep -q 'GenericCase .*is in no shard' "$tmp/out" || fail "GenericCase: $(cat "$tmp/out")"
-! grep -q 'LaunchHelper\|CommentedOutUITests\|func\|var\|shared' "$tmp/out" || fail "not test classes: $(cat "$tmp/out")"
+# Only the class name after "error: " counts: the temporary folder's path can
+# hold these words (macOS puts it under /var/folders).
+! grep -qE '^error: (LaunchHelper|CommentedOutUITests|func|var|shared) ' "$tmp/out" || fail "not test classes: $(cat "$tmp/out")"
 [ "$(grep -c 'is in no shard' "$tmp/out")" = 4 ] || fail "not four new classes: $(cat "$tmp/out")"
 
 echo "ios-ui-shards: ok"
