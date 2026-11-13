@@ -376,7 +376,10 @@ gather() { # from to dir
       esac
     done <<<"$st"
     jobs=$(fetch_jobs "$id") || die "could not read run $id's jobs"
-    { echo "$at other"; class_jobs <<<"$jobs"; } | sed "s/^/$at $sha /" >>"$dir/classes"
+    {
+      echo "$at other"
+      class_jobs <<<"$jobs"
+    } | sed "s/^/$at $sha /" >>"$dir/classes"
     line=$(ios_ui_seconds <<<"$jobs")
     [ -z "$line" ] || echo "$at $line" >>"$dir/ios-ui"
   done < <(sort -k3,3n <<<"$runs" | awk '!seen[$2]++')
