@@ -201,5 +201,6 @@ jobs:
             r=${part#*=}
             [ "$r" = success ] || bad="$bad, ci/ios (${part%%=*}) ${r:-did not finish}"
           done
-          echo "::error::${bad:+${bad#, }}${bad:-ci/ios parts: $RESULT}"
+          [ -n "$bad" ] || bad=", ci/ios parts: $RESULT"
+          echo "::error::${bad#, }"
           exit 1
