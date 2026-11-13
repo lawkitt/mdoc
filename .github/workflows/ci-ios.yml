@@ -74,12 +74,16 @@ jobs:
       fail-fast: false
       matrix:
         part: ${{ fromJSON(inputs.build-only && '["unit"]' || '["unit", "ui 1", "ui 2"]') }}
-    # Each part's own result (`unit`, `ui1`, `ui2`), which `ci/ios` names:
-    # a matrix job's outputs combine every part's.
+    # Each part's own result (`unit`, `ui1`, `ui2`) and failing tests
+    # (`unit_tests`, ...), which `ci/ios` names: a matrix job's outputs
+    # combine every part's.
     outputs:
       unit: ${{ steps.result.outputs.unit }}
       ui1: ${{ steps.result.outputs.ui1 }}
       ui2: ${{ steps.result.outputs.ui2 }}
+      unit_tests: ${{ steps.failed.outputs.unit_tests }}
+      ui1_tests: ${{ steps.failed.outputs.ui1_tests }}
+      ui2_tests: ${{ steps.failed.outputs.ui2_tests }}
     env:
       PART: ${{ matrix.part }}
       # The timing tests (LivePreviewUITests' typing and Return times, in
@@ -160,6 +164,13 @@ jobs:
       - if: ${{ !inputs.build-only && matrix.part == 'unit' }}
         run: just --no-deps ios-release
 
+      # The failing tests by name (ADR 0113), from the xcresult while Xcode
+      # is here: in this part's error and summary, and for ci/ios.
+      - name: Failing tests
+        id: failed
+        if: failure() && steps.part.outputs.key != ''
+        run: python3 scripts/ios-failed-tests.py part "$PART" target/ios/DerivedData/Logs/Test
+
       - name: Test results
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -180,8 +191,9 @@ jobs:
         run: '[ -z "$KEY" ] || echo "$KEY=$STATUS" >>"$GITHUB_OUTPUT"'
 
   # Green only when every part ran and passed, so a cancelled or skipped one
-  # never looks green (as ci/detection, ADR 0095). A failure names each
-  # part that did not pass, which merge-gate's link to this job shows.
+  # never looks green (as ci/detection, ADR 0095). A failure annotates each
+  # part that did not pass with its failing tests (ADR 0113), which
+  # merge-gate's link to this job shows.
   summary:
     name: ci/ios
     needs: [ios]
@@ -189,18 +201,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          sparse-checkout: scripts/ios-failed-tests.py
+          sparse-checkout-cone-mode: false
       - env:
           RESULT: ${{ needs.ios.result }}
-          UNIT: ${{ needs.ios.outputs.unit }}
-          UI1: ${{ needs.ios.outputs.ui1 }}
-          UI2: ${{ needs.ios.outputs.ui2 }}
-        run: |
-          [ "$RESULT" != success ] || exit 0
-          bad=
-          for part in "unit=$UNIT" "ui 1=$UI1" "ui 2=$UI2"; do
-            r=${part#*=}
-            [ "$r" = success ] || bad="$bad, ci/ios (${part%%=*}) ${r:-did not finish}"
-          done
-          [ -n "$bad" ] || bad=", ci/ios parts: $RESULT"
-          echo "::error::${bad#, }"
-          exit 1
+          IOS_OUTPUTS: ${{ toJSON(needs.ios.outputs) }}
+        run: python3 scripts/ios-failed-tests.py summary "$RESULT" unit "ui 1" "ui 2"
