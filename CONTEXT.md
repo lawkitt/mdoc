@@ -530,6 +530,20 @@ whether it works (the iOS typing-time UI tests). Runs nightly, never in the
 merge queue, where a shared runner makes its numbers meaningless
 ([grill](docs/design/ci-speed-grill-2026-11-12.md)).
 
+**Core change**: a queue commit that touches the core area
+(`scripts/ci-areas.txt`), so it runs every CI job; its queue time has its
+own target, apart from a desktop-only change's
+([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
+
+**Reference platform**: the one platform whose model output the detection
+gate's snapshots record and check, within a 1e-4 score tolerance; other
+platforms' scores differ in later digits. The Mac until ADR 0113's move,
+then Windows.
+
+**Retried pass**: a hosted iOS UI test that failed and passed on its one
+retry. The job stays green, but the test is named and counts as an
+unrelated failure toward quarantine (ADR 0113).
+
 **Release gate**: checks a release must pass on every shipped target: the OCR
 smoke test before packaging, and the packaged-app self-test (`just
 smoke-package`) on the built artifact itself.
