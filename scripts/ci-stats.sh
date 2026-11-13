@@ -101,10 +101,10 @@ repeat_s=$((14 * 86400))
 #   drops    ADR 0112's rollout
 target_start() { # target
   case "$1" in
-    core) echo pending ;;
+    core) echo 2026-11-13T12:57:58Z ;;
     desktop) echo 2026-11-13T07:07:50Z ;;
     queue) echo 2026-11-12T15:21:00Z ;;
-    ios-ui) echo pending ;;
+    ios-ui) echo 2026-11-13T12:57:58Z ;;
     drops) echo 2026-11-12T15:21:00Z ;;
     *) die "unknown target: $1" ;;
   esac

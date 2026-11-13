@@ -266,41 +266,12 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
 
 The queue's long jobs get shorter and its unrelated drops stop needing the
 maintainer ([ADR 0112](docs/adr/0112-ci-speed-after-the-first-fortnight.md),
-[CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)); items 16–21
-have shipped. Items 23–31 come from the
-[second grill](docs/design/ci-grill-2-2026-11-13.md) and run in that
-order; item 22 (the PC's slow bursts) closed as not needed.
-
-23. **[CI] Failing iOS tests by name.** After a failure `ci-ios.yml`
-    reads the xcresult and names the failing tests in the job's error and
-    summary, as the PC's status does, so `ci-stats.sh` and the hub apply
-    ADR 0112's "same test elsewhere" rule to hosted iOS
-    ([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
-    *Done when:* a planted failure's name shows in `ci/ios`'s status.
-26. **[CI] One UI wait timeout.** A shared timeout (about 15 s) replaces
-    the 5 s waits on a state to appear in `apps/ios/mdocUITests`; waits for
-    something to go away keep theirs. *Done when:* merged.
-27. **[CI] One `mdoc-detect` rule pack per test process.** Built lazily
-    and shared, not in each unit test. *Done when:* the hosted macOS unit
-    tier is measured before and after.
-28. **[CI] UI shards by measured time.** A committed table of class times
-    from recent xcresults, read by `scripts/test-ios-ui-shards.sh` and
-    refreshed by the nightly. *Done when:* the two shards' test times are
-    within 2 minutes of each other on a queue commit.
-29. **[CI] Hosted iOS UI tests retry once.** `-retry-tests-on-failure
-    -test-iterations 2`; a pass on the retry is named in the summary and
-    counts as an unrelated failure toward quarantine. *Done when:* a
-    planted fail-once test passes the job and is named.
-30. **[CI] UI tests launch from a prebuilt library.** Tried on the class
-    with the most launches, then every class if it saves at least 5 s a
-    launch. *Done when:* measured, and applied or dropped.
-31. **[CI] Detection on hosted Windows.** A trial dispatch on
-    `windows-latest` measures time per fixture and stale snapshots and
-    sets the shard count; then the gate moves, its 256 snapshots recorded
-    there, Windows its reference platform. If the model cannot fit its
-    5-minute budget in 12 shards, it stays on macOS and ADR 0113 is
-    reopened. *Done when:* the queue's detection runs on Windows, or the
-    trial says no.
+[CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)) and the
+[second grill](docs/design/ci-grill-2-2026-11-13.md)
+([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
+Items 16–31 have shipped; item 22 (the PC's slow bursts) closed as not
+needed, and item 30 (a prebuilt library for UI test launches) was measured
+and dropped (#857).
 
 ## Later
 
