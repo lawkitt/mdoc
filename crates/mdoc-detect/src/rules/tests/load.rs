@@ -5,6 +5,33 @@ use crate::rules::load::rust_classes;
 use mdoc_pii::Recognizer;
 use regex::Captures;
 
+/// ADR 0113: callers in one process share an immutable, lazily built pack.
+/// Nextest starts a process per test, so each test still pays for its first
+/// use; repeated calls and worker threads in that test reuse the same pack.
+#[test]
+fn rule_pack_is_shared_across_calls_and_threads() {
+    let start = std::sync::Barrier::new(4);
+    let packs = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    let first: &'static Pack = pack();
+                    assert!(std::ptr::eq(first, pack()));
+                    first
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    for shared in packs {
+        assert!(std::ptr::eq(shared, pack()));
+    }
+}
+
 #[test]
 fn every_rule_file_loads_and_each_entry_is_commented() {
     for file in FILES {
