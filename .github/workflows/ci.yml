@@ -133,6 +133,8 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           RELEASE_CALL: ${{ inputs.release-call }}
       - run: just lint-scripts
+      # Every iOS UI test class in exactly one of ci/ios's UI shards.
+      - run: scripts/ios-ui-shards.sh --check
       - run: just lint
 
   # The fast tier (ADR 0095, ADR 0100): the crates' tests and the script

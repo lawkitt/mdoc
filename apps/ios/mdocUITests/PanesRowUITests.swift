@@ -42,7 +42,10 @@ final class PanesRowUITests: XCTestCase {
         if !isPad {
             let original = picker.buttons["Original"]
             original.tap()
-            XCTAssertTrue(original.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
+            // The PDF's accessibility tree makes one query take over 4 s on a
+            // hosted runner, so 5 s allowed a single check (queue run
+            // 43359359817); the wait returns as soon as the segment is on.
+            XCTAssertTrue(original.wait(until: NSPredicate(format: "isSelected == true"), timeout: 15))
             XCTAssertTrue(picker.exists, "the row stays over the Original")
             picker.buttons["Text"].tap()
         }
