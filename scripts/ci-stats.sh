@@ -47,10 +47,11 @@
 #
 # Two report lines follow, which never set the exit: `retried`, every hosted
 # iOS UI test `ci/ios` warned of as passed on its retry (ADR 0113: "Passed
-# on retry in ci/ios (ui 1): <test>"), each an unrelated failure; and
+# on retry in ci/ios (ui 1): <test>, <test>"), each an unrelated failure; and
 # `flaky`, each test not on the quarantine list with two or more unrelated
-# failures (a retried pass, or the test an unrelated drop's rule names as
-# repeated), on different queue commits: ADR 0112 quarantines it. Both read
+# failures (a retried pass, or a test an unrelated drop names: one that
+# failed on another PR's queue commit too), on different queue commits: ADR
+# 0112 quarantines it. Both read
 # from the drops target's start.
 #
 # --nights K measures K windows, ending now, a day ago and so on (each N days
@@ -237,10 +238,11 @@ pc_test() { # description
 # scripts/ios-failed-tests.py words them: `fail <more> <test>` for each part
 # that failed ("Failed in ci/ios (ui 2): <test> and 1 more" gives `fail 1
 # <test>`), `fail 1 -` for one naming none (a build, cancelled, "did not
-# finish"), and `retried <test>` for each test that passed on its retry.
+# finish"), and `retried <test>` for each test that passed on its retry
+# ("Passed on retry in ci/ios (ui 1): <test>, <test>", one warning a part).
 # Other annotations (a step's exit code, a runner's notice) are not read.
 ios_annotations() {
-  local level msg line
+  local level msg line name names
   while read -r level msg; do
     case "$level $msg" in
       "failure Failed in ci/ios"* | "failure ci/ios ("* | "failure ci/ios:"*)
@@ -248,7 +250,8 @@ ios_annotations() {
         echo "fail ${line:-1 -}"
         ;;
       "warning Passed on retry in ci/ios ("*"): "*)
-        echo "retried ${msg#*): }"
+        read -ra names <<<"${msg#*): }"
+        for name in "${names[@]%,}"; do echo "retried $name"; done
         ;;
     esac
   done
@@ -352,6 +355,30 @@ quarantined() { # test
     END { exit !found }' "$quarantine"
 }
 
+# Whether a job merge-gate names failing is one whose tests are read: a PC
+# job, or the hosted iOS job.
+test_job() { # job where
+  { [ "$2" = PC ] && { [ "$1" = windows ] || [ "$1" = android ]; }; } || { [ "$2" = hosted ] && [ "$1" = ios ]; }
+}
+
+# What a job named failing on a commit, `<more> <test>` lines from the tests
+# file posted by the cutoff: the PC's one status, ci/ios's line per part.
+job_tests() { # sha job tests-file cutoff
+  awk -v s="$1" -v j="$2" -v c="$4" '$2 == s && $4 == j && $1 <= c { $1 = $2 = $3 = $4 = ""; sub(/^ +/, ""); print; if (j != "ios") exit }' "$3"
+}
+
+# Every test an unrelated drop names that is not quarantined: each failed on
+# another PR's queue commit (the drop's rule names only the first).
+drop_tests() { # sha description tests-file cutoff
+  local job where more test
+  while read -r job where; do
+    test_job "$job" "$where" || continue
+    while read -r more test; do
+      if [ "$more" = 0 ] && ! quarantined "$test"; then echo "$test"; fi
+    done < <(job_tests "$1" "$job" "$3" "$4")
+  done < <(failed_jobs "$2")
+}
+
 # Why a drop was not caused by its PR, or `related`: every job its failing
 # merge-gate description names is infrastructure, or a PC job naming one
 # failing test, or the hosted iOS job each of whose failing parts names one,
@@ -367,10 +394,8 @@ drop_reason() { # sha pr created description tests-file cutoff [retried-file]
     rule=''
     if infra_where "$where"; then
       rule="infrastructure ($job $where)"
-    elif { [ "$where" = PC ] && { [ "$job" = windows ] || [ "$job" = android ]; }; } ||
-      { [ "$where" = hosted ] && [ "$job" = ios ]; }; then
-      # The PC's one status per job; ci/ios's one line per failing part.
-      lines=$(awk -v s="$sha" -v j="$job" -v c="$cut" '$2 == s && $4 == j && $1 <= c { $1 = $2 = $3 = $4 = ""; sub(/^ +/, ""); print; if (j != "ios") exit }' "$tests")
+    elif test_job "$job" "$where"; then
+      lines=$(job_tests "$sha" "$job" "$tests" "$cut")
       while read -r more test; do
         if [ -z "$more" ] || [ "$more" != 0 ]; then
           rule=''
@@ -536,12 +561,11 @@ report() { # from to dir
       related) continue ;;
       infrastructure*) infra=$((infra + 1)) ;;
       quarantined*) quar=$((quar + 1)) ;;
-      *)
-        rep=$((rep + 1))
-        test=${why#repeated (} && test=${test%, on another PR*}
-        failed+="$sha $pr repeated $test"$'\n'
-        ;;
+      *) rep=$((rep + 1)) ;;
     esac
+    while read -r test; do
+      [ -z "$test" ] || failed+="$sha $pr repeated $test"$'\n'
+    done < <(drop_tests "$sha" "$desc" "$dir/tests" "$to")
     unrelated=$((unrelated + 1))
     list+="         $(iso "$at") ${sha:0:7} PR #$pr: $why"$'\n'
   done < <(awk -v f="$start" -v t="$to" '$1 >= f && $1 <= t && $4 <= t' "$dir/drops")

@@ -82,6 +82,7 @@ eq "$(printf '%s\n' \
   'failure ci/ios: parts cancelled' \
   'failure Process completed with exit code 1.' \
   'warning Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testC' \
+  'warning Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testF, ios:mdocUITests/S/testG' \
   'warning Node.js 20 actions are deprecated.' \
   'notice Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testD' \
   'failure Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testE' | ios_annotations)" \
@@ -90,7 +91,9 @@ fail 0 ios:mdocUITests/S/testB
 fail 1 -
 fail 1 -
 fail 1 -
-retried ios:mdocUITests/S/testC"
+retried ios:mdocUITests/S/testC
+retried ios:mdocUITests/S/testF
+retried ios:mdocUITests/S/testG"
 eq "$(ios_annotations </dev/null)" ""
 echo "ok: what ci/ios's annotations name"
 
@@ -445,11 +448,13 @@ echo "ok: several nights read once, and their exit codes"
 #   h3 (PR 9, day 3): dropped on ios; ci/ios names testF and a part naming
 #     none (related), and warns testQuar (quarantined: never flaky).
 #   h4 (PR 9, day 3): ci/ios still running; h5 (PR 9): ci/ios skipped.
+#   h6 (PR 10, day 4): dropped on ios; ci/ios names testF and testG, a part
+#     each (both repeated: the drop's rule names testF, flaky counts both).
 fetch_runs() {
   case "$1 $4" in
     "queue.yml merge_group")
       printf '%s\n' "11 h1 $(q 1) gh-readonly-queue/main/pr-7-x" "12 h2 $(q 2) gh-readonly-queue/main/pr-8-x" \
-        "13 h3 $(q 3) gh-readonly-queue/main/pr-9-x" "14 h4 $(q 3) gh-readonly-queue/main/pr-9-x" "15 h5 $(q 3) gh-readonly-queue/main/pr-9-x"
+        "13 h3 $(q 3) gh-readonly-queue/main/pr-9-x" "14 h4 $(q 3) gh-readonly-queue/main/pr-9-x" "15 h5 $(q 3) gh-readonly-queue/main/pr-9-x" "16 h6 $(q 4) gh-readonly-queue/main/pr-10-x"
       ;;
   esac |
     awk -v f="$(jq -rn --arg s "$2" '$s | fromdateiso8601')" -v t="$(jq -rn --arg s "$3" '$s | fromdateiso8601')" '$3 >= f && $3 <= t'
@@ -459,14 +464,16 @@ fetch_statuses() {
     h1) echo "merge-gate success $(($(q 1) + 1200)) Passed: ios (hosted)" ;;
     h2) echo "merge-gate failure $(($(q 2) + 1200)) Failed: ios (hosted); passed: macos (hosted)" ;;
     h3) echo "merge-gate failure $(($(q 3) + 1200)) Failed: ios (hosted)" ;;
+    h6) echo "merge-gate failure $(($(q 4) + 1200)) Failed: ios (hosted)" ;;
   esac
 }
 fetch_jobs() {
   local s
   case "$1" in
-    11 | 12 | 13 | 14)
+    11 | 12 | 13 | 14 | 16)
       s=$(q $(($1 - 10)))
       [ "$1" != 14 ] || s=$(q 3)
+      [ "$1" != 16 ] || s=$(q 4)
       printf '%s\n' "success $((s + 10)) $((s + 850)) ios / ci/ios (ui 1)" "success $((s + 10)) $((s + 800)) ios / ci/ios (ui 2)"
       case "$1" in
         11) echo "success $((s + 860)) $((s + 870)) ios / ci/ios" ;;
@@ -482,36 +489,40 @@ annotations=$tmp/annotations
 fetch_ios_annotations() {
   echo "$1" >>"$annotations"
   case "$1" in
-    11) printf '%s\n' 'warning Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testF' 'warning Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testG' ;;
+    11) echo 'warning Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testF, ios:mdocUITests/S/testG' ;;
     12) printf '%s\n' 'failure Failed in ci/ios (ui 2): ios:mdocUITests/S/testF' 'warning Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testG' \
       'failure Process completed with exit code 1.' ;;
     13) printf '%s\n' 'failure Failed in ci/ios (ui 2): ios:mdocUITests/S/testF' 'failure Failed in ci/ios (unit)' \
       'warning Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testQuar' ;;
+    16) printf '%s\n' 'failure Failed in ci/ios (ui 1): ios:mdocUITests/S/testF' 'failure Failed in ci/ios (ui 2): ios:mdocUITests/S/testG' ;;
     *) fail "read the annotations of run $1" ;;
   esac
 }
 dir=$tmp/hosted
 mkdir "$dir"
 gather 0 "$week" "$dir"
-eq "$(tr '\n' ' ' <"$annotations")" "11 12 13 "
+eq "$(tr '\n' ' ' <"$annotations")" "11 12 13 16 "
 eq "$(cat "$dir/tests")" "$(($(q 2) + 870)) h2 8 ios 0 ios:mdocUITests/S/testF
 $(($(q 3) + 870)) h3 9 ios 0 ios:mdocUITests/S/testF
-$(($(q 3) + 870)) h3 9 ios 1 -"
+$(($(q 3) + 870)) h3 9 ios 1 -
+$(($(q 4) + 870)) h6 10 ios 0 ios:mdocUITests/S/testF
+$(($(q 4) + 870)) h6 10 ios 0 ios:mdocUITests/S/testG"
 eq "$(cat "$dir/retried")" "$(q 1) h1 7 $(($(q 1) + 870)) ios:mdocUITests/S/testF
 $(q 1) h1 7 $(($(q 1) + 870)) ios:mdocUITests/S/testG
 $(q 2) h2 8 $(($(q 2) + 870)) ios:mdocUITests/S/testG
 $(q 3) h3 9 $(($(q 3) + 870)) ios:mdocUITests/S/testQuar"
 out=$(report 0 "$week" "$dir") && rc=0 || rc=$?
-eq "$(grep '^drops ' <<<"$out")" "drops    pass  queue drops not caused by the PR: 1 of 2 drops in 7.0 days (0 infrastructure, 0 quarantined test, 1 repeated test), 1.00 a week (target: 1 or fewer; $since)"
+eq "$(grep '^drops ' <<<"$out")" "drops    FAIL  queue drops not caused by the PR: 2 of 3 drops in 7.0 days (0 infrastructure, 0 quarantined test, 2 repeated test), 2.00 a week (target: 1 or fewer; $since)"
 eq "$(sed -n '/^drops /,$p' <<<"$out" | tail -n +2)" "         1970-01-02T01:00:00Z h2 PR #8: repeated (ios:mdocUITests/S/testF, on another PR's queue commit)
+         1970-01-04T01:00:00Z h6 PR #10: repeated (ios:mdocUITests/S/testF, on another PR's queue commit)
 retried  hosted iOS UI tests passed on their retry, each an unrelated failure: 4 on 3 queue commits
          1970-01-01T01:00:00Z h1 PR #7: ios:mdocUITests/S/testF
          1970-01-01T01:00:00Z h1 PR #7: ios:mdocUITests/S/testG
          1970-01-02T01:00:00Z h2 PR #8: ios:mdocUITests/S/testG
          1970-01-03T01:00:00Z h3 PR #9: ios:mdocUITests/S/testQuar
 flaky    tests with unrelated failures on two or more queue commits, not quarantined (ADR 0112: quarantine each): 2
-         ios:mdocUITests/S/testF: 2 (retried on PR #7, repeated on PR #8)
-         ios:mdocUITests/S/testG: 2 (retried on PR #7, retried on PR #8)"
+         ios:mdocUITests/S/testF: 3 (retried on PR #7, repeated on PR #8, repeated on PR #10)
+         ios:mdocUITests/S/testG: 3 (retried on PR #7, retried on PR #8, repeated on PR #10)"
 # A window known before h2's ci/ios finished: h1's retried passes alone.
 out=$(report 0 $(($(q 2) + 869)) "$dir") && rc=0 || rc=$?
 eq "$(sed -n '/^retried /,$p' <<<"$out")" "retried  hosted iOS UI tests passed on their retry, each an unrelated failure: 2 on 1 queue commits

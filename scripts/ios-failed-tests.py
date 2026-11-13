@@ -9,8 +9,8 @@ status does (scripts/queue-runner.sh): an error annotation
 summary ($GITHUB_STEP_SUMMARY). A hosted UI test that failed and passed on
 its one retry (`just ios-test` with MDOC_IOS_TEST_RETRY=1) keeps the job
 green but is named too: a warning annotation
-`Passed on retry in ci/ios (<part>): <test>` each, and a list in the job
-summary. A name is the quarantine list's `ios:<target>/<class>/<method>`
+`Passed on retry in ci/ios (<part>): <test>, <test>...` (one a part, every
+test), and a list in the job summary. A name is the quarantine list's `ios:<target>/<class>/<method>`
 (.config/quarantine.txt), so ADR 0112's "same test elsewhere" rule and its
 quarantine after two unrelated failures can read it
 (scripts/ci-stats.sh reads ci/ios's annotations).
@@ -104,11 +104,12 @@ def report(job, names, why=None):
 
 
 def report_retried(job, names):
-    """A warning annotation per retried test, and a summary section."""
+    """One warning annotation naming every retried test, and a summary
+    section: GitHub keeps only 10 warnings a step, so one a test would lose
+    some for scripts/ci-stats.sh."""
     if not names:
         return
-    for name in names:
-        print(f"::warning::{escape(f'Passed on retry in {job}: {name}')}")
+    print(f"::warning::{escape(f'Passed on retry in {job}: ' + ', '.join(names))}")
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if path:
         with open(path, "a") as summary:

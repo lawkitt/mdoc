@@ -102,9 +102,8 @@ retry_tree "$(NAME=S/testB rp Passed Failed Passed)" "$(NAME=S/testA rp Failed F
 : >"$GITHUB_STEP_SUMMARY" && : >"$GITHUB_OUTPUT"
 mkdir -p "$tmp/one-result/Test-mdoc-1.xcresult"
 XCRUN_JSON="$tmp/retried.json" run part 'ui 1' success "$tmp/one-result" || fail "green part exited non-zero: $(cat "$tmp/out")"
-has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testA'
-has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testB'
-[ "$(grep -c . "$tmp/out")" = 2 ] || fail "a green part says more than its retried tests: $(cat "$tmp/out")"
+has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testA, ios:mdocUITests/S/testB'
+[ "$(grep -c . "$tmp/out")" = 1 ] || fail "a green part says more than its retried tests: $(cat "$tmp/out")"
 has "$GITHUB_OUTPUT" 'ui1_retried=ios:mdocUITests/S/testA ios:mdocUITests/S/testB'
 has "$GITHUB_OUTPUT" 'ui1_tests=ios:mdocUITests/S/testBad'
 has "$GITHUB_OUTPUT" 'retried=2'
@@ -113,7 +112,15 @@ has "$GITHUB_STEP_SUMMARY" "- \`ios:mdocUITests/S/testA\`"
 grep -q 'testBad\|testOk' "$GITHUB_STEP_SUMMARY" && fail "the summary lists a failure or a pass as retried: $(cat "$GITHUB_STEP_SUMMARY")"
 XCRUN_JSON="$tmp/retried.json" run part 'ui 1' failure "$tmp/one-result"
 has "$tmp/out" '::error::Failed in ci/ios (ui 1): ios:mdocUITests/S/testBad'
-has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testB'
+has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testA, ios:mdocUITests/S/testB'
+# More than GitHub's 10 warnings a step: one warning still names them all.
+many=() && for i in 01 02 03 04 05 06 07 08 09 10 11 12; do many+=("$(NAME=S/test$i rp Passed Failed Passed)"); done
+retry_tree "${many[@]}" >"$tmp/many.json"
+XCRUN_JSON="$tmp/many.json" run part 'ui 2' success "$tmp/one-result"
+[ "$(grep -c '^::warning::' "$tmp/out")" = 1 ] || fail "not one warning: $(cat "$tmp/out")"
+grep -q '^::warning::Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/test01, .*, ios:mdocUITests/S/test12$' "$tmp/out" ||
+  fail "the warning does not name every test: $(cat "$tmp/out")"
+has "$GITHUB_OUTPUT" 'retried=12'
 # Under a device node, and Xcode wording the case itself Failed: retried.
 retry_tree "{\"nodeType\":\"Device\",\"name\":\"iPhone 17\",\"children\":[$(NAME=S/testD rp Failed Failed Passed)]}" >"$tmp/device.json"
 XCRUN_JSON="$tmp/device.json" run part 'ui 2' success "$tmp/one-result"
@@ -139,9 +146,8 @@ if [ -s "$tmp/out" ] || [ -s "$GITHUB_STEP_SUMMARY" ]; then fail "green summary 
 IOS_OUTPUTS='{"unit":"success","ui1":"success","ui2":"success","ui1_retried":"ios:mdocUITests/S/testA","ui2_retried":"ios:mdocUITests/S/testB ios:mdocUITests/S/testC"}' run summary success unit 'ui 1' 'ui 2' ||
   fail "green summary with retried tests failed: $(cat "$tmp/out")"
 has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testA'
-has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testB'
-has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testC'
-[ "$(grep -c . "$tmp/out")" = 3 ] || fail "green summary says more than its retried tests: $(cat "$tmp/out")"
+has "$tmp/out" '::warning::Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testB, ios:mdocUITests/S/testC'
+[ "$(grep -c . "$tmp/out")" = 2 ] || fail "green summary says more than its retried tests: $(cat "$tmp/out")"
 has "$GITHUB_STEP_SUMMARY" '### ci/ios (ui 2): passed on retry'
 : >"$GITHUB_STEP_SUMMARY"
 if IOS_OUTPUTS='{"unit":"success","ui1":"failure","ui2":"success","ui1_tests":"ios:mdocUITests/S/testX","ui2_retried":"ios:mdocUITests/S/testB"}' run summary failure unit 'ui 1' 'ui 2'; then
