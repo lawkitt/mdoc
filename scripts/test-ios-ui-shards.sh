@@ -308,6 +308,18 @@ if [ -z "$second" ] || [ "$second" = "$first" ]; then fail "not pushed again: $(
 grep -q 'Moved: BUITests (2 → 1), CUITests (1 → 2)\.' "$tmp/out" || fail "moved: $(cat "$tmp/out")"
 [ "$(git -C "$tmp/origin.git" rev-parse "$second~1")" = "$main" ] || fail "not on main"
 [ "$(git -C "$tmp/origin.git" rev-parse main)" = "$main" ] || fail "main moved"
+# Once that refresh is merged nothing is due, and the branch goes; with no
+# branch, nothing is deleted.
+git -C "$repo" checkout -q main
+git -C "$repo" fetch -q origin nightly/ui-class-times
+git -C "$repo" merge -q --ff-only FETCH_HEAD
+git -C "$repo" push -q origin main
+refresh 0
+grep -q 'nothing to do' "$tmp/out" || fail "merged: $(cat "$tmp/out")"
+grep -q '^::notice title=UI class times::Deleted nightly/ui-class-times' "$tmp/out" || fail "not deleted: $(cat "$tmp/out")"
+[ -z "$(pushed)" ] || fail "the branch is still there"
+refresh 0
+! grep -q 'Deleted' "$tmp/out" || fail "deleted twice: $(cat "$tmp/out")"
 refresh 1 --days x
 cd "$root"
 

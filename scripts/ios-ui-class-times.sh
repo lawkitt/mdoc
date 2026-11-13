@@ -9,8 +9,10 @@
 # a class to the other shard, or measures a class the table lacks, it
 # commits the table as one commit on this checkout's HEAD (main) and
 # force-pushes it to the branch nightly/ui-class-times, unless that branch
-# already holds the same table on the same commit; otherwise it changes
-# nothing. It never pushes to main and opens no PR: the organization's
+# already holds the same table on the same commit; otherwise it deletes
+# that branch when it exists (its refresh is merged or out of date), and a
+# change of times that moves no class is left out, as it changes no shard.
+# It never pushes to main and opens no PR: the organization's
 # Actions policy lets no workflow open one, so the hub opens it from the
 # branch with its own token, and CI starts as on any PR. It says so, with
 # the classes that moved, in a notice on the run and the job summary
@@ -77,6 +79,12 @@ measured=$(awk -F '\t' '
   !/^#/ && !($1 in old) { print $1 }' "$table" "$tmp/new.tsv")
 if [ "$before" = "$after" ] && [ -z "$measured" ]; then
   echo "ui-class-times: no class changes shard and every measured class is in $table; nothing to do"
+  # An earlier refresh still waiting on the branch is out of date (or
+  # merged): deleting the branch also closes a PR opened from it.
+  if [ -z "$dry" ] && git ls-remote --exit-code -q origin "refs/heads/$branch" >/dev/null 2>&1; then
+    git push -q origin --delete "$branch"
+    echo "::notice title=UI class times::Deleted $branch: its refresh is merged or no longer moves a class."
+  fi
   exit 0
 fi
 
