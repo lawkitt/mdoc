@@ -1,5 +1,5 @@
 - **The detection gate runs on hosted Windows.** `ci/detection` moved from
-  hosted `macos-26` to `windows-latest`, in 8 shards from the job pool
+  hosted `macos-26` to `windows-latest`, in 12 shards from the job pool
   Windows shares with Linux, so it no longer waits for one of the five macOS
   runners. Hosted Windows is now the reference platform: the 256 recognition
   snapshots were recorded there again (193 had moved past the 1e-4 score

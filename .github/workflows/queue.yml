@@ -60,17 +60,17 @@ jobs:
     if: needs.areas.outputs.ios == 'true'
     uses: ./.github/workflows/ci-ios.yml
 
-  # Eight shards on hosted Windows (ADR 0113): the slowest holds about 95 s
-  # of the 5-minute model budget on a typical runner and 218 s (73%) on the
-  # slowest seen, 2.3 times as slow (ci-detection.yml); a shard warns past
-  # 80%. They take runners from the pool Windows shares with Linux, not the
-  # account's five macOS runners.
+  # Twelve shards on hosted Windows (ADR 0113): the slowest holds about 75 s
+  # of the 5-minute model budget on a typical runner and about 225 s (75%)
+  # on one 3 times as slow, the slowest seen (ci-detection.yml); a shard
+  # warns past 80%. They take runners from the pool Windows shares with
+  # Linux, not the account's five macOS runners.
   detection:
     needs: areas
     if: needs.areas.outputs.detection == 'true'
     uses: ./.github/workflows/ci-detection.yml
     with:
-      shards: 8
+      shards: 12
 
   # The ci area (ADR 0100): a change to only the CI machinery runs the script
   # suites on Linux and under bash 3.2, not the desktop jobs.

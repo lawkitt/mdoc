@@ -8,14 +8,15 @@ name: Detection gate
 # has none). The fixtures split over `shards` parallel jobs,
 # `ci/detection (<k>)`, from the 20-job pool Windows shares with Linux, not
 # the 5 macOS slots. A fixture takes 2.5 s on a typical runner (0.4 to
-# 16 s; 660 s for all 256, 2026-11-13), but runners differ: of 22 jobs, 3
-# ran 0.6 times as long, 2 1.25 times and one 2.3 times. A model run over 5
-# minutes fails, so the queue, the nightly and recognition-area PR heads
-# (ci.yml's `detection-head`) run 8 shards: the slowest holds about 95 s,
-# 218 s on that 2.3-times runner (73%). With 5 such a runner took 358 s and
-# failed; 9 to 12 gain little, since one fixture takes 16 s. A shard warns
-# past 80% of the budget, the signal to add one; the job logs the runner's
-# CPU.
+# 16 s; 660 s for all 256, 2026-11-13), but runners differ for a whole job,
+# whatever their CPU: of 38 jobs, 3 ran 0.6 times as long, 2 1.25 times and
+# 2 about 2.3 and 2.9 times (one Xeon 8573C ran 3 times as long as another).
+# A model run over 5 minutes fails, so the queue, the nightly and
+# recognition-area PR heads (ci.yml's `detection-head`) run 12 shards, ADR
+# 0113's limit: the slowest holds about 75 s, about 225 s (75%) on a runner
+# 3 times as slow. With 5 shards such a runner took 358 s and failed, with
+# 8 one took 250 s. A shard warns past 80% of the budget; past 12 shards the
+# ADR is reopened. The job logs the runner's CPU.
 # `ci/detection` sums the shards up and is the context merge-gate reads. A
 # failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
@@ -32,7 +33,7 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 8
+        default: 12
       build-only:
         description: Set up the model and build only, which saves both caches on main (main-caches.yml).
         type: boolean
@@ -44,9 +45,9 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over (8, so a slow runner stays inside the 5-minute model budget).
+        description: Parallel jobs the fixtures split over (12, so a slow runner stays inside the 5-minute model budget).
         type: number
-        default: 8
+        default: 12
       build-only:
         description: Set up the model and build only.
         type: boolean
@@ -71,7 +72,7 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 8 }}
+          SHARDS: ${{ inputs.shards || 12 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
