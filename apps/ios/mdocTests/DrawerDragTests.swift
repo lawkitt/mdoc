@@ -36,4 +36,21 @@ final class DrawerDragTests: XCTestCase {
         XCTAssertFalse(moves(165), "a row's middle")
         XCTAssertFalse(moves(4), "near the screen's edge")
     }
+
+    /// Which moves start a drawer drag (ADR 0114): past 10 pt and mostly
+    /// sideways; up or down is the text's scroll, a diagonal too.
+    func testADragStartsOnlyWhenClearlySideways() {
+        // The sidebar: the screen moves right to open.
+        func decide(_ dx: CGFloat, _ dy: CGFloat, open: Bool = false) -> Bool? {
+            DrawerDrag.decide(CGVector(dx: dx, dy: dy), sign: 1, isOpen: open)
+        }
+        XCTAssertNil(decide(3, 1), "not yet clear")
+        XCTAssertEqual(decide(12, 2), true, "sideways toward the open side")
+        XCTAssertEqual(decide(-5, 0), false, "closed, away from the open side")
+        XCTAssertEqual(decide(-12, 1, open: true), true, "open, either way")
+        XCTAssertEqual(decide(1, 4), false, "down: the text's scroll")
+        XCTAssertEqual(decide(10, 11), false, "a diagonal that goes farther down")
+        XCTAssertEqual(decide(12, 10), false, "a diagonal not mostly sideways")
+        XCTAssertNil(decide(8, 7), "a diagonal under 10 pt waits")
+    }
 }
