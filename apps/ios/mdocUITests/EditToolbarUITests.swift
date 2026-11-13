@@ -28,7 +28,7 @@ final class EditToolbarUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "the toolbar above the keyboard")
         // A fresh Simulator's keyboard first shows its slide-to-type tip
@@ -66,8 +66,8 @@ final class EditToolbarUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 44, id)
         }
         XCTAssertTrue(app.buttons["toolbar-formatting"].isHittable, "Aa always shows")
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(bold.waitUntilHittable(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(bold.waitUntilHittable(timeout: MdocUITest.timeout))
         // The toolbar sits just above the keyboard: its margin, then the
         // system's 44 pt prediction bar, then the keys. On `rc.7` a home
         // indicator's room lay between them too (82 pt to the keys).
@@ -76,14 +76,14 @@ final class EditToolbarUITests: XCTestCase {
         // Aa: the formatting keyboard in place of the system keyboard.
         app.buttons["toolbar-formatting"].tap()
         let heading = app.buttons["turn-heading2"]
-        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        XCTAssertTrue(heading.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(app.buttons["toolbar-formatting"].isSelected)
         // No key back to the system keyboard: Aa switches back (ADR 0110).
         XCTAssertFalse(app.buttons["formatting-keyboard-return"].exists)
         app.buttons["toolbar-formatting"].tap()
         XCTAssertTrue(heading.wait(until: NSPredicate(format: "exists == false"), timeout: 5))
         XCTAssertFalse(app.buttons["toolbar-formatting"].isSelected)
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         // Hide keyboard leaves edit mode on.
         app.buttons["toolbar-hide-keyboard"].tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
@@ -98,31 +98,31 @@ final class EditToolbarUITests: XCTestCase {
         app.typeText("- first\nsecond")
         for _ in 0..<2 { app.typeKey(.leftArrow, modifierFlags: []) }
         app.typeKey("b", modifierFlags: .command)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "**second**"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "**second**"), timeout: MdocUITest.timeout))
         app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "    - **second**"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "    - **second**"), timeout: MdocUITest.timeout))
         app.typeKey(XCUIKeyboardKey.tab, modifierFlags: .shift)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "\n- **second**"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "\n- **second**"), timeout: MdocUITest.timeout))
         // ⌘K: the link sheet, filled from the selection. Return twice ends
         // the list.
         app.typeKey(.rightArrow, modifierFlags: .command)
         app.typeText("\n\nsite")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "\nsite"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "\nsite"), timeout: MdocUITest.timeout))
         app.typeKey(.leftArrow, modifierFlags: [.option, .shift])
         app.typeKey("k", modifierFlags: .command)
         let url = app.textFields["link-url"]
-        XCTAssertTrue(url.waitForExistence(timeout: 5), "⌘K opens the link sheet")
+        XCTAssertTrue(url.waitForExistence(timeout: MdocUITest.timeout), "⌘K opens the link sheet")
         url.typeText("https://example.org")
         app.buttons["link-done"].tap()
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "[site](https://example.org)"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "[site](https://example.org)"), timeout: MdocUITest.timeout))
         // The caret is at the link: its chip offers Open and Edit.
-        XCTAssertTrue(app.buttons["link-edit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["link-edit"].waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(app.buttons["link-open"].isEnabled)
         app.buttons["link-edit"].tap()
-        XCTAssertTrue(app.textFields["link-url"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["link-url"].waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertEqual(app.textFields["link-url"].value as? String, "https://example.org")
         app.buttons["link-cancel"].tap()
-        XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 5), "the keyboard and toolbar come back")
+        XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: MdocUITest.timeout), "the keyboard and toolbar come back")
     }
 
     /// The accessibility audit with the toolbar up, then with the
@@ -151,7 +151,7 @@ final class EditToolbarUITests: XCTestCase {
         }
         XCTAssertEqual(try audit("toolbar"), [], "issues on the toolbar")
         app.buttons["toolbar-formatting"].tap()
-        XCTAssertTrue(app.buttons["turn-heading1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["turn-heading1"].waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertEqual(try audit("formatting-keyboard"), [], "issues on the formatting keyboard")
     }
 
@@ -180,7 +180,7 @@ final class EditToolbarUITests: XCTestCase {
         let list = app.buttons["toolbar-list"]
         if list.isHittable {
             list.tap()
-            XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Item"), timeout: 5))
+            XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Item"), timeout: MdocUITest.timeout))
         }
         XCTAssertTrue(app.buttons["toolbar-hide-keyboard"].isHittable)
     }

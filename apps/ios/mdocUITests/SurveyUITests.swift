@@ -32,18 +32,18 @@ final class SurveyUITests: XCTestCase {
         app.buttons["new-menu"].firstMatch.tap()
         // The menu's item, not Start's Paste tile of the same name.
         let pasteItem = app.collectionViews.buttons["Paste text"].firstMatch
-        XCTAssertTrue(pasteItem.waitForExistence(timeout: 5))
+        XCTAssertTrue(pasteItem.waitForExistence(timeout: MdocUITest.timeout))
         shot("02-add-menu")
         pasteItem.tap()
         let editor = app.textViews.firstMatch
-        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
         shot("03-paste-sheet-empty")
         editor.tap()
         editor.typeText(Self.pastedText)
         shot("04-paste-sheet-filled")
         nextOrAdd(app)
 
-        if app.buttons["import-add"].waitForExistence(timeout: 5) {
+        if app.buttons["import-add"].waitForExistence(timeout: MdocUITest.probeTimeout) {
             shot("05-import-sheet")
             app.buttons["import-add"].tap()
         }
@@ -61,23 +61,23 @@ final class SurveyUITests: XCTestCase {
         // brings the document back, open.
         app.descendants(matching: .any)["document-row"].firstMatch.press(forDuration: 1.0)
         let delete = app.buttons["Delete"].firstMatch
-        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        XCTAssertTrue(delete.waitForExistence(timeout: MdocUITest.timeout))
         delete.tap()
         let undo = app.buttons["toast-action"].firstMatch
-        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        XCTAssertTrue(undo.waitForExistence(timeout: MdocUITest.timeout))
         shot("40-delete-undo")
         undo.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         goHome(app)
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("09-settings")
         // About is the last row, below the fold on a phone.
         let about = app.buttons["settings-about"]
         for _ in 0..<4 where !about.isHittable { app.swipeUp() }
         shot("09-settings-end")
         about.tap()
-        XCTAssertTrue(app.staticTexts["Version"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Version"].waitForExistence(timeout: MdocUITest.timeout))
         shot("10-about")
     }
 
@@ -94,7 +94,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         shot("11-home-to-review")
         app.buttons["sidebar-cases"].firstMatch.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["case-row"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["case-row"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("39-cases")
         MdocUITest.revealSidebar(app)
         row.tap()
@@ -108,11 +108,11 @@ final class SurveyUITests: XCTestCase {
 
         email.tap()
         let bar = app.descendants(matching: .any)["review-bar"].firstMatch
-        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout))
         shot("14-review-bar")
         // Swipe up on the grabber: the identity's mentions (ADR 0098).
         app.descendants(matching: .any)["review-grabber"].firstMatch.swipeUp()
-        XCTAssertTrue(app.descendants(matching: .any)["review-details"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["review-details"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("15-review-bar-expanded")
         app.descendants(matching: .any)["review-grabber"].firstMatch.swipeDown()
         app.buttons["review-replace"].tap()
@@ -125,11 +125,11 @@ final class SurveyUITests: XCTestCase {
         if !app.staticTexts["Identities"].waitForExistence(timeout: 2) {
             app.buttons["identities-button"].tap()
         }
-        XCTAssertTrue(app.staticTexts["Identities"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Identities"].waitForExistence(timeout: MdocUITest.timeout))
         shot("17-identities")
         // Select: a tick on the left and a ≡ handle on the right of each row.
         app.buttons["identities-select"].firstMatch.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["identity-drag-handle"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["identity-drag-handle"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("41-identities-select")
         app.buttons["identities-select"].firstMatch.tap()
         if !isPad {
@@ -143,16 +143,16 @@ final class SurveyUITests: XCTestCase {
         let word = text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04))
         word.press(forDuration: 1.0)
         let replace = app.menuItems["Hide name"].firstMatch
-        XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Hide name in the edit menu")
+        XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout), "no Hide name in the edit menu")
         shot("18-selection-edit-menu")
         // Switching to dark and back closes the edit menu: open it again.
         if !replace.waitForExistence(timeout: 1) {
             word.press(forDuration: 1.0)
-            XCTAssertTrue(replace.waitForExistence(timeout: 5))
+            XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout))
         }
         replace.tap()
         // The mark is a proposal, and the bar opens on it.
-        XCTAssertTrue(app.descendants(matching: .any)["review-bar"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["review-bar"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("19-marked-proposal")
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
@@ -168,7 +168,7 @@ final class SurveyUITests: XCTestCase {
 
         app.buttons["paste-reply"].tap()
         let reply = app.textViews["reply-editor"]
-        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(reply.waitForExistence(timeout: MdocUITest.timeout))
         shot("23-reply-sheet-empty")
         reply.tap()
         reply.typeText(Self.replyText)
@@ -192,7 +192,7 @@ final class SurveyUITests: XCTestCase {
             let segment = app.segmentedControls.buttons["Identities"].firstMatch
             if segment.exists {
                 segment.tap()
-                segment.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5)
+                segment.wait(until: NSPredicate(format: "isSelected == true"), timeout: MdocUITest.timeout)
                 shot("26-pdf-text-identities")
             }
             // Landscape keeps Home, the text, the original and Identities
@@ -207,7 +207,7 @@ final class SurveyUITests: XCTestCase {
         shot("26-pdf-text")
         let original = app.buttons["Original"].firstMatch
         original.tap()
-        original.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5)
+        original.wait(until: NSPredicate(format: "isSelected == true"), timeout: MdocUITest.timeout)
         shot("27-pdf-original")
     }
 
@@ -254,12 +254,12 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         app.buttons["document-menu"].tap()
         let showMarkdown = app.descendants(matching: .any)["show-markdown"].firstMatch
-        XCTAssertTrue(showMarkdown.waitForExistence(timeout: 5))
+        XCTAssertTrue(showMarkdown.waitForExistence(timeout: MdocUITest.timeout))
         showMarkdown.tap()
         let edit = app.buttons["edit-button"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         edit.tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
         shot("42-markdown-edit-mode")
     }
@@ -276,18 +276,18 @@ final class SurveyUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         let edit = app.buttons["edit-button"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         edit.tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
         app.typeKey(.upArrow, modifierFlags: .command)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value BEGINSWITH %@", "# "), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value BEGINSWITH %@", "# "), timeout: MdocUITest.timeout))
         shot("43-live-preview-heading")
         // A bold word typed at the end, the caret moved back into it.
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText("\nPay **monthly**")
         for _ in 0..<4 { app.typeKey(.leftArrow, modifierFlags: []) }
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "**monthly**"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "**monthly**"), timeout: MdocUITest.timeout))
         shot("44-live-preview-bold")
     }
 
@@ -303,26 +303,26 @@ final class SurveyUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         let edit = app.buttons["edit-button"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         edit.tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText("\nPay **monthly**")
         for _ in 0..<4 { app.typeKey(.leftArrow, modifierFlags: []) }
-        XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
+        XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "isSelected == true"), timeout: MdocUITest.timeout))
         shot("45-edit-toolbar")
         app.buttons["toolbar-formatting"].tap()
-        XCTAssertTrue(app.buttons["turn-text"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
+        XCTAssertTrue(app.buttons["turn-text"].wait(until: NSPredicate(format: "isSelected == true"), timeout: MdocUITest.timeout))
         shot("46-formatting-keyboard")
         // The caret in the link: its chip offers Open and Edit.
         app.buttons["toolbar-formatting"].tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText(" to [the agent](https://example.com)")
         app.typeKey(.leftArrow, modifierFlags: [])
-        XCTAssertTrue(app.buttons["link-edit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["link-edit"].waitForExistence(timeout: MdocUITest.timeout))
         shot("47-edit-link-chip")
     }
 
@@ -338,18 +338,18 @@ final class SurveyUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         let edit = app.buttons["edit-button"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         edit.tap()
         // The keyboard waits for a tap in the text (ADR 0110).
         MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText("\nPay monthly\n")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value ENDSWITH %@)", "monthly"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value ENDSWITH %@)", "monthly"), timeout: MdocUITest.timeout))
         _ = MdocUITest.caretRect(in: text)
         shot("52-edit-caret-empty-line")
         app.typeText((1...8).map { "Clause \($0) of the lease" }.joined(separator: "\n"))
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Clause 8 of the lease"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Clause 8 of the lease"), timeout: MdocUITest.timeout))
         shot("53-edit-caret-last-line")
     }
 
@@ -362,7 +362,7 @@ final class SurveyUITests: XCTestCase {
         MdocUITest.revealSidebar(app)
         app.buttons["new-menu"].firstMatch.tap()
         let item = app.collectionViews.buttons["New document"].firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        XCTAssertTrue(item.waitForExistence(timeout: MdocUITest.timeout))
         shot("50-new-menu")
         item.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
@@ -378,17 +378,17 @@ final class SurveyUITests: XCTestCase {
     func test10TableEditing() throws {
         let (app, _) = TableEditingUITests.editCell("Депозит")
         app.typeText(" paid")
-        XCTAssertTrue(TableEditingUITests.cell(app, "Депозит paid").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 5))
+        XCTAssertTrue(TableEditingUITests.cell(app, "Депозит paid").waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: MdocUITest.timeout))
         shot("57-table-toolbar")
         app.buttons["table-more"].tap()
-        XCTAssertTrue(app.buttons["Delete table"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Delete table"].waitForExistence(timeout: MdocUITest.timeout))
         shot("58-table-menu")
         // The menu closes without a choice; Aa: the formatting keyboard.
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
         XCTAssertTrue(app.buttons["Delete table"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
         app.buttons["toolbar-formatting"].tap()
-        XCTAssertTrue(app.buttons["format-strikethrough"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["format-strikethrough"].waitForExistence(timeout: MdocUITest.timeout))
         shot("59-table-formatting-keyboard")
     }
 
@@ -415,7 +415,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.textViews["document-text"].links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         shot("54-review-long-title")
         app.buttons["edit-button"].tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         shot("55-edit-mode-bar")
         MdocUITest.tapIntoText(app)
         shot("56-edit-mode-keyboard")
@@ -443,7 +443,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["edit-button"].waitForExistence(timeout: 30))
         shot("65-lists-review")
         app.buttons["edit-button"].tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
         // From the title down past the blank line and the first item's two
         // lines, onto the nested item.
@@ -496,11 +496,11 @@ final class SurveyUITests: XCTestCase {
 
         app.buttons["empty-paste"].firstMatch.tap()
         let editor = app.textViews.firstMatch
-        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
         editor.tap()
         editor.typeText(Self.pastedText)
         nextOrAdd(app)
-        if app.buttons["import-add"].waitForExistence(timeout: 5) {
+        if app.buttons["import-add"].waitForExistence(timeout: MdocUITest.probeTimeout) {
             app.buttons["import-add"].tap()
         }
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 30))
@@ -511,7 +511,7 @@ final class SurveyUITests: XCTestCase {
 
         goHome(app)
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("33-settings-below-floor")
     }
 
@@ -524,13 +524,13 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         shot("34-home-ax-text")
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("35-settings-ax-text")
         let font = app.descendants(matching: .any)["settings-document-font"].firstMatch
         for _ in 0..<3 where !font.isHittable { app.swipeUp() }
         font.tap()
         let serif = app.buttons["Serif"].firstMatch
-        XCTAssertTrue(serif.waitForExistence(timeout: 5))
+        XCTAssertTrue(serif.waitForExistence(timeout: MdocUITest.timeout))
         serif.tap()
         app.buttons["Done"].firstMatch.tap()
         MdocUITest.revealSidebar(app)
@@ -583,7 +583,7 @@ final class SurveyUITests: XCTestCase {
     @MainActor
     private func goHome(_ app: XCUIApplication) {
         MdocUITest.revealSidebar(app)
-        app.buttons["settings-button"].firstMatch.waitUntilHittable(timeout: 5)
+        app.buttons["settings-button"].firstMatch.waitUntilHittable(timeout: MdocUITest.timeout)
     }
 
     @MainActor
@@ -624,7 +624,7 @@ final class SurveyUITests: XCTestCase {
         let restore = sheet.descendants(matching: .any)
             .matching(NSPredicate(format: "label IN {'Restore with mdoc', 'mdoc'}"))
             .firstMatch
-        XCTAssertTrue(restore.waitForExistence(timeout: 5), "Restore with mdoc is not in the share sheet")
+        XCTAssertTrue(restore.waitForExistence(timeout: MdocUITest.timeout), "Restore with mdoc is not in the share sheet")
         let sharing = XCUIScreen.main.screenshot()
         restore.tap()
         // The extension runs in its own process; its sheet shows in the

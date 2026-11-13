@@ -18,6 +18,17 @@ extension XCUIElement {
 }
 
 extension MdocUITest {
+    /// How long a test waits for something to appear: an element, a value
+    /// or a state. A pass waits only until it shows, so the room is for a
+    /// slow hosted runner, not a cost to every run. Waits for something to
+    /// go away keep their own, shorter timeouts.
+    static let timeout: TimeInterval = 15
+
+    /// How long a test looks for something that may rightly never show (a
+    /// question only some networks ask, a sheet a step may skip), where the
+    /// full `timeout` would slow every run that goes the other way.
+    static let probeTimeout: TimeInterval = 5
+
     /// Waits up to `timeout` for `done`, checking it every `interval` (ten
     /// times a second by default, as XCTest's own waits do) while the run
     /// loop goes on.

@@ -25,7 +25,7 @@ final class NewDocumentUITests: XCTestCase {
         MdocUITest.revealSidebar(app)
         app.buttons["new-menu"].firstMatch.tap()
         let item = app.collectionViews.buttons["New document"].firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        XCTAssertTrue(item.waitForExistence(timeout: MdocUITest.timeout))
         // First in the menu: nearest the + button, which is below the menu,
         // so the last row, with the camera farthest away (ADR 0088).
         let items = app.collectionViews.buttons
@@ -34,7 +34,7 @@ final class NewDocumentUITests: XCTestCase {
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard comes up")
         let text = app.textViews["document-text"]
-        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        XCTAssertTrue(text.waitForExistence(timeout: MdocUITest.timeout))
         return text
     }
 
@@ -60,7 +60,7 @@ final class NewDocumentUITests: XCTestCase {
         }
         XCTAssertTrue(done.exists, "edit mode")
         XCTAssertEqual(app.buttons["title-menu"].label, "New document")
-        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: MdocUITest.timeout))
     }
 
     /// Left untouched, a new document leaves no row behind.
@@ -69,9 +69,9 @@ final class NewDocumentUITests: XCTestCase {
         let app = launch()
         _ = newDocument(app)
         MdocUITest.revealSidebar(app)
-        XCTAssertTrue(row(app, title: "New document").waitForExistence(timeout: 5), "listed while it is open")
+        XCTAssertTrue(row(app, title: "New document").waitForExistence(timeout: MdocUITest.timeout), "listed while it is open")
         let documents = app.descendants(matching: .any)["sidebar-documents"].firstMatch
-        XCTAssertTrue(documents.waitForExistence(timeout: 5))
+        XCTAssertTrue(documents.waitForExistence(timeout: MdocUITest.timeout))
         documents.tap()
         XCTAssertTrue(row(app, title: "New document").waitForNonExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["document-row"].firstMatch.exists)

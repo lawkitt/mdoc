@@ -38,7 +38,7 @@ final class LivePreviewUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         MdocUITest.tapIntoText(app)
         return (app, text)
     }
@@ -52,17 +52,17 @@ final class LivePreviewUITests: XCTestCase {
         // the caret's line shows it.
         app.typeText("\n- Milk\nBread\n")
         XCTAssertTrue(
-            text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Bread\n- "), timeout: 5),
+            text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Bread\n- "), timeout: MdocUITest.timeout),
             String(describing: (text.value as? String)?.suffix(80)))
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Milk\n"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Milk\n"), timeout: MdocUITest.timeout))
         // ⌘Z takes back the last Return, then the word before it.
         app.typeKey("z", modifierFlags: .command)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: MdocUITest.timeout))
         app.typeKey("z", modifierFlags: .command)
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value CONTAINS %@)", "Bread"), timeout: 5))
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Milk\n- "), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value CONTAINS %@)", "Bread"), timeout: MdocUITest.timeout))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Milk\n- "), timeout: MdocUITest.timeout))
         app.typeKey("z", modifierFlags: [.command, .shift])
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: MdocUITest.timeout))
     }
 
     /// The caret on an empty line, after Return, is as tall as on the
@@ -76,10 +76,10 @@ final class LivePreviewUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
         // A word of text, the caret after it; then Return: a new line.
         app.typeText("Word")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Word"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Word"), timeout: MdocUITest.timeout))
         let onText = try XCTUnwrap(MdocUITest.caretRect(in: text), "the caret blinks after the word")
         app.typeText("\n")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value ENDSWITH %@)", "Word"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "NOT (value ENDSWITH %@)", "Word"), timeout: MdocUITest.timeout))
         let onEmpty = try XCTUnwrap(MdocUITest.caretRect(in: text), "the caret blinks on the empty line")
         XCTAssertLessThan(onEmpty.minX, onText.minX - 10, "the caret went to a new line: \(onText) then \(onEmpty)")
         XCTAssertEqual(onEmpty.height, onText.height, accuracy: 2, "as tall as on the text: \(onText) then \(onEmpty)")
@@ -117,7 +117,7 @@ final class LivePreviewUITests: XCTestCase {
             contentSize: "UICTContentSizeCategoryAccessibilityXXXL")
         XCTAssertTrue(app.buttons["done-editing"].isHittable)
         app.typeText("Zephyrine")
-        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine"), timeout: 5))
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine"), timeout: MdocUITest.timeout))
     }
 
     /// The accessibility audit in live-preview edit mode (ADR 0109): no

@@ -21,11 +21,11 @@ final class ReviewToolsUITests: XCTestCase {
         // Find in document, then Hide name: the bar opens on the proposal.
         app.buttons["document-menu"].tap()
         let find = app.buttons["find-in-document"]
-        XCTAssertTrue(find.waitForExistence(timeout: 5))
+        XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
         find.tap()
         typeInFindField(app, "Bennett")
         let hide = app.buttons["find-hide-name"]
-        XCTAssertTrue(hide.waitForExistence(timeout: 5))
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(hide.isEnabled)
         hide.tap()
         let bar = app.descendants(matching: .any)["review-bar"].firstMatch
@@ -33,7 +33,7 @@ final class ReviewToolsUITests: XCTestCase {
 
         // The mentions chip steps through the name's repeats.
         let mentions = app.buttons["review-mentions"]
-        XCTAssertTrue(mentions.waitForExistence(timeout: 5), "the marked surname has repeats")
+        XCTAssertTrue(mentions.waitForExistence(timeout: MdocUITest.timeout), "the marked surname has repeats")
         let before = mentions.label
         mentions.tap()
         XCTAssertNotEqual(app.buttons["review-mentions"].label, before)
@@ -47,7 +47,7 @@ final class ReviewToolsUITests: XCTestCase {
         // Swipe up on the grabber: the expanded view; down closes it.
         let grabber = app.descendants(matching: .any)["review-grabber"].firstMatch
         grabber.swipeUp()
-        XCTAssertTrue(app.descendants(matching: .any)["review-details"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["review-details"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         grabber.swipeDown()
 
         // A hardware key: K keeps, which Undo can take back.
@@ -57,9 +57,9 @@ final class ReviewToolsUITests: XCTestCase {
         // New alias splits this mention off, with Undo in the toast.
         app.buttons["review-alias"].tap()
         let newAlias = app.buttons["New alias"]
-        if newAlias.waitForExistence(timeout: 5), newAlias.isEnabled {
+        if newAlias.waitForExistence(timeout: MdocUITest.probeTimeout), newAlias.isEnabled {
             newAlias.tap()
-            XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: MdocUITest.timeout))
         } else {
             app.tap()
         }
@@ -69,7 +69,7 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(MdocUITest.showIdentities(app))
         app.buttons["identities-search-button"].firstMatch.tap()
         let search = app.textFields["identities-search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.waitForExistence(timeout: MdocUITest.timeout))
         search.typeText("zzzz")
         let rows = app.descendants(matching: .any).matching(identifier: "identity-row")
         XCTAssertEqual(rows.count, 0, "nothing matches zzzz")
@@ -78,9 +78,9 @@ final class ReviewToolsUITests: XCTestCase {
         app.buttons["identities-select"].firstMatch.tap()
         rows.firstMatch.tap()
         let selectionBar = app.descendants(matching: .any)["identities-selection-bar"].firstMatch
-        XCTAssertTrue(selectionBar.waitForExistence(timeout: 5))
+        XCTAssertTrue(selectionBar.waitForExistence(timeout: MdocUITest.timeout))
         selectionBar.buttons["Replace"].tap()
-        XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: 5), "Undo for the selection")
+        XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: MdocUITest.timeout), "Undo for the selection")
     }
 
     /// A hardware keyboard drives the bar as desktop's keys do (ADR 0098,
@@ -97,7 +97,7 @@ final class ReviewToolsUITests: XCTestCase {
         app.buttons["find-in-document"].tap()
         typeInFindField(app, "Bennett")
         let hide = app.buttons["find-hide-name"]
-        XCTAssertTrue(hide.waitForExistence(timeout: 5))
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         hide.tap()
         XCTAssertTrue(app.descendants(matching: .any)["review-bar"].firstMatch.waitForExistence(timeout: 10))
 
@@ -130,7 +130,7 @@ final class ReviewToolsUITests: XCTestCase {
     @MainActor
     private func typeInFindField(_ app: XCUIApplication, _ text: String) {
         let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 10), .completed,
                        "the Find field never took focus")
@@ -139,16 +139,16 @@ final class ReviewToolsUITests: XCTestCase {
 
     private func expectLabel(of element: XCUIElement, _ label: String) {
         let same = NSPredicate(format: "label == %@", label)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: same, evaluatedWith: element)], timeout: 5), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: same, evaluatedWith: element)], timeout: MdocUITest.timeout), .completed)
     }
 
     private func expectChange(of element: XCUIElement, from label: String) {
         let changed = NSPredicate(format: "label != %@", label)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: changed, evaluatedWith: element)], timeout: 5), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: changed, evaluatedWith: element)], timeout: MdocUITest.timeout), .completed)
     }
 
     private func expectEnabled(_ element: XCUIElement) {
         let enabled = NSPredicate(format: "isEnabled == true")
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: enabled, evaluatedWith: element)], timeout: 5), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: enabled, evaluatedWith: element)], timeout: MdocUITest.timeout), .completed)
     }
 }

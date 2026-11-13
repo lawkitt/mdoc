@@ -28,7 +28,7 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
         // No selection: the keyboard waits for the tap in the cell (ADR 0110).
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         let target = Self.cell(app, cell)
         // The cells take no touches in edit mode (the grid does): the
         // cell is found, and the grid under it tapped.
@@ -64,36 +64,36 @@ final class TableEditingUITests: XCTestCase {
         let (app, target) = Self.editCell("Депозит")
         let more = app.buttons["table-more"]
         let shown = { more.exists && more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 }
-        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole")
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout, until: shown), "⋯ shows whole")
         app.buttons["done-editing"].tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
         app.buttons["edit-button"].tap()
-        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         if !app.buttons["toolbar-bold"].waitForExistence(timeout: 2) {
             target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         }
         XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 10), "the caret is in the cell again")
-        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "⋯ shows whole again")
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout, until: shown), "⋯ shows whole again")
 
         app.typeText(" paid")
         let typed = Self.cell(app, "Депозит paid")
-        XCTAssertTrue(typed.waitForExistence(timeout: 5), "the typed text shows in its cell")
+        XCTAssertTrue(typed.waitForExistence(timeout: MdocUITest.timeout), "the typed text shows in its cell")
         XCTAssertTrue(Self.cell(app, "£1,725").exists, "the cell beside it is untouched")
         // Tab to the next cell, then back: the caret moves, nothing types.
         app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
         app.typeText("!")
-        XCTAssertTrue(Self.cell(app, "!£1,725").waitForExistence(timeout: 5), "Tab moves to the next cell's start")
+        XCTAssertTrue(Self.cell(app, "!£1,725").waitForExistence(timeout: MdocUITest.timeout), "Tab moves to the next cell's start")
         // The toolbar's table controls (ADR 0110): Row below adds an empty
         // row; they take the list and task buttons' place.
         let cells = app.textViews.count
         let below = app.buttons["table-row-below"]
-        XCTAssertTrue(below.waitForExistence(timeout: 5), "the table controls in a cell")
+        XCTAssertTrue(below.waitForExistence(timeout: MdocUITest.timeout), "the table controls in a cell")
         XCTAssertFalse(app.buttons["toolbar-list"].exists, "no list button in a cell")
         XCTAssertFalse(app.buttons["toolbar-task"].exists, "no task button in a cell")
         XCTAssertFalse(app.buttons["toolbar-indent"].exists, "no indent in a cell, where it never applies")
         // The capsule scrolled to its end: ⋯ shows whole, left of Aa.
         XCTAssertTrue(
-            MdocUITest.wait(timeout: 5) { more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 },
+            MdocUITest.wait(timeout: MdocUITest.timeout) { more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 },
             "⋯ shows whole")
         for id in ["table-row-below", "table-column-right", "table-more"] {
             let frame = app.buttons[id].frame
@@ -106,11 +106,11 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertEqual(redo.minX, undo.maxX, accuracy: 1, "Redo beside it")
         XCTAssertGreaterThanOrEqual(min(undo.width, redo.width), 44)
         below.tap()
-        XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells + 2 }, "a row of two cells")
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout) { app.textViews.count == cells + 2 }, "a row of two cells")
         // The caret is in the new row, in the same column (ADR 0110).
         app.typeText("Z")
         let typedZ = Self.cell(app, "Z")
-        XCTAssertTrue(typedZ.waitForExistence(timeout: 5), "typed into a cell")
+        XCTAssertTrue(typedZ.waitForExistence(timeout: MdocUITest.timeout), "typed into a cell")
         let above = Self.cell(app, "!£1,725").frame
         XCTAssertEqual(typedZ.frame.minX, above.minX, accuracy: 1, "in the same column")
         XCTAssertEqual(typedZ.frame.minY, above.maxY, accuracy: 1, "in the new row below")
@@ -118,7 +118,7 @@ final class TableEditingUITests: XCTestCase {
         app.buttons["toolbar-undo"].tap()
         XCTAssertTrue(typedZ.wait(until: NSPredicate(format: "exists == false"), timeout: 5), "Undo takes the typing back")
         app.buttons["toolbar-undo"].tap()
-        XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells }, "Undo takes the row back")
+        XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout) { app.textViews.count == cells }, "Undo takes the row back")
         XCTAssertTrue(Self.cell(app, "!£1,725").exists)
     }
 
@@ -129,10 +129,10 @@ final class TableEditingUITests: XCTestCase {
     func testTheTableMenu() throws {
         let (app, _) = Self.editCell("Сумма")
         let more = app.buttons["table-more"]
-        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(more.waitForExistence(timeout: MdocUITest.timeout))
         more.tap()
         let deleteTable = app.buttons["Delete table"]
-        XCTAssertTrue(deleteTable.waitForExistence(timeout: 5), "the ⋯ menu opens")
+        XCTAssertTrue(deleteTable.waitForExistence(timeout: MdocUITest.timeout), "the ⋯ menu opens")
         for item in ["Row above", "Column left", "Delete row", "Delete column", "Align column"] {
             XCTAssertTrue(app.buttons[item].exists, item)
         }
@@ -141,7 +141,7 @@ final class TableEditingUITests: XCTestCase {
         // Align column: the column's alignment is checked.
         app.buttons["Align column"].tap()
         let right = app.buttons["Right"]
-        XCTAssertTrue(right.waitForExistence(timeout: 5))
+        XCTAssertTrue(right.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(right.isSelected, "the amount column is right-aligned")
         XCTAssertFalse(app.buttons["Left"].isSelected)
         right.tap()
@@ -149,7 +149,7 @@ final class TableEditingUITests: XCTestCase {
         // Delete column: the caret's column goes, the keyboard stays.
         let cells = app.textViews.count
         more.tap()
-        XCTAssertTrue(app.buttons["Delete column"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Delete column"].waitForExistence(timeout: MdocUITest.timeout))
         app.buttons["Delete column"].tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count < cells }, "the column is gone")
         XCTAssertFalse(Self.cell(app, "Сумма").exists)
@@ -163,7 +163,7 @@ final class TableEditingUITests: XCTestCase {
         let (app, _) = Self.editCell("Депозит")
         app.buttons["toolbar-formatting"].tap()
         let strike = app.buttons["format-strikethrough"]
-        XCTAssertTrue(strike.waitForExistence(timeout: 5), "the formatting keyboard in a cell")
+        XCTAssertTrue(strike.waitForExistence(timeout: MdocUITest.timeout), "the formatting keyboard in a cell")
         for id in ["format-strikethrough", "format-code", "format-highlight", "format-link"] {
             XCTAssertTrue(app.buttons[id].isEnabled, id)
         }
@@ -175,7 +175,7 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["table-row-below"].exists, "the table controls stay in the toolbar")
         strike.tap()
         // The caret is in struck-through text now: the key shows on.
-        XCTAssertTrue(strike.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5), "strikethrough in the cell")
+        XCTAssertTrue(strike.wait(until: NSPredicate(format: "isSelected == true"), timeout: MdocUITest.timeout), "strikethrough in the cell")
         XCTAssertTrue(app.buttons["toolbar-undo"].isEnabled, "one edit made")
     }
 
@@ -186,7 +186,7 @@ final class TableEditingUITests: XCTestCase {
     func testTheTableControlsScrollAtAnAccessibilitySize() throws {
         let (app, _) = Self.editCell("Депозит", contentSize: "UICTContentSizeCategoryAccessibilityXXXL")
         let more = app.buttons["table-more"]
-        XCTAssertTrue(more.waitUntilHittable(timeout: 5), "the capsule scrolls to ⋯ in a cell")
+        XCTAssertTrue(more.waitUntilHittable(timeout: MdocUITest.timeout), "the capsule scrolls to ⋯ in a cell")
         let undo = app.buttons["toolbar-undo"]
         let aa = app.buttons["toolbar-formatting"].frame
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
@@ -210,7 +210,7 @@ final class TableEditingUITests: XCTestCase {
     func testTheAccessibilityAuditWithTheTableControlsUp() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_A11Y_EXPLORE"] == "1", "exploration only")
         let (app, _) = Self.editCell("Депозит")
-        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: MdocUITest.timeout))
         var found: [String] = []
         try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait, .hitRegion]) { issue in
             let identifier = issue.element?.identifier ?? ""

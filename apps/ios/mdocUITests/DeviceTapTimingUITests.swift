@@ -26,7 +26,7 @@ final class DeviceTapTimingUITests: XCTestCase {
         XCTAssertTrue(email.waitForExistence(timeout: 30))
         MdocUITest.tapAboveBottomBar(email, in: text, app)
         let replace = app.buttons["review-replace"]
-        XCTAssertTrue(replace.waitForExistence(timeout: 5))
+        XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout))
 
         let tap = XCTOSSignpostMetric(subsystem: "io.github.lawkitt.mdoc", category: "Review", name: "Review tap")
         let options = XCTMeasureOptions()
@@ -35,10 +35,10 @@ final class DeviceTapTimingUITests: XCTestCase {
             replace.tap()
             XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
             let undo = app.buttons["toast-action"]
-            XCTAssertTrue(undo.waitForExistence(timeout: 5))
+            XCTAssertTrue(undo.waitForExistence(timeout: MdocUITest.timeout))
             undo.tap()
             XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
-            XCTAssertTrue(replace.waitForExistence(timeout: 5))
+            XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout))
         }
     }
 }

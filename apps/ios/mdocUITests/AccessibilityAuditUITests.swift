@@ -19,9 +19,9 @@ final class AccessibilityAuditExploreUITests: XCTestCase {
         XCTAssertTrue(app.buttons["primary-action"].waitForExistence(timeout: 10))
         audit(app, "review")
         let email = app.textViews.firstMatch.links[MdocUITest.email].firstMatch
-        if email.waitForExistence(timeout: 5) {
+        if email.waitForExistence(timeout: MdocUITest.timeout) {
             email.tap()
-            if app.buttons["review-replace"].waitForExistence(timeout: 5) {
+            if app.buttons["review-replace"].waitForExistence(timeout: MdocUITest.timeout) {
                 audit(app, "review-bar")
                 app.buttons["review-replace"].tap()
                 if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
@@ -36,7 +36,7 @@ final class AccessibilityAuditExploreUITests: XCTestCase {
         if app.buttons["paste-reply"].waitForExistence(timeout: 10) {
             audit(app, "replaced")
             app.buttons["paste-reply"].tap()
-            if app.buttons["reply-restore"].waitForExistence(timeout: 5) {
+            if app.buttons["reply-restore"].waitForExistence(timeout: MdocUITest.timeout) {
                 audit(app, "reply-sheet")
                 app.buttons["Cancel"].firstMatch.tap()
             }

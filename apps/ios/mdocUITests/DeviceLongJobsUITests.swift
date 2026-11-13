@@ -60,7 +60,7 @@ final class DeviceLongJobsUITests: XCTestCase {
         // A phone with no detector in either library: Find names offers its
         // download (ADR 0090) and goes on once it is in.
         let detector = app.buttons["setup-download"].firstMatch
-        if detector.waitForExistence(timeout: 5) {
+        if detector.waitForExistence(timeout: MdocUITest.probeTimeout) {
             detector.tap()
             MdocUITest.answerCellularQuestion(app)
         }

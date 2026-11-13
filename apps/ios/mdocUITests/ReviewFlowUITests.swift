@@ -26,7 +26,7 @@ final class ReviewFlowUITests: XCTestCase {
         MdocUITest.tapAboveBottomBar(email, in: text, app)
         // The review bar opens on it (ADR 0098); Replace takes every mention.
         let replace = app.buttons["review-replace"]
-        XCTAssertTrue(replace.waitForExistence(timeout: 5))
+        XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(app.descendants(matching: .any)["review-alias"].firstMatch.exists)
         replace.tap()
         // The text view rebuilds its elements after a change; ask the app.
@@ -37,7 +37,7 @@ final class ReviewFlowUITests: XCTestCase {
         // the bar back on it with no toast (ADR 0106), and the Undo button's
         // long press redoes.
         let toastUndo = app.buttons["toast-action"]
-        XCTAssertTrue(toastUndo.waitForExistence(timeout: 5))
+        XCTAssertTrue(toastUndo.waitForExistence(timeout: MdocUITest.timeout))
         toastUndo.tap()
         XCTAssertTrue(toastUndo.waitForNonExistence(timeout: 5), "no Redo toast")
         XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
@@ -45,14 +45,14 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertTrue(undo.exists)
         undo.press(forDuration: 1.0)
         let redo = app.buttons["Redo"].firstMatch
-        XCTAssertTrue(redo.waitForExistence(timeout: 5))
+        XCTAssertTrue(redo.waitForExistence(timeout: MdocUITest.timeout))
         redo.tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         // Replace any remaining proposals, as reviewed.
         let primary = app.buttons["primary-action"]
-        XCTAssertTrue(primary.waitForExistence(timeout: 5))
+        XCTAssertTrue(primary.waitForExistence(timeout: MdocUITest.timeout))
         if primary.label.hasPrefix("Replace") {
             primary.tap()
         }
@@ -67,7 +67,7 @@ final class ReviewFlowUITests: XCTestCase {
         // Restore: paste the AI's reply into the document.
         app.buttons["paste-reply"].tap()
         let editor = app.textViews["reply-editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(editor.waitForExistence(timeout: MdocUITest.timeout))
         editor.tap()
         editor.typeText("Write to EMAIL_1 today. EMAIL_9 is new.")
         app.buttons["reply-restore"].tap()
@@ -207,7 +207,7 @@ enum MdocUITest {
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
         if sidebar.exists && sidebar.isHittable { return }
         let button = app.buttons["show-sidebar"].firstMatch
-        guard button.waitForExistence(timeout: 5) else { return }
+        guard button.waitForExistence(timeout: MdocUITest.probeTimeout) else { return }
         // A tap in the first seconds after launch can be lost (#711), so tap
         // again until the drawer is open.
         for _ in 0..<5 {
@@ -251,7 +251,7 @@ enum MdocUITest {
             guard button.waitForExistence(timeout: 2) else { return false }
             button.tap()
         }
-        return heading.waitForExistence(timeout: 5)
+        return heading.waitForExistence(timeout: MdocUITest.timeout)
     }
 
     @MainActor
