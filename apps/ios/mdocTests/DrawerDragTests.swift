@@ -53,4 +53,17 @@ final class DrawerDragTests: XCTestCase {
         XCTAssertEqual(decide(12, 10), false, "a diagonal not mostly sideways")
         XCTAssertNil(decide(8, 7), "a diagonal under 10 pt waits")
     }
+
+    /// Which panel shows when the bindings change: the one just asked for
+    /// wins (⌘K's search over Identities opens the sidebar), then the open one.
+    func testThePanelJustAskedForShows() {
+        func wanted(_ leading: Bool, _ trailing: Bool, was: (Bool, Bool), open: DrawerSide?) -> DrawerSide? {
+            DrawerDrag.wanted(leading: leading, trailing: trailing, wasLeading: was.0, wasTrailing: was.1, open: open)
+        }
+        XCTAssertEqual(wanted(true, true, was: (false, true), open: .trailing), .leading, "search over Identities")
+        XCTAssertEqual(wanted(true, true, was: (true, false), open: .leading), .trailing, "Identities over the sidebar")
+        XCTAssertEqual(wanted(false, true, was: (true, true), open: .leading), .trailing, "the sidebar closes, Identities stays asked for")
+        XCTAssertNil(wanted(false, false, was: (false, true), open: .trailing), "Identities closes")
+        XCTAssertEqual(wanted(true, false, was: (false, false), open: nil), .leading, "☰")
+    }
 }

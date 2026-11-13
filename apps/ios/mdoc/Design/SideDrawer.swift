@@ -373,9 +373,17 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         // Only a change from SwiftUI: while a slide of the drawer's own is on
         // its way, SwiftUI still holds the old values until it ends.
         guard leading != leadingPanel.bound || trailing != trailingPanel.bound else { return }
+        let wanted = DrawerDrag.wanted(
+            leading: leading, trailing: trailing && trailingPanel.present,
+            wasLeading: leadingPanel.bound, wasTrailing: trailingPanel.bound, open: openSide)
         leadingPanel.bound = leading
         trailingPanel.bound = trailing
-        let wanted: DrawerSide? = trailing && trailingPanel.present ? .trailing : leading ? .leading : nil
+        // One panel at a time: the other's `isOpen` goes back to false, after
+        // this update (⌘K's search over Identities, say).
+        let other: DrawerSide? = wanted == .leading && trailing ? .trailing : wanted == .trailing && leading ? .leading : nil
+        if let other {
+            DispatchQueue.main.async { [weak self] in self?.tellSwiftUI(other, open: false) }
+        }
         guard wanted != openSide else { return }
         cancelDrag()
         if let wanted, wanted != active {
@@ -823,6 +831,18 @@ enum DrawerDrag {
         // Mostly sideways, or it belongs to a scroll.
         guard across > down * 1.2 else { return false }
         return isOpen || toward
+    }
+
+    /// Which panel shows when SwiftUI's `isOpen`s change from `was…` to
+    /// `leading` and `trailing` while `open` shows: the one just asked for
+    /// wins, then the one already open, then Identities over the sidebar.
+    static func wanted(
+        leading: Bool, trailing: Bool, wasLeading: Bool, wasTrailing: Bool, open: DrawerSide?
+    ) -> DrawerSide? {
+        if leading && !wasLeading { return .leading }
+        if trailing && !wasTrailing { return .trailing }
+        if let open, open == .leading ? leading : trailing { return open }
+        return trailing ? .trailing : leading ? .leading : nil
     }
 
     static func panelWidth(_ total: CGFloat) -> CGFloat {

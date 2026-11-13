@@ -46,8 +46,8 @@ final class DeviceTapTimingUITests: XCTestCase {
 
     /// A drawer drag drops no frames on a phone (ADR 0114): the "Drawer
     /// drag" animation interval, from the finger's first move to the end of
-    /// the slide, opening the sidebar from the middle of the text and
-    /// closing it from the sliver. XCTest reports its hitches and frame rate.
+    /// the slide, opening the sidebar and Identities from the middle of the
+    /// text and closing each from its sliver. XCTest reports its hitches and frame rate.
     @MainActor
     func testADrawerDragsHitches() throws {
         #if targetEnvironment(simulator)
@@ -74,11 +74,16 @@ final class DeviceTapTimingUITests: XCTestCase {
         let hitches = XCTOSSignpostMetric(subsystem: "io.github.lawkitt.mdoc", category: "Drawer", name: "Drawer drag")
         let options = XCTMeasureOptions()
         options.iterationCount = 5
+        let identities = app.descendants(matching: .any)["identities-panel"].firstMatch
         measure(metrics: [hitches], options: options) {
             drag(fromX: width * 0.3, by: width * 0.6)
             XCTAssertTrue(sidebar.waitUntilHittable(timeout: 5))
             drag(fromX: width - 30, by: -(width * 0.6))
             XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5))
+            drag(fromX: width * 0.7, by: -(width * 0.6))
+            XCTAssertTrue(identities.waitUntilHittable(timeout: 5))
+            drag(fromX: 30, by: width * 0.6)
+            XCTAssertTrue(identities.waitForNonExistence(timeout: 5))
         }
     }
 }
