@@ -80,7 +80,8 @@ detect_lib() {
   # The JSON doubles each backslash of a Windows path.
   bin=$(printf '%b' "$bin")
   if [ -n "$quarantined" ]; then
-    listed=$(cargo nextest list --workspace --features headless-renders --message-format oneline \
+    # Without colour: CARGO_TERM_COLOR=always would put escapes in the names.
+    listed=$(cargo nextest list --workspace --features headless-renders --color never --message-format oneline \
       -E "$detect_lib_filter & ($quarantined)") || return
     while read -r _ path; do
       [ -z "$path" ] || args+=(--skip "$path")

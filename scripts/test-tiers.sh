@@ -20,7 +20,9 @@ case "$*" in
     printf '{"rust-binaries":{"mdoc":{"binary-id":"mdoc","kind":"lib","binary-path":"/nowhere/mdoc"},'
     printf '"mdoc-detect":{"binary-id":"mdoc-detect","binary-name":"mdoc_detect","kind":"lib","binary-path":"%s"}}}\n' "$DETECT_BIN"
     ;;
-  'nextest list'*) printf 'mdoc-detect rules::tests::flaky\nmdoc-detect lists::tests::also_flaky\n' ;;
+  # Coloured names (CARGO_TERM_COLOR=always) unless asked for none.
+  'nextest list'*'--color never'*) printf 'mdoc-detect rules::tests::flaky\nmdoc-detect lists::tests::also_flaky\n' ;;
+  'nextest list'*) printf 'mdoc-detect \033[1mrules::tests::flaky\033[0m\nmdoc-detect \033[1mlists::tests::also_flaky\033[0m\n' ;;
   *) exit "${FAKE_CARGO_RC:-0}" ;;
 esac
 FAKE
