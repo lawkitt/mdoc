@@ -43,7 +43,8 @@ HEADER = """\
 # UI parts of the last {days} days (the `ios-ui-times-*` artifacts), of its
 # test cases' summed durations in whole seconds, and how many parts measured
 # it. Written by scripts/ios-ui-class-times.py; the nightly refreshes it
-# (scripts/ios-ui-class-times.sh). A class missing here counts as the median.
+# (scripts/ios-ui-class-times.sh), replacing a row only with 3 parts or more.
+# A class missing here counts as the median.
 """
 
 

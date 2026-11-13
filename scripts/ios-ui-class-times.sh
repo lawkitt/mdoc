@@ -3,7 +3,9 @@
 # The nightly's refresh of apps/ios/ui-class-times.tsv, the UI shards'
 # class times (ADR 0113): the green UI parts' times of the last N days (14),
 # from their `ios-ui-times-*` artifacts (or the `.tsv` files in --from), as
-# a new table of the classes under apps/ios/mdocUITests. When it would move
+# a new table of the classes under apps/ios/mdocUITests; a class measured
+# by fewer than 3 parts keeps its row, so one slow run moves nothing (a
+# class without a row takes even one measurement). When it would move
 # a class to the other shard, or measures a class the table lacks, it
 # commits the table on the branch nightly/ui-class-times, on top of this
 # checkout's HEAD (main), and opens one PR with it, labelled
@@ -46,11 +48,24 @@ if [ -z "$from" ]; then
 fi
 "$py" scripts/ios-ui-class-times.py table "$from" --days "$days" >"$tmp/all.tsv"
 
-# Only the classes there now: a gone class's old times leave the table.
-classes=$(bash scripts/ios-ui-shards.sh --classes)
-printf '%s\n' "$classes" >"$tmp/classes"
+# Only the classes there now (a gone class's old times leave the table),
+# each with its new row when at least $min_parts parts measured it, else
+# its old row, else its new row.
+min_parts=3
+bash scripts/ios-ui-shards.sh --classes >"$tmp/classes"
 # shellcheck disable=SC2016 # awk fields, not shell ones
-awk -F '\t' 'NR == FNR { keep[$1] = 1; next } /^#/ || ($1 in keep)' "$tmp/classes" "$tmp/all.tsv" >"$tmp/new.tsv"
+awk -F '\t' -v min="$min_parts" -v rows="$tmp/rows" '
+  FILENAME == ARGV[1] { keep[$1] = 1; next }
+  FILENAME == ARGV[2] { sub(/\r$/, ""); if (!/^#/ && NF) old[$1] = $0; next }
+  /^#/ { print; next }
+  ($1 in keep) { new[$1] = $0; parts[$1] = $3 }
+  END {
+    for (c in keep) {
+      if ((c in new) && (parts[c] >= min || !(c in old))) print new[c] >rows
+      else if (c in old) print old[c] >rows
+    }
+  }' "$tmp/classes" "$table" "$tmp/all.tsv" >"$tmp/new.tsv"
+[ ! -f "$tmp/rows" ] || LC_ALL=C sort "$tmp/rows" >>"$tmp/new.tsv"
 
 before=$(bash scripts/ios-ui-shards.sh 1)
 after=$(MDOC_UI_CLASS_TIMES="$tmp/new.tsv" bash scripts/ios-ui-shards.sh 1)

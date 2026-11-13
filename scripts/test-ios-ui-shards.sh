@@ -288,6 +288,18 @@ refresh 0
 grep -q '^pr edit 7 ' "$tmp/gh.log" || fail "not updated: $(cat "$tmp/gh.log")"
 ! grep -q '^pr create' "$tmp/gh.log" || fail "a second PR: $(cat "$tmp/gh.log")"
 [ "$(git -C "$tmp/origin.git" rev-parse main)" = "$(git -C "$repo" rev-parse main)" ] || fail "main moved"
+# A row changes only with 3 parts: A at 10 in two more (3 in all) replaces
+# its 100; B and C, measured once, keep theirs.
+git -C "$repo" checkout -q main
+printf 'AUITests\t10\n' >"$tmp/parts/3.tsv"
+printf 'AUITests\t10\n' >"$tmp/parts/4.tsv"
+refresh 0 --dry-run
+t=$repo/apps/ios/ui-class-times.tsv
+grep -q '^AUITests	10	3$' "$t" || fail "3 parts: $(cat "$t")"
+grep -q '^BUITests	90	1$' "$t" || fail "B kept: $(cat "$t")"
+grep -q '^CUITests	60	1$' "$t" || fail "C kept: $(cat "$t")"
+[ "$(grep -vc '^#' "$t")" = 4 ] || fail "not 4 rows: $(cat "$t")"
+grep -q '^# .*3 parts or more' "$t" || fail "no header: $(cat "$t")"
 refresh 1 --days x
 cd "$root"
 
