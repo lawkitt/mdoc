@@ -10,7 +10,8 @@ name: Nightly
 # It also measures ADR 0113's CI targets (scripts/ci-stats.sh) and keeps a
 # second issue, "CI targets missed", opened after 3 nights that missed one
 # (scripts/ci-targets-issue.sh). A missed target is not a red night; only an
-# error reading GitHub is.
+# error reading GitHub is. And it refreshes the iOS UI shards' class times
+# (ADR 0113) on a branch, nightly/ui-class-times, which the hub opens as a PR.
 on:
   schedule:
     # 02:17 UTC, between the maintainer's working days.
@@ -116,9 +117,31 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CI_STATS_DRILL: ${{ inputs.drill && '1' || '' }}
 
+  # The UI shards' class times (ADR 0113): refreshed from the last 14 days
+  # of green UI parts; a refresh that moves a class to the other shard is
+  # one commit on main, force-pushed to nightly/ui-class-times, and named in
+  # a notice and the job summary (scripts/ios-ui-class-times.sh). The hub
+  # opens the PR from it: the organization's Actions policy lets no
+  # workflow open one. Never a push to main.
+  ui-class-times:
+    name: UI class times
+    if: ${{ !inputs.drill }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash scripts/ios-ui-class-times.sh --days 14
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
   report:
     name: report
-    needs: [macos, windows, ios, android, detection, quarantined, advisories, targets]
+    needs: [macos, windows, ios, android, detection, quarantined, advisories, targets, ui-class-times]
     if: ${{ always() && !inputs.drill }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -141,6 +164,7 @@ jobs:
           quarantined=${{ needs.quarantined.result }}
           advisories=${{ needs.advisories.result }}
           targets=${{ needs.targets.result }}
+          ui-class-times=${{ needs.ui-class-times.result }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

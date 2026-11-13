@@ -560,14 +560,28 @@ with `just ios-core` and restore one cargo cache (`cache-key: ios`), which
 `CoreWiringTests`' `testAReviewTapsTime`) skip
 unless `TEST_RUNNER_MDOC_TIMING_TESTS=1`, which `ci-ios.yml`'s `timing`
 input sets: the nightly passes it, the queue does not; the UI ones are
-all in `ci/ios (ui 1)`. **The UI shards** are a static list of
-`mdocUITests` classes in `scripts/ios-ui-shards.sh`, balanced by each
-class's time on the hosted runner (beside it in the list) and then by the
-shards' measured Tests steps; one UI part took about 26 minutes after the
-sweep (#829), over ADR 0112's 20. A new UI test class goes in the shard
-whose Tests step was shorter in its last run: until it is listed,
-`lint (ubuntu)` (and the UI parts, before they build) fail and name it, as
-they do for a class in both shards or a listed class that is gone. Xcode needs a Simulator runtime of the SDK's version for any
+`LivePreviewUITests`', in whichever shard holds it. **The UI shards** split the `mdocUITests` classes by measured time
+([ADR 0113](adr/0113-ci-targets-by-commit-and-detection-off-macos.md)):
+`scripts/ios-ui-shards.sh` packs them, longest first, each into the shard
+with less so far, by `apps/ios/ui-class-times.tsv`, each class's median
+time over the green UI parts of the last 14 days; a class the table lacks,
+such as a new one, counts as the table's median, and `--plan` shows the
+split. Each green UI part (without the timing tests) uploads its class
+times, `ios-ui-times-<part>-<attempt>`, read from its xcresult
+(`scripts/ios-ui-class-times.py collect`; a case passed on its retry
+counts its passing run only), and the nightly's `UI class
+times` job rebuilds the table from them (`scripts/ios-ui-class-times.sh`):
+a class measured by fewer than 3 parts in the window keeps its row. When
+that moves a class to the other shard, or measures a class the table lacks,
+it commits the table as one commit on `main` and force-pushes it to
+`nightly/ui-class-times` (unless the branch already holds it), naming the
+moved classes in a notice on the run and the job summary; on a night with
+nothing due it deletes that branch, whose refresh is then merged or out of
+date (closing a PR opened from it). It never pushes
+to `main` and opens no PR, as the organization's Actions policy lets no
+workflow open one. The hub opens the PR from that branch with its own
+token, so CI starts as on any PR, and enqueues it. `lint (ubuntu)` (and the UI parts, before they build) fail on a class
+declared twice or a bad table row. Xcode needs a Simulator runtime of the SDK's version for any
 app build, Release included, so each job runs `scripts/ios-toolchain.sh
 --start`: it uses the installed runtime of build `IOS_SIM_RUNTIME_BUILD`
 (of version `IOS_SIM_RUNTIME`), or downloads that build (about 8 GB) in

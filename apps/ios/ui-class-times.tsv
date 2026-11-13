@@ -1,0 +1,26 @@
+# The UI test classes' times on hosted macos-26 (ADR 0113), which
+# scripts/ios-ui-shards.sh packs into ci-ios.yml's UI shards, longest first,
+# each into the shard with less so far. Per class: the median, over the green
+# UI parts of the last 14 days (the `ios-ui-times-*` artifacts), of its
+# test cases' summed durations in whole seconds, and how many parts measured
+# it. Written by scripts/ios-ui-class-times.py; the nightly refreshes it
+# (scripts/ios-ui-class-times.sh), replacing a row only with 3 parts or more.
+# A class missing here counts as the median.
+AccessibilityAuditExploreUITests	5	10
+DeviceBelowFloorUITests	1	10
+DeviceLongJobsUITests	8	5
+DeviceTapTimingUITests	0	10
+EditModeUITests	165	7
+EditToolbarUITests	154	4
+IdentitiesGesturesUITests	133	6
+LargeTextExploreUITests	0	10
+LivePreviewUITests	125	4
+NewDocumentUITests	68	8
+OCRResumeUITests	0	10
+PanesRowUITests	63	7
+RenderedMarkdownUITests	0	10
+ReviewPagerUITests	84	7
+ReviewToolsUITests	18	1
+SidebarSearchUITests	24	7
+SurveyUITests	2	8
+TableEditingUITests	187	7
