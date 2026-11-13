@@ -226,18 +226,20 @@ final class IdentitiesGesturesUITests: XCTestCase {
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
         let identities = app.descendants(matching: .any)["identities-panel"].firstMatch
 
-        // At its left edge, then scrolled along and back: the table's.
-        drag(app, fromX: width * 0.4, y: cell.frame.midY, by: 200)
+        // At its left edge, then scrolled along and back: the table's. The
+        // row's height, taken once: scrolled along, the cell leaves the screen.
+        let tableRow = cell.frame.midY
+        drag(app, fromX: width * 0.4, y: tableRow, by: 200)
         XCTAssertFalse(sidebar.waitForExistence(timeout: 2), "a swipe right on the table opens no sidebar")
-        drag(app, fromX: width * 0.6, y: cell.frame.midY, by: -200)
+        drag(app, fromX: width * 0.6, y: tableRow, by: -200)
         XCTAssertFalse(identities.waitForExistence(timeout: 2), "a swipe left on the table opens no Identities")
-        drag(app, fromX: width * 0.4, y: cell.frame.midY, by: 240)
+        drag(app, fromX: width * 0.4, y: tableRow, by: 240)
         XCTAssertFalse(sidebar.waitForExistence(timeout: 2), "back at its edge, still the table's")
 
         // The text above the table opens the sidebar.
         let heading = app.textViews["document-text"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
         let above = heading.screenPoint.y
-        XCTAssertLessThan(above, cell.frame.minY, "the text above the table")
+        XCTAssertLessThan(above, tableRow - 30, "the text above the table")
         drag(app, fromX: width * 0.4, y: above, by: 200)
         XCTAssertTrue(sidebar.waitUntilHittable(timeout: 5), "a swipe right on the text opens the sidebar")
     }

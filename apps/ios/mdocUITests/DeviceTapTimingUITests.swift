@@ -75,15 +75,22 @@ final class DeviceTapTimingUITests: XCTestCase {
         let options = XCTMeasureOptions()
         options.iterationCount = 5
         let identities = app.descendants(matching: .any)["identities-panel"].firstMatch
+        // Each drag starts once the slide before it has come to rest: the
+        // panel at its edge.
+        func settled(_ panel: XCUIElement, atLeft: Bool) -> Bool {
+            MdocUITest.wait(timeout: 5) {
+                panel.isHittable && abs(atLeft ? panel.frame.minX : width - panel.frame.maxX) < 1
+            }
+        }
         measure(metrics: [hitches], options: options) {
             drag(fromX: width * 0.3, by: width * 0.6)
-            XCTAssertTrue(sidebar.waitUntilHittable(timeout: 5))
+            XCTAssertTrue(settled(sidebar, atLeft: true), "the sidebar opens")
             drag(fromX: width - 30, by: -(width * 0.6))
-            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "the sidebar closes")
             drag(fromX: width * 0.7, by: -(width * 0.6))
-            XCTAssertTrue(identities.waitUntilHittable(timeout: 5))
+            XCTAssertTrue(settled(identities, atLeft: false), "Identities opens")
             drag(fromX: 30, by: width * 0.6)
-            XCTAssertTrue(identities.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(identities.waitForNonExistence(timeout: 5), "Identities closes")
         }
     }
 }
