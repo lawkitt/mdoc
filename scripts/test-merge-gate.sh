@@ -313,6 +313,15 @@ eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(
 eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 11 "macos / ci/macos" "$ran")")")" "cut 31"
 eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 32 "ios / ci/ios (unit)" "$never")")")" "cut "
 eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$cut")" "$(job 32 "ios / ci/ios (unit)" "$(jq -c '.html_url = "https://r"' <<<"$ran")")")")" "result https://r"
+# Three parts (ci/ios's unit and two UI shards): one shard cut while the
+# others passed or never ran is no result; one shard failing outright is,
+# and a missing summary names that shard's job.
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 33 "ios / ci/ios (ui 2)" "$cut")" "$(job 31 "ios / ci/ios (ui 1)" "$ok")" \
+  "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 33"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 33 "ios / ci/ios (ui 2)" "$ran")" "$(job 31 "ios / ci/ios (ui 1)" "$cut")" \
+  "$(job 32 "ios / ci/ios (unit)" "$ok")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui 1)" "$ok")" \
+  "$(job 33 "ios / ci/ios (ui 2)" "$(jq -c '.html_url = "https://ui2"' <<<"$ran")")" "$(job 32 "ios / ci/ios (unit)" "$ok")")")" "result https://ui2"
 printf 'The job running on runner GitHub Actions 3 has exceeded the maximum execution time of 40 minutes.\n' | timed_out || fail "a timeout not seen"
 if printf 'GitHub Actions has encountered an internal error when running your job.\n' | timed_out; then fail "an internal error taken for a timeout"; fi
 # Summaries over parts named after them (ci/macos's two jobs, ci/ios's

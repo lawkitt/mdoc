@@ -356,7 +356,7 @@ areas_of() { # [table-text]
 # caller reads their annotations: a timeout is a result); the same for a
 # summary whose failing parts (its caller's jobs named after it:
 # `detection / ci/detection (2)` for `detection / ci/detection`,
-# `ci/ios (ui)` for `ci/ios`) are all such jobs; `superseded` when the
+# `ci/ios (ui 2)` for `ci/ios`) are all such jobs; `superseded` when the
 # job is no longer among the latest (a re-run replaced it); else `result`.
 # A job that timed out itself, or a part that failed outright, makes it a
 # result.
@@ -391,7 +391,7 @@ failure_kind() { # job-id
 }
 
 # The failing parts of a missing check $1 (`ci/ios`: `ios / ci/ios (unit)`,
-# `ios / ci/ios (ui)`) from a run's jobs JSON on stdin: `result <url>`
+# `ios / ci/ios (ui 1)`, `ios / ci/ios (ui 2)`) from a run's jobs JSON on stdin: `result <url>`
 # when one failed outright or timed out, else `cut <job-id>...`, those
 # cancelled after they started (none, when every part never ran or passed).
 missing_parts() { # name

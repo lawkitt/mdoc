@@ -261,7 +261,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of CI |
 | `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of CI |
 | `just android-core` | Windows, macOS or Linux: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
-| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (unit)` and `ci/ios (ui)` run those recipes after the core, a test target each. Neither: both |
+| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (unit)`, `ci/ios (ui 1)` and `ci/ios (ui 2)` run those recipes after the core: the unit tests, or one UI shard's classes (`scripts/ios-ui-shards.sh`). Neither: both |
 | `just local-ci [command]` | The retired local CI runner (ADR 0082): `uninstall` and `status` only matter now; the scripts go with CI redesign item 7 |
 | `just ios-app` / `just ios-test [device] [only...]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.2 Simulator (Xcode 26.2); `only`, xcodebuild's `-only-testing` identifiers (`mdocTests`, `mdocUITests/LivePreviewUITests`), runs just those (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
 | `just ios-release` | macOS: the iOS core, then the app and extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles; `ci/ios (unit)` runs it after the unit tests |
@@ -522,7 +522,7 @@ wait for.
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
-| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui)`, the same of the UI tests (`mdocUITests`), without the timing tests, which only the nightly runs | 35 min (unit), 45 min (UI) |
+| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 35 min each |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
 | `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
 
@@ -533,22 +533,30 @@ CI machinery (the ci area) needs only `ci/scripts`, beside `lint (ubuntu)`
 ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)); with a desktop
 change, `ci/macos (checks)` runs the same suites instead.
 
-**The iOS jobs.** `ci/ios` is a summary job, green only when both of its
-parts ran and passed: `ci/ios (unit)` and `ci/ios (ui)`, one matrix job
-(id `ios`) split by test target (ADR 0112). Both build the core
+**The iOS jobs.** `ci/ios` is a summary job, green only when all three
+of its parts ran and passed: `ci/ios (unit)`, `ci/ios (ui 1)` and
+`ci/ios (ui 2)`, one matrix job (id `ios`) split by test target, and the
+UI tests by class (ADR 0112); on a failure its annotation names each part
+that did not pass. Each builds the core
 with `just ios-core` and restore one cargo cache (`cache-key: ios`), which
 `main-caches.yml`'s build-only run of the unit part saves. The timing tests
 (`LivePreviewUITests`' `testTypingRestyleTime` and `testReturnTime`,
 `CoreWiringTests`' `testAReviewTapsTime`) skip
 unless `TEST_RUNNER_MDOC_TIMING_TESTS=1`, which `ci-ios.yml`'s `timing`
-input sets: the nightly passes it, the queue does not. A second UI part,
-sharded by test class, comes only if `ci/ios (ui)` stays over 20 minutes. Xcode needs a Simulator runtime of the SDK's version for any
+input sets: the nightly passes it, the queue does not; the UI ones are
+all in `ci/ios (ui 1)`. **The UI shards** are a static list of
+`mdocUITests` classes in `scripts/ios-ui-shards.sh`, balanced by each
+class's time on the hosted runner (beside it in the list); one UI part
+took about 26 minutes after the sweep (#829), over ADR 0112's 20. A new UI
+test class goes in the shard with the smaller total: until it is listed,
+`lint (ubuntu)` (and the UI parts, before they build) fail and name it, as
+they do for a class in both shards or a listed class that is gone. Xcode needs a Simulator runtime of the SDK's version for any
 app build, Release included, so each job runs `scripts/ios-toolchain.sh
 --start`: it uses the installed runtime of build `IOS_SIM_RUNTIME_BUILD`
 (of version `IOS_SIM_RUNTIME`), or downloads that build (about 8 GB) in
 the background while the core builds; `--finish` waits for it. The pins,
 Xcode 26.2 and iOS 26.2 build 23C54, are ones the `macos-26` image ships
-(with its iPhone 17), so neither job downloads a runtime (#630); a pin the
+(with its iPhone 17), so no job downloads a runtime (#630); a pin the
 image lacks costs each job about 8 GB and 4 minutes. The build is pinned
 because a version alone is ambiguous: `-buildVersion 26.2` resolves to the
 23C52 release candidate (#654). A Mac that runs `just mobile --ios` needs
@@ -758,7 +766,7 @@ it is not the status itself.
   merged first can take the desktop area off the gate's diff (#665).
   A job that ran and failed, or timed out, still fails at once, and beside
   it nothing is re-run on that commit. A summary's parts are its caller's jobs
-  named after it: `ci/detection (2)` for `ci/detection`, `ci/ios (ui)`
+  named after it: `ci/detection (2)` for `ci/detection`, `ci/ios (ui 2)`
   for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `ci/scripts (bash 3.2)`
   for `ci/scripts`, `fast (unit)` for `fast (ubuntu)`; name new parts that way, or their capacity cancels count
   as failures.

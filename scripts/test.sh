@@ -107,6 +107,7 @@ suites+=(test-snapshots-fetch.sh)
 suites+=(test-nightly.sh)
 suites+=(test-ci-stats.sh)
 suites+=(test-fixed-delays.sh)
+suites+=(test-ios-ui-shards.sh)
 for suite in "${suites[@]}"; do
   bash "scripts/$suite" </dev/null >"$tmp/$suite.log" 2>&1 &
   pids+=($!)
