@@ -4,8 +4,9 @@
 # is in exactly one shard, and the shards print disjoint `-only-testing`
 # lists that cover them all; on scratch copies a new class in no shard, a
 # class in two, a listed class that is gone and a bad shard number fail and
-# name it; what counts as a test class (XCTestCase, a name ending in Tests;
-# not a helper class, `class func` or a comment). Bash 3.2 compatible.
+# name it; what counts as a test class (XCTestCase, also with the
+# superclass on the next line or after generics; a name ending in Tests;
+# not a helper class, `class func`, `class var` or a comment). Bash 3.2 compatible.
 source "$(dirname "$0")/lib.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -107,10 +108,20 @@ final class LaunchHelper {
 // final class CommentedOutUITests: XCTestCase {}
 class OpenUITests:XCTestCase {}
 class SubclassedTests: OpenUITests {}
+final class RegressionCase:
+    XCTestCase {
+    override class func setUp() {}
+    class var shared: XCTestCase { fatalError() }
+    func testRegression() {}
+}
+@MainActor final class GenericCase<T>: XCTest.XCTestCase where T: Equatable {}
 EOF
 expect 1 "$s" --check
 grep -q 'OpenUITests .*is in no shard' "$tmp/out" || fail "OpenUITests: $(cat "$tmp/out")"
 grep -q 'SubclassedTests .*is in no shard' "$tmp/out" || fail "SubclassedTests: $(cat "$tmp/out")"
-! grep -q 'LaunchHelper\|CommentedOutUITests\|func' "$tmp/out" || fail "not test classes: $(cat "$tmp/out")"
+grep -q 'RegressionCase .*is in no shard' "$tmp/out" || fail "a superclass on the next line: $(cat "$tmp/out")"
+grep -q 'GenericCase .*is in no shard' "$tmp/out" || fail "GenericCase: $(cat "$tmp/out")"
+! grep -q 'LaunchHelper\|CommentedOutUITests\|func\|var\|shared' "$tmp/out" || fail "not test classes: $(cat "$tmp/out")"
+[ "$(grep -c 'is in no shard' "$tmp/out")" = 4 ] || fail "not four new classes: $(cat "$tmp/out")"
 
 echo "ios-ui-shards: ok"

@@ -57,17 +57,33 @@ esac
 [ "$#" -eq 1 ] || die "usage: scripts/ios-ui-shards.sh <shard 1-$count> | --check"
 [ -d "$dir" ] || die "no $dir"
 
-# The test classes declared under the folder, one per line.
+# The test classes declared under the folder, one per line. Each file is
+# read as one line without its `//` comments, so a declaration whose
+# superclass is on a later line (`class A:` then `XCTestCase {`) counts:
+# what follows the name up to its `{` is its generic clause and
+# inheritance.
+# shellcheck disable=SC2016 # awk fields, not shell ones
 found=$(find "$dir" -type f -name '*.swift' -print0 | xargs -0 awk '
+  function scan(t, decl, head, i) {
+    while (match(t, /(^|[^A-Za-z0-9_])class[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
+      decl = substr(t, RSTART, RLENGTH)
+      sub(/^.*class[ \t]+/, "", decl)
+      t = substr(t, RSTART + RLENGTH)
+      # `class func`, `class var` and the like declare no class.
+      if (decl ~ /^(func|var|let|subscript|static|final|override|open|public|internal|private|fileprivate)$/) continue
+      head = t
+      i = index(head, "{")
+      if (i) head = substr(head, 1, i - 1)
+      if ((head ~ /^[ \t]*(<[^>]*>)?[ \t]*:/ && head ~ /XCTestCase/) || decl ~ /Tests$/) print decl
+    }
+  }
+  FNR == 1 && NR > 1 { scan(text); text = "" }
   {
     line = $0
     sub(/\/\/.*/, "", line)
-    if (!match(line, /(^|[^A-Za-z0-9_])class[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) next
-    decl = substr(line, RSTART, RLENGTH)
-    sub(/^[^A-Za-z0-9_]?class[ \t]+/, "", decl)
-    rest = substr(line, RSTART + RLENGTH)
-    if (rest ~ /^[ \t]*:[^{]*XCTestCase/ || decl ~ /Tests$/) print decl
-  }' | LC_ALL=C sort)
+    text = text " " line
+  }
+  END { scan(text) }' | LC_ALL=C sort)
 
 listed=$(printf '%s\n' "$shards" | awk 'NF { print $2 }' | LC_ALL=C sort)
 bad=0
