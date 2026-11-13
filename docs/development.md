@@ -289,7 +289,11 @@ the recognition fixtures, and the doctests), `app` (the app package without
 the render test), `renders`, `recognition` (the fixtures on their
 snapshots), `rust` (those four in one nextest run, then the doctests: the
 PC's `ci/windows`), `scripts` (the suites and the quarantine check), or
-`quarantined`. Tests never retry. A test that flakes twice goes into
+`quarantined`. One exception to nextest: in `unit` and `rust`,
+`mdoc-detect`'s lib tests run in one process, from the binary nextest built,
+so its rule pack is built once rather than in each test's process; the job's
+timeout is their only limit ([ADR 0113](adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
+Tests never retry. A test that flakes twice goes into
 `.config/quarantine.txt` (`<nextest filter>  #<issue>  <expires
 YYYY-MM-DD>`) by PR, with its issue: every tier leaves it out, `just
 test-tier quarantined` runs the list alone without failing, and a line past
@@ -521,7 +525,7 @@ wait for.
 | Job (status) | Areas | Runs on | Limit |
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
-| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
+| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, `mdoc-detect`'s lib tests in one process, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 35 min each |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
 | `ci/detection` | recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
