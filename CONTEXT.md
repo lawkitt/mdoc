@@ -596,8 +596,17 @@ lists, quotes, alerts and code drawn as desktop draws them, over the
 unchanged source, so candidate offsets stay source offsets
 ([ADR 0096](docs/adr/0096-rendered-markdown-on-mobile.md)).
 
-**Show Markdown**: the mobile ⋯ menu checkmark that swaps the rendered view
-for the source with dimmed markers; one setting for the app.
+**Show Markdown**: the mobile document menu's toggle that swaps the rendered
+view for the source with dimmed markers; one setting for the app.
+
+**Document menu** (mobile): the menu under the document's title, the one
+place for its commands (Find, Show Markdown, Copy for AI, Share, Rename,
+Move, Delete); there is no ⋯ ([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md)).
+
+**Fix the words** (mobile): correcting a found name's span with handles in
+the text; the new wording replaces the old one everywhere and keeps the
+identity and alias. Not "edit name" or "rename", which change the alias
+([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md)).
 
 **Edit mode** (mobile): the document screen with the keyboard, the editing
 toolbar and the text editable, entered with Edit (⌘E) and left with Done;
