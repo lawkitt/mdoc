@@ -2,10 +2,10 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":280,"end":287,"label":"routing_number","score":0.6781138,"text":"1199999"},
-    {"start":147,"end":153,"label":"routing_number","score":0.6703925,"text":"009999"},
-    {"start":423,"end":431,"label":"routing_number","score":0.66235983,"text":"00999999"},
-    {"start":383,"end":389,"label":"routing_number","score":0.644337,"text":"009999"},
-    {"start":227,"end":249,"label":"routing_number","score":0.53989303,"text":"ДИ-999999/2031/00009"}
+    {"start":280,"end":287,"label":"routing_number","score":0.67854,"text":"1199999"},
+    {"start":147,"end":153,"label":"routing_number","score":0.67093176,"text":"009999"},
+    {"start":423,"end":431,"label":"routing_number","score":0.66257817,"text":"00999999"},
+    {"start":383,"end":389,"label":"routing_number","score":0.64467263,"text":"009999"},
+    {"start":227,"end":249,"label":"routing_number","score":0.54037815,"text":"ДИ-999999/2031/00009"}
   ]
 }

@@ -3,8 +3,8 @@
   "threshold": 0.5,
   "entities": [
     {"start":711,"end":725,"label":"person","score":0.9948804,"text":"Serena Marnell"},
-    {"start":670,"end":682,"label":"person","score":0.990839,"text":"Alva Ruskett"},
-    {"start":470,"end":485,"label":"person","score":0.98486924,"text":"Neris O’Brien"},
+    {"start":670,"end":682,"label":"person","score":0.9908744,"text":"Alva Ruskett"},
+    {"start":470,"end":485,"label":"person","score":0.98481095,"text":"Neris O’Brien"},
     {"start":231,"end":245,"label":"person","score":0.9778834,"text":"Lirena Vossick"},
     {"start":756,"end":769,"label":"person","score":0.98926485,"text":"Viora Mellick"}
   ]

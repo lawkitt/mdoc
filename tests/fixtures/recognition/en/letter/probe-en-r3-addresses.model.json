@@ -2,17 +2,17 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":168,"end":179,"label":"person","score":0.99760324,"text":"Jane Quenby"},
-    {"start":74,"end":94,"label":"organization","score":0.98301995,"text":"Larkfield Supply LLC"},
+    {"start":168,"end":179,"label":"person","score":0.99759394,"text":"Jane Quenby"},
+    {"start":74,"end":94,"label":"organization","score":0.9829547,"text":"Larkfield Supply LLC"},
     {"start":188,"end":208,"label":"email","score":0.99989194,"text":"post@quillon.invalid"},
-    {"start":365,"end":403,"label":"address","score":0.9943799,"text":"242A West Harrow Road Ostrand,NJ 07999"},
-    {"start":1006,"end":1029,"label":"organization","score":0.9666002,"text":"Royal Courts of Justice"},
+    {"start":365,"end":403,"label":"address","score":0.99442345,"text":"242A West Harrow Road Ostrand,NJ 07999"},
+    {"start":1006,"end":1029,"label":"organization","score":0.96666324,"text":"Royal Courts of Justice"},
     {"start":926,"end":938,"label":"organization","score":0.9280184,"text":"County Court"},
-    {"start":1050,"end":1079,"label":"address","score":0.9714558,"text":"Strand, Slocombe, WC2A 9ZZ\nUK"},
-    {"start":888,"end":919,"label":"address","score":0.9347534,"text":"7528 Rooke Road Penrow Township"},
+    {"start":1050,"end":1079,"label":"address","score":0.97156394,"text":"Strand, Slocombe, WC2A 9ZZ\nUK"},
+    {"start":888,"end":919,"label":"address","score":0.9348725,"text":"7528 Rooke Road Penrow Township"},
     {"start":1469,"end":1503,"label":"address","score":0.94397056,"text":"12 Pellin Street, Slocombe SL9 9ZZ"},
-    {"start":1421,"end":1457,"label":"address","score":0.9094255,"text":"а/я 4410, Ольховск, 199999"},
+    {"start":1421,"end":1457,"label":"address","score":0.9091033,"text":"а/я 4410, Ольховск, 199999"},
     {"start":1421,"end":1431,"label":"routing_number","score":0.6222298,"text":"а/я 4410"},
-    {"start":1801,"end":1812,"label":"person","score":0.9914225,"text":"Jane Quenby"}
+    {"start":1801,"end":1812,"label":"person","score":0.9914557,"text":"Jane Quenby"}
   ]
 }

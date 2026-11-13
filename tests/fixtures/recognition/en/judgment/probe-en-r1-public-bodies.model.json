@@ -2,21 +2,21 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":549,"end":574,"label":"full_name","score":0.60882664,"text":"Georgia-Quillon Paper LLC"},
-    {"start":318,"end":337,"label":"full_name","score":0.5925487,"text":"Quillon Freight LLC"},
-    {"start":173,"end":192,"label":"full_name","score":0.5752898,"text":"Quillon Freight LLC"},
-    {"start":50,"end":85,"label":"organization","score":0.9960393,"text":"Ashmoor County Probation Department"},
+    {"start":549,"end":574,"label":"full_name","score":0.60940796,"text":"Georgia-Quillon Paper LLC"},
+    {"start":318,"end":337,"label":"full_name","score":0.5926666,"text":"Quillon Freight LLC"},
+    {"start":173,"end":192,"label":"full_name","score":0.5758265,"text":"Quillon Freight LLC"},
+    {"start":50,"end":85,"label":"organization","score":0.9960546,"text":"Ashmoor County Probation Department"},
     {"start":476,"end":497,"label":"organization","score":0.98532796,"text":"Department of Justice"},
     {"start":87,"end":91,"label":"organization","score":0.9824231,"text":"HMRC"},
     {"start":133,"end":141,"label":"organization","score":0.9802431,"text":"9th Cir."},
     {"start":97,"end":124,"label":"organization","score":0.95630896,"text":"Federal Election Commission"},
     {"start":549,"end":574,"label":"organization","score":0.9448931,"text":"Georgia-Quillon Paper LLC"},
-    {"start":318,"end":337,"label":"organization","score":0.87169343,"text":"Quillon Freight LLC"},
-    {"start":222,"end":235,"label":"organization","score":0.75183046,"text":"United States"},
-    {"start":173,"end":192,"label":"organization","score":0.74816835,"text":"Quillon Freight LLC"},
-    {"start":199,"end":216,"label":"organization","score":0.72389543,"text":"State of Ashmoria"},
-    {"start":244,"end":259,"label":"organization","score":0.62079406,"text":"Town of Brindle"},
-    {"start":277,"end":284,"label":"tax_id","score":0.5839153,"text":"Federal"},
-    {"start":416,"end":429,"label":"tax_id","score":0.56889486,"text":"740 ILCS 14/1"}
+    {"start":318,"end":337,"label":"organization","score":0.8713654,"text":"Quillon Freight LLC"},
+    {"start":222,"end":235,"label":"organization","score":0.7514658,"text":"United States"},
+    {"start":173,"end":192,"label":"organization","score":0.7479843,"text":"Quillon Freight LLC"},
+    {"start":199,"end":216,"label":"organization","score":0.72370017,"text":"State of Ashmoria"},
+    {"start":244,"end":259,"label":"organization","score":0.6205641,"text":"Town of Brindle"},
+    {"start":277,"end":284,"label":"tax_id","score":0.58516043,"text":"Federal"},
+    {"start":416,"end":429,"label":"tax_id","score":0.5683559,"text":"740 ILCS 14/1"}
   ]
 }

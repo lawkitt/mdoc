@@ -218,10 +218,10 @@ is the flaws one fix cures, one issue each (label `flaw`,
 
 **Recognition fixture**: one synthetic document with `⟦CATEGORY|text⟧`
 gold, a status (`pass`, `known-flaw`, `model-limit`) and a **snapshot**,
-its raw model output made on the Mac (ADR 0093).
+its raw model output recorded on the reference platform (ADR 0093).
 
 **Detection gate**: the model run over every recognition fixture,
-`ci/detection` on hosted `macos-26` in shards; a stale snapshot or an
+`ci/detection` on hosted `windows-latest` in shards; a stale snapshot or an
 unexpected result fails it (ADR 0093, ADR 0095).
 
 **Hunter, curator, fixer**: the flaw hunt loop's roles: Codex writes
@@ -537,8 +537,8 @@ own target, apart from a desktop-only change's
 
 **Reference platform**: the one platform whose model output the detection
 gate's snapshots record and check, within a 1e-4 score tolerance; other
-platforms' scores differ in later digits. The Mac until ADR 0113's move,
-then Windows.
+platforms' scores differ in later digits. Hosted Windows since ADR 0113
+(the Mac before).
 
 **Retried pass**: a hosted iOS UI test that failed and passed on its one
 retry. The job stays green, but the test is named and counts as an

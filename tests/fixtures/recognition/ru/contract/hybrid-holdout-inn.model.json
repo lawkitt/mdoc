@@ -2,10 +2,10 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":8,"end":18,"label":"tax_id","score":0.7867867,"text":"5401000039"},
-    {"start":46,"end":56,"label":"tax_id","score":0.6771538,"text":"5401000039"},
+    {"start":8,"end":18,"label":"tax_id","score":0.7859664,"text":"5401000039"},
+    {"start":46,"end":56,"label":"tax_id","score":0.67597854,"text":"5401000039"},
     {"start":8,"end":18,"label":"routing_number","score":0.74148685,"text":"5401000039"},
-    {"start":24,"end":36,"label":"routing_number","score":0.5675771,"text":"660100000231"},
-    {"start":46,"end":56,"label":"routing_number","score":0.5550735,"text":"5401000039"}
+    {"start":24,"end":36,"label":"routing_number","score":0.5675172,"text":"660100000231"},
+    {"start":46,"end":56,"label":"routing_number","score":0.5550132,"text":"5401000039"}
   ]
 }

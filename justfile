@@ -84,7 +84,7 @@ recognize *args:
 import *args:
     @cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdoc-import --example convert -- "$@"
 
-# The detection gate (ADR 0093), macOS: the model over every recognition fixture when recognition changed; CI runs it sharded on hosted macos-26 (ADR 0095)
+# The detection gate (ADR 0093), Windows: the model over every recognition fixture when recognition changed; CI runs it sharded on hosted windows-latest, the reference platform (ADR 0095, ADR 0113)
 detection-gate:
     scripts/detection-gate.sh
 

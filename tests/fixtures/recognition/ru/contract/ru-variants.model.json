@@ -4,8 +4,8 @@
   "entities": [
     {"start":0,"end":40,"label":"person","score":0.85764897,"text":"Анна Сергеевна Ёлкина"},
     {"start":173,"end":193,"label":"person","score":0.8003801,"text":"А. С. Ёлкина"},
-    {"start":102,"end":144,"label":"person","score":0.7426084,"text":"Анне Сергеевне Ёлкиной"},
-    {"start":221,"end":235,"label":"person","score":0.58154076,"text":"Ёлкиной"},
+    {"start":102,"end":144,"label":"person","score":0.7424217,"text":"Анне Сергеевне Ёлкиной"},
+    {"start":221,"end":235,"label":"person","score":0.58219415,"text":"Ёлкиной"},
     {"start":272,"end":301,"label":"organization","score":0.83237296,"text":"Северный Вектор"}
   ]
 }

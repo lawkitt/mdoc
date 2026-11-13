@@ -2,7 +2,7 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":8,"end":18,"label":"tax_id","score":0.8533026,"text":"7701000019"},
-    {"start":43,"end":55,"label":"tax_id","score":0.6117879,"text":"500100000199"}
+    {"start":8,"end":18,"label":"tax_id","score":0.8534248,"text":"7701000019"},
+    {"start":43,"end":55,"label":"tax_id","score":0.611556,"text":"500100000199"}
   ]
 }

@@ -2,7 +2,7 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":229,"end":253,"label":"organization","score":0.81032884,"text":"document-production team"},
-    {"start":895,"end":910,"label":"organization","score":0.8794577,"text":"production team"}
+    {"start":229,"end":253,"label":"organization","score":0.8104789,"text":"document-production team"},
+    {"start":895,"end":910,"label":"organization","score":0.879043,"text":"production team"}
   ]
 }

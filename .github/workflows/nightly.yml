@@ -57,7 +57,7 @@ jobs:
     if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-detection.yml
     with:
-      shards: 6
+      shards: 12
 
   # Reports and never fails: a quarantined test still failing is expected.
   quarantined:

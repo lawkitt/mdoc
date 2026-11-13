@@ -12,7 +12,8 @@ What the detector must propose, one synthetic document per file
 fixture with several flaw classes lists them, space-separated, in `flaw`
 and their issues in `issue`. Beside each is `<id>.model.json`, its
 **snapshot**: the pinned FP16 model's raw entities at threshold 0.5
-(document byte offsets, label, score, text), made on the Mac. Files keep LF
+(document byte offsets, label, score, text), recorded on the reference
+platform, CI's hosted Windows (ADR 0113). Files keep LF
 line endings (`.gitattributes`): offsets are bytes.
 
 A fixture passes when what the user would be shown (the correction stage,
@@ -29,14 +30,14 @@ right; the diff shows every flaw added or gone.
 ## Commands
 
 ```sh
-just recognize <file.md>                  # proposals, marked like gold (the Mac's model)
+just recognize <file.md>                  # proposals, marked like gold (the installed model)
 just recognize <file.md|folder> --gold    # misses, false hits, boundary errors; status check
 just recognize <file.md|folder> --gold --snapshot   # the same from snapshots, any OS
 just recognize --scoreboard [<folder>]    # recall and precision per language × category × kind
-just recognize --refresh-snapshots [<file.md|folder>]   # the Mac only
+just recognize --refresh-snapshots [<file.md|folder>]   # a local draft; CI's replace it
 just recognize --check [<folder>]         # the detection gate (--shard k/n, --out <dir> in CI)
 just recognize --record-flaws [<file.md|folder>]   # known-flaw fixtures' expect: lines
-just snapshots-fetch <pr|run>             # a failing CI gate's regenerated snapshots into the tree
+just snapshots-fetch <pr|run>             # CI's regenerated snapshots into the tree, the ones to commit
 just import <file> > <id>.import.md       # mdoc's own import of a probe's original
 ```
 
@@ -54,22 +55,24 @@ converters' text: `pdftotext` or `textutil` output has flaws mdoc's import
 does not, and the reverse.
 
 `just test` runs every fixture on its snapshot on each OS
-(`crates/mdoc-detect/tests/recognition.rs`). `local/macos` also runs `just
-detection-gate` when a PR touches recognition or what it depends on: it
-reruns the model over every fixture, failing on a stale snapshot, an
-unexpected result or a model run over 5 minutes (about 14 s for 48
-fixtures on the M4). Hosted CI runs the same check as `ci/detection`
-(`.github/workflows/ci-detection.yml`, ADR 0095) on `macos-26`, split into
-shards (about 2 minutes of model per 30 fixtures on its 3-core M1); a
-failing shard uploads its stale snapshots regenerated, and `just
-snapshots-fetch <pr|run>` writes them here to review and commit.
+(`crates/mdoc-detect/tests/recognition.rs`). The detection gate reruns the
+model over every fixture, failing on a stale snapshot, an unexpected result
+or a model run over 5 minutes: hosted CI runs it as `ci/detection`
+(`.github/workflows/ci-detection.yml`, ADR 0095, ADR 0113) on
+`windows-latest`, the reference platform, split into shards (about 2.5 s a
+fixture); on Windows `just detection-gate` runs it locally on this
+machine's scores. A failing shard uploads its stale snapshots regenerated,
+and `just snapshots-fetch <pr|run>` writes them here to review and commit.
 
 ## Adding a fixture
 
-Write the document by the guide, then on the Mac
-`just recognize --refresh-snapshots <file.md>` and
-`just recognize <file.md> --gold` to set its status; for `known-flaw`,
-`just recognize --record-flaws <file.md>`. Commit both files.
+Write the document by the guide, then `just recognize --refresh-snapshots
+<file.md>` (a draft snapshot, on any machine with the model) and `just
+recognize <file.md> --gold` to set its status; for `known-flaw`, `just
+recognize --record-flaws <file.md>`. Commit both files and push: the PR
+head's `ci/detection` regenerates the snapshot on the reference platform,
+and `just snapshots-fetch <PR>` writes it in to commit (rerun `--gold` and
+`--record-flaws` on it if a score near the threshold moved).
 
 ## Imported
 

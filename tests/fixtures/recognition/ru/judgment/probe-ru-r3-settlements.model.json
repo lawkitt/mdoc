@@ -2,7 +2,7 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":160,"end":185,"label":"person","score":0.6755506,"text":"а. Новый Хутор"},
-    {"start":316,"end":364,"label":"organization","score":0.52959794,"text":"районного суда г. Ольховск"}
+    {"start":160,"end":185,"label":"person","score":0.67587155,"text":"а. Новый Хутор"},
+    {"start":316,"end":364,"label":"organization","score":0.52962834,"text":"районного суда г. Ольховск"}
   ]
 }

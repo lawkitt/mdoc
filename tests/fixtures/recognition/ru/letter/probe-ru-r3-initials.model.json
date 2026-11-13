@@ -4,6 +4,6 @@
   "entities": [
     {"start":178,"end":220,"label":"person","score":0.96336865,"text":"Яков Викторович Ростов"},
     {"start":277,"end":283,"label":"organization","score":0.94853723,"text":"ЯВР"},
-    {"start":292,"end":298,"label":"organization","score":0.8895289,"text":"ЯВР"}
+    {"start":292,"end":298,"label":"organization","score":0.8897207,"text":"ЯВР"}
   ]
 }

@@ -2,14 +2,14 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":366,"end":410,"label":"person","score":0.95703757,"text":"Нияз Рауф оглы Иль-Булат"},
-    {"start":851,"end":899,"label":"person","score":0.7105279,"text":"Нияза Рауф оглы Иль-Булата"},
-    {"start":514,"end":552,"label":"organization","score":0.8487216,"text":"ООО «Глиняный парус»"},
-    {"start":105,"end":169,"label":"organization","score":0.7065955,"text":"Российской Федерации\n\nРайонный суд"},
-    {"start":1826,"end":1843,"label":"person","score":0.98905545,"text":"Иль-Булат"},
+    {"start":366,"end":410,"label":"person","score":0.9569572,"text":"Нияз Рауф оглы Иль-Булат"},
+    {"start":851,"end":899,"label":"person","score":0.7100255,"text":"Нияза Рауф оглы Иль-Булата"},
+    {"start":514,"end":552,"label":"organization","score":0.8485962,"text":"ООО «Глиняный парус»"},
+    {"start":105,"end":169,"label":"organization","score":0.70700026,"text":"Российской Федерации\n\nРайонный суд"},
+    {"start":1826,"end":1843,"label":"person","score":0.9890131,"text":"Иль-Булат"},
     {"start":1529,"end":1545,"label":"person","score":0.9809856,"text":"Aveline D'Orveil"},
-    {"start":2987,"end":3012,"label":"person","score":0.9710194,"text":"Н. Р. Иль-Булат"},
+    {"start":2987,"end":3012,"label":"person","score":0.9710743,"text":"Н. Р. Иль-Булат"},
     {"start":3173,"end":3211,"label":"organization","score":0.8201816,"text":"суд первой инстанции"},
-    {"start":2569,"end":2575,"label":"organization","score":0.52278084,"text":"суд"}
+    {"start":2569,"end":2575,"label":"organization","score":0.5231006,"text":"суд"}
   ]
 }

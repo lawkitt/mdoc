@@ -1,17 +1,28 @@
 name: Detection gate
 
-# The detection gate on hosted macos-26 (ADR 0095): the pinned FP16 model,
-# downloaded from its pinned Hugging Face revision and cached, reruns over
-# the recognition fixtures (`just recognize --check`). The fixtures split
-# over `shards` parallel jobs, `ci/detection (<k>)`: the 3-core M1 runs about
-# 50 fixtures in 3 minutes, and a model run over 5 minutes fails, so the
-# queue, the nightly and recognition-area PR heads (ci.yml's
-# `detection-head`) run 6 shards: with 4, a shard held 64 fixtures on
-# 2026-11-12 and ran over the budget twice in two days (305 s, 315 s). A
-# shard warns past 80% of it, the signal to add one. `ci/detection` sums the shards up and is the context merge-gate
-# reads. A failing shard uploads its stale snapshots, regenerated, as
+# The detection gate on hosted windows-latest (ADR 0095, ADR 0113): the
+# pinned FP16 model, downloaded from its pinned Hugging Face revision and
+# cached, reruns over the recognition fixtures (`just recognize --check`).
+# Hosted Windows is the reference platform: the snapshots are recorded on
+# it, and the runtime is mdoc's pinned Windows x86_64 ONNX Runtime (Linux
+# has none). The fixtures split over `shards` parallel jobs,
+# `ci/detection (<k>)`, from the 20-job pool Windows shares with Linux, not
+# the 5 macOS slots. A fixture takes 2.5 s on a typical runner (0.4 to
+# 16 s; 660 s for all 256, 2026-11-13), but runners differ for a whole job,
+# whatever their CPU: of 38 jobs, 3 ran 0.6 times as long, 2 1.25 times and
+# 2 about 2.3 and 2.9 times (one Xeon 8573C ran 3 times as long as another).
+# A model run over 5 minutes fails, so the queue, the nightly and
+# recognition-area PR heads (ci.yml's `detection-head`) run 12 shards, ADR
+# 0113's limit: the slowest holds about 75 s, about 225 s (75%) on a runner
+# 3 times as slow. With 5 shards such a runner took 358 s and failed, with
+# 8 one took 250 s. A shard warns past 80% of the budget; past 12 shards the
+# ADR is reopened. The job logs the runner's CPU.
+# `ci/detection` sums the shards up and is the context merge-gate reads. A
+# failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
-# the tree for review. No workflow writes to PR branches.
+# the tree for review. A manual run with `record` uploads every snapshot
+# whose bytes changed, a re-recording (a runtime or model pin change). No
+# workflow writes to PR branches.
 on:
   workflow_call:
     inputs:
@@ -22,7 +33,7 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 4
+        default: 12
       build-only:
         description: Set up the model and build only, which saves both caches on main (main-caches.yml).
         type: boolean
@@ -34,11 +45,15 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over (4; 3 take 84% of the 5-minute model budget). A manual run takes 4 of the account's 5 macOS runners.
+        description: Parallel jobs the fixtures split over (12, so a slow runner stays inside the 5-minute model budget).
         type: number
-        default: 4
+        default: 12
       build-only:
         description: Set up the model and build only.
+        type: boolean
+        default: false
+      record:
+        description: Also refresh every shard's snapshots and upload the changed ones, a recording on the reference platform (just snapshots-fetch <run>).
         type: boolean
         default: false
 
@@ -57,17 +72,20 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 6 }}
+          SHARDS: ${{ inputs.shards || 12 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
     name: ci/detection (${{ matrix.shard }})
     needs: shards
-    runs-on: macos-26
-    # Job limits (ADR 0095): each shard 10 minutes once `main` saves the
-    # detection build's cache (CI redesign item 7); until then a cold
-    # `just recognize --setup` compiles for about 6 minutes, so 20.
+    runs-on: windows-latest
+    # Job limits (ADR 0095): a cold build and model download took about 5
+    # minutes and the model run 1 to 2.5 (2026-11-13), so 20.
     timeout-minutes: 20
+    # Git Bash, as the recipes: the steps are bash.
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +105,12 @@ jobs:
         with:
           tools: just
 
+      # Hosted runners' CPUs differ, and the model's speed with them: the
+      # first thing to read when a shard nears its budget.
+      - name: Runner CPU
+        shell: pwsh
+        run: (Get-CimInstance Win32_Processor).Name | Select-Object -First 1
+
       # The app-data folders `just recognize` reads, keyed by the model pins.
       # Setup re-verifies every file, so a runtime pin change refetches only
       # the runtime.
@@ -95,8 +119,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/Library/Application Support/mdoc/pseudonymization
-            ~/Library/Application Support/mdoc/ocr/v1
+            ~/AppData/Local/mdoc/pseudonymization
+            ~/AppData/Local/mdoc/ocr/v1
           key: detection-model-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('resources/pseudonymization-model.json') }}
 
       # mdoc's own verified, pinned download; retried once (ADR 0095).
@@ -111,16 +135,28 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/Library/Application Support/mdoc/pseudonymization
-            ~/Library/Application Support/mdoc/ocr/v1
+            ~/AppData/Local/mdoc/pseudonymization
+            ~/AppData/Local/mdoc/ocr/v1
           key: ${{ steps.model.outputs.cache-primary-key }}
 
       - name: Detection gate
         if: ${{ !inputs.build-only }}
         run: just recognize --check --shard "$SHARD" --out target/detection-snapshots
 
+      # Every fixture of the shard refreshed, and each snapshot whose bytes
+      # changed added to the artifact beside the stale ones.
+      - name: Record the snapshots
+        if: ${{ !cancelled() && inputs.record && !inputs.build-only }}
+        run: |
+          just recognize --refresh-snapshots --shard "$SHARD"
+          git diff --name-only -- tests/fixtures/recognition | while IFS= read -r file; do
+            mkdir -p "target/detection-snapshots/$(dirname "$file")"
+            cp "$file" "target/detection-snapshots/$file"
+          done
+          echo "changed: $(git diff --name-only -- tests/fixtures/recognition | wc -l)"
+
       - name: Regenerated snapshots
-        if: failure()
+        if: ${{ failure() || (!cancelled() && inputs.record && !inputs.build-only) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: detection-snapshots-${{ matrix.shard }}

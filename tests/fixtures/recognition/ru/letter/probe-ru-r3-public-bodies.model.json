@@ -2,23 +2,23 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":941,"end":960,"label":"person","score":0.9764457,"text":"Олег Думов"},
-    {"start":701,"end":713,"label":"organization","score":0.9898696,"text":"ОГИБДД"},
-    {"start":395,"end":475,"label":"organization","score":0.98191,"text":"Министерствофинансов Российской Федерации"},
+    {"start":941,"end":960,"label":"person","score":0.9764906,"text":"Олег Думов"},
+    {"start":701,"end":713,"label":"organization","score":0.9898304,"text":"ОГИБДД"},
+    {"start":395,"end":475,"label":"organization","score":0.9819447,"text":"Министерствофинансов Российской Федерации"},
     {"start":715,"end":769,"label":"organization","score":0.9802431,"text":"Ольховская районная больница"},
     {"start":810,"end":845,"label":"organization","score":0.9788344,"text":"войсковая часть 54321"},
     {"start":327,"end":351,"label":"organization","score":0.974869,"text":"Ольховскстат"},
     {"start":477,"end":483,"label":"organization","score":0.97007024,"text":"МФЦ"},
-    {"start":771,"end":806,"label":"organization","score":0.9658352,"text":"Ольховская таможня"},
-    {"start":962,"end":999,"label":"organization","score":0.9494823,"text":"АО «Ольховскэнерго»"},
+    {"start":771,"end":806,"label":"organization","score":0.9658996,"text":"Ольховская таможня"},
+    {"start":962,"end":999,"label":"organization","score":0.94957596,"text":"АО «Ольховскэнерго»"},
     {"start":666,"end":697,"label":"organization","score":0.9388008,"text":"отдел полиции № 2"},
-    {"start":124,"end":160,"label":"organization","score":0.92522997,"text":"ООО «Сосновый двор»"},
+    {"start":124,"end":160,"label":"organization","score":0.925365,"text":"ООО «Сосновый двор»"},
     {"start":1003,"end":1097,"label":"organization","score":0.9178934,"text":"ФГБОУ ВО «Ольховский государственный университет»"},
-    {"start":246,"end":323,"label":"organization","score":0.90052974,"text":"Клиентская служба СФР в Ольховском районе"},
+    {"start":246,"end":323,"label":"organization","score":0.9007046,"text":"Клиентская служба СФР в Ольховском районе"},
     {"start":487,"end":568,"label":"organization","score":0.8791468,"text":"многофункциональный центр города Ольховска"},
-    {"start":602,"end":664,"label":"organization","score":0.8690492,"text":"администрацию Ольховского района"},
+    {"start":602,"end":664,"label":"organization","score":0.86916035,"text":"администрацию Ольховского района"},
     {"start":162,"end":244,"label":"organization","score":0.8091252,"text":"Управление Росреестра по Ольховской области"},
-    {"start":1251,"end":1269,"label":"phone_number","score":0.999998,"text":"+7 (812) 555-02-02"},
-    {"start":1306,"end":1330,"label":"email","score":0.99876,"text":"priem@olh-reestr.invalid"}
+    {"start":1251,"end":1269,"label":"phone_number","score":0.99999803,"text":"+7 (812) 555-02-02"},
+    {"start":1306,"end":1330,"label":"email","score":0.99875516,"text":"priem@olh-reestr.invalid"}
   ]
 }
