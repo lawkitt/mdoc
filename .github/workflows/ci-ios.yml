@@ -96,7 +96,8 @@ jobs:
       # What `just ios-test` runs: the unit and parity tests, or a UI
       # shard's classes. Before anything is built, so a UI test class in no
       # shard or in two fails in seconds (as it fails `lint (ubuntu)`).
-      - id: part
+      - name: What to test
+        id: part
         run: |
           echo "key=${PART// /}" >>"$GITHUB_OUTPUT"
           case "$PART" in
@@ -148,7 +149,8 @@ jobs:
       # `just mobile --ios` for one test target or shard, without its area
       # check (the caller decided) and its Simulator shutdown (the runner is
       # thrown away); --no-deps, as the core is built.
-      - if: ${{ !inputs.build-only }}
+      - name: Tests
+        if: ${{ !inputs.build-only }}
         run: |
           # shellcheck disable=SC2086 # ONLY: identifiers, split on purpose
           just --no-deps ios-app ios-test "iPhone 17" $ONLY
@@ -169,7 +171,8 @@ jobs:
 
       # This part's result, for `ci/ios` to name; missing when the job
       # never ran or was stopped before this step.
-      - id: result
+      - name: Part result
+        id: result
         if: always()
         env:
           KEY: ${{ steps.part.outputs.key }}
