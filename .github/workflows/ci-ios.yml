@@ -10,7 +10,8 @@ name: CI iOS
 #   ci/ios (ui 1)   the core, the app and half of the UI test classes
 #   ci/ios (ui 2)   (mdocUITests) each, as scripts/ios-ui-shards.sh lists
 #                   them; the timing tests (in ui 1) run only with `timing`
-#                   (the nightly).
+#                   (the nightly). A failed UI test retries once (ADR 0113):
+#                   a pass on the retry keeps the part green and is named.
 # The merge queue calls it for a queue commit that touches the ios or core
 # area. Every step is a recipe or a script, so `scripts/ios-toolchain.sh`,
 # `just ios-test "iPhone 17" mdocTests` (or `$(scripts/ios-ui-shards.sh 1)`)
@@ -74,9 +75,10 @@ jobs:
       fail-fast: false
       matrix:
         part: ${{ fromJSON(inputs.build-only && '["unit"]' || '["unit", "ui 1", "ui 2"]') }}
-    # Each part's own result (`unit`, `ui1`, `ui2`) and failing tests
-    # (`unit_tests`, ...), which `ci/ios` names: a matrix job's outputs
-    # combine every part's.
+    # Each part's own result (`unit`, `ui1`, `ui2`), failing tests
+    # (`unit_tests`, ...) and tests that passed on their retry
+    # (`ui1_retried`, `ui2_retried`), which `ci/ios` names: a matrix job's
+    # outputs combine every part's.
     outputs:
       unit: ${{ steps.result.outputs.unit }}
       ui1: ${{ steps.result.outputs.ui1 }}
@@ -84,6 +86,8 @@ jobs:
       unit_tests: ${{ steps.failed.outputs.unit_tests }}
       ui1_tests: ${{ steps.failed.outputs.ui1_tests }}
       ui2_tests: ${{ steps.failed.outputs.ui2_tests }}
+      ui1_retried: ${{ steps.failed.outputs.ui1_retried }}
+      ui2_retried: ${{ steps.failed.outputs.ui2_retried }}
     env:
       PART: ${{ matrix.part }}
       # The timing tests (LivePreviewUITests' typing and Return times, in
@@ -91,6 +95,9 @@ jobs:
       # they only measure speed, about 4 minutes, so only the nightly runs
       # them. xcodebuild passes TEST_RUNNER_<name> to the tests as <name>.
       TEST_RUNNER_MDOC_TIMING_TESTS: ${{ inputs.timing && '1' || '' }}
+      # A failed UI test retries once (ADR 0113): the Simulator's timing
+      # noise. Unit, Rust, Android and script tests never retry.
+      MDOC_IOS_TEST_RETRY: ${{ startsWith(matrix.part, 'ui ') && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -165,14 +172,18 @@ jobs:
         run: just --no-deps ios-release
 
       # The failing tests by name (ADR 0113), from the xcresult while Xcode
-      # is here: in this part's error and summary, and for ci/ios.
+      # is here: in this part's error and summary, and for ci/ios; and a
+      # green UI part's tests that passed on their retry, as warnings.
       - name: Failing tests
         id: failed
-        if: failure() && steps.part.outputs.key != ''
-        run: python3 scripts/ios-failed-tests.py part "$PART" target/ios/DerivedData/Logs/Test
+        if: steps.part.outputs.key != '' && (failure() || (success() && !inputs.build-only && startsWith(matrix.part, 'ui ')))
+        env:
+          STATUS: ${{ job.status }}
+        run: python3 scripts/ios-failed-tests.py part "$PART" "$STATUS" target/ios/DerivedData/Logs/Test
 
+      # On a failure, or a pass on a retry, to see what went wrong.
       - name: Test results
-        if: failure()
+        if: failure() || (steps.failed.outputs.retried || '0') != '0'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-xcresult-${{ steps.part.outputs.key }}-${{ github.run_attempt }}
@@ -193,7 +204,9 @@ jobs:
   # Green only when every part ran and passed, so a cancelled or skipped one
   # never looks green (as ci/detection, ADR 0095). A failure annotates each
   # part that did not pass with its failing tests (ADR 0113), which
-  # merge-gate's link to this job shows.
+  # merge-gate's link to this job shows; green or not, it warns of each UI
+  # test that passed on its retry. scripts/ci-stats.sh reads these
+  # annotations for ADR 0112's unrelated failures.
   summary:
     name: ci/ios
     needs: [ios]
