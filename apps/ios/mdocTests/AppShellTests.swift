@@ -323,19 +323,62 @@ final class AppShellTests: XCTestCase {
     // MARK: Launch and preferences
 
     func testTheLaunchIsReadOnce() {
-        let normal = LaunchConfiguration(arguments: ["mdoc"], environment: ["MDOC_SEED_FILE": "/x.docx"])
+        let normal = LaunchConfiguration(
+            arguments: ["mdoc"], environment: ["MDOC_SEED_FILE": "/x.docx", "MDOC_PREBUILT_LIBRARY": "run"])
         XCTAssertFalse(normal.isUITesting)
         XCTAssertNil(normal.seedFile, "only UI tests seed")
+        XCTAssertNil(normal.prebuiltLibrary, "only UI tests copy a prebuilt library")
         let testing = LaunchConfiguration(
             arguments: ["mdoc", LaunchConfiguration.uiTestingArgument],
-            environment: ["MDOC_SEED_FILE": "/x.docx", "MDOC_REAL_DOWNLOADS": "1", "MDOC_UI_DETECTOR_TIER": "1"])
+            environment: [
+                "MDOC_SEED_FILE": "/x.docx", "MDOC_REAL_DOWNLOADS": "1", "MDOC_UI_DETECTOR_TIER": "1",
+                "MDOC_PREBUILT_LIBRARY": "run",
+            ])
         XCTAssertTrue(testing.isUITesting)
         XCTAssertEqual(testing.seedFile, "/x.docx")
+        XCTAssertEqual(testing.prebuiltLibrary, "run")
         XCTAssertTrue(testing.realDownloads)
         XCTAssertTrue(testing.detectorTier)
         XCTAssertEqual(testing.physicalMemory, ProcessInfo.processInfo.physicalMemory)
         let belowFloor = LaunchConfiguration(arguments: [LaunchConfiguration.uiTestingArgument], environment: [:])
         XCTAssertEqual(belowFloor.physicalMemory, LaunchConfiguration.belowFloorMemory)
+    }
+
+    /// A UI test run's prebuilt library: kept once the seed is in, copied
+    /// back into a cleared test library at a later launch, the models left
+    /// out; an earlier run's goes when a new run builds its first.
+    func testAPrebuiltLibraryIsKeptAndCopiedBack() throws {
+        let files = FileManager.default
+        let container = files.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? files.removeItem(at: container) }
+        let storage = MdocStorage(root: container.appendingPathComponent("mdoc-ui-testing", isDirectory: true))
+        func launch(run: String, seed: String = "/x.md") -> LaunchConfiguration {
+            LaunchConfiguration(
+                arguments: [LaunchConfiguration.uiTestingArgument],
+                environment: ["MDOC_SEED_FILE": seed, "MDOC_PREBUILT_LIBRARY": run])
+        }
+        XCTAssertNil(UITestPrebuiltLibrary(LaunchConfiguration(arguments: [], environment: [:]), storage: storage))
+        let first = try XCTUnwrap(UITestPrebuiltLibrary(launch(run: "a"), storage: storage))
+        XCTAssertFalse(try first.restore(), "a run's first launch imports")
+        try storage.prepare()
+        try storage.write(Data("# Seed".utf8), named: "seed.md", in: .documents)
+        try storage.write(Data("model".utf8), named: "model.bin", in: .models)
+        first.save()
+
+        // The next launch: the library cleared, the prebuilt one copied in.
+        try files.removeItem(at: storage.root)
+        let next = try XCTUnwrap(UITestPrebuiltLibrary(launch(run: "a"), storage: storage))
+        XCTAssertTrue(try next.restore())
+        XCTAssertTrue(next.isRestored)
+        XCTAssertEqual(try String(contentsOf: storage.url(.documents).appendingPathComponent("seed.md"), encoding: .utf8), "# Seed")
+        XCTAssertFalse(files.fileExists(atPath: storage.url(.models).appendingPathComponent("model.bin").path))
+
+        // Another seed of the run has its own; a new run drops the old run's.
+        try files.removeItem(at: storage.root)
+        XCTAssertFalse(try XCTUnwrap(UITestPrebuiltLibrary(launch(run: "a", seed: "/y.docx"), storage: storage)).restore())
+        XCTAssertTrue(files.fileExists(atPath: first.library.path))
+        XCTAssertFalse(try XCTUnwrap(UITestPrebuiltLibrary(launch(run: "b"), storage: storage)).restore())
+        XCTAssertFalse(files.fileExists(atPath: first.library.path))
     }
 
     /// One store for every preference; UI tests keep theirs apart and clear

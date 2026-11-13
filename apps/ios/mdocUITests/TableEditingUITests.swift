@@ -19,6 +19,7 @@ final class TableEditingUITests: XCTestCase {
         app.launchArguments = ["-mdoc-ui-testing"]
         if let contentSize { app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSize] }
         app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo.appendingPathComponent(MdocUITest.markdownFixture).path
+        MdocUITest.usePrebuiltLibrary(app)
         app.launch()
         let row = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
         XCTAssertTrue(row.waitForExistence(timeout: 120))

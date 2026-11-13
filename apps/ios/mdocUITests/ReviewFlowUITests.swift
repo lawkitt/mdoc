@@ -111,6 +111,20 @@ enum MdocUITest {
         return app
     }
 
+    /// This test run's name for its prebuilt library (ROADMAP CI speed
+    /// item 30): one per test process, so the run's first launch with a seed
+    /// imports it and its later launches with that seed copy the library it
+    /// left. `MDOC_NO_PREBUILT=1` (`TEST_RUNNER_MDOC_NO_PREBUILT`) imports
+    /// at every launch, to measure what the copy saves.
+    static let prebuiltRun = UUID().uuidString
+
+    /// The launch opens the run's prebuilt library for its seed.
+    @MainActor
+    static func usePrebuiltLibrary(_ app: XCUIApplication) {
+        guard ProcessInfo.processInfo.environment["MDOC_NO_PREBUILT"] != "1" else { return }
+        app.launchEnvironment["MDOC_PREBUILT_LIBRARY"] = prebuiltRun
+    }
+
     /// Rendered pages of a fictional tenancy, as the camera would give
     /// them, in a folder the app's seed reads as a scan.
     static func scanPages(named name: String, count: Int) throws -> URL {

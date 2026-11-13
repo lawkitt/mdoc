@@ -27,6 +27,10 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// `MDOC_KEEP_LIBRARY=1`: a relaunch in a UI test opens the test library
     /// as the last launch left it, to check what was saved.
     var keepsLibrary = false
+    /// `MDOC_PREBUILT_LIBRARY=<run>`: the seed's library is built once per
+    /// test run, named by `<run>`, and each later launch with the same seed
+    /// copies it in instead of importing again (`UITestPrebuiltLibrary`).
+    var prebuiltLibrary: String?
 
     init() {}
 
@@ -37,7 +41,9 @@ struct LaunchConfiguration: Sendable, Equatable {
         slowToasts = environment["MDOC_SLOW_TOASTS"] == "1"
         realDownloads = environment["MDOC_REAL_DOWNLOADS"] == "1"
         detectorTier = environment["MDOC_UI_DETECTOR_TIER"] == "1"
-        keepsLibrary = environment["MDOC_KEEP_LIBRARY"] == "1"    }
+        keepsLibrary = environment["MDOC_KEEP_LIBRARY"] == "1"
+        prebuiltLibrary = environment["MDOC_PREBUILT_LIBRARY"].flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     /// This process's launch, parsed on first use.
     static let current = LaunchConfiguration(
