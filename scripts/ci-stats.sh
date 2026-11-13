@@ -88,7 +88,7 @@ repeat_s=$((14 * 86400))
 target_start() { # target
   case "$1" in
     core) echo pending ;;
-    desktop) echo pending ;;
+    desktop) echo 2026-11-13T07:07:50Z ;;
     queue) echo 2026-11-12T15:21:00Z ;;
     ios-ui) echo pending ;;
     drops) echo 2026-11-12T15:21:00Z ;;
