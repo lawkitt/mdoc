@@ -2,18 +2,18 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":854,"end":876,"label":"person","score":0.9893886,"text":"Дроздов К. Л."},
-    {"start":779,"end":805,"label":"person","score":0.9862577,"text":"Ратникова Е. А."},
-    {"start":691,"end":713,"label":"person","score":0.9738444,"text":"Вельтов О. Р."},
-    {"start":339,"end":365,"label":"person","score":0.9701835,"text":"Пахомцева И. В."},
-    {"start":471,"end":495,"label":"person","score":0.9701269,"text":"Пахомцев И. В."},
+    {"start":854,"end":876,"label":"person","score":0.98934746,"text":"Дроздов К. Л."},
+    {"start":779,"end":805,"label":"person","score":0.9862046,"text":"Ратникова Е. А."},
+    {"start":691,"end":713,"label":"person","score":0.9737946,"text":"Вельтов О. Р."},
+    {"start":339,"end":365,"label":"person","score":0.9701269,"text":"Пахомцева И. В."},
+    {"start":471,"end":495,"label":"person","score":0.97007024,"text":"Пахомцев И. В."},
     {"start":536,"end":552,"label":"person","score":0.9667889,"text":"Брюн Л. И."},
-    {"start":161,"end":181,"label":"person","score":0.91321325,"text":"Мухина П. Е."},
-    {"start":70,"end":131,"label":"organization","score":0.96458924,"text":"Арбитражный суд Тверской области"},
-    {"start":376,"end":399,"label":"organization","score":0.6286354,"text":"Тихая гавань"},
+    {"start":161,"end":181,"label":"person","score":0.9129032,"text":"Мухина П. Е."},
+    {"start":70,"end":131,"label":"organization","score":0.9645225,"text":"Арбитражный суд Тверской области"},
+    {"start":376,"end":399,"label":"organization","score":0.62852144,"text":"Тихая гавань"},
     {"start":1173,"end":1195,"label":"person","score":0.9194981,"text":"Гранина П. С."},
     {"start":1012,"end":1036,"label":"person","score":0.82361233,"text":"Ольховой М. С."},
-    {"start":1070,"end":1092,"label":"person","score":0.6536798,"text":"Мухиным П. Е."},
-    {"start":1229,"end":1258,"label":"person","score":0.63079864,"text":"Судья П. Е. Мухин"}
+    {"start":1070,"end":1092,"label":"person","score":0.65401137,"text":"Мухиным П. Е."},
+    {"start":1229,"end":1258,"label":"person","score":0.6303436,"text":"Судья П. Е. Мухин"}
   ]
 }

@@ -2,9 +2,9 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":248,"end":255,"label":"person","score":0.94417685,"text":"brother"},
+    {"start":248,"end":255,"label":"person","score":0.94427973,"text":"brother"},
     {"start":285,"end":292,"label":"person","score":0.8912444,"text":"brother"},
     {"start":265,"end":275,"label":"person","score":0.767167,"text":"respondent"},
-    {"start":145,"end":153,"label":"person","score":0.6811968,"text":"claimant"}
+    {"start":145,"end":153,"label":"person","score":0.6810908,"text":"claimant"}
   ]
 }

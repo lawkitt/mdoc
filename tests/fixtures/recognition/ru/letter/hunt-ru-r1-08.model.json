@@ -4,11 +4,11 @@
   "entities": [
     {"start":114,"end":173,"label":"person","score":0.9643886,"text":"Яромир Всеволодович Фьорд-Лукин"},
     {"start":220,"end":253,"label":"organization","score":0.90260965,"text":"Листовая пристань"},
-    {"start":1848,"end":1867,"label":"person","score":0.89858866,"text":"Yaromir Fjord-Lukin"},
+    {"start":1848,"end":1867,"label":"person","score":0.89841056,"text":"Yaromir Fjord-Lukin"},
     {"start":1314,"end":1326,"label":"person","score":0.8895289,"text":"Яриком"},
-    {"start":1249,"end":1263,"label":"person","score":0.6270381,"text":"Яромиру"},
+    {"start":1249,"end":1263,"label":"person","score":0.62726647,"text":"Яромиру"},
     {"start":1924,"end":1946,"label":"email","score":0.99976945,"text":"yaromir@dostup.invalid"},
-    {"start":2089,"end":2110,"label":"bank_account","score":0.84758973,"text":"40817О10900007361542"},
-    {"start":2701,"end":2723,"label":"person","score":0.91274774,"text":"управляющий"}
+    {"start":2089,"end":2110,"label":"bank_account","score":0.8477158,"text":"40817О10900007361542"},
+    {"start":2701,"end":2723,"label":"person","score":0.91259205,"text":"управляющий"}
   ]
 }

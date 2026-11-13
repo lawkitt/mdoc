@@ -2,9 +2,9 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":395,"end":406,"label":"full_name","score":0.97414124,"text":"Maren Quill"},
-    {"start":81,"end":89,"label":"person","score":0.6936805,"text":"Ms Quill"},
+    {"start":395,"end":406,"label":"full_name","score":0.97423947,"text":"Maren Quill"},
+    {"start":81,"end":89,"label":"person","score":0.6944063,"text":"Ms Quill"},
     {"start":358,"end":375,"label":"phone_number","score":0.9999959,"text":"+1 (202) 555-0199"},
-    {"start":315,"end":336,"label":"bank_account","score":0.95195264,"text":"bank account 12345678"}
+    {"start":315,"end":336,"label":"bank_account","score":0.95213103,"text":"bank account 12345678"}
   ]
 }

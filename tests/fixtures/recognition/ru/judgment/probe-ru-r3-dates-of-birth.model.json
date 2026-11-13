@@ -2,9 +2,9 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":41,"end":48,"label":"person","score":0.9417614,"text":"ФИО1"},
-    {"start":341,"end":348,"label":"person","score":0.90582335,"text":"ФИО3"},
-    {"start":287,"end":294,"label":"person","score":0.8992984,"text":"ФИО2"},
-    {"start":442,"end":449,"label":"person","score":0.89423656,"text":"ФИО4"}
+    {"start":41,"end":48,"label":"person","score":0.9418684,"text":"ФИО1"},
+    {"start":341,"end":348,"label":"person","score":0.9059899,"text":"ФИО3"},
+    {"start":287,"end":294,"label":"person","score":0.89947516,"text":"ФИО2"},
+    {"start":442,"end":449,"label":"person","score":0.8944212,"text":"ФИО4"}
   ]
 }

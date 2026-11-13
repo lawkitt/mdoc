@@ -255,14 +255,15 @@ affects() { [[ " $2 " == *" $1 "* ]]; }
 # android, detection, scripts (ADR 0095, ADR 0100). merge-gate.sh waits for
 # these and queue.yml (scripts/ci-areas.sh --queue) starts them, so the two
 # agree. The fixtures alone need only the detection gate; it decides itself
-# whether recognition changed. The CI machinery needs only the script suites
+# whether recognition changed. App-only desktop changes skip detection
+# (ADR 0113). The CI machinery needs only the script suites
 # (ci/scripts), which ci/macos runs too, so a desktop change does not add it.
 needed_jobs() { # areas
   local a=$1 out=''
   if affects desktop "$a"; then out+=' macos windows'; fi
   if affects ios "$a"; then out+=' ios'; fi
   if affects android "$a"; then out+=' android'; fi
-  if affects desktop "$a" || affects recognition "$a"; then out+=' detection'; fi
+  if affects recognition "$a"; then out+=' detection'; fi
   if affects ci "$a" && ! affects desktop "$a"; then out+=' scripts'; fi
   echo "${out# }"
 }
@@ -277,8 +278,9 @@ diff_areas() { # from to
 # Whether a PR head runs the detection gate (ADR 0100): true when one of the
 # files on stdin (NUL-separated, as changed_areas reads them) takes the
 # recognition area from its own line of the table given as text, the
-# fixtures' or the recognition code's. Core lists every area, so a core or
-# desktop change alone runs it only in the queue: macOS runners are scarce.
+# fixtures', recognition code's, resources' or gate machinery's. Core lists
+# every area, so a core change alone runs it only in the queue; app-only
+# desktop changes skip it (ADR 0113).
 # ci.yml's areas job (scripts/ci-areas.sh --github) starts the head run and
 # merge-gate.sh waits for it.
 head_detection() { # table-text

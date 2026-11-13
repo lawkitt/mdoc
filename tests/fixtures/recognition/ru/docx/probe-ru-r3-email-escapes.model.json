@@ -2,7 +2,7 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":71,"end":96,"label":"email","score":0.78744125,"text":"snake\\_case@kadry.invalid"},
-    {"start":104,"end":125,"label":"email","score":0.64332926,"text":"\\_roman@kadry.invalid"}
+    {"start":71,"end":96,"label":"email","score":0.78695047,"text":"snake\\_case@kadry.invalid"},
+    {"start":104,"end":125,"label":"email","score":0.6434413,"text":"\\_roman@kadry.invalid"}
   ]
 }

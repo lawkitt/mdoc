@@ -3,7 +3,9 @@
 # (`just test`, `just test-tier <tier>`)
 #
 # The workspace tests through cargo-nextest (.config/nextest.toml), then
-# doctests, which nextest does not run (ADR 0082). The script suites (release,
+# doctests, which nextest does not run (ADR 0082). mdoc-detect's lib tests
+# run in one process instead, from the binary nextest built, so its rule pack
+# is built once and not in each test's process (ADR 0113). The script suites (release,
 # CI cache cleanup, local CI runner and its hosted fallback, the quarantine
 # list, the merge gate, the merge-queue runner) need no build and mostly wait on fakes and timers, so they run beside
 # the Rust tests instead of after them: about a minute off a Windows run
@@ -12,11 +14,13 @@
 #
 # With --tier, one test tier (ADR 0095), which CI runs as its own job:
 #   unit         the crates outside the app package, without the recognition
-#                fixtures, and the doctests
+#                fixtures (mdoc-detect's lib tests in one process), and the
+#                doctests
 #   app          the app package's tests without the render test
 #   renders      the render test
 #   recognition  the recognition fixtures on their snapshots
-#   rust         unit, app, renders and recognition in one nextest run, then
+#   rust         unit, app, renders and recognition in one nextest run (but
+#                mdoc-detect's lib tests, after it in one process), then
 #                the doctests: the PC's ci/windows (ADR 0112), which leaves
 #                the script suites to hosted Linux and macOS
 #   scripts      the script suites and the quarantine list's expiry check
@@ -44,7 +48,10 @@ esac
 renders_filter='binary_id(mdoc::headless_renders)'
 recognition_filter='binary_id(mdoc-detect::recognition)'
 app_filter="package(mdoc) - $renders_filter"
-unit_filter="!package(mdoc) - $recognition_filter"
+# mdoc-detect's lib tests: not in nextest's runs but in detect_lib's.
+detect_lib_filter='binary_id(mdoc-detect)'
+unit_filter="!package(mdoc) - $recognition_filter - $detect_lib_filter"
+rust_filter="all() - $detect_lib_filter"
 
 quarantined=$(bash scripts/quarantine.sh filter) || die "scripts/quarantine.sh: .config/quarantine.txt does not parse"
 
@@ -55,9 +62,41 @@ nextest() {
   cargo nextest run --workspace --features headless-renders --no-tests=pass -E "$filter"
 }
 
+# mdoc-detect's lib tests in one process, so the rule pack is built once and
+# not in each test's process (ADR 0113). It runs the test binary nextest
+# built: `cargo test -p mdoc-detect` would resolve other features and rebuild
+# about 90 crates. Each quarantined test is skipped by its exact path, as
+# nextest lists it for the quarantine filter. No per-test timeout: the job's
+# is the only limit. A failure is printed as nextest prints one (`FAIL [...]
+# mdoc-detect <path>`), the line the queue runner names failing tests by.
+detect_lib() {
+  local json bin listed path out rc=0 args=(--exact)
+  json=$(cargo nextest list --workspace --features headless-renders --list-type binaries-only --message-format json) || return
+  bin=$(printf '%s\n' "$json" | sed -nE 's/.*"binary-id":"mdoc-detect",[^}]*"binary-path":"([^"]*)".*/\1/p')
+  if [ -z "$bin" ]; then
+    echo "error: nextest lists no mdoc-detect lib test binary" >&2
+    return 1
+  fi
+  # The JSON doubles each backslash of a Windows path.
+  bin=$(printf '%b' "$bin")
+  if [ -n "$quarantined" ]; then
+    # Without colour: CARGO_TERM_COLOR=always would put escapes in the names.
+    listed=$(cargo nextest list --workspace --features headless-renders --color never --message-format oneline \
+      -E "$detect_lib_filter & ($quarantined)") || return
+    while read -r _ path; do
+      [ -z "$path" ] || args+=(--skip "$path")
+    done <<<"$listed"
+  fi
+  out=$(mktemp)
+  (cd crates/mdoc-detect && "$bin" "${args[@]}") 2>&1 | tee "$out" || rc=$?
+  [ "$rc" -eq 0 ] || sed -nE 's/^test (.+) \.\.\. FAILED$/        FAIL [libtest] mdoc-detect \1/p' "$out"
+  rm -f "$out"
+  return "$rc"
+}
+
 doctests() { cargo test --doc --workspace --features headless-renders; }
 
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh test-ios-build-info.sh test-ios-release.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh test-ios-build-info.sh test-ios-release.sh test-ios-failed-tests.sh)
 
 # Runs one tier's commands and exits with their status; nothing else runs.
 only() {
@@ -68,12 +107,12 @@ only() {
 
 # shellcheck disable=SC2317,SC2329 # run through only
 unit() {
-  nextest "$unit_filter" && doctests
+  nextest "$unit_filter" && detect_lib && doctests
 }
 
 # shellcheck disable=SC2317,SC2329 # run through only
 rust() {
-  nextest "all()" && doctests
+  nextest "$rust_filter" && detect_lib && doctests
 }
 
 case "$tier" in
@@ -116,7 +155,8 @@ done
 rc=0
 bash scripts/quarantine.sh check || rc=1
 if [ "$tier" = all ]; then
-  nextest "all()" || rc=1
+  nextest "$rust_filter" || rc=1
+  [ "$rc" -ne 0 ] || detect_lib || rc=$?
   [ "$rc" -ne 0 ] || doctests || rc=$?
 fi
 

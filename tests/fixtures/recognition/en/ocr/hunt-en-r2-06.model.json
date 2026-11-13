@@ -3,10 +3,10 @@
   "threshold": 0.5,
   "entities": [
     {"start":463,"end":476,"label":"person","score":0.99869037,"text":"Veyra Nemmick"},
-    {"start":41,"end":51,"label":"person","score":0.9819447,"text":"Delva Rosk"},
-    {"start":403,"end":422,"label":"person","score":0.9768907,"text":"D E L V A   R O S K"},
+    {"start":41,"end":51,"label":"person","score":0.98197925,"text":"Delva Rosk"},
+    {"start":403,"end":422,"label":"person","score":0.97693473,"text":"D E L V A   R O S K"},
     {"start":72,"end":96,"label":"organization","score":0.9744834,"text":"Cinder Reed Displays Ltd"},
-    {"start":41,"end":51,"label":"organization","score":0.55404824,"text":"Delva Rosk"},
+    {"start":41,"end":51,"label":"organization","score":0.55450064,"text":"Delva Rosk"},
     {"start":1176,"end":1208,"label":"email","score":0.998935,"text":"delva.return@cinder-reed.invalid"}
   ]
 }

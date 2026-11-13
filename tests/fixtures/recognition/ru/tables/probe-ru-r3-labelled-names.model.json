@@ -2,10 +2,10 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":273,"end":281,"label":"person","score":0.90894175,"text":"Лада"},
-    {"start":301,"end":313,"label":"person","score":0.8916225,"text":"Ивовна"},
-    {"start":249,"end":263,"label":"person","score":0.84556025,"text":"Кравель"},
-    {"start":175,"end":211,"label":"person","score":0.81757444,"text":"Ветлин Нил Олегович"},
-    {"start":158,"end":162,"label":"person","score":0.6338636,"text":"Edda"}
+    {"start":273,"end":281,"label":"person","score":0.90926456,"text":"Лада"},
+    {"start":301,"end":313,"label":"person","score":0.891811,"text":"Ивовна"},
+    {"start":249,"end":263,"label":"person","score":0.84594244,"text":"Кравель"},
+    {"start":175,"end":211,"label":"person","score":0.8177201,"text":"Ветлин Нил Олегович"},
+    {"start":158,"end":162,"label":"person","score":0.63420355,"text":"Edda"}
   ]
 }

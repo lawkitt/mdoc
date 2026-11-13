@@ -24,7 +24,7 @@ fn every_recognition_fixture_is_as_its_status_says() {
         let snapshot = Snapshot::read(&fixture.snapshot_path())?;
         if snapshot.model != model || snapshot.threshold != config.threshold {
             return Err(format!(
-                "snapshot made with {} at {}, not {model} at {}; refresh it on the Mac",
+                "snapshot made with {} at {}, not {model} at {}; refresh it (just recognize --refresh-snapshots, then CI's with just snapshots-fetch)",
                 snapshot.model, snapshot.threshold, config.threshold
             ));
         }

@@ -91,14 +91,17 @@ not() { ! "$@"; }
   routes "core desktop recognition ios android ci" justfile apps/ios/mdoc/App/MdocApp.swift
   routes "core desktop recognition ios android ci" scripts/ci-areas.txt
   routes desktop src/main.rs
-  routes desktop tests/render.rs vendor/gpui-pre-macos/src/lib.rs .github/actions/setup/action.yml
+  routes desktop tests/render.rs tests/fixtures/import/a.docx vendor/gpui-pre-macos/src/lib.rs build/windows.rc
+  routes "desktop recognition" .github/actions/setup/action.yml .github/workflows/ci-detection.yml scripts/detection-gate.sh
+  routes "desktop recognition" resources/pseudonymization-model.json
+  routes "desktop recognition" resources/other-input.json crates/mdoc-detect/src/lib.rs
   routes desktop scripts/release.sh scripts/test-release.sh scripts/quarantine.sh scripts/test.sh
   # The CI machinery (ADR 0100): the script suites, not the desktop jobs.
   routes ci scripts/merge-gate.sh scripts/test-merge-gate.sh scripts/queue-runner.sh scripts/test-queue-runner.sh scripts/queue-runner-setup.ps1
   routes ci scripts/local-ci.sh scripts/test-local-ci.sh scripts/ci-cache-cleanup.sh scripts/ci-stats.sh scripts/deny-ci.sh scripts/nightly-issue.sh
   routes ci .github/workflows/ci.yml .github/workflows/ci-scripts.yml .github/workflows/merge-gate.yml .github/workflows/nightly.yml .github/workflows/main-caches.yml
   # A workflow that builds or tests the app keeps the area of what it runs.
-  routes desktop .github/workflows/ci-desktop.yml .github/workflows/ci-detection.yml .github/workflows/queue.yml .github/workflows/release.yml
+  routes desktop .github/workflows/ci-desktop.yml .github/workflows/queue.yml .github/workflows/release.yml
   routes ios .github/workflows/ci-ios.yml
   routes android .github/workflows/ci-android.yml
   routes "core desktop recognition ios android ci" scripts/ci-areas.sh

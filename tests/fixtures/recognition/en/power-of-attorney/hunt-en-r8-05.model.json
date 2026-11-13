@@ -8,6 +8,6 @@
     {"start":1172,"end":1186,"label":"person","score":0.9933071,"text":"Ceryna MacKell"},
     {"start":1211,"end":1226,"label":"person","score":0.95945925,"text":"Mireva Quennell"},
     {"start":1284,"end":1305,"label":"organization","score":0.9497627,"text":"Slate Purl Advice LLP"},
-    {"start":687,"end":709,"label":"address","score":0.9453994,"text":"28 Alder Row, Hereford"}
+    {"start":687,"end":709,"label":"address","score":0.9456007,"text":"28 Alder Row, Hereford"}
   ]
 }

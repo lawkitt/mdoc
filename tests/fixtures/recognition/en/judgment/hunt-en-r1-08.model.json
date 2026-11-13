@@ -2,14 +2,14 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":67,"end":81,"label":"person","score":0.9920002,"text":"Sola Merrowick"},
+    {"start":67,"end":81,"label":"person","score":0.9919692,"text":"Sola Merrowick"},
     {"start":150,"end":173,"label":"organization","score":0.98439646,"text":"Tidal Acorn Travel Ltd."},
     {"start":485,"end":499,"label":"full_name","score":0.9621076,"text":"Sola Merrowick"},
     {"start":613,"end":647,"label":"email","score":0.99986017,"text":"sola.merrowick@tidal-acorn.invalid"},
-    {"start":540,"end":571,"label":"address","score":0.86982524,"text":"Unit 6, 92 Fable Street, Exeter"},
+    {"start":540,"end":571,"label":"address","score":0.87004614,"text":"Unit 6, 92 Fable Street, Exeter"},
     {"start":1138,"end":1147,"label":"person","score":0.92840886,"text":"appellant"},
-    {"start":845,"end":855,"label":"person","score":0.8331889,"text":"respondent"},
-    {"start":1244,"end":1249,"label":"organization","score":0.6749081,"text":"panel"},
-    {"start":1481,"end":1494,"label":"person","score":0.9948604,"text":"Fenla Ruskett"}
+    {"start":845,"end":855,"label":"person","score":0.8330531,"text":"respondent"},
+    {"start":1244,"end":1249,"label":"organization","score":0.6751224,"text":"panel"},
+    {"start":1481,"end":1494,"label":"person","score":0.9948404,"text":"Fenla Ruskett"}
   ]
 }

@@ -244,10 +244,10 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-models [--download]` | Default OCR and pseudonymization models through setup and offline paths |
 | `just check-all` | `check` + both smoke recipes |
 | `just perf` | Ignored performance tests, serially |
-| `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the Mac's installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots (Mac); `--record-flaws` writes known-flaw fixtures' `expect:` lines; `--check` is the detection gate (`--shard k/n` for one CI shard, `--out <dir>` for its regenerated snapshots); `--setup` installs the pinned FP16 through mdoc's verified setup (CI's runner, ADR 0095). Any folder of fixtures works (the holdout) |
+| `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots, a local draft: commit CI's from `just snapshots-fetch <PR|run>` (hosted Windows is the reference platform, ADR 0113); `--record-flaws` writes known-flaw fixtures' `expect:` lines; `--check` is the detection gate (`--shard k/n` for one CI shard, `--out <dir>` for its regenerated snapshots); `--setup` installs the pinned FP16 through mdoc's verified setup (CI's runner, ADR 0095). Any folder of fixtures works (the holdout) |
 | `just import <file>` | What mdoc's own import makes of a file, as Markdown on stdout (warning and errors on stderr); a PDF needing OCR uses the installed OCR models (read only; `MDOC_OCR_ROOT` points elsewhere). Judge probes on this text, not on another converter's (ADR 0093) |
 | `just snapshots-fetch <pr\|run>` | A failing `ci/detection` run's regenerated snapshots (the PR's newest run with them, or that run) into the tree, to review and commit (ADR 0095) |
-| `just detection-gate` | macOS: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides), on this Mac's scores; CI runs `just recognize --check` in shards on hosted `macos-26` instead (`ci/detection`), whose snapshots differ in the fourth decimal place |
+| `just detection-gate` | Windows: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides), on this machine's scores; CI runs `just recognize --check` in shards on hosted `windows-latest`, the reference platform (`ci/detection`), whose scores a developer machine's may miss in the fourth decimal place |
 | `just headless-renders <new-directory>` | macOS/Windows: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
 | `just package` | This machine's installers into `dist/` |
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
@@ -289,7 +289,11 @@ the recognition fixtures, and the doctests), `app` (the app package without
 the render test), `renders`, `recognition` (the fixtures on their
 snapshots), `rust` (those four in one nextest run, then the doctests: the
 PC's `ci/windows`), `scripts` (the suites and the quarantine check), or
-`quarantined`. Tests never retry. A test that flakes twice goes into
+`quarantined`. One exception to nextest: in `unit` and `rust`,
+`mdoc-detect`'s lib tests run in one process, from the binary nextest built,
+so its rule pack is built once rather than in each test's process; the job's
+timeout is their only limit ([ADR 0113](adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
+Tests never retry, except the hosted iOS UI tests (below). A test that flakes twice goes into
 `.config/quarantine.txt` (`<nextest filter>  #<issue>  <expires
 YYYY-MM-DD>`) by PR, with its issue: every tier leaves it out, `just
 test-tier quarantined` runs the list alone without failing, and a line past
@@ -521,10 +525,10 @@ wait for.
 | Job (status) | Areas | Runs on | Limit |
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
-| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
+| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, `mdoc-detect`'s lib tests in one process, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 35 min each |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
-| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 6 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
+| `ci/detection` | recognition | hosted `windows-latest` (`ci-detection.yml`, ADR 0113): the detection gate in 12 shards, each warning past 80% of its 5-minute model budget | 20 min a shard |
 
 | `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
 
@@ -536,8 +540,20 @@ change, `ci/macos (checks)` runs the same suites instead.
 **The iOS jobs.** `ci/ios` is a summary job, green only when all three
 of its parts ran and passed: `ci/ios (unit)`, `ci/ios (ui 1)` and
 `ci/ios (ui 2)`, one matrix job (id `ios`) split by test target, and the
-UI tests by class (ADR 0112); on a failure its annotation names each part
-that did not pass. Each builds the core
+UI tests by class (ADR 0112); on a failure its annotations name each part
+that did not pass. A failed part names its failing tests from the xcresult
+(`scripts/ios-failed-tests.py`, ADR 0113), as the PC's status does: an
+annotation "Failed in ci/ios (ui 1): ios:mdocUITests/PanesRowUITests/testX
+and 1 more", every name in its job summary, and `ci/ios` repeats them, in
+the quarantine list's `ios:<target>/<class>/<method>` form. **A failed UI
+test retries once** in the UI parts (`MDOC_IOS_TEST_RETRY=1`, which gives
+`just ios-test` xcodebuild's `-retry-tests-on-failure -test-iterations 2`;
+ADR 0113): a pass on the retry keeps the part green but is named, as a
+warning "Passed on retry in ci/ios (ui 2): ios:mdocUITests/<class>/<method>"
+(one a part, naming every such test)
+and in its job summary, `ci/ios` repeats it, the xcresult is uploaded, and
+it counts as an unrelated failure toward quarantine. Unit, Rust, Android and
+script tests never retry. Each builds the core
 with `just ios-core` and restore one cargo cache (`cache-key: ios`), which
 `main-caches.yml`'s build-only run of the unit part saves. The timing tests
 (`LivePreviewUITests`' `testTypingRestyleTime` and `testReturnTime`,
@@ -576,6 +592,10 @@ two of them) and a glob; a file takes the first line that matches it, desktop wh
 none does, and a core change runs every area. Its comment says which
 scripts are desktop, shared (core) or mobile; `crates/mdoc-detect` and
 `crates/mdoc-pii` are `recognition,desktop`, so they skip the mobile jobs.
+`resources/`, the detection gate's script and workflow, and the shared setup
+action are also `recognition,desktop`. App-only files (`src/`, `vendor/`,
+`build/`, and `tests/` outside recognition fixtures) stay desktop and skip
+the detection gate (ADR 0113); core still runs every job.
 `scripts/ci-areas.sh [<from> <to>]` prints the areas a change touches. A new
 script outside `src/` and `tests/` that a mobile job runs needs a line
 there, or it counts as desktop. The ci area is `merge-gate.sh`,
@@ -584,7 +604,7 @@ own `ci-areas.sh`, which is core; `deny-ci.sh`, `nightly-issue.sh`, the
 retired local CI), their suites, and the workflows that build and test
 nothing themselves (`ci.yml`, `ci-scripts.yml`, `main-caches.yml`, the
 gate's two, `nightly.yml`). A workflow that builds or tests the app takes
-the area of what it runs: `ci-desktop.yml`, `ci-detection.yml`, `queue.yml`
+the area of what it runs: `ci-desktop.yml`, `queue.yml`
 (which starts them) and `release.yml` are desktop, `ci-ios.yml` ios. When
 unsure, leave a file desktop. `ci.yml`'s `paths-ignore` repeats the `none`
 lines word for word (`scripts/test-local-ci.sh` checks).
@@ -628,24 +648,32 @@ proves it. On macOS the signature query of an unsigned test binary read
 every file in `target/debug/deps` and took seconds per test process
 (#510). A new call into such a service goes behind the same guard.
 
-**Detection gate.** Hosted `macos-26` is its reference: the snapshots
-(`tests/fixtures/recognition/**/*.model.json`) are recorded there, not on a
-developer Mac, whose scores differ in the fourth decimal place. A failing shard uploads the
-fixtures it found stale, regenerated, as `detection-snapshots-<k>`.
-`just snapshots-fetch <PR|run>` writes them into the tree; review the
-diff, commit and push. Scores in CI depend on ONNX Runtime's threads,
-so the shards set `MDOC_DETECT_THREADS=4`.
+**Detection gate.** Hosted `windows-latest` is its reference platform
+([ADR 0113](adr/0113-ci-targets-by-commit-and-detection-off-macos.md)):
+the snapshots (`tests/fixtures/recognition/**/*.model.json`) are recorded
+there, with mdoc's pinned Windows x86_64 ONNX Runtime, not on a developer
+machine, whose scores differ in the fourth decimal place (a Mac's in 193
+of the 256 fixtures, 2026-11-13). A failing shard uploads the fixtures it
+found stale, regenerated, as `detection-snapshots-<k>`. **Agents on the
+Mac or the PC never commit their own `--refresh-snapshots` output**: they
+push (a local snapshot is a draft for a new fixture), let the PR head's
+gate fail, then `just snapshots-fetch <PR|run>` writes CI's snapshots into
+the tree; review the diff, commit and push. Scores in CI depend on ONNX
+Runtime's threads, so the shards set `MDOC_DETECT_THREADS=4`. A manual run
+with `record` (`gh workflow run ci-detection.yml --ref <branch> -f
+record=true`) uploads every snapshot whose bytes changed, for a runtime or
+model pin change.
 
 A recognition-area PR runs the gate on its head
 ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)), so a stale
 snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
-6 shards, on every push (a newer push cancels it), drafts included. Its
+12 shards, on every push (a newer push cancels it), drafts included. Its
 head `merge-gate` waits for `detection-head / ci/detection` beside the fast
 tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
 PR is one with a file on a recognition line of `scripts/ci-areas.txt`
-(the fixtures, `crates/mdoc-detect`, `crates/mdoc-pii`;
-`head_detection` in `scripts/lib.sh`); a core or desktop change alone runs
-the gate only in the queue, since hosted macOS runners are scarce. The
+(the fixtures, `crates/mdoc-detect`, `crates/mdoc-pii`, resources and gate
+machinery; `head_detection` in `scripts/lib.sh`); a core change alone runs
+the gate only in the queue. App-only desktop changes skip it. The
 head run replaces a manual run of the Detection gate workflow, so lanes no
 longer dispatch it. The queue still runs `ci/detection` on the queue
 commit.
@@ -815,13 +843,16 @@ commit's `Build.xcconfig`. A miss builds the core as before, then
 key does not hash, so a stale core cannot pass. Only `main` saves; the
 cache cleanup keeps its newest key.
 
-**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>] [--nights K]` measures ADR 0112's targets from GitHub's queue commits, read-only, over the last 7 days by default:
-- a queue commit's time to a green `merge-gate`: median 25 minutes or less;
-- a green `ci/windows` run, the PC's "Passed in" or a hosted fallback's job time: median 15 minutes or less;
-- a green `ci/ios (ui)` job: median 20 minutes or less;
-- queue drops not caused by the PR (an infrastructure failure, or a PC job whose one failing test is quarantined or failed on another PR's queue commit within 14 days, among the commits read): at most 1 a week, each listed with the rule that matched.
+**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>] [--nights K]` measures ADR 0113's targets from GitHub's queue commits, read-only, over the last 7 days by default. It first counts the queue commits by class, from the jobs each Queue run started: core (an iOS job and a macOS or detection job), desktop-only (macOS or detection, no iOS), iOS-only, other. Then one line per target:
+- a core queue commit's time to a green `merge-gate`: median 20 minutes or less;
+- a desktop-only one's: median 15 minutes or less;
+- every queue commit's: median 25 minutes or less;
+- the slower of a green `ci/ios (ui 1)` and `(ui 2)` pair (or the single `ci/ios (ui)` before the second shard): median 15 minutes or less;
+- queue drops not caused by the PR (an infrastructure failure, or a PC job whose one failing test, or the hosted iOS job each of whose failing parts' one test as `ci/ios`'s annotations name it, is quarantined or failed on another PR's queue commit within 14 days, a retried pass there included, among the commits read): at most 1 a week, each listed with the rule that matched.
 
-Its header says exactly what each counts. It exits 2 when a target fails, 3 when one fails in each of `--nights K` windows (ending now, a day ago and so on), 1 on an error. `--since` measures only what ran after a change landed.
+Two lines follow that never fail the run: `retried`, each hosted iOS UI test `ci/ios` warned of as passed on its retry, and `flaky`, each test not on the quarantine list with unrelated failures (a retried pass, or a test an unrelated drop names) on two or more queue commits, which ADR 0112 quarantines.
+
+Each target reads only queue commits from its start, set in one place (`target_start` in the script): the merge of the last change it depends on, so the nightly judges only data from after it. A target whose change has not merged is `pending`: reported, never judged. Its header says exactly what each counts. It exits 2 when a judged target fails, 3 when one fails in each of `--nights K` windows (ending now, a day ago and so on), 1 on an error. `--since` measures only what ran after a change landed.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
 desktop jobs on both OSes, iOS, Android (`ci-android.yml`), the detection

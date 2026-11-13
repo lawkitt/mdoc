@@ -3,10 +3,10 @@
   "threshold": 0.5,
   "entities": [
     {"start":113,"end":144,"label":"organization","score":0.96538115,"text":"отдел подготовки"},
-    {"start":155,"end":180,"label":"organization","score":0.7929456,"text":"группа сверки"},
-    {"start":1467,"end":1492,"label":"organization","score":0.9145963,"text":"группа сверки"},
+    {"start":155,"end":180,"label":"organization","score":0.79246426,"text":"группа сверки"},
+    {"start":1467,"end":1492,"label":"organization","score":0.9144437,"text":"группа сверки"},
     {"start":1505,"end":1536,"label":"organization","score":0.8946055,"text":"отдел подготовки"},
     {"start":2423,"end":2432,"label":"organization","score":0.881002,"text":"ГК РФ"},
-    {"start":2295,"end":2301,"label":"organization","score":0.5610645,"text":"ИНН"}
+    {"start":2295,"end":2301,"label":"organization","score":0.56148535,"text":"ИНН"}
   ]
 }
