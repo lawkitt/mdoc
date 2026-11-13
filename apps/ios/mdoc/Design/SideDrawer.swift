@@ -370,6 +370,9 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     /// once without one (a row that opens something: the screen covers the
     /// panel in the same update).
     func show(leading: Bool, trailing: Bool, animation: Animation?) {
+        // Only a change from SwiftUI: while a slide of the drawer's own is on
+        // its way, SwiftUI still holds the old values until it ends.
+        guard leading != leadingPanel.bound || trailing != trailingPanel.bound else { return }
         leadingPanel.bound = leading
         trailingPanel.bound = trailing
         let wanted: DrawerSide? = trailing && trailingPanel.present ? .trailing : leading ? .leading : nil
@@ -411,7 +414,8 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
 
     /// Slides the screen to rest, the active panel open or shut, with the
     /// drawer's motion (with Reduce Motion, the panel fades), and tells
-    /// SwiftUI unless it asked.
+    /// SwiftUI at the end unless it asked: the screen's update then never
+    /// runs while the screen moves.
     func slide(open: Bool, animation: Animation? = nil, tell: Bool = true) {
         slides += 1
         let slide = slides
@@ -432,8 +436,8 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
             apply()
             endDragInterval()
             if !isOpen { renew(side) }
+            if tell { tellSwiftUI(side, open: open) }
         }
-        if tell { tellSwiftUI(side, open: open) }
     }
 
     /// Moves to rest at once.
