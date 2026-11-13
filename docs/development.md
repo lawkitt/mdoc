@@ -293,7 +293,7 @@ PC's `ci/windows`), `scripts` (the suites and the quarantine check), or
 `mdoc-detect`'s lib tests run in one process, from the binary nextest built,
 so its rule pack is built once rather than in each test's process; the job's
 timeout is their only limit ([ADR 0113](adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
-Tests never retry. A test that flakes twice goes into
+Tests never retry, except the hosted iOS UI tests (below). A test that flakes twice goes into
 `.config/quarantine.txt` (`<nextest filter>  #<issue>  <expires
 YYYY-MM-DD>`) by PR, with its issue: every tier leaves it out, `just
 test-tier quarantined` runs the list alone without failing, and a line past
@@ -545,7 +545,15 @@ that did not pass. A failed part names its failing tests from the xcresult
 (`scripts/ios-failed-tests.py`, ADR 0113), as the PC's status does: an
 annotation "Failed in ci/ios (ui 1): ios:mdocUITests/PanesRowUITests/testX
 and 1 more", every name in its job summary, and `ci/ios` repeats them, in
-the quarantine list's `ios:<target>/<class>/<method>` form. Each builds the core
+the quarantine list's `ios:<target>/<class>/<method>` form. **A failed UI
+test retries once** in the UI parts (`MDOC_IOS_TEST_RETRY=1`, which gives
+`just ios-test` xcodebuild's `-retry-tests-on-failure -test-iterations 2`;
+ADR 0113): a pass on the retry keeps the part green but is named, as a
+warning "Passed on retry in ci/ios (ui 2): ios:mdocUITests/<class>/<method>"
+(one a part, naming every such test)
+and in its job summary, `ci/ios` repeats it, the xcresult is uploaded, and
+it counts as an unrelated failure toward quarantine. Unit, Rust, Android and
+script tests never retry. Each builds the core
 with `just ios-core` and restore one cargo cache (`cache-key: ios`), which
 `main-caches.yml`'s build-only run of the unit part saves. The timing tests
 (`LivePreviewUITests`' `testTypingRestyleTime` and `testReturnTime`,
@@ -840,7 +848,9 @@ cache cleanup keeps its newest key.
 - a desktop-only one's: median 15 minutes or less;
 - every queue commit's: median 25 minutes or less;
 - the slower of a green `ci/ios (ui 1)` and `(ui 2)` pair (or the single `ci/ios (ui)` before the second shard): median 15 minutes or less;
-- queue drops not caused by the PR (an infrastructure failure, or a PC job whose one failing test is quarantined or failed on another PR's queue commit within 14 days, among the commits read): at most 1 a week, each listed with the rule that matched.
+- queue drops not caused by the PR (an infrastructure failure, or a PC job whose one failing test, or the hosted iOS job each of whose failing parts' one test as `ci/ios`'s annotations name it, is quarantined or failed on another PR's queue commit within 14 days, a retried pass there included, among the commits read): at most 1 a week, each listed with the rule that matched.
+
+Two lines follow that never fail the run: `retried`, each hosted iOS UI test `ci/ios` warned of as passed on its retry, and `flaky`, each test not on the quarantine list with unrelated failures (a retried pass, or a test an unrelated drop names) on two or more queue commits, which ADR 0112 quarantines.
 
 Each target reads only queue commits from its start, set in one place (`target_start` in the script): the merge of the last change it depends on, so the nightly judges only data from after it. A target whose change has not merged is `pending`: reported, never judged. Its header says exactly what each counts. It exits 2 when a judged target fails, 3 when one fails in each of `--nights K` windows (ending now, a day ago and so on), 1 on an error. `--since` measures only what ran after a change landed.
 

@@ -292,12 +292,49 @@ final class ReviewScrollTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(seconds))
         }
 
-        /// The name under review shows whole and, a while later, has not
-        /// moved.
+        /// Runs the run loop until the reveal the last steps owe has run
+        /// and its scroll has landed: the coordinator owes and runs nothing,
+        /// the name under review shows whole, and the offset has held for
+        /// 0.1 s since. Not `settle()`'s 0.3 s of a still offset whatever
+        /// the coordinator says: on a loaded runner the owed reveal or its
+        /// scroll's first frames came later than that, and the name was
+        /// measured before it moved (#851's queue drop). The cap only ends
+        /// a wait for a name that never comes into view.
+        func settleTheReveal(timeout: TimeInterval = 10) {
+            let deadline = Date().addingTimeInterval(timeout)
+            var last = view.contentOffset
+            var still = Date()
+            var restingSince: Date?
+            while Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                view.layoutIfNeeded()
+                let now = Date()
+                if view.contentOffset != last {
+                    last = view.contentOffset
+                    still = now
+                }
+                guard idle, let current = state.reviewedCandidate, shownTop(of: current) != nil else {
+                    restingSince = nil
+                    continue
+                }
+                let since = restingSince ?? now
+                restingSince = since
+                if now.timeIntervalSince(max(still, since)) > 0.1 { return }
+            }
+        }
+
+        /// What the coordinator still owes or runs, for a failure's message.
+        var owed: String {
+            "pending reveal \(coordinator.pendingReveal.map { "\($0)" } ?? "none"), queued \(coordinator.revealQueued), "
+                + "scrolling \(coordinator.scrolling), landing \(coordinator.landing == nil ? "none" : "owed")"
+        }
+
+        /// The name under review, once the reveal the last steps owe has
+        /// run, shows whole and, a while later, has not moved.
         func assertTheNameRests(_ message: String, file: StaticString = #filePath, line: UInt = #line) throws {
-            settle()
+            settleTheReveal()
             let now = try XCTUnwrap(state.reviewedCandidate, message, file: file, line: line)
-            let top = try XCTUnwrap(shownTop(of: now), "\(message): \(now.original) is in view", file: file, line: line)
+            let top = try XCTUnwrap(shownTop(of: now), "\(message): \(now.original) is in view (\(owed))", file: file, line: line)
             // Longer than a scroll animation's first frames: a scroll
             // still on its way moves the name by then.
             turn(0.3)
