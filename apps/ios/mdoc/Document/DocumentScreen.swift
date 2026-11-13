@@ -45,11 +45,16 @@ struct DocumentScreen: View {
             .safeAreaInset(edge: .bottom) { bottomBar }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
-            .inspector(isPresented: inspectorBinding) {
+            // Only beside a standing sidebar (a wide iPad): elsewhere the
+            // screen sits in the drawer's hosting controller, where an
+            // inspector, even closed, reset its child's traits on every
+            // update without end; a narrow iPad's stands beside the drawer
+            // (RootView, ADR 0114).
+            .modifier(RegularInspector(isOn: layout.sidebarStands, isPresented: inspectorBinding) {
                 identities
                     .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
                     .reviewSheetDetents()
-            }
+            })
             .sheet(isPresented: $model.showsFind) {
                 FindSheet(model: model)
             }
@@ -96,8 +101,9 @@ struct DocumentScreen: View {
     }
 
     /// The inspector stays closed while Identities show in the right column.
-    /// On iPhone Identities is the right-edge drawer (`IdentitiesDrawer`), so
-    /// the inspector, a sheet there, stays closed.
+    /// On iPhone Identities is the right-hand drawer
+    /// (`IdentitiesPanel.drawer`), so the inspector, a sheet there, stays
+    /// closed.
     private var inspectorBinding: Binding<Bool> {
         Binding(
             get: { model.identitiesPlacement == .inspector && model.wantsIdentities },
@@ -484,5 +490,20 @@ struct DocumentScreen: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+}
+
+/// `.inspector` only when `isOn`.
+private struct RegularInspector<Inspector: View>: ViewModifier {
+    let isOn: Bool
+    @Binding var isPresented: Bool
+    @ViewBuilder var inspector: () -> Inspector
+
+    func body(content: Content) -> some View {
+        if isOn {
+            content.inspector(isPresented: $isPresented, content: inspector)
+        } else {
+            content
+        }
     }
 }

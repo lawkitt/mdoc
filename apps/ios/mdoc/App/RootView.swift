@@ -38,25 +38,32 @@ struct RootView: View {
     }
 
     /// iPhone and a narrow iPad: the sidebar lies under the screen, which
-    /// slides aside to show it (docs/mobile-ui.md, Sidebar).
+    /// slides aside to show it (docs/mobile-ui.md, Sidebar), and an open
+    /// document's Identities under its other side.
     private var drawer: some View {
-        // Editing, only the edge opens it: a sideways drag in the text
-        // is the text's (ADR 0114).
         SideDrawer(
-            isOpen: Bindable(app.navigator).showsSidebar,
-            opens: app.openModel?.isEditing == true ? .edge : .anywhere
+            leading: DrawerPanel(
+                isOpen: Bindable(app.navigator).showsSidebar,
+                closeLabel: "Close sidebar",
+                // Editing, only the edge opens it: a sideways drag in the
+                // text is the text's (ADR 0114).
+                opens: app.openModel?.isEditing == true ? .edge : .anywhere
+            ) {
+                SidebarView(app: app)
+            },
+            trailing: IdentitiesPanel.drawer(model: app.openModel, layout: layout)
         ) {
-            SidebarView(app: app)
-        } content: {
-            IdentitiesDrawer(model: app.openModel, layout: layout) {
-                NavigationStack {
-                    main
-                }
+            NavigationStack {
+                main
             }
             .environment(\.showSidebar) {
                 withAnimation(Motion.move(reduced: reduceMotion)) { app.navigator.showsSidebar = true }
             }
         }
+        // A narrow iPad's Identities inspector stands beside the drawer, in
+        // the window's own host: inside the drawer's hosting controller an
+        // inspector reset its child's traits without end (ADR 0114).
+        .modifier(IdentitiesInspector(model: layout.isRegular ? app.openModel : nil))
     }
 
     /// A wide iPad: the same sidebar as the standing first column.
@@ -101,6 +108,27 @@ struct RootView: View {
             case .section(.documents): DocumentsPage(app: app)
             case .start: StartView(app: app)
             }
+        }
+    }
+}
+
+/// A document's Identities as the inspector beside the screen, while the
+/// window wants them there (`IdentitiesPlacement.inspector`).
+private struct IdentitiesInspector: ViewModifier {
+    let model: DocumentViewModel?
+
+    func body(content: Content) -> some View {
+        if let model {
+            content.inspector(isPresented: Binding(
+                get: { model.identitiesPlacement == .inspector && model.wantsIdentities },
+                set: { model.showIdentities($0) })
+            ) {
+                IdentitiesPanel(model: model)
+                    .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
+                    .reviewSheetDetents()
+            }
+        } else {
+            content
         }
     }
 }

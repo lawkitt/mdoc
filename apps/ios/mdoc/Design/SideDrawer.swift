@@ -3,10 +3,10 @@ import UIKit
 import UIKit.UIGestureRecognizerSubclass
 import os
 
-/// Which side of the screen a `SideDrawer`'s panel lies on.
+/// Which side of the screen a drawer's panel lies on.
 enum DrawerSide { case leading, trailing }
 
-/// Where a sideways swipe opens a closed `SideDrawer` (ADR 0114).
+/// Where a sideways swipe opens a closed drawer (ADR 0114).
 enum DrawerOpening {
     /// Anywhere on the screen, but on what keeps its own sideways swipes.
     case anywhere
@@ -16,53 +16,75 @@ enum DrawerOpening {
     case never
 }
 
-/// A panel under the screen that the screen slides aside to show, as the
-/// Claude app's sidebar does (docs/mobile-ui.md, Sidebar): the content
-/// moves toward the far edge, keeps a dimmed sliver with rounded corners,
-/// and a tap on the sliver or a swipe back closes the panel. It opens from a
-/// sideways swipe anywhere on the screen (`opens`) or from a button that
-/// sets `isOpen`, and follows the finger both ways. Open, only a swipe that
-/// starts on the sliver or at the panel's inner edge moves it: a swipe over
-/// the panel's content is the content's, such as an Identities row's (ADR
-/// 0106). While a drawer inside its content shows its panel, the swipe is
-/// that drawer's: with Identities open, a swipe right from the left edge
-/// closes Identities and never opens the sidebar over it.
-///
-/// The drag runs in UIKit (ADR 0114): the panel and the screen each sit in
-/// a hosting controller, one pan recognizer moves their layers by
-/// transform, and SwiftUI hears only open or shut at the end. Nothing
-/// changes a shadow or a mask while the finger moves, and the panel stays
-/// built while closed, so the first frames of a drag build nothing.
-struct SideDrawer<Panel: View, Content: View>: View {
-    typealias Side = DrawerSide
-
-    var side: Side = .leading
-    @Binding var isOpen: Bool
-    /// What VoiceOver's close action and the sliver are called.
-    var closeLabel: LocalizedStringResource = "Close sidebar"
-    /// Where a swipe opens the closed panel.
+/// One side's panel in a `SideDrawer`: whether it is open, what its sliver
+/// is called for VoiceOver, and where a swipe opens it.
+struct DrawerPanel<Panel: View> {
+    var isOpen: Binding<Bool>
+    var closeLabel: LocalizedStringResource
     var opens: DrawerOpening = .anywhere
-    @ViewBuilder var panel: () -> Panel
+    var panel: Panel
+
+    init(
+        isOpen: Binding<Bool>, closeLabel: LocalizedStringResource, opens: DrawerOpening = .anywhere,
+        @ViewBuilder panel: () -> Panel
+    ) {
+        self.isOpen = isOpen
+        self.closeLabel = closeLabel
+        self.opens = opens
+        self.panel = panel()
+    }
+}
+
+/// Panels under the screen that the screen slides aside to show, as the
+/// Claude app's sidebar does (docs/mobile-ui.md, Sidebar): the sidebar on
+/// the leading side, Identities on the trailing one. The screen moves toward
+/// the far edge, keeps a dimmed sliver with rounded corners, and a tap on
+/// the sliver or a swipe back closes the panel. A panel opens from a
+/// sideways swipe anywhere on the screen (each panel's `opens`) or from a
+/// button that sets its `isOpen`, and follows the finger both ways. One
+/// panel shows at a time. Open, only a swipe that starts on the sliver or at
+/// the panel's inner edge moves it: a swipe over the panel's content is the
+/// content's, such as an Identities row's (ADR 0106); with Identities open,
+/// a swipe right from the left edge closes Identities and never opens the
+/// sidebar.
+///
+/// The drag runs in UIKit (ADR 0114): the panels and the screen each sit in
+/// a hosting controller of one view controller, one pan recognizer moves
+/// their layers by transform, and SwiftUI hears only open or shut at the
+/// end. Nothing changes a shadow or a mask while the finger moves, and the
+/// panels stay built while closed, so the first frames of a drag build
+/// nothing. Both panels are in the one controller: a drawer's hosting
+/// controller inside another's updated its traits without end.
+struct SideDrawer<Leading: View, Trailing: View, Content: View>: View {
+    var leading: DrawerPanel<Leading>
+    var trailing: DrawerPanel<Trailing>?
     @ViewBuilder var content: () -> Content
 
     var body: some View {
+        // Read here, so a change to either redraws the drawer.
         DrawerHost(
-            side: side, isOpen: $isOpen, closeLabel: String(localized: closeLabel), opens: opens,
-            panel: panel(), content: content())
+            leading: leading, trailing: trailing, leadingOpen: leading.isOpen.wrappedValue,
+            trailingOpen: trailing?.isOpen.wrappedValue ?? false, content: content())
             // The hosted screen keeps its own safe areas; the drawer is the
             // whole window, so nothing the screen draws in them is cut off.
             .ignoresSafeArea()
     }
 }
 
-/// The drawer's controller in SwiftUI: hands it the panel and the screen,
-/// with the environment around the drawer, and whether it is open.
-private struct DrawerHost<Panel: View, Content: View>: UIViewControllerRepresentable {
-    let side: DrawerSide
-    @Binding var isOpen: Bool
-    let closeLabel: String
-    let opens: DrawerOpening
-    let panel: Panel
+extension SideDrawer where Trailing == EmptyView {
+    /// A drawer with a leading panel only.
+    init(leading: DrawerPanel<Leading>, @ViewBuilder content: @escaping () -> Content) {
+        self.init(leading: leading, trailing: nil, content: content)
+    }
+}
+
+/// The drawer's controller in SwiftUI: hands it the panels and the screen,
+/// with the app's environment around the drawer, and which panel is open.
+private struct DrawerHost<Leading: View, Trailing: View, Content: View>: UIViewControllerRepresentable {
+    let leading: DrawerPanel<Leading>
+    let trailing: DrawerPanel<Trailing>?
+    let leadingOpen: Bool
+    let trailingOpen: Bool
     let content: Content
 
     func makeUIViewController(context: Context) -> DrawerController {
@@ -71,93 +93,132 @@ private struct DrawerHost<Panel: View, Content: View>: UIViewControllerRepresent
 
     func updateUIViewController(_ controller: DrawerController, context: Context) {
         let environment = context.environment
-        controller.side = side
         controller.layoutDirection = environment.layoutDirection
         controller.reduceMotion = environment.accessibilityReduceMotion
-        controller.closeLabel = closeLabel
-        controller.opens = opens
-        let binding = $isOpen
-        controller.setOpenBinding = { binding.wrappedValue = $0 }
-        // A hosting controller starts from its window's environment: the
-        // values set around the drawer (the app model, the layout, the
-        // preferences) go in with the views.
-        controller.setViews(
-            panel: AnyView(panel
-                .environment(\.self, environment)
+        func panelView(_ panel: some View, _ side: DrawerSide) -> AnyView {
+            AnyView(panel
+                .modifier(ForwardedEnvironment(values: environment))
                 // The panel's own close button slides it shut.
                 .environment(\.closeDrawer) { [weak controller] in
-                    MainActor.assumeIsolated { controller?.slide(open: false) }
-                }),
-            content: AnyView(content.environment(\.self, environment)))
+                    MainActor.assumeIsolated { controller?.close(side) }
+                })
+        }
+        let leadingBinding = leading.isOpen
+        controller.configure(
+            .leading, present: true, closeLabel: String(localized: leading.closeLabel), opens: leading.opens,
+            view: panelView(leading.panel, .leading)) { leadingBinding.wrappedValue = $0 }
+        if let trailing {
+            let trailingBinding = trailing.isOpen
+            controller.configure(
+                .trailing, present: true, closeLabel: String(localized: trailing.closeLabel), opens: trailing.opens,
+                view: panelView(trailing.panel, .trailing)) { trailingBinding.wrappedValue = $0 }
+        } else {
+            controller.configure(.trailing, present: false, closeLabel: "", opens: .never, view: AnyView(EmptyView())) { _ in }
+        }
+        controller.setContent(AnyView(content.modifier(ForwardedEnvironment(values: environment))))
         let transaction = context.transaction
-        controller.show(open: isOpen, animation: transaction.disablesAnimations ? nil : transaction.animation)
+        controller.show(
+            leading: leadingOpen, trailing: trailingOpen,
+            animation: transaction.disablesAnimations ? nil : transaction.animation)
     }
 }
 
-/// The panel under the screen and the screen over it, moved by one pan.
+/// The app's environment values set around the drawer, for the hosting
+/// controllers inside it. Only these: the whole environment (`\.self`)
+/// carries the outer host's own values and traits, which fed back into the
+/// hosts without end. The system's values (colour scheme, text size,
+/// Reduce Motion) reach the hosts as traits.
+private struct ForwardedEnvironment: ViewModifier {
+    let values: EnvironmentValues
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.appModel, values.appModel)
+            .environment(\.preferences, values.preferences)
+            .environment(\.documentLayout, values.documentLayout)
+            .environment(\.showSidebar, values.showSidebar)
+    }
+}
+
+/// The panels under the screen and the screen over them, moved by one pan.
 final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
-    /// Every drawer, so one can tell whether a drawer inside its screen
-    /// shows its panel.
-    private static let all = NSHashTable<DrawerController>.weakObjects()
     /// A drag and the slide after it, as an animation interval whose
     /// hitches a device test measures (DeviceTapTimingUITests).
     private static let signposter = OSSignposter(subsystem: "io.github.lawkitt.mdoc", category: "Drawer")
 
-    var side: DrawerSide = .leading { didSet { if side != oldValue { view.setNeedsLayout() } } }
-    var layoutDirection: LayoutDirection = .leftToRight { didSet { if layoutDirection != oldValue { view.setNeedsLayout() } } }
-    var reduceMotion = false { didSet { if reduceMotion != oldValue { view.setNeedsLayout() } } }
-    var closeLabel = "" { didSet { sliver.accessibilityLabel = closeLabel } }
-    var opens: DrawerOpening = .anywhere
-    /// Tells SwiftUI the drawer came to rest open or shut.
-    var setOpenBinding: (Bool) -> Void = { _ in }
+    /// One side's panel and what SwiftUI said about it.
+    @MainActor private final class Panel {
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        /// There is a panel on this side (Identities: a document is open,
+        /// in a narrow window).
+        var present = false
+        var closeLabel = ""
+        var opens: DrawerOpening = .never
+        /// Tells SwiftUI the panel came to rest open or shut.
+        var setOpen: (Bool) -> Void = { _ in }
+        /// What SwiftUI last said its `isOpen` is.
+        var bound = false
+        /// The panel as SwiftUI last gave it, and how many times it was
+        /// made anew: closed, it starts over (no search or Select left).
+        var view = AnyView(EmptyView())
+        var generation = 0
+    }
 
-    private let panelHost = UIHostingController(rootView: AnyView(EmptyView()))
+    var layoutDirection: LayoutDirection = .leftToRight { didSet { if layoutDirection != oldValue { view.setNeedsLayout() } } }
+    var reduceMotion = false { didSet { if reduceMotion != oldValue { stack() } } }
+
+    private let leadingPanel = Panel()
+    private let trailingPanel = Panel()
     private let contentHost = UIHostingController(rootView: AnyView(EmptyView()))
-    /// Rounds the screen's corners while the panel shows.
+    /// Rounds the screen's corners while a panel shows.
     private let clip = UIView()
     /// The screen's shadow on the panel: a fixed path, never redrawn.
     private let shadow = UIView()
     private let sliver = DrawerSliverView()
-    /// Over the panel's inner edge while open: a drag there is the drawer's
-    /// and never reaches a row below.
+    /// Over the open panel's inner edge: a drag there is the drawer's and
+    /// never reaches a row below.
     private let innerEdge = UIView()
     private let pan = DrawerPan(target: nil, action: nil)
 
-    /// Where the drawer rests or is sliding to.
-    private(set) var isOpen = false
-    /// What SwiftUI last said `isOpen` is.
-    private var boundOpen = false
+    /// The panel that shows or moves; `shown` is its.
+    private var active: DrawerSide = .leading
+    /// The panel open, or sliding open: `nil` when the screen rests shut or
+    /// slides shut.
+    private var openSide: DrawerSide?
     /// How far the screen has moved aside, from 0 to the panel's width.
     private var shown: CGFloat = 0
     private var dragStart: CGFloat = 0
     private var dragging = false
-    /// The drawer is sliding to rest: the panel stays until it gets there.
+    /// The screen is sliding to rest: the panel stays until it gets there.
     private var settling = false
     /// Counts the slides, so an earlier slide's end leaves a later one be.
     private var slides = 0
-    /// The pan is following a touch that started where it may move the
-    /// drawer.
-    private var tracking = false
-    /// The tracked touch started at the screen's near edge, where the
+    /// The panels a touch may open or move, found where it started.
+    private var candidates: [DrawerSide] = []
+    /// The tracked touch started at a candidate's near edge, where the
     /// drawer goes before anything that scrolls sideways.
     private var fromEdge = false
+    /// The panel the pan chose once the touch went clearly sideways.
+    private var chosen: DrawerSide?
     private weak var trackedTouch: UITouch?
-    /// The panel as SwiftUI last gave it, and how many times it was made
-    /// anew: closed, it starts over (no search or Select left from before).
-    private var panelView = AnyView(EmptyView())
-    private var panelGeneration = 0
     private var dragInterval: OSSignpostIntervalState?
 
-    /// The panel is there: open, dragged or sliding to rest.
-    var showsPanel: Bool { isOpen || dragging || settling }
+    private var isOpen: Bool { openSide != nil }
+    /// The active panel is there: open, dragged or sliding to rest.
+    private var showsPanel: Bool { isOpen || dragging || settling }
 
-    /// +1 when the screen moves right to open, -1 when it moves left.
-    private var sign: CGFloat {
+    private func panel(_ side: DrawerSide) -> Panel {
+        side == .leading ? leadingPanel : trailingPanel
+    }
+
+    /// +1 when the screen moves right to open `side`, -1 when it moves left.
+    private func sign(_ side: DrawerSide) -> CGFloat {
         let leading: CGFloat = side == .leading ? 1 : -1
         return layoutDirection == .rightToLeft ? -leading : leading
     }
 
-    private var panelOnLeft: Bool { sign > 0 }
+    private var sign: CGFloat { sign(active) }
+    private func onLeft(_ side: DrawerSide) -> Bool { sign(side) > 0 }
     private var panelWidth: CGFloat { DrawerDrag.panelWidth(view.bounds.width) }
 
     override func loadView() {
@@ -174,10 +235,15 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
 
-        addChild(panelHost)
-        panelHost.view.backgroundColor = .clear
-        view.addSubview(panelHost.view)
-        panelHost.didMove(toParent: self)
+        for side in [DrawerSide.leading, .trailing] {
+            let host = panel(side).host
+            addChild(host)
+            host.view.backgroundColor = .clear
+            host.view.isHidden = true
+            host.view.accessibilityElementsHidden = true
+            view.addSubview(host.view)
+            host.didMove(toParent: self)
+        }
 
         innerEdge.accessibilityElementsHidden = true
         view.addSubview(innerEdge)
@@ -209,14 +275,14 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
             return decide(delta)
         }
         pan.onReset = { [weak self] in
-            self?.tracking = false
+            self?.candidates = []
             self?.fromEdge = false
+            self?.chosen = nil
             self?.trackedTouch = nil
         }
         pan.addTarget(self, action: #selector(panned(_:)))
         view.addGestureRecognizer(pan)
 
-        Self.all.add(self)
         apply()
     }
 
@@ -232,98 +298,162 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         contentHost.view.frame = clip.bounds
         shadow.layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: Radius.screen).cgPath
         let width = panelWidth
-        panelHost.view.bounds = CGRect(x: 0, y: 0, width: width, height: bounds.height)
-        panelHost.view.center = CGPoint(x: panelOnLeft ? width / 2 : bounds.width - width / 2, y: middle.y)
-        if reduceMotion {
-            // Nothing slides: the panel fades in over the screen, and the
-            // rest of the screen dims.
-            view.insertSubview(panelHost.view, aboveSubview: clip)
-            let rest = bounds.width - width
-            sliver.bounds = CGRect(x: 0, y: 0, width: rest, height: bounds.height)
-            sliver.center = CGPoint(x: panelOnLeft ? width + rest / 2 : rest / 2, y: middle.y)
-        } else {
-            view.insertSubview(panelHost.view, at: 0)
-            sliver.bounds = bounds
-            sliver.center = middle
+        for side in [DrawerSide.leading, .trailing] {
+            let host = panel(side).host.view!
+            host.bounds = CGRect(x: 0, y: 0, width: width, height: bounds.height)
+            host.center = CGPoint(x: onLeft(side) ? width / 2 : bounds.width - width / 2, y: middle.y)
         }
-        view.insertSubview(innerEdge, aboveSubview: panelHost.view)
-        innerEdge.frame = CGRect(
-            x: panelOnLeft ? width - DrawerDrag.innerEdge : bounds.width - width, y: 0,
-            width: DrawerDrag.innerEdge, height: bounds.height)
+        arrange()
         if !dragging { shown = isOpen ? width : 0 }
         apply()
     }
 
+    /// Stacks the active panel: under the screen, or with Reduce Motion
+    /// over it, since nothing slides and the panel fades in. Only when the
+    /// panel or the setting changes: moving a view in the hierarchy sends
+    /// traits down again, and the screen's host lays out anew.
+    private func stack() {
+        let host = panel(active).host.view!
+        if reduceMotion {
+            view.insertSubview(host, aboveSubview: clip)
+        } else {
+            view.insertSubview(host, belowSubview: innerEdge)
+        }
+        view.insertSubview(innerEdge, aboveSubview: host)
+        view.setNeedsLayout()
+    }
+
+    /// Places the sliver and the inner edge for the active panel; with
+    /// Reduce Motion the sliver dims only the rest of the screen.
+    private func arrange() {
+        let bounds = view.bounds
+        let width = panelWidth
+        if reduceMotion {
+            let rest = bounds.width - width
+            sliver.bounds = CGRect(x: 0, y: 0, width: rest, height: bounds.height)
+            sliver.center = CGPoint(x: onLeft(active) ? width + rest / 2 : rest / 2, y: bounds.midY)
+        } else {
+            sliver.bounds = bounds
+            sliver.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        }
+        innerEdge.frame = CGRect(
+            x: onLeft(active) ? width - DrawerDrag.innerEdge : bounds.width - width, y: 0,
+            width: DrawerDrag.innerEdge, height: bounds.height)
+    }
+
     // MARK: SwiftUI
 
-    func setViews(panel: AnyView, content: AnyView) {
-        panelView = panel
-        panelHost.rootView = AnyView(panel.id(panelGeneration))
+    func configure(
+        _ side: DrawerSide, present: Bool, closeLabel: String, opens: DrawerOpening, view panelView: AnyView,
+        setOpen: @escaping (Bool) -> Void
+    ) {
+        let panel = panel(side)
+        let wasPresent = panel.present
+        panel.present = present
+        panel.closeLabel = closeLabel
+        panel.opens = opens
+        panel.setOpen = setOpen
+        panel.view = panelView
+        panel.host.rootView = AnyView(panelView.id(panel.generation))
+        // A panel that goes (the document closed) takes nothing with it.
+        if wasPresent, !present, active == side, showsPanel {
+            cancelDrag()
+            rest(open: false)
+        }
+    }
+
+    func setContent(_ content: AnyView) {
         contentHost.rootView = content
     }
 
-    /// SwiftUI's `isOpen`: slides with the change's animation, or moves at
+    /// SwiftUI's `isOpen`s: slides with the change's animation, or moves at
     /// once without one (a row that opens something: the screen covers the
     /// panel in the same update).
-    func show(open: Bool, animation: Animation?) {
-        boundOpen = open
-        guard open != isOpen else { return }
-        if dragging {
-            // The finger lets go of the drawer.
-            pan.isEnabled = false
-            pan.isEnabled = true
-            dragging = false
+    func show(leading: Bool, trailing: Bool, animation: Animation?) {
+        leadingPanel.bound = leading
+        trailingPanel.bound = trailing
+        let wanted: DrawerSide? = trailing && trailingPanel.present ? .trailing : leading ? .leading : nil
+        guard wanted != openSide else { return }
+        cancelDrag()
+        if let wanted, wanted != active {
+            // One panel at a time: the other goes at once.
+            if showsPanel { rest(open: false) }
+            setActive(wanted)
         }
         if let animation {
-            slide(open: open, animation: animation)
+            slide(open: wanted != nil, animation: animation, tell: false)
         } else {
-            rest(open: open)
+            rest(open: wanted != nil)
         }
+    }
+
+    /// A panel's own close button.
+    func close(_ side: DrawerSide) {
+        guard openSide == side else { return }
+        slide(open: false)
+    }
+
+    private func setActive(_ side: DrawerSide) {
+        guard side != active else { return }
+        active = side
+        stack()
+    }
+
+    private func cancelDrag() {
+        guard dragging else { return }
+        // The finger lets go of the drawer.
+        pan.isEnabled = false
+        pan.isEnabled = true
+        dragging = false
     }
 
     // MARK: Motion
 
-    /// Slides the screen to rest, open or shut, with the drawer's motion
-    /// (with Reduce Motion, the panel fades), and tells SwiftUI.
-    func slide(open: Bool, animation: Animation? = nil) {
+    /// Slides the screen to rest, the active panel open or shut, with the
+    /// drawer's motion (with Reduce Motion, the panel fades), and tells
+    /// SwiftUI unless it asked.
+    func slide(open: Bool, animation: Animation? = nil, tell: Bool = true) {
         slides += 1
         let slide = slides
         let from = currentShown()
         stopMotion()
-        isOpen = open
+        let side = active
+        openSide = open ? side : nil
         settling = true
         shown = from
         apply()
         let target = open ? panelWidth : 0
-        let finish = { [weak self] in
+        UIView.animate(reduceMotion ? Motion.fade : animation ?? Motion.move(reduced: false)) {
+            self.shown = target
+            self.apply()
+        } completion: { [weak self] in
             guard let self, slide == slides else { return }
             settling = false
             apply()
             endDragInterval()
-            if !isOpen { renewPanel() }
+            if !isOpen { renew(side) }
         }
-        UIView.animate(reduceMotion ? Motion.fade : animation ?? Motion.move(reduced: false)) {
-            self.shown = target
-            self.apply()
-        } completion: {
-            finish()
-        }
-        if open != boundOpen {
-            boundOpen = open
-            setOpenBinding(open)
-        }
+        if tell { tellSwiftUI(side, open: open) }
     }
 
     /// Moves to rest at once.
     private func rest(open: Bool) {
         slides += 1
         stopMotion()
-        isOpen = open
+        let side = active
+        openSide = open ? side : nil
         settling = false
         shown = open ? panelWidth : 0
         apply()
         endDragInterval()
-        if !open { renewPanel() }
+        if !open { renew(side) }
+    }
+
+    private func tellSwiftUI(_ side: DrawerSide, open: Bool) {
+        let panel = panel(side)
+        guard panel.bound != open else { return }
+        panel.bound = open
+        panel.setOpen(open)
     }
 
     private func endDragInterval() {
@@ -336,24 +466,25 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     private func currentShown() -> CGFloat {
         guard settling else { return shown }
         if reduceMotion {
-            guard let panel = panelHost.view.layer.presentation() else { return shown }
-            return CGFloat(panel.opacity) * panelWidth
+            guard let faded = panel(active).host.view.layer.presentation() else { return shown }
+            return CGFloat(faded.opacity) * panelWidth
         }
         guard let moved = clip.layer.presentation() else { return shown }
         return min(max(moved.affineTransform().tx * sign, 0), panelWidth)
     }
 
     private func stopMotion() {
-        for moved in [clip, shadow, sliver, panelHost.view!] {
+        for moved in [clip, shadow, sliver, leadingPanel.host.view!, trailingPanel.host.view!] {
             moved.layer.removeAllAnimations()
         }
     }
 
-    /// Closed, the panel is made anew under the screen, as if it had gone:
+    /// Closed, a panel is made anew under the screen, as if it had gone:
     /// the next drag finds it built.
-    private func renewPanel() {
-        panelGeneration += 1
-        panelHost.rootView = AnyView(panelView.id(panelGeneration))
+    private func renew(_ side: DrawerSide) {
+        let panel = panel(side)
+        panel.generation += 1
+        panel.host.rootView = AnyView(panel.view.id(panel.generation))
     }
 
     /// Places the layers for `shown`: transforms and opacities, nothing
@@ -361,36 +492,42 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     private func apply() {
         let width = panelWidth
         let progress = width > 0 ? min(max(shown / width, 0), 1) : 0
+        let host = panel(active).host.view!
         if reduceMotion {
             // The finger fades the panel in and out; nothing moves.
             clip.transform = .identity
             shadow.transform = .identity
             sliver.transform = .identity
-            panelHost.view.transform = .identity
-            panelHost.view.alpha = progress
+            host.transform = .identity
+            host.alpha = progress
         } else {
             let move = CGAffineTransform(translationX: sign * shown, y: 0)
             clip.transform = move
             shadow.transform = move
             sliver.transform = move
             // A little parallax: the panel comes from under the screen.
-            panelHost.view.transform = CGAffineTransform(translationX: sign * -(1 - progress) * 24, y: 0)
-            panelHost.view.alpha = 1
+            host.transform = CGAffineTransform(translationX: sign * -(1 - progress) * 24, y: 0)
+            host.alpha = 1
         }
         sliver.alpha = 0.22 * progress
+        sliver.accessibilityLabel = panel(active).closeLabel
 
         let shows = showsPanel
-        panelHost.view.isHidden = !shows
-        panelHost.view.isUserInteractionEnabled = isOpen || dragging
-        // Closed, the panel is not there for VoiceOver (or tests); open,
-        // the panel and the sliver, its close button, are all there is.
-        panelHost.view.accessibilityElementsHidden = !isOpen
+        for side in [DrawerSide.leading, .trailing] {
+            let view = panel(side).host.view!
+            let this = side == active
+            view.isHidden = !(this && shows)
+            view.isUserInteractionEnabled = this && (isOpen || dragging)
+            // Closed, a panel is not there for VoiceOver (or tests); open,
+            // the panel and the sliver, its close button, are all there is.
+            view.accessibilityElementsHidden = !(this && isOpen)
+        }
         contentHost.view.accessibilityElementsHidden = isOpen
         innerEdge.isHidden = !isOpen
         sliver.isHidden = !shows
         shadow.isHidden = !shows || reduceMotion
-        // Set when the panel starts to show and when it is gone, never
-        // while the finger moves.
+        // Set when a panel starts to show and when it is gone, never while
+        // the finger moves.
         let radius = shows && !reduceMotion ? Radius.screen : 0
         if clip.layer.cornerRadius != radius { clip.layer.cornerRadius = radius }
     }
@@ -402,9 +539,9 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     // MARK: The pan
 
     @objc private func panned(_ pan: DrawerPan) {
-        let width = panelWidth
         switch pan.state {
         case .began:
+            if !isOpen, !settling || shown == 0, let chosen { setActive(chosen) }
             if dragInterval == nil { dragInterval = Self.signposter.beginAnimationInterval("Drawer drag") }
             dragStart = currentShown()
             slides += 1
@@ -416,7 +553,7 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
             apply()
         case .changed:
             guard dragging else { return }
-            shown = min(max(dragStart + pan.translation(in: view).x * sign, 0), width)
+            shown = min(max(dragStart + pan.translation(in: view).x * sign, 0), panelWidth)
             apply()
         case .ended, .cancelled:
             guard dragging else { return }
@@ -424,24 +561,61 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
             let velocity = pan.velocity(in: view).x * sign
             // Where a flick would carry it.
             let end = shown + velocity * 0.2
-            slide(open: pan.state == .ended ? end > width / 2 : isOpen)
+            slide(open: pan.state == .ended ? end > panelWidth / 2 : isOpen)
             Haptics.selection()
         default:
             break
         }
     }
 
+    /// Whether the touch, moved by `delta`, is the drawer's: `nil` until it
+    /// is clear. Open, the open panel's; closed, the first candidate it
+    /// moves toward opening.
     private func decide(_ delta: CGVector) -> Bool? {
-        DrawerDrag.decide(delta, sign: sign, isOpen: isOpen)
+        var waiting = false
+        for side in candidates {
+            switch DrawerDrag.decide(delta, sign: sign(side), isOpen: isOpen) {
+            case true?:
+                chosen = side
+                return true
+            case nil: waiting = true
+            case false?: break
+            }
+        }
+        return waiting ? nil : false
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard gestureRecognizer === pan else { return true }
         let point = touch.location(in: view)
-        tracking = takesTouch(at: point)
-        fromEdge = tracking && !isOpen && atNearEdge(point)
-        trackedTouch = tracking ? touch : nil
-        return tracking
+        if let openSide {
+            let moves = DrawerDrag.movesOpenDrawer(
+                startingAt: point.x, width: view.bounds.width, panelWidth: panelWidth, panelOnLeft: onLeft(openSide))
+            candidates = moves ? [openSide] : []
+            fromEdge = false
+        } else {
+            // Hit-tested once, for both sides.
+            var keeps: Bool?
+            candidates = [DrawerSide.leading, .trailing].filter { side in
+                let panel = panel(side)
+                guard panel.present else { return false }
+                switch panel.opens {
+                case .never: return false
+                case .edge: return atNearEdge(point, of: side)
+                case .anywhere:
+                    if atNearEdge(point, of: side) { return true }
+                    if keeps == nil {
+                        keeps = DrawerSwipes.keepsSideSwipes(at: point, in: view, within: contentHost.view)
+                    }
+                    return keeps == false
+                }
+            }
+            // Sliding shut, only the panel on its way.
+            if settling { candidates = candidates.filter { $0 == active } }
+            fromEdge = candidates.contains { atNearEdge(point, of: $0) }
+        }
+        trackedTouch = candidates.isEmpty ? nil : touch
+        return !candidates.isEmpty
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -457,40 +631,16 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         shouldBeRequiredToFailBy other: UIGestureRecognizer
     ) -> Bool {
         // The screen's vertical scrolls wait until the drawer's pan has
-        // decided, so a sideways swipe never scrolls the text too; from the
+        // decided, so a sideways swipe never scrolls the text too; from a
         // near edge, what scrolls sideways waits as well.
-        guard gestureRecognizer === pan, tracking, !isOpen,
+        guard gestureRecognizer === pan, !candidates.isEmpty, !isOpen,
               let scroll = other.view as? UIScrollView, other === scroll.panGestureRecognizer,
               scroll.isDescendant(of: contentHost.view) else { return false }
         return fromEdge || !DrawerSwipes.scrollsSideways(scroll)
     }
 
-    /// Whether a touch starting at `point` may move the drawer.
-    private func takesTouch(at point: CGPoint) -> Bool {
-        if innerShows { return false }
-        let width = view.bounds.width
-        if isOpen {
-            return DrawerDrag.movesOpenDrawer(
-                startingAt: point.x, width: width, panelWidth: panelWidth, panelOnLeft: panelOnLeft)
-        }
-        let atEdge = atNearEdge(point)
-        switch opens {
-        case .never: return false
-        case .edge: return atEdge
-        case .anywhere:
-            return atEdge || !DrawerSwipes.keepsSideSwipes(at: point, in: view, within: contentHost.view)
-        }
-    }
-
-    private func atNearEdge(_ point: CGPoint) -> Bool {
-        panelOnLeft ? point.x <= DrawerDrag.edgeWidth : point.x >= view.bounds.width - DrawerDrag.edgeWidth
-    }
-
-    /// A drawer inside the screen shows its panel.
-    private var innerShows: Bool {
-        Self.all.allObjects.contains {
-            $0 !== self && $0.showsPanel && $0.isViewLoaded && $0.view.isDescendant(of: contentHost.view)
-        }
+    private func atNearEdge(_ point: CGPoint, of side: DrawerSide) -> Bool {
+        onLeft(side) ? point.x <= DrawerDrag.edgeWidth : point.x >= view.bounds.width - DrawerDrag.edgeWidth
     }
 }
 
@@ -648,7 +798,7 @@ enum DrawerDrag {
     static let innerEdge: CGFloat = 20
     /// The sliver of the screen left showing while the panel is open.
     static let sliver: CGFloat = 72
-    /// The near edge that opens the panel while only the edge does (edit
+    /// The near edge that opens a panel while only the edge does (edit
     /// mode), and always.
     static let edgeWidth: CGFloat = 22
 

@@ -236,9 +236,9 @@ final class ComponentSnapshotTests: XCTestCase {
     /// What a screen draws in the safe areas stays on screen: the drawer
     /// clipped to its frame, which cut the bottom toolbar's buttons in half.
     func testSideDrawerKeepsWhatTheScreenDrawsInTheSafeAreas() throws {
-        let host = UIHostingController(rootView: SideDrawer(isOpen: .constant(false)) {
-            Color.clear
-        } content: {
+        let host = UIHostingController(rootView: SideDrawer(
+            leading: DrawerPanel(isOpen: .constant(false), closeLabel: "Close sidebar") { Color.clear }
+        ) {
             Color(red: 1, green: 0, blue: 0).ignoresSafeArea()
         })
         host.additionalSafeAreaInsets = UIEdgeInsets(top: 60, left: 0, bottom: 40, right: 0)
