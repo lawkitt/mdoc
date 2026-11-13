@@ -266,32 +266,11 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
 
 The queue's long jobs get shorter and its unrelated drops stop needing the
 maintainer ([ADR 0112](docs/adr/0112-ci-speed-after-the-first-fortnight.md),
-[CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)). Items 16–18
-run in parallel; 19–21 follow item 17. Items 23–31 come from the
+[CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)); items 16–21
+have shipped. Items 23–31 come from the
 [second grill](docs/design/ci-grill-2-2026-11-13.md) and run in that
 order; item 22 (the PC's slow bursts) closed as not needed.
 
-16. **[CI] Windows job: Rust tests only.** `ci/windows` runs the test tiers
-    and doctests, not the script suites; the PC's 45-minute override goes,
-    so the limit is 30. Shadow-branch run first. *Done when:* a week of
-    queue traffic is measured against ADR 0112's Windows target, and the
-    PC's place (main or fallback) is decided by it.
-17. **[CI] iOS job in two.** `ci/ios (unit)` (unit and parity tests, then
-    the Release build, replacing `ci/ios-release`) and `ci/ios (ui)` in
-    parallel; the timing tests run nightly. *Done when:* `ci/ios (ui)`'s
-    median is measured; a second UI shard follows if it is over 20 minutes.
-18. **[CI] Quarantine the Android long-press flake**
-    (`IdentitiesTest#aLongPressKeepsAllOfAnIdentity`). *Done when:* the
-    line and its issue are on `main`.
-19. **[CI] iOS test sweep.** ADR 0112's rule applied to the iOS UI tests
-    and the slow unit tests (`ReviewScrollTests`), one PR with a reason per
-    test. *Done when:* merged.
-20. **[CI] Rust, script and Android sweeps.** Rust tests over 10 s on
-    hosted macOS, script suites over 60 s on Linux, Android instrumented
-    tests; one PR each. *Done when:* all three merged.
-21. **[CI] Targets in the nightly.** The nightly runs `scripts/ci-stats.sh`
-    with ADR 0112's targets and opens an issue after 3 red nights.
-    *Done when:* a drill with a red target opens the issue.
 23. **[CI] Failing iOS tests by name.** After a failure `ci-ios.yml`
     reads the xcresult and names the failing tests in the job's error and
     summary, as the PC's status does, so `ci-stats.sh` and the hub apply
