@@ -10,8 +10,10 @@
 # superclass on the next line or after generics; a name ending in Tests;
 # not a helper class, `class func`, `class var` or a comment). Then
 # scripts/ios-ui-class-times.py's table (and, off Windows, collect against
-# a fake xcrun) and scripts/ios-ui-class-times.sh's refresh against a fake
-# gh and a local origin. No network. Bash 3.2 compatible.
+# a fake xcrun) and scripts/ios-ui-class-times.sh's refresh against a local
+# origin: no push when nothing moves or the branch already holds it, else
+# one commit on main pushed to the branch, never to main. No network. Bash
+# 3.2 compatible.
 source "$(dirname "$0")/lib.sh"
 root=$(pwd)
 tmp=$(mktemp -d)
@@ -221,8 +223,7 @@ EOF
 fi
 
 # scripts/ios-ui-class-times.sh: a scratch repository whose origin is a
-# local bare one, and a fake gh that logs each call; `pr list` prints the
-# number in $tmp/open (empty: none open).
+# local bare one; with --from it reads nothing from GitHub, so gh fails.
 repo=$tmp/repo
 mkdir -p "$repo/scripts" "$repo/apps/ios" "$tmp/bin"
 cp scripts/lib.sh scripts/ios-ui-shards.sh scripts/ios-ui-class-times.sh scripts/ios-ui-class-times.py "$repo/scripts/"
@@ -239,58 +240,56 @@ git init -q --bare "$tmp/origin.git"
   git remote add origin "$tmp/origin.git"
   git push -q origin main
 )
-cat >"$tmp/bin/gh" <<EOF
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >>"$tmp/gh.log"
-case "\$1 \$2" in
-  "pr list") cat "$tmp/open" ;;
-  "pr create") echo https://example.com/pull/7 ;;
-esac
-EOF
+main=$(git -C "$repo" rev-parse main)
+printf '#!/usr/bin/env bash\necho "gh called: $*" >&2\nexit 1\n' >"$tmp/bin/gh"
 chmod +x "$tmp/bin/gh"
-: >"$tmp/open"
-# refresh <rc> [args...]: runs the copy's refresh on the parts in $tmp/parts.
+# refresh <rc> [args...]: runs the copy's refresh on the parts in $tmp/parts,
+# from main, with its job summary in $tmp/summary.
 refresh() {
   local want=$1 rc=0
   shift
-  rm -f "$tmp/gh.log"
-  PATH="$tmp/bin:$PATH" bash "$repo/scripts/ios-ui-class-times.sh" --from "$tmp/parts" "$@" >"$tmp/out" 2>&1 || rc=$?
+  git -C "$repo" checkout -q main
+  rm -f "$tmp/summary"
+  PATH="$tmp/bin:$PATH" GITHUB_STEP_SUMMARY="$tmp/summary" \
+    bash "$repo/scripts/ios-ui-class-times.sh" --from "$tmp/parts" "$@" >"$tmp/out" 2>&1 || rc=$?
   [ "$rc" = "$want" ] || fail "refresh $*: exited $rc, not $want: $(cat "$tmp/out")"
 }
+# pushed: the branch's commit on origin (empty: none).
+pushed() { git -C "$tmp/origin.git" rev-parse -q --verify refs/heads/nightly/ui-class-times || true; }
 rm -f "$tmp/parts"/*.tsv
-# The same split, D still unmeasured: nothing to do.
+# The same split, D still unmeasured: nothing to do, nothing pushed.
 printf 'AUITests\t101\nBUITests\t88\nCUITests\t61\n' >"$tmp/parts/1.tsv"
 refresh 0
 grep -q 'nothing to do' "$tmp/out" || fail "unchanged: $(cat "$tmp/out")"
-[ ! -e "$tmp/gh.log" ] || fail "unchanged called gh: $(cat "$tmp/gh.log")"
 [ -z "$(git -C "$repo" status --porcelain)" ] || fail "unchanged wrote: $(git -C "$repo" status --porcelain)"
+[ -z "$(pushed)" ] || fail "unchanged pushed"
+[ ! -e "$tmp/summary" ] || fail "unchanged summary: $(cat "$tmp/summary")"
 # D measured, and a gone class's times: --dry-run writes the table only.
 printf 'DUITests\t30\nGoneUITests\t500\n' >"$tmp/parts/2.tsv"
 refresh 0 --dry-run
 grep -qx '1 DUITests 30' "$tmp/out" || fail "dry run plan: $(cat "$tmp/out")"
 grep -q '^DUITests	30	1$' "$repo/apps/ios/ui-class-times.tsv" || fail "dry run table: $(cat "$repo/apps/ios/ui-class-times.tsv")"
 ! grep -q GoneUITests "$repo/apps/ios/ui-class-times.tsv" || fail "a gone class kept"
-[ ! -e "$tmp/gh.log" ] || fail "dry run called gh: $(cat "$tmp/gh.log")"
+[ -z "$(pushed)" ] || fail "dry run pushed"
 git -C "$repo" checkout -q -- apps/ios/ui-class-times.tsv
-# For real: a commit on the branch, pushed, and a new labelled PR.
+# For real: one commit on main, force-pushed to the branch, and a notice and
+# a job summary that name it; main never moves.
 refresh 0
-git -C "$tmp/origin.git" rev-parse -q --verify refs/heads/nightly/ui-class-times >/dev/null || fail "not pushed"
-[ "$(git -C "$tmp/origin.git" rev-parse main)" = "$(git -C "$tmp/origin.git" rev-parse nightly/ui-class-times~1)" ] ||
-  fail "the branch is not one commit on main"
-git -C "$tmp/origin.git" show nightly/ui-class-times:apps/ios/ui-class-times.tsv | grep -q '^DUITests	30	1$' || fail "pushed table"
-grep -q '^label create nightly-refresh' "$tmp/gh.log" || fail "no label: $(cat "$tmp/gh.log")"
-grep -q '^pr create --base main --head nightly/ui-class-times --label nightly-refresh' "$tmp/gh.log" || fail "no PR: $(cat "$tmp/gh.log")"
-grep -q 'Newly measured: DUITests' "$tmp/gh.log" || fail "PR body: $(cat "$tmp/gh.log")"
-# An open PR is updated, not a second one opened; main never moves.
-git -C "$repo" checkout -q main
-echo 7 >"$tmp/open"
+first=$(pushed)
+[ -n "$first" ] || fail "not pushed: $(cat "$tmp/out")"
+[ "$(git -C "$tmp/origin.git" rev-parse "$first~1")" = "$main" ] || fail "the branch is not one commit on main"
+git -C "$tmp/origin.git" show "$first:apps/ios/ui-class-times.tsv" | grep -q '^DUITests	30	1$' || fail "pushed table"
+git -C "$tmp/origin.git" log -1 --format=%B "$first" | grep -q 'Newly measured: DUITests' || fail "commit message"
+grep -q '^::notice title=UI class times::A refresh of apps/ios/ui-class-times.tsv waits on the branch nightly/ui-class-times: open a PR from it. Moved: CUITests (1 → 2), DUITests (2 → 1). Newly measured: DUITests.$' "$tmp/out" ||
+  fail "notice: $(cat "$tmp/out")"
+grep -q 'waits on the branch nightly/ui-class-times' "$tmp/summary" || fail "summary: $(cat "$tmp/summary" 2>&1)"
+[ "$(git -C "$tmp/origin.git" rev-parse main)" = "$main" ] || fail "main moved"
+# The same refresh again: the branch already holds it, so no push.
 refresh 0
-grep -q '^pr edit 7 ' "$tmp/gh.log" || fail "not updated: $(cat "$tmp/gh.log")"
-! grep -q '^pr create' "$tmp/gh.log" || fail "a second PR: $(cat "$tmp/gh.log")"
-[ "$(git -C "$tmp/origin.git" rev-parse main)" = "$(git -C "$repo" rev-parse main)" ] || fail "main moved"
+grep -q 'already holds this refresh' "$tmp/out" || fail "again: $(cat "$tmp/out")"
+[ "$(pushed)" = "$first" ] || fail "pushed the same refresh again"
 # A row changes only with 3 parts: A at 10 in two more (3 in all) replaces
 # its 100; B and C, measured once, keep theirs.
-git -C "$repo" checkout -q main
 printf 'AUITests\t10\n' >"$tmp/parts/3.tsv"
 printf 'AUITests\t10\n' >"$tmp/parts/4.tsv"
 refresh 0 --dry-run
@@ -300,6 +299,14 @@ grep -q '^BUITests	90	1$' "$t" || fail "B kept: $(cat "$t")"
 grep -q '^CUITests	60	1$' "$t" || fail "C kept: $(cat "$t")"
 [ "$(grep -vc '^#' "$t")" = 4 ] || fail "not 4 rows: $(cat "$t")"
 grep -q '^# .*3 parts or more' "$t" || fail "no header: $(cat "$t")"
+git -C "$repo" checkout -q -- apps/ios/ui-class-times.tsv
+# That moves B and C (A 100, B 90, C 60, D 90 as the median before; now A
+# 10, B 90, C 60, D 30): a new push over the old one, naming them.
+refresh 0
+[ -n "$(pushed)" ] && [ "$(pushed)" != "$first" ] || fail "not pushed again: $(cat "$tmp/out")"
+grep -q 'Moved: BUITests (2 → 1), CUITests (1 → 2)\.' "$tmp/out" || fail "moved: $(cat "$tmp/out")"
+[ "$(git -C "$tmp/origin.git" rev-parse "$(pushed)~1")" = "$main" ] || fail "not on main"
+[ "$(git -C "$tmp/origin.git" rev-parse main)" = "$main" ] || fail "main moved"
 refresh 1 --days x
 cd "$root"
 

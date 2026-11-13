@@ -7,13 +7,16 @@
 # by fewer than 3 parts keeps its row, so one slow run moves nothing (a
 # class without a row takes even one measurement). When it would move
 # a class to the other shard, or measures a class the table lacks, it
-# commits the table on the branch nightly/ui-class-times, on top of this
-# checkout's HEAD (main), and opens one PR with it, labelled
-# nightly-refresh, or updates the open one; otherwise it changes nothing. It
-# never pushes to main: the hub enqueues the PR. --dry-run writes the table
-# and prints the plan but commits nothing. GH_REPO and GH_TOKEN reach
-# GitHub (actions: read; contents and pull-requests: write, issues: write
-# for the label). Bash 3.2 compatible.
+# commits the table as one commit on this checkout's HEAD (main) and
+# force-pushes it to the branch nightly/ui-class-times, unless that branch
+# already holds the same table on the same commit; otherwise it changes
+# nothing. It never pushes to main and opens no PR: the organization's
+# Actions policy lets no workflow open one, so the hub opens it from the
+# branch with its own token, and CI starts as on any PR. It says so, with
+# the classes that moved, in a notice on the run and the job summary
+# ($GITHUB_STEP_SUMMARY). --dry-run writes the table and prints the plan but
+# commits nothing. GH_REPO and GH_TOKEN read the artifacts (actions: read);
+# the push needs contents: write. Bash 3.2 compatible.
 source "$(dirname "$0")/lib.sh"
 
 days=14 from='' dry=''
@@ -37,7 +40,6 @@ done
 
 table=apps/ios/ui-class-times.tsv
 branch=nightly/ui-class-times
-label=nightly-refresh
 py=$(command -v python3 || command -v python) || die "no python3"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -78,44 +80,57 @@ if [ "$before" = "$after" ] && [ -z "$measured" ]; then
   exit 0
 fi
 
-old_plan=$(bash scripts/ios-ui-shards.sh --plan | grep '^shard ')
+bash scripts/ios-ui-shards.sh --plan >"$tmp/old-plan"
 cp "$tmp/new.tsv" "$table"
-plan=$(bash scripts/ios-ui-shards.sh --plan)
-echo "$plan"
+bash scripts/ios-ui-shards.sh --plan >"$tmp/new-plan"
+cat "$tmp/new-plan"
 [ -z "$dry" ] || exit 0
 
+# The classes that changed shard, as `Name (1 → 2)`.
+# shellcheck disable=SC2016 # awk fields, not shell ones
+moved=$(awk '
+  /^shard / { next }
+  FILENAME == ARGV[1] { was[$2] = $1; next }
+  ($2 in was) && was[$2] != $1 { printf "%s%s (%s → %s)", (n++ ? ", " : ""), $2, was[$2], $1 }
+' "$tmp/old-plan" "$tmp/new-plan")
 parts=$(find "$from" -name '*.tsv' | wc -l | tr -d ' ')
-body="The nightly's refresh of \`$table\` (ADR 0113, \`scripts/ios-ui-class-times.sh\`) from $parts green UI parts of the last $days days.
+summary="A refresh of $table waits on the branch $branch: open a PR from it. Moved: ${moved:-none}.${measured:+ Newly measured: $(printf '%s\n' "$measured" | paste -sd ' ' -).}"
+message="iOS UI shards: refreshed class times (nightly)
 
-Before:
-
-\`\`\`
-$old_plan
-\`\`\`
-
-After (\`scripts/ios-ui-shards.sh --plan\`):
-
-\`\`\`
-$plan
-\`\`\`
-${measured:+
-Newly measured: $(echo "$measured" | tr '\n' ' ' | sed 's/ $//').
+The nightly's refresh of $table (ADR 0113, scripts/ios-ui-class-times.sh)
+from $parts green UI parts of the last $days days. Moved: ${moved:-none}.
+${measured:+Newly measured: $(printf '%s\n' "$measured" | paste -sd ' ' -).
 }
-The workflow's token opened or pushed this, which starts no workflow: close and reopen the PR to start \`lint (ubuntu)\` and the fast tier, then enqueue it. Run: ${RUN_URL:-unknown}."
+Before:
+$(grep '^shard ' "$tmp/old-plan")
+
+After (scripts/ios-ui-shards.sh --plan):
+$(cat "$tmp/new-plan")
+
+Run: ${RUN_URL:-unknown}"
 
 git checkout -q -B "$branch"
 git add "$table"
 git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-  commit -q -m "iOS UI shards: refreshed class times (nightly)"
-git push -q --force origin "HEAD:refs/heads/$branch"
-
-pr=$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // empty')
-if [ -n "$pr" ]; then
-  gh pr edit "$pr" --body "$body" >/dev/null
-  echo "ui-class-times: updated #$pr"
+  commit -q -m "$message"
+# The same table on the same main commit: nothing new to push.
+if git fetch -q origin "refs/heads/$branch" 2>/dev/null &&
+  [ "$(git rev-parse 'FETCH_HEAD^{tree}')" = "$(git rev-parse 'HEAD^{tree}')" ] &&
+  [ "$(git rev-parse FETCH_HEAD~1)" = "$(git rev-parse HEAD~1)" ]; then
+  echo "ui-class-times: $branch already holds this refresh"
 else
-  gh label create "$label" --color 0E8A16 --force \
-    --description "Refreshed data the nightly opened as a PR; the hub enqueues it" >/dev/null
-  gh pr create --base main --head "$branch" --label "$label" \
-    --title "iOS UI shards: refreshed class times (nightly)" --body "$body"
+  git push -q --force origin "HEAD:refs/heads/$branch"
+  echo "ui-class-times: pushed $branch"
+fi
+echo "::notice title=UI class times::$summary"
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    echo "### UI class times"
+    echo
+    echo "$summary"
+    echo
+    echo '```'
+    cat "$tmp/new-plan"
+    echo '```'
+  } >>"$GITHUB_STEP_SUMMARY"
 fi

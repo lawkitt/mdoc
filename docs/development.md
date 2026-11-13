@@ -570,12 +570,14 @@ split. Each green UI part (without the timing tests) uploads its class
 times, `ios-ui-times-<part>-<attempt>`, read from its xcresult
 (`scripts/ios-ui-class-times.py collect`), and the nightly's `UI class
 times` job rebuilds the table from them (`scripts/ios-ui-class-times.sh`):
-when that moves a class to the other shard, or measures a class the table
-lacks, it opens one PR with the table on `nightly/ui-class-times`, labelled
-`nightly-refresh`, or updates the open one; it never pushes to `main`. The
-workflow's token starts no workflow on that PR, so the hub closes and
-reopens it, which starts `lint (ubuntu)` and the fast tier, then enqueues
-it. `lint (ubuntu)` (and the UI parts, before they build) fail on a class
+a class measured by fewer than 3 parts in the window keeps its row. When
+that moves a class to the other shard, or measures a class the table lacks,
+it commits the table as one commit on `main` and force-pushes it to
+`nightly/ui-class-times` (unless the branch already holds it), naming the
+moved classes in a notice on the run and the job summary; it never pushes
+to `main` and opens no PR, as the organization's Actions policy lets no
+workflow open one. The hub opens the PR from that branch with its own
+token, so CI starts as on any PR, and enqueues it. `lint (ubuntu)` (and the UI parts, before they build) fail on a class
 declared twice or a bad table row. Xcode needs a Simulator runtime of the SDK's version for any
 app build, Release included, so each job runs `scripts/ios-toolchain.sh
 --start`: it uses the installed runtime of build `IOS_SIM_RUNTIME_BUILD`
