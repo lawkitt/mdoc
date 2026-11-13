@@ -4,6 +4,7 @@
 //! (`just recognize --check`) also reruns the model to keep snapshots fresh.
 use mdoc_detect::recognition::{Comparison, Fixture, Snapshot, fixture_paths, proposals, verdict};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn every_recognition_fixture_is_as_its_status_says() {
@@ -16,28 +17,55 @@ fn every_recognition_fixture_is_as_its_status_says() {
     );
     let config = mdoc_store::settings::PiiConfig::default();
     let model = mdoc_detect::model_name(mdoc_store::settings::PiiModel::Fp16);
-    let mut failures = Vec::new();
-    for path in &paths {
-        let check = || -> Result<(), String> {
-            let fixture = Fixture::read(path)?;
-            fixture.validate()?;
-            fixture.validate_layout()?;
-            let snapshot = Snapshot::read(&fixture.snapshot_path())?;
-            if snapshot.model != model || snapshot.threshold != config.threshold {
-                return Err(format!(
-                    "snapshot made with {} at {}, not {model} at {}; refresh it on the Mac",
-                    snapshot.model, snapshot.threshold, config.threshold
-                ));
-            }
-            snapshot.validate(&fixture.source)?;
-            let proposed = proposals(&fixture.source, &snapshot.entities)?;
-            let comparison = Comparison::new(&fixture.gold, &proposed);
-            verdict(&fixture, &comparison).map_or(Ok(()), Err)
-        };
-        if let Err(error) = check() {
-            failures.push(format!("{}: {error}", path.display()));
+    let check = |path: &Path| -> Result<(), String> {
+        let fixture = Fixture::read(path)?;
+        fixture.validate()?;
+        fixture.validate_layout()?;
+        let snapshot = Snapshot::read(&fixture.snapshot_path())?;
+        if snapshot.model != model || snapshot.threshold != config.threshold {
+            return Err(format!(
+                "snapshot made with {} at {}, not {model} at {}; refresh it on the Mac",
+                snapshot.model, snapshot.threshold, config.threshold
+            ));
         }
-    }
+        snapshot.validate(&fixture.source)?;
+        let proposed = proposals(&fixture.source, &snapshot.entities)?;
+        let comparison = Comparison::new(&fixture.gold, &proposed);
+        verdict(&fixture, &comparison).map_or(Ok(()), Err)
+    };
+    // The fixtures are independent and share the rule pack, so they are
+    // checked on every core: one after another, the loop took 15 to 17 s on
+    // hosted macOS and 20 s on the PC (ADR 0112's sweep).
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let mut failed: Vec<(usize, String)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers.min(paths.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut failed = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(path) = paths.get(index) else {
+                            break failed;
+                        };
+                        if let Err(error) = check(path) {
+                            failed.push((index, format!("{}: {error}", path.display())));
+                        }
+                    }
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|e| std::panic::resume_unwind(e))
+            })
+            .collect()
+    });
+    failed.sort();
+    let mut failures: Vec<String> = failed.into_iter().map(|(_, failure)| failure).collect();
     // A snapshot whose fixture was renamed or removed.
     let mut pending = vec![root.clone()];
     while let Some(dir) = pending.pop() {
