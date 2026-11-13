@@ -83,6 +83,7 @@ eq "$(printf '%s\n' \
   'failure Process completed with exit code 1.' \
   'warning Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testC' \
   'warning Passed on retry in ci/ios (ui 1): ios:mdocUITests/S/testF, ios:mdocUITests/S/testG' \
+  'warning Passed on retry in ci/ios (ui 1): ' \
   'warning Node.js 20 actions are deprecated.' \
   'notice Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testD' \
   'failure Passed on retry in ci/ios (ui 2): ios:mdocUITests/S/testE' | ios_annotations)" \

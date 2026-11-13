@@ -251,6 +251,7 @@ ios_annotations() {
         ;;
       "warning Passed on retry in ci/ios ("*"): "*)
         read -ra names <<<"${msg#*): }"
+        [ "${#names[@]}" -gt 0 ] || continue
         for name in "${names[@]%,}"; do echo "retried $name"; done
         ;;
     esac
