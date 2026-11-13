@@ -28,8 +28,9 @@ inputs=(crates resources Cargo.toml Cargo.lock rust-toolchain.toml .cargo justfi
   scripts/build-ios-core.sh scripts/lib.sh scripts/ios-core-cache.sh)
 # What the app's build reads from target/ios, and the licences beside it.
 outputs=(target/ios/MdocCore.xcframework target/ios/pdfium.xcframework target/ios/swift target/ios/licenses)
-# Bump to drop every saved core, for a change the inputs cannot show.
-version=v1
+# Bump to drop every saved core, for a change the inputs cannot show, or when
+# a key stays reserved by a save that never finished (v2: #838).
+version=v2
 
 key() {
   git diff --quiet HEAD -- "${inputs[@]}" ||
