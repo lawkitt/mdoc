@@ -568,7 +568,8 @@ time over the green UI parts of the last 14 days; a class the table lacks,
 such as a new one, counts as the table's median, and `--plan` shows the
 split. Each green UI part (without the timing tests) uploads its class
 times, `ios-ui-times-<part>-<attempt>`, read from its xcresult
-(`scripts/ios-ui-class-times.py collect`), and the nightly's `UI class
+(`scripts/ios-ui-class-times.py collect`; a case passed on its retry
+counts its passing run only), and the nightly's `UI class
 times` job rebuilds the table from them (`scripts/ios-ui-class-times.sh`):
 a class measured by fewer than 3 parts in the window keeps its row. When
 that moves a class to the other shard, or measures a class the table lacks,
