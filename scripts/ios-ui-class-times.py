@@ -61,9 +61,14 @@ def duration(node):
 
 def class_times(tree):
     """{class: seconds} over the UI test bundles' test cases in a
-    `test-results tests` JSON. A retried case's repetitions are its
-    children; the case's own duration covers them."""
+    `test-results tests` JSON. A case retried on a failure (`Repetition`
+    children, ci-ios.yml's MDOC_IOS_TEST_RETRY) counts its passing run
+    only, what the case takes without the noise that failed it."""
     times = {}
+
+    def case_time(node):
+        passed = [c for c in node.get("children", []) if c.get("nodeType") == "Repetition" and c.get("result") == "Passed"]
+        return duration(passed[-1]) if passed else duration(node)
 
     def walk(node, ui):
         kind = node.get("nodeType", "")
@@ -73,7 +78,7 @@ def class_times(tree):
             if ui:
                 cls = node.get("nodeIdentifier", "").split("/")[0]
                 if cls:
-                    times[cls] = times.get(cls, 0.0) + duration(node)
+                    times[cls] = times.get(cls, 0.0) + case_time(node)
             return
         for child in node.get("children", []):
             walk(child, ui)

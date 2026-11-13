@@ -10,10 +10,10 @@
 # superclass on the next line or after generics; a name ending in Tests;
 # not a helper class, `class func`, `class var` or a comment). Then
 # scripts/ios-ui-class-times.py's table (and, off Windows, collect against
-# a fake xcrun) and scripts/ios-ui-class-times.sh's refresh against a local
-# origin: no push when nothing moves or the branch already holds it, else
-# one commit on main pushed to the branch, never to main. No network. Bash
-# 3.2 compatible.
+# a fake xcrun, a retried case counting its passing run) and
+# scripts/ios-ui-class-times.sh's refresh against a local origin: no push
+# when nothing moves or the branch already holds it, else one commit on main
+# pushed to the branch, never to main. No network. Bash 3.2 compatible.
 source "$(dirname "$0")/lib.sh"
 root=$(pwd)
 tmp=$(mktemp -d)
@@ -211,13 +211,17 @@ if [ "$(platform)" != windows-x64 ]; then
       {"nodeType": "Test Case", "nodeIdentifier": "AUITests/testB()", "duration": "1m 3s", "result": "Passed"}]},
     {"nodeType": "Test Suite", "name": "BUITests", "children": [
       {"nodeType": "Test Case", "nodeIdentifier": "BUITests/testSkip()", "durationInSeconds": 0.33, "result": "Skipped",
-       "children": [{"nodeType": "Failure Message", "name": "Test skipped"}]}]}]}]}]}
+       "children": [{"nodeType": "Failure Message", "name": "Test skipped"}]},
+      {"nodeType": "Test Case", "nodeIdentifier": "BUITests/testRetried()", "durationInSeconds": 47.5, "result": "Passed",
+       "children": [{"nodeType": "Repetition", "name": "First Run", "durationInSeconds": 40, "result": "Failed"},
+                    {"nodeType": "Repetition", "name": "Retry 1", "durationInSeconds": 7.5, "result": "Passed"}]}]}]}]}]}
 EOF
   printf '#!/usr/bin/env bash\n[ "$*" = "xcresulttool get test-results tests --path %s" ] || exit 9\ncat %s\n' \
     "$tmp/xc/one.xcresult" "$tmp/tests.json" >"$tmp/bin/xcrun"
   chmod +x "$tmp/bin/xcrun"
   PATH="$tmp/bin:$PATH" "$py" -I scripts/ios-ui-class-times.py collect "$tmp/xc" >"$tmp/out" 2>&1 || fail "collect: $(cat "$tmp/out")"
-  [ "$(cat "$tmp/out")" = "$(printf 'AUITests\t75.2\nBUITests\t0.3')" ] || fail "collect: $(cat "$tmp/out")"
+  # A case passed on its retry counts its passing run: B is 0.33 + 7.5.
+  [ "$(cat "$tmp/out")" = "$(printf 'AUITests\t75.2\nBUITests\t7.8')" ] || fail "collect: $(cat "$tmp/out")"
   ! "$py" -I scripts/ios-ui-class-times.py collect "$tmp/parts" >"$tmp/out" 2>&1 || fail "collect without an xcresult"
   grep -q 'no .xcresult' "$tmp/out" || fail "collect without an xcresult: $(cat "$tmp/out")"
 fi
