@@ -14,8 +14,11 @@
 # Balanced by each class's time on hosted macos-26 (the xcresult of run
 # 43251870301, after the UI test sweep #829), in seconds beside it; skipped
 # tests (survey, explore, device, audit, the timing tests outside the
-# nightly) cost about a second each. A new class goes to the shard with the
-# smaller total. The timing tests (LivePreviewUITests, `timing: true`) stay
+# nightly) cost about a second each. By these the shards were even (570 s,
+# 565 s), but on the trial of run 43346441110 the first one's tests step
+# took 15.8 minutes and the second's 13.4, so NewDocumentUITests moved to
+# the second: on paper 503 s and 632 s. A new class goes to the shard
+# whose Tests step took less time in its last ci/ios run. The timing tests (LivePreviewUITests, `timing: true`) stay
 # in one shard, about 4 minutes more there each night. Quarantined tests
 # (.config/quarantine.txt) are not counted: all of ReviewFlowUITests' and
 # ReviewToolsUITests' are, so they sit one in each shard. Bash 3.2
@@ -26,7 +29,6 @@ shards='
 1 EditToolbarUITests 208
 1 LivePreviewUITests 157
 1 IdentitiesGesturesUITests 135
-1 NewDocumentUITests 67
 1 ReviewFlowUITests 0
 1 DeviceLongJobsUITests 3
 2 TableEditingUITests 202
@@ -34,6 +36,7 @@ shards='
 2 ReviewPagerUITests 95
 2 PanesRowUITests 63
 2 SidebarSearchUITests 42
+2 NewDocumentUITests 67
 2 ReviewToolsUITests 0
 2 AccessibilityAuditExploreUITests 7
 2 DeviceTapTimingUITests 6
@@ -96,7 +99,7 @@ for c in $(printf '%s\n' "$found" | uniq -d); do
   bad=1
 done
 for c in $(LC_ALL=C comm -23 <(printf '%s\n' "$found" | uniq) <(printf '%s\n' "$listed" | uniq)); do
-  echo "error: $c (under $dir) is in no shard: add it to the shard with the smaller total in scripts/ios-ui-shards.sh" >&2
+  echo "error: $c (under $dir) is in no shard: add it to the shorter shard in scripts/ios-ui-shards.sh" >&2
   bad=1
 done
 for c in $(LC_ALL=C comm -13 <(printf '%s\n' "$found" | uniq) <(printf '%s\n' "$listed" | uniq)); do

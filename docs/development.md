@@ -546,9 +546,10 @@ unless `TEST_RUNNER_MDOC_TIMING_TESTS=1`, which `ci-ios.yml`'s `timing`
 input sets: the nightly passes it, the queue does not; the UI ones are
 all in `ci/ios (ui 1)`. **The UI shards** are a static list of
 `mdocUITests` classes in `scripts/ios-ui-shards.sh`, balanced by each
-class's time on the hosted runner (beside it in the list); one UI part
-took about 26 minutes after the sweep (#829), over ADR 0112's 20. A new UI
-test class goes in the shard with the smaller total: until it is listed,
+class's time on the hosted runner (beside it in the list) and then by the
+shards' measured Tests steps; one UI part took about 26 minutes after the
+sweep (#829), over ADR 0112's 20. A new UI test class goes in the shard
+whose Tests step was shorter in its last run: until it is listed,
 `lint (ubuntu)` (and the UI parts, before they build) fail and name it, as
 they do for a class in both shards or a listed class that is gone. Xcode needs a Simulator runtime of the SDK's version for any
 app build, Release included, so each job runs `scripts/ios-toolchain.sh
