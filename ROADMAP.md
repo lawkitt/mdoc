@@ -277,15 +277,6 @@ order; item 22 (the PC's slow bursts) closed as not needed.
     ADR 0112's "same test elsewhere" rule to hosted iOS
     ([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
     *Done when:* a planted failure's name shows in `ci/ios`'s status.
-24. **[CI] Detection only when its inputs change.** App-only files
-    (`src/`, `vendor/`, `build/`, `tests/` outside the recognition
-    fixtures) leave the detection gate's area in `scripts/ci-areas.txt`.
-    *Done when:* a desktop-only queue commit runs `ci/macos` without
-    detection shards.
-25. **[CI] Targets by commit.** `ci-stats.sh` classifies queue commits
-    (core, desktop-only, iOS-only, other) and reports ADR 0113's targets:
-    core 20, desktop-only 15, every commit 25, the slower UI shard 15.
-    *Done when:* the nightly reports them.
 26. **[CI] One UI wait timeout.** A shared timeout (about 15 s) replaces
     the 5 s waits on a state to appear in `apps/ios/mdocUITests`; waits for
     something to go away keep theirs. *Done when:* merged.
