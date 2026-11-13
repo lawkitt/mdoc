@@ -84,6 +84,40 @@
                 {
                   "children": [
                     {
+                      "children": [
+                        {
+                          "name": "PanesRowUITests.swift:27: failed - planted failure for ci-ios.yml's retry; passes on the retry",
+                          "nodeType": "Failure Message"
+                        }
+                      ],
+                      "duration": "0.12s",
+                      "durationInSeconds": 0.1249229907989502,
+                      "name": "First Run",
+                      "nodeIdentifier": "1",
+                      "nodeType": "Repetition",
+                      "result": "Failed"
+                    },
+                    {
+                      "duration": "0.12s",
+                      "durationInSeconds": 0.11992204189300537,
+                      "name": "Retry 1",
+                      "nodeIdentifier": "2",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    }
+                  ],
+                  "details": "⚠️ Passed after 1 retry",
+                  "duration": "0.12s",
+                  "durationInSeconds": 0.12242251634597778,
+                  "name": "testPlantedFailOnce()",
+                  "nodeIdentifier": "PanesRowUITests/testPlantedFailOnce()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/mdoc/mdocUITests/PanesRowUITests/testPlantedFailOnce",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "children": [
+                    {
                       "name": "Test skipped - exploration only",
                       "nodeType": "Failure Message"
                     }

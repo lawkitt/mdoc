@@ -32,9 +32,11 @@ export GITHUB_STEP_SUMMARY="$tmp/summary" GITHUB_OUTPUT="$tmp/output"
 run() { python3 scripts/ios-failed-tests.py "$@" >"$tmp/out" 2>&1; }
 
 # The sample is ui 2's xcresult on run 43375543082 (two failed cases, a
-# passed and a skipped suite), trimmed.
+# passed and a skipped suite), trimmed, with run 43392172167's case that
+# failed and passed on its retry.
 one=ios:mdocUITests/PanesRowUITests/testPlantedFailure
 two=ios:mdocUITests/ReviewPagerUITests/testTheCardSwipesAsACarouselAndStillPullsTheBar
+again=ios:mdocUITests/PanesRowUITests/testPlantedFailOnce
 
 # A part: every failed case of every xcresult once, sorted, with its
 # target; no passed or skipped case, and no suite.
@@ -43,12 +45,15 @@ has "$tmp/out" "::error::Failed in ci/ios (ui 2): $one and 1 more"
 has "$XCRUN_LOG" "xcresulttool get test-results tests --path $tmp/results/Test-mdoc-1.xcresult --compact"
 has "$XCRUN_LOG" "xcresulttool get test-results tests --path $tmp/results/Test-mdoc-2.xcresult --compact"
 has "$GITHUB_OUTPUT" "ui2_tests=$one $two"
-has "$GITHUB_OUTPUT" "ui2_retried="
-has "$GITHUB_OUTPUT" "retried=0"
+has "$GITHUB_OUTPUT" "ui2_retried=$again"
+has "$GITHUB_OUTPUT" "retried=1"
+has "$tmp/out" "::warning::Passed on retry in ci/ios (ui 2): $again"
 has "$GITHUB_STEP_SUMMARY" '### ci/ios (ui 2)'
 has "$GITHUB_STEP_SUMMARY" "- \`$one\`"
 has "$GITHUB_STEP_SUMMARY" "- \`$two\`"
-[ "$(grep -c '^- ' "$GITHUB_STEP_SUMMARY")" = 2 ] || fail "summary lists other tests: $(cat "$GITHUB_STEP_SUMMARY")"
+has "$GITHUB_STEP_SUMMARY" '### ci/ios (ui 2): passed on retry'
+has "$GITHUB_STEP_SUMMARY" "- \`$again\`"
+[ "$(grep -c '^- ' "$GITHUB_STEP_SUMMARY")" = 3 ] || fail "summary lists other tests: $(cat "$GITHUB_STEP_SUMMARY")"
 
 # One failed case alone: no "and 0 more".
 case_one='{"testNodes":[{"nodeType":"Test Plan","name":"mdoc","children":[{"nodeType":"Unit test bundle","name":"mdocTests","children":[{"nodeType":"Test Suite","name":"ATests","children":[{"nodeType":"Test Case","name":"testA()","nodeIdentifier":"ATests/testA()","result":"Failed"}]}]}]}]}'
