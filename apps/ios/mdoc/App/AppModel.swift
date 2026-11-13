@@ -92,11 +92,7 @@ final class AppModel {
                 core: core, storage: storage, background: BackgroundContinuations.system(),
                 downloader: models, network: NetworkMonitor(), preferences: preferences)
             if let seed = launch.seedFile {
-                // A run's later launches open its prebuilt library instead.
-                let prebuilt = UITestPrebuiltLibrary(launch, storage: storage)
-                if prebuilt?.isRestored != true {
-                    UITestSeed.run(UITestSeed.fixture(seed), in: app, keepingAs: prebuilt)
-                }
+                UITestSeed.run(UITestSeed.fixture(seed), in: app)
             }
             return app
         } catch {
@@ -111,7 +107,6 @@ final class AppModel {
     /// The App Group storage and the real core.
     nonisolated static func openCore(_ launch: LaunchConfiguration) throws -> (MdocStorage, Core) {
         let storage = try CoreFactory.appStorage(launch)
-        try UITestPrebuiltLibrary(launch, storage: storage)?.restore()
         try storage.prepare()
         storage.clear(.handOff)
         return (storage, try CoreFactory.appCore(storage: storage, launch))

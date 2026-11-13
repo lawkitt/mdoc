@@ -68,12 +68,12 @@ jobs:
     # Job limits (ADR 0095, ADR 0112): the one job took 29 to 46 minutes
     # with every test (2026-11-11); the unit part took 10 minutes and the
     # one UI part 26 on #829, so a UI shard should take about 17.
-    timeout-minutes: 75
+    timeout-minutes: 35
     strategy:
       # A cancelled part would read as a capacity cancel to merge-gate.
       fail-fast: false
       matrix:
-        part: ${{ fromJSON(inputs.build-only && '["unit"]' || '["unit", "ui 1"]') }}
+        part: ${{ fromJSON(inputs.build-only && '["unit"]' || '["unit", "ui 1", "ui 2"]') }}
     # Each part's own result (`unit`, `ui1`, `ui2`), which `ci/ios` names:
     # a matrix job's outputs combine every part's.
     outputs:
@@ -152,47 +152,8 @@ jobs:
       - name: Tests
         if: ${{ !inputs.build-only }}
         run: |
-          # TRIAL (item 30), reverted before ready: TableEditingUITests three
-          # times without the prebuilt library and three times with, in turn.
-          if [ "$PART" = unit ]; then
-            # shellcheck disable=SC2086 # ONLY: identifiers, split on purpose
-            just --no-deps ios-app ios-test "iPhone 17" $ONLY
-            exit 0
-          fi
-          just --no-deps ios-app
-          mkdir -p "$RUNNER_TEMP/trial"
-          for round in 1 2 3; do
-            for mode in without with; do
-              off=; [ "$mode" = without ] && off=1
-              TEST_RUNNER_MDOC_NO_PREBUILT=$off just --no-deps ios-test "iPhone 17" mdocUITests/TableEditingUITests || echo "::warning::round $round $mode failed"
-              for r in target/ios/DerivedData/Logs/Test/*.xcresult; do mv "$r" "$RUNNER_TEMP/trial/$round-$mode.xcresult"; done
-            done
-          done
-
-      - name: Trial activities
-        if: ${{ always() && matrix.part != 'unit' }}
-        run: |
-          mkdir -p trial-out
-          for r in "$RUNNER_TEMP"/trial/*.xcresult; do
-            n=$(basename "$r" .xcresult)
-            xcrun xcresulttool get test-results tests --path "$r" >"trial-out/$n-tests.json" || continue
-            python3 -c 'import json,sys
-          def walk(n):
-              if n.get("nodeType") == "Test Case": print(n["nodeIdentifier"])
-              for c in n.get("children", []): walk(c)
-          for t in json.load(open(sys.argv[1]))["testNodes"]: walk(t)' "trial-out/$n-tests.json" | while read -r id; do
-              xcrun xcresulttool get test-results activities --test-id "$id" --path "$r" >"trial-out/$n-$(printf %s "$id" | tr -c A-Za-z0-9 _).json" || true
-            done
-          done
-          ls -la trial-out
-
-      - name: Trial upload
-        if: ${{ always() && matrix.part != 'unit' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: trial-activities
-          path: trial-out
-          retention-days: 7
+          # shellcheck disable=SC2086 # ONLY: identifiers, split on purpose
+          just --no-deps ios-app ios-test "iPhone 17" $ONLY
 
       # What an archive compiles, after the unit tests: it fits under the
       # UI parts, so it takes no runner of its own (ADR 0112).

@@ -24,10 +24,7 @@ enum UITestSeed {
             .appendingPathComponent(mac.lastPathComponent)
     }
 
-    /// `prebuilt`: once the seed is scanned and saved, the library is kept
-    /// as the run's prebuilt one, before the row shows it scanned; not when
-    /// the test opened the document sooner, as its taps might be in it.
-    static func run(_ file: URL, in app: AppModel, keepingAs prebuilt: UITestPrebuiltLibrary? = nil) {
+    static func run(_ file: URL, in app: AppModel) {
         Task {
             let title = file.deletingPathExtension().lastPathComponent
             guard let source = source(file, storage: app.storage),
@@ -38,10 +35,6 @@ enum UITestSeed {
             // A scan waits here for its OCR model.
             if model.snapshot.phase == .unscanned {
                 await model.findNames()
-            }
-            if let prebuilt, !model.needsSetup, model.snapshot.phase != .unscanned, app.navigator.openDocument == nil {
-                try? app.core.library.saveChanges()
-                prebuilt.save()
             }
             app.library.refresh()
         }
