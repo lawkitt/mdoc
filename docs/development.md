@@ -802,19 +802,25 @@ commit's `Build.xcconfig`. A miss builds the core as before, then
 key does not hash, so a stale core cannot pass. Only `main` saves; the
 cache cleanup keeps its newest key.
 
-**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>]` measures ADR 0100's targets from GitHub, read-only, and exits 1 when one fails:
-- a queue commit's time to a green `merge-gate`: median 13 minutes or less;
-- a PR head's time to `fast (ubuntu)`, from its CI run starting: median 4 minutes or less;
-- infrastructure failures ("no macOS runner"): at most 1 a week.
+**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>] [--nights K]` measures ADR 0112's targets from GitHub's queue commits, read-only, over the last 7 days by default:
+- a queue commit's time to a green `merge-gate`: median 25 minutes or less;
+- a green `ci/windows` run, the PC's "Passed in" or a hosted fallback's job time: median 15 minutes or less;
+- a green `ci/ios (ui)` job: median 20 minutes or less;
+- queue drops not caused by the PR (an infrastructure failure, or a PC job whose one failing test is quarantined or failed on another PR's queue commit within 14 days, among the commits read): at most 1 a week, each listed with the rule that matched.
 
-`--since` measures only what ran after a change landed.
+Its header says exactly what each counts. It exits 2 when a target fails, 3 when one fails in each of `--nights K` windows (ending now, a day ago and so on), 1 on an error. `--since` measures only what ran after a change landed.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
 desktop jobs on both OSes, iOS, Android (`ci-android.yml`), the detection
 gate, the quarantined tests and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
 red", or comments on the open one; a green night closes it
-(`scripts/nightly-issue.sh`). Run it by hand with `gh workflow run
-nightly.yml --repo lawkitt/mdoc`.
+(`scripts/nightly-issue.sh`). Its `CI targets` job runs
+`scripts/ci-stats.sh --days 7 --nights 3` through
+`scripts/ci-targets-issue.sh`: a target missed on each of the last 3 nights
+opens one issue, "CI targets missed", or comments on the open one; a night
+that meets them all closes it. A missed target alone does not make the night
+red. Run it by hand with `gh workflow run nightly.yml --repo lawkitt/mdoc`;
+`-f drill=true` runs only the targets job, every window forced red.
 
 **cargo-deny.** `lint (ubuntu)` checks licences, bans and sources on every
 change, and advisories only when `Cargo.lock` or `deny.toml` changes

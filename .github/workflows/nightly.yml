@@ -6,11 +6,21 @@ name: Nightly
 # cargo-deny's advisories, which PRs check only when their dependencies
 # change. A red night opens one issue, "Nightly CI is red", or comments on
 # the open one; a green night closes it (scripts/nightly-issue.sh).
+#
+# It also measures ADR 0112's CI targets (scripts/ci-stats.sh) and keeps a
+# second issue, "CI targets missed", opened after 3 nights that missed one
+# (scripts/ci-targets-issue.sh). A missed target is not a red night; only an
+# error reading GitHub is.
 on:
   schedule:
     # 02:17 UTC, between the maintainer's working days.
     - cron: "17 2 * * *"
   workflow_dispatch:
+    inputs:
+      drill:
+        description: "Drill: run only the CI targets job, with every window forced red (CI_STATS_DRILL), so it opens or comments on its issue."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,25 +31,30 @@ concurrency:
 
 jobs:
   macos:
+    if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-desktop.yml
     with:
       os: macos
 
   windows:
+    if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-desktop.yml
     with:
       os: windows
 
   # With the timing tests, which the queue skips (ADR 0112).
   ios:
+    if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-ios.yml
     with:
       timing: true
 
   android:
+    if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-android.yml
 
   detection:
+    if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-detection.yml
     with:
       shards: 6
@@ -47,6 +62,7 @@ jobs:
   # Reports and never fails: a quarantined test still failing is expected.
   quarantined:
     name: quarantined tests
+    if: ${{ !inputs.drill }}
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -60,6 +76,7 @@ jobs:
 
   advisories:
     name: cargo-deny advisories
+    if: ${{ !inputs.drill }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -71,10 +88,37 @@ jobs:
           tools: just cargo-deny
       - run: just deny-advisories
 
+  # ADR 0112's targets over the last 7 days, as on each of the last 3
+  # nights: an issue once all 3 missed one. Fails only when it cannot read
+  # GitHub (about 400 reads, retried), which the report then names.
+  targets:
+    name: CI targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      statuses: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The scripts and the quarantine list the drops are read against.
+          sparse-checkout: |
+            scripts
+            .config
+      - run: bash scripts/ci-targets-issue.sh --days 7 --nights 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI_STATS_DRILL: ${{ inputs.drill && '1' || '' }}
+
   report:
     name: report
-    needs: [macos, windows, ios, android, detection, quarantined, advisories]
-    if: always()
+    needs: [macos, windows, ios, android, detection, quarantined, advisories, targets]
+    if: ${{ always() && !inputs.drill }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # The only write permission here; this job runs main's script only.
@@ -95,6 +139,7 @@ jobs:
           detection=${{ needs.detection.result }}
           quarantined=${{ needs.quarantined.result }}
           advisories=${{ needs.advisories.result }}
+          targets=${{ needs.targets.result }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
