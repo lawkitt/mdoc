@@ -80,7 +80,7 @@ has "$tmp/out" '::error::Failed in ci/ios (unit): ios:mdocTests/ATests/test%25A'
 # finish" when it wrote none.
 : >"$GITHUB_STEP_SUMMARY"
 IOS_OUTPUTS='{"unit":"success","ui1":"success","ui2":"success","unit_tests":"","ui1_tests":"","ui2_tests":""}' run summary success unit 'ui 1' 'ui 2' || fail "green summary failed: $(cat "$tmp/out")"
-[ ! -s "$tmp/out" ] && [ ! -s "$GITHUB_STEP_SUMMARY" ] || fail "green summary reported: $(cat "$tmp/out")"
+if [ -s "$tmp/out" ] || [ -s "$GITHUB_STEP_SUMMARY" ]; then fail "green summary reported: $(cat "$tmp/out")"; fi
 if IOS_OUTPUTS="{\"unit\":\"failure\",\"ui1\":\"success\",\"ui2\":\"failure\",\"unit_tests\":\"\",\"ui1_tests\":\"\",\"ui2_tests\":\"$one $two\"}" run summary failure unit 'ui 1' 'ui 2'; then fail 'red summary passed'; fi
 has "$tmp/out" '::error::Failed in ci/ios (unit)'
 has "$tmp/out" "::error::Failed in ci/ios (ui 2): $one and 1 more"
