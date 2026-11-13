@@ -87,6 +87,10 @@ struct IdentitiesView: View {
             .scrollContentBackground(.hidden)
             .contentMargins(.bottom, selecting ? 72 : Space.m, for: .scrollContent)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.list = $0 }
+            // A scroll moves the rows under the demo's ghost: it ends the demo.
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { endDemo(dismissed: true) }
+            }
             .overlay { liftedCopy }
         }
         .background(Palette.background)
@@ -162,6 +166,19 @@ struct IdentitiesView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("identities-search")
+                    if selecting {
+                        // Select's header has no search button: the field's own.
+                        Button {
+                            searching = false
+                            query = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                                .frame(width: Size.target, height: Size.target)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Cancel search"))
+                    }
                 }
                 .padding(.horizontal, Space.s)
                 .frame(minHeight: Size.target)
