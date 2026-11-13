@@ -64,7 +64,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `IconTile` | Settings: white symbol on a colored square. Start and document rows: tinted fill, colored symbol. |
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
-| `ReviewHintLine` | A hint line: symbol, words, ×. The review bar's, and Identities' one. |
+| `ReviewHintLine` | A hint line: symbol, words, ×. The review bar's. |
 | `EditToolbar` / `ToolbarKey` | Edit mode's bar above the keyboard (ADR 0109): a glass capsule of icon buttons (undo to outdent) that scrolls sideways when they don't fit, then Aa and hide keyboard as glass circles that always show; every button is a 44 pt square target that grows with the text. A button that is on is an ink circle (VoiceOver: selected); one that can't apply is secondary and disabled. A link chip (glass capsule) sits above it while the caret is in a link. The host never becomes first responder, and ends 8 pt above the keyboard (above the home indicator with a hardware keyboard), inside the safe area at a landscape phone's sides. The text keeps room below it for as much of the screen as the toolbar covers plus 12 pt, so the caret's line stays above the toolbar with every keyboard (ADR 0110); on an empty line the caret is a body line tall. |
 | `TableMenu` | The table controls (ADR 0110): with the caret in a drawn table's cell, Row below, Column right and a ⋯ button take the place of the list, task, indent and outdent buttons in the `EditToolbar` capsule, which scrolls to its end so ⋯ shows whole (and back to Undo on leaving the cell). ⋯ is a system menu: Row above, Column left, Delete row, Delete column, Align column (a submenu, the column's alignment checked), then Delete table (destructive). A control that cannot apply there (a row above or deleted in the header, the last column deleted) is off; after a new column the grid scrolls to the caret's cell. Nothing is drawn in the document. |
 | `FormattingKeyboard` / `FormattingKey` | Aa's keys in place of the keyboard, grouped Turn into, Format, Insert: a symbol over its name on a keyboard-coloured key, the selected block in ink, scrolling at large text sizes. It is the same in a table's cell, where Turn into, Rule and Table are off. Aa brings the system keyboard back. |
@@ -134,7 +134,12 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 - **Cases:** each case with its colour, document count and how many wait
   for review; a tap shows its documents.
 - **A document's panes** ([ADR 0111](adr/0111-ios-panes-row.md),
-  `PanesRow`): the bar's centre is always the title's menu. With more
+  `PanesRow`): the bar's centre is always the title's menu, the
+  document's one menu ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)),
+  in groups: Find in document, Find names again | Show Markdown (a
+  toggle) | Copy for AI, Share | Rename…, Move to case › | Delete. Share
+  and Copy for AI are there too because the review bar takes the action
+  bar's place while reviewing. With more
   than one pane a segmented row is pinned under the bar: Text, Original
   and Reply at the content's width on iPhone; on iPad the right column's
   choices at their natural width, centred. It stays in edit mode. On
@@ -232,11 +237,18 @@ that only the view model changes; views send intents
   ORG_3"), each row's icon in its category's color; Same as… lists hints
   first, then the same category, then the rest, and a long list becomes a
   searchable sheet.
-- **Tips** (`ReviewHint`): no popovers or cards. One line per document at
-  most, inside the bar: "Swipe the card for the next name" from the
-  second card, "Long-press any name for more" after three decisions; gone
-  for good once the gesture is used or × tapped. The grabber hops once on
-  the third card. Off in UI tests; Settings › Review › Reset tips.
+- **Tips** (`ReviewHint`, `Hints`;
+  [ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)): TipKit decides
+  whether a hint may show; mdoc draws it, with no `TipView`, popovers or
+  cards. One line per document at most, inside the bar: "Swipe the card
+  for the next name" from the second card, "Long-press any name for more"
+  after three decisions; gone for good once the gesture is used or ×
+  tapped (the tip is invalidated). Identities' Select demo is the third
+  tip. Only one shows at a time: while the demo shows, the bar's line
+  waits. The grabber hops once on the third card. UI tests hide every tip
+  (`Tips.hideAllTipsForTesting()`), or show them all for a test of a hint
+  (`MDOC_SHOW_TIPS=1`). Settings › Review › Reset tips resets each tip's
+  eligibility (`Tips.resetDatastore()` works only before TipKit starts).
 - **Keys:** Return Replace, K Keep, ← → step, ⌘. end (Esc too where iOS
   passes it to the app), ⌘Z and ⇧⌘Z.
 
@@ -246,18 +258,21 @@ that only the view model changes; views send intents
 [ADR 0106](adr/0106-mobile-identities-gestures.md); code in
 [`IdentitiesView`](../apps/ios/mdoc/Document/IdentitiesView.swift),
 `IdentitiesView+Rows`, `IdentitiesView+Gestures`,
-`IdentitiesView+DragMerge`, `IdentityDrag`, `IdentitiesPanel` and
-`DocumentViewModel+Identities`.
+`IdentitiesView+DragMerge`, `IdentitiesView+Select`, `IdentityDrag`,
+`IdentitiesPanel` and `DocumentViewModel+Identities`.
 
 - **Where:** iPhone, a drawer from the right edge or 🪪 (`SideDrawer`,
   trailing); a wide iPad, the standing right column. A tap on a name opens
   the review bar's full view on it.
-- **Top:** progress ring, "Identities", "9 names · 4 left", search circle,
-  Select, › close; then Replace N, full width in clear glass (a bulk
-  shortcut, not the drawer's loudest thing). Outside Select, the hint line
-  "In Select, drag ≡ onto a name to make them one" (`ReviewHint.dragMerge`)
-  goes here while Looks like has a card or two names share a category,
-  gone for good after the first drag-merge or Same as, or ×.
+- **Top:** progress ring, "Identities", "9 names · 4 left", the search
+  circle and "Select" with ☑︎ in a glass capsule; then Replace N, full
+  width in clear glass (a bulk shortcut, not the drawer's loudest thing).
+  No close button and no hint line
+  ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)): the sliver, a
+  swipe, 🪪 and VoiceOver's escape close the drawer. In Select, as in Mail
+  and Photos: Cancel | "3 selected" ("Select names" with none) | Select
+  All (Deselect All once all are ticked; the folded Kept names are not
+  ticked).
 - **Then:** Looks like cards (Same as, Not the same), category chips, and
   the names by what is left: To review, Replaced, Kept (folded).
 - **Rows:** category icon, the name (wrapped at words), the alias, "3×"
@@ -287,7 +302,18 @@ that only the view model changes; views send intents
   are desktop's only.
 - **Select:** tick rows, then Replace, Keep or Same as (into the name
   mentioned most); one Undo takes the selection back. Rows in Select have
-  no swipes and no long-press menu: a tap ticks, the ≡ handle drags.
+  a leading tick circle, no swipes and no long-press menu: a tap ticks,
+  the ≡ handle drags.
+- **The Select demo** (`IdentitiesView+Select`, `ReviewHint.dragMerge`):
+  the first time Select opens with two names or more, a ghost of the
+  first row lifts on its ≡ handle and settles on the row below, which
+  shows "Same as PERSON_1", under the caption "Tick names to act on them,
+  or drag ≡ onto another name to make them one". About 2 s, drawn as the
+  drag-merge draws its lifted row; the caption stays until a tap, and any
+  tap ends it and still does what it taps. Reduce Motion: the ghost still
+  on the row below, with the caption. VoiceOver hears the caption. A tap
+  (dismissing it), the first drag-merge or a Same as learns it for good;
+  leaving Select or closing the drawer first leaves it for next time.
 
 ## Edit mode
 
@@ -302,10 +328,11 @@ that only the view model changes; views send intents
 - **Entering** (the pencil, ⌘E): with a selection the keyboard comes up
   on it; with none nothing moves, names dim and the keyboard waits for a
   tap in the text. A new, empty document opens with the keyboard up.
-- **The bar:** ☰, the title, Done as a
+- **The bar:** ☰, the title, and Done as a
   checkmark in its own tinted glass capsule (`.glassProminent`, VoiceOver
-  "Done editing", ⌘E), and ⋯. In review: the pencil, Identities and ⋯ in
-  one capsule. The title truncates at its tail in the room between ☰ and
+  "Done editing", ⌘E). In review: the pencil and Identities in one
+  capsule. Find in document and Show Markdown are in the title's menu
+  ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)). The title truncates at its tail in the room between ☰ and
   the trailing buttons, centred.
 - **The Original while editing** (iPhone): the switch stays; Original
   hides the keyboard and keeps edit mode on, and Text brings the keyboard

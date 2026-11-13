@@ -131,7 +131,7 @@ final class SurveyUITests: XCTestCase {
         app.buttons["identities-select"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["identity-drag-handle"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         shot("41-identities-select")
-        app.buttons["identities-select"].firstMatch.tap()
+        app.buttons["identities-select-cancel"].firstMatch.tap()
         if !isPad {
             closeSheet(app)
         }
