@@ -84,7 +84,9 @@ From the maintainer's use of TestFlight rc.9 on the iPhone 17 Pro:
 - **TipKit decides when; mdoc draws how.** The Select demo and the three
   existing hints (card swipe, long press, drag-merge) become TipKit tips
   read through `shouldDisplay` / `statusUpdates`; none uses `TipView` or
-  `.popoverTip`. The existing hints keep their quiet line.
+  `.popoverTip`. Card swipe and long press keep their quiet line in the
+  review bar. Drag-merge has no line of its own any more: its tip gates
+  the Select demo, which teaches it.
 - Tips appear on the thing they explain, cover no control and leave every
   button live, show one at a time (`.tipsDisplayFrequency`), and are
   invalidated by doing the action (TipKit events).
