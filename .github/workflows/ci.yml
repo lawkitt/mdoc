@@ -58,10 +58,13 @@ permissions:
 # Replace superseded pushes and PR runs, including on PR close/merge (all jobs
 # skip on closed). A called workflow inherits the caller's event_name/ref, not
 # "workflow_call", so release.yml explicitly selects a separate per-run group
-# and disables cancellation. These groups cannot cancel one another.
+# and disables cancellation. These groups cannot cancel one another. `main`'s
+# pushes are never cancelled either, only replaced while waiting: their runs
+# save the caches, and a run cancelled while saving leaves its key reserved
+# and never written (main-caches.yml).
 concurrency:
   group: ci-${{ inputs.release-call && format('release-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !inputs.release-call }}
+  cancel-in-progress: ${{ !inputs.release-call && github.ref != 'refs/heads/main' }}
 
 jobs:
   # Linux isn't shipped, but its cfg code must keep compiling. Formatting and

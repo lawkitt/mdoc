@@ -25,10 +25,14 @@ on:
 permissions:
   contents: read
 
-# A newer main replaces an older one's builds.
+# One build at a time, never cancelled: a newer main waits, and replaces an
+# older one that is still waiting. Cancelling a run while it saves leaves its
+# cache key reserved and never written, and no later run can save that key:
+# on 2026-11-13 five merges in 30 minutes cancelled four runs, one partway
+# through saving the iOS core, so every iOS job rebuilt it (+3 to 5 min).
 concurrency:
   group: main-caches
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ios:

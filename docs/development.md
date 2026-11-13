@@ -780,6 +780,10 @@ the tests without running them (`test`, and `fast-linux` on Linux), and
 no check). Between them they save every cache the queue's hosted jobs
 restore: a branch can restore only its own caches and `main`'s, so only
 `main` saves (the setup action's `save-if`, and the model's save step).
+Neither workflow cancels a run on `main`: a newer push waits, and replaces
+an older one still waiting. A run cancelled while it saves leaves its cache
+key reserved and never written, and no later run can save that key until
+the key changes (2026-11-13: the iOS core, rebuilt by every iOS job).
 rust-cache keys a cache by job id, so each hosted job restores the one
 `main`'s job of the same id saves: `ci-desktop.yml`'s `checks` and `test`
 jobs are `ci.yml`'s. A job that builds something new needs `main` to build
