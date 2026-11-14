@@ -11,6 +11,7 @@ mod history;
 mod ids;
 mod mapping;
 mod typing;
+pub(crate) mod words;
 
 use crate::CoreError;
 pub use history::StepKind;
@@ -85,7 +86,7 @@ pub(crate) struct Counts {
     pub kept: u64,
 }
 
-fn text_revision(text: &str) -> u64 {
+pub(crate) fn text_revision(text: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut hasher);
@@ -447,11 +448,22 @@ impl ReviewText {
     /// A selection added as proposals of every exact repeat
     /// (`add_manual_candidate`): `picked` is taken for new wording, else the
     /// guess; proposed wording keeps its own category (ADR 0024).
+    ///
+    /// The selection is taken as Hide name's callout shows it: snapped to
+    /// whole words and trimmed (`hide_target`) when that leaves a name to
+    /// hide, else as it is. Returns the range marked.
     pub fn add_selection(
         &mut self,
         range: Range<usize>,
         picked: Option<Category>,
-    ) -> Result<(), CoreError> {
+    ) -> Result<Range<usize>, CoreError> {
+        let range = match self.text.get(range.clone()) {
+            Some(_) => self
+                .review
+                .selection_target(&self.text, range.clone())
+                .unwrap_or(range),
+            None => range,
+        };
         let source = self.text.clone();
         let wording = source
             .get(range.clone())
@@ -476,10 +488,11 @@ impl ReviewText {
                 .map_err(CoreError::review)?;
             step.after = Focus {
                 identity: document.at(&range).and_then(|at| document.entity(&at)),
-                range: Some(range),
+                range: Some(range.clone()),
             };
             Ok(())
-        })
+        })?;
+        Ok(range)
     }
 
     /// Replace the proposals in scope (`apply_scope`): this mention, or
