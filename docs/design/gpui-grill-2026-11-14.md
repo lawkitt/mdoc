@@ -1,7 +1,7 @@
 # Desktop GPUI upgrade grill
 
 Research as of 2026-11-14. Four rounds answered. The outcome is
-[ADR 0115](../adr/0115-gpui-0-3-12-and-a-quicker-sidebar-reveal.md) and the
+[ADR 0117](../adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md) and the
 ROADMAP section "Desktop GPUI". The record stays open until the maintainer
 confirms a shared understanding.
 
@@ -57,7 +57,7 @@ confirms a shared understanding.
 18. **Both reveal fixes:** `.cached()` on the document view, and timings of
     100 ms intent plus a 120 ms slide (amends ADR 0027). The 300 ms close grace
     stays. The maintainer confirms the timings by eye.
-19. **Record:** ADR 0115, plus a ROADMAP "Desktop GPUI" section that
+19. **Record:** ADR 0117, plus a ROADMAP "Desktop GPUI" section that
     replaces the Later item on GPUI Fast. Glossary: rail and hover reveal,
     cached view.
 

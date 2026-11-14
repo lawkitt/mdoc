@@ -299,7 +299,7 @@ and dropped (#857).
 
 The desktop app moves to `gpui-pre 0.3.12` (macOS 12 minimum), and the
 sidebar's hover reveal gets quicker and smooth
-([ADR 0115](docs/adr/0115-gpui-0-3-12-and-a-quicker-sidebar-reveal.md),
+([ADR 0117](docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md),
 [GPUI grill](docs/design/gpui-grill-2026-11-14.md)). In order:
 
 1. **[Desktop] `gpui-pre 0.3.12`.** One change for macOS and Windows: the
@@ -314,7 +314,7 @@ sidebar's hover reveal gets quicker and smooth
 3. **[Desktop] Measure the reveal.** Native release builds with Animation
    Hitches on a real legal document with the preview open, plus a Windows
    smoothness check. *Done when:* no hitch exceeds 16.7 ms and the numbers
-   are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0115
+   are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
 ## Later
