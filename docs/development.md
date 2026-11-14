@@ -595,7 +595,16 @@ the same Xcode and runtime build (`just doctor` checks both);
 `scripts/ios-toolchain.sh` downloads the runtime once, or
 `xcodebuild -downloadPlatform iOS -buildVersion 23C54 -architectureVariant
 arm64 -exportPath <dir>` exports it for `xcrun simctl runtime add` on
-another Mac.
+another Mac. Xcode 26.x is not supported on macOS 27: there the kernel's
+code-signing check refuses Xcode 26.2's `DTServiceHub`, so every
+Simulator test run hangs ("The test runner hung before establishing
+connection", "failed to bless service hub") while device tests still run.
+A Mac on macOS 27 keeps Xcode 26.2 selected for `just mobile --ios` and
+`just doctor`, installs Xcode 27.x beside it, and runs local Simulator
+tests through it, still on the pinned iOS 26.2 runtime:
+`DEVELOPER_DIR=/Applications/Xcode-27.2.app/Contents/Developer just
+ios-test "iPhone 17"`. Its newer Swift and SDK can warn where CI does not;
+hosted `ci/ios` stays the reference.
 `MDOC_IOS_TEST_WORKERS` in `ci-ios.yml` switches parallel testing on
 (the number of Simulator clones); it is off, as 2 clones were slower and
 failed UI tests (#617).
