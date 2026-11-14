@@ -422,6 +422,11 @@ including unopened restored records. Code: `workspace::Workspace`.
 **Tab**: sidebar entry owning a document view once initialized; restored tabs
 allocate their document view when activated.
 
+**Rail** and **hover reveal**: the collapsed sidebar's icon strip, and the
+full document list that slides out over the editor after hover intent on it
+(100 ms intent, 120 ms slide; [ADR 0027](docs/adr/0027-chrome-style-vertical-sidebar.md),
+[ADR 0115](docs/adr/0115-gpui-0-3-12-and-a-quicker-sidebar-reveal.md)).
+
 **Back/Forward**: per-window history of tab activations, Home and the case
 page; ⌘[ / ⌘] ([ADR 0081](docs/adr/0081-workspace-back-forward.md)).
 
@@ -451,6 +456,12 @@ prompt, emit an event), as a variant of that owner's own effect enum.
 **Case coordination**: the window-level owner (`CaseCoordinator`) of case
 state, the case key and case saves across tabs. Distinct from a tab's
 **case link** (`CaseLink`), its own membership and pending save.
+
+**Cached view**: a GPUI entity rendered through `.cached()`, so a window
+rebuild reuses its last frame unless the entity was notified. A missing
+`cx.notify()` then shows as a stale frame ([ADR 0115](docs/adr/0115-gpui-0-3-12-and-a-quicker-sidebar-reveal.md)).
+Distinct from GPUI Fast's retained rendering, which a gate in ADR 0115 keeps
+out unless measured.
 
 **Document lifecycle**: a document view's loading, generation, availability,
 conversion and dirty state (`DocumentLifecycle`). Distinct from file-level

@@ -295,14 +295,32 @@ Items 16–31 have shipped; item 22 (the PC's slow bursts) closed as not
 needed, and item 30 (a prebuilt library for UI test launches) was measured
 and dropped (#857).
 
+## Desktop GPUI
+
+The desktop app moves to `gpui-pre 0.3.12` (macOS 12 minimum), and the
+sidebar's hover reveal gets quicker and smooth
+([ADR 0115](docs/adr/0115-gpui-0-3-12-and-a-quicker-sidebar-reveal.md),
+[GPUI grill](docs/design/gpui-grill-2026-11-14.md)). In order:
+
+1. **[Desktop] `gpui-pre 0.3.12`.** One change for macOS and Windows: the
+   API migration, the macOS and Windows patches re-ported, the WGPU override
+   kept, and the macOS minimum set to 12.0 in the packager configuration and
+   `Info.plist`. *Done when:* CI is green, the headless renders pass on both
+   platforms, and wrap, caret and scroll look unchanged in a native build.
+2. **[Desktop] A quicker hover reveal.** The document view gets a
+   `.cached()` boundary, with tests that change its state from outside, and
+   the reveal is 100 ms of intent plus a 120 ms slide. *Done when:* the
+   maintainer accepts the timings by eye.
+3. **[Desktop] Measure the reveal.** Native release builds with Animation
+   Hitches on a real legal document with the preview open, plus a Windows
+   smoothness check. *Done when:* no hitch exceeds 16.7 ms and the numbers
+   are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0115
+   describes.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
-
-- **[Perf]** Consider gpui-fast (longbridge's GPUI fork with frame-to-frame
-  caching) for the app's per-frame CPU. Costs a newer GPUI and porting the
-  three vendored patches ([CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)).
 
 - **[Recognition]** Real-text fixtures: commit public real documents as
   fixtures, each with a licence check, which loosens ADR 0093's CC0 rule.
