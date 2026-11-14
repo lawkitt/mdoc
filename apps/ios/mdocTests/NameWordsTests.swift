@@ -159,5 +159,6 @@ final class NameWordsTests: XCTestCase {
     func testAMenuQuotesALongNameCutAtAWord() {
         XCTAssertEqual("Тагиев Тебриз".truncatedForMenu, "Тагиев Тебриз")
         XCTAssertEqual("Тагиев Тебриз Фарадж оглы".truncatedForMenu, "Тагиев Тебриз Фарадж…")
+        XCTAssertEqual("паспорт серии 4510, выдан".truncatedForMenu, "паспорт серии 4510…")
     }
 }

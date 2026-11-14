@@ -91,15 +91,20 @@ extension MarkdownTextView.Coordinator {
     }
 
     /// The menu's words are the selection's: a word it reached into shows
-    /// whole, and the punctuation at its ends goes.
+    /// whole, and the punctuation at its ends goes. Moving the selection
+    /// closes UIKit's menu, so the same menu shows again over the words.
     private func snapSelection(to target: SourceRange, in textView: UITextView) {
         let base = (textView as? CellTextView)?.location ?? 0
         let shown = offsets.nsRange(target)
         let local = NSRange(location: shown.location - base, length: shown.length)
         guard local != textView.selectedRange, local.location >= 0,
               NSMaxRange(local) <= textView.textStorage.length else { return }
-        DispatchQueue.main.async { [weak textView] in
-            textView?.selectedRange = local
+        DispatchQueue.main.async { [weak self, weak textView] in
+            guard let self, let textView, textView.selectedRange.length > 0 else { return }
+            textView.selectedRange = local
+            self.presentMenu(on: textView) { [weak self] view, source in
+                self?.hideMenu(for: source, in: view, at: view.selectedRange)
+            }
         }
     }
 
@@ -178,12 +183,18 @@ extension MarkdownTextView.Coordinator {
     /// Hide «…» shows over the name at once, as the edit menu does after a
     /// drag.
     private func presentFixMenu(on holder: UITextView) {
-        guard let shown = holder.selectedTextRange else { return }
-        let rect = holder.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
+        presentMenu(on: holder) { [weak self] _, source in self?.fixMenu(for: source) }
+    }
+
+    /// `menu` over the selection of `view`, shown by this view's own
+    /// interaction (`SelectionMenuPresenter`).
+    private func presentMenu(on view: UITextView, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
+        guard let shown = view.selectedTextRange else { return }
+        let rect = view.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
         guard !rect.isNull, !rect.isInfinite else { return }
-        let presenter = fixPresenter ?? FixMenuPresenter(coordinator: self)
+        let presenter = fixPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
         fixPresenter = presenter
-        presenter.present(on: holder, over: rect)
+        presenter.present(on: view, over: rect, menu: menu)
     }
 
     private func endFixSelection() {
@@ -197,20 +208,22 @@ extension MarkdownTextView.Coordinator {
     }
 }
 
-/// Shows Fix the words' Hide «…» over the selection when the handles
-/// first appear; afterwards UIKit's own edit menu shows it
-/// (`editMenuForTextIn`).
+/// Shows a selection's menu from mdoc's own interaction: Fix the words'
+/// Hide «…» when the handles first appear, and Hide name's menu again once
+/// the selection snapped to whole words. UIKit's own edit menu
+/// (`editMenuForTextIn`) shows the same menus otherwise.
 @MainActor
-final class FixMenuPresenter: NSObject, @preconcurrency UIEditMenuInteractionDelegate {
-    private weak var coordinator: MarkdownTextView.Coordinator?
+final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteractionDelegate {
+    private let offsets: () -> TextOffsets?
     private var interaction: UIEditMenuInteraction?
     private var target = CGRect.null
+    private var menu: ((UITextView, SourceRange) -> UIMenu?)?
 
-    init(coordinator: MarkdownTextView.Coordinator) {
-        self.coordinator = coordinator
+    init(offsets: @escaping () -> TextOffsets?) {
+        self.offsets = offsets
     }
 
-    func present(on view: UITextView, over rect: CGRect) {
+    func present(on view: UITextView, over rect: CGRect, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
         if let interaction, interaction.view !== view {
             interaction.view?.removeInteraction(interaction)
             self.interaction = nil
@@ -218,6 +231,7 @@ final class FixMenuPresenter: NSObject, @preconcurrency UIEditMenuInteractionDel
         let interaction = self.interaction ?? UIEditMenuInteraction(delegate: self)
         if interaction.view == nil { view.addInteraction(interaction) }
         self.interaction = interaction
+        self.menu = menu
         target = rect.insetBy(dx: 0, dy: -Space.s)
         interaction.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: rect.midX, y: rect.minY)))
     }
@@ -229,10 +243,10 @@ final class FixMenuPresenter: NSObject, @preconcurrency UIEditMenuInteractionDel
     func editMenuInteraction(
         _ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]
     ) -> UIMenu? {
-        guard let coordinator, let view = interaction.view as? UITextView else { return nil }
+        guard let view = interaction.view as? UITextView, let offsets = offsets(), let menu else { return nil }
         let base = (view as? CellTextView)?.location ?? 0
         let range = view.selectedRange
-        return coordinator.fixMenu(for: coordinator.offsets.sourceRange(NSRange(location: range.location + base, length: range.length)))
+        return menu(view, offsets.sourceRange(NSRange(location: range.location + base, length: range.length)))
     }
 
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, targetRectFor configuration: UIEditMenuConfiguration) -> CGRect {

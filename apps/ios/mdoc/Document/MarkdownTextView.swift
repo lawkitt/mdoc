@@ -205,11 +205,12 @@ struct MarkdownTextView: UIViewRepresentable {
         var shownFindBar = 0
         /// Fix the words as the view shows it (ADR 0114): the request
         /// taken, the text view whose selection holds the name, a selection
-        /// set here (not by the reader), and the first callout's presenter.
+        /// set here (not by the reader), and the presenter of mdoc's own
+        /// selection menus.
         var shownFix: WordsFixRequest?
         weak var fixHolder: UITextView?
         var fixSettling = false
-        var fixPresenter: FixMenuPresenter?
+        var fixPresenter: SelectionMenuPresenter?
         /// A `followResponder` waits for SwiftUI's update to end.
         private var responderWaits = false
         /// Whether the text last showed in edit mode; nil before it first
@@ -628,8 +629,10 @@ struct MarkdownTextView: UIViewRepresentable {
         /// selection stays behind.
         func textView(_ textView: UITextView, textItemMenuWillEndFor textItem: UITextItem, animator: any UIContextMenuInteractionAnimating) {
             guard !textView.isEditable else { return }
-            animator.addCompletion { [weak textView] in
-                guard let textView, !textView.isEditable else { return }
+            animator.addCompletion { [weak self, weak textView] in
+                // Fix the words, chosen in this menu, holds the name's
+                // words selected (ADR 0114).
+                guard let textView, !textView.isEditable, self?.parent.wordsFix == nil else { return }
                 textView.selectedTextRange = nil
             }
         }

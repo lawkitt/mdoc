@@ -64,6 +64,6 @@ extension String {
         guard count > limit else { return self }
         let cut = prefix(limit)
         let atWord = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
-        return atWord.trimmingCharacters(in: .whitespaces) + "…"
+        return atWord.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
     }
 }
