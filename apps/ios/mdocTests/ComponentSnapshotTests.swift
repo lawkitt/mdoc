@@ -87,8 +87,8 @@ final class ComponentSnapshotTests: XCTestCase {
     /// The big buttons and what sits on the ink accent (ADR 0099, amended
     /// 2026-11-08): the primary is ink glass with white words in light mode
     /// and black in dark mode, the secondary clear glass with ink words, and
-    /// Undo a clear glass circle; the Replaced mark's symbol and the selected
-    /// chip's words read on ink; the progress ring is ink.
+    /// Undo a clear glass circle; the selected chip's words read on ink; the
+    /// progress ring is ink.
     func testAccentControls() {
         let view = VStack(alignment: .leading, spacing: Space.m) {
             HStack(spacing: Space.s) {
@@ -121,9 +121,6 @@ final class ComponentSnapshotTests: XCTestCase {
             }
             .disabled(true)
             HStack(spacing: Space.s) {
-                StateMark(state: .replaced)
-                StateMark(state: .kept)
-                StateMark(state: .proposed)
                 ProgressRing(fraction: 0.6)
                 Chip(Text(verbatim: "All"), filled: true)
                 Chip(Text(verbatim: "Person 2"), systemImage: "person")
@@ -136,6 +133,30 @@ final class ComponentSnapshotTests: XCTestCase {
         .background(Palette.background)
         for appearance in Snapshot.Appearance.allCases {
             Snapshot.assert(view, named: "accent-controls", appearance: appearance)
+        }
+    }
+
+    /// The state marks (docs/mobile-ui.md, State marks; ADR 0114): replaced
+    /// is its glyph on the category's tint, never an ink disc, readable for
+    /// the palest categories (yellow, mint) in light mode too; kept an eye
+    /// on the chip fill; proposed a dashed ring.
+    func testStateMarks() {
+        let view = VStack(alignment: .leading, spacing: Space.xs) {
+            ForEach([Category.person, .caseNumber, .url, .tax, .other], id: \.self) { category in
+                HStack(spacing: Space.s) {
+                    Image(systemName: category.symbol)
+                        .foregroundStyle(category.color)
+                        .frame(width: 24)
+                    StateMark(state: .replaced, tint: category.color)
+                    StateMark(state: .kept, tint: category.color)
+                    StateMark(state: .proposed, tint: category.color)
+                }
+            }
+        }
+        .padding()
+        .background(Palette.background)
+        for appearance in Snapshot.Appearance.allCases {
+            Snapshot.assert(view, named: "state-marks", appearance: appearance)
         }
     }
 

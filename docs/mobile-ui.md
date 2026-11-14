@@ -195,10 +195,15 @@ that only the view model changes; views send intents
   the screen); down on compact springs back. Opening it keeps the active
   name visible above the bar.
 - **Card:** category icon and the name (tap to scroll back to it), its
-  state mark once decided, the mentions chip when the name repeats (the
-  line is the chip's height either way, so the compact bar keeps one
-  height); then the category ▾, alias ▾ and scope ▾ chips; a merge hint
-  line while the core sees one.
+  state mark once decided, the mentions chip when the name repeats; then
+  the category ▾, alias ▾, scope ▾ and Fix the words chips; a merge hint
+  line while the core sees one. The name wraps at words, without hyphens,
+  to two lines, and a longer one ends in "…" (VoiceOver hears it whole;
+  [ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)). The line always
+  holds two lines of the name's font, and the chip's height if more, at
+  every text size, so the compact bar keeps one height from card to card
+  whether the name takes one line or two; a one-line name sits in its
+  middle.
 - **Stepping** (`ReviewPager`): the previous, current and next cards sit
   side by side in one strip, the neighbors peeking in at the bar's edges.
   The finger moves the strip; let go past a third of the card or with a
@@ -301,6 +306,15 @@ that only the view model changes; views send intents
   Kept, with Undo in the toast. A decided row's mark turns to its new
   mark first (a cross-fade under Reduce Motion), then the row moves to
   its section.
+- **State marks** (`StateMark`, 26 pt in a 44 pt target; the rows, the
+  mentions and the card's badge): a dashed grey ring while proposed;
+  replaced, an eye.slash glyph on its category's tint, the one the text
+  puts behind a replaced name (`aliasFill`'s strength, stronger in dark
+  mode), with a ring in the category's colour under Increase Contrast;
+  kept, an eye on the chip fill. Never an ink disc: a list of replaced
+  names would read as a column of buttons in dark mode. The glyph is the
+  text colour, not the category's: a category colour fails contrast as a
+  glyph in light mode (yellow, mint) as it does as text (ADR 0114).
 - **Swipes:** right is Replace, a full swipe too; left shows Same as… and
   Keep, never as a full swipe, since Keep sends the original to the AI.
   In the drawer the rows own sideways swipes.

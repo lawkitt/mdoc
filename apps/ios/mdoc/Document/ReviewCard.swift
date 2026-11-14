@@ -61,18 +61,30 @@ struct ReviewCard: View {
 
     // MARK: Line 1
 
-    /// One height whether or not the mentions chip shows: a hidden chip, no
-    /// wider than nothing, holds the row at the chip's height at every text
-    /// size, so the compact bar (and the text above it) keeps its height
-    /// from card to card.
+    /// One height whether the name takes one line or two and whether or not
+    /// the mentions chip shows: a hidden chip and two hidden lines of the
+    /// name's font, no wider than nothing, hold the row at the taller of
+    /// them at every text size, so the compact bar (and the text above it)
+    /// keeps its height from card to card (ADR 0098, 0114). A one-line name
+    /// sits in the middle.
     private var header: some View {
         ZStack(alignment: .leading) {
             Chip(Text(verbatim: "1 of 2"), systemImage: "arrow.down")
                 .fixedSize()
                 .frame(width: 0)
                 .hidden()
+            Self.title("1\n2")
+                .fixedSize()
+                .frame(width: 0)
+                .hidden()
             headerRow
         }
+    }
+
+    /// The name: wrapped at words without hyphens, two lines at most, the
+    /// second ending in "…" when it needs more (ADR 0114).
+    private static func title(_ text: String) -> UnhyphenatedText {
+        UnhyphenatedText(text, style: .headline, weight: .semibold, lines: 2)
     }
 
     private var headerRow: some View {
@@ -83,13 +95,10 @@ struct ReviewCard: View {
             Button {
                 model.revealReviewed()
             } label: {
-                Text(candidate.original)
-                    .font(Typography.title)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Self.title(candidate.original)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(Text(verbatim: candidate.original))
             .accessibilityHint(Text("Scrolls the text to it."))
             Spacer(minLength: 0)
             stateBadge
@@ -113,7 +122,7 @@ struct ReviewCard: View {
     @ViewBuilder
     private var stateBadge: some View {
         if candidate.state != .proposed {
-            StateMark(state: candidate.state)
+            StateMark(state: candidate.state, tint: candidate.category.color)
                 .accessibilityLabel(Text(ReviewDetails.stateName(candidate.state)))
         }
     }
@@ -525,7 +534,7 @@ struct MentionRow: View {
             .accessibilityLabel(Text(spoken))
             .accessibilityHint(Text("Scrolls the text to it."))
             Button(action: onToggle) {
-                StateButtonLabel(state: state)
+                StateButtonLabel(state: state, tint: tint)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(ReviewDetails.stateName(state)))
@@ -559,22 +568,33 @@ struct MentionRow: View {
 }
 
 /// A mention's or an identity's state as a round button, like Reminders'
-/// checkbox: a dashed ring while proposed, a filled accent disc once
+/// checkbox: a dashed ring while proposed, the name's category tint once
 /// replaced, an eye once kept. The words are for VoiceOver.
 struct StateButtonLabel: View {
     let state: MentionState
+    /// The name's category colour (`Category.color`).
+    let tint: Color
 
     var body: some View {
-        StateMark(state: state)
+        StateMark(state: state, tint: tint)
             // The whole 44-point square is the target.
             .frame(width: Size.target, height: Size.target)
             .contentShape(Rectangle())
     }
 }
 
-/// The round mark itself, 26 points.
+/// The round mark itself, 26 points (docs/mobile-ui.md, State marks).
+/// Replaced is the glyph on its category's tint, the one the text puts
+/// behind a replaced name, never an ink disc: a list of replaced names
+/// would read as a column of buttons in dark mode (ADR 0114). The glyph is
+/// the text's colour: a category colour fails contrast as a glyph in light
+/// mode (yellow, mint), as it does as text.
 struct StateMark: View {
     let state: MentionState
+    /// The name's category colour (`Category.color`).
+    let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         ZStack {
@@ -583,10 +603,13 @@ struct StateMark: View {
                 Circle()
                     .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
             case .replaced:
-                Circle().fill(Palette.accent)
+                Circle().fill(tint.opacity(MarkdownStyler.fill(dark: colorScheme == .dark).replaced))
+                if contrast == .increased {
+                    Circle().strokeBorder(tint, lineWidth: 1.5)
+                }
                 Image(systemName: "eye.slash.fill")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(Palette.onAccent)
+                    .foregroundStyle(.primary)
             case .kept:
                 Circle().fill(Palette.chipFill)
                 Image(systemName: "eye")

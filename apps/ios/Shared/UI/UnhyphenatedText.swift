@@ -6,18 +6,27 @@ import UIKit
 /// text-style font (SwiftUI's `Text`, `preferredFont`) hyphenates a word too
 /// long for its line, so this draws a label in a plain system font of the
 /// reader's text size, and lets an email or a path break after `@`, `.`,
-/// `_` and `/` rather than mid-word.
+/// `_` and `/` rather than mid-word. `lines` caps the lines, the last
+/// ending in "…" (VoiceOver still hears the whole text); 0, as many as it
+/// takes.
 struct UnhyphenatedText: UIViewRepresentable {
     let text: String
     var style: UIFont.TextStyle = .body
+    var weight: UIFont.Weight = .regular
     var monospaced = false
     var color: UIColor = .label
+    var lines = 0
 
-    init(_ text: String, style: UIFont.TextStyle = .body, monospaced: Bool = false, color: UIColor = .label) {
+    init(
+        _ text: String, style: UIFont.TextStyle = .body, weight: UIFont.Weight = .regular, monospaced: Bool = false,
+        color: UIColor = .label, lines: Int = 0
+    ) {
         self.text = text
         self.style = style
+        self.weight = weight
         self.monospaced = monospaced
         self.color = color
+        self.lines = lines
     }
 
     func makeUIView(context: Context) -> UILabel {
@@ -34,6 +43,12 @@ struct UnhyphenatedText: UIViewRepresentable {
         // Reading the size here re-runs this when the reader's text size changes.
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize))
         label.attributedText = Self.attributed(text, font: font(for: traits), color: color)
+        label.numberOfLines = lines
+        if lines > 0 {
+            // Set after the text: the label still wraps at words, as the
+            // paragraph says, and cuts only its last line.
+            label.lineBreakMode = .byTruncatingTail
+        }
         label.accessibilityLabel = text
     }
 
@@ -45,7 +60,7 @@ struct UnhyphenatedText: UIViewRepresentable {
 
     private func font(for traits: UITraitCollection) -> UIFont {
         let size = UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize
-        return monospaced ? .monospacedSystemFont(ofSize: size, weight: .regular) : .systemFont(ofSize: size)
+        return monospaced ? .monospacedSystemFont(ofSize: size, weight: weight) : .systemFont(ofSize: size, weight: weight)
     }
 
     nonisolated static func attributed(_ text: String, font: UIFont, color: UIColor) -> NSAttributedString {
