@@ -212,6 +212,14 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     private var dragInterval: OSSignpostIntervalState?
 
     private var isOpen: Bool { openSide != nil }
+
+    /// For tests: both panels lie under the screen (`clip`), as they must
+    /// while they slide; with Reduce Motion the active one is over it.
+    var panelsLieUnderScreen: Bool {
+        let order = view.subviews
+        guard let screen = order.firstIndex(of: clip) else { return false }
+        return [leadingPanel, trailingPanel].allSatisfy { (order.firstIndex(of: $0.host.view) ?? .max) < screen }
+    }
     /// The active panel is there: open, dragged or sliding to rest.
     private var showsPanel: Bool { isOpen || dragging || settling }
 
@@ -323,7 +331,8 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         if reduceMotion {
             view.insertSubview(host, aboveSubview: clip)
         } else {
-            view.insertSubview(host, belowSubview: innerEdge)
+            // Under the screen and its shadow, wherever Reduce Motion put it.
+            view.insertSubview(host, belowSubview: shadow)
         }
         view.insertSubview(innerEdge, aboveSubview: host)
         view.setNeedsLayout()
@@ -571,7 +580,7 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     @objc private func panned(_ pan: DrawerPan) {
         switch pan.state {
         case .began:
-                if !isOpen, !settling || shown == 0, let chosen { setActive(chosen) }
+                    if !isOpen, !settling || shown == 0, let chosen { setActive(chosen) }
             if dragInterval == nil { dragInterval = Self.signposter.beginAnimationInterval("Drawer drag") }
             dragStart = currentShown()
             slides += 1

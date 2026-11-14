@@ -66,4 +66,18 @@ final class DrawerDragTests: XCTestCase {
         XCTAssertNil(wanted(false, false, was: (false, true), open: .trailing), "Identities closes")
         XCTAssertEqual(wanted(true, false, was: (false, false), open: nil), .leading, "☰")
     }
+
+    /// Reduce Motion puts the panel over the screen to fade it in; turned off
+    /// again, the panel goes back under the screen (review of #864: a closed
+    /// sidebar, always shown, covered the screen).
+    @MainActor
+    func testPanelsGoBackUnderTheScreenWhenReduceMotionEnds() {
+        let controller = DrawerController()
+        controller.loadViewIfNeeded()
+        XCTAssertTrue(controller.panelsLieUnderScreen, "at first")
+        controller.reduceMotion = true
+        XCTAssertFalse(controller.panelsLieUnderScreen, "Reduce Motion: the panel over the screen")
+        controller.reduceMotion = false
+        XCTAssertTrue(controller.panelsLieUnderScreen, "Reduce Motion off: under the screen again")
+    }
 }
