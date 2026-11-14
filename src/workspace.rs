@@ -2207,6 +2207,23 @@ impl Workspace {
         cx.notify();
     }
 
+    /// A reveal slide that started ends after `REVEAL_SLIDE` with a repaint,
+    /// so the document beside it is drawn afresh, uncached (ADR 0117).
+    fn end_reveal_slide_later(&mut self, cx: &mut Context<Self>) {
+        let Some(generation) = self.sidebar.reveal_slide_to_schedule() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(REVEAL_SLIDE).await;
+            let _ = this.update(cx, |this, cx| {
+                if this.sidebar.end_reveal_slide(generation) {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
     /// Slide the reveal back; it unmounts once the animation has finished.
     fn dismiss_reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let effect = self.sidebar.dismiss(cx.reduce_motion());
@@ -3325,6 +3342,7 @@ impl Render for Workspace {
         }
         self.note_region_focus(window, cx);
         self.reveal_for_keyboard(window, cx);
+        self.end_reveal_slide_later(cx);
         // A finished or abandoned OS drag leaves no insertion line or reveal.
         if !cx.has_active_drag() && self.sidebar.dragging() {
             self.clear_file_drag(window, cx);
@@ -3614,9 +3632,13 @@ impl Workspace {
                 // last frame unless it changed itself (ADR 0117): only a view
                 // notified on its own redraws, so this holds only for the
                 // slide, never as the document's steady state.
-                Some(active) if self.sidebar.animating(std::time::Instant::now()) => active
-                    .cached(gpui::StyleRefinement::default().size_full())
-                    .into_any_element(),
+                Some(active)
+                    if self.sidebar.animating(std::time::Instant::now()) && !cx.reduce_motion() =>
+                {
+                    active
+                        .cached(gpui::StyleRefinement::default().size_full())
+                        .into_any_element()
+                }
                 Some(active) => active.into_any_element(),
                 None => div().into_any_element(),
             }

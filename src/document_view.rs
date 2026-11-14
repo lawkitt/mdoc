@@ -1784,8 +1784,17 @@ impl Drop for DocumentView {
     }
 }
 
+/// How many times a document view rendered on this thread: tests use it to
+/// see the workspace reuse a cached frame (ADR 0117).
+#[cfg(test)]
+thread_local! {
+    pub(crate) static RENDERS: Cell<usize> = const { Cell::new(0) };
+}
+
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(test)]
+        RENDERS.with(|renders| renders.set(renders.get() + 1));
         // The before/after view follows the applied replacements (ADR 0042).
         self.refresh_compare(window, cx);
         // The Share panel's reply box restores against the live mapping (ADR 0078).

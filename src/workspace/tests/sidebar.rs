@@ -1000,3 +1000,50 @@ fn a_cut_name_keeps_its_start_and_gives_its_end_the_rest() {
     let (front, back) = middle_cut(stem, x, x(stem.len()), 60.);
     assert_eq!(format!("{}…{}", &stem[..front], &stem[back..]), "Отчё…ал");
 }
+
+/// While the rail's reveal slides, the document beside it reuses its last
+/// frame even when the workspace redraws; the slide's end draws it afresh.
+/// With reduced motion nothing slides, so nothing is reused (ADR 0117).
+#[gpui::test]
+fn the_document_waits_out_the_reveal_slide_and_redraws_after(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(900.), px(700.)));
+    collapse(&tabs, cx);
+    let renders = || crate::document_view::RENDERS.with(|renders| renders.get());
+    // A frame as GPUI draws one, without `refresh`, which skips every cache.
+    let frame = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    };
+    // A redraw of the workspace alone, as the sidebar's own changes cause.
+    let workspace_changes = |cx: &mut VisualTestContext| {
+        tabs.update(cx, |_, cx| cx.notify());
+        frame(cx);
+    };
+
+    cx.update(|_, cx| cx.set_reduce_motion(false));
+    tabs.update(cx, |tabs, cx| tabs.show_reveal(false, cx));
+    frame(cx);
+    let before = renders();
+    workspace_changes(cx);
+    workspace_changes(cx);
+    assert_eq!(renders(), before, "the slide reuses the document's frame");
+    cx.executor().advance_clock(REVEAL_SLIDE);
+    cx.run_until_parked();
+    frame(cx);
+    assert!(
+        renders() > before,
+        "the slide's end draws the document afresh"
+    );
+    let after = renders();
+    workspace_changes(cx);
+    assert!(renders() > after, "outside a slide the document redraws");
+
+    cx.update(|_, cx| cx.set_reduce_motion(true));
+    tabs.update_in(cx, |tabs, window, cx| tabs.dismiss_reveal(window, cx));
+    frame(cx);
+    tabs.update(cx, |tabs, cx| tabs.show_reveal(false, cx));
+    frame(cx);
+    let shown = renders();
+    workspace_changes(cx);
+    assert!(renders() > shown, "reduced motion never reuses a frame");
+}

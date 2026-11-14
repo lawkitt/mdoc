@@ -62,8 +62,9 @@ pub(super) struct Sidebar<H> {
     slide: Option<Instant>,
     reveal: Reveal,
     reveal_generation: u64,
-    /// When the reveal's current slide out or back ends.
-    reveal_slide: Option<Instant>,
+    /// The reveal's running slide out or back: its generation, and whether
+    /// the workspace has scheduled its end yet.
+    reveal_slide: Option<(u64, bool)>,
     /// Opened by keyboard focus, so focus inside it also keeps it open.
     keyboard: bool,
     /// Pointer over (rail, reveal).
@@ -201,6 +202,7 @@ impl<H: Clone + PartialEq> Sidebar<H> {
 
     fn end_reveal(&mut self) {
         self.reveal = Reveal::Hidden;
+        self.reveal_slide = None;
         self.pending = None;
         self.hover = (false, false);
         self.keyboard = false;
@@ -255,9 +257,35 @@ impl<H: Clone + PartialEq> Sidebar<H> {
 
     /// Whether a toggle's slide or the reveal's slide is running at `now`:
     /// the content beside the sidebar does not change meanwhile, so the
-    /// workspace reuses its last frame (ADR 0117).
+    /// workspace reuses its last frame (ADR 0117). The reveal's slide runs
+    /// until `end_reveal_slide`, which the workspace calls with a repaint.
     pub(super) fn animating(&self, now: Instant) -> bool {
-        self.sliding(now) || self.reveal_slide.is_some_and(|until| now < until)
+        self.sliding(now) || self.reveal_slide.is_some()
+    }
+
+    /// The generation of a reveal slide whose end is not scheduled yet; it
+    /// counts as scheduled from now on.
+    pub(super) fn reveal_slide_to_schedule(&mut self) -> Option<u64> {
+        match &mut self.reveal_slide {
+            Some((generation, scheduled)) if !*scheduled => {
+                *scheduled = true;
+                Some(*generation)
+            }
+            _ => None,
+        }
+    }
+
+    /// The reveal's slide of `generation` ended: whether that changes what
+    /// the workspace draws.
+    pub(super) fn end_reveal_slide(&mut self, generation: u64) -> bool {
+        if self
+            .reveal_slide
+            .is_some_and(|(running, _)| running == generation)
+        {
+            self.reveal_slide = None;
+            return true;
+        }
+        false
     }
 
     /// The pointer entered or left the rail (`panel` false) or the reveal.
@@ -325,7 +353,7 @@ impl<H: Clone + PartialEq> Sidebar<H> {
         if self.reveal != Reveal::Shown {
             self.reveal_generation += 1;
             self.reveal = Reveal::Shown;
-            self.reveal_slide = Some(Instant::now() + REVEAL_SLIDE);
+            self.reveal_slide = Some((self.reveal_generation, false));
             self.keyboard = keyboard;
         }
     }
@@ -342,11 +370,12 @@ impl<H: Clone + PartialEq> Sidebar<H> {
         self.reveal_generation += 1;
         if reduce_motion {
             self.reveal = Reveal::Hidden;
+            self.reveal_slide = None;
             self.hover.1 = false;
             Some(SidebarEffect::Repaint)
         } else {
             self.reveal = Reveal::Hiding;
-            self.reveal_slide = Some(Instant::now() + REVEAL_SLIDE);
+            self.reveal_slide = Some((self.reveal_generation, false));
             Some(SidebarEffect::FinishHiding(self.reveal_generation))
         }
     }
@@ -355,6 +384,7 @@ impl<H: Clone + PartialEq> Sidebar<H> {
     pub(super) fn finish_hiding(&mut self, generation: u64) -> Option<SidebarEffect> {
         if self.reveal == Reveal::Hiding && self.reveal_generation == generation {
             self.reveal = Reveal::Hidden;
+            self.reveal_slide = None;
             self.hover.1 = false;
             Some(SidebarEffect::Repaint)
         } else {
@@ -493,22 +523,28 @@ mod tests {
     }
 
     #[test]
-    fn the_reveal_slides_out_and_back_for_its_own_slide_time() {
+    fn the_reveal_slides_until_its_scheduled_end_and_not_with_reduced_motion() {
         let mut sidebar = collapsed();
-        assert!(!sidebar.animating(Instant::now()));
+        let now = Instant::now();
+        assert!(!sidebar.animating(now));
         sidebar.show(false);
-        let shown = Instant::now();
-        assert!(sidebar.animating(shown));
-        assert!(!sidebar.animating(shown + REVEAL_SLIDE));
+        assert!(sidebar.animating(now));
+        let shown = sidebar.reveal_slide_to_schedule().expect("a slide to end");
+        assert_eq!(sidebar.reveal_slide_to_schedule(), None, "scheduled once");
+        assert!(sidebar.end_reveal_slide(shown));
+        assert!(!sidebar.animating(now));
+        assert!(!sidebar.end_reveal_slide(shown), "ended once");
+        // Sliding back: a stale end from the slide out changes nothing.
         assert!(sidebar.dismiss(false).is_some());
-        let hiding = Instant::now();
-        assert!(sidebar.animating(hiding));
-        assert!(!sidebar.animating(hiding + REVEAL_SLIDE));
+        assert!(!sidebar.end_reveal_slide(shown));
+        assert!(sidebar.animating(now));
+        let hiding = sidebar.reveal_slide_to_schedule().expect("a slide to end");
+        assert!(sidebar.finish_hiding(hiding).is_some());
+        assert!(!sidebar.animating(now), "unmounting ends the slide");
         // Reduced motion unmounts at once: nothing slides.
         sidebar.show(false);
-        let later = Instant::now() + REVEAL_SLIDE;
         assert_eq!(sidebar.dismiss(true), Some(SidebarEffect::Repaint));
-        assert!(!sidebar.animating(later));
+        assert!(!sidebar.animating(now));
     }
 
     #[test]
