@@ -17,8 +17,8 @@ Local changes:
   chain; presentation and native resize require it. Rendering/shaders, atlas,
   path intermediates and BGRA staging readback are shared unchanged.
 - `headless.rs`: feature `test-support` exports a standalone
-  `PlatformHeadlessRenderer` using offscreen textures, and DirectWrite text
-  construction using WARP. It never constructs WindowsPlatform, HWND,
+  `PlatformHeadlessRenderer` using offscreen textures on WARP, and the
+  DirectWrite text system (which needs no device in 0.3.12). It never constructs WindowsPlatform, HWND,
   DirectComposition, a swap chain or an event loop; it never presents.
 - `gpui_windows.rs`: exports these two test-only entry points. mdoc supplies
   the renderer factory to HeadlessAppContext directly, without patching the

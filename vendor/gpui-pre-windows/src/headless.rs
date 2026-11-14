@@ -2,10 +2,10 @@
 //! DirectComposition target, presentation or event loop is constructed.
 use super::*;
 
+/// 0.3.12's DirectWrite text system needs no Direct3D device, so this
+/// builds it without one.
 pub fn headless_text_system() -> Result<Arc<dyn PlatformTextSystem>> {
-    Ok(Arc::new(DirectWriteTextSystem::new(
-        &DirectXDevices::warp()?,
-    )?))
+    Ok(Arc::new(DirectWriteTextSystem::new()?))
 }
 
 pub struct DirectXHeadlessRenderer(DirectXRenderer);
