@@ -224,6 +224,10 @@ struct MarkdownTextView: UIViewRepresentable {
         /// moment later, and that layout and the next change return here
         /// too, until the reader scrolls, types or a reveal moves the text.
         var modeAnchor: CandidateTextView.ScrollAnchor?
+        /// A word selected in a cell as the pencil was tapped, noted before
+        /// the edit-mode render restyles the cell (which drops it) and
+        /// selected in the text once the grids switch (`connectTables`).
+        var enteringCellSelection: NSRange?
         /// The width the text was last styled for.
         var renderedWidth: CGFloat?
         /// Edit mode's restyling and reveal (ADR 0109).
@@ -294,6 +298,10 @@ struct MarkdownTextView: UIViewRepresentable {
                 pendingReveal = reveal.target
                 pendingRequest = RevealOrigin(selected: parent.selected)
             }
+            if parent.editing, shownEditing == false {
+                // Read only: nothing here moves the first responder.
+                enteringCellSelection = view.cellSelection
+            }
             if content != self.content {
                 // iOS draws a backgrounded app again in light and dark for
                 // the app switcher. Building then made every table's cells
@@ -347,9 +355,16 @@ struct MarkdownTextView: UIViewRepresentable {
         /// each view above whether it can take over, and a hosting view
         /// answers from its view graph, which is in the middle of that
         /// update. On iOS 27 that never returned and iOS stopped mdoc
-        /// (build 882, twice on 2026-11-12).
+        /// (build 882, twice on 2026-11-12). The same for the tables' cells,
+        /// which a cell holding a selection resigns (rc.9, build 899).
+        ///
+        /// The switch keeps the place (`holdsPlace`): the render put the line
+        /// at the top of the view back already (ADR 0110).
         func followResponder(_ view: CandidateTextView) {
+            view.holdsPlace = true
+            connectTables(view)
             view.setEditMode(parent.editing, shown: parent.shown)
+            view.holdsPlace = false
             followShown(view)
             if parent.findBar != shownFindBar {
                 shownFindBar = parent.findBar
@@ -799,6 +814,14 @@ final class CandidateTextView: RenderedTextView {
 
     // MARK: The caret in a table cell (ADR 0109)
 
+    /// While edit mode switches on or off, nothing UIKit does scrolls the
+    /// text: the pencil and Done keep the line at the top of the view
+    /// (ADR 0110). A cell's selection ending hands this view the focus, and
+    /// UIKit, told of the keyboard as the mode changed, scrolled to its
+    /// caret, which in review is wherever UIKit left it: the pencil at row
+    /// 17 of a large contract's table showed the contract's end (rc.9).
+    var holdsPlace = false
+
     /// With the caret in a cell, UIKit scrolls to its selection where the
     /// table's hidden source lies (the end of the grid), so a tap on a
     /// cell of a long table threw it out of view as the keyboard came up.
@@ -807,7 +830,7 @@ final class CandidateTextView: RenderedTextView {
     override func scrollRectToVisible(_ rect: CGRect, animated: Bool) {
         // A handle dragged in a cell scrolls the text itself, under the
         // finger: the selection's end may be the one left behind.
-        if cellHandles.isDragging { return }
+        if cellHandles.isDragging || holdsPlace { return }
         guard let end = selectedTextRange?.end, let cell = cellCaretRect(for: end) else {
             super.scrollRectToVisible(rect, animated: animated)
             return

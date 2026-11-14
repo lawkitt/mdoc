@@ -12,6 +12,18 @@ extension CandidateTextView {
     /// Edit mode in live preview: tables are grids whose cells are edited.
     var editsCells: Bool { isEditMode && hidesMarkers }
 
+    /// A word selected in a cell (a long press, for Hide name) as a range
+    /// of this view's text: a cell's text is its source, offset by its
+    /// `location`, as Fix the words maps it. Nil with none.
+    var cellSelection: NSRange? {
+        for cell in tableViews.lazy.flatMap({ $0.cells.joined() }) where cell.isFirstResponder {
+            let selected = cell.selectedRange
+            let range = NSRange(location: cell.location + selected.location, length: selected.length)
+            return selected.length > 0 && NSMaxRange(range) <= textStorage.length ? range : nil
+        }
+        return nil
+    }
+
     /// The grid cell whose span holds the text's UTF-16 `offset`, and where
     /// in the cell's text that is. Nil outside a drawn table's cells, and
     /// outside live-preview edit mode.
@@ -161,15 +173,30 @@ final class CellSelectionRect: UITextSelectionRect {
 extension MarkdownTextView.Coordinator {
     /// Points the grids' taps and scrolls at the caret (ADR 0109): a tap
     /// puts the caret in the cell's source at the character tapped.
+    ///
+    /// Only when the mode changes, and never inside SwiftUI's update of the
+    /// view (`followResponder` runs it): it switches every cell of every
+    /// table, and a cell holding a selection resigns the first responder
+    /// (`MarkdownTableView.onTap`). The closures set read the coordinator
+    /// as it is when they run, so a later update needs nothing new here.
     func connectTables(_ view: CandidateTextView) {
-        view.cellHandles.press.isEnabled = parent.edit != nil
-        guard parent.edit != nil else {
+        let editing = parent.edit != nil
+        guard editing != (view.onTableTap != nil) else { return }
+        view.cellHandles.press.isEnabled = editing
+        guard editing else {
             view.onTableTap = nil
             view.onTableSelect = nil
             view.onTableScroll = nil
             view.onCellPaste = nil
             return
         }
+        // A word selected in a cell stays selected, in the cell's source,
+        // where edit mode keeps a cell's text, so the keyboard comes up on
+        // it as on any selection (ADR 0110).
+        if let selection = enteringCellSelection, NSMaxRange(selection) <= view.textStorage.length {
+            view.selectedRange = selection
+        }
+        enteringCellSelection = nil
         view.onTableTap = { [weak view] table, point in
             guard let view, let offset = table.offset(at: point) else { return }
             if !view.isFirstResponder { view.becomeFirstResponder() }

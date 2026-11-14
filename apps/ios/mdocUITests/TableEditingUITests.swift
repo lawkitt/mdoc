@@ -48,6 +48,49 @@ final class TableEditingUITests: XCTestCase {
         return (app, target)
     }
 
+    /// The pencil after a word selected in a cell partway down a long table
+    /// (ADR 0114): rc.9 froze there on iOS 27, and on iOS 26 the text jumped
+    /// to the document's end. The place stays, the word stays selected and
+    /// the keyboard comes up on it.
+    @MainActor
+    func testThePencilInALongTableKeepsThePlaceAndTheWord() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo
+            .appendingPathComponent("tests/fixtures/mobile-markdown/large-table.md").path
+        app.launch()
+        let row = MdocUITest.documentRow(app, title: "large-table")
+        XCTAssertTrue(row.waitForExistence(timeout: 120))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 30))
+        let target = app.textViews.matching(NSPredicate(format: "value BEGINSWITH %@", "Clause 17.")).firstMatch
+        // Dragged until clause 17 sits in the top half, clear of the bar:
+        // up while it is below, down a little if it went past.
+        let window = app.windows.firstMatch.frame
+        let top = window.minY + 160
+        let placed = { target.exists && target.frame.minY > top && target.frame.minY < window.midY }
+        for _ in 0..<40 where !placed() {
+            let past = target.exists && target.frame.minY <= top
+            let (from, to) = past ? (0.3, 0.45) : (0.7, 0.4)
+            text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: from))
+                .press(forDuration: 0.05, thenDragTo: text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: to)))
+        }
+        XCTAssertTrue(placed(), "clause 17 is in view")
+        // A long press on a word in its first line selects it (the
+        // review's Hide menu).
+        target.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.12)).press(forDuration: 1.2)
+        let place = target.frame.minY
+        let edit = app.buttons["edit-button"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10))
+        edit.tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout), "edit mode, mdoc still answering")
+        XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "the keyboard comes up on the word")
+        // A jump runs as an animated scroll: given the time, it shows.
+        let moved = { !target.exists || abs(target.frame.minY - place) > 40 }
+        XCTAssertFalse(MdocUITest.wait(timeout: 2, until: moved), "the pencil moved the text from clause 17")
+    }
+
     /// The grid's cell whose text is `text`: a text view of its own.
     @MainActor
     static func cell(_ app: XCUIApplication, _ text: String) -> XCUIElement {

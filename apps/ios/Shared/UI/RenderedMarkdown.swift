@@ -1056,6 +1056,14 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
     override func accessibilityActivate() -> Bool {
         onActivate?() ?? super.accessibilityActivate()
     }
+
+    /// Drops a selection made in the cell (a long press, for Hide name),
+    /// and the keyboard focus with it. Edit mode takes the selection into
+    /// the text behind the grid first (`connectTables`).
+    func endSelection() {
+        if selectedRange.length > 0 { selectedRange = NSRange(location: 0, length: 0) }
+        if isFirstResponder { resignFirstResponder() }
+    }
 }
 
 /// One table's grid: cell text views over drawn lines and fills, scrolling
@@ -1187,10 +1195,20 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
     /// Edit mode (ADR 0109): a tap on the grid runs this with where it
     /// landed, in this view's coordinates, and the cells take no touches.
     /// Nil outside edit mode, where cells are selectable.
+    ///
+    /// Only a change of mode touches the cells: a large table has hundreds.
+    /// Entering edit mode ends a cell's selection first: a cell that is the
+    /// first responder resigns once it takes no touches, and UIKit then asks
+    /// the views above it, SwiftUI's hosting view among them, which may take
+    /// over. So the mode never changes here inside SwiftUI's update of the
+    /// view (`followResponder`): on iOS 27 that read the view graph being
+    /// updated and never returned (rc.9, build 899).
     var onTap: ((CGPoint) -> Void)? {
         didSet {
             let editing = onTap != nil
+            guard editing != (oldValue != nil) else { return }
             for view in cells.joined() {
+                if editing { view.endSelection() }
                 view.isUserInteractionEnabled = !editing
                 view.onActivate = editing ? { [weak self, weak view] in
                     guard let self, let view else { return false }

@@ -123,7 +123,6 @@ extension MarkdownTextView.Coordinator {
                     : [])
         }
         view.hidesMarkers = parent.rendered
-        connectTables(view)
     }
 
     /// A table's range and the line breaks either side of it, within the
