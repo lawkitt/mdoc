@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Fix the words' bar (ADR 0114), in the review bar's place while a name's
 /// handles are in the text: what to do, Cancel, and Hide «…» for the words
-/// the handles hold. The same Hide «…» is the edit menu's callout over the
-/// selection; this one is there for VoiceOver and a keyboard too.
+/// the handles hold, following them as they move. The one Hide «…»: no
+/// menu shows over the selection (ADR 0115).
 struct FixWordsBar: View {
     @Bindable var model: DocumentViewModel
 

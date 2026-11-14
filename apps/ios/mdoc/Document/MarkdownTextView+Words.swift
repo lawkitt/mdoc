@@ -18,15 +18,11 @@ struct WordsFixRequest: Equatable {
     }
 }
 
-/// What the text view tells the model while a name's words are fixed.
+/// What the text view tells the model while a name's words are fixed:
+/// Hide «…» and Cancel are on `FixWordsBar` (ADR 0115).
 struct WordsFixActions {
     /// The handles moved; the words they hold, in the draft's bytes.
     var selected: (SourceRange) -> Void
-    /// Hide «…»'s title for the words now; nil while they can't be hidden.
-    var hideTitle: () -> String?
-    /// The core's reason they can't, for the callout.
-    var problem: () -> String?
-    var confirm: () -> Void
     var cancel: () -> Void
 }
 
@@ -35,24 +31,16 @@ extension WordsFixActions {
     init(_ model: DocumentViewModel) {
         self.init(
             selected: { [weak model] in model?.fixSelectionChanged($0) },
-            hideTitle: { [weak model] in
-                guard let fix = model?.wordsFix, case .success = fix.target else { return nil }
-                return FixWordsBar.hideTitle(for: fix)
-            },
-            problem: { [weak model] in
-                guard let fix = model?.wordsFix, case .failure(let error) = fix.target else { return nil }
-                return error.localizedDescription
-            },
-            confirm: { [weak model] in model?.confirmFixWords() },
             cancel: { [weak model] in model?.cancelFixWords() })
     }
 }
 
 /// A name's words in the text (ADR 0114). Hide name's selection is tinted
 /// and its edit menu reads Hide "…" beside Hide as ›. Fix the words selects
-/// the name in the draft, in a table cell too, shows Hide «…» over it, keeps
-/// the handles inside the paragraph or cell the core allows, and ends when
-/// the selection goes.
+/// the name in the draft, plain text without links (ADR 0115), in a table
+/// cell too, whose table then holds still; the handles stay inside the
+/// paragraph or cell the core allows, no menu shows over them (the bar
+/// holds Hide «…»), and it ends when the selection goes.
 extension MarkdownTextView.Coordinator {
     /// A selection's colour outside edit mode: tinted, not the ink's grey.
     static let selectionTint = UIColor.systemBlue
@@ -124,13 +112,19 @@ extension MarkdownTextView.Coordinator {
         let range = offsets.nsRange(request.wording)
         guard let (holder, local) = holder(of: range, in: view) else { return }
         shownFix = request
+        if let cell = holder as? CellTextView, let table = cell.superview as? MarkdownTableView {
+            // In a table the cell shows whole and the table holds still,
+            // so a drag of the handles never scrolls it sideways (ADR 0115).
+            table.reveal(cell.frame)
+            table.isScrollEnabled = false
+            fixTable = table
+        }
         fixSettling = true
         holder.tintColor = request.category?.uiColor ?? Self.selectionTint
         holder.becomeFirstResponder()
         holder.selectedRange = local
         fixSettling = false
         fixHolder = holder
-        presentFixMenu(on: holder)
     }
 
     /// The selection of a name being fixed changed: kept inside the
@@ -158,19 +152,6 @@ extension MarkdownTextView.Coordinator {
         parent.wordsFixActions?.selected(offsets.sourceRange(kept.length > 0 ? kept : shown))
     }
 
-    /// The edit menu over a name being fixed: Hide «…», or why not.
-    func fixMenu(for source: SourceRange) -> UIMenu {
-        guard let actions = parent.wordsFixActions else { return UIMenu(children: []) }
-        actions.selected(source)
-        guard let title = actions.hideTitle() else {
-            let problem = actions.problem() ?? String(localized: "Select the name's words.")
-            return UIMenu(children: [UIAction(title: problem, attributes: .disabled) { _ in }])
-        }
-        let hide = UIAction(title: title, image: UIImage(systemName: "eye.slash")) { _ in actions.confirm() }
-        hide.accessibilityIdentifier = "fix-words-callout"
-        return UIMenu(children: [hide])
-    }
-
     /// The view and its own range that hold `range` of the text: a table
     /// cell for a name in one, else the text itself.
     private func holder(of range: NSRange, in view: CandidateTextView) -> (UITextView, NSRange)? {
@@ -183,37 +164,31 @@ extension MarkdownTextView.Coordinator {
         return (view, range)
     }
 
-    /// Hide «…» shows over the name at once, as the edit menu does after a
-    /// drag.
-    private func presentFixMenu(on holder: UITextView) {
-        presentMenu(on: holder) { [weak self] _, source in self?.fixMenu(for: source) }
-    }
-
     /// `menu` over the selection of `view`, shown by this view's own
     /// interaction (`SelectionMenuPresenter`).
     private func presentMenu(on view: UITextView, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
         guard let shown = view.selectedTextRange else { return }
         let rect = view.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
         guard !rect.isNull, !rect.isInfinite else { return }
-        let presenter = fixPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
-        fixPresenter = presenter
+        let presenter = menuPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
+        menuPresenter = presenter
         presenter.present(on: view, over: rect, menu: menu)
     }
 
     private func endFixSelection() {
+        fixTable?.isScrollEnabled = true
+        fixTable = nil
         guard let holder = fixHolder else { return }
         fixHolder = nil
         fixSettling = true
-        fixPresenter?.dismiss()
         if holder.selectedRange.length > 0 { holder.selectedTextRange = nil }
         holder.tintColor = Self.selectionTint
         fixSettling = false
     }
 }
 
-/// Shows a selection's menu from mdoc's own interaction: Fix the words'
-/// Hide «…» when the handles first appear, and Hide name's menu again once
-/// the selection snapped to whole words. UIKit's own edit menu
+/// Shows a selection's menu from mdoc's own interaction: Hide name's menu
+/// again once the selection snapped to whole words. UIKit's own edit menu
 /// (`editMenuForTextIn`) shows the same menus otherwise.
 @MainActor
 final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteractionDelegate {
@@ -237,10 +212,6 @@ final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteract
         self.menu = menu
         target = rect.insetBy(dx: 0, dy: -Space.s)
         interaction.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: rect.midX, y: rect.minY)))
-    }
-
-    func dismiss() {
-        interaction?.dismissMenu()
     }
 
     func editMenuInteraction(

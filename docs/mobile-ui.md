@@ -196,8 +196,10 @@ that only the view model changes; views send intents
   name visible above the bar.
 - **Card:** category icon and the name (tap to scroll back to it), its
   state mark once decided, the mentions chip when the name repeats; then
-  the category ▾, alias ▾, scope ▾ and Fix the words chips; a merge hint
-  line while the core sees one. The name wraps at words, without hyphens,
+  the category ▾, alias ▾ (Rename…, Fix the words, Same as…, New alias)
+  and scope ▾ chips, a row that scrolls sideways when it doesn't fit,
+  clipped at the card's edges under a short fade so no chip draws over a
+  neighbouring card; a merge hint line while the core sees one. The name wraps at words, without hyphens,
   to two lines, and a longer one ends in "…" (VoiceOver hears it whole;
   [ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)). The line always
   holds two lines of the name's font, and the chip's height if more, at
@@ -267,16 +269,23 @@ that only the view model changes; views send intents
   (`hide_target`), and the selection moves to its words. The bar opens on
   the new mark.
 - **Fix the words** (`MarkdownTextView+Words`, `FixWordsBar`): the last row
-  of a name's long-press menu and a chip on the card. The text shows the
-  core's draft, a replaced name with its original back, and puts the
-  name's words in a selection in its category's colour, in a table cell
-  too; the handles (loupe, word snapping) stay inside the paragraph or
-  cell up to Markdown formatting or another name's alias, the reach the
-  core gives. Hide «…» shows over the words and in a bar in the review
-  bar's place, with Cancel; a tap away from the handles cancels too. The
-  new words take the old ones' place everywhere they fit, keeping the
-  identity and alias (a replaced name stays replaced), as one step:
-  "Words fixed: … · Undo".
+  of a name's long-press menu and, on the card, the alias chip's menu
+  after Rename…. The text shows the core's draft, a replaced name with its
+  original back, as plain text: no name is a link meanwhile, and the name
+  has no box or underline under its selection, which is in its category's
+  colour, in a table cell too ([ADR
+  0115](adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).
+  The handles behave as any selection's (loupe, word snapping, a long press
+  selects again) and stay inside the paragraph or cell up to Markdown
+  formatting or another name's alias, the reach the core gives. In a table
+  the cell first scrolls whole into view and the table holds still until
+  the fix ends. No menu shows over the words: the bar in the review bar's
+  place holds the hint, Cancel and the one Hide «…», which follows the
+  handles; a tap away from them cancels too. The new words take the old
+  ones' place everywhere they fit, keeping the identity and alias (a
+  replaced name stays replaced), as one step: "Words fixed: … · Undo".
+  A name's link never shows the system's link menu (its address, Open,
+  Copy, Share), in any state.
 
 ## Identities
 

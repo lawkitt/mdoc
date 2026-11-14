@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The swipeable card under review (ADR 0098): the category icon, the name
 /// (tap to scroll back to it) and its alias, with a mentions chip when the
-/// identity has more than one; then the category, alias and scope chips;
+/// identity has more than one; then the category, alias and scope chips
+/// (the alias chip's menu: Rename…, Fix the words, Same as…, New alias);
 /// and a merge hint while the core sees one.
 struct ReviewCard: View {
     @Bindable var model: DocumentViewModel
@@ -129,17 +130,30 @@ struct ReviewCard: View {
 
     // MARK: Line 2
 
+    /// The category, alias and scope chips. A row too long for the card
+    /// scrolls under a short fade at the card's edges and is clipped there,
+    /// so no chip draws over a neighbouring card (ADR 0115).
     private var chips: some View {
         ScrollView(.horizontal) {
             HStack(spacing: Space.xs) {
                 categoryMenu
                 aliasMenu
                 scopeMenu
-                fixWordsButton
             }
         }
         .scrollIndicators(.hidden)
-        .scrollClipDisabled()
+        // Out to the card's edges, its padding the fade.
+        .contentMargins(.horizontal, Space.s, for: .scrollContent)
+        .padding(.horizontal, -Space.s)
+        .mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Space.s)
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Space.s)
+            }
+        }
     }
 
     private var categoryMenu: some View {
@@ -196,18 +210,6 @@ struct ReviewCard: View {
         .accessibilityIdentifier(id("review-category"))
     }
 
-    /// Fix the words (ADR 0114): handles on the name in the text.
-    private var fixWordsButton: some View {
-        Button {
-            model.beginFixWords(candidate.id)
-        } label: {
-            Chip(String(localized: "Fix the words"), systemImage: "character.cursor.ibeam")
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint(Text("Puts handles on the name's words in the text."))
-        .accessibilityIdentifier(id("review-fix-words"))
-    }
-
     private var ownerTitle: String {
         if let owner = identity?.owner, let name = model.snapshot.identities.first(where: { $0.id == owner }) {
             return String(localized: "Belongs to \(name.alias)")
@@ -225,6 +227,15 @@ struct ReviewCard: View {
             } label: {
                 Label("Rename…", systemImage: "pencil")
             }
+            // Fix the words (ADR 0114, 0115): handles on the name in the
+            // text.
+            Button {
+                model.beginFixWords(candidate.id)
+            } label: {
+                Label("Fix the words", systemImage: "character.cursor.ibeam")
+            }
+            .accessibilityHint(Text("Puts handles on the name's words in the text."))
+            .accessibilityIdentifier(id("review-fix-words"))
             sameAsMenu
             Button {
                 model.newAlias()

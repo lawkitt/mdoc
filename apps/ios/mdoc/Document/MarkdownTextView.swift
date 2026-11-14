@@ -55,6 +55,10 @@ struct MarkdownTextView: UIViewRepresentable {
     /// The text is edited now.
     var editing: Bool { edit != nil }
 
+    /// The name whose words are fixed (ADR 0115): the draft shows as plain
+    /// text, no candidate a link and this name undecorated.
+    var fixing: CandidateID? { editing ? nil : wordsFix?.candidate }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -97,6 +101,7 @@ struct MarkdownTextView: UIViewRepresentable {
         var candidates: [Candidate]
         var rendered: Bool
         var editing: Bool
+        var fixing: CandidateID?
         var serif: Bool
         var dynamicTypeSize: DynamicTypeSize
         var colorScheme: ColorScheme
@@ -108,6 +113,7 @@ struct MarkdownTextView: UIViewRepresentable {
             candidates = view.snapshot.candidates
             rendered = view.rendered
             editing = view.editing
+            fixing = view.fixing
             serif = view.serif
             self.dynamicTypeSize = dynamicTypeSize
             self.colorScheme = colorScheme
@@ -115,7 +121,7 @@ struct MarkdownTextView: UIViewRepresentable {
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             guard lhs.candidates == rhs.candidates, lhs.rendered == rhs.rendered, lhs.editing == rhs.editing,
-                  lhs.serif == rhs.serif,
+                  lhs.fixing == rhs.fixing, lhs.serif == rhs.serif,
                   lhs.dynamicTypeSize == rhs.dynamicTypeSize, lhs.colorScheme == rhs.colorScheme else { return false }
             if let left = lhs.textRevision, let right = rhs.textRevision { return left == right }
             return lhs.textRevision == rhs.textRevision && lhs.markdown == rhs.markdown && lhs.styling == rhs.styling
@@ -204,13 +210,14 @@ struct MarkdownTextView: UIViewRepresentable {
         /// The find bar request last shown.
         var shownFindBar = 0
         /// Fix the words as the view shows it (ADR 0114): the request
-        /// taken, the text view whose selection holds the name, a selection
-        /// set here (not by the reader), and the presenter of mdoc's own
-        /// selection menus.
+        /// taken, the text view whose selection holds the name, the table
+        /// held still around it, and a selection set here (not by the
+        /// reader). The presenter shows mdoc's own selection menus.
         var shownFix: WordsFixRequest?
         weak var fixHolder: UITextView?
+        weak var fixTable: MarkdownTableView?
         var fixSettling = false
-        var fixPresenter: SelectionMenuPresenter?
+        var menuPresenter: SelectionMenuPresenter?
         /// A `followResponder` waits for SwiftUI's update to end.
         private var responderWaits = false
         /// Whether the text last showed in edit mode; nil before it first
@@ -455,7 +462,12 @@ struct MarkdownTextView: UIViewRepresentable {
                 traits: view.traitCollection, selected: nil, scoped: [], rendered: parent.rendered,
                 width: width > 0 ? width : nil)
             styler.editing = parent.editing
-            var document = styler.document(for: snapshot)
+            // Fix the words (ADR 0115): no link a press could lift, and the
+            // name's own look gone under its selection.
+            styler.links = parent.fixing == nil
+            var styled = snapshot
+            if let fixing = parent.fixing { styled.candidates.removeAll { $0.id == fixing } }
+            var document = styler.document(for: styled)
             if parent.editing {
                 // The view's string is the source while editing: restyled
                 // in place, never replaced (ADR 0109). A snapshot older than
@@ -619,12 +631,27 @@ struct MarkdownTextView: UIViewRepresentable {
             }
         }
 
+        /// What a press on a text item gets: a candidate's own tap and
+        /// menu in review, and nothing from the system for a candidate's
+        /// link in any other state (ADR 0115), so its `mdoc-candidate` URL
+        /// never shows with Open, Copy and Share (ADR 0085's export
+        /// invariant). Any other item keeps UIKit's own.
+        enum TextItemUse: Equatable {
+            case candidate(CandidateID)
+            case nothing
+            case system
+        }
+
+        static func use(of content: UITextItem.Content, editable: Bool, fixing: Bool) -> TextItemUse {
+            guard case .link(let url) = content, url.scheme == MarkdownStyler.candidateScheme else { return .system }
+            guard !editable, !fixing, let id = MarkdownStyler.candidateID(from: url) else { return .nothing }
+            return .candidate(id)
+        }
+
         func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
             // While a name's words are fixed, a tap ends the selection.
-            guard !textView.isEditable, parent.wordsFix == nil, case .link(let url) = textItem.content,
-                  let id = MarkdownStyler.candidateID(from: url) else {
-                return nil
-            }
+            guard case .candidate(let id) = Self.use(
+                of: textItem.content, editable: textView.isEditable, fixing: parent.wordsFix != nil) else { return nil }
             return UIAction { [weak self] _ in
                 self?.parent.onCandidate(id)
             }
@@ -632,12 +659,15 @@ struct MarkdownTextView: UIViewRepresentable {
 
         func textView(_ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu) -> UITextItem.MenuConfiguration? {
             // A candidate's tap opens the bar; its long press, its menu.
-            if !textView.isEditable, parent.wordsFix == nil, case .link(let url) = textItem.content,
-               let id = MarkdownStyler.candidateID(from: url) {
+            switch Self.use(of: textItem.content, editable: textView.isEditable, fixing: parent.wordsFix != nil) {
+            case .candidate(let id):
                 parent.onMenu(id)
                 return parent.menu(id)
+            case .nothing:
+                return nil
+            case .system:
+                return UITextItem.MenuConfiguration(menu: defaultMenu)
             }
-            return UITextItem.MenuConfiguration(menu: defaultMenu)
         }
 
         /// Under the menu's own header (not the system's lifted text) UIKit
@@ -653,9 +683,10 @@ struct MarkdownTextView: UIViewRepresentable {
             }
         }
 
-        /// Only Hide name, or Fix the words' Hide «…»: text leaves mdoc
-        /// through Copy for AI and Share, never a plain Copy, Share, Look Up
-        /// or Translate of the selection (ADR 0085's export invariant).
+        /// Only Hide name, and nothing while a name's words are fixed (its
+        /// bar holds Hide «…», ADR 0115): text leaves mdoc through Copy for
+        /// AI and Share, never a plain Copy, Share, Look Up or Translate of
+        /// the selection (ADR 0085's export invariant).
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             // Edit mode: Cut, Copy, Paste and Select All only (ADR 0109).
             if textView.isEditable { return CandidateTextView.editMenu(from: suggestedActions) }
@@ -667,10 +698,10 @@ struct MarkdownTextView: UIViewRepresentable {
                main.tableViews.contains(where: { NSIntersectionRange($0.table.range, range).length > 0 }) {
                 return UIMenu(children: [])
             }
+            if parent.wordsFix != nil { return UIMenu(children: []) }
             // A table cell's selection, in document offsets.
             let base = (textView as? CellTextView)?.location ?? 0
             let source = offsets.sourceRange(NSRange(location: base + range.location, length: range.length))
-            if shownFix != nil, textView === fixHolder { return fixMenu(for: source) }
             return hideMenu(for: source, in: textView, at: range)
         }
     }
