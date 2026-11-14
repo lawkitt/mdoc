@@ -60,7 +60,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `AliasTag` | An alias as the text draws a replaced name: monospaced, the text's color on its category's tint, one line, cut in the middle when too long for its row (VoiceOver hears it whole). For an alias in a list or a sheet (the Same as… sheet). A system menu cannot draw it: there the row's icon is `MenuIcon` (the category's symbol in its color) and the alias is `unbrokenAlias`, so the menu cannot hyphenate it: whole up to 12 characters, longer broken only after a separator. |
 | `card()` | A raised surface: the review card, empty-state tiles. |
 | `StatusPill` | State as an icon and words in the state's color. |
-| `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. Open, a drag moves it only from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); over the panel, the content owns the drag. While a drawer inside its screen shows, its own edge leaves the swipe to that drawer. |
+| `SideDrawer` | Panels under the screen that the screen slides aside to show, following the finger: the sidebar on the leading side and, with a document open, Identities on the trailing one (`DrawerPanel`), one at a time; the sliver dims and closes it on a tap. Closed, a sideways swipe anywhere on the screen opens the panel on the side it moves away from, except on what keeps its own sideways swipes (`DrawerSwipes`: content that scrolls sideways, views marked `keepsSideSwipes()`, a selection's handles); each panel's `opens` narrows that to the edge or to nothing. Open, a drag moves it only from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); over the panel, the content owns the drag. The drag runs in UIKit: one view controller holds the panels and the screen in hosting controllers, one pan moves their layers by transform, SwiftUI hears only open or shut, and the panels stay built while closed. An `.inspector` inside the screen's hosting controller reset its child's traits without end, so a narrow iPad's Identities inspector stands beside the drawer (`RootView`) ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)). |
 | `IconTile` | Settings: white symbol on a colored square. Start and document rows: tinted fill, colored symbol. |
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
@@ -156,7 +156,8 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 
 - **Motion:** on iPhone the screen slides right over the sidebar,
-  following the finger from ☰ or the left edge (22 pt), leaving a dimmed
+  following the finger from ☰ or a swipe right anywhere on the screen
+  (only the left edge, 22 pt, while editing), leaving a dimmed
   72 pt sliver with `Radius.screen` corners; a tap on it, or a swipe left
   that starts on it or at the panel's inner edge (20 pt), closes it. Reduce Motion fades. On a wide iPad it is the standing first
   column; on a narrow one (portrait, Slide Over, a split) it slides over as
@@ -261,7 +262,7 @@ that only the view model changes; views send intents
 `IdentitiesView+DragMerge`, `IdentitiesView+Select`, `IdentityDrag`,
 `IdentitiesPanel` and `DocumentViewModel+Identities`.
 
-- **Where:** iPhone, a drawer from the right edge or 🪪 (`SideDrawer`,
+- **Where:** iPhone, a drawer from a swipe left or 🪪 (`SideDrawer`,
   trailing); a wide iPad, the standing right column. A tap on a name opens
   the review bar's full view on it.
 - **Top:** progress ring, "Identities", "9 names · 4 left", the search
@@ -344,7 +345,7 @@ that only the view model changes; views send intents
   It stays in its cell: a handle dragged past the cell stops at the end
   of that line, or at the cell's start or end, and Select All selects the
   cell's text ([ADR 0110](adr/0110-mobile-editor-polish.md)).
-- **Identities are hidden:** on iPhone no button and no right-edge swipe,
+- **Identities are hidden:** on iPhone no button and no swipe,
   and an open drawer closes; on iPad the inspector or the right column
   gives way to the Original and comes back on Done if it was showing.
 
@@ -362,10 +363,17 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Identities row | Swipe right or left, or tap its round button | Replace (a full swipe too); Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
 | Identities row, in Select | Drag ≡ onto another row | Same as: the two names become one |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
-| Left edge (iPhone) | Swipe right | The sidebar (with Identities open, it closes Identities); tap the sliver, or swipe left from it or the panel's inner edge, to close |
-| Right edge (iPhone, a document open, not editing) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |
+| Anywhere on the screen (iPhone, a narrow iPad; only the left edge while editing) | Swipe right | The sidebar (with Identities open, it closes Identities); tap the sliver, or swipe left from it or the panel's inner edge, to close |
+| Anywhere on a document (iPhone, a narrow iPad; not while editing) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |
 
-No swipes on the document text.
+A drawer swipe starts once the finger has moved more than 10 pt, mostly
+sideways; a vertical scroll is never taken. What scrolls sideways keeps
+every sideways swipe that starts on it, even at its edge: a table wider
+than the screen and an Original page zoomed past its width (a table that
+fits and a page at fit width let the swipe through). The review bar and
+its cards keep theirs, and selection handles and long presses are never
+taken. A swipe from the screen's 22 pt edges opens the drawer even over those
+([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)).
 
 ## Wording
 

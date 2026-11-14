@@ -41,31 +41,21 @@ struct IdentitiesPanel: View {
     }
 }
 
-/// iPhone: the open document's Identities as a drawer from the right edge,
-/// the mirror of the sidebar (2026-11-06 grill, Q8). Without a document,
-/// or in a regular window, the screen shows as it is.
-struct IdentitiesDrawer<Content: View>: View {
-    let model: DocumentViewModel?
-    let layout: DocumentLayout
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        if let model, layout.identities(hasRightPane: model.hasRightPane) == .drawer {
-            // The drawer, not the wish: a wide window that narrows keeps
-            // the text in view (#674).
-            SideDrawer(
-                side: .trailing,
-                isOpen: Binding(get: { model.identitiesDrawerOpen }, set: { model.showIdentities($0) }),
-                closeLabel: "Close Identities",
-                // Hidden while editing: no edge swipe until Done (ADR 0110).
-                opensFromEdge: !model.isEditing
-            ) {
-                IdentitiesPanel(model: model)
-            } content: {
-                content()
-            }
-        } else {
-            content()
+extension IdentitiesPanel {
+    /// iPhone: the open document's Identities as the drawer's trailing
+    /// panel, the mirror of the sidebar (2026-11-06 grill, Q8). Without a
+    /// document, or in a regular window, there is none.
+    static func drawer(model: DocumentViewModel?, layout: DocumentLayout) -> DrawerPanel<IdentitiesPanel>? {
+        // The drawer, not the wish: a wide window that narrows keeps the
+        // text in view (#674).
+        guard let model, layout.identities(hasRightPane: model.hasRightPane) == .drawer else { return nil }
+        return DrawerPanel(
+            isOpen: Binding(get: { model.identitiesDrawerOpen }, set: { model.showIdentities($0) }),
+            closeLabel: "Close Identities",
+            // Hidden while editing: no swipe until Done (ADR 0110).
+            opens: model.isEditing ? .never : .anywhere
+        ) {
+            IdentitiesPanel(model: model)
         }
     }
 }

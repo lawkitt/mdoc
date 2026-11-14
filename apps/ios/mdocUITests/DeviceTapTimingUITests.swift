@@ -3,19 +3,21 @@ import XCTest
 /// How long a review tap takes on a phone (ADR 0104: core calls stay on the
 /// main actor while a tap stays under about 16 ms): the "Review tap"
 /// signpost around the core call (`RealCore.review`), measured over Replace
-/// and Undo on the seed's email. A phone only; run it with
+/// and Undo on the seed's email; and a drawer drag's hitches (ADR 0114),
+/// on a phone or, with the timing tests (`TEST_RUNNER_MDOC_TIMING_TESTS=1`),
+/// on a Simulator. Run them with
 /// `-only-testing:mdocUITests/DeviceTapTimingUITests` after
 /// `scripts/ios-device-test.sh` has copied the fixtures.
 final class DeviceTapTimingUITests: XCTestCase {
     override func setUpWithError() throws {
-        #if targetEnvironment(simulator)
-        throw XCTSkip("Timing a review tap needs a phone.")
-        #endif
         continueAfterFailure = false
     }
 
     @MainActor
     func testAReviewTapsTime() throws {
+        #if targetEnvironment(simulator)
+        try XCTSkipIf(true, "Timing a review tap needs a phone.")
+        #endif
         let app = MdocUITest.launch()
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
@@ -39,6 +41,56 @@ final class DeviceTapTimingUITests: XCTestCase {
             undo.tap()
             XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
             XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout))
+        }
+    }
+
+    /// A drawer drag drops no frames on a phone (ADR 0114): the "Drawer
+    /// drag" animation interval, from the finger's first move to the end of
+    /// the slide, opening the sidebar and Identities from the middle of the
+    /// text and closing each from its sliver. XCTest reports its hitches and frame rate.
+    @MainActor
+    func testADrawerDragsHitches() throws {
+        #if targetEnvironment(simulator)
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["MDOC_TIMING_TESTS"] == "1", "on a Simulator, with the timing tests only")
+        #endif
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 30))
+        XCTAssertTrue(text.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 30))
+        let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let width = app.frame.width, middle = app.frame.height * 0.5
+        func drag(fromX x: CGFloat, by dx: CGFloat) {
+            let start = origin.withOffset(CGVector(dx: x, dy: middle))
+            // A finger's pace: about a third of a second across.
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)),
+                        withVelocity: 900, thenHoldForDuration: 0.05)
+        }
+
+        let hitches = XCTOSSignpostMetric(subsystem: "io.github.lawkitt.mdoc", category: "Drawer", name: "Drawer drag")
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+        let identities = app.descendants(matching: .any)["identities-panel"].firstMatch
+        // Each drag starts once the slide before it has come to rest: the
+        // panel at its edge.
+        func settled(_ panel: XCUIElement, atLeft: Bool) -> Bool {
+            MdocUITest.wait(timeout: 5) {
+                panel.isHittable && abs(atLeft ? panel.frame.minX : width - panel.frame.maxX) < 1
+            }
+        }
+        measure(metrics: [hitches], options: options) {
+            drag(fromX: width * 0.3, by: width * 0.6)
+            XCTAssertTrue(settled(sidebar, atLeft: true), "the sidebar opens")
+            drag(fromX: width - 30, by: -(width * 0.6))
+            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "the sidebar closes")
+            drag(fromX: width * 0.7, by: -(width * 0.6))
+            XCTAssertTrue(settled(identities, atLeft: false), "Identities opens")
+            drag(fromX: 30, by: width * 0.6)
+            XCTAssertTrue(identities.waitForNonExistence(timeout: 5), "Identities closes")
         }
     }
 }
