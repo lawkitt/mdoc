@@ -122,9 +122,28 @@ protocol DocumentSession: AnyObject, Sendable {
     func undo() throws -> DocumentSnapshot
     /// Makes the last undone step again; the snapshot's `undoStep` names it.
     func redo() throws -> DocumentSnapshot
-    /// Hide name: the selection and its exact repeats become proposals in
-    /// the core's guessed category, replacing nothing yet.
-    func markSelection(_ range: SourceRange) throws -> DocumentSnapshot
+    /// Hide name's callout for a selection outside any name (ADR 0114):
+    /// what it hides, snapped to whole words and trimmed, and Hide as's
+    /// categories, the core's guess first. Throws the core's reason when
+    /// there is nothing to hide there.
+    func hideTarget(_ range: SourceRange) throws -> WordsTarget
+    /// Hide name: the selection, snapped and trimmed as `hideTarget` shows
+    /// it, and its exact repeats become proposals in `category`, or the
+    /// core's guess when nil; a proposed wording keeps its own. Replaces
+    /// nothing yet.
+    func markSelection(_ range: SourceRange, as category: Category?) throws -> DocumentSnapshot
+    /// Fix the words begins on a name (ADR 0114): the document as it shows
+    /// meanwhile (a replaced name's original back in place), where the
+    /// handles start and how far they reach. Changes nothing.
+    func fixWordsDraft(_ candidate: CandidateID) throws -> WordsDraft
+    /// Hide «…» for `words` of the draft: the words Fix the words would
+    /// take, or the core's reason it can't.
+    func fixWordsTarget(_ candidate: CandidateID, words: SourceRange) throws -> WordsTarget
+    /// Fix the words: the name takes `words` of its draft; the new wording
+    /// replaces the old one everywhere it fits and keeps the identity and
+    /// its alias, or joins the identity whose wording it is already. One
+    /// undo step.
+    func fixWords(_ candidate: CandidateID, words: SourceRange) throws -> DocumentSnapshot
     /// Stored proposals, as a scan's: every occurrence of each wording, in
     /// its category. Try a sample uses it, so the sample reviews before the
     /// name finder is downloaded (ADR 0099).
@@ -190,4 +209,11 @@ protocol Setup: AnyObject, Sendable {
 struct Core: Sendable {
     let library: any Library
     let setup: any Setup
+}
+
+extension DocumentSession {
+    /// Hide name in the core's guessed category.
+    func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
+        try markSelection(range, as: nil)
+    }
 }

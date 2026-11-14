@@ -83,6 +83,43 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: MdocUITest.timeout), "Undo for the selection")
     }
 
+    /// Fix the words from the card (ADR 0114): its bar takes the review
+    /// bar's place with Hide «…» for the name's words; Cancel brings the
+    /// bar back, and Hide with the words as they were changes nothing.
+    @MainActor
+    func testFixTheWordsFromTheCard() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        app.buttons["title-menu"].tap()
+        app.buttons["find-in-document"].tap()
+        typeInFindField(app, "Bennett")
+        let mark = app.buttons["find-hide-name"]
+        XCTAssertTrue(mark.waitForExistence(timeout: MdocUITest.timeout))
+        mark.tap()
+        let bar = app.descendants(matching: .any)["review-bar"].firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 10))
+
+        let fix = app.buttons["review-fix-words"]
+        XCTAssertTrue(fix.waitForExistence(timeout: MdocUITest.timeout))
+        if !fix.isHittable { app.buttons["review-alias"].swipeLeft() }
+        fix.tap()
+        let hide = app.buttons["fix-words-hide"]
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout), "no Fix the words bar")
+        expectLabel(of: hide, "Hide «Bennett»")
+        XCTAssertFalse(bar.exists, "the review bar gives way")
+        app.buttons["fix-words-cancel"].tap()
+        XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout), "Cancel brings the bar back")
+
+        fix.tap()
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
+        hide.tap()
+        XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertFalse(app.buttons["toast-action"].exists, "the same words are no step")
+    }
+
     /// A hardware keyboard drives the bar as desktop's keys do (ADR 0098,
     /// ROADMAP iOS 0.2 item 7): → and ← step, Return replaces, ⌘. ends.
     @MainActor

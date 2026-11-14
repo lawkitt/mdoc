@@ -859,10 +859,29 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return snapshot()
     }
 
-    func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
+    func hideTarget(_ range: SourceRange) throws -> WordsTarget {
+        try core { try ffi.hideTarget(range: range.textRange) }
+    }
+
+    func markSelection(_ range: SourceRange, as category: Category?) throws -> DocumentSnapshot {
         guard range.length > 0 else { throw CoreError.emptySelection }
         // No category: the core's guess, as desktop's Replace on a selection.
-        return try review(.mark(range: range.textRange, category: nil))
+        return try review(.mark(range: range.textRange, category: category))
+    }
+
+    func fixWordsDraft(_ candidate: CandidateID) throws -> WordsDraft {
+        let draft = try core { try ffi.fixWordsDraft(mention: Self.mention(candidate)) }
+        return WordsDraft(
+            snapshot: snapshot(of: draft.snapshot, path: ffi.info()?.path),
+            wording: SourceRange(draft.wording), bounds: SourceRange(draft.bounds))
+    }
+
+    func fixWordsTarget(_ candidate: CandidateID, words: SourceRange) throws -> WordsTarget {
+        try core { try ffi.fixWordsTarget(mention: Self.mention(candidate), words: words.textRange) }
+    }
+
+    func fixWords(_ candidate: CandidateID, words: SourceRange) throws -> DocumentSnapshot {
+        try review(.fixWords(mention: Self.mention(candidate), words: words.textRange))
     }
 
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {

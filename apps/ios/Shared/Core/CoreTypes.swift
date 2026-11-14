@@ -317,6 +317,17 @@ struct DocumentSnapshot: Equatable, Sendable {
     }
 }
 
+/// Fix the words' draft (ADR 0114): the document as it shows while a
+/// name's words are fixed, where its handles start and how far they reach.
+struct WordsDraft: Equatable, Sendable {
+    var snapshot: DocumentSnapshot
+    /// The name's words in `snapshot.markdown`.
+    var wording: SourceRange
+    /// The paragraph or cell around them, up to Markdown formatting or
+    /// another name's alias: the handles stay inside.
+    var bounds: SourceRange
+}
+
 // MARK: - Setup
 
 enum ModelPurpose: Hashable, Sendable {

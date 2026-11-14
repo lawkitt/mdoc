@@ -174,13 +174,6 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertEqual(model.snapshot.candidates.first { $0.original == first.original }?.state, .proposed)
     }
 
-    func testASelectionLosesItsLineEnd() {
-        let text = "# Title words\nNext"
-        let trimmed = DocumentViewModel.trimmed(SourceRange(start: 8, end: 14), in: text)
-        XCTAssertEqual(trimmed, SourceRange(start: 8, end: 13))
-        XCTAssertEqual(DocumentViewModel.trimmed(SourceRange(start: 13, end: 14), in: text).length, 0)
-    }
-
     // MARK: Full view and decided cards (2026-11-06 grill)
 
     func testAMentionPillChangesOnlyThatMentionAndTheBarStays() throws {

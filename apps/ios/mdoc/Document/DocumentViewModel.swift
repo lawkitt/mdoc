@@ -52,6 +52,9 @@ final class DocumentViewModel {
     /// The screen the window's steps belong to (`attachSystemUndo`).
     var systemUndoScreen: UUID?
     var showsFind = false
+    /// Fix the words in progress (ADR 0114); nil otherwise. Changed only by
+    /// the `+Words` intents, and ended by any other change.
+    var wordsFix: WordsFix?
     /// Edit mode (ADR 0109): the keyboard is up on the text, candidates are
     /// dimmed and not tappable, the review bar is hidden. Changed only by
     /// `enterEditMode` and `doneEditing`.
@@ -309,18 +312,6 @@ final class DocumentViewModel {
         }
     }
 
-    /// Hide name on a selection: a proposal in the core's guessed category,
-    /// with the bar open on it (ADR 0098). Undo removes the mark.
-    func markSelection(_ selection: SourceRange) {
-        guard !reviewWaitsForJob() else { return }
-        // A selection to the line's end takes its newline; the name is the
-        // words.
-        let selection = Self.trimmed(selection, in: snapshot.markdown)
-        guard selection.length > 0 else { return }
-        guard perform({ try session.markSelection(selection) }) else { return }
-        if updateReview({ $0.selectMarked(selection) }) { Haptics.decision() }
-    }
-
     // MARK: Hand-off
 
     /// Copy for AI to the clipboard.
@@ -377,16 +368,6 @@ final class DocumentViewModel {
     /// How long a notice stays: two seconds, up to four for a sentence.
     static func noticeDuration(_ text: String) -> Duration {
         .seconds(min(4, max(2, Double(text.count) / 12)))
-    }
-
-    /// `range` without the whitespace and newlines at its ends.
-    static func trimmed(_ range: SourceRange, in text: String) -> SourceRange {
-        let bytes = Array(text.utf8)
-        var start = max(0, range.start), end = min(bytes.count, range.end)
-        let space: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D]
-        while start < end, space.contains(bytes[start]) { start += 1 }
-        while end > start, space.contains(bytes[end - 1]) { end -= 1 }
-        return SourceRange(start: start, end: end)
     }
 
     static func safeFileName(_ name: String) -> String {
@@ -565,6 +546,8 @@ final class DocumentViewModel {
 
     func applyReview(_ new: DocumentSnapshot) {
         snapshot = new
+        // The draft was of the text before this change.
+        wordsFix = nil
         // The snapshot is the core's latest: typing's own answers are older.
         typing.settled(at: new)
         var state = review

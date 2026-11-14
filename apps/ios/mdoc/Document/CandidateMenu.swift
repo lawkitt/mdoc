@@ -61,7 +61,7 @@ enum CandidateMenu {
                         model.setCategory(category, fromMenuOn: id)
                     }
                 })
-        case .replace, .keep, .replaceThisOne, .keepInstead, .replaceInstead, .next:
+        case .replace, .keep, .replaceThisOne, .keepInstead, .replaceInstead, .next, .fixWords:
             let (title, image) = label(of: action)
             return item(title, image) { model.perform(action, fromMenuOn: id) }
         }
@@ -107,6 +107,7 @@ enum CandidateMenu {
         case .next: (String(localized: "Next"), "arrow.right")
         case .sameAs: (String(localized: "Same as…"), "link")
         case .changeCategory: (String(localized: "Change category"), "tag")
+        case .fixWords: (String(localized: "Fix the words"), "character.cursor.ibeam")
         }
     }
 

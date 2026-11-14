@@ -18,6 +18,8 @@ enum CandidateAction: Hashable {
     case sameAs
     /// Change category: a submenu of the other categories.
     case changeCategory
+    /// Fix the words (ADR 0114): handles on the name in the text.
+    case fixWords
 }
 
 /// A hardware key the review bar answers (ADR 0098).
@@ -44,7 +46,7 @@ extension CandidateAction {
         switch self {
         case .replace, .replaceThisOne, .replaceInstead: .replace
         case .keep, .keepInstead: .keep
-        case .next, .sameAs, .changeCategory: nil
+        case .next, .sameAs, .changeCategory, .fixWords: nil
         }
     }
 }
@@ -56,8 +58,9 @@ extension DocumentViewModel {
 
     /// The long press's actions on a name, in menu order: its decisions
     /// (with Just this one while proposed), Same as… when there is another
-    /// identity and the name is not kept, then Change category. A replaced
-    /// name's original wording is the menu's header (`CandidateMenu`).
+    /// identity and the name is not kept, Change category, then Fix the
+    /// words (ADR 0114). A replaced name's original wording is the menu's
+    /// header (`CandidateMenu`).
     func actions(for candidate: Candidate) -> [CandidateAction] {
         var actions = CandidateAction.decisions(for: candidate.state)
         if candidate.state == .proposed { actions.append(.replaceThisOne) }
@@ -65,6 +68,7 @@ extension DocumentViewModel {
             actions.append(.sameAs)
         }
         actions.append(.changeCategory)
+        actions.append(.fixWords)
         return actions
     }
 
@@ -95,6 +99,8 @@ extension DocumentViewModel {
             decideCurrent(.replace)
         case .next:
             goToNextUndecided()
+        case .fixWords:
+            if let id = reviewing { beginFixWords(id) }
         case .sameAs, .changeCategory:
             // Submenus: their choices run `sameAs` and `setCategory`.
             break

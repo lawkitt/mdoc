@@ -79,7 +79,7 @@ final class DeviceBelowFloorUITests: XCTestCase {
             text.swipeDown(velocity: .fast)
         }
         text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04)).press(forDuration: 1.0)
-        let replace = app.menuItems["Hide name"].firstMatch
+        let replace = app.menuItems["hide-name"].firstMatch
         XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout), "no Hide name in the edit menu")
         replace.tap()
         // The mark is a proposal and the review bar opens on it; Replace applies.
