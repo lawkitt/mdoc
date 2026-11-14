@@ -300,16 +300,17 @@ and dropped (#857).
 The desktop app moves to `gpui-pre 0.3.12` (macOS 12 minimum), and the
 sidebar's hover reveal gets quicker and smooth
 ([ADR 0117](docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md),
-[GPUI grill](docs/design/gpui-grill-2026-11-14.md)). In order:
+[GPUI grill](docs/design/gpui-grill-2026-11-14.md)). Items 1 and 2 shipped
+(#879, #880) after the maintainer's native check; item 3 is open.
 
 1. **[Desktop] `gpui-pre 0.3.12`.** One change for macOS and Windows: the
    API migration, the macOS and Windows patches re-ported, the WGPU override
    kept, and the macOS minimum set to 12.0 in the packager configuration and
    `Info.plist`. *Done when:* CI is green, the headless renders pass on both
    platforms, and wrap, caret and scroll look unchanged in a native build.
-2. **[Desktop] A quicker hover reveal.** The document view gets a
-   `.cached()` boundary, with tests that change its state from outside, and
-   the reveal is 100 ms of intent plus a 120 ms slide. *Done when:* the
+2. **[Desktop] A quicker hover reveal.** The document view is cached while
+   the sidebar slides, with a rendering test of redraws during and after the
+   slide, and the reveal is 100 ms of intent plus a 120 ms slide. *Done when:* the
    maintainer accepts the timings by eye.
 3. **[Desktop] Measure the reveal.** Native release builds with Animation
    Hitches on a real legal document with the preview open, plus a Windows

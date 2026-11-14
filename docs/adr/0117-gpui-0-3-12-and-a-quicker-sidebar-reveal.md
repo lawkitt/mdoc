@@ -37,9 +37,14 @@ rail not responsive, smooth or quick enough. The reveal has two separate costs:
   factory). Keep the WGPU combining-mark override until a published release
   contains Zed #66799 and the check passes. Upstreaming the patches is
   optional later work.
-- **Fix the reveal app-side first.** Give the document view (and the PDF view
-  where useful) a `.cached()` boundary, so sidebar animation and hover frames
-  skip the document. Shorten the reveal to a **100 ms** intent delay and a
+- **Fix the reveal app-side first.** While the sidebar's toggle or reveal
+  slides, render the document view through `.cached()`, so animation frames
+  reuse the document's last frame. Only while it slides: a cached view
+  redraws only when notified itself, and the document reads shared state
+  (the theme's cell, notices) that changes without notifying it. Each reveal
+  slide ends with a repaint that draws the document uncached, and reduced
+  motion never caches. *Amended 2026-11-14 in #880; the decision first said
+  a standing cache boundary.* Shorten the reveal to a **100 ms** intent delay and a
   **120 ms** slide. The close grace stays 300 ms. The maintainer confirms the
   new timings by eye in a build.
 - **GPUI Fast only behind a gate.** If the reveal still misses the target
@@ -86,5 +91,6 @@ smoothness check on the same document. The numbers go under
 
 The vendored crates are re-ported once, at a 10-version jump. The upgrade
 also positions a later Fast A/B on the same Zed revision. A cached document
-view can hide a missing `cx.notify()` as a stale frame, so the cache boundary
-needs tests that change the document's state from outside its view.
+view can hide a missing `cx.notify()` as a stale frame, so the cache is held
+only for a slide, and a rendering test counts document renders while the
+workspace redraws during a slide, at its end and with reduced motion.
