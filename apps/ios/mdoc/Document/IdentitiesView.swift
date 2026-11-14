@@ -146,23 +146,13 @@ struct IdentitiesView: View {
         VStack(alignment: .leading, spacing: Space.xs) {
             if selecting {
                 selectHeader
+            } else if dynamicTypeSize.isAccessibilitySize {
+                // The largest sizes: the title and summary alone on the
+                // first row, Select beside the filter under the search.
+                titleAndSummary
             } else {
                 HStack(alignment: .center, spacing: Space.s) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Identities")
-                            .font(Typography.title)
-                            .accessibilityAddTraits(.isHeader)
-                        if let summary = summary(model.identityCounts) {
-                            Text(summary)
-                                .font(Typography.caption)
-                                .foregroundStyle(.secondary)
-                                // One line: the words shrink a little, then truncate.
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                                .accessibilityIdentifier("identities-summary")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    titleAndSummary
                     if !identities.isEmpty {
                         selectButton
                     }
@@ -173,10 +163,23 @@ struct IdentitiesView: View {
                     .transition(.opacity)
             }
             if !identities.isEmpty {
-                HStack(spacing: Space.xs) {
+                if dynamicTypeSize.isAccessibilitySize {
                     searchField
-                    if offersFilter {
-                        filterMenu
+                    HStack(spacing: Space.xs) {
+                        if offersFilter {
+                            filterMenu
+                        }
+                        Spacer(minLength: 0)
+                        if !selecting {
+                            selectButton
+                        }
+                    }
+                } else {
+                    HStack(spacing: Space.xs) {
+                        searchField
+                        if offersFilter {
+                            filterMenu
+                        }
                     }
                 }
             }
@@ -186,6 +189,27 @@ struct IdentitiesView: View {
         .padding(.bottom, Space.xs)
         .background(Palette.background)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+    }
+
+    /// "Identities" with the summary under it, each on one line.
+    private var titleAndSummary: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Identities")
+                .font(Typography.title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityAddTraits(.isHeader)
+            if let summary = summary(model.identityCounts) {
+                Text(summary)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    // One line: the words shrink a little, then truncate.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .accessibilityIdentifier("identities-summary")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// "8 of 12 decided"; once none is left, "12 names · all decided ✓".
@@ -360,16 +384,18 @@ struct IdentitiesView: View {
     /// frame, which a drag keeps clear of (the header pins over the rows).
     private func sectionHeader(_ title: LocalizedStringKey, id: String, count: Int?, chevron: String? = nil) -> some View {
         HStack(spacing: Space.xxs) {
+            // Label colours, not `.primary` and `.secondary`: a List header's
+            // own style dims those a level.
             Text(title)
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color(uiColor: .label))
             if let count {
                 Text("\(count)")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
             }
             if let chevron {
                 Image(systemName: chevron)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
                     .padding(.leading, Space.xxs)
                     .accessibilityHidden(true)
             }

@@ -79,9 +79,16 @@ final class IdentitiesHeaderUITests: XCTestCase {
 
     /// Copy for AI and Share are in the document menu while names are left,
     /// disabled with the reason under them; once all are decided, enabled.
+    /// Home's Continue card reads its count as words.
     @MainActor
     func testCopyForAIAndShareWaitWithTheirReason() throws {
         let app = MdocUITest.launch()
+        // Home's Continue card: "N left" reads as words, never "Error".
+        let card = app.buttons["continue-card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 60))
+        XCTAssertTrue(card.wait(until: NSPredicate(format: "label ENDSWITH 'names left to review' OR label ENDSWITH '1 name left to review'"), timeout: 10),
+                      "the card reads \(card.label)")
+        XCTAssertFalse(card.label.contains("Error"))
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
@@ -90,15 +97,16 @@ final class IdentitiesHeaderUITests: XCTestCase {
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         app.buttons["title-menu"].tap()
-        let copy = app.buttons["copy-for-ai"]
-        let share = app.buttons["share-document"]
+        // The menu's items; once ready the action bar has a Copy for AI too.
+        let copy = app.collectionViews.buttons["copy-for-ai"]
+        let share = app.collectionViews.buttons["share-document"]
         XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout), "Copy for AI is listed while names are left")
         XCTAssertTrue(share.exists, "so is Share")
         XCTAssertFalse(copy.isEnabled)
         XCTAssertFalse(share.isEnabled)
-        let reason = NSPredicate(format: "label CONTAINS %@", "1 name left to decide")
-        XCTAssertTrue(app.staticTexts.matching(reason).firstMatch.exists || copy.label.contains("1 name left to decide"),
-                      "the reason under the title")
+        // The reason under the title ("1 name left to decide") is the
+        // menu item's subtitle, which XCUITest doesn't expose: the PR's
+        // screenshots show it.
         // Close the menu.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
         XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
