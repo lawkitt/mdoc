@@ -170,6 +170,16 @@ Features are frozen until items 13–19 land (Q4).
     gated on the iPhone 17 Pro. *Done when:* all merged and checked on
     the iPhone 17 Pro from rc.11.
 
+27. **[Mobile] rc.11's Adjust Words, Identities drawer and Done fixes.**
+    *From the maintainer's rc.11 look
+    ([ADR 0116](docs/adr/0116-ios-rc11-adjust-words-identities-and-done.md)).*
+    Slices, one PR each: (J) Adjust Words without a cross-faded first
+    frame, and a tap away from a table cell's adjusted words cancels it;
+    (K) the Identities drawer slides in from its button, Select and Cancel
+    without a cross-faded first frame, and Done on an already reviewed
+    document closes the bar without a toast. TestFlight rc.12 after.
+    *Done when:* both merged and checked on the iPhone 17 Pro from rc.12.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
