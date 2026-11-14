@@ -1997,11 +1997,12 @@ fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
     });
     draw(cx);
     let wheel = |cx: &mut gpui::VisualTestContext, delta| {
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: list,
             delta,
             modifiers: Default::default(),
             touch_phase: gpui::TouchPhase::Moved,
+            source: gpui::ScrollSource::Pointer,
         });
         cx.run_until_parked();
     };
@@ -2024,16 +2025,9 @@ fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
         .debug_bounds(Box::leak(format!("mention-{mention}").into_boxed_str()))
         .unwrap()
         .center();
-    cx.simulate_mouse_down(
-        at,
-        gpui::MouseButton::Middle,
-        gpui::Modifiers::secondary_key(),
-    );
-    cx.simulate_mouse_up(
-        at,
-        gpui::MouseButton::Middle,
-        gpui::Modifiers::secondary_key(),
-    );
+    let secondary = cx.update(|_, cx| gpui::Modifiers::secondary_key(cx));
+    cx.simulate_mouse_down(at, gpui::MouseButton::Middle, secondary);
+    cx.simulate_mouse_up(at, gpui::MouseButton::Middle, secondary);
     draw(cx);
     app.read_with(cx, |app, _| {
         assert_eq!(app.pii.review.identity_count(initials), 0)

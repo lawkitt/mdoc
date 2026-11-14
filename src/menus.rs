@@ -98,7 +98,8 @@ pub(crate) fn install(cx: &mut App) {
     });
     cx.on_action(|_: &OpenHelp, cx| cx.open_url(HELP_URL));
     // macOS only: the table has no Windows keys for these.
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Menus));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Menus, cx);
+    cx.bind_keys(bindings);
     cx.set_global(Installed);
     cx.set_menus(menus(&recent_files(cx)));
 }

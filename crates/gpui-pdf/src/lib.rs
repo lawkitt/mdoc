@@ -2497,7 +2497,7 @@ impl Render for PdfView {
                     }
                     return;
                 }
-                let secondary = ev.keystroke.modifiers.secondary();
+                let secondary = ev.keystroke.modifiers.secondary(cx);
                 {
                     // ⌘F toggles the find bar; ⌘G / ⌘⇧G step matches (bar open or not).
                     if secondary && key == "f" {
@@ -2849,7 +2849,7 @@ impl Render for PdfView {
                                 .py(px(PAGE_PAD_Y))
                                 // Scrolling doesn't re-run render on its own; notify so
                                 // the next frame re-runs `ensure_window` + page counter.
-                                .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                                .on_scroll(cx.listener(|_, _, _, cx| cx.notify()))
                                 .children(slots),
                         )
                         .child(scrollbar)
@@ -3450,16 +3450,17 @@ mod scrolling_tests {
         draw(cx);
         let viewport = cx.update(|_, cx| view.read(cx).scroll.bounds());
         cx.update(|_, cx| assert!(view.read(cx).scroll.max_offset().x > px(100.)));
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: viewport.center(),
             delta: gpui::ScrollDelta::Pixels(point(px(-80.), px(0.))),
             modifiers: Default::default(),
             touch_phase: gpui::TouchPhase::Moved,
+            source: gpui::ScrollSource::Pointer,
         });
         draw(cx);
         cx.update(|_, cx| assert!(view.read(cx).scroll.offset().x < px(-10.)));
         let before = cx.update(|_, cx| view.read(cx).scroll.offset());
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: viewport.center(),
             delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-60.))),
             modifiers: gpui::Modifiers {
@@ -3467,6 +3468,7 @@ mod scrolling_tests {
                 ..Default::default()
             },
             touch_phase: gpui::TouchPhase::Moved,
+            source: gpui::ScrollSource::Pointer,
         });
         draw(cx);
         cx.update(|_, cx| {

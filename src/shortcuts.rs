@@ -219,30 +219,23 @@ pub(crate) fn specs(mac: bool) -> Vec<Spec> {
 }
 
 impl Spec {
-    fn binding(self) -> KeyBinding {
+    fn binding(self, cx: &gpui::App) -> KeyBinding {
         let predicate = self.context.map(|context| {
             KeyBindingContextPredicate::parse(context)
                 .expect("valid key context")
                 .into()
         });
-        KeyBinding::load(
-            &self.keys,
-            self.action,
-            predicate,
-            false,
-            None,
-            &gpui::DummyKeyboardMapper,
-        )
-        .expect("valid keystroke")
+        KeyBinding::load(&self.keys, self.action, predicate, false, None, cx)
+            .expect("valid keystroke")
     }
 }
 
 /// The bindings `owner` registers on this platform.
-pub fn bindings(owner: Owner) -> Vec<KeyBinding> {
+pub fn bindings(owner: Owner, cx: &gpui::App) -> Vec<KeyBinding> {
     specs(MAC)
         .into_iter()
         .filter(|spec| spec.owner == owner)
-        .map(Spec::binding)
+        .map(|spec| spec.binding(cx))
         .collect()
 }
 
@@ -250,7 +243,7 @@ pub fn bindings(owner: Owner) -> Vec<KeyBinding> {
 /// is, then its table rows. A crate binding the table does not make stays
 /// bound, so the invariant test catches drift.
 pub fn bind_crate(cx: &mut gpui::App, owner: Owner, keymap: Vec<KeyBinding>) {
-    let table = bindings(owner);
+    let table = bindings(owner, cx);
     let mut all: Vec<_> = keymap
         .into_iter()
         .filter(|binding| !table.iter().any(|row| same(row, binding)))

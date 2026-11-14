@@ -53,7 +53,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("up", ShelfUp, Some("Shelf")),
         KeyBinding::new("down", ShelfDown, Some("Shelf")),
     ]);
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Shelf));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Shelf, cx);
+    cx.bind_keys(bindings);
 }
 
 const PADDING: f32 = 8.;

@@ -22,7 +22,8 @@ gpui::actions!(
 );
 
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Cases));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Cases, cx);
+    cx.bind_keys(bindings);
 }
 
 #[derive(Default)]

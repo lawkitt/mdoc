@@ -62,7 +62,7 @@ and mdoc restores the originals in a new tab.
 </h3>
 
 Download `mdoc_<version>_arm64.dmg` from [Releases](https://github.com/lawkitt/mdoc/releases).
-Requires a Mac with Apple silicon and macOS 11 or later.
+Requires a Mac with Apple silicon and macOS 12 or later.
 
 <h3>
   <picture>

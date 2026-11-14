@@ -3,19 +3,15 @@
 //! anchor a `WindowKind::PopUp` window under it.
 
 use crate::ns_string;
-use cocoa::{
-    base::{id, nil},
-    foundation::{NSData, NSRect, NSSize},
-};
 use gpui::{Bounds, DisplayId, Pixels, point, px, size};
-use objc::{
-    class,
-    declare::ClassDecl,
-    msg_send,
-    runtime::{Class, Object, Sel, YES},
-    sel, sel_impl,
+use objc2::{
+    class, msg_send,
+    rc::Retained,
+    runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel},
+    sel,
 };
-use std::{cell::RefCell, ffi::c_void, rc::Rc, sync::Once};
+use objc2_foundation::{NSData, NSRect, NSSize};
+use std::{cell::RefCell, rc::Rc, sync::Once};
 
 /// `NSSquareStatusItemLength`.
 const SQUARE_LENGTH: f64 = -2.;
@@ -38,8 +34,8 @@ pub struct StatusImage {
 }
 
 struct Installed {
-    item: id,
-    target: id,
+    item: Retained<AnyObject>,
+    _target: Retained<AnyObject>,
     on_click: Rc<dyn Fn()>,
 }
 
@@ -48,9 +44,9 @@ thread_local! {
 }
 
 static REGISTER: Once = Once::new();
-static mut TARGET_CLASS: *const Class = std::ptr::null();
+static mut TARGET_CLASS: *const AnyClass = std::ptr::null();
 
-extern "C" fn clicked(_: &Object, _: Sel, _: id) {
+extern "C-unwind" fn clicked(_: &AnyObject, _: Sel, _: *mut AnyObject) {
     // Cloned out first: the callback may replace the item.
     let on_click = INSTALLED.with(|installed| {
         installed
@@ -63,17 +59,21 @@ extern "C" fn clicked(_: &Object, _: Sel, _: id) {
     }
 }
 
-fn target_class() -> *const Class {
+fn target_class() -> &'static AnyClass {
     REGISTER.call_once(|| {
-        let mut decl = ClassDecl::new("MDOCStatusItemTarget", class!(NSObject)).unwrap();
+        let mut decl = ClassBuilder::new(c"MDOCStatusItemTarget", class!(NSObject))
+            .expect("failed to register MDOCStatusItemTarget");
         // SAFETY: the method's signature matches the `clicked:` selector.
         unsafe {
-            decl.add_method(sel!(clicked:), clicked as extern "C" fn(&Object, Sel, id));
+            decl.add_method(
+                sel!(clicked:),
+                clicked as extern "C-unwind" fn(_, Sel, *mut AnyObject),
+            );
             TARGET_CLASS = decl.register();
         }
     });
     // SAFETY: written once, inside `call_once`, before this read.
-    unsafe { TARGET_CLASS }
+    unsafe { &*TARGET_CLASS }
 }
 
 /// Show `item` in the menu bar, replacing one shown before, or remove it
@@ -86,59 +86,64 @@ pub fn set_status_item(item: Option<StatusItem>) {
     // SAFETY: AppKit calls on the main thread; nil results are checked and
     // the item and target are retained until `remove`.
     unsafe {
-        let bar: id = msg_send![class!(NSStatusBar), systemStatusBar];
-        let status: id = msg_send![bar, statusItemWithLength: SQUARE_LENGTH];
-        if status.is_null() {
+        let bar: *mut AnyObject = msg_send![class!(NSStatusBar), systemStatusBar];
+        let status: Option<Retained<AnyObject>> =
+            msg_send![bar, statusItemWithLength: SQUARE_LENGTH];
+        let Some(status) = status else {
             return;
-        }
-        let _: id = msg_send![status, retain];
-        let button: id = msg_send![status, button];
-        let image = template_image(&item.image, item.label);
-        if image.is_null() {
-            let _: () = msg_send![button, setTitle: ns_string("mdoc")];
-        } else {
-            let _: () = msg_send![button, setImage: image];
+        };
+        let button: *mut AnyObject = msg_send![&*status, button];
+        match template_image(&item.image, item.label) {
+            Some(image) => {
+                let _: () = msg_send![button, setImage: &*image];
+            }
+            None => {
+                let _: () = msg_send![button, setTitle: ns_string("mdoc")];
+            }
         }
         let _: () = msg_send![button, setToolTip: ns_string(item.label)];
-        let target: id = msg_send![target_class(), new];
-        let _: () = msg_send![button, setTarget: target];
+        let target: Option<Retained<AnyObject>> = msg_send![target_class(), new];
+        let Some(target) = target else {
+            return;
+        };
+        let _: () = msg_send![button, setTarget: &*target];
         let _: () = msg_send![button, setAction: sel!(clicked:)];
         INSTALLED.with(|installed| {
             *installed.borrow_mut() = Some(Installed {
                 item: status,
-                target,
+                _target: target,
                 on_click: item.on_click.into(),
             })
         });
     }
 }
 
-/// An autoreleased template `NSImage` with one representation per PNG that
-/// decodes, each `points` square; nil when none does.
-unsafe fn template_image(glyph: &StatusImage, label: &str) -> id {
+/// A template `NSImage` with one representation per PNG that decodes, each
+/// `points` square; `None` when none does.
+unsafe fn template_image(glyph: &StatusImage, label: &str) -> Option<Retained<AnyObject>> {
     unsafe {
         let size = NSSize::new(glyph.points, glyph.points);
-        let image: id = msg_send![class!(NSImage), alloc];
-        let image: id = msg_send![image, initWithSize: size];
+        let image: *mut AnyObject = msg_send![class!(NSImage), alloc];
+        let image: *mut AnyObject = msg_send![image, initWithSize: size];
+        let image = Retained::from_raw(image)?;
         let mut added = false;
         for png in glyph.pngs {
-            let data = NSData::dataWithBytes_length_(nil, png.as_ptr() as *const c_void, png.len() as u64);
-            let rep: id = msg_send![class!(NSBitmapImageRep), imageRepWithData: data];
+            let data = NSData::with_bytes(png);
+            let rep: *mut AnyObject =
+                msg_send![class!(NSBitmapImageRep), imageRepWithData: &*data];
             if rep.is_null() {
                 continue;
             }
             let _: () = msg_send![rep, setSize: size];
-            let _: () = msg_send![image, addRepresentation: rep];
+            let _: () = msg_send![&*image, addRepresentation: rep];
             added = true;
         }
         if !added {
-            let _: () = msg_send![image, release];
-            return nil;
+            return None;
         }
-        let _: () = msg_send![image, setTemplate: YES];
-        let _: () = msg_send![image, setAccessibilityDescription: ns_string(label)];
-        let _: id = msg_send![image, autorelease];
-        image
+        let _: () = msg_send![&*image, setTemplate: Bool::YES];
+        let _: () = msg_send![&*image, setAccessibilityDescription: ns_string(label)];
+        Some(image)
     }
 }
 
@@ -146,29 +151,30 @@ fn remove() {
     let Some(installed) = INSTALLED.with(|installed| installed.borrow_mut().take()) else {
         return;
     };
-    // SAFETY: both objects were retained by `set_status_item`.
+    // SAFETY: main thread; the item is retained by `installed`.
     unsafe {
-        let bar: id = msg_send![class!(NSStatusBar), systemStatusBar];
-        let _: () = msg_send![bar, removeStatusItem: installed.item];
-        let _: () = msg_send![installed.item, release];
-        let _: () = msg_send![installed.target, release];
+        let bar: *mut AnyObject = msg_send![class!(NSStatusBar), systemStatusBar];
+        let _: () = msg_send![bar, removeStatusItem: &*installed.item];
     }
 }
 
 /// The status item's button: its display and its bounds on that display,
 /// top-left origin, as `WindowOptions` takes them. `None` without an item.
 pub fn status_item_bounds() -> Option<(DisplayId, Bounds<Pixels>)> {
-    let item = INSTALLED.with(|installed| installed.borrow().as_ref().map(|i| i.item))?;
+    let item = INSTALLED.with(|installed| installed.borrow().as_ref().map(|i| i.item.clone()))?;
     // SAFETY: main thread; the item is retained while installed and every
     // nil result is checked.
     unsafe {
-        let button: id = msg_send![item, button];
-        let window: id = msg_send![button, window];
+        let button: *mut AnyObject = msg_send![&*item, button];
+        if button.is_null() {
+            return None;
+        }
+        let window: *mut AnyObject = msg_send![button, window];
         if window.is_null() {
             return None;
         }
         let frame: NSRect = msg_send![window, frame];
-        let mut screen: id = msg_send![window, screen];
+        let mut screen: *mut AnyObject = msg_send![window, screen];
         if screen.is_null() {
             screen = msg_send![class!(NSScreen), mainScreen];
         }

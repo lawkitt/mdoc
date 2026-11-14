@@ -1728,7 +1728,8 @@ fn toggled(on: bool) -> gpui::Toggled {
 
 /// The find bar's keys, from the shortcuts table (ADR 0063, 0073).
 pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Find));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Find, cx);
+    cx.bind_keys(bindings);
 }
 
 /// One zoom step (ADR 0048).
@@ -2182,7 +2183,7 @@ impl Render for DocumentView {
                         // editor: each probe width (search-bar min-content, max content,
                         // 0 px) shaped it again, and a changing one missed every cache.
                         .child(div().id("document-scroll").absolute().inset_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
-                            .on_scroll_wheel(cx.listener(|this, _, _, cx| { this.wake_switcher(cx); cx.notify(); }))
+                            .on_scroll(cx.listener(|this, _, _, cx| { this.wake_switcher(cx); cx.notify(); }))
                             // A click in the blank page under the last line puts the caret
                             // at the end, as in other editors; it used to take focus away
                             // from the editor, so typing went nowhere.

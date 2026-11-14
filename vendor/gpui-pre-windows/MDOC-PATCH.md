@@ -1,10 +1,13 @@
-# Vendored: gpui-pre-windows 0.3.2
+# Vendored: gpui-pre-windows 0.3.12
 
-Source: crates.io `gpui-pre-windows` 0.3.2 (Zed `gpui_windows`,
-zed@801c087af22dd189dc1aa49e2f370b4f04190b19; Apache-2.0,
+Source: crates.io `gpui-pre-windows` 0.3.12 (Zed `gpui_windows`,
+zed@d2a4fb6ded7c470be25d1541281da3882495b65b; Apache-2.0,
 see LICENSE-APACHE). The workspace patches this version without updating the
 GPUI family. Registry checksum:
-`682040da1444801c80ff0d885956467cc087429824c77aa9c0dfeb27e5105dfc`.
+`7201762420222d5b5ce5bdf0056996199212a3349bfb2457a3a0238c688681f3`.
+Re-ported from 0.3.2 for [ADR 0117](../../docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md).
+The save dialog now opens through upstream's `dialog::show_dialog`; the
+title is taken before it.
 
 Local changes:
 

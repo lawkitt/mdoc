@@ -2190,7 +2190,7 @@ fn the_view_pill_rests_hidden_until_pointer_scroll_or_zoom(cx: &mut gpui::TestAp
     idle(cx);
     assert!(!shown(&app, cx));
     // Scrolling wakes it too.
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
         position: gpui::point(pill.x, px(300.)),
         delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-40.))),
         ..Default::default()

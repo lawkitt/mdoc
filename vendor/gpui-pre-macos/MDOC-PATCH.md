@@ -1,10 +1,14 @@
-# Vendored: gpui-pre-macos 0.3.2
+# Vendored: gpui-pre-macos 0.3.12
 
-Source: crates.io `gpui-pre-macos` 0.3.2 (Zed `gpui_macos`,
-zed@801c087af22dd189dc1aa49e2f370b4f04190b19; Apache-2.0,
+Source: crates.io `gpui-pre-macos` 0.3.12 (Zed `gpui_macos`,
+zed@d2a4fb6ded7c470be25d1541281da3882495b65b; Apache-2.0,
 see LICENSE-APACHE). The workspace patches this version without updating the
 GPUI family. Registry checksum:
-`66a1e7a41b11c83b121b7bf729537c5b46dad91ef0cf221851cfb287cbe0fe33`.
+`2de7d3f4ad51ac387e822495db363fcc1188d349793365731d054444c4cb06ee`.
+Re-ported from 0.3.2 for [ADR 0117](../../docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md):
+upstream moved this crate from `cocoa`/`objc` to `objc2`, so the patches
+below are written against `objc2` and the drag is in `src/text_drag.rs`,
+included into `window.rs` to share its window state.
 
 Local changes, marked `mdoc patch`:
 
@@ -29,7 +33,7 @@ Local changes, marked `mdoc patch`:
   `WindowKind::PopUp` window can open under it. `window.rs`'s
   `display_id_for_screen` is `pub(crate)` for it. mdoc uses them in
   `src/menu_bar.rs` for the menu bar shelf (ADR 0084).
-- `window.rs`: `start_text_and_file_drag` starts an outbound drag from a
+- `text_drag.rs` (included into `window.rs`): `start_text_and_file_drag` starts an outbound drag from a
   window's last left mouse down carrying one `NSPasteboardItem` with both
   plain text and a file URL (upstream's `start_external_drag` carries files
   only). The shelf drags a document with it (ADR 0084). It shows an optional
@@ -70,10 +74,10 @@ Local changes, marked `mdoc patch`:
   (nspasteboard.org), so clipboard managers skip it.
   Every other copy is unchanged. mdoc tags restored text with it
   (`src/restored_clipboard.rs`; recognition grill 2026-11-01, round 3).
-- `Cargo.toml`: `[lints.rust.deprecated]` is set to `allow`. Upstream
-  still calls the deprecated `cocoa` crate (716 warnings). Cargo hides
-  warnings from registry crates, but prints them for this one because it is
-  patched in from a local path.
+- `presence.rs`'s `set_dock_visible` calls AppKit directly, not GPUI
+  0.3.12's `App::set_activation_policy`: GPUI treats an Accessory app as
+  headless (`graphical_environment` is then `None`), which mdoc's hidden
+  window must not be.
 
 Drop this directory, the patch entry and the `gpui_macos` dependency once the
 adopted GPUI family's `prompt_for_new_path` takes a message, the app can

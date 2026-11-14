@@ -25,9 +25,8 @@ use std::{
 actions!(model_comparison, [CloseComparison]);
 
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys(crate::shortcuts::bindings(
-        crate::shortcuts::Owner::Comparison,
-    ));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Comparison, cx);
+    cx.bind_keys(bindings);
 }
 
 pub struct View {

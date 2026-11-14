@@ -326,7 +326,8 @@ pub(crate) const POPUP_UNDO: &str = "PseudonymReview && !PseudonymReplacement";
 /// after the table's popup keys: the chooser is also `PseudonymReview`, and
 /// the later binding wins its Enter.
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Pii));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Pii, cx);
+    cx.bind_keys(bindings);
     cx.bind_keys([
         // This multiline field is a Share control: Tab moves between
         // controls instead of indenting the pasted reply.
