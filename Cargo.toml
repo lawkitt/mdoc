@@ -33,8 +33,8 @@ gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
 gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 
 [workspace.dependencies]
-gpui = { package = "gpui-pre", version = "0.3" }
-gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["font-kit", "wayland", "x11", "runtime_shaders"] }
+gpui = { package = "gpui-pre", version = "0.3.12" }
+gpui_platform = { package = "gpui-pre-platform", version = "0.3.12", features = ["font-kit", "wayland", "x11", "runtime_shaders"] }
 
 [dependencies]
 regex = "1"
@@ -72,11 +72,11 @@ unicode-segmentation = "1"
 [target.'cfg(target_os = "macos")'.dependencies]
 # The save dialog's reason (src/save_prompt.rs), the quit question
 # (src/system_quit.rs) and the menu bar shelf (src/menu_bar.rs).
-gpui_macos = { package = "gpui-pre-macos", version = "=0.3.2" }
+gpui_macos = { package = "gpui-pre-macos", version = "=0.3.12" }
 
 [target.'cfg(windows)'.dependencies]
 # The save dialog's reason (src/save_prompt.rs) and the headless renderer.
-gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2" }
+gpui_windows = { package = "gpui-pre-windows", version = "=0.3.12" }
 # Single-instance launch (src/single_instance.rs) uses the pipe, session and
 # foreground features.
 windows-sys = { version = "0.61", features = [
@@ -248,7 +248,7 @@ SectionEnd
 [package.metadata.packager.macos]
 # Hand-curated Info.plist (single-instance launch, high-DPI, stable bundle id).
 info-plist-path = "resources/Info.plist"
-minimum-system-version = "11.0"
+minimum-system-version = "12.0"
 # Ad-hoc signature (`-`) with the hardened runtime. Release builds are re-signed
 # with the Developer ID and notarized by scripts/macos-sign.sh (ADR 0039).
 signing-identity = "-"

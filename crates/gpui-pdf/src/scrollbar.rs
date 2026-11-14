@@ -1,7 +1,7 @@
 //! Small overlay scrollbar shared by the PDF viewport and its Markdown host.
 use gpui::{
     AnyElement, Context, DispatchPhase, DragMoveEvent, Empty, HitboxBehavior, Hsla, MouseButton,
-    Render, ScrollHandle, ScrollWheelEvent, Window, canvas, div, prelude::*, px,
+    Render, ScrollEvent, ScrollHandle, Window, canvas, div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -99,7 +99,7 @@ pub fn overlay_scrollbar<T: 'static>(
                     let owner = owner.clone();
                     // Handle Shift+wheel before the native scroll element's bubble
                     // handler, so the same event cannot move both axes.
-                    window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+                    window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
                         if phase != DispatchPhase::Capture
                             || !event.modifiers.shift
                             || !hitbox.should_handle_scroll(window)

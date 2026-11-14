@@ -41,9 +41,8 @@ pub(crate) fn set_words(
 const UNDO_WINDOW: Duration = Duration::from_secs(6);
 
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys(crate::shortcuts::bindings(
-        crate::shortcuts::Owner::Dictionary,
-    ));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Dictionary, cx);
+    cx.bind_keys(bindings);
 }
 
 pub struct DictionaryView {

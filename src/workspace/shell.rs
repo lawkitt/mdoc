@@ -44,7 +44,8 @@ pub(crate) const PALETTE: &str = "CommandPalette";
 /// `Workspace` is the window's own, below every deeper one: Notices opens
 /// without focus (ADR 0062), so Esc closes it from a source-only tab or Home.
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Shell));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Shell, cx);
+    cx.bind_keys(bindings);
     cx.bind_keys([
         KeyBinding::new("up", PaletteUp, Some(PALETTE)),
         KeyBinding::new("down", PaletteDown, Some(PALETTE)),

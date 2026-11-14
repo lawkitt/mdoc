@@ -1,7 +1,7 @@
-# Vendored: gpui-pre-wgpu 0.3.2
+# Vendored: gpui-pre-wgpu 0.3.12
 
-This is the crates.io `gpui-pre-wgpu` 0.3.2 source (Zed's `gpui_wgpu`,
-zed@801c087; Apache-2.0, see `LICENSE-APACHE`), wired in through
+This is the crates.io `gpui-pre-wgpu` 0.3.12 source (Zed's `gpui_wgpu`,
+zed@d2a4fb6; Apache-2.0, see `LICENSE-APACHE`), wired in through
 `[patch.crates-io]` in the workspace `Cargo.toml`. It is gpui's renderer and
 text system for Linux (and web). One change, marked `ZORITE PATCH` in
 `src/cosmic_text_system.rs`:
@@ -29,7 +29,7 @@ unchanged. Original vendoring commit:
 `5140b901349108b569accaf6c6fa157e29d00f5c`; correction by Will Lehnertz:
 `9bb9ed10d9e8285e39deccc5ccfcb46fdbc4c3ab`.
 
-mdoc retains the GPUI 0.3.2 family and excludes this directory from the workspace.
+mdoc retains the GPUI 0.3.12 family and excludes this directory from the workspace.
 The correction is the only difference from published crate source. Remove this
 directory and the patch override when the adopted GPUI family includes the fix.
 Local macOS tests do not exercise this Linux text backend; native glyph placement

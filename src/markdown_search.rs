@@ -49,9 +49,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("end", End, context),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, context),
     ]);
-    cx.bind_keys(crate::shortcuts::bindings(
-        crate::shortcuts::Owner::TextField,
-    ));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::TextField, cx);
+    cx.bind_keys(bindings);
 }
 
 /// Emitted whenever the query text changes, including through IME composition.

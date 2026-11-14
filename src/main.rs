@@ -286,7 +286,8 @@ fn open_paths_from_os(
 /// Window-wide shortcuts: files, tabs, zoom and spelling, from the
 /// shortcuts table (ADR 0073).
 pub(crate) fn bind_app_keys(cx: &mut App) {
-    cx.bind_keys(shortcuts::bindings(shortcuts::Owner::App));
+    let bindings = shortcuts::bindings(shortcuts::Owner::App, cx);
+    cx.bind_keys(bindings);
 }
 
 /// Every key binding, in the order GPUI's tie-breaks rely on: between

@@ -19,7 +19,8 @@ pub(crate) const DIALOG: &str = "ConfirmDialog";
 
 /// ⌘D / Alt+D answers Don't Save, from the shortcuts table (ADR 0073).
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Dialog));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Dialog, cx);
+    cx.bind_keys(bindings);
 }
 
 /// Replace the platform prompt for the rest of the app's life.

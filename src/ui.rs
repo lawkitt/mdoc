@@ -575,7 +575,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("tab", NextControl, Some("UiControl || UiPanel")),
         KeyBinding::new("shift-tab", PreviousControl, Some("UiControl || UiPanel")),
     ]);
-    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Ui));
+    let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Ui, cx);
+    cx.bind_keys(bindings);
 }
 
 pub fn cycle(window: &mut Window, cx: &mut App, group: Option<&FocusHandle>, backwards: bool) {
@@ -1085,7 +1086,7 @@ mod reveal_tests {
         assert!(offset(cx) < px(-1500.), "focus revealed: {:?}", offset(cx));
 
         // The wheel may move the focused control away.
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: gpui::point(px(200.), px(150.)),
             delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(800.))),
             ..Default::default()

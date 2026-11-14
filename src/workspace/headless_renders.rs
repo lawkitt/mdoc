@@ -120,7 +120,9 @@ impl Driver {
     fn key(&mut self, key: &str) -> Result<()> {
         self.cx
             .update_window(self.window, |_, window, cx| {
-                window.dispatch_keystroke(Keystroke::parse(key).expect("static keystroke"), cx);
+                let keystroke =
+                    Keystroke::parse_with_os(key, cx.platform_info().os).expect("valid keystroke");
+                window.dispatch_keystroke(keystroke, cx);
             })
             .map_err(|e| e.to_string())?;
         self.cx.run_until_parked();
@@ -407,9 +409,9 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             }
             #[cfg(target_os = "windows")]
             {
-                Some(Box::new(
-                    gpui_windows::DirectXHeadlessRenderer::new().expect("WARP renderer"),
-                ))
+                gpui_windows::DirectXHeadlessRenderer::new().map(|renderer| {
+                    Some(Box::new(renderer) as Box<dyn gpui::PlatformHeadlessRenderer>)
+                })
             }
         });
         cx.update(|cx| {

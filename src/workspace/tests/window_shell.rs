@@ -1114,7 +1114,7 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
     click_toolbar(cx, "Settings");
     click_toolbar(cx, "settings-category-Spelling");
     let scroll = cx.debug_bounds("settings-scroll").unwrap();
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
         position: scroll.center(),
         delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-600.))),
         ..Default::default()

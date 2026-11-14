@@ -1,7 +1,12 @@
 //! The one-table invariant (ADR 0073): every bound user-facing action is in
 //! the table, and the table is what the app binds.
 use super::*;
-use gpui::{Keystroke, TestAppContext};
+use gpui::{Keystroke, OperatingSystem, TestAppContext};
+
+/// The table resolves `mod-` itself, so the host OS doesn't matter here.
+fn parse(key: &str) -> Keystroke {
+    Keystroke::parse_with_os(key, OperatingSystem::Mac).expect("valid keystroke")
+}
 
 #[test]
 fn workspace_navigation_is_everywhere_with_platform_keys_and_text_context_guards() {
@@ -40,74 +45,78 @@ fn workspace_navigation_is_everywhere_with_platform_keys_and_text_context_guards
 /// on any OS (ADR 0061, 0081): on Windows and Linux Alt+← / Alt+→ stay word
 /// moves in the editor, do nothing in a text field and navigate elsewhere;
 /// on macOS ⌘[ / ⌘] navigate from the editor too and ⌥←/→ never navigate.
-#[test]
-fn navigation_keys_resolve_by_focus_on_both_platforms_keymaps() {
-    let context = |names: &[&str]| -> Vec<gpui::KeyContext> {
-        names
-            .iter()
-            .map(|name| gpui::KeyContext::parse(name).unwrap())
-            .collect()
-    };
-    let editor = context(&["Workspace", "Editor"]);
-    let field = context(&["Workspace", "TextInput SearchInput"]);
-    let chrome = context(&["Workspace", "UiControl"]);
-    for mac in [true, false] {
-        // Registered as bind_all_keys does: the editor's plumbing, then the table.
-        let mut bindings = mdoc_editor::key_bindings(mac);
-        bindings.extend(specs(mac).into_iter().map(Spec::binding));
-        let keymap = gpui::Keymap::new(bindings);
-        let first = |key: &str, stack: &[gpui::KeyContext]| {
-            let (found, _) = keymap.bindings_for_input(&[Keystroke::parse(key).unwrap()], stack);
-            found.first().map(|binding| binding.action().name())
+#[gpui::test]
+fn navigation_keys_resolve_by_focus_on_both_platforms_keymaps(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        let context = |names: &[&str]| -> Vec<gpui::KeyContext> {
+            names
+                .iter()
+                .map(|name| gpui::KeyContext::parse(name).unwrap())
+                .collect()
         };
-        let (back, forward) = (workspace::Back.name(), workspace::Forward.name());
-        if mac {
-            for stack in [&editor, &field, &chrome] {
-                assert_eq!(first("cmd-[", stack), Some(back));
-                assert_eq!(first("cmd-]", stack), Some(forward));
+        let editor = context(&["Workspace", "Editor"]);
+        let field = context(&["Workspace", "TextInput SearchInput"]);
+        let chrome = context(&["Workspace", "UiControl"]);
+        for mac in [true, false] {
+            // Registered as bind_all_keys does: the editor's plumbing, then the table.
+            let mut bindings = mdoc_editor::key_bindings(mac);
+            bindings.extend(specs(mac).into_iter().map(|spec| spec.binding(cx)));
+            let keymap = gpui::Keymap::new(bindings);
+            let first = |key: &str, stack: &[gpui::KeyContext]| {
+                let (found, _) = keymap.bindings_for_input(&[parse(key)], stack);
+                found.first().map(|binding| binding.action().name())
+            };
+            let (back, forward) = (workspace::Back.name(), workspace::Forward.name());
+            if mac {
+                for stack in [&editor, &field, &chrome] {
+                    assert_eq!(first("cmd-[", stack), Some(back));
+                    assert_eq!(first("cmd-]", stack), Some(forward));
+                }
+                assert_eq!(first("alt-left", &chrome), None);
+                assert_eq!(first("alt-right", &chrome), None);
+            } else {
+                assert_eq!(
+                    first("alt-left", &editor),
+                    Some(mdoc_editor::WordLeft.name())
+                );
+                assert_eq!(
+                    first("alt-right", &editor),
+                    Some(mdoc_editor::WordRight.name())
+                );
+                assert_ne!(first("alt-left", &field), Some(back));
+                assert_ne!(first("alt-right", &field), Some(forward));
+                assert_eq!(first("alt-left", &chrome), Some(back));
+                assert_eq!(first("alt-right", &chrome), Some(forward));
+                assert_eq!(first("cmd-[", &chrome), None);
             }
-            assert_eq!(first("alt-left", &chrome), None);
-            assert_eq!(first("alt-right", &chrome), None);
-        } else {
-            assert_eq!(
-                first("alt-left", &editor),
-                Some(mdoc_editor::WordLeft.name())
-            );
-            assert_eq!(
-                first("alt-right", &editor),
-                Some(mdoc_editor::WordRight.name())
-            );
-            assert_ne!(first("alt-left", &field), Some(back));
-            assert_ne!(first("alt-right", &field), Some(forward));
-            assert_eq!(first("alt-left", &chrome), Some(back));
-            assert_eq!(first("alt-right", &chrome), Some(forward));
-            assert_eq!(first("cmd-[", &chrome), None);
         }
-    }
+    });
 }
 
 /// A focused sidebar tab opens its menu with ⌃↩ (no fn on MacBook keyboards)
 /// or ⇧F10 on both platforms, and the Menu key on Windows, ahead of the
 /// window-wide Ctrl+Enter (Apply all) there (ADR 0062).
-#[test]
-fn ctrl_enter_opens_a_sidebar_tabs_menu_on_both_platforms() {
-    let tab: Vec<gpui::KeyContext> = ["Workspace", "SidebarRegion", "UiControl SidebarTab"]
-        .iter()
-        .map(|name| gpui::KeyContext::parse(name).unwrap())
-        .collect();
-    let menu = crate::ui::SidebarMenu.name();
-    for mac in [true, false] {
-        let mut bindings = mdoc_editor::key_bindings(mac);
-        bindings.extend(specs(mac).into_iter().map(Spec::binding));
-        let keymap = gpui::Keymap::new(bindings);
-        let first = |key: &str| {
-            let (found, _) = keymap.bindings_for_input(&[Keystroke::parse(key).unwrap()], &tab);
-            found.first().map(|binding| binding.action().name())
-        };
-        assert_eq!(first("ctrl-enter"), Some(menu), "mac={mac}");
-        assert_eq!(first("shift-f10"), Some(menu), "mac={mac}");
-        assert_eq!(first("menu") == Some(menu), !mac, "mac={mac}");
-    }
+#[gpui::test]
+fn ctrl_enter_opens_a_sidebar_tabs_menu_on_both_platforms(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        let tab: Vec<gpui::KeyContext> = ["Workspace", "SidebarRegion", "UiControl SidebarTab"]
+            .iter()
+            .map(|name| gpui::KeyContext::parse(name).unwrap())
+            .collect();
+        let menu = crate::ui::SidebarMenu.name();
+        for mac in [true, false] {
+            let mut bindings = mdoc_editor::key_bindings(mac);
+            bindings.extend(specs(mac).into_iter().map(|spec| spec.binding(cx)));
+            let keymap = gpui::Keymap::new(bindings);
+            let first = |key: &str| {
+                let (found, _) = keymap.bindings_for_input(&[parse(key)], &tab);
+                found.first().map(|binding| binding.action().name())
+            };
+            assert_eq!(first("ctrl-enter"), Some(menu), "mac={mac}");
+            assert_eq!(first("shift-f10"), Some(menu), "mac={mac}");
+            assert_eq!(first("menu") == Some(menu), !mac, "mac={mac}");
+        }
+    });
 }
 
 /// Plumbing, by action: Tab inside a control group, moving inside menus,
@@ -173,7 +182,7 @@ fn bound(binding: &KeyBinding) -> Key {
 
 fn listed(spec: &Spec) -> Key {
     Key(
-        Keystroke::parse(&spec.keys).expect("valid keystroke"),
+        parse(&spec.keys),
         spec.action.name(),
         spec.context
             .map(|c| KeyBindingContextPredicate::parse(c).unwrap().to_string()),
@@ -247,7 +256,7 @@ fn every_row_has_keys_that_parse() {
         );
         for mac in [true, false] {
             for spec in specs(mac) {
-                Keystroke::parse(&spec.keys).expect("valid keystroke");
+                parse(&spec.keys);
                 if let Some(context) = spec.context {
                     KeyBindingContextPredicate::parse(context).expect("valid context");
                 }

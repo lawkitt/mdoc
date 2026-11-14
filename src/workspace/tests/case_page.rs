@@ -519,7 +519,7 @@ fn case_page_scrolls(cx: &mut TestAppContext, sidebar_visible: bool) {
     draw(cx);
     draw(cx);
     let viewport = cx.debug_bounds("case-page").unwrap();
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
         position: viewport.center(),
         delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-400.))),
         ..Default::default()
@@ -538,7 +538,7 @@ fn case_page_scrolls(cx: &mut TestAppContext, sidebar_visible: bool) {
     );
     // The wheel reaches the last control on the page, inside the window.
     for _ in 0..20 {
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: viewport.center(),
             delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-400.))),
             ..Default::default()

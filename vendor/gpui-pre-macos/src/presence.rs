@@ -1,17 +1,16 @@
 //! mdoc patch (ADR 0084): with the menu bar item on, closing mdoc's last
 //! window hides it instead (its tabs and undo stay in memory) and mdoc
 //! leaves the Dock until a window shows again. GPUI shows a window with
-//! `Window::activate_window`, but has no way to hide one or to change the
-//! activation policy. The shelf's popup also resizes to its content with
-//! its top kept under the menu bar item: GPUI's `Window::resize` keeps the
-//! bottom edge instead.
+//! `Window::activate_window`, but has no way to hide one. The shelf's popup
+//! also resizes to its content with its top kept under the menu bar item:
+//! GPUI's `Window::resize` keeps the bottom edge instead.
 
-use cocoa::{
-    appkit::{NSScreen, NSWindow},
-    base::{NO, id, nil},
-    foundation::{NSPoint, NSRect, NSSize, NSUInteger},
+use objc2::{
+    class, msg_send,
+    runtime::{AnyObject, Bool},
 };
-use objc::{class, msg_send, runtime::BOOL, sel, sel_impl};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSUInteger};
+use std::ptr;
 
 /// `NSApplicationActivationPolicyRegular` and `…Accessory`.
 const REGULAR: isize = 0;
@@ -23,33 +22,33 @@ const REDRAW_AFTER: std::time::Duration = std::time::Duration::from_millis(20);
 
 #[link(name = "QuartzCore", kind = "framework")]
 unsafe extern "C" {
-    static kCAGravityTop: id;
+    static kCAGravityTop: *mut AnyObject;
 }
 
 /// AppKit window and app state change only on the main thread: debug
 /// builds check it.
 fn debug_assert_main_thread() {
     // SAFETY: `+[NSThread isMainThread]` is safe on any thread.
-    let main: BOOL = unsafe { msg_send![class!(NSThread), isMainThread] };
-    debug_assert!(main != objc::runtime::NO, "AppKit call off the main thread");
+    let main: Bool = unsafe { msg_send![class!(NSThread), isMainThread] };
+    debug_assert!(main.as_bool(), "AppKit call off the main thread");
 }
 
-/// GPUI's view behind `window`, or nil.
-fn native_view(window: &gpui::Window) -> id {
+/// GPUI's view behind `window`, or null.
+fn native_view(window: &gpui::Window) -> *mut AnyObject {
     let Ok(handle) = raw_window_handle::HasWindowHandle::window_handle(window) else {
-        return nil;
+        return ptr::null_mut();
     };
     let raw_window_handle::RawWindowHandle::AppKit(handle) = handle.as_raw() else {
-        return nil;
+        return ptr::null_mut();
     };
     handle.ns_view.as_ptr().cast()
 }
 
-/// The `NSWindow` behind `window`, or nil.
-fn native_window(window: &gpui::Window) -> id {
+/// The `NSWindow` behind `window`, or null.
+fn native_window(window: &gpui::Window) -> *mut AnyObject {
     let view = native_view(window);
     if view.is_null() {
-        return nil;
+        return ptr::null_mut();
     }
     // SAFETY: the handle's view belongs to a live window on this thread.
     unsafe { msg_send![view, window] }
@@ -60,10 +59,10 @@ fn native_window(window: &gpui::Window) -> id {
 pub fn hide_window(window: &gpui::Window) {
     debug_assert_main_thread();
     let native_window = native_window(window);
-    // SAFETY: main thread; checked for nil.
+    // SAFETY: main thread; checked for null.
     unsafe {
         if !native_window.is_null() {
-            let _: () = msg_send![native_window, orderOut: nil];
+            let _: () = msg_send![native_window, orderOut: ptr::null_mut::<AnyObject>()];
         }
     }
 }
@@ -102,16 +101,16 @@ fn resize_keeping_top(window: &gpui::Window, height: f32) -> bool {
     if view.is_null() || native_window.is_null() {
         return false;
     }
-    // SAFETY: main thread; a live window, its screen checked for nil.
+    // SAFETY: main thread; a live window, its screen checked for null.
     unsafe {
-        let frame = NSWindow::frame(native_window);
-        let content = native_window.contentRectForFrameRect_(frame);
+        let frame: NSRect = msg_send![native_window, frame];
+        let content: NSRect = msg_send![native_window, contentRectForFrameRect: frame];
         let chrome = frame.size.height - content.size.height;
         let top = frame.origin.y + frame.size.height;
         let mut frame_height = height as f64 + chrome;
-        let screen = native_window.screen();
+        let screen: *mut AnyObject = msg_send![native_window, screen];
         if !screen.is_null() {
-            let visible = NSScreen::visibleFrame(screen);
+            let visible: NSRect = msg_send![screen, visibleFrame];
             frame_height = frame_height.min(top - visible.origin.y);
         }
         let frame_height = frame_height.max(chrome + 1.);
@@ -128,14 +127,14 @@ fn resize_keeping_top(window: &gpui::Window, height: f32) -> bool {
         // window's change and is then sized here, through GPUI's path.
         let mask: NSUInteger = msg_send![view, autoresizingMask];
         let _: () = msg_send![view, setAutoresizingMask: 0 as NSUInteger];
-        native_window.setFrame_display_(resized, NO);
-        let content = native_window.contentRectForFrameRect_(resized);
+        let _: () = msg_send![native_window, setFrame: resized, display: Bool::NO];
+        let content: NSRect = msg_send![native_window, contentRectForFrameRect: resized];
         let _: () = msg_send![view, setFrameOrigin: NSPoint::new(0., 0.)];
         let _: () = msg_send![view, setFrameSize: content.size];
         let _: () = msg_send![view, setAutoresizingMask: mask];
         // A picture of the old height stays pinned to the top, not
         // stretched or squashed, until the next frame replaces it.
-        let layer: id = msg_send![view, layer];
+        let layer: *mut AnyObject = msg_send![view, layer];
         if !layer.is_null() {
             let _: () = msg_send![layer, setContentsGravity: kCAGravityTop];
         }
@@ -149,9 +148,9 @@ pub fn set_dock_visible(visible: bool) {
     debug_assert_main_thread();
     // SAFETY: main thread; NSApp exists once GPUI runs.
     unsafe {
-        let app: id = msg_send![class!(NSApplication), sharedApplication];
+        let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
         let policy = if visible { REGULAR } else { ACCESSORY };
-        let changed: BOOL = msg_send![app, setActivationPolicy: policy];
-        debug_assert!(changed != objc::runtime::NO, "activation policy refused");
+        let changed: Bool = msg_send![app, setActivationPolicy: policy];
+        debug_assert!(changed.as_bool(), "activation policy refused");
     }
 }

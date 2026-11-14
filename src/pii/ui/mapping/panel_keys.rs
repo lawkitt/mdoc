@@ -534,7 +534,7 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let scope = match (modifiers.secondary(), modifiers.shift) {
+        let scope = match (modifiers.secondary(cx), modifiers.shift) {
             (true, true) => Scope::Entity,
             (true, false) => Scope::Wording,
             _ => Scope::Mention,
@@ -557,7 +557,7 @@ impl DocumentView {
             |_, _, _| {},
             move |bounds, _, window, _| {
                 let weak = weak.clone();
-                window.on_mouse_event(move |e: &gpui::ScrollWheelEvent, phase, window, cx| {
+                window.on_mouse_event(move |e: &gpui::ScrollEvent, phase, window, cx| {
                     let gpui::ScrollDelta::Lines(delta) = e.delta else {
                         return;
                     };

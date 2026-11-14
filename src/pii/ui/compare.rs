@@ -887,7 +887,7 @@ impl DocumentView {
                         .pt(px(44.))
                         // Room for the view switcher over the last lines.
                         .pb(px(72.))
-                        .on_scroll_wheel(cx.listener(|this, _, _, cx| {
+                        .on_scroll(cx.listener(|this, _, _, cx| {
                             this.wake_switcher(cx);
                             cx.notify();
                         }))
