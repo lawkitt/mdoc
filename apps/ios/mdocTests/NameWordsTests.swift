@@ -86,7 +86,7 @@ final class NameWordsTests: XCTestCase {
         model.fixSelectionChanged(surname)
         guard case .success(let target) = model.wordsFix?.target else { return XCTFail("Ellison can be hidden") }
         XCTAssertEqual(target.wording, "Ellison")
-        XCTAssertEqual(FixWordsBar.hideTitle(for: try XCTUnwrap(model.wordsFix)), "Hide «Ellison»")
+        XCTAssertEqual(FixWordsBar.words(for: try XCTUnwrap(model.wordsFix)), "Ellison", "the bar shows the words")
         model.confirmFixWords()
         XCTAssertNil(model.wordsFix)
         XCTAssertFalse(model.snapshot.candidates.contains { $0.original == "Maya Ellison" })
@@ -158,15 +158,15 @@ final class NameWordsTests: XCTestCase {
         XCTAssertEqual(model.shownSnapshot.markdown, model.snapshot.markdown)
     }
 
-    /// Fix the words is in every name's long-press menu, last, and the
-    /// card's chips.
+    /// Adjust Words is in every name's long-press menu, last (ADR 0115's
+    /// name for Fix the words).
     func testFixTheWordsIsInEveryNamesMenu() throws {
         let model = try model()
         for candidate in model.snapshot.candidates {
             XCTAssertEqual(model.actions(for: candidate).last, .fixWords, candidate.original)
         }
         let menu = try XCTUnwrap(CandidateMenu.make(for: model.snapshot.candidates[0].id, model: model) { _ in })
-        XCTAssertEqual(menu.children.last?.title, "Fix the words")
+        XCTAssertEqual(menu.children.last?.title, "Adjust Words")
     }
 
     /// The menu's quoted words are cut at a word's end past 24 characters.
@@ -174,5 +174,51 @@ final class NameWordsTests: XCTestCase {
         XCTAssertEqual("Тагиев Тебриз".truncatedForMenu, "Тагиев Тебриз")
         XCTAssertEqual("Тагиев Тебриз Фарадж оглы".truncatedForMenu, "Тагиев Тебриз Фарадж…")
         XCTAssertEqual("паспорт серии 4510, выдан".truncatedForMenu, "паспорт серии 4510…")
+    }
+
+    // MARK: Adjust Words' demo (ADR 0115)
+
+    /// The demo shows the first time a name's words are adjusted, while
+    /// TipKit lets it; moving a handle learns it for good.
+    func testTheDemoShowsUntilAHandleMoves() throws {
+        XCTAssertEqual(String(localized: ReviewHint.adjustWords.text), "Drag the handles onto the name's words")
+        Hints.shared.setAvailableForTesting(Set(ReviewHint.allCases))
+        defer { Hints.shared.setAvailableForTesting([]) }
+        let model = try model()
+        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
+        model.beginFixWords(maya.id)
+        XCTAssertTrue(model.adjustWordsDemo)
+        XCTAssertEqual(ReviewHint.teachable, [.adjustWords], "no other hint while it shows")
+        let fix = try XCTUnwrap(model.wordsFix)
+        model.fixSelectionChanged(SourceRange(start: fix.draft.wording.end - "Ellison".utf8.count, end: fix.draft.wording.end))
+        XCTAssertFalse(model.adjustWordsDemo)
+        XCTAssertTrue(ReviewHint.adjustWords.isLearned, "a handle moved")
+        model.cancelFixWords()
+        model.beginFixWords(maya.id)
+        XCTAssertFalse(model.adjustWordsDemo, "never again")
+        model.cancelFixWords()
+        ReviewHint.resetAll()
+        model.beginFixWords(maya.id)
+        XCTAssertTrue(model.adjustWordsDemo, "Reset tips brings it back")
+    }
+
+    /// A fix ended by another change puts the demo away until next time;
+    /// Cancel or Done learn it.
+    func testTheDemoWaitsWhenTheFixEndsByAnotherChange() throws {
+        Hints.shared.setAvailableForTesting(Set(ReviewHint.allCases))
+        defer { Hints.shared.setAvailableForTesting([]) }
+        let model = try model()
+        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
+        model.beginFixWords(maya.id)
+        XCTAssertTrue(model.adjustWordsDemo)
+        model.wordsFix = nil
+        XCTAssertFalse(model.adjustWordsDemo)
+        XCTAssertFalse(ReviewHint.adjustWords.isLearned, "shows again next time")
+        XCTAssertTrue(ReviewHint.teachable.contains(.swipe), "the other hints are back")
+        model.beginFixWords(maya.id)
+        XCTAssertTrue(model.adjustWordsDemo)
+        model.confirmFixWords()
+        XCTAssertFalse(model.adjustWordsDemo)
+        XCTAssertTrue(ReviewHint.adjustWords.isLearned, "Done learns it")
     }
 }

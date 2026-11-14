@@ -83,9 +83,10 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: MdocUITest.timeout), "Undo for the selection")
     }
 
-    /// Fix the words from the card (ADR 0114): its bar takes the review
-    /// bar's place with Hide «…» for the name's words; Cancel brings the
-    /// bar back, and Hide with the words as they were changes nothing.
+    /// Adjust Words from the alias chip's menu (ADR 0114, 0115), after
+    /// Rename…: its bar takes the review bar's place with the name's words
+    /// and Done, no menu shows over the selection, Cancel brings the bar
+    /// back, and Done with the words as they were changes nothing.
     @MainActor
     func testFixTheWordsFromTheCard() throws {
         let app = MdocUITest.launch()
@@ -102,25 +103,42 @@ final class ReviewToolsUITests: XCTestCase {
         let bar = app.descendants(matching: .any)["review-bar"].firstMatch
         XCTAssertTrue(bar.waitForExistence(timeout: 10))
 
-        let fix = app.buttons["review-fix-words"]
-        XCTAssertTrue(fix.waitForExistence(timeout: MdocUITest.timeout))
-        if !fix.isHittable { app.buttons["review-alias"].swipeLeft() }
-        fix.tap()
-        let hide = app.buttons["fix-words-hide"]
-        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout), "no Fix the words bar")
-        expectLabel(of: hide, "Hide «Bennett»")
+        XCTAssertFalse(app.buttons["review-fix-words"].exists, "no Adjust Words chip on the card")
+        fixTheWordsFromTheAliasMenu(app)
+        let hide = app.buttons["fix-words-done"]
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout), "no Adjust Words bar")
+        XCTAssertTrue(hide.isEnabled)
+        let words = app.descendants(matching: .any)["fix-words-words"].firstMatch
+        XCTAssertTrue(words.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(words.label.contains("Bennett"), "the bar shows the words: \(words.label)")
         XCTAssertFalse(bar.exists, "the review bar gives way")
+        XCTAssertEqual(app.buttons.matching(identifier: "fix-words-done").count, 1, "one Done, on the bar")
+        XCTAssertFalse(app.buttons["fix-words-callout"].exists, "no callout over the selection")
         app.buttons["fix-words-cancel"].tap()
         XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout), "Cancel brings the bar back")
 
-        let again = app.buttons["review-fix-words"]
-        XCTAssertTrue(again.waitForExistence(timeout: MdocUITest.timeout))
-        if !again.isHittable { app.buttons["review-alias"].swipeLeft() }
-        again.tap()
+        fixTheWordsFromTheAliasMenu(app)
         XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         hide.tap()
         XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertFalse(app.buttons["toast-action"].exists, "the same words are no step")
+    }
+
+    /// The alias chip's menu lists Rename…, Adjust Words, Same as… and New
+    /// alias, in that order; Adjust Words is chosen.
+    @MainActor
+    private func fixTheWordsFromTheAliasMenu(_ app: XCUIApplication) {
+        let alias = app.buttons["review-alias"]
+        XCTAssertTrue(alias.waitForExistence(timeout: MdocUITest.timeout))
+        alias.tap()
+        let fix = app.buttons["Adjust Words"]
+        XCTAssertTrue(fix.waitForExistence(timeout: MdocUITest.timeout), "Adjust Words in the alias menu")
+        let rename = app.buttons["Rename…"]
+        XCTAssertTrue(rename.exists)
+        XCTAssertLessThan(rename.frame.minY, fix.frame.minY, "Rename… comes first")
+        let newAlias = app.buttons["New alias"]
+        if newAlias.exists { XCTAssertLessThan(fix.frame.minY, newAlias.frame.minY, "New alias comes after") }
+        fix.tap()
     }
 
     /// A hardware keyboard drives the bar as desktop's keys do (ADR 0098,

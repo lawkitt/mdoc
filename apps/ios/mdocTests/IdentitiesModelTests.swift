@@ -192,7 +192,7 @@ final class IdentitiesModelTests: XCTestCase {
         Hints.shared.show(.dragMerge)
         XCTAssertEqual(ReviewHint.teachable, [.dragMerge])
         Hints.shared.learn(.dragMerge, closed: true)
-        XCTAssertEqual(ReviewHint.teachable, [.swipe, .longPress], "dismissed: learned, and the others are back")
+        XCTAssertEqual(ReviewHint.teachable, [.swipe, .longPress, .adjustWords], "dismissed: learned, and the others are back")
     }
 
     func testCountsSayHowManyAreLeft() throws {

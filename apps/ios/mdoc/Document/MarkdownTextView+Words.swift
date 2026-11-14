@@ -18,16 +18,15 @@ struct WordsFixRequest: Equatable {
     }
 }
 
-/// What the text view tells the model while a name's words are fixed.
+/// What the text view tells the model while a name's words are fixed:
+/// Hide «…» and Cancel are on `FixWordsBar` (ADR 0115).
 struct WordsFixActions {
     /// The handles moved; the words they hold, in the draft's bytes.
     var selected: (SourceRange) -> Void
-    /// Hide «…»'s title for the words now; nil while they can't be hidden.
-    var hideTitle: () -> String?
-    /// The core's reason they can't, for the callout.
-    var problem: () -> String?
-    var confirm: () -> Void
     var cancel: () -> Void
+    /// Adjust Words' one-time demo is on: a ghost handle glides along the
+    /// words once the handles show.
+    var demo: () -> Bool = { false }
 }
 
 extension WordsFixActions {
@@ -35,24 +34,17 @@ extension WordsFixActions {
     init(_ model: DocumentViewModel) {
         self.init(
             selected: { [weak model] in model?.fixSelectionChanged($0) },
-            hideTitle: { [weak model] in
-                guard let fix = model?.wordsFix, case .success = fix.target else { return nil }
-                return FixWordsBar.hideTitle(for: fix)
-            },
-            problem: { [weak model] in
-                guard let fix = model?.wordsFix, case .failure(let error) = fix.target else { return nil }
-                return error.localizedDescription
-            },
-            confirm: { [weak model] in model?.confirmFixWords() },
-            cancel: { [weak model] in model?.cancelFixWords() })
+            cancel: { [weak model] in model?.cancelFixWords() },
+            demo: { [weak model] in model?.adjustWordsDemo ?? false })
     }
 }
 
 /// A name's words in the text (ADR 0114). Hide name's selection is tinted
 /// and its edit menu reads Hide "…" beside Hide as ›. Fix the words selects
-/// the name in the draft, in a table cell too, shows Hide «…» over it, keeps
-/// the handles inside the paragraph or cell the core allows, and ends when
-/// the selection goes.
+/// the name in the draft, plain text without links (ADR 0115), in a table
+/// cell too, whose table then holds still; the handles stay inside the
+/// paragraph or cell the core allows, no menu shows over them (the bar
+/// holds Hide «…»), and it ends when the selection goes.
 extension MarkdownTextView.Coordinator {
     /// A selection's colour outside edit mode: tinted, not the ink's grey.
     static let selectionTint = UIColor.systemBlue
@@ -121,16 +113,86 @@ extension MarkdownTextView.Coordinator {
         }
         // The draft's text must show first: its offsets map the request.
         guard pending == nil, content?.textRevision == parent.snapshot.textRevision else { return }
-        let range = offsets.nsRange(request.wording)
+        fixWords = nil
+        select(request.wording, for: request, in: view)
+        guard let holder = fixHolder else { return }
+        keepClear(holder, in: view)
+        if parent.wordsFixActions?.demo() == true, !UIAccessibility.isReduceMotionEnabled {
+            playHandleDemo(on: holder, tint: holder.tintColor)
+        }
+    }
+
+    /// The words and their handles sit clear of the bars: the text scrolls
+    /// so the selection has room above Adjust Words' bar (and the demo's
+    /// caption over it) and below the top bar.
+    private func keepClear(_ holder: UITextView, in view: CandidateTextView) {
+        guard let range = holder.selectedTextRange else { return }
+        let words = holder.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
+        guard !words.isNull, !words.isInfinite else { return }
+        // Room for the end knob and the demo's caption, which shows over
+        // the bar after this layout.
+        let room: CGFloat = 88
+        let rect = holder.convert(words, to: view)
+        let visible = view.bounds.inset(by: view.adjustedContentInset)
+        var y = view.contentOffset.y
+        if rect.maxY + room > visible.maxY {
+            y += rect.maxY + room - visible.maxY
+        } else if rect.minY - Space.l < visible.minY {
+            y -= visible.minY - (rect.minY - Space.l)
+        }
+        let insets = view.adjustedContentInset
+        let lowest = max(-insets.top, view.laidOutContentHeight + insets.bottom - view.bounds.height)
+        y = min(max(y, -insets.top), lowest)
+        guard abs(y - view.contentOffset.y) > 0.5 else { return }
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: y), animated: true)
+    }
+
+    /// The text was built again while a name's words are fixed (a text
+    /// size, width or appearance change): its cells may be new views, so
+    /// the handles go back on the words they last held, and a table holds
+    /// still again.
+    func restoreWordsFix(_ view: CandidateTextView) {
+        guard let request = shownFix, parent.wordsFix == request, !parent.editing else { return }
+        fixTable?.isScrollEnabled = true
+        fixTable = nil
+        select(fixWords ?? request.wording, for: request, in: view)
+    }
+
+    /// Selects `words` of the draft for `request`, in the cell or text
+    /// that holds them.
+    private func select(_ words: SourceRange, for request: WordsFixRequest, in view: CandidateTextView) {
+        let range = offsets.nsRange(words)
         guard let (holder, local) = holder(of: range, in: view) else { return }
         shownFix = request
+        if let cell = holder as? CellTextView, let table = cell.superview as? MarkdownTableView {
+            hold(table, around: cell, words: local)
+        }
         fixSettling = true
         holder.tintColor = request.category?.uiColor ?? Self.selectionTint
         holder.becomeFirstResponder()
         holder.selectedRange = local
         fixSettling = false
         fixHolder = holder
-        presentFixMenu(on: holder)
+    }
+
+    /// In a table the cell shows whole and the table holds still, so a
+    /// drag of the handles never scrolls it sideways (ADR 0115). A cell
+    /// wider than the screen (a long identifier widens its column) can't
+    /// show whole: the table shows the name's words and still scrolls, so
+    /// the rest of the cell stays in reach.
+    private func hold(_ table: MarkdownTableView, around cell: CellTextView, words: NSRange) {
+        guard cell.frame.width <= table.bounds.width else {
+            if let start = cell.position(from: cell.beginningOfDocument, offset: words.location),
+               let end = cell.position(from: start, offset: words.length),
+               let range = cell.textRange(from: start, to: end) {
+                let rect = cell.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
+                if !rect.isNull, !rect.isInfinite { table.reveal(cell.convert(rect, to: table)) }
+            }
+            return
+        }
+        table.reveal(cell.frame)
+        table.isScrollEnabled = false
+        fixTable = table
     }
 
     /// The selection of a name being fixed changed: kept inside the
@@ -155,20 +217,9 @@ extension MarkdownTextView.Coordinator {
             textView.selectedRange = NSRange(location: kept.location - base, length: kept.length)
             fixSettling = false
         }
-        parent.wordsFixActions?.selected(offsets.sourceRange(kept.length > 0 ? kept : shown))
-    }
-
-    /// The edit menu over a name being fixed: Hide «…», or why not.
-    func fixMenu(for source: SourceRange) -> UIMenu {
-        guard let actions = parent.wordsFixActions else { return UIMenu(children: []) }
-        actions.selected(source)
-        guard let title = actions.hideTitle() else {
-            let problem = actions.problem() ?? String(localized: "Select the name's words.")
-            return UIMenu(children: [UIAction(title: problem, attributes: .disabled) { _ in }])
-        }
-        let hide = UIAction(title: title, image: UIImage(systemName: "eye.slash")) { _ in actions.confirm() }
-        hide.accessibilityIdentifier = "fix-words-callout"
-        return UIMenu(children: [hide])
+        let words = offsets.sourceRange(kept.length > 0 ? kept : shown)
+        fixWords = words
+        parent.wordsFixActions?.selected(words)
     }
 
     /// The view and its own range that hold `range` of the text: a table
@@ -183,37 +234,67 @@ extension MarkdownTextView.Coordinator {
         return (view, range)
     }
 
-    /// Hide «…» shows over the name at once, as the edit menu does after a
-    /// drag.
-    private func presentFixMenu(on holder: UITextView) {
-        presentMenu(on: holder) { [weak self] _, source in self?.fixMenu(for: source) }
-    }
-
     /// `menu` over the selection of `view`, shown by this view's own
     /// interaction (`SelectionMenuPresenter`).
     private func presentMenu(on view: UITextView, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
         guard let shown = view.selectedTextRange else { return }
         let rect = view.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
         guard !rect.isNull, !rect.isInfinite else { return }
-        let presenter = fixPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
-        fixPresenter = presenter
+        let presenter = menuPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
+        menuPresenter = presenter
         presenter.present(on: view, over: rect, menu: menu)
     }
 
+    // MARK: The demo
+
+    /// Adjust Words' demo (ADR 0115): a ghost of the end handle glides back
+    /// along the words and returns, once, a moment after the handles show.
+    /// It is drawn in the text's own coordinates, so it scrolls with it,
+    /// and takes no touches.
+    private func playHandleDemo(on holder: UITextView, tint: UIColor) {
+        guard let range = holder.selectedTextRange, !range.isEmpty else { return }
+        let end = holder.caretRect(for: range.end)
+        let start = holder.caretRect(for: range.start)
+        guard !end.isNull, !end.isInfinite, end.height > 0 else { return }
+        // Back half the words on one line, else a word's width or so.
+        let sameLine = abs(start.midY - end.midY) < 1
+        let glide = min(96, max(28, sameLine ? (end.minX - start.minX) * 0.5 : 56))
+        let ghost = HandleGhost(height: end.height, tint: tint)
+        ghost.center = CGPoint(x: end.midX, y: end.minY + ghost.bounds.height / 2)
+        ghost.alpha = 0
+        handleGhost?.removeFromSuperview()
+        holder.addSubview(ghost)
+        handleGhost = ghost
+        // timing: the handles settle first; the glide then takes about 2 s (ADR 0115)
+        UIView.animateKeyframes(withDuration: 2.2, delay: 0.4, options: [.calculationModeCubic]) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.12) { ghost.alpha = 0.7 }
+            UIView.addKeyframe(withRelativeStartTime: 0.14, relativeDuration: 0.34) {
+                ghost.transform = CGAffineTransform(translationX: -glide, y: 0)
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.56, relativeDuration: 0.3) { ghost.transform = .identity }
+            UIView.addKeyframe(withRelativeStartTime: 0.88, relativeDuration: 0.12) { ghost.alpha = 0 }
+        } completion: { _ in
+            ghost.removeFromSuperview()
+        }
+    }
+
     private func endFixSelection() {
+        handleGhost?.removeFromSuperview()
+        handleGhost = nil
+        fixWords = nil
+        fixTable?.isScrollEnabled = true
+        fixTable = nil
         guard let holder = fixHolder else { return }
         fixHolder = nil
         fixSettling = true
-        fixPresenter?.dismiss()
         if holder.selectedRange.length > 0 { holder.selectedTextRange = nil }
         holder.tintColor = Self.selectionTint
         fixSettling = false
     }
 }
 
-/// Shows a selection's menu from mdoc's own interaction: Fix the words'
-/// Hide «…» when the handles first appear, and Hide name's menu again once
-/// the selection snapped to whole words. UIKit's own edit menu
+/// Shows a selection's menu from mdoc's own interaction: Hide name's menu
+/// again once the selection snapped to whole words. UIKit's own edit menu
 /// (`editMenuForTextIn`) shows the same menus otherwise.
 @MainActor
 final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteractionDelegate {
@@ -239,10 +320,6 @@ final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteract
         interaction.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: rect.midX, y: rect.minY)))
     }
 
-    func dismiss() {
-        interaction?.dismissMenu()
-    }
-
     func editMenuInteraction(
         _ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]
     ) -> UIMenu? {
@@ -255,4 +332,26 @@ final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteract
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, targetRectFor configuration: UIEditMenuConfiguration) -> CGRect {
         target
     }
+}
+
+/// The demo's ghost of a selection's end handle: a line as tall as the
+/// text with a knob under it, in the selection's tint.
+final class HandleGhost: UIView {
+    init(height: CGFloat, tint: UIColor) {
+        let knob: CGFloat = 11
+        super.init(frame: CGRect(x: 0, y: 0, width: knob, height: height + knob - 2))
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        let line = UIView(frame: CGRect(x: (knob - 2) / 2, y: 0, width: 2, height: height))
+        line.backgroundColor = tint
+        line.layer.cornerRadius = 1
+        let dot = UIView(frame: CGRect(x: 0, y: height - 2, width: knob, height: knob))
+        dot.backgroundColor = tint
+        dot.layer.cornerRadius = knob / 2
+        addSubview(line)
+        addSubview(dot)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unused") }
 }

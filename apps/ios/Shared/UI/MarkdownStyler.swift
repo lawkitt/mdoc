@@ -26,6 +26,10 @@ struct MarkdownStyler {
     /// Edit mode (ADR 0109): candidates are no links and their underlines
     /// dimmed; applied aliases are tinted, so an edit into one shows.
     var editing = false
+    /// Candidates are links, so a tap opens the bar and a long press its
+    /// menu. False while a name's words are fixed (ADR 0115): the draft is
+    /// plain text, where no press can lift a link.
+    var links = true
     /// Live preview's reveal (ADR 0109): the markers the caret shows, dimmed
     /// instead of hidden, in the styled text's UTF-8 offsets. A line whose
     /// first marker shows draws its source instead of what the marker paints
@@ -215,10 +219,10 @@ struct MarkdownStyler {
             }
             let colour = candidate.category.uiColor
             var attributes: [NSAttributedString.Key: Any] = [
-                .link: Self.link(for: candidate.id),
                 .underlineColor: colour,
                 .accessibilityTextCustom: [Self.spokenState(of: candidate)],
             ]
+            if links { attributes[.link] = Self.link(for: candidate.id) }
             let fill = Self.fill(dark: traits.userInterfaceStyle == .dark)
             switch candidate.state {
             case .proposed:

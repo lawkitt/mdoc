@@ -603,9 +603,11 @@ view for the source with dimmed markers; one setting for the app.
 place for its commands (Find, Show Markdown, Copy for AI, Share, Rename,
 Move, Delete); there is no ⋯ ([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md)).
 
-**Fix the words** (mobile): correcting a found name's span with handles in
+**Adjust Words** (mobile): correcting a found name's span with handles in
 the text; the new wording replaces the old one everywhere and keeps the
-identity and alias. Not "edit name" or "rename", which change the alias
+identity and alias. Called "Fix the words" in ADRs 0114 and 0115 and in
+the code (`wordsFix`, `FixWordsBar`, `fix_words`). Not "edit name" or
+"rename", which change the alias
 ([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md)).
 
 **Edit mode** (mobile): the document screen with the keyboard, the editing

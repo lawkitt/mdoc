@@ -46,11 +46,11 @@ final class MarkdownTextViewTests: XCTestCase {
 
     private func textView(
         _ snapshot: DocumentSnapshot, selected: CandidateID? = nil, scoped: Set<CandidateID> = [],
-        reveal: RevealRequest? = nil
+        reveal: RevealRequest? = nil, wordsFix: WordsFixRequest? = nil
     ) -> MarkdownTextView {
         MarkdownTextView(
             snapshot: snapshot, selected: selected, scoped: scoped, reveal: reveal,
-            onCandidate: { _ in }, onReplace: { _ in }, onReviewNext: {})
+            onCandidate: { _ in }, onReplace: { _ in }, wordsFix: wordsFix, onReviewNext: {})
     }
 
     private func show(_ harness: Harness, _ view: MarkdownTextView) {
@@ -412,5 +412,171 @@ final class MarkdownTextViewTests: XCTestCase {
 
         XCTAssertEqual(try place(), before, accuracy: 1)
         XCTAssertEqual(view.contentOffset.y, 800, accuracy: 60, "about where it was")
+    }
+
+    // MARK: Fix the words in place (ADR 0115)
+
+    /// A candidate's link gets its own tap and menu in review, and never
+    /// the system's menu (the raw URL with Open, Copy and Share): not in
+    /// edit mode, not while a name's words are fixed, not without an id.
+    /// Other links keep UIKit's own.
+    func testACandidateLinkNeverShowsTheSystemMenu() throws {
+        typealias Coordinator = MarkdownTextView.Coordinator
+        let id = CandidateID(rawValue: "2")
+        let candidate = UITextItem.Content.link(MarkdownStyler.link(for: id))
+        XCTAssertEqual(Coordinator.use(of: candidate, editable: false, fixing: false), .candidate(id))
+        XCTAssertEqual(Coordinator.use(of: candidate, editable: false, fixing: true), .nothing)
+        XCTAssertEqual(Coordinator.use(of: candidate, editable: true, fixing: false), .nothing)
+        let noID = UITextItem.Content.link(try XCTUnwrap(URL(string: "mdoc-candidate://candidate")))
+        XCTAssertEqual(Coordinator.use(of: noID, editable: false, fixing: false), .nothing)
+        let web = UITextItem.Content.link(try XCTUnwrap(URL(string: "https://example.com")))
+        XCTAssertEqual(Coordinator.use(of: web, editable: false, fixing: false), .system)
+    }
+
+    /// Fix the words on `name`'s mention in a table cell: the request the
+    /// model would pass the view.
+    private func fixRequest(_ harness: Harness, inCell: Bool) throws -> (WordsFixRequest, DocumentSnapshot) {
+        let snapshot = harness.session.snapshot()
+        let offsets = TextOffsets(snapshot.markdown)
+        show(harness, textView(snapshot))
+        let inTable = { (candidate: Candidate) in
+            harness.view.tableViews.contains { NSLocationInRange(offsets.nsRange(candidate.range).location, $0.table.range) }
+        }
+        let candidate = try XCTUnwrap(snapshot.candidates.first { inTable($0) == inCell })
+        let draft = try harness.session.fixWordsDraft(candidate.id)
+        let target = try harness.session.fixWordsTarget(candidate.id, words: draft.wording)
+        let fix = WordsFix(candidate: candidate.id, draft: draft, selection: draft.wording, target: .success(target))
+        return (WordsFixRequest(fix), draft.snapshot)
+    }
+
+    /// Every attributed string the view shows: the text and each cell.
+    private func shownStrings(_ view: CandidateTextView) -> [NSAttributedString] {
+        [view.textStorage] + view.tableViews.flatMap { $0.cells.joined().map(\.textStorage) }
+    }
+
+    /// While a name's words are fixed the draft shows without candidate
+    /// links, so no press lifts one, and the name has no box or underline
+    /// under its selection; the other names keep their look. The links
+    /// come back after.
+    func testTheDraftShowsWithoutLinksWhileFixing() throws {
+        let harness = try harness()
+        let (request, draft) = try fixRequest(harness, inCell: false)
+        show(harness, textView(draft, selected: request.candidate, wordsFix: request))
+        for string in shownStrings(harness.view) {
+            string.enumerateAttribute(.link, in: NSRange(location: 0, length: string.length)) { value, _, _ in
+                XCTAssertNil(value, "no link while the words are fixed")
+            }
+        }
+        let offsets = TextOffsets(draft.markdown)
+        let fixed = offsets.nsRange(request.wording)
+        for key in MarkdownStyler.decorationKeys {
+            XCTAssertNil(harness.view.textStorage.attribute(key, at: fixed.location, effectiveRange: nil), "\(key.rawValue) on the fixed name")
+        }
+        let other = try XCTUnwrap(draft.candidates.first { candidate in
+            candidate.id != request.candidate && !harness.view.tableViews.contains {
+                NSLocationInRange(offsets.nsRange(candidate.range).location, $0.table.range)
+            }
+        })
+        let place = offsets.nsRange(other.range).location
+        XCTAssertNotNil(harness.view.textStorage.attribute(.underlineStyle, at: place, effectiveRange: nil), "another name keeps its look")
+
+        show(harness, textView(harness.session.snapshot()))
+        let snapshot = harness.session.snapshot()
+        let first = TextOffsets(snapshot.markdown).nsRange(snapshot.candidates.sorted { $0.range.start < $1.range.start }[0].range)
+        XCTAssertNotNil(harness.view.textStorage.attribute(.link, at: first.location, effectiveRange: nil), "the links are back")
+    }
+
+    /// The edit menu over a name being fixed is empty: Hide «…» is the
+    /// bar's alone.
+    func testNoMenuShowsOverANameBeingFixed() throws {
+        let harness = try harness()
+        let (request, draft) = try fixRequest(harness, inCell: false)
+        show(harness, textView(draft, selected: request.candidate, wordsFix: request))
+        harness.coordinator.followWordsFix(harness.view)
+        let range = TextOffsets(draft.markdown).nsRange(request.wording)
+        XCTAssertEqual(harness.view.selectedRange, range, "the name's words selected")
+        let menu = harness.coordinator.textView(harness.view, editMenuForTextIn: range, suggestedActions: [])
+        XCTAssertEqual(menu?.children.count, 0)
+    }
+
+    /// In a table cell too wide to show beside its neighbours, the table
+    /// first scrolls so the cell shows whole, then holds still while the
+    /// words are fixed, and scrolls again after.
+    func testATableHoldsStillWhileACellsWordsAreFixed() throws {
+        let wide: [String] = (1...6).map { "Column \($0) with a long heading" }
+        let row: String = wide.joined(separator: " | ")
+        let rule: String = String(repeating: " --- |", count: 7)
+        let text = "# Agreement\n\n| \(row) | Name |\n|\(rule)\n| \(row) | Maya Bennett |\n"
+        let harness = try harness(text: text)
+        let (request, draft) = try fixRequest(harness, inCell: true)
+        show(harness, textView(draft, selected: request.candidate, wordsFix: request))
+        let table = try XCTUnwrap(harness.view.tableViews.first)
+        XCTAssertGreaterThan(table.contentSize.width, table.bounds.width, "the table runs past the screen")
+        table.setContentOffset(.zero, animated: false)
+        harness.coordinator.followWordsFix(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        XCTAssertTrue(cell.superview === table)
+        XCTAssertFalse(table.isScrollEnabled, "no sideways scroll while fixing")
+        let shown = CGRect(origin: table.contentOffset, size: table.bounds.size)
+        XCTAssertGreaterThanOrEqual(cell.frame.minX, shown.minX - 0.5, "the cell's start on screen")
+        XCTAssertLessThanOrEqual(cell.frame.maxX, shown.maxX + 0.5, "the cell's end on screen")
+
+        show(harness, textView(harness.session.snapshot()))
+        harness.coordinator.followWordsFix(harness.view)
+        XCTAssertTrue(table.isScrollEnabled, "the table scrolls again")
+        XCTAssertNil(harness.coordinator.fixHolder)
+    }
+
+    /// A cell wider than the screen (a long identifier widens its column)
+    /// can't show whole: the table shows the name's words and keeps
+    /// scrolling sideways, so the rest of the cell stays in reach.
+    func testAnOversizedCellStillScrollsWhileFixing() throws {
+        let identifier = String(repeating: "A7", count: 60)
+        let text = "# Agreement\n\n| Note | Code |\n| --- | --- |\n| short | \(identifier) Maya Bennett |\n"
+        let harness = try harness(text: text)
+        let (request, draft) = try fixRequest(harness, inCell: true)
+        show(harness, textView(draft, selected: request.candidate, wordsFix: request))
+        let table = try XCTUnwrap(harness.view.tableViews.first)
+        table.setContentOffset(.zero, animated: false)
+        harness.coordinator.followWordsFix(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        XCTAssertGreaterThan(cell.frame.width, table.bounds.width, "the cell runs past the screen")
+        XCTAssertTrue(table.isScrollEnabled, "the rest of the cell stays in reach")
+        XCTAssertNil(harness.coordinator.fixTable)
+        let range = try XCTUnwrap(cell.selectedTextRange)
+        let words = cell.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
+        let shown = CGRect(origin: table.contentOffset, size: table.bounds.size)
+        XCTAssertTrue(shown.contains(cell.convert(words, to: table).insetBy(dx: 1, dy: 1)), "the name's words show")
+    }
+
+    /// The text built again while a name's words are fixed (a text size
+    /// or appearance change) puts the handles back on the words they last
+    /// held, and the table holds still again.
+    func testARebuildWhileFixingKeepsTheHandlesAndTheLock() throws {
+        let wide: [String] = (1...6).map { "Column \($0) with a long heading" }
+        let row: String = wide.joined(separator: " | ")
+        let rule: String = String(repeating: " --- |", count: 7)
+        let text = "# Agreement\n\n| \(row) | Name |\n|\(rule)\n| \(row) | Maya Bennett |\n"
+        let harness = try harness(text: text)
+        let (request, draft) = try fixRequest(harness, inCell: true)
+        let fixing = textView(draft, selected: request.candidate, wordsFix: request)
+        show(harness, fixing)
+        harness.coordinator.followWordsFix(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        // The handles narrow onto the surname.
+        let surname = (cell.textStorage.string as NSString).range(of: "Bennett")
+        cell.selectedRange = surname
+        harness.coordinator.fixSelectionChanged(cell)
+
+        harness.coordinator.update(harness.view, with: fixing, dynamicTypeSize: .large, colorScheme: .dark)
+        harness.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        let table = try XCTUnwrap(harness.view.tableViews.first)
+        XCTAssertFalse(table.isScrollEnabled, "the table holds still again")
+        let holder = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        XCTAssertTrue(holder.superview === table)
+        XCTAssertEqual(holder.selectedRange, surname, "the words the handles held")
+        XCTAssertNotNil(harness.coordinator.shownFix, "still fixing")
     }
 }

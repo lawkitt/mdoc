@@ -107,7 +107,7 @@ enum CandidateMenu {
         case .next: (String(localized: "Next"), "arrow.right")
         case .sameAs: (String(localized: "Same as…"), "link")
         case .changeCategory: (String(localized: "Change category"), "tag")
-        case .fixWords: (String(localized: "Fix the words"), "character.cursor.ibeam")
+        case .fixWords: (String(localized: "Adjust Words"), "character.cursor.ibeam")
         }
     }
 
