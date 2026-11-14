@@ -7,8 +7,10 @@
 
 use std::time::{Duration, Instant};
 
-/// How long a collapse or reveal slides.
+/// How long a collapse or expand slides.
 pub(super) const SLIDE: Duration = Duration::from_millis(150);
+/// How long the rail's hover reveal slides out or back (ADR 0117).
+pub(super) const REVEAL_SLIDE: Duration = Duration::from_millis(120);
 
 /// The expanded sidebar's width range and default, in points (ADR 0027).
 pub(super) const MIN_WIDTH: f32 = 160.;
@@ -60,6 +62,8 @@ pub(super) struct Sidebar<H> {
     slide: Option<Instant>,
     reveal: Reveal,
     reveal_generation: u64,
+    /// When the reveal's current slide out or back ends.
+    reveal_slide: Option<Instant>,
     /// Opened by keyboard focus, so focus inside it also keeps it open.
     keyboard: bool,
     /// Pointer over (rail, reveal).
@@ -96,6 +100,7 @@ impl<H> Default for Sidebar<H> {
             slide: None,
             reveal: Reveal::Hidden,
             reveal_generation: 0,
+            reveal_slide: None,
             keyboard: false,
             hover: (false, false),
             pending: None,
@@ -248,6 +253,13 @@ impl<H: Clone + PartialEq> Sidebar<H> {
         self.slide.is_some_and(|until| now < until)
     }
 
+    /// Whether a toggle's slide or the reveal's slide is running at `now`:
+    /// the content beside the sidebar does not change meanwhile, so the
+    /// workspace reuses its last frame (ADR 0117).
+    pub(super) fn animating(&self, now: Instant) -> bool {
+        self.sliding(now) || self.reveal_slide.is_some_and(|until| now < until)
+    }
+
     /// The pointer entered or left the rail (`panel` false) or the reveal.
     pub(super) fn hover(&mut self, panel: bool, hovered: bool) -> Option<SidebarEffect> {
         if panel {
@@ -313,6 +325,7 @@ impl<H: Clone + PartialEq> Sidebar<H> {
         if self.reveal != Reveal::Shown {
             self.reveal_generation += 1;
             self.reveal = Reveal::Shown;
+            self.reveal_slide = Some(Instant::now() + REVEAL_SLIDE);
             self.keyboard = keyboard;
         }
     }
@@ -333,6 +346,7 @@ impl<H: Clone + PartialEq> Sidebar<H> {
             Some(SidebarEffect::Repaint)
         } else {
             self.reveal = Reveal::Hiding;
+            self.reveal_slide = Some(Instant::now() + REVEAL_SLIDE);
             Some(SidebarEffect::FinishHiding(self.reveal_generation))
         }
     }
@@ -476,6 +490,25 @@ mod tests {
         let mut sidebar = Sidebar::default();
         sidebar.restore(false, Some(false));
         sidebar
+    }
+
+    #[test]
+    fn the_reveal_slides_out_and_back_for_its_own_slide_time() {
+        let mut sidebar = collapsed();
+        assert!(!sidebar.animating(Instant::now()));
+        sidebar.show(false);
+        let shown = Instant::now();
+        assert!(sidebar.animating(shown));
+        assert!(!sidebar.animating(shown + REVEAL_SLIDE));
+        assert!(sidebar.dismiss(false).is_some());
+        let hiding = Instant::now();
+        assert!(sidebar.animating(hiding));
+        assert!(!sidebar.animating(hiding + REVEAL_SLIDE));
+        // Reduced motion unmounts at once: nothing slides.
+        sidebar.show(false);
+        let later = Instant::now() + REVEAL_SLIDE;
+        assert_eq!(sidebar.dismiss(true), Some(SidebarEffect::Repaint));
+        assert!(!sidebar.animating(later));
     }
 
     #[test]

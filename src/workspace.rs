@@ -71,7 +71,7 @@ pub(crate) use cases_ui::{
 pub(crate) use shell::{
     CloseNotices, OpenPalette, PALETTE, PaletteClose, ShowHome, bind_keys as bind_shell_keys,
 };
-use sidebar::{Reveal, SLIDE, SidebarEffect};
+use sidebar::{REVEAL_SLIDE, Reveal, SLIDE, SidebarEffect};
 use tab_set::TabsEffect;
 mod app_actions;
 pub(crate) use app_actions::bind as bind_app_actions;
@@ -2172,7 +2172,7 @@ impl Workspace {
             }
             Some(SidebarEffect::FinishHiding(generation)) => {
                 cx.spawn_in(window, async move |this, cx| {
-                    cx.background_executor().timer(SLIDE).await;
+                    cx.background_executor().timer(REVEAL_SLIDE).await;
                     let _ = this.update_in(cx, |this, window, cx| {
                         let effect = this.sidebar.finish_hiding(generation);
                         this.carry_out_sidebar(effect, window, cx);
@@ -3041,7 +3041,7 @@ impl Workspace {
                     .child(panel)
                     .with_animation(
                         ("sidebar-reveal", self.sidebar.reveal_generation()),
-                        Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
+                        Animation::new(REVEAL_SLIDE).with_easing(gpui::ease_out_quint()),
                         move |v, delta| v.w(px(from + (to - from) * delta)),
                     ),
             ));
@@ -3077,7 +3077,7 @@ const RAIL_WIDTH: f32 = 44.;
 const PANEL_WIDTH: f32 = sidebar::DEFAULT_WIDTH;
 /// How far either side of the expanded sidebar's edge a drag can start.
 const RESIZE_GRIP: f32 = 3.;
-const REVEAL_DELAY: Duration = Duration::from_millis(200);
+const REVEAL_DELAY: Duration = Duration::from_millis(100);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
 
 /// A tab name that fits by losing its middle, never its extension, so
@@ -3610,6 +3610,13 @@ impl Workspace {
             self.home_view(window, cx)
         } else {
             match self.active_view() {
+                // While the sidebar slides, the document beside it reuses its
+                // last frame unless it changed itself (ADR 0117): only a view
+                // notified on its own redraws, so this holds only for the
+                // slide, never as the document's steady state.
+                Some(active) if self.sidebar.animating(std::time::Instant::now()) => active
+                    .cached(gpui::StyleRefinement::default().size_full())
+                    .into_any_element(),
                 Some(active) => active.into_any_element(),
                 None => div().into_any_element(),
             }
