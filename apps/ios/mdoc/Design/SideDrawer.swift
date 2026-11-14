@@ -42,19 +42,21 @@ struct DrawerPanel<Panel: View> {
 /// the sliver or a swipe back closes the panel. A panel opens from a
 /// sideways swipe anywhere on the screen (each panel's `opens`) or from a
 /// button that sets its `isOpen`, and follows the finger both ways. One
-/// panel shows at a time. Open, only a swipe that starts on the sliver or at
-/// the panel's inner edge moves it: a swipe over the panel's content is the
-/// content's, such as an Identities row's (ADR 0106); with Identities open,
-/// a swipe right from the left edge closes Identities and never opens the
-/// sidebar.
+/// panel shows at a time. Open, it closes as it opened (ADR 0115): a swipe
+/// toward the panel's side anywhere over it, or either way from the sliver
+/// or the panel's inner edge. A swipe the other way over the panel is the
+/// content's, such as an Identities row's (its actions are on a left
+/// swipe), and so is one that starts on what keeps its own sideways
+/// swipes; with Identities open, a swipe right from the left edge closes
+/// Identities and never opens the sidebar.
 ///
 /// The drag runs in UIKit (ADR 0114): the panels and the screen each sit in
 /// a hosting controller of one view controller, one pan recognizer moves
 /// their layers by transform, and SwiftUI hears only open or shut at the
-/// end. The panels stay built and drawn under the screen while closed, the
-/// shadow is a gradient strip and the screen's corners are drawn shapes (no
-/// mask), so a drag's first frame has nothing new to draw: on the iPhone
-/// 12 Pro each of them cost that frame. Both panels are in the one
+/// end. The panels stay built and drawn under the screen while closed, and
+/// the screen's corners and its shadow are one bitmap drawn once (no mask,
+/// no layer shadow), so a drag's first frame has nothing new to draw: on
+/// the iPhone 12 Pro each of them cost that frame. Both panels are in the one
 /// controller: a drawer's hosting controller inside another's updated its
 /// traits without end.
 struct SideDrawer<Leading: View, Trailing: View, Content: View>: View {
@@ -172,16 +174,14 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     private let leadingPanel = Panel()
     private let trailingPanel = Panel()
     private let contentHost = UIHostingController(rootView: AnyView(EmptyView()))
-    /// Holds the screen; its corners are drawn by `corners`, not masked.
+    /// Holds the screen; its corners are drawn by `edge`, not masked.
     private let clip = UIView()
-    /// The screen's rounded corners beside the panel, drawn over it in the
-    /// panel's colour: a corner mask on the whole screen rendered it
-    /// offscreen and cost the drag's first frame.
-    private let corners = DrawerCorners()
-    /// The screen's shadow on the panel: a gradient strip along the screen's
-    /// edge, which costs nothing to show; a blurred layer shadow over the
-    /// whole screen cost a frame when it appeared.
-    private let shadow = DrawerEdgeShadow()
+    /// The screen's edge beside the panel: its rounded corners, drawn over
+    /// it in the panel's colour, and its shadow on the panel, following the
+    /// corners' curve (ADR 0115). A corner mask on the whole screen
+    /// rendered it offscreen, and a blurred layer shadow cost a frame when
+    /// it appeared: this is one bitmap, drawn once.
+    private let edge = DrawerEdge()
     private let sliver = DrawerSliverView()
     /// Over the open panel's inner edge: a drag there is the drawer's and
     /// never reaches a row below.
@@ -206,6 +206,10 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     /// The tracked touch started at a candidate's near edge, where the
     /// drawer goes before anything that scrolls sideways.
     private var fromEdge = false
+    /// Open, the tracked touch started over the panel's content, not on the
+    /// sliver or the inner edge: only a swipe that closes it is the
+    /// drawer's.
+    private var overPanel = false
     /// The panel the pan chose once the touch went clearly sideways.
     private var chosen: DrawerSide?
     private weak var trackedTouch: UITouch?
@@ -263,9 +267,6 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         innerEdge.accessibilityElementsHidden = true
         view.addSubview(innerEdge)
 
-        shadow.isUserInteractionEnabled = false
-        view.addSubview(shadow)
-
         clip.clipsToBounds = true
         clip.backgroundColor = .systemGroupedBackground
         view.addSubview(clip)
@@ -278,9 +279,9 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         sliver.close = { [weak self] in self?.slide(open: false) }
         sliver.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(sliverTapped)))
         view.addSubview(sliver)
-        corners.isUserInteractionEnabled = false
-        corners.accessibilityElementsHidden = true
-        view.addSubview(corners)
+        edge.isUserInteractionEnabled = false
+        edge.accessibilityElementsHidden = true
+        view.addSubview(edge)
 
         pan.delegate = self
         pan.decide = { [weak self] delta in
@@ -290,6 +291,7 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         pan.onReset = { [weak self] in
             self?.candidates = []
             self?.fromEdge = false
+            self?.overPanel = false
             self?.chosen = nil
             self?.trackedTouch = nil
         }
@@ -307,8 +309,6 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         // Bounds and centre, not frames: these views move by transform.
         clip.bounds = bounds
         clip.center = middle
-        corners.bounds = bounds
-        corners.center = middle
         contentHost.view.frame = clip.bounds
         let width = panelWidth
         for side in [DrawerSide.leading, .trailing] {
@@ -331,8 +331,8 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         if reduceMotion {
             view.insertSubview(host, aboveSubview: clip)
         } else {
-            // Under the screen and its shadow, wherever Reduce Motion put it.
-            view.insertSubview(host, belowSubview: shadow)
+            // Under the screen, wherever Reduce Motion put it.
+            view.insertSubview(host, belowSubview: clip)
         }
         view.insertSubview(innerEdge, aboveSubview: host)
         view.setNeedsLayout()
@@ -354,12 +354,13 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         innerEdge.frame = CGRect(
             x: onLeft(active) ? width - DrawerDrag.innerEdge : bounds.width - width, y: 0,
             width: DrawerDrag.innerEdge, height: bounds.height)
-        // Outside the screen's edge beside the panel; it moves with the screen.
-        let reach = DrawerEdgeShadow.reach
-        shadow.bounds = CGRect(x: 0, y: 0, width: reach, height: bounds.height)
-        shadow.center = CGPoint(x: onLeft(active) ? -reach / 2 : bounds.width + reach / 2, y: bounds.midY)
-        shadow.fadesLeft = onLeft(active)
-        corners.onLeft = onLeft(active)
+        // The screen's edge beside the panel, from the shadow's reach
+        // outside it to its corners inside; it moves with the screen.
+        let reach = DrawerEdge.reach, inside = DrawerEdge.cornerSide
+        edge.bounds = CGRect(x: 0, y: 0, width: reach + inside, height: bounds.height)
+        edge.center = CGPoint(
+            x: onLeft(active) ? (inside - reach) / 2 : bounds.width + (reach - inside) / 2, y: bounds.midY)
+        edge.onLeft = onLeft(active)
     }
 
     // MARK: SwiftUI
@@ -507,7 +508,7 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     private func stopMotion() {
-        for moved in [clip, shadow, sliver, corners, leadingPanel.host.view!, trailingPanel.host.view!] {
+        for moved in [clip, edge, sliver, leadingPanel.host.view!, trailingPanel.host.view!] {
             moved.layer.removeAllAnimations()
         }
     }
@@ -529,17 +530,15 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         if reduceMotion {
             // The finger fades the panel in and out; nothing moves.
             clip.transform = .identity
-            shadow.transform = .identity
+            edge.transform = .identity
             sliver.transform = .identity
-            corners.transform = .identity
             host.transform = .identity
             host.alpha = progress
         } else {
             let move = CGAffineTransform(translationX: sign * shown, y: 0)
             clip.transform = move
-            shadow.transform = move
+            edge.transform = move
             sliver.transform = move
-            corners.transform = move
             // A little parallax: the panel comes from under the screen.
             host.transform = CGAffineTransform(translationX: sign * -(1 - progress) * 24, y: 0)
             host.alpha = 1
@@ -561,11 +560,9 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         }
         contentHost.view.accessibilityElementsHidden = isOpen
         innerEdge.isHidden = !isOpen
-        // The sliver (clear at rest) and the shadow (past the screen's edge
-        // at rest) stay shown, so a drag's first frame shows nothing new but
-        // the corners, two small shapes.
-        shadow.isHidden = reduceMotion
-        corners.isHidden = !shows || reduceMotion
+        // The sliver (clear at rest) stays shown, so a drag's first frame
+        // shows nothing new but the edge, one bitmap drawn beforehand.
+        edge.isHidden = !shows || reduceMotion
         // The sliver is a button for VoiceOver only while a panel is open.
         if sliver.isAccessibilityElement != isOpen { sliver.isAccessibilityElement = isOpen }
         sliver.accessibilityLabel = panel(active).closeLabel
@@ -613,7 +610,7 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     private func decide(_ delta: CGVector) -> Bool? {
         var waiting = false
         for side in candidates {
-            switch DrawerDrag.decide(delta, sign: sign(side), isOpen: isOpen) {
+            switch DrawerDrag.decide(delta, sign: sign(side), isOpen: isOpen, overPanel: overPanel) {
             case true?:
                 chosen = side
                 return true
@@ -628,9 +625,19 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         guard gestureRecognizer === pan else { return true }
         let point = touch.location(in: view)
         if let openSide {
-            let moves = DrawerDrag.movesOpenDrawer(
+            // From the sliver or the inner edge either way; over the panel
+            // only to close it, and never on what keeps its sideways swipes
+            // or takes typing (the search fields).
+            overPanel = !DrawerDrag.movesOpenDrawer(
                 startingAt: point.x, width: view.bounds.width, panelWidth: panelWidth, panelOnLeft: onLeft(openSide))
-            candidates = moves ? [openSide] : []
+            // While a row shows its swipe actions, a swipe over the panel
+            // is the row's: it puts them away.
+            let host = panel(openSide).host.view!
+            let keeps = overPanel
+                && (DrawerSwipes.showsSwipeActions(in: host)
+                    || DrawerSwipes.isTextInput(at: point, in: view)
+                    || DrawerSwipes.keepsSideSwipes(at: point, in: view, within: host))
+            candidates = keeps ? [] : [openSide]
             fromEdge = false
         } else {
             // Hit-tested once, for both sides.
@@ -671,10 +678,14 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     ) -> Bool {
         // The screen's vertical scrolls wait until the drawer's pan has
         // decided, so a sideways swipe never scrolls the text too; from a
-        // near edge, what scrolls sideways waits as well.
-        guard gestureRecognizer === pan, !candidates.isEmpty, !isOpen,
-              let scroll = other.view as? UIScrollView, other === scroll.panGestureRecognizer,
-              scroll.isDescendant(of: contentHost.view) else { return false }
+        // near edge, what scrolls sideways waits as well. Open, the panel's
+        // lists wait the same way for a swipe over them.
+        guard gestureRecognizer === pan, !candidates.isEmpty,
+              let scroll = other.view as? UIScrollView, other === scroll.panGestureRecognizer else { return false }
+        if let openSide {
+            return overPanel && scroll.isDescendant(of: panel(openSide).host.view) && !DrawerSwipes.scrollsSideways(scroll)
+        }
+        guard scroll.isDescendant(of: contentHost.view) else { return false }
         return fromEdge || !DrawerSwipes.scrollsSideways(scroll)
     }
 
@@ -683,87 +694,91 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     }
 }
 
-/// The screen's shadow on the open panel: black fading to clear, away from
-/// the screen's edge.
-private final class DrawerEdgeShadow: UIView {
+/// The screen's edge beside the open panel (ADR 0115): its two rounded
+/// corners, the bits of a square outside the screen's continuous corner in
+/// the panels' colour (`systemGroupedBackground`), and its shadow on the
+/// panel, which follows the corners' curve. One bitmap per side, drawn
+/// once per size and appearance and stretched along the straight edge
+/// (`contentsCenter`); the drag only moves it. The screen's other corners
+/// are past the window's edge.
+private final class DrawerEdge: UIView {
     /// How far the shadow reaches over the panel.
     static let reach: CGFloat = 24
+    /// The corners' square inside the screen: a continuous corner bends
+    /// over about 1.53 times its radius.
+    static let cornerSide = ceil(Radius.screen * 1.6)
+    /// The shadow's blur and colour, about as dark at the screen's edge as
+    /// ADR 0114's gradient strip.
+    private static let blur: CGFloat = 18
+    private static let shade = UIColor.black.withAlphaComponent(0.24)
 
-    override class var layerClass: AnyClass { CAGradientLayer.self }
-
-    /// The panel is on the left: the shadow fades toward the left.
-    var fadesLeft = true {
-        didSet {
-            guard let gradient = layer as? CAGradientLayer else { return }
-            gradient.startPoint = CGPoint(x: fadesLeft ? 1 : 0, y: 0.5)
-            gradient.endPoint = CGPoint(x: fadesLeft ? 0 : 1, y: 0.5)
-        }
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        guard let gradient = layer as? CAGradientLayer else { return }
-        gradient.colors = [
-            UIColor.black.withAlphaComponent(0.12).cgColor,
-            UIColor.black.withAlphaComponent(0.04).cgColor,
-            UIColor.clear.cgColor,
-        ]
-        gradient.locations = [0, 0.35, 1]
-        gradient.startPoint = CGPoint(x: 1, y: 0.5)
-        gradient.endPoint = CGPoint(x: 0, y: 0.5)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is unused") }
-}
-
-/// The screen's two rounded corners beside the open panel: the bits of a
-/// square outside the screen's continuous corner, in the panels' colour
-/// (`Palette.background`), over the screen as it moves. The screen's other
-/// corners are past the window's edge.
-private final class DrawerCorners: UIView {
-    private let top = CAShapeLayer()
-    private let bottom = CAShapeLayer()
-
-    /// The panel is on the left: the corners are the screen's left ones.
-    var onLeft = true { didSet { if onLeft != oldValue { setNeedsLayout() } } }
+    /// The panel is on the left: the edge is the screen's left one.
+    var onLeft = true { didSet { if onLeft != oldValue { show() } } }
+    /// Both sides' bitmaps, so a drag that opens the other panel draws
+    /// nothing.
+    private var drawn: [Bool: CGImage] = [:]
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        for corner in [top, bottom] {
-            layer.addSublayer(corner)
+        layer.contentsGravity = .resize
+        registerForTraitChanges([
+            UITraitUserInterfaceStyle.self, UITraitAccessibilityContrast.self, UITraitDisplayScale.self,
+        ]) { (view: Self, _) in
+            view.drawn = [:]
+            view.show()
         }
-        registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitAccessibilityContrast.self]) { (view: Self, _) in
-            view.paint()
-        }
-        paint()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is unused") }
 
-    private func paint() {
-        let colour = UIColor.systemGroupedBackground.resolvedColor(with: traitCollection).cgColor
-        top.fillColor = colour
-        bottom.fillColor = colour
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        show()
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        // A continuous corner bends over about 1.53 times its radius.
-        let side = ceil(Radius.screen * 1.6)
-        let screen = bounds
-        let outline = UIBezierPath(roundedRect: screen, cornerRadius: Radius.screen).cgPath
+    /// The bitmap's height: both corners and one stretched row between.
+    private static var height: CGFloat { cornerSide * 2 + 1 }
+
+    private func show() {
+        guard window != nil else { return }
+        if drawn.isEmpty {
+            for side in [true, false] { drawn[side] = draw(onLeft: side) }
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for (corner, atTop) in [(top, true), (bottom, false)] {
-            let square = CGRect(
-                x: onLeft ? screen.minX : screen.maxX - side, y: atTop ? screen.minY : screen.maxY - side,
-                width: side, height: side)
-            // The square less the screen's outline: the bit outside the curve.
-            corner.path = CGPath(rect: square, transform: nil).subtracting(outline)
-        }
+        layer.contents = drawn[onLeft]
+        layer.contentsScale = traitCollection.displayScale
+        layer.contentsCenter = CGRect(x: 0, y: Self.cornerSide / Self.height, width: 1, height: 1 / Self.height)
         CATransaction.commit()
+    }
+
+    /// The corners in the panels' colour, then the screen's shadow over
+    /// everything outside its outline.
+    private func draw(onLeft: Bool) -> CGImage? {
+        let reach = Self.reach, inside = Self.cornerSide
+        let size = CGSize(width: reach + inside, height: Self.height)
+        // The screen, reaching well past the bitmap on its far side.
+        let far = inside * 4
+        let screen = CGRect(x: onLeft ? reach : inside - far, y: 0, width: far, height: size.height)
+        let outline = UIBezierPath(roundedRect: screen, cornerRadius: Radius.screen)
+        let format = UIGraphicsImageRendererFormat(for: traitCollection)
+        format.opaque = false
+        let fill = UIColor.systemGroupedBackground.resolvedColor(with: traitCollection)
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let outside = UIBezierPath(rect: CGRect(origin: .zero, size: size))
+            outside.append(outline)
+            outside.usesEvenOddFillRule = true
+            outside.addClip()
+            fill.setFill()
+            let x = onLeft ? reach : 0
+            UIBezierPath(rect: CGRect(x: x, y: 0, width: inside, height: inside)).fill()
+            UIBezierPath(rect: CGRect(x: x, y: size.height - inside, width: inside, height: inside)).fill()
+            // The screen's own fill is clipped away: only its shadow shows.
+            context.cgContext.setShadow(offset: .zero, blur: Self.blur, color: Self.shade.cgColor)
+            UIColor.black.setFill()
+            outline.fill()
+        }.cgImage
     }
 }
 
@@ -846,6 +861,32 @@ enum DrawerSwipes {
     /// How near a selection's end a touch is on its handle.
     static let handleReach: CGFloat = 24
 
+    /// Whether what lies at `point` in `container` takes typing: a text
+    /// field (the panels' search) or an editable text view. A swipe there
+    /// moves its caret or selection, and closing the panel would clear it.
+    static func isTextInput(at point: CGPoint, in container: UIView) -> Bool {
+        var view = container.hitTest(point, with: nil)
+        while let current = view, current !== container {
+            if current is UITextField { return true }
+            if let text = current as? UITextView, text.isEditable { return true }
+            view = current.superview
+        }
+        return false
+    }
+
+    /// Whether a list row in `view` shows its swipe actions: UIKit's
+    /// (private) pull view or its buttons, laid out and visible. Waiting for the list's
+    /// swipe recognizer instead let a swipe right over a row with a full
+    /// swipe run the row's first action.
+    static func showsSwipeActions(in view: UIView) -> Bool {
+        let name = NSStringFromClass(type(of: view))
+        if !view.isHidden, view.alpha > 0, view.bounds.width > 1,
+           name.contains("SwipeAction"), name.contains("PullView") || name.contains("Button") {
+            return true
+        }
+        return view.subviews.contains { showsSwipeActions(in: $0) }
+    }
+
     static func scrollsSideways(_ scroll: UIScrollView) -> Bool {
         guard scroll.isScrollEnabled else { return false }
         let inset = scroll.adjustedContentInset
@@ -911,10 +952,11 @@ extension View {
     }
 }
 
-/// Which drags move an open drawer (ADR 0106): those that start on the
-/// dimmed sliver or within `innerEdge` of the panel's edge beside it. One
-/// that starts over the panel's content belongs to the content: an
-/// Identities row's swipe, or putting its revealed actions away.
+/// Which drags move a drawer. Closed, a sideways one toward opening
+/// (ADR 0114). Open (ADR 0115): either way from the dimmed sliver or within
+/// `innerEdge` of the panel's edge beside it; over the panel's content only
+/// toward closing, since the other way is the content's (an Identities
+/// row's actions are on a left swipe).
 enum DrawerDrag {
     /// How far into the panel, from its edge beside the sliver, a drag
     /// still moves the drawer.
@@ -928,20 +970,23 @@ enum DrawerDrag {
     /// Whether a touch that has moved by `delta` is the drawer's: `nil`
     /// until it is clear. `sign` is +1 when the screen moves right to open.
     /// A vertical scroll is never taken: up or down by 4 pt, or past 10 pt
-    /// without being mostly sideways, declines; closed, only a move toward
-    /// the open side is taken.
-    static func decide(_ delta: CGVector, sign: CGFloat, isOpen: Bool) -> Bool? {
+    /// without being mostly sideways, declines. Closed, only a move toward
+    /// opening is taken; open, either way, but `overPanel` (it started over
+    /// the panel's content) only toward closing.
+    static func decide(_ delta: CGVector, sign: CGFloat, isOpen: Bool, overPanel: Bool = false) -> Bool? {
         let across = abs(delta.dx), down = abs(delta.dy)
         if down > across * 1.2 { return down >= 4 ? false : nil }
         let toward = delta.dx * sign > 0
+        // Closed, away from opening is another drawer's or a table's; open
+        // over the panel, toward opening is the content's.
+        let otherWay = isOpen ? overPanel && toward : !toward
         guard across >= 10 else {
-            // Away from the open side: another drawer's, or a table's.
-            if !isOpen, across >= 4, !toward { return false }
+            if across >= 4, otherWay { return false }
             return nil
         }
         // Mostly sideways, or it belongs to a scroll.
         guard across > down * 1.2 else { return false }
-        return isOpen || toward
+        return !otherWay
     }
 
     /// Which panel shows when SwiftUI's `isOpen`s change from `was…` to

@@ -45,22 +45,20 @@ extension IdentitiesView {
             tracking: dragTracking))
         .listRowBackground(selected ? Palette.accent.opacity(0.08) : Color.clear)
         .listRowInsets(EdgeInsets(top: Space.xxs, leading: Space.m, bottom: Space.xxs, trailing: Space.xs))
-        // Right: Replace, a full swipe too. Left: Keep and Same as…, never
-        // a full swipe: Keep sends the original to the AI, so it is a tap
-        // (ADR 0106). In Select neither, nor the long press's menu: a row
-        // there ticks, and its ≡ handle drags.
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+        // Left only: Replace outermost, then Same as… and Keep. No full
+        // swipe: with one, swiping a row with its actions showing back to
+        // the right ran Replace (UIKit), and Keep sends the original to the
+        // AI (ADR 0106). A swipe right is the drawer's close (ADR 0115). In
+        // Select none, nor the long press's menu: a row there ticks, and
+        // its ≡ handle drags.
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !selecting {
                 Button("Replace") { decide(identity, .replace) }
                     .tint(Palette.swipeAccent)
-            }
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if !selecting {
-                Button("Keep") { decide(identity, .keep) }
-                    .tint(.gray)
                 Button("Same as…") { onPickSameAs(identity.id) }
                     .tint(.indigo)
+                Button("Keep") { decide(identity, .keep) }
+                    .tint(.gray)
             }
         }
         .contextMenu {

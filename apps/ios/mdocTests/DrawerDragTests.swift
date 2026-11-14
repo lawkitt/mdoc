@@ -1,17 +1,17 @@
 import XCTest
 @testable import mdoc
 
-/// Which drags move an open drawer (ADR 0106): those that start on the
-/// dimmed sliver or at the panel's inner edge. A drag over the panel's
-/// content is the content's: an Identities row's swipe right is Replace,
-/// not a close.
+/// Which drags move a drawer. Open (ADR 0115): either way from the dimmed
+/// sliver or the panel's inner edge, and over the panel's content only
+/// toward closing: the other way is the content's (an Identities row's
+/// actions are on a left swipe).
 final class DrawerDragTests: XCTestCase {
     /// An iPhone 17 Pro: a 402-point screen, a 330-point panel and the
     /// 72-point sliver.
     private let width: CGFloat = 402
     private let panel: CGFloat = 330
 
-    func testTheTrailingDrawerMovesOnlyFromTheSliverAndItsInnerEdge() {
+    func testTheTrailingDrawerMovesEitherWayOnlyFromTheSliverAndItsInnerEdge() {
         // Identities: the panel on the right, its inner edge at x = 72.
         func moves(_ x: CGFloat) -> Bool {
             DrawerDrag.movesOpenDrawer(startingAt: x, width: width, panelWidth: panel, panelOnLeft: false)
@@ -24,7 +24,7 @@ final class DrawerDragTests: XCTestCase {
         XCTAssertFalse(moves(390), "near the screen's edge")
     }
 
-    func testTheLeadingDrawerMovesOnlyFromTheSliverAndItsInnerEdge() {
+    func testTheLeadingDrawerMovesEitherWayOnlyFromTheSliverAndItsInnerEdge() {
         // The sidebar: the panel on the left, its inner edge at x = 330.
         func moves(_ x: CGFloat) -> Bool {
             DrawerDrag.movesOpenDrawer(startingAt: x, width: width, panelWidth: panel, panelOnLeft: true)
@@ -52,6 +52,24 @@ final class DrawerDragTests: XCTestCase {
         XCTAssertEqual(decide(10, 11), false, "a diagonal that goes farther down")
         XCTAssertEqual(decide(12, 10), false, "a diagonal not mostly sideways")
         XCTAssertNil(decide(8, 7), "a diagonal under 10 pt waits")
+    }
+
+    /// Over an open panel's content only a swipe toward closing is the
+    /// drawer's (ADR 0115): right over Identities closes it, left is a
+    /// row's; up and down scroll the list.
+    func testOverTheOpenPanelOnlyAClosingSwipeIsTheDrawers() {
+        // Identities: the screen moves left to open, so right closes.
+        func decide(_ dx: CGFloat, _ dy: CGFloat) -> Bool? {
+            DrawerDrag.decide(CGVector(dx: dx, dy: dy), sign: -1, isOpen: true, overPanel: true)
+        }
+        XCTAssertEqual(decide(12, 1), true, "right closes Identities")
+        XCTAssertEqual(decide(-5, 0), false, "left is a row's swipe")
+        XCTAssertEqual(decide(-12, 1), false, "left, clearly")
+        XCTAssertEqual(decide(1, 5), false, "down: the list's scroll")
+        XCTAssertNil(decide(3, 0), "not yet clear")
+        // The sidebar: the screen moves right to open, so left closes.
+        XCTAssertEqual(DrawerDrag.decide(CGVector(dx: -12, dy: 0), sign: 1, isOpen: true, overPanel: true), true)
+        XCTAssertEqual(DrawerDrag.decide(CGVector(dx: 12, dy: 0), sign: 1, isOpen: true, overPanel: true), false)
     }
 
     /// Which panel shows when the bindings change: the one just asked for
