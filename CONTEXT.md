@@ -459,7 +459,8 @@ state, the case key and case saves across tabs. Distinct from a tab's
 
 **Cached view**: a GPUI entity rendered through `.cached()`, so a window
 rebuild reuses its last frame unless the entity was notified. A missing
-`cx.notify()` then shows as a stale frame ([ADR 0117](docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md)).
+`cx.notify()` then shows as a stale frame, so the workspace caches the
+document view only while the sidebar slides ([ADR 0117](docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md)).
 Distinct from GPUI Fast's retained rendering, which a gate in ADR 0117 keeps
 out unless measured.
 
