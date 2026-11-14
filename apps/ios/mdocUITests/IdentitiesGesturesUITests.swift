@@ -103,6 +103,17 @@ final class IdentitiesGesturesUITests: XCTestCase {
     /// the document; it never opens the sidebar, whose edge lay under
     /// Identities' sliver (its own test until ADR 0112's sweep, which saved
     /// the launch).
+    /// Whether `element` stops moving: its frame the same 0.2 s apart.
+    @MainActor
+    private func settles(_ element: XCUIElement) -> Bool {
+        var last = CGRect.null
+        return MdocUITest.wait(timeout: 5, every: 0.2) {
+            let frame = element.frame
+            defer { last = frame }
+            return frame == last
+        }
+    }
+
     @MainActor
     func testTheDrawersCloseFromTheSliverAndTheInnerEdge() throws {
         let app = try openDocument()
@@ -112,9 +123,12 @@ final class IdentitiesGesturesUITests: XCTestCase {
         // Select shows while the drawer is open (no close button, ADR 0114).
         let close = app.buttons["identities-select"].firstMatch
         let panel = app.descendants(matching: .any)["identities-panel"].firstMatch
+        // Open and at rest: mid-slide the panel is up to 24 pt short of its
+        // place, and a drag meant for its inner edge lands inside it.
         func openIdentities() {
             XCTAssertTrue(MdocUITest.showIdentities(app))
             XCTAssertTrue(close.waitUntilHittable(timeout: MdocUITest.timeout))
+            XCTAssertTrue(settles(panel), "Identities at rest")
         }
         openIdentities()
         let edge = panel.frame.minX
@@ -145,6 +159,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         func openSidebar() {
             MdocUITest.revealSidebar(app)
             XCTAssertTrue(sidebar.waitUntilHittable(timeout: MdocUITest.timeout))
+            XCTAssertTrue(settles(sidebar), "the sidebar at rest")
         }
         openSidebar()
         let inner = sidebar.frame.maxX
