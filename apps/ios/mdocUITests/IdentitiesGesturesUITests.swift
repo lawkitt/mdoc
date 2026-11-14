@@ -1,12 +1,11 @@
 import UIKit
 import XCTest
 
-/// Who owns a sideways swipe in an open drawer (ADR 0106): over the panel,
-/// its content; the drawer moves only from its sliver or its inner edge.
-/// In Identities, swipe right is Replace (a full swipe too); swipe left
-/// shows Same as… and Keep, and a long swipe left keeps nothing. iPhone
-/// only: on iPad Identities and the sidebar stand beside the text. Drag-to-
-/// merge runs on both.
+/// Who owns a sideways swipe in an open drawer (ADR 0106, 0115): Identities
+/// rows swipe left only (Replace, Same as… and Keep, no full swipe), and
+/// an open drawer closes by a swipe toward its side anywhere over it, or
+/// either way from its sliver or inner edge. iPhone only: on iPad Identities
+/// and the sidebar stand beside the text. Drag-to-merge runs on both.
 final class IdentitiesGesturesUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -31,11 +30,14 @@ final class IdentitiesGesturesUITests: XCTestCase {
     /// the panel's width (a revealed row's own frame has slid aside): slow
     /// enough to be a pan, not a flick.
     @MainActor
-    private func drag(_ row: XCUIElement, in panel: XCUIElement, from: CGFloat = 0.5, by dx: CGFloat, _ app: XCUIApplication) {
+    private func drag(
+        _ row: XCUIElement, in panel: XCUIElement, from: CGFloat = 0.5, by dx: CGFloat, velocity: XCUIGestureVelocity = 500,
+        _ app: XCUIApplication
+    ) {
         let x = panel.frame.minX + panel.frame.width * from
         let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: row.frame.midY))
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)),
-                    withVelocity: 500, thenHoldForDuration: 0.2)
+                    withVelocity: velocity, thenHoldForDuration: 0.2)
     }
 
     /// A drag on the screen from `x` points, at `y` or across the middle.
@@ -47,7 +49,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
     }
 
     @MainActor
-    func testRowsOwnTheirSwipesInTheDrawer() throws {
+    func testRowsSwipeLeftAndASwipeRightClosesIdentities() throws {
         let app = try openDocument()
         XCTAssertTrue(MdocUITest.showIdentities(app))
         // Select shows while the drawer is open (no close button, ADR 0114).
@@ -65,44 +67,48 @@ final class IdentitiesGesturesUITests: XCTestCase {
         let sameAs = app.buttons["Same as…"].firstMatch
         let width = panel.frame.width
 
-        // Right: Replace shows, and the drawer stays open.
-        drag(proposed, in: panel, from: 0.3, by: 120, app)
-        XCTAssertTrue(replace.waitForExistence(timeout: 3), "a swipe right shows Replace")
-        XCTAssertFalse(close.waitForNonExistence(timeout: 2), "the drawer stays open")
-        XCTAssertTrue(close.isHittable)
-        XCTAssertTrue(proposed.exists, "nothing decided")
-        // Left puts Replace away.
-        drag(proposed, in: panel, from: 0.7, by: -120, app)
-        XCTAssertTrue(replace.waitForNonExistence(timeout: 3))
-
-        // A long swipe left shows Same as… and Keep, and keeps nothing.
-        drag(proposed, in: panel, from: 0.95, by: -width * 0.85, app)
+        // A swipe left shows Replace, Same as… and Keep; nothing is decided.
+        drag(proposed, in: panel, from: 0.8, by: -120, velocity: 150, app)
         XCTAssertTrue(keep.waitForExistence(timeout: 3), "a swipe left shows Keep")
         XCTAssertTrue(sameAs.exists, "and Same as…")
-        XCTAssertTrue(proposed.exists, "a long swipe left keeps nothing")
+        XCTAssertTrue(replace.exists, "and Replace")
+        XCTAssertFalse(proposed.waitForNonExistence(timeout: 2), "nothing decided")
 
-        // Right over the revealed actions puts them away; the drawer stays.
-        drag(proposed, in: panel, from: 0.2, by: 120, app)
-        XCTAssertTrue(keep.waitForNonExistence(timeout: 3), "a swipe right puts Keep and Same as… away")
+        // Right over the revealed actions puts them away; the drawer stays
+        // and nothing is decided (a full swipe ran Replace here).
+        drag(proposed, in: panel, from: 0.15, by: 120, app)
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 3), "a swipe right puts the actions away")
         XCTAssertFalse(close.waitForNonExistence(timeout: 2), "the drawer stays open")
         XCTAssertTrue(proposed.exists, "nothing decided")
 
-        // A long swipe right replaces: Replace's full swipe.
+        // A long swipe left only shows the actions; Replace is a tap.
         let name = String(row.label.prefix { $0 != "," })
-        drag(proposed, in: panel, from: 0.12, by: width * 0.85, app)
+        drag(proposed, in: panel, from: 0.95, by: -width * 0.85, app)
+        XCTAssertTrue(replace.waitForExistence(timeout: 3), "a long swipe left shows Replace")
+        XCTAssertTrue(proposed.exists, "and decides nothing")
+        replace.tap()
         let replaced = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier == 'identity-row' AND label BEGINSWITH %@ AND label ENDSWITH ', replaced'", name + ",")).firstMatch
-        XCTAssertTrue(proposed.waitForNonExistence(timeout: 5), "a full swipe right decides")
+        XCTAssertTrue(proposed.waitForNonExistence(timeout: 5), "Replace decides")
         XCTAssertTrue(replaced.waitForExistence(timeout: MdocUITest.timeout), "and replaces")
         XCTAssertTrue(close.isHittable, "the drawer stays open")
+
+        // A swipe right over a row closes Identities and decides nothing.
+        let label = replaced.label
+        drag(replaced, in: panel, from: 0.3, by: 200, app)
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a swipe right over a row closes Identities")
+        XCTAssertTrue(MdocUITest.showIdentities(app))
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'identity-row' AND label == %@", label)).firstMatch
+            .waitForExistence(timeout: MdocUITest.timeout), "the row is as it was")
     }
 
-    /// Both drawers still close from the sliver and from the panel's inner
-    /// edge, and not from the middle of the panel. With Identities open, a
-    /// swipe right from the screen's left edge closes Identities and shows
-    /// the document; it never opens the sidebar, whose edge lay under
-    /// Identities' sliver (its own test until ADR 0112's sweep, which saved
-    /// the launch).
+    /// Both drawers close from the sliver, the panel's inner edge and, toward
+    /// their side, anywhere over the panel (ADR 0115); a swipe the other way
+    /// over the panel leaves them open. With Identities open, a swipe right
+    /// from the screen's left edge closes Identities and shows the document;
+    /// it never opens the sidebar, whose edge lay under Identities' sliver
+    /// (its own test until ADR 0112's sweep, which saved the launch).
     /// Whether `element` stops moving: its frame the same 0.2 s apart.
     @MainActor
     private func settles(_ element: XCUIElement) -> Bool {
@@ -115,7 +121,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
     }
 
     @MainActor
-    func testTheDrawersCloseFromTheSliverAndTheInnerEdge() throws {
+    func testTheDrawersCloseAsTheyOpen() throws {
         let app = try openDocument()
         let width = app.frame.width
 
@@ -132,8 +138,13 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
         openIdentities()
         let edge = panel.frame.minX
-        drag(app, fromX: edge + 120, by: 200)
-        XCTAssertFalse(close.waitForNonExistence(timeout: 2), "a drag over the panel leaves it open")
+        // Over the header, where no row's swipe answers a drag left.
+        let header = close.frame.midY
+        drag(app, fromX: edge + 200, y: header, by: -150)
+        XCTAssertFalse(close.waitForNonExistence(timeout: 2), "a drag left over the panel leaves it open")
+        drag(app, fromX: edge + 120, y: header, by: 200)
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a drag right over the panel closes it")
+        openIdentities()
         drag(app, fromX: edge / 2, by: 200)
         XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a drag from the sliver closes it")
         openIdentities()
@@ -163,8 +174,11 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
         openSidebar()
         let inner = sidebar.frame.maxX
+        drag(app, fromX: inner - 200, by: 150)
+        XCTAssertFalse(sidebar.waitForNonExistence(timeout: 2), "a drag right over the sidebar leaves it open")
         drag(app, fromX: inner - 120, by: -200)
-        XCTAssertFalse(sidebar.waitForNonExistence(timeout: 2), "a drag over the sidebar leaves it open")
+        XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "a drag left over the sidebar closes it")
+        openSidebar()
         drag(app, fromX: (inner + width) / 2, by: -200)
         XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "a drag from the sliver closes it")
         openSidebar()

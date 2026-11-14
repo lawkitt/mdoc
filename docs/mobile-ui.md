@@ -60,7 +60,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `AliasTag` | An alias as the text draws a replaced name: monospaced, the text's color on its category's tint, one line, cut in the middle when too long for its row (VoiceOver hears it whole). For an alias in a list or a sheet (the Same as… sheet). A system menu cannot draw it: there the row's icon is `MenuIcon` (the category's symbol in its color) and the alias is `unbrokenAlias`, so the menu cannot hyphenate it: whole up to 12 characters, longer broken only after a separator. |
 | `card()` | A raised surface: the review card, empty-state tiles. |
 | `StatusPill` | State as an icon and words in the state's color. |
-| `SideDrawer` | Panels under the screen that the screen slides aside to show, following the finger: the sidebar on the leading side and, with a document open, Identities on the trailing one (`DrawerPanel`), one at a time; the sliver dims and closes it on a tap. Closed, a sideways swipe anywhere on the screen opens the panel on the side it moves away from, except on what keeps its own sideways swipes (`DrawerSwipes`: content that scrolls sideways, views marked `keepsSideSwipes()`, a selection's handles); each panel's `opens` narrows that to the edge or to nothing. Open, a drag moves it only from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); over the panel, the content owns the drag. The drag runs in UIKit: one view controller holds the panels and the screen in hosting controllers, one pan moves their layers by transform, SwiftUI hears only open or shut, and the panels stay built while closed. A drag's first frame shows nothing that has to be drawn then: the panels lie drawn under the opaque screen while closed, the screen's shadow is a gradient strip, and its rounded corners are two drawn shapes in the panels' colour, not a mask over the screen. An `.inspector` inside the screen's hosting controller reset its child's traits without end, so a narrow iPad's Identities inspector stands beside the drawer (`RootView`) ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)). |
+| `SideDrawer` | Panels under the screen that the screen slides aside to show, following the finger: the sidebar on the leading side and, with a document open, Identities on the trailing one (`DrawerPanel`), one at a time; the sliver dims and closes it on a tap. Closed, a sideways swipe anywhere on the screen opens the panel on the side it moves away from, except on what keeps its own sideways swipes (`DrawerSwipes`: content that scrolls sideways, views marked `keepsSideSwipes()`, a selection's handles); each panel's `opens` narrows that to the edge or to nothing. Open, it closes as it opened ([ADR 0115](adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)): a drag toward the panel's side anywhere over the panel, or either way from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); a drag the other way over the panel, or on what keeps its sideways swipes there, is the content's. The drag runs in UIKit: one view controller holds the panels and the screen in hosting controllers, one pan moves their layers by transform, SwiftUI hears only open or shut, and the panels stay built while closed. A drag's first frame shows nothing that has to be drawn then: the panels lie drawn under the opaque screen while closed, and the screen's rounded corners (in the panels' colour, not a mask over the screen) and its shadow, which follows their curve, are one bitmap per side drawn beforehand (`DrawerEdge`). An `.inspector` inside the screen's hosting controller reset its child's traits without end, so a narrow iPad's Identities inspector stands beside the drawer (`RootView`) ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)). |
 | `IconTile` | Settings: white symbol on a colored square. Start and document rows: tinted fill, colored symbol. |
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
@@ -159,7 +159,7 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
   following the finger from ☰ or a swipe right anywhere on the screen
   (only the left edge, 22 pt, while editing), leaving a dimmed
   72 pt sliver with `Radius.screen` corners; a tap on it, or a swipe left
-  that starts on it or at the panel's inner edge (20 pt), closes it. Reduce Motion fades. On a wide iPad it is the standing first
+  anywhere over the sidebar or the sliver, closes it. Reduce Motion fades. On a wide iPad it is the standing first
   column; on a narrow one (portrait, Slide Over, a split) it slides over as
   on iPhone (`DocumentLayout`).
 - **Layout:** search (titles and cases) at the top, no title; the Cases
@@ -315,9 +315,11 @@ that only the view model changes; views send intents
   names would read as a column of buttons in dark mode. The glyph is the
   text colour, not the category's: a category colour fails contrast as a
   glyph in light mode (yellow, mint) as it does as text (ADR 0114).
-- **Swipes:** right is Replace, a full swipe too; left shows Same as… and
-  Keep, never as a full swipe, since Keep sends the original to the AI.
-  In the drawer the rows own sideways swipes.
+- **Swipes:** left only, showing Replace, Same as… and Keep, Replace
+  outermost; no full swipe (with one, swiping a row with its actions
+  showing back to the right ran Replace, and Keep sends the original to the
+  AI). A swipe right anywhere over Identities closes the drawer; while a
+  row shows its actions, it puts them away ([ADR 0115](adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).
 - **Drag-to-merge** (`IdentitiesView+DragMerge`, `IdentityDrag`): in
   Select each row has a ≡ handle at its trailing edge, where the state
   mark is outside Select. Dragging it lifts a copy of the row that follows
@@ -398,11 +400,11 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Text outside any name | Long press; drag a handle | Selects whole words, tinted; Hide "…" and Hide as › |
 | A name whose words are fixed | Drag a handle | Moves the name's span within its paragraph or cell; Hide «…» confirms |
 | A table's cell, editing | Double tap or long press; drag a handle | Selects the word; stretches the selection inside the cell |
-| Identities row | Swipe right or left, or tap its round button | Replace (a full swipe too); Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
+| Identities row | Swipe left, or tap its round button | Replace, Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
 | Identities row, in Select | Drag ≡ onto another row | Same as: the two names become one |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
-| Anywhere on the screen (iPhone, a narrow iPad; only the left edge while editing) | Swipe right | The sidebar (with Identities open, it closes Identities); tap the sliver, or swipe left from it or the panel's inner edge, to close |
-| Anywhere on a document (iPhone, a narrow iPad; not while editing) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |
+| Anywhere on the screen (iPhone, a narrow iPad; only the left edge while editing) | Swipe right | The sidebar (with Identities open, it closes Identities); tap the sliver, or swipe left over the sidebar or the sliver, to close |
+| Anywhere on a document (iPhone, a narrow iPad; not while editing) | Swipe left | Identities; tap the sliver, or swipe right over Identities or the sliver, to close |
 
 A drawer swipe starts once the finger has moved more than 10 pt, mostly
 sideways; a vertical scroll is never taken. What scrolls sideways keeps
