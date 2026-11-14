@@ -605,8 +605,10 @@ Move, Delete); there is no ⋯ ([ADR 0114](docs/adr/0114-ios-menu-swipes-and-nam
 
 **Fix the words** (mobile): correcting a found name's span with handles in
 the text; the new wording replaces the old one everywhere and keeps the
-identity and alias. Not "edit name" or "rename", which change the alias
-([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md)).
+identity and alias; meanwhile the name shows as plain text, without its
+link or box. Not "edit name" or "rename", which change the alias
+([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md),
+[ADR 0115](docs/adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).
 
 **Edit mode** (mobile): the document screen with the keyboard, the editing
 toolbar and the text editable, entered with Edit (⌘E) and left with Done;
