@@ -27,19 +27,17 @@ extension IdentitiesView {
             .accessibilityAction(named: Text("Review this identity")) { onFocus(.identity(identity.id)) }
             .accessibilityAction(named: Text("Same as…")) { onPickSameAs(identity.id) }
             .accessibilityIdentifier("identity-row")
-        return Group {
+        // One line in and out of Select: as two branches its text would
+        // cross-fade, drawn twice and offset, as Select's ticks slid in
+        // (ADR 0116). In Select the ≡ handle takes the state mark's place:
+        // an element of its own beside the row's, for VoiceOver.
+        return HStack(spacing: Space.s) {
+            line
             if selecting {
-                // In Select the ≡ handle takes the state mark's place: an
-                // element of its own beside the row's, for VoiceOver.
-                HStack(spacing: Space.s) {
-                    line
-                    dragHandle(identity)
-                }
-                .accessibilityElement(children: .contain)
-            } else {
-                line
+                dragHandle(identity)
             }
         }
+        .accessibilityElement(children: .contain)
         .modifier(DragMergeRow(
             id: identity.id, lifted: drag?.dragged == identity.id, targeted: drag?.target == identity.id,
             tracking: dragTracking))

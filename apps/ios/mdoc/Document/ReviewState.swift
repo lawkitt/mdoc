@@ -125,6 +125,10 @@ struct ReviewState: Equatable {
     /// Cards and decisions so far in this document, which time the hints.
     private(set) var cardsSeen = 0
     private(set) var decisionsHere = 0
+    /// Changes made since the bar last opened, less those undone: Done's
+    /// "All N reviewed · Undo" shows only when this visit changed something,
+    /// so its Undo never reaches an earlier visit's decision (ADR 0116).
+    private(set) var changesThisVisit = 0
     /// The hints still to teach (`ReviewHint.teachable`), as the model last
     /// said.
     private(set) var teachable: Set<ReviewHint> = []
@@ -240,6 +244,8 @@ struct ReviewState: Equatable {
         }
         // A new card, not the same one found again after its range moved.
         if counts && id != reviewing { cardsSeen += 1 }
+        // The bar opens: a new visit.
+        if reviewing == nil { changesThisVisit = 0 }
         reviewing = id
         updateHint()
     }
@@ -315,6 +321,20 @@ struct ReviewState: Equatable {
     mutating func decided() {
         decisionsHere += 1
     }
+
+    /// The document changed (an undo step made or redone) while the bar was
+    /// open.
+    mutating func changed() {
+        changesThisVisit += 1
+    }
+
+    /// A step undone while the bar was open.
+    mutating func undid() {
+        changesThisVisit = max(changesThisVisit - 1, 0)
+    }
+
+    /// Whether this visit of the bar decided or changed something.
+    var changedThisVisit: Bool { changesThisVisit > 0 }
 
     /// After a decision: the next undecided candidate, or All reviewed.
     /// `index` is where the decided card stood before the change.

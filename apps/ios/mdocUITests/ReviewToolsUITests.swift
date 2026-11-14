@@ -87,6 +87,53 @@ final class ReviewToolsUITests: XCTestCase {
     /// Rename…: its bar takes the review bar's place with the name's words
     /// and Done, no menu shows over the selection, Cancel brings the bar
     /// back, and Done with the words as they were changes nothing.
+    /// Done on a document reviewed before closes the bar with no toast,
+    /// whose Undo would reach an earlier decision; after a change on this
+    /// visit, "All N reviewed · Undo" shows and undoes that change (ADR 0116).
+    @MainActor
+    func testDoneOnAReviewedDocumentShowsNoToast() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+
+        // Every proposal replaced, from the bottom bar.
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(primary.label.hasPrefix("Replace"), primary.label)
+        primary.tap()
+        let alias = app.links["EMAIL_1"].firstMatch
+        XCTAssertTrue(alias.waitForExistence(timeout: 10))
+        let toast = app.buttons["toast-action"]
+        if toast.exists { XCTAssertTrue(toast.waitForNonExistence(timeout: 15)) }
+
+        // A later visit: a decided card, Done; the bar closes, no toast.
+        MdocUITest.tapAboveBottomBar(alias, in: text, app)
+        let next = app.buttons["review-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertEqual(next.label, "Done")
+        next.tap()
+        let bar = app.descendants(matching: .any)["review-bar"].firstMatch
+        XCTAssertTrue(bar.waitForNonExistence(timeout: MdocUITest.timeout))
+        XCTAssertFalse(toast.waitForExistence(timeout: 2), "Done on a reviewed document shows no toast")
+
+        // This visit changes something: Done shows All reviewed, and its
+        // Undo takes back this visit's change.
+        MdocUITest.tapAboveBottomBar(app.links["EMAIL_1"].firstMatch, in: text, app)
+        let keep = app.buttons["review-keep"]
+        XCTAssertTrue(keep.waitForExistence(timeout: MdocUITest.timeout))
+        keep.tap()
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(next.waitForExistence(timeout: MdocUITest.timeout))
+        next.tap()
+        XCTAssertTrue(toast.waitForExistence(timeout: MdocUITest.timeout), "a change on this visit: All reviewed · Undo")
+        toast.tap()
+        XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+    }
+
     @MainActor
     func testFixTheWordsFromTheCard() throws {
         let app = MdocUITest.launch()

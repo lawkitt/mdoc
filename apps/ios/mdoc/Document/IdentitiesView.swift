@@ -189,6 +189,10 @@ struct IdentitiesView: View {
         .padding(.bottom, Space.xs)
         .background(Palette.background)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        // Entering or leaving Select, the header's text swaps in one frame:
+        // a cross-fade drew the title over Cancel and "Select names" over
+        // Select (ADR 0116). The list below still moves.
+        .transaction(value: selecting) { $0.animation = nil }
     }
 
     /// "Identities" with the summary under it, each on one line.

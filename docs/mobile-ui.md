@@ -235,7 +235,11 @@ that only the view model changes; views send intents
   the primary ("Done" when nothing is left).
 - **Moving on:** a decision steps to the next undecided candidate; the
   last ends review with "All N reviewed · Undo", and a line above Share
-  says "All 15 reviewed · 12 replaced · 3 kept". Candidate ids are source
+  says "All 15 reviewed · 12 replaced · 3 kept". The toast shows only when
+  this visit of the bar decided or changed something: opened on a
+  document with nothing left to decide, Done closes the bar with Next's
+  light haptic and no toast, whose Undo would reach an earlier decision
+  ([ADR 0116](adr/0116-ios-rc11-adjust-words-identities-and-done.md)). Candidate ids are source
   ranges that move, so the bar keeps its place by position
   (`ReviewOrder`).
 - **Undo:** every core step is also registered with the window's undo
@@ -325,10 +329,14 @@ that only the view model changes; views send intents
   in its colour). The filter shows with two categories or more. No close
   button and no hint line
   ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)): the sliver, a
-  swipe, 🪪 and VoiceOver's escape close the drawer. In Select, as in Mail
+  swipe, 🪪 and VoiceOver's escape close the drawer. Every way in or out
+  (🪪, the bar's count, a row, a swipe) slides with the sidebar's motion
+  (ADR 0116). In Select, as in Mail
   and Photos, the first row is Cancel | "3 selected" ("Select names" with
   none) | Select All (Deselect All once all are ticked; the folded Kept
-  names are not ticked); search stays.
+  names are not ticked); search stays. Entering and leaving Select swap
+  the header's and rows' text in one frame; only the check circles, the
+  handles and the insets move (ADR 0116).
 - **Replace N** floats over the list's bottom while names are left, a
   clear glass capsule (a bulk shortcut, not the drawer's loudest thing);
   in Select, Select's bar takes its place.
