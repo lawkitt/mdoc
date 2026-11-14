@@ -91,6 +91,27 @@ final class ReviewStateTests: XCTestCase {
         XCTAssertGreaterThan(state.decisionsHere, 0)
     }
 
+    /// Each opening of the bar is a visit: its changes, less those undone,
+    /// decide whether Done says All reviewed (ADR 0116).
+    func testAVisitCountsItsOwnChanges() throws {
+        var (_, state) = try letter()
+        state.begin()
+        XCTAssertFalse(state.changedThisVisit)
+        state.changed()
+        XCTAssertTrue(state.changedThisVisit)
+        state.undid()
+        state.undid()
+        XCTAssertFalse(state.changedThisVisit, "never below none")
+        state.changed()
+        state.end()
+        state.begin()
+        XCTAssertFalse(state.changedThisVisit, "a new visit starts with none")
+        state.changed()
+        let other = try XCTUnwrap(state.document.candidates.last)
+        state.select(other.id)
+        XCTAssertTrue(state.changedThisVisit, "stepping stays in the visit")
+    }
+
     /// Undo puts the bar back on the name it undid, out of a focus that
     /// doesn't hold it, and asks the text to scroll there. Each request is
     /// new, even for the same name, so none is lost (the dropped reveal).

@@ -185,8 +185,11 @@ extension DocumentViewModel {
     }
 
     /// "All 15 reviewed · Undo", or "3 reviewed" at the end of a focus.
+    /// When this visit of the bar changed nothing (Done on a document
+    /// reviewed before), the bar closes quietly: Next's light haptic, no
+    /// toast, whose Undo would reach an earlier decision (ADR 0116).
     private func allReviewed(_ advance: ReviewState.Advance) {
-        guard case .allReviewed(let count, let focused) = advance else { return }
+        guard case .allReviewed(let count, let focused) = advance, review.changedThisVisit else { return }
         Haptics.success()
         toast = undoToast(focused ? String(localized: "\(count) reviewed") : String(localized: "All \(count) reviewed"))
     }
@@ -209,7 +212,12 @@ extension DocumentViewModel {
         let step = snapshot.redoStep
         // In edit mode the bar stays hidden: the text shows what changed,
         // and the notice names the step (ADR 0109).
-        if !isEditing { updateReview { $0.follow(step) } }
+        if !isEditing {
+            updateReview {
+                $0.follow(step)
+                $0.undid()
+            }
+        }
         announceEditUndo(true)
         toast = nil
         UIAccessibility.post(
@@ -221,7 +229,12 @@ extension DocumentViewModel {
         guard canRedo, !reviewWaitsForJob() else { return }
         guard perform(undoable: false, { try session.redo() }) else { return }
         let step = snapshot.undoStep
-        if !isEditing { updateReview { $0.follow(step) } }
+        if !isEditing {
+            updateReview {
+                $0.follow(step)
+                $0.changed()
+            }
+        }
         toast = ToastMessage(
             text: step.map { String(localized: "Redid \($0.label)") } ?? String(localized: "Redone"),
             actionTitle: String(localized: "Undo"), action: { [weak self] in self?.undoTapped() })

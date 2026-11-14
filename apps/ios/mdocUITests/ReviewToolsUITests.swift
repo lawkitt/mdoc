@@ -87,6 +87,53 @@ final class ReviewToolsUITests: XCTestCase {
     /// Rename…: its bar takes the review bar's place with the name's words
     /// and Done, no menu shows over the selection, Cancel brings the bar
     /// back, and Done with the words as they were changes nothing.
+    /// Done on a document reviewed before closes the bar with no toast,
+    /// whose Undo would reach an earlier decision; after a change on this
+    /// visit, "All N reviewed · Undo" shows and undoes that change (ADR 0116).
+    @MainActor
+    func testDoneOnAReviewedDocumentShowsNoToast() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+
+        // Every proposal replaced, from the bottom bar.
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(primary.label.hasPrefix("Replace"), primary.label)
+        primary.tap()
+        let alias = app.links["EMAIL_1"].firstMatch
+        XCTAssertTrue(alias.waitForExistence(timeout: 10))
+        let toast = app.buttons["toast-action"]
+        if toast.exists { XCTAssertTrue(toast.waitForNonExistence(timeout: 15)) }
+
+        // A later visit: a decided card, Done; the bar closes, no toast.
+        MdocUITest.tapAboveBottomBar(alias, in: text, app)
+        let next = app.buttons["review-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertEqual(next.label, "Done")
+        next.tap()
+        let bar = app.descendants(matching: .any)["review-bar"].firstMatch
+        XCTAssertTrue(bar.waitForNonExistence(timeout: MdocUITest.timeout))
+        XCTAssertFalse(toast.waitForExistence(timeout: 2), "Done on a reviewed document shows no toast")
+
+        // This visit changes something: Done shows All reviewed, and its
+        // Undo takes back this visit's change.
+        MdocUITest.tapAboveBottomBar(app.links["EMAIL_1"].firstMatch, in: text, app)
+        let keep = app.buttons["review-keep"]
+        XCTAssertTrue(keep.waitForExistence(timeout: MdocUITest.timeout))
+        keep.tap()
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(next.waitForExistence(timeout: MdocUITest.timeout))
+        next.tap()
+        XCTAssertTrue(toast.waitForExistence(timeout: MdocUITest.timeout), "a change on this visit: All reviewed · Undo")
+        toast.tap()
+        XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+    }
+
     @MainActor
     func testFixTheWordsFromTheCard() throws {
         let app = MdocUITest.launch()
@@ -122,6 +169,49 @@ final class ReviewToolsUITests: XCTestCase {
         hide.tap()
         XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertFalse(app.buttons["toast-action"].exists, "the same words are no step")
+    }
+
+    /// Adjust Words on a name in a table cell ends on a tap away (ADR 0116):
+    /// a tap in another cell, or a long press in the text, cancels it as
+    /// Cancel does, and the review bar comes back. rc.11 left Adjust Words'
+    /// bar up with the cell's selection gone.
+    @MainActor
+    func testAdjustWordsInACellEndsOnATapAway() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo.appendingPathComponent(MdocUITest.markdownFixture).path
+        app.launch()
+        let row = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
+        XCTAssertTrue(row.waitForExistence(timeout: 120))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 30))
+        app.buttons["title-menu"].tap()
+        app.buttons["find-in-document"].tap()
+        typeInFindField(app, "Депозит")
+        let mark = app.buttons["find-hide-name"]
+        XCTAssertTrue(mark.waitForExistence(timeout: MdocUITest.timeout))
+        mark.tap()
+        let bar = app.descendants(matching: .any)["review-bar"].firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 10))
+        let done = app.buttons["fix-words-done"]
+
+        // A tap in another cell.
+        fixTheWordsFromTheAliasMenu(app)
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout), "no Adjust Words bar")
+        let other = TableEditingUITests.cell(app, "£1,725")
+        XCTAssertTrue(other.waitForExistence(timeout: MdocUITest.timeout), "the cell beside the name shows")
+        // The grid's cells read as not hittable while the bar is up.
+        other.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(done.waitForNonExistence(timeout: MdocUITest.timeout), "a tap in another cell ends Adjust Words")
+        XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout), "the review bar comes back")
+
+        // A long press in the text, outside the table.
+        fixTheWordsFromTheAliasMenu(app)
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout), "no Adjust Words bar")
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.12)).press(forDuration: 0.8)
+        XCTAssertTrue(done.waitForNonExistence(timeout: MdocUITest.timeout), "a long press in the text ends Adjust Words")
+        XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout), "the review bar comes back")
     }
 
     /// The alias chip's menu lists Rename…, Adjust Words, Same as… and New

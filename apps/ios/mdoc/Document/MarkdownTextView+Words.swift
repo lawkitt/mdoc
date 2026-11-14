@@ -222,6 +222,21 @@ extension MarkdownTextView.Coordinator {
         parent.wordsFixActions?.selected(words)
     }
 
+    /// The view holding a fixed name's words lost the focus to a touch
+    /// elsewhere, in a cell or in the text (ADR 0116): its selection no
+    /// longer shows, so Adjust Words ends as Cancel ends it. A rebuild or
+    /// the handles moving to another view resign it too: those are not
+    /// the reader's. Checked once this turn of the run loop is over, as a
+    /// resign may come inside SwiftUI's update of the view.
+    func fixHolderResigned(_ view: UITextView) {
+        guard view === fixHolder, shownFix != nil, !fixSettling, !rendering, parent.wordsFix != nil else { return }
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view, view === self.fixHolder, !view.isFirstResponder, !self.rendering,
+                  let request = self.shownFix, self.parent.wordsFix == request else { return }
+            self.parent.wordsFixActions?.cancel()
+        }
+    }
+
     /// The view and its own range that hold `range` of the text: a table
     /// cell for a name in one, else the text itself.
     private func holder(of range: NSRange, in view: CandidateTextView) -> (UITextView, NSRange)? {

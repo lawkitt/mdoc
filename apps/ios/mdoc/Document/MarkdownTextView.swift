@@ -222,6 +222,14 @@ struct MarkdownTextView: UIViewRepresentable {
         weak var handleGhost: UIView?
         var fixSettling = false
         var menuPresenter: SelectionMenuPresenter?
+        /// A name's long-press menu is closing: UIKit carries the name it
+        /// lifted back into the text and keeps its picture there until the
+        /// menu is gone. Adjust Words chosen there shows its draft then
+        /// (ADR 0116), or the alias and the words under it would be drawn
+        /// over each other.
+        var menuClosing = false
+        /// The text this coordinator styles, for work that waits on a menu.
+        weak var shownView: CandidateTextView?
         /// A `followResponder` waits for SwiftUI's update to end.
         private var responderWaits = false
         /// Whether the text last showed in edit mode; nil before it first
@@ -277,10 +285,17 @@ struct MarkdownTextView: UIViewRepresentable {
         }
 
         func attach(to view: CandidateTextView) {
+            shownView = view
             view.configureCell = { [weak self] cell in
                 cell.delegate = self
                 cell.allowsCopy = false
                 cell.tintColor = Self.selectionTint
+                cell.onResign = { [weak self, weak cell] in
+                    if let self, let cell { self.fixHolderResigned(cell) }
+                }
+            }
+            view.onResign = { [weak self, weak view] in
+                if let self, let view { self.fixHolderResigned(view) }
             }
             view.onWidth = { [weak self, weak view] width in
                 guard let self, let view else { return }
@@ -321,6 +336,12 @@ struct MarkdownTextView: UIViewRepresentable {
                 // on return, and so does a reveal.
                 if view.window?.windowScene?.activationState == .background {
                     restyleOnReturn(content, view)
+                    return
+                }
+                if menuClosing, content.fixing != self.content?.fixing {
+                    // Adjust Words from a name's menu: its draft waits
+                    // for the menu to close (`textItemMenuWillEndFor`).
+                    pending = content
                     return
                 }
                 rebuild(content, view)
@@ -687,12 +708,28 @@ struct MarkdownTextView: UIViewRepresentable {
         /// selection stays behind.
         func textView(_ textView: UITextView, textItemMenuWillEndFor textItem: UITextItem, animator: any UIContextMenuInteractionAnimating) {
             guard !textView.isEditable else { return }
+            menuClosing = true
             animator.addCompletion { [weak self, weak textView] in
+                guard let self else { return }
+                self.menuClosed()
                 // Fix the words, chosen in this menu, holds the name's
                 // words selected (ADR 0114).
-                guard let textView, !textView.isEditable, self?.parent.wordsFix == nil else { return }
+                guard let textView, !textView.isEditable, self.parent.wordsFix == nil else { return }
                 textView.selectedTextRange = nil
             }
+        }
+
+        /// The menu is gone, and with it UIKit's picture of the name, which
+        /// stays over the text until then: the text held back meanwhile
+        /// shows now, in one frame, and Adjust Words' handles follow
+        /// (ADR 0116).
+        private func menuClosed() {
+            menuClosing = false
+            guard let view = shownView, let content = pending, content != self.content,
+                  view.window?.windowScene?.activationState != .background else { return }
+            rebuild(content, view)
+            if pendingReveal != nil { view.setNeedsLayout() }
+            followWordsFix(view)
         }
 
         /// Only Hide name, and nothing while a name's words are fixed (its
@@ -798,6 +835,16 @@ final class CandidateTextView: RenderedTextView {
             key(String(localized: "Previous cell"), .shift, #selector(outdentKey)),
         ]
     }()
+
+    /// Told when the text stops being the first responder: a touch in a
+    /// table cell took the focus, and the text's selection no longer shows.
+    var onResign: (() -> Void)?
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onResign?() }
+        return resigned
+    }
 
     override var keyCommands: [UIKeyCommand]? {
         guard isEditMode, isFirstResponder else { return super.keyCommands }
