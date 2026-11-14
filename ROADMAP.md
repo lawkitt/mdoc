@@ -158,18 +158,6 @@ Features are frozen until items 13–19 land (Q4).
     ADR 0109's acceptance bars pass and the iPhone 17 Pro and 12 Pro
     checks have no open `ui` findings.
 
-25. **[Mobile] Menu, swipes and a name's words.** *From the
-    [iOS UI grill](docs/design/ios-ui-grill-2026-11-13.md)
-    ([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md)).* Slices,
-    one PR each: (A) the edit-mode crash in a large table document and the
-    jump to its end, first; (B) one document menu, the Identities header and
-    the Select demo, hints moved onto TipKit; (C) document-wide drawer swipes
-    on a UIKit pan, frame-checked on the 12 Pro; (D) the Hide name callout
-    and Fix the words with its core action; (F) the review card's title
-    wraps, quieter row glyphs. B and C in parallel after A, then D and F;
-    TestFlight rc.10 after. *Done when:* all merged and checked on the
-    iPhone 17 Pro from rc.10.
-
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
