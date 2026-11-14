@@ -48,8 +48,11 @@ Pro, and a look at it through a device probe:
   leftward over the sidebar, rightward over Identities. Vertical scrolls,
   text fields and long presses are never taken.
 - **Identities rows give up the right swipe.** A left swipe shows Replace |
-  Same as… | Keep, Replace outermost, so a full left swipe replaces (it has
-  Undo; Keep still needs a tap). Select's rows don't swipe, as before.
+  Same as… | Keep, Replace outermost, with no full swipe: with one,
+  swiping a row whose actions show back to the right ran Replace (UIKit,
+  found building slice G), and Keep sends the original to the AI. While a
+  row shows its actions, a swipe right over the panel puts them away
+  instead of closing the drawer. Select's rows don't swipe, as before.
 
 ### Fix the words, in place
 

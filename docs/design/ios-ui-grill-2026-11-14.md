@@ -147,6 +147,12 @@ install and its data stayed as they were.
     therefore waits for a later build; the curved shadow is checked by eye
     on the 17 Pro, and goes (Q4's fallback) if a drag stutters.
 
+**While building slice G (2026-11-14):** a full left swipe was dropped.
+With `allowsFullSwipe` on the trailing edge, swiping a row whose actions
+show back to the right ran Replace (UIKit, seen in the UI test's screen
+recording); without it the same swipe puts the actions away. Replace is a
+tap after the swipe. ADR 0115 says so.
+
 The tree is closed:
 [ADR 0115](../adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md),
 ROADMAP iOS item 26.
