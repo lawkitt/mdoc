@@ -1784,10 +1784,10 @@ impl Drop for DocumentView {
     }
 }
 
-/// How many times a document view rendered on this thread: tests use it to
-/// see the workspace reuse a cached frame (ADR 0117).
 #[cfg(test)]
 thread_local! {
+    /// How many times a document view rendered on this thread: tests use it
+    /// to see the workspace reuse a cached frame (ADR 0117).
     pub(crate) static RENDERS: Cell<usize> = const { Cell::new(0) };
 }
 
