@@ -52,7 +52,17 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     func followFirstLine() throws -> String? { try base.followFirstLine() }
     func undo() throws -> DocumentSnapshot { try base.undo() }
     func redo() throws -> DocumentSnapshot { try base.redo() }
-    func markSelection(_ range: SourceRange) throws -> DocumentSnapshot { try base.markSelection(range) }
+    func hideTarget(_ range: SourceRange) throws -> WordsTarget { try base.hideTarget(range) }
+    func markSelection(_ range: SourceRange, as category: mdoc.Category?) throws -> DocumentSnapshot {
+        try base.markSelection(range, as: category)
+    }
+    func fixWordsDraft(_ candidate: CandidateID) throws -> WordsDraft { try base.fixWordsDraft(candidate) }
+    func fixWordsTarget(_ candidate: CandidateID, words: SourceRange) throws -> WordsTarget {
+        try base.fixWordsTarget(candidate, words: words)
+    }
+    func fixWords(_ candidate: CandidateID, words: SourceRange) throws -> DocumentSnapshot {
+        try base.fixWords(candidate, words: words)
+    }
     func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot { try base.propose(names) }
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {
         try base.rename(candidate, scope: scope, to: alias)

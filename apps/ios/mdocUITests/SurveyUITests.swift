@@ -142,7 +142,7 @@ final class SurveyUITests: XCTestCase {
         }
         let word = text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04))
         word.press(forDuration: 1.0)
-        let replace = app.menuItems["Hide name"].firstMatch
+        let replace = app.menuItems["hide-name"].firstMatch
         XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout), "no Hide name in the edit menu")
         shot("18-selection-edit-menu")
         // Switching to dark and back closes the edit menu: open it again.

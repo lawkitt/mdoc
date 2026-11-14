@@ -409,7 +409,7 @@ private struct ReviewButtons: View {
                             .accessibilityHidden(true)
                     }
                 }
-            case .replaceThisOne, .sameAs, .changeCategory:
+            case .replaceThisOne, .sameAs, .changeCategory, .fixWords:
                 EmptyView()
             }
         }
@@ -463,7 +463,7 @@ private struct ButtonAccessibility: ViewModifier {
             content.accessibilityIdentifier("review-keep")
         case .replace, .replaceInstead:
             content.accessibilityIdentifier("review-replace")
-        case .replaceThisOne, .sameAs, .changeCategory:
+        case .replaceThisOne, .sameAs, .changeCategory, .fixWords:
             content
         }
     }

@@ -4,6 +4,7 @@ mod candidates;
 pub mod columns;
 pub mod decisions;
 mod discovery;
+pub mod fix_words;
 pub mod handoff;
 mod identities;
 mod manual;

@@ -38,6 +38,9 @@ pub enum StepKind {
     /// One edit-mode command (ADR 0109): a toolbar or formatting-keyboard
     /// button, a hardware shortcut or the link sheet.
     Formatting,
+    /// Fix the words (ADR 0114): a name's span moved, its new wording in
+    /// the old one's place everywhere it fits.
+    FixWords,
 }
 
 impl StepKind {
@@ -55,6 +58,7 @@ impl StepKind {
             Self::JoinCase => "Join case",
             Self::Typing => "Typing",
             Self::Formatting => "Formatting",
+            Self::FixWords => "Fix the words",
         }
     }
 }

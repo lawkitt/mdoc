@@ -252,6 +252,26 @@ that only the view model changes; views send intents
   eligibility (`Tips.resetDatastore()` works only before TipKit starts).
 - **Keys:** Return Replace, K Keep, ← → step, ⌘. end (Esc too where iOS
   passes it to the app), ⌘Z and ⇧⌘Z.
+- **Hide name** ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)):
+  a selection outside any name is tinted, never the ink's grey, and its
+  edit menu reads Hide "Тагиев Тебриз…" with the words the core would
+  hide (cut at about 24 characters, at a word's end) beside Hide as ›,
+  the categories with the core's guess first (a proposed wording has its
+  own category and no submenu). A word the selection reaches into counts
+  whole and the punctuation at its ends goes: the core snaps and trims
+  (`hide_target`), and the selection moves to its words. The bar opens on
+  the new mark.
+- **Fix the words** (`MarkdownTextView+Words`, `FixWordsBar`): the last row
+  of a name's long-press menu and a chip on the card. The text shows the
+  core's draft, a replaced name with its original back, and puts the
+  name's words in a selection in its category's colour, in a table cell
+  too; the handles (loupe, word snapping) stay inside the paragraph or
+  cell up to Markdown formatting or another name's alias, the reach the
+  core gives. Hide «…» shows over the words and in a bar in the review
+  bar's place, with Cancel; a tap away from the handles cancels too. The
+  new words take the old ones' place everywhere they fit, keeping the
+  identity and alias (a replaced name stays replaced), as one step:
+  "Words fixed: … · Undo".
 
 ## Identities
 
@@ -358,7 +378,9 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 |---|---|---|
 | Review card | Swipe sideways, or tap a peek | Previous or next candidate |
 | Review bar grabber, progress line, card | Drag up or down | Full or compact, following the finger; × ends review |
-| A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category) |
+| A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category, Fix the words) |
+| Text outside any name | Long press; drag a handle | Selects whole words, tinted; Hide "…" and Hide as › |
+| A name whose words are fixed | Drag a handle | Moves the name's span within its paragraph or cell; Hide «…» confirms |
 | A table's cell, editing | Double tap or long press; drag a handle | Selects the word; stretches the selection inside the cell |
 | Identities row | Swipe right or left, or tap its round button | Replace (a full swipe too); Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
 | Identities row, in Select | Drag ≡ onto another row | Same as: the two names become one |

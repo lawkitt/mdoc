@@ -204,7 +204,7 @@ struct DocumentScreen: View {
 
     private var markdownTextView: some View {
         MarkdownTextView(
-            snapshot: model.snapshot,
+            snapshot: model.shownSnapshot,
             selected: model.reviewing,
             scoped: model.scopedMentions,
             reveal: model.review.reveal,
@@ -212,6 +212,10 @@ struct DocumentScreen: View {
             serif: preferences.serif,
             onCandidate: { model.open($0) },
             onReplace: { model.markSelection($0) },
+            hideTarget: { model.hideTarget(for: $0) },
+            onHideAs: { model.markSelection($0, as: $1) },
+            wordsFix: model.wordsFix.map(WordsFixRequest.init),
+            wordsFixActions: WordsFixActions(model),
             onReviewNext: { model.reviewNext() },
             onMenu: { model.menuOpened(on: $0) },
             menu: { id in CandidateMenu.configuration(for: id, model: model) { sameAsCandidate = $0 } },
@@ -438,7 +442,10 @@ struct DocumentScreen: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        if model.isEditing {
+        if model.wordsFix != nil && !model.isEditing {
+            // Fix the words (ADR 0114): its bar in the review bar's place.
+            FixWordsBar(model: model)
+        } else if model.isEditing {
             // Edit mode: no review bar and no Find names (ADR 0109); a
             // notice (the alias hint, what Undo undid) shows above the keys.
             if let notice = model.notice {

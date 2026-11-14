@@ -419,3 +419,30 @@ pub(super) fn of(
         text_revision: document.text_revision,
     }
 }
+
+/// `snapshot` as Fix the words shows it for the mention at `range`
+/// (`review::Draft`): a replaced mention's original in place of its alias,
+/// as a proposal, and the mentions after it moved along.
+pub(super) fn draft(
+    mut snapshot: ReviewSnapshot,
+    range: &std::ops::Range<usize>,
+    draft: &super::review::words::Draft,
+) -> ReviewSnapshot {
+    let Some(alias) = draft.replaced.as_ref() else {
+        return snapshot;
+    };
+    let shift = draft.wording.len() as i64 - alias.len() as i64;
+    let at = TextRange::of(range);
+    for mention in &mut snapshot.mentions {
+        if mention.range == at {
+            mention.range = TextRange::of(&draft.wording);
+            mention.state = MentionState::Proposed;
+        } else if mention.range.start >= at.end {
+            mention.range.start = mention.range.start.saturating_add_signed(shift);
+            mention.range.end = mention.range.end.saturating_add_signed(shift);
+        }
+    }
+    snapshot.text = draft.text.clone();
+    snapshot.text_revision = super::review::text_revision(&draft.text);
+    snapshot
+}

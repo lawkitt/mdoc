@@ -126,6 +126,7 @@ struct ReviewCard: View {
                 categoryMenu
                 aliasMenu
                 scopeMenu
+                fixWordsButton
             }
         }
         .scrollIndicators(.hidden)
@@ -184,6 +185,18 @@ struct ReviewCard: View {
         }
         .accessibilityLabel(Text("Category, \(candidate.category.label)"))
         .accessibilityIdentifier(id("review-category"))
+    }
+
+    /// Fix the words (ADR 0114): handles on the name in the text.
+    private var fixWordsButton: some View {
+        Button {
+            model.beginFixWords(candidate.id)
+        } label: {
+            Chip(String(localized: "Fix the words"), systemImage: "character.cursor.ibeam")
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(Text("Puts handles on the name's words in the text."))
+        .accessibilityIdentifier(id("review-fix-words"))
     }
 
     private var ownerTitle: String {

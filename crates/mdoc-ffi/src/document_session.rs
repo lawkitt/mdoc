@@ -450,6 +450,7 @@ impl DocumentSession {
             document
                 .review
                 .add_selection(span(range), category.map(Into::into))
+                .map(|_| ())
         })
     }
 

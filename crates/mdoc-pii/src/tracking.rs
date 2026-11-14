@@ -257,6 +257,25 @@ impl Tracking {
             delta.removed_keeps.extend(removed);
         }
     }
+    /// Lift exactly these Keep decisions and nothing else, as part of the
+    /// current step: Fix the words keeps them again as the new words.
+    pub(crate) fn unkeep(&mut self, ranges: &HashSet<(usize, usize)>) {
+        if ranges.is_empty() {
+            return;
+        }
+        let mut removed = Vec::new();
+        self.exclusions.retain(|e| {
+            if ranges.contains(&(e.range.start, e.range.end)) {
+                removed.push(e.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if let Some(delta) = self.current.and_then(|id| self.journal.get_mut(&id)) {
+            delta.removed_keeps.extend(removed);
+        }
+    }
     /// Lift exactly these Keep decisions, retaining homonym assignments even
     /// when replacing/restoring their text invalidated the original assignment.
     pub(crate) fn propose_kept(&mut self, ranges: &HashSet<(usize, usize)>) -> Vec<Exclusion> {

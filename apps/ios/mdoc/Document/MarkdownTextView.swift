@@ -26,6 +26,15 @@ struct MarkdownTextView: UIViewRepresentable {
     var serif = false
     let onCandidate: (CandidateID) -> Void
     let onReplace: (SourceRange) -> Void
+    /// Hide name's callout (ADR 0114): what a selection hides and Hide
+    /// as's categories, from the core; nil leaves plain Hide name.
+    var hideTarget: (SourceRange) -> WordsTarget? = { _ in nil }
+    /// Hide "…" (nil: the core's guess) or a Hide as › category.
+    var onHideAs: (SourceRange, Category?) -> Void = { _, _ in }
+    /// Fix the words (ADR 0114): handles on a name's words in the draft
+    /// `snapshot` shows; nil otherwise.
+    var wordsFix: WordsFixRequest?
+    var wordsFixActions: WordsFixActions?
     let onReviewNext: () -> Void
     /// A candidate's long press opens its menu.
     var onMenu: (CandidateID) -> Void = { _ in }
@@ -194,6 +203,14 @@ struct MarkdownTextView: UIViewRepresentable {
         var restyleAfterComposing = false
         /// The find bar request last shown.
         var shownFindBar = 0
+        /// Fix the words as the view shows it (ADR 0114): the request
+        /// taken, the text view whose selection holds the name, a selection
+        /// set here (not by the reader), and the presenter of mdoc's own
+        /// selection menus.
+        var shownFix: WordsFixRequest?
+        weak var fixHolder: UITextView?
+        var fixSettling = false
+        var fixPresenter: SelectionMenuPresenter?
         /// A `followResponder` waits for SwiftUI's update to end.
         private var responderWaits = false
         /// Whether the text last showed in edit mode; nil before it first
@@ -248,6 +265,7 @@ struct MarkdownTextView: UIViewRepresentable {
             view.configureCell = { [weak self] cell in
                 cell.delegate = self
                 cell.allowsCopy = false
+                cell.tintColor = Self.selectionTint
             }
             view.onWidth = { [weak self, weak view] width in
                 guard let self, let view else { return }
@@ -297,6 +315,16 @@ struct MarkdownTextView: UIViewRepresentable {
                 }
             }
             if pendingReveal != nil { view.setNeedsLayout() }
+            // Outside edit mode a selection is tinted, not the ink's grey
+            // (ADR 0114); the caret keeps the ink while editing.
+            if fixHolder !== view { view.tintColor = parent.editing ? nil : Self.selectionTint }
+            if parent.wordsFix != shownFix {
+                // After this update: the draft's text is shown by then.
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self, let view else { return }
+                    self.followWordsFix(view)
+                }
+            }
             if inViewUpdate {
                 // Noted now: by the time the update has ended the Original
                 // may cover the text, and the keyboard is gone with it.
@@ -372,6 +400,7 @@ struct MarkdownTextView: UIViewRepresentable {
                     guard let self, let view, let content = self.pending, content != self.content else { return }
                     self.rebuild(content, view)
                     if self.pendingReveal != nil { view.setNeedsLayout() }
+                    self.followWordsFix(view)
                 }
             }
         }
@@ -576,7 +605,9 @@ struct MarkdownTextView: UIViewRepresentable {
         }
 
         func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
-            guard !textView.isEditable, case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) else {
+            // While a name's words are fixed, a tap ends the selection.
+            guard !textView.isEditable, parent.wordsFix == nil, case .link(let url) = textItem.content,
+                  let id = MarkdownStyler.candidateID(from: url) else {
                 return nil
             }
             return UIAction { [weak self] _ in
@@ -586,7 +617,8 @@ struct MarkdownTextView: UIViewRepresentable {
 
         func textView(_ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu) -> UITextItem.MenuConfiguration? {
             // A candidate's tap opens the bar; its long press, its menu.
-            if !textView.isEditable, case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) {
+            if !textView.isEditable, parent.wordsFix == nil, case .link(let url) = textItem.content,
+               let id = MarkdownStyler.candidateID(from: url) {
                 parent.onMenu(id)
                 return parent.menu(id)
             }
@@ -598,15 +630,17 @@ struct MarkdownTextView: UIViewRepresentable {
         /// selection stays behind.
         func textView(_ textView: UITextView, textItemMenuWillEndFor textItem: UITextItem, animator: any UIContextMenuInteractionAnimating) {
             guard !textView.isEditable else { return }
-            animator.addCompletion { [weak textView] in
-                guard let textView, !textView.isEditable else { return }
+            animator.addCompletion { [weak self, weak textView] in
+                // Fix the words, chosen in this menu, holds the name's
+                // words selected (ADR 0114).
+                guard let textView, !textView.isEditable, self?.parent.wordsFix == nil else { return }
                 textView.selectedTextRange = nil
             }
         }
 
-        /// Only Replace…: text leaves mdoc through Copy for AI and Share,
-        /// never a plain Copy, Share, Look Up or Translate of the selection
-        /// (ADR 0085's export invariant).
+        /// Only Hide name, or Fix the words' Hide «…»: text leaves mdoc
+        /// through Copy for AI and Share, never a plain Copy, Share, Look Up
+        /// or Translate of the selection (ADR 0085's export invariant).
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             // Edit mode: Cut, Copy, Paste and Select All only (ADR 0109).
             if textView.isEditable { return CandidateTextView.editMenu(from: suggestedActions) }
@@ -621,11 +655,8 @@ struct MarkdownTextView: UIViewRepresentable {
             // A table cell's selection, in document offsets.
             let base = (textView as? CellTextView)?.location ?? 0
             let source = offsets.sourceRange(NSRange(location: base + range.location, length: range.length))
-            let replace = UIAction(title: String(localized: "Hide name"), image: UIImage(systemName: "eye.slash")) { [weak self, weak textView] _ in
-                textView?.selectedRange = NSRange(location: range.location, length: 0)
-                self?.parent.onReplace(source)
-            }
-            return UIMenu(children: [replace])
+            if shownFix != nil, textView === fixHolder { return fixMenu(for: source) }
+            return hideMenu(for: source, in: textView, at: range)
         }
     }
 }

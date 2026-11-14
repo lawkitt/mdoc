@@ -33,6 +33,15 @@ pub enum ReviewAction {
         range: TextRange,
         category: Option<Category>,
     },
+    /// Fix the words (ADR 0114): the mention takes `words`, a range of its
+    /// draft (`DocumentSession::fix_words_draft`, where a replaced mention
+    /// shows its original); the new wording replaces the old one
+    /// everywhere it fits, keeping the identity and its alias, or joins the
+    /// identity whose wording it is already. One undo step.
+    FixWords {
+        mention: u64,
+        words: TextRange,
+    },
     /// Selected text marked, then every mention of it replaced.
     ReplaceSelection {
         range: TextRange,
@@ -111,6 +120,31 @@ pub struct SessionInfo {
     pub origin: super::DocumentOrigin,
 }
 
+/// What Hide name's callout or Fix the words' Hide «…» would hide: the
+/// selection snapped to whole words and trimmed (ADR 0114).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct WordsTarget {
+    pub range: TextRange,
+    pub wording: String,
+    /// Hide as ›: a proposed wording's own category alone, else the core's
+    /// guess first, then the others in picker order. Empty for Fix the
+    /// words, which keeps the name's identity.
+    pub categories: Vec<Category>,
+}
+
+/// What Fix the words shows while a name's words are fixed (ADR 0114).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct FixWordsDraft {
+    /// The review as it shows meanwhile: a replaced name has its original
+    /// back in place of its alias, as a proposal; ranges index its text.
+    pub snapshot: ReviewSnapshot,
+    /// The name's words in `snapshot.text`: the handles start here.
+    pub wording: TextRange,
+    /// How far the handles reach: the paragraph or cell, up to Markdown
+    /// formatting or another name's alias.
+    pub bounds: TextRange,
+}
+
 /// Every occurrence of `wording` in `text` as UTF-8 byte ranges, left to
 /// right without overlaps; NFC and NFD spellings match each other
 /// (`mdoc_pii::view::occurrences`).
@@ -166,6 +200,54 @@ impl DocumentSession {
         Ok(hand_off)
     }
 
+    /// Hide name's callout for a selection outside any name: what it
+    /// hides and the categories Hide as offers. Refused with the reason
+    /// (nothing to hide, a cut through a name, Markdown formatting).
+    pub fn hide_target(&self, range: TextRange) -> Result<WordsTarget, ReviewError> {
+        let guard = self.lock_document();
+        let document = guard.as_ref().ok_or_else(no_document)?;
+        let (range, categories) = document.review.hide_target(span(range))?;
+        Ok(WordsTarget {
+            wording: document.review.text[range.clone()].to_owned(),
+            range: TextRange::of(&range),
+            categories: categories.into_iter().map(Into::into).collect(),
+        })
+    }
+
+    /// Fix the words begins on `mention`: the review as it shows while its
+    /// words are fixed, where the handles start and how far they reach.
+    pub fn fix_words_draft(&self, mention: u64) -> Result<FixWordsDraft, ReviewError> {
+        let mut guard = self.lock_document();
+        let document = guard.as_mut().ok_or_else(no_document)?;
+        let range = document.mention(mention)?;
+        let draft = document.review.draft(&range)?;
+        let bounds = super::review::ReviewText::words_bounds(&draft);
+        let snapshot = super::snapshot::draft(document.snapshot(), &range, &draft);
+        Ok(FixWordsDraft {
+            snapshot,
+            wording: TextRange::of(&draft.wording),
+            bounds: TextRange::of(&bounds),
+        })
+    }
+
+    /// Fix the words' Hide «…» for `words` of `mention`'s draft: the words
+    /// it would take, or why it can't.
+    pub fn fix_words_target(
+        &self,
+        mention: u64,
+        words: TextRange,
+    ) -> Result<WordsTarget, ReviewError> {
+        let mut guard = self.lock_document();
+        let document = guard.as_mut().ok_or_else(no_document)?;
+        let range = document.mention(mention)?;
+        let (draft, target) = document.review.words_target(&range, span(words))?;
+        Ok(WordsTarget {
+            wording: draft.text[target.clone()].to_owned(),
+            range: TextRange::of(&target),
+            categories: Vec::new(),
+        })
+    }
+
     /// The title, file, case and phase; `None` before a document is read.
     pub fn info(&self) -> Option<SessionInfo> {
         let guard = self.lock_document();
@@ -217,10 +299,14 @@ impl Document {
                 self.review
                     .add_selection(span(range), category.map(Into::into))?;
             }
+            A::FixWords { mention, words } => {
+                let range = self.mention(mention)?;
+                self.review.fix_words(range, span(words))?;
+            }
             A::ReplaceSelection { range, category } => {
-                let selection = span(range);
-                self.review
-                    .add_selection(selection.clone(), Some(category.into()))?;
+                let selection = self
+                    .review
+                    .add_selection(span(range), Some(category.into()))?;
                 let covering = self
                     .review
                     .mention_ranges()
@@ -550,6 +636,45 @@ mod tests {
         assert!(renamed.identities.iter().any(|i| i.alias == "CLIENT"));
         // Its own alias again is no refusal.
         session.review(rename("CLIENT"), None).unwrap();
+    }
+
+    /// Fix the words on a replaced name: the draft shows its original as a
+    /// proposal, the handles' reach stops at the line's end, and the action
+    /// keeps it replaced under its alias, as one step the toast names.
+    #[test]
+    fn fix_the_words_runs_from_the_draft() {
+        let text = "Mr Ann Lee signed.\nMr Ann Lee paid.";
+        let (session, start) = session(text, &["Mr Ann Lee"]);
+        let replaced = session.review(ReviewAction::ReplaceAll, None).unwrap();
+        assert_eq!(replaced.text, "PERSON_1 signed.\nPERSON_1 paid.");
+        let mention = id(&replaced, "Mr Ann Lee", 0);
+        assert_eq!(mention, id(&start, "Mr Ann Lee", 0));
+        let draft = session.fix_words_draft(mention).unwrap();
+        assert_eq!(draft.snapshot.text, "Mr Ann Lee signed.\nPERSON_1 paid.");
+        assert_ne!(draft.snapshot.text_revision, replaced.text_revision);
+        let shown = &draft.snapshot.mentions;
+        assert_eq!(
+            (shown[0].range, shown[0].state),
+            (draft.wording, MentionState::Proposed)
+        );
+        assert_eq!(shown[1].range, TextRange { start: 19, end: 27 });
+        assert_eq!(draft.bounds, TextRange { start: 0, end: 18 });
+        // Hide «…» names the words the handles hold, trimmed.
+        let words = TextRange { start: 2, end: 17 };
+        let target = session.fix_words_target(mention, words).unwrap();
+        assert_eq!(target.wording, "Ann Lee signed");
+        let words = TextRange { start: 3, end: 10 };
+        let fixed = session
+            .review(ReviewAction::FixWords { mention, words }, None)
+            .unwrap();
+        assert_eq!(fixed.text, "Mr PERSON_1 signed.\nMr PERSON_1 paid.");
+        let step = fixed.undo_step.unwrap();
+        assert_eq!(step.label, "Fix the words · Ann Lee");
+        assert_eq!(step.range, Some(TextRange { start: 3, end: 11 }));
+        assert_eq!(fixed.identities.len(), 1);
+        assert_eq!(fixed.identities[0].originals, ["Ann Lee"]);
+        let undone = session.review(ReviewAction::Undo, None).unwrap();
+        assert_eq!(undone.text, replaced.text);
     }
 
     /// Copy for AI refuses while proposals are pending; then it is the
