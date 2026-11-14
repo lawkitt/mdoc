@@ -105,10 +105,11 @@ final class IdentitiesGesturesUITests: XCTestCase {
 
     /// Both drawers close from the sliver, the panel's inner edge and, toward
     /// their side, anywhere over the panel (ADR 0115); a swipe the other way
-    /// over the panel leaves them open. With Identities open, a swipe right
-    /// from the screen's left edge closes Identities and shows the document;
-    /// it never opens the sidebar, whose edge lay under Identities' sliver
-    /// (its own test until ADR 0112's sweep, which saved the launch).
+    /// over the panel, or in its search field, leaves them open. With
+    /// Identities open, a swipe right from the screen's left edge closes
+    /// Identities and shows the document; it never opens the sidebar, whose
+    /// edge lay under Identities' sliver (its own test until ADR 0112's
+    /// sweep, which saved the launch).
     /// Whether `element` stops moving: its frame the same 0.2 s apart.
     @MainActor
     private func settles(_ element: XCUIElement) -> Bool {
@@ -174,6 +175,11 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
         openSidebar()
         let inner = sidebar.frame.maxX
+        // A drag in the search field is the field's: the sidebar stays.
+        let search = app.descendants(matching: .any)["sidebar-search"].firstMatch
+        XCTAssertTrue(search.waitUntilHittable(timeout: MdocUITest.timeout))
+        drag(app, fromX: min(search.frame.maxX - 20, inner - 30), y: search.frame.midY, by: -150)
+        XCTAssertFalse(sidebar.waitForNonExistence(timeout: 2), "a drag left in the search field leaves it open")
         drag(app, fromX: inner - 200, by: 150)
         XCTAssertFalse(sidebar.waitForNonExistence(timeout: 2), "a drag right over the sidebar leaves it open")
         drag(app, fromX: inner - 120, by: -200)

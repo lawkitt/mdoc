@@ -626,7 +626,8 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         let point = touch.location(in: view)
         if let openSide {
             // From the sliver or the inner edge either way; over the panel
-            // only to close it, and never on what keeps its sideways swipes.
+            // only to close it, and never on what keeps its sideways swipes
+            // or takes typing (the search fields).
             overPanel = !DrawerDrag.movesOpenDrawer(
                 startingAt: point.x, width: view.bounds.width, panelWidth: panelWidth, panelOnLeft: onLeft(openSide))
             // While a row shows its swipe actions, a swipe over the panel
@@ -634,6 +635,7 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
             let host = panel(openSide).host.view!
             let keeps = overPanel
                 && (DrawerSwipes.showsSwipeActions(in: host)
+                    || DrawerSwipes.isTextInput(at: point, in: view)
                     || DrawerSwipes.keepsSideSwipes(at: point, in: view, within: host))
             candidates = keeps ? [] : [openSide]
             fromEdge = false
@@ -858,6 +860,19 @@ final class DrawerPan: UIPanGestureRecognizer {
 enum DrawerSwipes {
     /// How near a selection's end a touch is on its handle.
     static let handleReach: CGFloat = 24
+
+    /// Whether what lies at `point` in `container` takes typing: a text
+    /// field (the panels' search) or an editable text view. A swipe there
+    /// moves its caret or selection, and closing the panel would clear it.
+    static func isTextInput(at point: CGPoint, in container: UIView) -> Bool {
+        var view = container.hitTest(point, with: nil)
+        while let current = view, current !== container {
+            if current is UITextField { return true }
+            if let text = current as? UITextView, text.isEditable { return true }
+            view = current.superview
+        }
+        return false
+    }
 
     /// Whether a list row in `view` shows its swipe actions: UIKit's
     /// (private) pull view or its buttons, laid out and visible. Waiting for the list's
