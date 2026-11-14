@@ -400,6 +400,7 @@ struct MarkdownTextView: UIViewRepresentable {
                     guard let self, let view, let content = self.pending, content != self.content else { return }
                     self.rebuild(content, view)
                     if self.pendingReveal != nil { view.setNeedsLayout() }
+                    self.followWordsFix(view)
                 }
             }
         }

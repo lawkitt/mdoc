@@ -40,7 +40,7 @@ extension DocumentViewModel {
     // MARK: Fix the words
 
     /// What the text shows: the draft while a name's words are fixed.
-    var shownSnapshot: DocumentSnapshot { wordsFix?.draft.snapshot ?? snapshot }
+    var shownSnapshot: DocumentSnapshot { isEditing ? snapshot : wordsFix?.draft.snapshot ?? snapshot }
 
     /// Fix the words on `id`, from its menu or the card: the text shows its
     /// draft (a replaced name's original back) with handles on its words.

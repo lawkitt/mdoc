@@ -44,8 +44,8 @@ final class NameWordsTests: XCTestCase {
         XCTAssertNil(model.hideTarget(for: try range(of: "**", in: text)))
     }
 
-    /// A selection to the line's end takes its newline; the name is the
-    /// words.
+    /// A selection's spaces, its line end and its punctuation go: the name
+    /// is the words.
     func testAMarkedSelectionLosesItsLineEndAndPunctuation() throws {
         let model = try model()
         let text = model.snapshot.markdown
@@ -77,8 +77,7 @@ final class NameWordsTests: XCTestCase {
         let alias = maya.alias
         let repeats = model.snapshot.candidates.filter { $0.original == "Maya Ellison" }.count
         XCTAssertGreaterThan(repeats, 1)
-        model.select(maya.id)
-        model.perform(.fixWords)
+        model.beginFixWords(maya.id)
         let fix = try XCTUnwrap(model.wordsFix)
         let draft = fix.draft.snapshot.markdown
         XCTAssertEqual(draft, model.snapshot.markdown, "a proposal's draft is the text")
@@ -120,7 +119,8 @@ final class NameWordsTests: XCTestCase {
         model.fixSelectionChanged(wider)
         model.confirmFixWords()
         XCTAssertTrue(model.snapshot.markdown.contains("your \(replaced.alias) on"))
-        XCTAssertEqual(model.shownSnapshot, model.snapshot)
+        XCTAssertFalse(model.snapshot.markdown.contains("colleague"), "the new words are replaced")
+        XCTAssertNil(model.wordsFix)
     }
 
     /// Cancel, or the same words, leave the document as it was.
@@ -142,6 +142,20 @@ final class NameWordsTests: XCTestCase {
         let space = SourceRange(start: name.range.end, end: name.range.end + 1)
         model.fixSelectionChanged(space)
         guard case .failure = model.wordsFix?.target else { return XCTFail("a space can't be hidden") }
+    }
+
+    /// Edit mode ends Fix the words: the text edited is the core's, not a
+    /// replaced name's draft.
+    func testEditModeEndsFixTheWords() throws {
+        let model = try model()
+        let name = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Priya Nandakumar" })
+        model.decide(name.id, .replace, scope: .all)
+        let replaced = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Priya Nandakumar" })
+        model.beginFixWords(replaced.id)
+        XCTAssertNotEqual(model.shownSnapshot.markdown, model.snapshot.markdown)
+        model.enterEditMode()
+        XCTAssertNil(model.wordsFix)
+        XCTAssertEqual(model.shownSnapshot.markdown, model.snapshot.markdown)
     }
 
     /// Fix the words is in every name's long-press menu, last, and the

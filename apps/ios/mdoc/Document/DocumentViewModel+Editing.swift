@@ -60,6 +60,8 @@ extension DocumentViewModel {
             say(reason, symbol: "hourglass")
             return
         }
+        // The text edited is the core's, never Fix the words' draft.
+        cancelFixWords()
         if isReviewing { endReview() }
         toast = nil
         typing = TypingState(revision: snapshot.textRevision)

@@ -545,9 +545,10 @@ final class DocumentViewModel {
     }
 
     func applyReview(_ new: DocumentSnapshot) {
+        // The draft was of the text before this change; a snapshot of the
+        // same text and history (discovery, a job's tick) keeps it.
+        if new.textRevision != snapshot.textRevision || new.undoStep != snapshot.undoStep { wordsFix = nil }
         snapshot = new
-        // The draft was of the text before this change.
-        wordsFix = nil
         // The snapshot is the core's latest: typing's own answers are older.
         typing.settled(at: new)
         var state = review

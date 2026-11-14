@@ -153,6 +153,10 @@ impl WordsChange {
     pub fn fits(&self, source: &str, range: &Range<usize>) -> bool {
         let head = (-self.left).max(0) as usize;
         let tail = self.right.max(0) as usize;
+        if head > self.new.len() || tail > self.new.len() {
+            // Words beside the old wording, not over it: no place to fit.
+            return false;
+        }
         if head > 0 {
             let Some(start) = range.start.checked_sub(head) else {
                 return false;
@@ -167,7 +171,11 @@ impl WordsChange {
         }
         if tail > 0 {
             let end = range.end + tail;
-            let words = self.new.get(self.new.len() - tail..);
+            let words = self
+                .new
+                .len()
+                .checked_sub(tail)
+                .and_then(|from| self.new.get(from..));
             if words.is_none() || source.get(range.end..end) != words {
                 return false;
             }
@@ -401,5 +409,13 @@ mod tests {
             right: 0,
         };
         assert!(narrowed.fits("PERSON_1", &(0..8)));
+        // Words beside the old wording never fit, and never underflow.
+        let beside = WordsChange {
+            old: "Ann".into(),
+            new: "Lee".into(),
+            left: 4,
+            right: 4,
+        };
+        assert!(!beside.fits("Ann Lee.", &(0..3)));
     }
 }

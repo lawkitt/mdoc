@@ -109,6 +109,17 @@ impl ReviewText {
         }
         let target = fix_words::words_target(&draft.text, words, &draft.blocked)
             .map_err(CoreError::review)?;
+        // The words stay the name's: some of it, within the reach of its
+        // handles (ADR 0114).
+        if target.start >= draft.wording.end || draft.wording.start >= target.end {
+            return Err(CoreError::review("Keep some of the name's words."));
+        }
+        let bounds = Self::words_bounds(&draft);
+        if target.start < bounds.start || target.end > bounds.end {
+            return Err(CoreError::review(
+                "Stay in the name's paragraph or cell, outside formatting.",
+            ));
+        }
         Ok((draft, target))
     }
 
@@ -164,19 +175,27 @@ impl ReviewText {
                 focus = moved(focus, &source_edits(&edits));
             }
             let source = document.text.clone();
-            document
+            let variant = document
                 .checkpoint(|review| {
                     review.fix_words(&source, &change, identity, category, reach.everywhere)
                 })?
                 .map_err(CoreError::review)?;
+            // The identity the new words joined: the name's own, or the one
+            // whose wording they are already.
+            let joined = document.review.variant_identity(variant);
             let mut focus = change.range_at(&focus);
-            // Replaced again, each under the identity it had.
+            // Replaced again, each under the identity it had, or the one the
+            // name's identity joined.
             if !restored.is_empty() {
                 let assigned: HashMap<(usize, usize), u64> = restored
                     .iter()
                     .map(|(r, owner)| {
                         let words = change.range_at(r);
-                        ((words.start, words.end), *owner)
+                        let owner = match joined {
+                            Some(joined) if Some(*owner) == identity => joined,
+                            _ => *owner,
+                        };
+                        ((words.start, words.end), owner)
                     })
                     .collect();
                 let plans: Vec<_> = document
@@ -480,6 +499,48 @@ mod tests {
             mentions(&document),
             pairs(&[("Acme Ltd", "ORG_1"), ("The Acme Ltd board", "ORG_2")])
         );
+    }
+
+    #[test]
+    fn replaced_words_that_join_another_identity_take_its_alias() {
+        let text = "Acme Ltd sued. The Acme Ltd board met.";
+        let mut document = document(
+            text,
+            &[
+                (at(text, "Acme Ltd", 0), Category::Organization),
+                (at(text, "The Acme Ltd board", 0), Category::Organization),
+            ],
+        );
+        document.replace_all().unwrap();
+        assert_eq!(document.text, "ORG_1 sued. ORG_2 met.");
+        let alias = at(&document.text.clone(), "ORG_2", 0);
+        let draft = document.draft(&alias).unwrap();
+        let words = at(&draft.text, "Acme Ltd", 0);
+        document.fix_words(alias, words).unwrap();
+        assert_eq!(document.text, "ORG_1 sued. The ORG_1 board met.");
+        assert!(document.undo());
+        assert_eq!(document.text, "ORG_1 sued. ORG_2 met.");
+    }
+
+    #[test]
+    fn the_words_stay_the_names_and_within_its_reach() {
+        let text = "Ann Lee signed.\n\nBob Hart paid.";
+        let mut document = document(text, &[(at(text, "Ann Lee", 0), Category::Person)]);
+        let name = at(text, "Ann Lee", 0);
+        // Beside the name, or in another paragraph: refused, no step.
+        assert!(
+            document
+                .fix_words(name.clone(), at(text, "signed", 0))
+                .is_err()
+        );
+        assert!(
+            document
+                .fix_words(name.clone(), at(text, "Bob Hart", 0))
+                .is_err()
+        );
+        assert!(!document.can_undo());
+        document.fix_words(name, at(text, "Lee", 0)).unwrap();
+        assert!(document.can_undo());
     }
 
     #[test]

@@ -113,7 +113,10 @@ final class ReviewToolsUITests: XCTestCase {
         app.buttons["fix-words-cancel"].tap()
         XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout), "Cancel brings the bar back")
 
-        fix.tap()
+        let again = app.buttons["review-fix-words"]
+        XCTAssertTrue(again.waitForExistence(timeout: MdocUITest.timeout))
+        if !again.isHittable { app.buttons["review-alias"].swipeLeft() }
+        again.tap()
         XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
         hide.tap()
         XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout))

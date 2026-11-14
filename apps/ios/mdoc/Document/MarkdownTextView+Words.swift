@@ -121,9 +121,9 @@ extension MarkdownTextView.Coordinator {
         }
         // The draft's text must show first: its offsets map the request.
         guard pending == nil, content?.textRevision == parent.snapshot.textRevision else { return }
-        shownFix = request
         let range = offsets.nsRange(request.wording)
         guard let (holder, local) = holder(of: range, in: view) else { return }
+        shownFix = request
         fixSettling = true
         holder.tintColor = request.category?.uiColor ?? Self.selectionTint
         holder.becomeFirstResponder()
@@ -136,7 +136,10 @@ extension MarkdownTextView.Coordinator {
     /// The selection of a name being fixed changed: kept inside the
     /// bounds, reported to the model, and gone means Cancel.
     func fixSelectionChanged(_ textView: UITextView) {
-        guard let request = shownFix, !fixSettling, textView === fixHolder else { return }
+        // A rebuild (rotation, text size, appearance) resets the selection
+        // on its own; only the reader's change counts.
+        guard let request = shownFix, !fixSettling, !rendering, parent.wordsFix != nil,
+              textView === fixHolder else { return }
         let base = (textView as? CellTextView)?.location ?? 0
         let selected = textView.selectedRange
         guard textView.selectedTextRange != nil, selected.length > 0 else {
