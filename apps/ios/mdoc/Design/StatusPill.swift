@@ -19,11 +19,15 @@ struct StatusPill: View {
     var text: Text
     var systemImage: String
     var kind: Kind
+    /// What VoiceOver reads in place of the words, when they are short
+    /// ("73 left" → "73 names left to review").
+    var spoken: String?
 
-    init(_ text: Text, systemImage: String, kind: Kind) {
+    init(_ text: Text, systemImage: String, kind: Kind, spoken: String? = nil) {
         self.text = text
         self.systemImage = systemImage
         self.kind = kind
+        self.spoken = spoken
     }
 
     init(_ text: String, systemImage: String, kind: Kind) {
@@ -39,6 +43,9 @@ struct StatusPill: View {
         }
         .font(Typography.caption.weight(kind == .toReview ? .semibold : .regular))
         .foregroundStyle(kind.color)
+        // One element: the words, never the symbol's own name.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken.map { Text($0) } ?? text)
     }
 }
 

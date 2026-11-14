@@ -202,6 +202,29 @@ final class RenderedMarkdownTests: XCTestCase {
         XCTAssertEqual(table.anchor, ns.range(of: "| Name").location)
     }
 
+    /// A header row whose cells are all empty, as a converted contract's
+    /// table often has, isn't drawn (ADR 0115): its height is 0 and the
+    /// grid's height is the body's. The text keeps the row, so Copy for AI
+    /// is unchanged; in edit mode it shows, to be typed into.
+    func testAnEmptyHeaderRowIsNotDrawn() throws {
+        let text = "|  |   |\n| --- | --- |\n| Maya Bennett | Tenant |\n| Leo Park | Landlord |"
+        let document = render(text)
+        XCTAssertEqual(document.text.string, text)
+        let table = try XCTUnwrap(document.tables.first)
+        XCTAssertEqual(table.rows.count, 3, "the row stays in the grid")
+        XCTAssertEqual(table.heights[0], 0)
+        XCTAssertGreaterThan(table.heights[1], 0)
+        XCTAssertEqual(table.height, table.heights[1] + table.heights[2], accuracy: 0.5)
+
+        var editing = MarkdownStyler(traits: traits, selected: nil, width: 360)
+        editing.editing = true
+        let edited = try XCTUnwrap(editing.document(markdown: text, styling: .init(markdown: text), candidates: []).tables.first)
+        XCTAssertGreaterThan(edited.heights[0], 0, "edit mode shows the row")
+
+        let named = try XCTUnwrap(render("| Name |  |\n| --- | --- |\n| Maya | Tenant |").tables.first)
+        XCTAssertGreaterThan(named.heights[0], 0, "one header cell with words keeps the row")
+    }
+
     /// Long bilingual cells wrap in columns no narrower than the minimum, so
     /// a three-column contract scrolls sideways on a phone.
     func testLongCellsWrapAndTheTableScrolls() throws {

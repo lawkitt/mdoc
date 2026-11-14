@@ -172,3 +172,43 @@ extension MdocUITest {
             width: CGFloat(box.maxX - box.minX + 1) / first.scale, height: CGFloat(box.maxY - box.minY + 1) / first.scale)
     }
 }
+
+extension MdocUITest {
+    /// Find in document, then Hide name on its first match; the review bar
+    /// that opens on it is ended.
+    @MainActor
+    static func hideFromFind(_ word: String, _ app: XCUIApplication) {
+        app.buttons["title-menu"].tap()
+        let find = app.buttons["find-in-document"]
+        XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
+        find.tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))
+        // The Simulator drops a keystroke now and then while matches load:
+        // type again until the field holds the whole word.
+        let typed = NSPredicate(format: "value == %@", word)
+        for _ in 0..<3 where !field.wait(until: typed, timeout: 0.5) {
+            let current = (field.value as? String) ?? ""
+            let placeholder = field.placeholderValue ?? ""
+            let length = current == placeholder ? 0 : current.count
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: length) + word)
+        }
+        XCTAssertEqual(field.value as? String, word)
+        let hide = app.buttons["find-hide-name"]
+        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
+        hide.tap()
+        let end = app.buttons["review-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 10))
+        end.tap()
+    }
+
+    /// Closes the Identities drawer by its sliver; on iPad, where the list
+    /// stands beside the text, nothing.
+    @MainActor
+    static func closeIdentities(_ app: XCUIApplication) {
+        let close = app.buttons["Close Identities"].firstMatch
+        if close.exists { close.tap() }
+        _ = close.waitForNonExistence(timeout: 5)
+    }
+}

@@ -12,6 +12,25 @@ extension DocumentViewModel {
         return (identities.count, identities.filter { $0.state == .proposed }.count)
     }
 
+    /// Why Copy for AI and Share wait, shown under them in the document's
+    /// menu (ADR 0115): "32 names left to decide", or names not found yet.
+    /// Nil once the document is ready.
+    var handOffBlockedReason: String? {
+        switch snapshot.phase {
+        case .ready?:
+            return nil
+        case .reviewing?:
+            let left = identityCounts.toReview
+            if left == 1 { return String(localized: "1 name left to decide") }
+            if left > 1 { return String(localized: "\(left) names left to decide") }
+            return String(localized: "Some names are left to decide")
+        case .unscanned?:
+            return String(localized: "Find names first")
+        default:
+            return String(localized: "The document isn't ready yet")
+        }
+    }
+
     /// Merge hints whose two identities are both still there: the Looks
     /// like cards.
     var identityHints: [(hint: LinkHint, from: Identity, into: Identity)] {

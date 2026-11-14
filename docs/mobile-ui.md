@@ -108,6 +108,9 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 - **The name under review** keeps its category's fill and gets an ink
   outline, black in light mode and white in dark mode (`mdocOutline`, drawn
   by `MarkdownLayoutFragment`, in table cells too).
+- **Tables:** a header row whose cells are all empty, as a converted
+  document's table often has, isn't drawn outside edit mode (its height is
+  0); the text keeps the row, so Copy for AI is unchanged (ADR 0115).
 - **Lists** (`BlockLayout`, drawn by `MarkdownLayoutFragment`): bullets,
   numbers and task boxes start at the paragraph's left edge; their text
   starts one column in, 24 pt at the 17 pt body and scaled with the text,
@@ -129,7 +132,8 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   on one line, then `StatusPill`, the time and the `CaseTag`. Search from 8
   documents, a case filter from 2 cases, Scan and + in the bottom bar.
 - **Start:** the main area with nothing open: the setup card, Continue
-  (the newest document with names to review), the Scan, Files and Paste
+  (the newest document with names to review; its "73 left" reads "73
+  names left to review" to VoiceOver, ADR 0115), the Scan, Files and Paste
   tiles, and Try a sample while there are no documents.
 - **Cases:** each case with its colour, document count and how many wait
   for review; a tap shows its documents.
@@ -139,7 +143,9 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   in groups: Find in document, Find names again | Show Markdown (a
   toggle) | Copy for AI, Share | Rename…, Move to case › | Delete. Share
   and Copy for AI are there too because the review bar takes the action
-  bar's place while reviewing. With more
+  bar's place while reviewing. They are always listed: until the document
+  is ready they are off, with the reason under the title ("32 names left
+  to decide"), as Find names again shows its own (ADR 0115). With more
   than one pane a segmented row is pinned under the bar: Text, Original
   and Reply at the content's width on iPhone; on iPad the right column's
   choices at their natural width, centred. It stays in edit mode. On
@@ -290,17 +296,29 @@ that only the view model changes; views send intents
 - **Where:** iPhone, a drawer from a swipe left or 🪪 (`SideDrawer`,
   trailing); a wide iPad, the standing right column. A tap on a name opens
   the review bar's full view on it.
-- **Top:** progress ring, "Identities", "9 names · 4 left", the search
-  circle and "Select" with ☑︎ in a glass capsule; then Replace N, full
-  width in clear glass (a bulk shortcut, not the drawer's loudest thing).
-  No close button and no hint line
+- **Top**, two rows pinned above the list on the panel's background
+  ([ADR 0115](adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)):
+  "Identities" with the summary on one line under it ("8 of 12 decided";
+  once none is left "12 names · all decided ✓"; no ring), and "Select"
+  with ☑︎ in a glass capsule alone at the right; then the search field,
+  always shown (names, wordings, aliases; ⓧ clears it), and one filter
+  capsule, "Show", whose menu lists All and each category with its icon
+  and count ("Person 5"), its label the filter now (the category's icon
+  in its colour). The filter shows with two categories or more. No close
+  button and no hint line
   ([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)): the sliver, a
   swipe, 🪪 and VoiceOver's escape close the drawer. In Select, as in Mail
-  and Photos: Cancel | "3 selected" ("Select names" with none) | Select
-  All (Deselect All once all are ticked; the folded Kept names are not
-  ticked).
-- **Then:** Looks like cards (Same as, Not the same), category chips, and
-  the names by what is left: To review, Replaced, Kept (folded).
+  and Photos, the first row is Cancel | "3 selected" ("Select names" with
+  none) | Select All (Deselect All once all are ticked; the folded Kept
+  names are not ticked); search stays.
+- **Replace N** floats over the list's bottom while names are left, a
+  clear glass capsule (a bulk shortcut, not the drawer's loudest thing);
+  in Select, Select's bar takes its place.
+- **Then:** Looks like cards (Same as, Not the same), and the names by
+  what is left: To review, Replaced, Kept (folded). Their section headers
+  pin under the header on an opaque band of the panel's background, the
+  title in the primary colour and its count in the secondary, so no row
+  shows through; the list draws no blur at its top edge.
 - **Rows:** category icon, the name (wrapped at words), the alias, "3×"
   and its other spellings in grey, and a round `StateButtonLabel`: replace, then Replaced ⇄
   Kept, with Undo in the toast. A decided row's mark turns to its new

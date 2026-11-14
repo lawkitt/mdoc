@@ -121,7 +121,6 @@ final class ComponentSnapshotTests: XCTestCase {
             }
             .disabled(true)
             HStack(spacing: Space.s) {
-                ProgressRing(fraction: 0.6)
                 Chip(Text(verbatim: "All"), filled: true)
                 Chip(Text(verbatim: "Person 2"), systemImage: "person")
                 Button(String("Select")) {}

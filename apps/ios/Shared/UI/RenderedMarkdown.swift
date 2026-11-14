@@ -275,7 +275,9 @@ struct BlockLayout {
                     return same ? shown.heights[index] : height(row, shown.columns)
                 }
                 return RenderedTable(
-                    anchor: tableRange.location, range: tableRange, rows: rows, columns: shown.columns, heights: heights,
+                    anchor: tableRange.location, range: tableRange, rows: rows, columns: shown.columns,
+                    heights: headerShown(rows) ? heights.enumerated().map { $0 == 0 && $1 == 0 ? height(rows[0], shown.columns) : $1 }
+                        : [0] + Array(heights.dropFirst()),
                     style: table.style, rtl: table.rtl, padding: padding)
             }
             // Natural widths: each column's longest unwrapped cell; floors:
@@ -314,8 +316,19 @@ struct BlockLayout {
             columns = columns.map { max($0, tappable).rounded(.up) }
             return RenderedTable(
                 anchor: tableRange.location, range: tableRange, rows: rows, columns: columns,
-                heights: rows.map { height($0, columns) },
+                heights: rows.enumerated().map { $0 == 0 && !headerShown(rows) ? 0 : height($1, columns) },
                 style: table.style, rtl: table.rtl, padding: padding)
+        }
+    }
+
+    /// A header row whose cells are all empty, as a converted table's often
+    /// is, isn't drawn (ADR 0115): its height is 0, outside edit mode, where
+    /// its cells can be typed into. Rendering only: the text keeps the row.
+    private func headerShown(_ rows: [[RenderedCell]]) -> Bool {
+        guard !editing, rows.count > 1, let header = rows.first else { return true }
+        return header.contains { cell in
+            !cell.text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || (cell.text.length > 0 && cell.text.attribute(.mdocDecoration, at: 0, effectiveRange: nil) != nil)
         }
     }
 
@@ -1153,6 +1166,9 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
             for (column, view) in views.enumerated() {
                 let frame = CGRect(x: x, y: y, width: table.columns[column], height: table.heights[rowIndex])
                 if view.frame != frame { view.frame = frame }
+                // An empty header row isn't drawn, nor read (ADR 0115).
+                let hidden = frame.height == 0
+                if view.isHidden != hidden { view.isHidden = hidden }
                 x += table.columns[column]
             }
             y += table.heights[rowIndex]
@@ -1430,7 +1446,7 @@ private final class GridView: UIView {
         let header = table.heights.first ?? 0
         let bounds = self.bounds
         // Fills: the header (not Minimal), striped body rows.
-        if table.style != .minimal {
+        if table.style != .minimal && header > 0 {
             UIColor.secondarySystemFill.setFill()
             UIBezierPath(rect: CGRect(x: 0, y: 0, width: bounds.width, height: header)).fill()
         }
@@ -1451,7 +1467,10 @@ private final class GridView: UIView {
             var y: CGFloat = 0
             for height in table.heights.dropLast() {
                 y += height
-                line(CGRect(x: 0, y: y - hairline / 2, width: bounds.width, height: hairline))
+                // An undrawn header row (height 0) adds no line on the box's.
+                if height > 0 {
+                    line(CGRect(x: 0, y: y - hairline / 2, width: bounds.width, height: hairline))
+                }
             }
             var x: CGFloat = 0
             for width in table.columns.dropLast() {
@@ -1463,7 +1482,9 @@ private final class GridView: UIView {
             UIColor.separator.setStroke()
             box.stroke()
         case .striped, .minimal:
-            line(CGRect(x: 0, y: header - hairline / 2, width: bounds.width, height: hairline))
+            if header > 0 {
+                line(CGRect(x: 0, y: header - hairline / 2, width: bounds.width, height: hairline))
+            }
         case .header:
             break
         }
