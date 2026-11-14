@@ -49,6 +49,9 @@ enum Snapshot {
         guard !recording, let expected = UIImage(contentsOfFile: reference.path) else {
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try? png.write(to: reference)
+            // Attached too, so a reference recorded on a hosted runner can
+            // be taken from its xcresult.
+            add(png, named: "\(name)-\(appearance.rawValue)-recorded")
             XCTFail("\(name): recorded \(reference.lastPathComponent); run again to compare", file: file, line: line)
             return
         }

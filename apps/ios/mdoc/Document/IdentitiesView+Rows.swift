@@ -141,7 +141,7 @@ extension IdentitiesView {
                 Button {
                     deciding([identity.id]) { model.toggle(identity) }
                 } label: {
-                    StateButtonLabel(state: identity.state)
+                    StateButtonLabel(state: identity.state, tint: identity.category.color)
                         .id(identity.state)
                         .transition(markTransition)
                 }
