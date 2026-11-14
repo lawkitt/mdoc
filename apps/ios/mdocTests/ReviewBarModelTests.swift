@@ -348,7 +348,7 @@ final class ReviewBarModelTests: XCTestCase {
     func testActionsForEachState() throws {
         let model = try model()
         let proposed = try XCTUnwrap(model.snapshot.candidates.first { $0.state == .proposed })
-        XCTAssertEqual(model.actions(for: proposed), [.replace, .keep, .replaceThisOne, .sameAs, .changeCategory])
+        XCTAssertEqual(model.actions(for: proposed), [.replace, .keep, .replaceThisOne, .sameAs, .changeCategory, .fixWords])
         XCTAssertTrue(model.cardActions(for: proposed) == (.keep, .replace))
         XCTAssertEqual(model.keyAction(.return, for: proposed), .replace)
         XCTAssertEqual(model.keyAction(.keep, for: proposed), .keep)
@@ -356,7 +356,7 @@ final class ReviewBarModelTests: XCTestCase {
         var replaced = proposed
         replaced.state = .replaced
         XCTAssertEqual(
-            model.actions(for: replaced), [.keepInstead, .sameAs, .changeCategory],
+            model.actions(for: replaced), [.keepInstead, .sameAs, .changeCategory, .fixWords],
             "no Show original: the menu's header says the wording")
         XCTAssertTrue(model.cardActions(for: replaced) == (.keepInstead, .next))
         XCTAssertEqual(model.keyAction(.return, for: replaced), .next, "Return is the filled Next")
@@ -364,7 +364,7 @@ final class ReviewBarModelTests: XCTestCase {
 
         var kept = proposed
         kept.state = .kept
-        XCTAssertEqual(model.actions(for: kept), [.replaceInstead, .changeCategory])
+        XCTAssertEqual(model.actions(for: kept), [.replaceInstead, .changeCategory, .fixWords])
         XCTAssertTrue(model.cardActions(for: kept) == (.replaceInstead, .next))
         XCTAssertEqual(model.keyAction(.return, for: kept), .replaceInstead)
         XCTAssertNil(model.keyAction(.keep, for: kept), "K on a kept name does nothing")
@@ -378,7 +378,7 @@ final class ReviewBarModelTests: XCTestCase {
         _ = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
         let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
         let only = try XCTUnwrap(model.snapshot.candidates.first)
-        XCTAssertEqual(model.actions(for: only), [.replace, .keep, .replaceThisOne, .changeCategory])
+        XCTAssertEqual(model.actions(for: only), [.replace, .keep, .replaceThisOne, .changeCategory, .fixWords])
     }
 
     /// A menu choice puts the bar on the name, in scope All, or This one for
