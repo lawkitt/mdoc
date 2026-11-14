@@ -1,6 +1,7 @@
 import Foundation
 import MdocFFI
 import Observation
+import SwiftUI
 import UIKit
 
 /// One document screen. It holds the core's latest snapshot and view state
@@ -436,8 +437,15 @@ final class DocumentViewModel {
         if show && isEditing { return }
         let placement = identitiesPlacement
         if show && placement == .column && pane == .reply { pane = .text }
+        let drawerOpen = show && placement == .drawer
         wantsIdentities = show
-        identitiesDrawerOpen = show && placement == .drawer
+        guard drawerOpen != identitiesDrawerOpen else { return }
+        // The drawer slides as the sidebar does, from every way in or out:
+        // the toolbar button, the bar's count, a row, the panel's own
+        // gestures (ADR 0116). Reduce Motion: the drawer fades.
+        withAnimation(Motion.move(reduced: UIAccessibility.isReduceMotionEnabled)) {
+            identitiesDrawerOpen = drawerOpen
+        }
     }
 
     /// Shows `pane`. In the right column a pane takes Identities' place.
@@ -492,7 +500,10 @@ final class DocumentViewModel {
     func hideIdentitiesForEditing() {
         identitiesBeforeEditing = wantsIdentities && identitiesPlacement != .drawer
         wantsIdentities = false
-        identitiesDrawerOpen = false
+        guard identitiesDrawerOpen else { return }
+        withAnimation(Motion.move(reduced: UIAccessibility.isReduceMotionEnabled)) {
+            identitiesDrawerOpen = false
+        }
     }
 
     /// Done: Identities come back where they showed in a regular window.
@@ -528,7 +539,10 @@ final class DocumentViewModel {
             errorMessage = error.localizedDescription
             return false
         }
-        if undoable && snapshot.canUndo && snapshot.undoStep != before { registerSystemUndo() }
+        if undoable && snapshot.canUndo && snapshot.undoStep != before {
+            registerSystemUndo()
+            if isReviewing { updateReview { $0.changed() } }
+        }
         return true
     }
 
