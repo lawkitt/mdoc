@@ -124,6 +124,49 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertFalse(app.buttons["toast-action"].exists, "the same words are no step")
     }
 
+    /// Adjust Words on a name in a table cell ends on a tap away (ADR 0116):
+    /// a tap in another cell, or a long press in the text, cancels it as
+    /// Cancel does, and the review bar comes back. rc.11 left Adjust Words'
+    /// bar up with the cell's selection gone.
+    @MainActor
+    func testAdjustWordsInACellEndsOnATapAway() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo.appendingPathComponent(MdocUITest.markdownFixture).path
+        app.launch()
+        let row = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
+        XCTAssertTrue(row.waitForExistence(timeout: 120))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 30))
+        app.buttons["title-menu"].tap()
+        app.buttons["find-in-document"].tap()
+        typeInFindField(app, "Депозит")
+        let mark = app.buttons["find-hide-name"]
+        XCTAssertTrue(mark.waitForExistence(timeout: MdocUITest.timeout))
+        mark.tap()
+        let bar = app.descendants(matching: .any)["review-bar"].firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 10))
+        let done = app.buttons["fix-words-done"]
+
+        // A tap in another cell.
+        fixTheWordsFromTheAliasMenu(app)
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout), "no Adjust Words bar")
+        let other = TableEditingUITests.cell(app, "£1,725")
+        XCTAssertTrue(other.waitForExistence(timeout: MdocUITest.timeout), "the cell beside the name shows")
+        // The grid's cells read as not hittable while the bar is up.
+        other.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(done.waitForNonExistence(timeout: MdocUITest.timeout), "a tap in another cell ends Adjust Words")
+        XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout), "the review bar comes back")
+
+        // A long press in the text, outside the table.
+        fixTheWordsFromTheAliasMenu(app)
+        XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout), "no Adjust Words bar")
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.12)).press(forDuration: 0.8)
+        XCTAssertTrue(done.waitForNonExistence(timeout: MdocUITest.timeout), "a long press in the text ends Adjust Words")
+        XCTAssertTrue(bar.waitForExistence(timeout: MdocUITest.timeout), "the review bar comes back")
+    }
+
     /// The alias chip's menu lists Rename…, Adjust Words, Same as… and New
     /// alias, in that order; Adjust Words is chosen.
     @MainActor

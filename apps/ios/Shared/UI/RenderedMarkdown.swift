@@ -1070,6 +1070,16 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
         onActivate?() ?? super.accessibilityActivate()
     }
 
+    /// Told when the cell stops being the first responder: a touch
+    /// elsewhere took the focus, and its selection no longer shows.
+    var onResign: (() -> Void)?
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onResign?() }
+        return resigned
+    }
+
     /// Drops a selection made in the cell (a long press, for Hide name),
     /// and the keyboard focus with it. Edit mode takes the selection into
     /// the text behind the grid first (`connectTables`).
