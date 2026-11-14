@@ -69,8 +69,11 @@ jobs:
     runs-on: macos-26
     # Job limits (ADR 0095, ADR 0112): the one job took 29 to 46 minutes
     # with every test (2026-11-11); the unit part took 10 minutes and the
-    # one UI part 26 on #829, so a UI shard should take about 17.
-    timeout-minutes: 35
+    # one UI part 26 on #829, so a UI shard should take about 17. A change
+    # to crates/ or Cargo.lock misses the built-core cache, and with a new
+    # Cargo.lock the cargo cache too: the core then took 19 minutes cold
+    # before a UI shard's 15-20 (#879), so 55 leaves room for that.
+    timeout-minutes: 55
     strategy:
       # A cancelled part would read as a capacity cancel to merge-gate.
       fail-fast: false
