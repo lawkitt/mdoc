@@ -52,9 +52,15 @@ final class DocumentViewModel {
     /// The screen the window's steps belong to (`attachSystemUndo`).
     var systemUndoScreen: UUID?
     var showsFind = false
-    /// Fix the words in progress (ADR 0114); nil otherwise. Changed only by
-    /// the `+Words` intents, and ended by any other change.
-    var wordsFix: WordsFix?
+    /// Adjust Words in progress (ADR 0114, 0115); nil otherwise. Changed
+    /// only by the `+Words` intents, and ended by any other change, which
+    /// also puts the one-time demo away until next time.
+    var wordsFix: WordsFix? {
+        didSet { if wordsFix == nil { endAdjustWordsDemo(learned: false) } }
+    }
+    /// Adjust Words' one-time demo shows: a ghost handle in the text and a
+    /// caption over the bar (`ReviewHint.adjustWords`).
+    var adjustWordsDemo = false
     /// Edit mode (ADR 0109): the keyboard is up on the text, candidates are
     /// dimmed and not tappable, the review bar is hidden. Changed only by
     /// `enterEditMode` and `doneEditing`.

@@ -5,7 +5,8 @@ import TipKit
 /// hint may show (learned, reset, the UI tests' switch) and mdoc draws it.
 /// No `TipView` and no popovers: the card swipe and the long press are one
 /// quiet line inside the review bar, at most one per document; drag-merge
-/// is Identities' Select demo. Doing the action, or ×, learns a hint for
+/// is Identities' Select demo, and Adjust Words has its own demo in the
+/// text (ADR 0115). Doing the action, or ×, learns a hint for
 /// good; Settings › Review › Reset tips shows them all again.
 enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
     /// After the second card: the card swipes.
@@ -16,6 +17,10 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
     /// a ghost row dragged onto the next (ADR 0114). Learned by the first
     /// drag-merge or Same as, or by dismissing the demo.
     case dragMerge
+    /// The first time a name's words are adjusted: a ghost handle glides
+    /// along the words under a caption (ADR 0115). Learned by moving a
+    /// handle, Done, Cancel or a tap on the caption.
+    case adjustWords
 
     var id: String { rawValue }
 
@@ -24,6 +29,7 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
         case .swipe: "Swipe the card for the next name"
         case .longPress: "Long-press any name for more"
         case .dragMerge: "Tick names to act on them, or drag ≡ onto another name to make them one"
+        case .adjustWords: "Drag the handles onto the name's words"
         }
     }
 
@@ -32,6 +38,7 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
         case .swipe: "hand.draw"
         case .longPress: "hand.tap"
         case .dragMerge: "hand.point.up.left"
+        case .adjustWords: "hand.point.up.left.and.text"
         }
     }
 
@@ -41,15 +48,18 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
         case .swipe: SwipeTip()
         case .longPress: LongPressTip()
         case .dragMerge: DragMergeTip()
+        case .adjustWords: AdjustWordsTip()
         }
     }
 
-    /// rc.9 and earlier kept a learned hint in `Preferences`.
-    fileprivate var oldKey: Preferences.Key {
+    /// rc.9 and earlier kept a learned hint in `Preferences`; newer hints
+    /// never were.
+    fileprivate var oldKey: Preferences.Key? {
         switch self {
         case .swipe: .swipeLearned
         case .longPress: .longPressLearned
         case .dragMerge: .dragMergeLearned
+        case .adjustWords: nil
         }
     }
 
@@ -86,6 +96,11 @@ struct LongPressTip: Tip {
 struct DragMergeTip: Tip {
     var title: Text { Text(ReviewHint.dragMerge.text) }
     var image: Image? { Image(systemName: ReviewHint.dragMerge.symbol) }
+}
+
+struct AdjustWordsTip: Tip {
+    var title: Text { Text(ReviewHint.adjustWords.text) }
+    var image: Image? { Image(systemName: ReviewHint.adjustWords.symbol) }
 }
 
 /// What TipKit says about the hints, as mdoc's views read it: the hints
@@ -187,9 +202,10 @@ final class Hints {
 
     /// A hint learned before TipKit kept them stays learned.
     private func moveLearnedHints() {
-        for hint in ReviewHint.allCases where Preferences.shared.isLearned(hint.oldKey) {
+        for hint in ReviewHint.allCases {
+            guard let key = hint.oldKey, Preferences.shared.isLearned(key) else { continue }
             hint.tip.invalidate(reason: .actionPerformed)
-            Preferences.shared.forget(hint.oldKey)
+            Preferences.shared.forget(key)
         }
     }
 }

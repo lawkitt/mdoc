@@ -1,7 +1,8 @@
 import Foundation
 import MdocFFI
 
-/// Fix the words in progress (ADR 0114): the name, the draft the text shows
+/// Adjust Words in progress (ADR 0114, 0115; "Fix the words" in code): the
+/// name, the draft the text shows
 /// meanwhile, and the words its handles hold now.
 struct WordsFix: Equatable {
     let candidate: CandidateID
@@ -51,23 +52,30 @@ extension DocumentViewModel {
             wordsFix = WordsFix(
                 candidate: id, draft: draft, selection: draft.wording,
                 target: target(of: id, words: draft.wording))
+            if ReviewHint.teachable.contains(.adjustWords) {
+                adjustWordsDemo = true
+                Hints.shared.show(.adjustWords)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    /// The handles moved: Hide «…» follows them.
+    /// The handles moved: the bar's words follow them, and the demo is
+    /// learned.
     func fixSelectionChanged(_ words: SourceRange) {
         guard var fix = wordsFix, fix.selection != words else { return }
+        endAdjustWordsDemo(learned: true)
         fix.selection = words
         fix.target = target(of: fix.candidate, words: words)
         wordsFix = fix
     }
 
-    /// Hide «…»: the name takes the words its handles hold, everywhere the
-    /// old wording fits, as one step; the bar moves onto it, with Undo.
+    /// Done: the name takes the words its handles hold, everywhere the old
+    /// wording fits, as one step; the bar moves onto it, with Undo.
     func confirmFixWords() {
         guard let fix = wordsFix else { return }
+        endAdjustWordsDemo(learned: true)
         wordsFix = nil
         guard case .success(let target) = fix.target else { return }
         let before = snapshot.undoStep
@@ -76,13 +84,27 @@ extension DocumentViewModel {
         let step = snapshot.undoStep
         updateReview { $0.follow(step) }
         Haptics.decision()
-        toast = undoToast(String(localized: "Words fixed: \(target.wording)"))
+        toast = undoToast(String(localized: "Adjusted to «\(target.wording)»"))
     }
 
     /// Cancel, a tap away from the handles, or another change: the text
-    /// shows the document again, unchanged.
+    /// shows the document again, unchanged. The demo was seen.
     func cancelFixWords() {
+        endAdjustWordsDemo(learned: true, closed: true)
         wordsFix = nil
+    }
+
+    /// The demo goes: learned for good (the reader moved a handle, chose
+    /// Done or Cancel, or tapped the caption: `closed`), or put away until
+    /// the next Adjust Words (the fix ended some other way).
+    func endAdjustWordsDemo(learned: Bool, closed: Bool = false) {
+        guard adjustWordsDemo else { return }
+        adjustWordsDemo = false
+        if learned {
+            Hints.shared.learn(.adjustWords, closed: closed)
+        } else {
+            Hints.shared.show(nil)
+        }
     }
 
     private func target(of id: CandidateID, words: SourceRange) -> Result<WordsTarget, CoreError> {

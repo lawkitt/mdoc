@@ -24,6 +24,9 @@ struct WordsFixActions {
     /// The handles moved; the words they hold, in the draft's bytes.
     var selected: (SourceRange) -> Void
     var cancel: () -> Void
+    /// Adjust Words' one-time demo is on: a ghost handle glides along the
+    /// words once the handles show.
+    var demo: () -> Bool = { false }
 }
 
 extension WordsFixActions {
@@ -31,7 +34,8 @@ extension WordsFixActions {
     init(_ model: DocumentViewModel) {
         self.init(
             selected: { [weak model] in model?.fixSelectionChanged($0) },
-            cancel: { [weak model] in model?.cancelFixWords() })
+            cancel: { [weak model] in model?.cancelFixWords() },
+            demo: { [weak model] in model?.adjustWordsDemo ?? false })
     }
 }
 
@@ -111,6 +115,36 @@ extension MarkdownTextView.Coordinator {
         guard pending == nil, content?.textRevision == parent.snapshot.textRevision else { return }
         fixWords = nil
         select(request.wording, for: request, in: view)
+        guard let holder = fixHolder else { return }
+        keepClear(holder, in: view)
+        if parent.wordsFixActions?.demo() == true, !UIAccessibility.isReduceMotionEnabled {
+            playHandleDemo(on: holder, tint: holder.tintColor)
+        }
+    }
+
+    /// The words and their handles sit clear of the bars: the text scrolls
+    /// so the selection has room above Adjust Words' bar (and the demo's
+    /// caption over it) and below the top bar.
+    private func keepClear(_ holder: UITextView, in view: CandidateTextView) {
+        guard let range = holder.selectedTextRange else { return }
+        let words = holder.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
+        guard !words.isNull, !words.isInfinite else { return }
+        // Room for the end knob and the demo's caption, which shows over
+        // the bar after this layout.
+        let room: CGFloat = 88
+        let rect = holder.convert(words, to: view)
+        let visible = view.bounds.inset(by: view.adjustedContentInset)
+        var y = view.contentOffset.y
+        if rect.maxY + room > visible.maxY {
+            y += rect.maxY + room - visible.maxY
+        } else if rect.minY - Space.l < visible.minY {
+            y -= visible.minY - (rect.minY - Space.l)
+        }
+        let insets = view.adjustedContentInset
+        let lowest = max(-insets.top, view.laidOutContentHeight + insets.bottom - view.bounds.height)
+        y = min(max(y, -insets.top), lowest)
+        guard abs(y - view.contentOffset.y) > 0.5 else { return }
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: y), animated: true)
     }
 
     /// The text was built again while a name's words are fixed (a text
@@ -211,7 +245,42 @@ extension MarkdownTextView.Coordinator {
         presenter.present(on: view, over: rect, menu: menu)
     }
 
+    // MARK: The demo
+
+    /// Adjust Words' demo (ADR 0115): a ghost of the end handle glides back
+    /// along the words and returns, once, a moment after the handles show.
+    /// It is drawn in the text's own coordinates, so it scrolls with it,
+    /// and takes no touches.
+    private func playHandleDemo(on holder: UITextView, tint: UIColor) {
+        guard let range = holder.selectedTextRange, !range.isEmpty else { return }
+        let end = holder.caretRect(for: range.end)
+        let start = holder.caretRect(for: range.start)
+        guard !end.isNull, !end.isInfinite, end.height > 0 else { return }
+        // Back half the words on one line, else a word's width or so.
+        let sameLine = abs(start.midY - end.midY) < 1
+        let glide = min(96, max(28, sameLine ? (end.minX - start.minX) * 0.5 : 56))
+        let ghost = HandleGhost(height: end.height, tint: tint)
+        ghost.center = CGPoint(x: end.midX, y: end.minY + ghost.bounds.height / 2)
+        ghost.alpha = 0
+        handleGhost?.removeFromSuperview()
+        holder.addSubview(ghost)
+        handleGhost = ghost
+        // timing: the handles settle first; the glide then takes about 2 s (ADR 0115)
+        UIView.animateKeyframes(withDuration: 2.2, delay: 0.4, options: [.calculationModeCubic]) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.12) { ghost.alpha = 0.7 }
+            UIView.addKeyframe(withRelativeStartTime: 0.14, relativeDuration: 0.34) {
+                ghost.transform = CGAffineTransform(translationX: -glide, y: 0)
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.56, relativeDuration: 0.3) { ghost.transform = .identity }
+            UIView.addKeyframe(withRelativeStartTime: 0.88, relativeDuration: 0.12) { ghost.alpha = 0 }
+        } completion: { _ in
+            ghost.removeFromSuperview()
+        }
+    }
+
     private func endFixSelection() {
+        handleGhost?.removeFromSuperview()
+        handleGhost = nil
         fixWords = nil
         fixTable?.isScrollEnabled = true
         fixTable = nil
@@ -263,4 +332,26 @@ final class SelectionMenuPresenter: NSObject, @preconcurrency UIEditMenuInteract
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, targetRectFor configuration: UIEditMenuConfiguration) -> CGRect {
         target
     }
+}
+
+/// The demo's ghost of a selection's end handle: a line as tall as the
+/// text with a knob under it, in the selection's tint.
+final class HandleGhost: UIView {
+    init(height: CGFloat, tint: UIColor) {
+        let knob: CGFloat = 11
+        super.init(frame: CGRect(x: 0, y: 0, width: knob, height: height + knob - 2))
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        let line = UIView(frame: CGRect(x: (knob - 2) / 2, y: 0, width: 2, height: height))
+        line.backgroundColor = tint
+        line.layer.cornerRadius = 1
+        let dot = UIView(frame: CGRect(x: 0, y: height - 2, width: knob, height: knob))
+        dot.backgroundColor = tint
+        dot.layer.cornerRadius = knob / 2
+        addSubview(line)
+        addSubview(dot)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unused") }
 }

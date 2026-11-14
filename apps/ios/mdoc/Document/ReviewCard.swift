@@ -4,7 +4,7 @@ import SwiftUI
 /// The swipeable card under review (ADR 0098): the category icon, the name
 /// (tap to scroll back to it) and its alias, with a mentions chip when the
 /// identity has more than one; then the category, alias and scope chips
-/// (the alias chip's menu: Rename…, Fix the words, Same as…, New alias);
+/// (the alias chip's menu: Rename…, Adjust Words, Same as…, New alias);
 /// and a merge hint while the core sees one.
 struct ReviewCard: View {
     @Bindable var model: DocumentViewModel
@@ -227,12 +227,12 @@ struct ReviewCard: View {
             } label: {
                 Label("Rename…", systemImage: "pencil")
             }
-            // Fix the words (ADR 0114, 0115): handles on the name in the
+            // Adjust Words (ADR 0114, 0115): handles on the name in the
             // text.
             Button {
                 model.beginFixWords(candidate.id)
             } label: {
-                Label("Fix the words", systemImage: "character.cursor.ibeam")
+                Label("Adjust Words", systemImage: "character.cursor.ibeam")
             }
             .accessibilityHint(Text("Puts handles on the name's words in the text."))
             .accessibilityIdentifier(id("review-fix-words"))

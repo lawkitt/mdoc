@@ -196,7 +196,7 @@ that only the view model changes; views send intents
   name visible above the bar.
 - **Card:** category icon and the name (tap to scroll back to it), its
   state mark once decided, the mentions chip when the name repeats; then
-  the category ▾, alias ▾ (Rename…, Fix the words, Same as…, New alias)
+  the category ▾, alias ▾ (Rename…, Adjust Words, Same as…, New alias)
   and scope ▾ chips, a row that scrolls sideways when it doesn't fit,
   clipped at the card's edges under a short fade so no chip draws over a
   neighbouring card; a merge hint line while the core sees one. The name wraps at words, without hyphens,
@@ -252,8 +252,8 @@ that only the view model changes; views send intents
   for the next name" from the second card, "Long-press any name for more"
   after three decisions; gone for good once the gesture is used or ×
   tapped (the tip is invalidated). Identities' Select demo is the third
-  tip. Only one shows at a time: while the demo shows, the bar's line
-  waits. The grabber hops once on the third card. UI tests hide every tip
+  tip, and Adjust Words' demo the fourth. Only one shows at a time: while
+  a demo shows, the bar's line waits. The grabber hops once on the third card. UI tests hide every tip
   (`Tips.hideAllTipsForTesting()`), or show them all for a test of a hint
   (`MDOC_SHOW_TIPS=1`). Settings › Review › Reset tips resets each tip's
   eligibility (`Tips.resetDatastore()` works only before TipKit starts).
@@ -268,7 +268,8 @@ that only the view model changes; views send intents
   whole and the punctuation at its ends goes: the core snaps and trims
   (`hide_target`), and the selection moves to its words. The bar opens on
   the new mark.
-- **Fix the words** (`MarkdownTextView+Words`, `FixWordsBar`): the last row
+- **Adjust Words** (`MarkdownTextView+Words`, `FixWordsBar`; "Fix the
+  words" in the code and in ADRs 0114 and 0115): the last row
   of a name's long-press menu and, on the card, the alias chip's menu
   after Rename…. The text shows the core's draft, a replaced name with its
   original back, as plain text: no name is a link meanwhile, and the name
@@ -279,11 +280,19 @@ that only the view model changes; views send intents
   selects again) and stay inside the paragraph or cell up to Markdown
   formatting or another name's alias, the reach the core gives. In a table
   the cell first scrolls whole into view and the table holds still until
-  the fix ends. No menu shows over the words: the bar in the review bar's
-  place holds the hint, Cancel and the one Hide «…», which follows the
-  handles; a tap away from them cancels too. The new words take the old
-  ones' place everywhere they fit, keeping the identity and alias (a
-  replaced name stays replaced), as one step: "Words fixed: … · Undo".
+  the fix ends. No menu shows over the words. The bar in the review bar's
+  place is one row of Liquid Glass: ✕ (Cancel), "Adjust Words" over the
+  words the handles hold, in the category's tint, with the alias they
+  keep ("210403690535 → TAX_1"), following the handles (or the core's
+  reason they can't be taken, with Done disabled), and ✓ Done in ink. A
+  tap away from the handles cancels too. The first time (TipKit,
+  `ReviewHint.adjustWords`), a ghost of the end handle glides back along
+  the words and returns, under a caption over the bar, "Drag the handles
+  onto the name's words"; moving a handle, Done, Cancel or a tap on the
+  caption learns it, and Reduce Motion leaves the caption alone. The new
+  words take the old ones' place everywhere they fit, keeping the
+  identity and alias (a replaced name stays replaced), as one step:
+  "Adjusted to «…» · Undo".
   A name's link never shows the system's link menu (its address, Open,
   Copy, Share), in any state.
 
@@ -403,7 +412,7 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 |---|---|---|
 | Review card | Swipe sideways, or tap a peek | Previous or next candidate |
 | Review bar grabber, progress line, card | Drag up or down | Full or compact, following the finger; × ends review |
-| A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category, Fix the words) |
+| A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category, Adjust Words) |
 | Text outside any name | Long press; drag a handle | Selects whole words, tinted; Hide "…" and Hide as › |
 | A name whose words are fixed | Drag a handle | Moves the name's span within its paragraph or cell; Hide «…» confirms |
 | A table's cell, editing | Double tap or long press; drag a handle | Selects the word; stretches the selection inside the cell |

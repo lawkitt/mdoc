@@ -218,6 +218,8 @@ struct MarkdownTextView: UIViewRepresentable {
         var fixWords: SourceRange?
         weak var fixHolder: UITextView?
         weak var fixTable: MarkdownTableView?
+        /// Adjust Words' demo ghost while it glides.
+        weak var handleGhost: UIView?
         var fixSettling = false
         var menuPresenter: SelectionMenuPresenter?
         /// A `followResponder` waits for SwiftUI's update to end.
