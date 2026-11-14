@@ -2,7 +2,9 @@
 
 Status: Accepted, 2026-10-09. Supersedes the sidebar of
 [ADR 0012](0012-document-preparation-ui.md). Default widths, header and toggle
-animation superseded by [ADR 0048](0048-workspace-shell-redesign.md).
+animation superseded by [ADR 0048](0048-workspace-shell-redesign.md). Hover
+reveal timings amended by [ADR 0117](0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md)
+(100 ms intent, 120 ms slide).
 
 ## Problem
 
