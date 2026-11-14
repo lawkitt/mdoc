@@ -210,10 +210,12 @@ struct MarkdownTextView: UIViewRepresentable {
         /// The find bar request last shown.
         var shownFindBar = 0
         /// Fix the words as the view shows it (ADR 0114): the request
-        /// taken, the text view whose selection holds the name, the table
-        /// held still around it, and a selection set here (not by the
-        /// reader). The presenter shows mdoc's own selection menus.
+        /// taken, the words the handles last held, the text view whose
+        /// selection holds them, the table held still around it, and a
+        /// selection set here (not by the reader). The presenter shows
+        /// mdoc's own selection menus.
         var shownFix: WordsFixRequest?
+        var fixWords: SourceRange?
         weak var fixHolder: UITextView?
         weak var fixTable: MarkdownTableView?
         var fixSettling = false
@@ -524,6 +526,14 @@ struct MarkdownTextView: UIViewRepresentable {
                 }
             }
             view.rotorItems = items.sorted { $0.order < $1.order }
+            if shownFix != nil {
+                // Built again while a name's words are fixed: the handles
+                // come back once this update is over (ADR 0115).
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self, let view else { return }
+                    self.restoreWordsFix(view)
+                }
+            }
             let ranges = shownRanges
             shownRanges = Dictionary(
                 snapshot.candidates.map { ($0.id, offsets.nsRange($0.range)) }, uniquingKeysWith: { first, _ in first })

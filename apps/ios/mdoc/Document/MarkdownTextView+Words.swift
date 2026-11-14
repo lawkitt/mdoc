@@ -109,15 +109,29 @@ extension MarkdownTextView.Coordinator {
         }
         // The draft's text must show first: its offsets map the request.
         guard pending == nil, content?.textRevision == parent.snapshot.textRevision else { return }
-        let range = offsets.nsRange(request.wording)
+        fixWords = nil
+        select(request.wording, for: request, in: view)
+    }
+
+    /// The text was built again while a name's words are fixed (a text
+    /// size, width or appearance change): its cells may be new views, so
+    /// the handles go back on the words they last held, and a table holds
+    /// still again.
+    func restoreWordsFix(_ view: CandidateTextView) {
+        guard let request = shownFix, parent.wordsFix == request, !parent.editing else { return }
+        fixTable?.isScrollEnabled = true
+        fixTable = nil
+        select(fixWords ?? request.wording, for: request, in: view)
+    }
+
+    /// Selects `words` of the draft for `request`, in the cell or text
+    /// that holds them.
+    private func select(_ words: SourceRange, for request: WordsFixRequest, in view: CandidateTextView) {
+        let range = offsets.nsRange(words)
         guard let (holder, local) = holder(of: range, in: view) else { return }
         shownFix = request
         if let cell = holder as? CellTextView, let table = cell.superview as? MarkdownTableView {
-            // In a table the cell shows whole and the table holds still,
-            // so a drag of the handles never scrolls it sideways (ADR 0115).
-            table.reveal(cell.frame)
-            table.isScrollEnabled = false
-            fixTable = table
+            hold(table, around: cell, words: local)
         }
         fixSettling = true
         holder.tintColor = request.category?.uiColor ?? Self.selectionTint
@@ -125,6 +139,26 @@ extension MarkdownTextView.Coordinator {
         holder.selectedRange = local
         fixSettling = false
         fixHolder = holder
+    }
+
+    /// In a table the cell shows whole and the table holds still, so a
+    /// drag of the handles never scrolls it sideways (ADR 0115). A cell
+    /// wider than the screen (a long identifier widens its column) can't
+    /// show whole: the table shows the name's words and still scrolls, so
+    /// the rest of the cell stays in reach.
+    private func hold(_ table: MarkdownTableView, around cell: CellTextView, words: NSRange) {
+        guard cell.frame.width <= table.bounds.width else {
+            if let start = cell.position(from: cell.beginningOfDocument, offset: words.location),
+               let end = cell.position(from: start, offset: words.length),
+               let range = cell.textRange(from: start, to: end) {
+                let rect = cell.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
+                if !rect.isNull, !rect.isInfinite { table.reveal(cell.convert(rect, to: table)) }
+            }
+            return
+        }
+        table.reveal(cell.frame)
+        table.isScrollEnabled = false
+        fixTable = table
     }
 
     /// The selection of a name being fixed changed: kept inside the
@@ -149,7 +183,9 @@ extension MarkdownTextView.Coordinator {
             textView.selectedRange = NSRange(location: kept.location - base, length: kept.length)
             fixSettling = false
         }
-        parent.wordsFixActions?.selected(offsets.sourceRange(kept.length > 0 ? kept : shown))
+        let words = offsets.sourceRange(kept.length > 0 ? kept : shown)
+        fixWords = words
+        parent.wordsFixActions?.selected(words)
     }
 
     /// The view and its own range that hold `range` of the text: a table
@@ -176,6 +212,7 @@ extension MarkdownTextView.Coordinator {
     }
 
     private func endFixSelection() {
+        fixWords = nil
         fixTable?.isScrollEnabled = true
         fixTable = nil
         guard let holder = fixHolder else { return }

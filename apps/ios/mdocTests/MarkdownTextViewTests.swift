@@ -526,4 +526,57 @@ final class MarkdownTextViewTests: XCTestCase {
         XCTAssertTrue(table.isScrollEnabled, "the table scrolls again")
         XCTAssertNil(harness.coordinator.fixHolder)
     }
+
+    /// A cell wider than the screen (a long identifier widens its column)
+    /// can't show whole: the table shows the name's words and keeps
+    /// scrolling sideways, so the rest of the cell stays in reach.
+    func testAnOversizedCellStillScrollsWhileFixing() throws {
+        let identifier = String(repeating: "A7", count: 60)
+        let text = "# Agreement\n\n| Note | Code |\n| --- | --- |\n| short | \(identifier) Maya Bennett |\n"
+        let harness = try harness(text: text)
+        let (request, draft) = try fixRequest(harness, inCell: true)
+        show(harness, textView(draft, selected: request.candidate, wordsFix: request))
+        let table = try XCTUnwrap(harness.view.tableViews.first)
+        table.setContentOffset(.zero, animated: false)
+        harness.coordinator.followWordsFix(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        XCTAssertGreaterThan(cell.frame.width, table.bounds.width, "the cell runs past the screen")
+        XCTAssertTrue(table.isScrollEnabled, "the rest of the cell stays in reach")
+        XCTAssertNil(harness.coordinator.fixTable)
+        let range = try XCTUnwrap(cell.selectedTextRange)
+        let words = cell.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
+        let shown = CGRect(origin: table.contentOffset, size: table.bounds.size)
+        XCTAssertTrue(shown.contains(cell.convert(words, to: table).insetBy(dx: 1, dy: 1)), "the name's words show")
+    }
+
+    /// The text built again while a name's words are fixed (a text size
+    /// or appearance change) puts the handles back on the words they last
+    /// held, and the table holds still again.
+    func testARebuildWhileFixingKeepsTheHandlesAndTheLock() throws {
+        let wide: [String] = (1...6).map { "Column \($0) with a long heading" }
+        let row: String = wide.joined(separator: " | ")
+        let rule: String = String(repeating: " --- |", count: 7)
+        let text = "# Agreement\n\n| \(row) | Name |\n|\(rule)\n| \(row) | Maya Bennett |\n"
+        let harness = try harness(text: text)
+        let (request, draft) = try fixRequest(harness, inCell: true)
+        let fixing = textView(draft, selected: request.candidate, wordsFix: request)
+        show(harness, fixing)
+        harness.coordinator.followWordsFix(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        // The handles narrow onto the surname.
+        let surname = (cell.textStorage.string as NSString).range(of: "Bennett")
+        cell.selectedRange = surname
+        harness.coordinator.fixSelectionChanged(cell)
+
+        harness.coordinator.update(harness.view, with: fixing, dynamicTypeSize: .large, colorScheme: .dark)
+        harness.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        let table = try XCTUnwrap(harness.view.tableViews.first)
+        XCTAssertFalse(table.isScrollEnabled, "the table holds still again")
+        let holder = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        XCTAssertTrue(holder.superview === table)
+        XCTAssertEqual(holder.selectedRange, surname, "the words the handles held")
+        XCTAssertNotNil(harness.coordinator.shownFix, "still fixing")
+    }
 }
