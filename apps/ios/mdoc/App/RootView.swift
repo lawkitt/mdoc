@@ -45,9 +45,9 @@ struct RootView: View {
             leading: DrawerPanel(
                 isOpen: Bindable(app.navigator).showsSidebar,
                 closeLabel: "Close sidebar",
-                // Editing, only the edge opens it: a sideways drag in the
-                // text is the text's (ADR 0114).
-                opens: app.openModel?.isEditing == true ? .edge : .anywhere
+                // Editing, or fixing a name's words, only the edge opens it:
+                // a sideways drag in the text is the text's (ADR 0114, 0115).
+                opens: app.openModel.map { $0.isEditing || $0.wordsFix != nil } == true ? .edge : .anywhere
             ) {
                 SidebarView(app: app)
             },

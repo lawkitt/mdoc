@@ -413,7 +413,10 @@ than the screen and an Original page zoomed past its width (a table that
 fits and a page at fit width let the swipe through). The review bar and
 its cards keep theirs, and selection handles and long presses are never
 taken. A swipe from the screen's 22 pt edges opens the drawer even over those
-([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)).
+([ADR 0114](adr/0114-ios-menu-swipes-and-name-words.md)). While a name's
+words are fixed, only those edges open a drawer: the table holding the name
+stops scrolling sideways, and a swipe over it is the fix's
+([ADR 0115](adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).
 
 ## Wording
 
