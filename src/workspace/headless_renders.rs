@@ -120,8 +120,8 @@ impl Driver {
     fn key(&mut self, key: &str) -> Result<()> {
         self.cx
             .update_window(self.window, |_, window, cx| {
-                let keystroke = Keystroke::parse_with_os(key, cx.platform_info().os)
-                    .expect("valid keystroke");
+                let keystroke =
+                    Keystroke::parse_with_os(key, cx.platform_info().os).expect("valid keystroke");
                 window.dispatch_keystroke(keystroke, cx);
             })
             .map_err(|e| e.to_string())?;
