@@ -348,7 +348,9 @@ that only the view model changes; views send intents
   hidden, under the Original.
 - **Entering** (the pencil, ⌘E): with a selection the keyboard comes up
   on it; with none nothing moves, names dim and the keyboard waits for a
-  tap in the text. A new, empty document opens with the keyboard up.
+  tap in the text. A selection in a table's cell ends: in edit mode the
+  caret lives in the text behind the grid. A new, empty document opens
+  with the keyboard up.
 - **The bar:** ☰, the title, and Done as a
   checkmark in its own tinted glass capsule (`.glassProminent`, VoiceOver
   "Done editing", ⌘E). In review: the pencil and Identities in one

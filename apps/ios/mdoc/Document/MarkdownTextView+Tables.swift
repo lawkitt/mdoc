@@ -161,9 +161,17 @@ final class CellSelectionRect: UITextSelectionRect {
 extension MarkdownTextView.Coordinator {
     /// Points the grids' taps and scrolls at the caret (ADR 0109): a tap
     /// puts the caret in the cell's source at the character tapped.
+    ///
+    /// Only when the mode changes, and never inside SwiftUI's update of the
+    /// view (`followResponder` runs it): it switches every cell of every
+    /// table, and a cell holding a selection resigns the first responder
+    /// (`MarkdownTableView.onTap`). The closures set read the coordinator
+    /// as it is when they run, so a later update needs nothing new here.
     func connectTables(_ view: CandidateTextView) {
-        view.cellHandles.press.isEnabled = parent.edit != nil
-        guard parent.edit != nil else {
+        let editing = parent.edit != nil
+        guard editing != (view.onTableTap != nil) else { return }
+        view.cellHandles.press.isEnabled = editing
+        guard editing else {
             view.onTableTap = nil
             view.onTableSelect = nil
             view.onTableScroll = nil
