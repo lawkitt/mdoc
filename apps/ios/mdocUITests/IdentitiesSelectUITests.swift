@@ -20,7 +20,7 @@ final class IdentitiesSelectUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 30))
         // The agreement's email, and its surname marked from Find: two names.
-        hideFromFind("Bennett", app)
+        MdocUITest.hideFromFind("Bennett", app)
         XCTAssertTrue(MdocUITest.showIdentities(app))
 
         XCTAssertFalse(app.buttons["identities-done"].exists, "no close button")
@@ -56,34 +56,5 @@ final class IdentitiesSelectUITests: XCTestCase {
         app.buttons["identities-select-cancel"].firstMatch.tap()
         XCTAssertTrue(select.waitUntilHittable(timeout: 5), "Cancel leaves Select")
         XCTAssertFalse(app.descendants(matching: .any)["identity-drag-handle"].exists)
-    }
-
-    /// Find in document, then Hide name on its first match; the review bar
-    /// that opens on it is ended.
-    @MainActor
-    private func hideFromFind(_ word: String, _ app: XCUIApplication) {
-        app.buttons["title-menu"].tap()
-        let find = app.buttons["find-in-document"]
-        XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
-        find.tap()
-        let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))
-        // The Simulator drops a keystroke now and then while matches load:
-        // type again until the field holds the whole word.
-        let typed = NSPredicate(format: "value == %@", word)
-        for _ in 0..<3 where !field.wait(until: typed, timeout: 0.5) {
-            let current = (field.value as? String) ?? ""
-            let placeholder = field.placeholderValue ?? ""
-            let length = current == placeholder ? 0 : current.count
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: length) + word)
-        }
-        XCTAssertEqual(field.value as? String, word)
-        let hide = app.buttons["find-hide-name"]
-        XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
-        hide.tap()
-        let end = app.buttons["review-end"]
-        XCTAssertTrue(end.waitForExistence(timeout: 10))
-        end.tap()
     }
 }

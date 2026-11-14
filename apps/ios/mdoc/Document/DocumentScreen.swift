@@ -345,16 +345,22 @@ struct DocumentScreen: View {
         }
         // The review bar takes the action bar's place while reviewing, so
         // these are here too (ADR 0114).
+        // Always listed; until the document is ready, disabled with why,
+        // as Find names again is (ADR 0115).
         Section {
-            if model.snapshot.phase == .ready {
-                Button {
-                    model.copyForAI { UIPasteboard.general.string = $0 }
-                } label: {
-                    Label("Copy for AI", systemImage: "doc.on.doc")
+            let blocked = model.handOffBlockedReason
+            Button {
+                model.copyForAI { UIPasteboard.general.string = $0 }
+            } label: {
+                Label("Copy for AI", systemImage: "doc.on.doc")
+                if let blocked {
+                    Text(blocked)
                 }
             }
+            .disabled(blocked != nil)
+            .accessibilityIdentifier("copy-for-ai")
             if let app, let document {
-                DocumentShareButton(app: app, document: document)
+                DocumentShareButton(app: app, document: document, blockedReason: blocked, alwaysListed: true)
             }
         }
         if let app, let document {

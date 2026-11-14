@@ -59,14 +59,30 @@ struct DocumentFileItems: View {
 struct DocumentShareButton: View {
     let app: AppModel
     let document: LibraryDocument
+    /// Why sharing waits, from the open document (ADR 0115), which goes
+    /// before the library's phase where it is listed always.
+    var blockedReason: String?
+    /// The title's menu lists Share always, disabled until the document is
+    /// ready; a row's menu only once it is.
+    var alwaysListed = false
+
+    private var reason: String? {
+        if alwaysListed { return blockedReason }
+        return document.phase == .ready ? nil : String(localized: "The document isn't ready yet")
+    }
 
     var body: some View {
-        if document.phase == .ready {
+        if reason == nil || alwaysListed {
             Button {
                 app.share(document.id)
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
+                if let reason {
+                    Text(reason)
+                }
             }
+            .disabled(reason != nil)
+            .accessibilityIdentifier("share-document")
         }
     }
 }

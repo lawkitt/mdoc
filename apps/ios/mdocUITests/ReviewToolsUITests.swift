@@ -65,15 +65,15 @@ final class ReviewToolsUITests: XCTestCase {
         }
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
-        // Identities: search, then Select with Replace.
+        // Identities: search (its field always shown), then Select with Replace.
         XCTAssertTrue(MdocUITest.showIdentities(app))
-        app.buttons["identities-search-button"].firstMatch.tap()
         let search = app.textFields["identities-search"]
-        XCTAssertTrue(search.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(search.waitUntilHittable(timeout: MdocUITest.timeout))
+        search.tap()
         search.typeText("zzzz")
         let rows = app.descendants(matching: .any).matching(identifier: "identity-row")
         XCTAssertEqual(rows.count, 0, "nothing matches zzzz")
-        app.buttons["identities-search-button"].firstMatch.tap()
+        app.buttons["identities-search-clear"].firstMatch.tap()
         XCTAssertGreaterThan(rows.count, 0)
         app.buttons["identities-select"].firstMatch.tap()
         rows.firstMatch.tap()

@@ -201,4 +201,17 @@ final class IdentitiesModelTests: XCTestCase {
         XCTAssertEqual(counts.total, model.snapshot.identities.count)
         XCTAssertEqual(counts.toReview, model.snapshot.identities.filter { $0.state == .proposed }.count)
     }
+
+    /// Copy for AI and Share wait with a reason while names are left
+    /// (ADR 0115), and none once every name is decided.
+    func testCopyForAIWaitsWithTheNamesLeft() throws {
+        let model = try model()
+        XCTAssertEqual(model.snapshot.phase, .reviewing)
+        let left = model.identityCounts.toReview
+        XCTAssertGreaterThan(left, 0)
+        XCTAssertEqual(model.handOffBlockedReason, left == 1 ? "1 name left to decide" : "\(left) names left to decide")
+        model.replaceAllPending()
+        XCTAssertEqual(model.snapshot.phase, .ready)
+        XCTAssertNil(model.handOffBlockedReason)
+    }
 }

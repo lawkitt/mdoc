@@ -1,15 +1,15 @@
 import MdocFFI
 import SwiftUI
 
-/// Identities (2026-11-06 grill, round 2; docs/mobile-ui.md, Identities):
-/// the document's names, a drawer from the right edge on iPhone and the
-/// standing right column on iPad. At the top, how many names and how many
-/// are left, Replace N and search; then Looks like cards, a category filter,
-/// and the names by what is left: To review, Replaced, Kept. Each row's
-/// round button replaces or keeps that name; a tap opens the review bar's
-/// full view on it; Select acts on several at once (ADR 0114: no close
-/// button and no hint line; the sliver, a swipe, 🪪 and VoiceOver's escape
-/// close the drawer).
+/// Identities (2026-11-06 grill, round 2; ADR 0115; docs/mobile-ui.md,
+/// Identities): the document's names, a drawer from the right edge on iPhone
+/// and the standing right column on iPad. At the top, pinned, the title with
+/// how much is decided and Select, then search and a category filter; then
+/// Looks like cards and the names by what is left: To review, Replaced,
+/// Kept; Replace N floats at the bottom. Each row's round button replaces or
+/// keeps that name; a tap opens the review bar's full view on it; Select
+/// acts on several at once (ADR 0114: no close button and no hint line; the
+/// sliver, a swipe, 🪪 and VoiceOver's escape close the drawer).
 struct IdentitiesView: View {
     @Bindable var model: DocumentViewModel
     /// The bar's full view on a name (and the drawer closed on iPhone).
@@ -21,8 +21,8 @@ struct IdentitiesView: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State var query = ""
-    @State private var searching = false
     @FocusState private var searchFocused: Bool
+    /// The filter's category; nil is All.
     @State private var category: Category?
     /// The Select demo shows (`IdentitiesView+Select`), and its beats.
     @State var demoShows = false
@@ -44,12 +44,24 @@ struct IdentitiesView: View {
     var shown: [Identity] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         return identities.filter { identity in
-            (category == nil || identity.category == category)
+            (filtered == nil || identity.category == filtered)
                 && (needle.isEmpty || identity.alias.localizedStandardContains(needle)
                     || identity.variants.contains { $0.localizedStandardContains(needle) }
                     || identity.primaryWording.localizedStandardContains(needle))
         }
     }
+
+    /// The filter's category while names of it are left; else All.
+    private var filtered: Category? {
+        categories.contains { $0.0 == category } ? category : nil
+    }
+
+    /// The filter shows with two categories or more, or one chosen.
+    private var offersFilter: Bool { categories.count > 1 || filtered != nil }
+
+    /// Replace N floats at the panel's bottom while names are left, outside
+    /// Select, whose bar takes its place (ADR 0115).
+    private var floatsReplaceAll: Bool { !selecting && model.identityCounts.toReview > 0 }
 
     private var categories: [(Category, Int)] {
         Category.allCases.compactMap { category in
@@ -72,20 +84,19 @@ struct IdentitiesView: View {
                 if !selecting && query.isEmpty {
                     hints
                 }
-                if categories.count > 1 {
-                    categoryChips
-                        .listRowInsets(EdgeInsets(top: Space.xs, leading: Space.m, bottom: Space.xs, trailing: 0))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                }
                 section("To review", id: "proposed", shown.filter { placed($0) == .proposed })
                 section("Replaced", id: "replaced", shown.filter { placed($0) == .replaced })
                 keptSection(shown.filter { placed($0) == .kept })
             }
             .listStyle(.plain)
             .listSectionSpacing(Space.xs)
+            .environment(\.defaultMinListHeaderHeight, 0)
             .scrollContentBackground(.hidden)
-            .contentMargins(.bottom, selecting ? 72 : Space.m, for: .scrollContent)
+            // The header above is opaque and the section headers pin under
+            // it: no blur of the rows at the list's top (ADR 0115).
+            .scrollEdgeEffectHidden(true, for: .top)
+            .scrollDismissesKeyboard(.immediately)
+            .contentMargins(.bottom, selecting || floatsReplaceAll ? 72 : Space.m, for: .scrollContent)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.list = $0 }
             // A scroll moves the rows under the demo's ghost: it ends the demo.
             .onScrollPhaseChange { _, phase in
@@ -95,10 +106,15 @@ struct IdentitiesView: View {
         }
         .background(Palette.background)
         .overlay(alignment: .bottom) {
-            if selecting { selectionBar }
+            if selecting {
+                selectionBar
+            } else if floatsReplaceAll {
+                replaceAllButton
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
         }
         .animation(Motion.snappy, value: selecting)
-        .animation(Motion.snappy, value: searching)
+        .animation(Motion.snappy, value: floatsReplaceAll)
         .animation(Motion.fade, value: demoShows)
         // Any tap ends the Select demo, and still does what it taps.
         .simultaneousGesture(TapGesture().onEnded { endDemo(dismissed: true) }, including: demoShows ? .all : .subviews)
@@ -122,31 +138,21 @@ struct IdentitiesView: View {
 
     // MARK: Header
 
-    /// "15 names · 4 to review" beside a ring, search and Select; in Select,
-    /// Cancel, "3 selected" and Select All, as in Mail. Then Replace N.
+    /// Two rows pinned above the list (ADR 0115): the title with "8 of 12
+    /// decided" under it and Select; then search and the category filter.
+    /// In Select, Cancel, "3 selected" and Select All, as in Mail, take the
+    /// first row's place.
     private var header: some View {
-        let counts = model.identityCounts
-        return VStack(alignment: .leading, spacing: Space.s) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             if selecting {
                 selectHeader
+            } else if dynamicTypeSize.isAccessibilitySize {
+                // The largest sizes: the title and summary alone on the
+                // first row, Select beside the filter under the search.
+                titleAndSummary
             } else {
-                HStack(spacing: Space.s) {
-                    ProgressRing(fraction: counts.total == 0 ? 1 : Double(counts.total - counts.toReview) / Double(counts.total))
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Identities")
-                            .font(Typography.title)
-                            .accessibilityAddTraits(.isHeader)
-                        Text(summary(counts))
-                            .font(Typography.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
-                    circleButton(searching ? "xmark" : "magnifyingglass", label: searching ? "Cancel search" : "Search names") {
-                        searching.toggle()
-                        if searching { searchFocused = true } else { query = "" }
-                    }
-                    .accessibilityIdentifier("identities-search-button")
+                HStack(alignment: .center, spacing: Space.s) {
+                    titleAndSummary
                     if !identities.isEmpty {
                         selectButton
                     }
@@ -156,75 +162,101 @@ struct IdentitiesView: View {
                 SelectDemoCaption()
                     .transition(.opacity)
             }
-            if searching {
-                HStack(spacing: Space.xs) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    TextField("Names and aliases", text: $query)
-                        .focused($searchFocused)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("identities-search")
-                    if selecting {
-                        // Select's header has no search button: the field's own.
-                        Button {
-                            searching = false
-                            query = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                                .frame(width: Size.target, height: Size.target)
+            if !identities.isEmpty {
+                if dynamicTypeSize.isAccessibilitySize {
+                    searchField
+                    HStack(spacing: Space.xs) {
+                        if offersFilter {
+                            filterMenu
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Text("Cancel search"))
+                        Spacer(minLength: 0)
+                        if !selecting {
+                            selectButton
+                        }
+                    }
+                } else {
+                    HStack(spacing: Space.xs) {
+                        searchField
+                        if offersFilter {
+                            filterMenu
+                        }
                     }
                 }
-                .padding(.horizontal, Space.s)
-                .frame(minHeight: Size.target)
-                .background(Palette.chipFill, in: Capsule())
-                .transition(.opacity)
-            }
-            if counts.toReview > 0 && !selecting {
-                Button {
-                    deciding(identities.filter { $0.state == .proposed }.map(\.id)) { model.replaceAllPending() }
-                } label: {
-                    Label("Replace \(counts.toReview)", systemImage: "eye.slash")
-                        .frame(maxWidth: .infinity)
-                }
-                // A bulk shortcut past looking at each name: clear glass,
-                // not the drawer's loudest thing (buttons grill Q2).
-                .secondaryAction()
-                .accessibilityLabel(Text("Replace all \(counts.toReview) names left"))
-                .accessibilityIdentifier("identities-replace-all")
             }
         }
         .padding(.horizontal, Space.m)
         .padding(.top, Space.s)
         .padding(.bottom, Space.xs)
+        .background(Palette.background)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
-    private func summary(_ counts: (total: Int, toReview: Int)) -> String {
-        let names = counts.total == 1 ? String(localized: "1 name") : String(localized: "\(counts.total) names")
-        guard counts.toReview > 0 else { return names + " · " + String(localized: "all decided") }
-        return names + " · " + String(localized: "\(counts.toReview) left")
-    }
-
-    private func circleButton(_ symbol: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 34, height: 34)
-                .background(Palette.chipFill, in: Circle())
-                .frame(width: Size.target, height: Size.target)
-                .contentShape(Rectangle())
+    /// "Identities" with the summary under it, each on one line.
+    private var titleAndSummary: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Identities")
+                .font(Typography.title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityAddTraits(.isHeader)
+            if let summary = summary(model.identityCounts) {
+                Text(summary)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    // One line: the words shrink a little, then truncate.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .accessibilityIdentifier("identities-summary")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(label))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// "8 of 12 decided"; once none is left, "12 names · all decided ✓".
+    private func summary(_ counts: (total: Int, toReview: Int)) -> String? {
+        guard counts.total > 0 else { return nil }
+        guard counts.toReview == 0 else {
+            return String(localized: "\(counts.total - counts.toReview) of \(counts.total) decided")
+        }
+        let names = counts.total == 1 ? String(localized: "1 name") : String(localized: "\(counts.total) names")
+        return names + " · " + String(localized: "all decided ✓")
+    }
+
+    /// The search field, always shown: names, wordings and aliases.
+    private var searchField: some View {
+        HStack(spacing: Space.xs) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search names", text: $query)
+                .focused($searchFocused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .accessibilityIdentifier("identities-search")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: Size.target)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Clear search"))
+                .accessibilityIdentifier("identities-search-clear")
+            }
+        }
+        .font(Typography.body)
+        .padding(.leading, Space.s)
+        .padding(.trailing, query.isEmpty ? Space.s : Space.xxs)
+        .frame(minHeight: Size.target)
+        .background(Palette.chipFill, in: Capsule())
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: Looks like
     // MARK: Looks like
 
     @ViewBuilder
@@ -250,28 +282,61 @@ struct IdentitiesView: View {
 
     // MARK: Categories
 
-    private var categoryChips: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: Space.xs) {
-                Button {
-                    category = nil
-                } label: {
-                    Chip(Text("All"), filled: category == nil)
-                }
+    /// One capsule in place of the chips (ADR 0115): its menu lists All and
+    /// each category with its icon and count; its label, the filter now.
+    private var filterMenu: some View {
+        Menu {
+            Picker(selection: $category) {
+                Label("All \(identities.count)", systemImage: "person.2")
+                    .tag(Category?.none)
                 ForEach(categories, id: \.0) { item in
-                    Button {
-                        category = category == item.0 ? nil : item.0
-                    } label: {
-                        Chip(Text("\(item.0.label) \(item.1)"), systemImage: item.0.symbol, tint: category == item.0 ? item.0.color : nil)
-                    }
-                    .accessibilityAddTraits(category == item.0 ? .isSelected : [])
+                    Label("\(item.0.label) \(item.1)", systemImage: item.0.symbol)
+                        .tag(Category?.some(item.0))
                 }
+            } label: {
+                Text("Show")
             }
-            .buttonStyle(.plain)
-            .padding(.trailing, Space.m)
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: Space.xxs) {
+                Image(systemName: filtered?.symbol ?? "line.3.horizontal.decrease")
+                    .foregroundStyle(filtered?.color ?? .primary)
+                Text(filtered?.label ?? String(localized: "All"))
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .font(Typography.chip)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, Space.s)
+            .frame(minHeight: Size.target)
+            .background(Palette.chipFill, in: Capsule())
+            .contentShape(Capsule())
         }
-        .scrollIndicators(.hidden)
-        .accessibilityIdentifier("identities-categories")
+        .fixedSize()
+        .accessibilityLabel(Text("Show"))
+        .accessibilityValue(Text(filtered?.label ?? String(localized: "All")))
+        .accessibilityHint(Text("Shows the names of one category."))
+        .accessibilityIdentifier("identities-filter")
+    }
+
+    /// Replace N, a glass capsule over the list's bottom.
+    private var replaceAllButton: some View {
+        let left = model.identityCounts.toReview
+        return Button {
+            deciding(identities.filter { $0.state == .proposed }.map(\.id)) { model.replaceAllPending() }
+        } label: {
+            Label("Replace \(left)", systemImage: "eye.slash")
+                .padding(.horizontal, Space.xs)
+        }
+        // A bulk shortcut past looking at each name: clear glass, not the
+        // drawer's loudest thing (buttons grill Q2).
+        .secondaryAction()
+        .padding(.bottom, Space.s)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .accessibilityLabel(Text("Replace all \(left) names left"))
+        .accessibilityIdentifier("identities-replace-all")
     }
 
     // MARK: Sections
@@ -303,33 +368,47 @@ struct IdentitiesView: View {
                 Button {
                     showsKept.toggle()
                 } label: {
-                    HStack {
-                        sectionHeader("Kept", id: "kept", count: members.count)
-                        Image(systemName: showsKept || !query.isEmpty ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
+                    sectionHeader("Kept", id: "kept", count: members.count,
+                                  chevron: showsKept || !query.isEmpty ? "chevron.down" : "chevron.right")
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets())
                 .accessibilityHint(Text(showsKept ? "Hides the kept names." : "Shows the kept names."))
             }
         }
     }
 
-    /// A section's title and count; `id` names its frame, which a drag
-    /// keeps clear of (the header pins over the rows).
-    private func sectionHeader(_ title: LocalizedStringKey, id: String, count: Int?) -> some View {
+    /// A section's title and count on an opaque band the width of the list
+    /// (ADR 0115: no row shows through a pinned header); `id` names its
+    /// frame, which a drag keeps clear of (the header pins over the rows).
+    private func sectionHeader(_ title: LocalizedStringKey, id: String, count: Int?, chevron: String? = nil) -> some View {
         HStack(spacing: Space.xxs) {
+            // Label colours, not `.primary` and `.secondary`: a List header's
+            // own style dims those a level.
             Text(title)
+                .foregroundStyle(Color(uiColor: .label))
             if let count {
                 Text("\(count)")
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
             }
+            if let chevron {
+                Image(systemName: chevron)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    .padding(.leading, Space.xxs)
+                    .accessibilityHidden(true)
+            }
+            Spacer(minLength: 0)
         }
         .font(Typography.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
         .textCase(nil)
+        .padding(.horizontal, Space.m)
+        .padding(.vertical, Space.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.background)
+        .listRowInsets(EdgeInsets())
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.headers[id] = $0 }
         .onDisappear { dragTracking.headers[id] = nil }
@@ -434,22 +513,5 @@ private struct HintCard: View {
         .card(padding: Space.xxs)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Looks like the same: \(into.primaryWording) and \(from.primaryWording)"))
-    }
-}
-
-/// How much is decided, as a small ring.
-struct ProgressRing: View {
-    let fraction: Double
-
-    var body: some View {
-        ZStack {
-            Circle().stroke(Palette.chipFill, lineWidth: 4)
-            Circle()
-                .trim(from: 0, to: max(0, min(1, fraction)))
-                .stroke(Palette.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-        }
-        .frame(width: 28, height: 28)
-        .accessibilityHidden(true)
     }
 }

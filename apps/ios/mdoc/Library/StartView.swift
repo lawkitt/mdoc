@@ -48,7 +48,8 @@ struct StartView: View {
                         .font(Typography.body.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
-                    StatusPill(Text("\(document.pendingCount) left"), systemImage: "exclamationmark.circle", kind: .toReview)
+                    StatusPill(Text("\(document.pendingCount) left"), systemImage: "exclamationmark.circle", kind: .toReview,
+                               spoken: Self.left(document.pendingCount))
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
@@ -61,8 +62,14 @@ struct StartView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Continue \(document.title), \(document.pendingCount) left"))
+        .accessibilityLabel(Text("Continue \(document.title), \(Self.left(document.pendingCount))"))
         .accessibilityIdentifier("continue-card")
+    }
+
+    /// "73 names left to review", as VoiceOver reads the card's "73 left"
+    /// (ADR 0115: never the symbol's own name, "Error").
+    static func left(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 name left to review") : String(localized: "\(count) names left to review")
     }
 }
 
