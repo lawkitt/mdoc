@@ -224,6 +224,10 @@ struct MarkdownTextView: UIViewRepresentable {
         /// moment later, and that layout and the next change return here
         /// too, until the reader scrolls, types or a reveal moves the text.
         var modeAnchor: CandidateTextView.ScrollAnchor?
+        /// A word selected in a cell as the pencil was tapped, noted before
+        /// the edit-mode render restyles the cell (which drops it) and
+        /// selected in the text once the grids switch (`connectTables`).
+        var enteringCellSelection: NSRange?
         /// The width the text was last styled for.
         var renderedWidth: CGFloat?
         /// Edit mode's restyling and reveal (ADR 0109).
@@ -293,6 +297,10 @@ struct MarkdownTextView: UIViewRepresentable {
                 takenReveal = reveal.id
                 pendingReveal = reveal.target
                 pendingRequest = RevealOrigin(selected: parent.selected)
+            }
+            if parent.editing, shownEditing == false {
+                // Read only: nothing here moves the first responder.
+                enteringCellSelection = view.cellSelection
             }
             if content != self.content {
                 // iOS draws a backgrounded app again in light and dark for

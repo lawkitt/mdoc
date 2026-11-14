@@ -12,6 +12,18 @@ extension CandidateTextView {
     /// Edit mode in live preview: tables are grids whose cells are edited.
     var editsCells: Bool { isEditMode && hidesMarkers }
 
+    /// A word selected in a cell (a long press, for Hide name) as a range
+    /// of this view's text: a cell's text is its source, offset by its
+    /// `location`, as Fix the words maps it. Nil with none.
+    var cellSelection: NSRange? {
+        for cell in tableViews.lazy.flatMap({ $0.cells.joined() }) where cell.isFirstResponder {
+            let selected = cell.selectedRange
+            let range = NSRange(location: cell.location + selected.location, length: selected.length)
+            return selected.length > 0 && NSMaxRange(range) <= textStorage.length ? range : nil
+        }
+        return nil
+    }
+
     /// The grid cell whose span holds the text's UTF-16 `offset`, and where
     /// in the cell's text that is. Nil outside a drawn table's cells, and
     /// outside live-preview edit mode.
@@ -178,6 +190,13 @@ extension MarkdownTextView.Coordinator {
             view.onCellPaste = nil
             return
         }
+        // A word selected in a cell stays selected, in the cell's source,
+        // where edit mode keeps a cell's text, so the keyboard comes up on
+        // it as on any selection (ADR 0110).
+        if let selection = enteringCellSelection, NSMaxRange(selection) <= view.textStorage.length {
+            view.selectedRange = selection
+        }
+        enteringCellSelection = nil
         view.onTableTap = { [weak view] table, point in
             guard let view, let offset = table.offset(at: point) else { return }
             if !view.isFirstResponder { view.becomeFirstResponder() }

@@ -72,14 +72,18 @@ final class LargeTableEditModeTests: XCTestCase {
     /// taking touches, the selected cell resigned the first responder, and
     /// SwiftUI's hosting view, asked to take over, read the view graph it
     /// was updating: on iOS 27 that never returned and iOS stopped mdoc.
-    /// Now the update leaves the cells as they are; after it the cell's
-    /// selection ends and the grid switches.
+    /// Now the update leaves the cells as they are; after it the selected
+    /// word becomes the text's selection, in the cell's source, the cell's
+    /// own selection ends, and the grid switches. The keyboard comes up on
+    /// the word, and typing replaces it (ADR 0110).
     func testThePencilLeavesASelectedCellAloneInsideTheUpdate() throws {
         let harness = try harness()
         let cell = try grid(harness).cells[3][0]
         XCTAssertTrue(cell.isUserInteractionEnabled)
         XCTAssertTrue(cell.becomeFirstResponder())
-        cell.selectedRange = NSRange(location: 0, length: 4)
+        let word = (cell.textStorage.string as NSString).range(of: "seller")
+        XCTAssertNotEqual(word.location, NSNotFound)
+        cell.selectedRange = word
         harness.model.enterEditMode()
         update(harness)
         update(harness)
@@ -89,8 +93,19 @@ final class LargeTableEditModeTests: XCTestCase {
         XCTAssertTrue(harness.view.isEditMode)
         XCTAssertFalse(cell.isUserInteractionEnabled)
         XCTAssertFalse(cell.isFirstResponder)
-        XCTAssertEqual(cell.selectedRange.length, 0, "the cell's selection ended")
+        XCTAssertEqual(cell.selectedRange.length, 0, "the cell's own selection ended")
         XCTAssertNotNil(harness.view.onTableTap)
+        let selected = harness.view.selectedRange
+        XCTAssertEqual(selected, NSRange(location: cell.location + word.location, length: word.length))
+        XCTAssertEqual(harness.string.substring(with: selected), "seller", "the word stays selected")
+        XCTAssertTrue(harness.view.isFirstResponder, "the keyboard comes up on the word")
+        // Typed over, as UIKit types: the word is replaced in its cell.
+        XCTAssertTrue(harness.coordinator.textView(harness.view, shouldChangeTextIn: selected, replacementText: "buyer"))
+        harness.view.textStorage.replaceCharacters(in: selected, with: "buyer")
+        harness.view.selectedRange = NSRange(location: selected.location + 5, length: 0)
+        harness.coordinator.textViewDidChange(harness.view)
+        XCTAssertTrue(harness.session.snapshot().markdown.contains("| 3.1. The buyer delivers the goods named in annex 3 "))
+        harness.view.resignFirstResponder()
         // Done gives the cells their touches back, after the update too.
         harness.model.doneEditing()
         update(harness)
@@ -139,13 +154,15 @@ final class LargeTableEditModeTests: XCTestCase {
         let before = view.contentOffset.y
         view.selectedRange = NSRange(location: view.textStorage.length, length: 0)
         XCTAssertTrue(cell.becomeFirstResponder())
-        cell.selectedRange = NSRange(location: 0, length: 4)
+        cell.selectedRange = (cell.textStorage.string as NSString).range(of: "goods")
         harness.model.enterEditMode()
         update(harness)
         settle()
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         XCTAssertTrue(view.isEditMode)
         XCTAssertEqual(view.contentOffset.y, before, accuracy: 2, "the pencil moved the text")
+        XCTAssertEqual(harness.string.substring(with: view.selectedRange), "goods")
+        view.resignFirstResponder()
     }
 
     /// Every update ran through every cell of every table (280 in the

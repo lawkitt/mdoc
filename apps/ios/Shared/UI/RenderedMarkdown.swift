@@ -1058,7 +1058,8 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
     }
 
     /// Drops a selection made in the cell (a long press, for Hide name),
-    /// and the keyboard focus with it.
+    /// and the keyboard focus with it. Edit mode takes the selection into
+    /// the text behind the grid first (`connectTables`).
     func endSelection() {
         if selectedRange.length > 0 { selectedRange = NSRange(location: 0, length: 0) }
         if isFirstResponder { resignFirstResponder() }
