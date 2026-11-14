@@ -158,6 +158,18 @@ Features are frozen until items 13–19 land (Q4).
     ADR 0109's acceptance bars pass and the iPhone 17 Pro and 12 Pro
     checks have no open `ui` findings.
 
+26. **[Mobile] rc.10's drawer, Fix the words and Identities fixes.** *From
+    the [iOS UI grill](docs/design/ios-ui-grill-2026-11-14.md)
+    ([ADR 0115](docs/adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).*
+    Slices, one PR each: (G) the drawer's shadow on the screen's curve, an
+    open drawer closing by a drag from anywhere over it, Identities rows on
+    a left swipe; (H) Fix the words in place, no system link menu, the
+    item in the card's alias menu; (I) the two-row Identities header with
+    a filter menu and Replace N at the bottom, the document menu's
+    disabled Copy for AI and Share, small fixes. TestFlight rc.11 after,
+    gated on the iPhone 17 Pro. *Done when:* all merged and checked on
+    the iPhone 17 Pro from rc.11.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
