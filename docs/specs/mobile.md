@@ -115,8 +115,8 @@ iOS: `apps/ios/mdoc/Design/`.
 - `Chip`: anything tappable that isn't a button is a filled capsule; ▾ or a
   chevron opens a menu; plain text never acts.
 - `AliasTag`: an alias is monospaced on its category's tint, one line, cut
-  in the middle when too long; VoiceOver hears it whole.
-- `Toast`: at most one action (Undo), announced to VoiceOver.
+  in the middle when too long.
+- `Toast`: at most one action (Undo).
 - `StateMark`: a dashed ring while proposed, an eye.slash on the category's
   tint once replaced, an eye on the chip fill once kept; as a button it has
   a 44 pt target and the state as its label.
@@ -147,8 +147,7 @@ iOS: `apps/ios/mdoc/Design/`.
   and alias fills are stronger in dark than in light.
 - No text is hyphenated anywhere.
 - A button bar never wraps a label: it stacks, the primary on its own row.
-- Bars stop growing at the second accessibility size and show a label in
-  the large content viewer on a long press.
+- Bars stop growing at the second accessibility size.
 
 ## Rendered Markdown
 
@@ -168,7 +167,6 @@ iOS: `apps/ios/mdoc/Design/`.
   scrolls sideways.
 - Candidates in cells look and act as in text.
 - A selection stays inside one cell or outside tables.
-- VoiceOver reads a table as a data table.
 - A header row whose cells are all empty isn't drawn outside edit mode; the
   text keeps it.
 - Bullets are `•` at every depth; ordered items show the number written in
@@ -191,8 +189,6 @@ iOS: `apps/ios/mdoc/Design/`.
   standing columns on a wide iPad.
 - The sidebar shows titles and case names only, never a document's text or
   names.
-- While a drawer is open the screen under it is hidden from VoiceOver, and
-  VoiceOver's escape closes it.
 - Every way into or out of a drawer animates with `Motion.move`.
 - The document's one menu is the title's; there is no ⋯ menu.
 - The title menu always lists Copy for AI and Share; until the document is
@@ -236,7 +232,7 @@ iOS: `apps/ios/mdoc/Design/`.
 - Merge hints never merge on their own; a dismissed hint is remembered in
   the case.
 - Undo moves the bar back to what it undid and shows no toast.
-- Redo is Undo's long press, ⇧⌘Z and a VoiceOver action.
+- Redo is Undo's long press and ⇧⌘Z.
 - A Redo shows the Undo toast.
 - "All N reviewed · Undo" shows only when this visit of the bar decided or
   changed something, because its Undo would reach an earlier decision.
@@ -277,8 +273,6 @@ iOS: `apps/ios/mdoc/Design/`.
 - Select ticks rows for Replace, Keep or Same as (into the name mentioned
   most); one Undo takes the selection back.
 - In Select, rows have no swipes and no long-press menu; a tap ticks.
-- Rows have VoiceOver actions for every swipe action and Review this
-  identity.
 - Drag-to-merge works from a ≡ handle in Select.
 - A drag-merge follows desktop's rule: the target keeps its alias, another
   category takes the target's, one undo step, no confirmation; the
@@ -311,8 +305,8 @@ iOS; Android's editor is a later roadmap item.
 
 ## Gestures
 
-- No action exists only as a gesture: each has a visible control and a
-  VoiceOver action.
+- No action exists only as a gesture: each has a visible control. Redo is
+  the one exception, as it reverses the visible Undo.
 - A sideways swipe anywhere opens a drawer: right the sidebar, left
   Identities.
 - A drawer swipe starts after 10 pt of mostly sideways movement; a vertical
@@ -336,8 +330,12 @@ iOS; Android's editor is a later roadmap item.
 
 ## Accessibility
 
-- Every screen works at every Dynamic Type size.
-- Every control has a VoiceOver label.
+- Every screen works at every Dynamic Type size, up to the largest
+  accessibility size, with nothing clipped.
+- Every icon-only control has a label.
+- Screen-reader support beyond labels waits for the roadmap's
+  Accessibility pass; existing VoiceOver and TalkBack code stays but is not
+  required in new work.
 
 ## Sample document
 

@@ -341,9 +341,28 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   been used. *From the mobile editor grill Q12.*
 - **[Mobile]** Save reply as document: make a restored AI reply an editable
   document of its own. *From the mobile editor grill Q23.*
-- **[A11y]** Expose editor text to screen readers (AccessKit text role, ranges,
-  caret and selection events); promote when a user asks or a buyer needs it
-  for compliance.
+- **[A11y]** Accessibility pass, promoted when a user asks or a buyer needs
+  it for compliance (2026-11-15 accessibility grill). Until then the specs
+  keep only icon-only labels, visible controls for gestures, text sizes,
+  contrast, Reduce Motion and desktop keyboard reach. The pass covers:
+  VoiceOver and TalkBack beyond labels (an alias heard whole, toasts
+  announced, tables read as data tables, the screen under a drawer hidden
+  and VoiceOver's escape closing it, actions for Identities rows' swipes and
+  for Redo, the large content viewer on bars); desktop live regions (the
+  find counter, the popup's position) and accessible names without tooltip
+  keys; editor text for screen readers (AccessKit text role, ranges, caret
+  and selection events); keyboard focus reported to UI Automation (the
+  Replacements list, the palette, the sidebar menu) and as `AXFocused` on
+  macOS beyond text fields and dialog buttons; status text (download
+  progress, notices, "Installed") as text and announcements; the shelf row's
+  nested Copy for AI button made a sibling; zooming the whole window, not
+  only the editor
+  ([U30](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas));
+  the VoiceOver acceptance row (candidates read with their aliases, Keep and
+  Replace from the rotor); and Xcode's accessibility audit, back as a test.
+- **[CI]** Save the desktop renders' per-Tab-step PNGs only on a failure or
+  behind a flag; they make most of the 1.3 GB `renders-*` artifact, while the
+  Tab-walk assertions stay. *From the 2026-11-15 accessibility grill.*
 - **[UI]** Smooth scrolling to the selected mention, and maybe centering it;
   whether to center is still open, and either way it must not undo #102's
   keep-visible-in-place behavior.
@@ -358,13 +377,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   Image → text.
 - **[Models]** Model choices show what each detects (Person, Email, Address…)
   and the memory of the active set ("2.3 GB in memory"). *From Anoni 0.86.1.*
-- **[A11y]** Report keyboard focus to UI Automation in the Replacements list,
-  the palette and the sidebar context menu: arrowing there leaves the window
-  as the focused element, so Narrator can't follow. *From the 2026-10-26
-  Windows run.*
-- **[A11y]** Expose status text (download progress, "Download cancelled",
-  "Checking runtime…", notices, a model's "Installed") to assistive tech as
-  text and announcements. *From the 2026-10-26 Windows run (A5, S5).*
 - **[Windows]** Caption buttons and resize borders respond to synthetic input
   (UI Automation, Voice Access, test agents); today only a physical mouse
   works, and a narrow window leaves almost no title bar to drag, so a
@@ -373,9 +385,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Release]** Keep the Windows acceptance helpers (UI Automation tree and
   focus dump, clipboard byte compare, HTML clipboard writer) in `scripts/` so
   runs don't rewrite them. *From the 2026-10-26 Windows run.*
-- **[A11y]** Report keyboard focus on macOS too: only text fields and dialog
-  buttons set `AXFocused`, so accessibility clients and agent-run acceptance
-  can't follow focus elsewhere. *From the rc.4 acceptance run.*
 - **[Release]** Measure a cheaper release profile (thin LTO or more codegen
   units than `lto = true`, `codegen-units = 1`) against binary size and the
   perf budgets; the package step is 17–24 minutes. RCs and stables keep one
@@ -393,10 +402,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Spelling]** Russian name forms such as "Маришей" get a misspelling
   underline; names, detected mentions and aliases shouldn't be spell-checked.
   *From the 2026-10-31 shelf GUI run.*
-- **[A11y]** The shelf row is a button with its Copy for AI button nested
-  inside, so accessibility hit-testing lands on the row (an agent's click on
-  Copy opened the document instead); check with VoiceOver (M9) and make them
-  siblings if it can't reach the button. *From the 2026-10-31 shelf GUI run.*
 - **[Release]** Keep the macOS acceptance helpers (window list with layers,
   AX dump and press by title, pressing the menu bar item) in `scripts/`
   beside the Windows ones, so GUI runs don't rewrite them. *From the
@@ -474,10 +479,6 @@ steps and screenshots: [evidence](https://github.com/lawkitt/mdoc/blob/0aaf8f706
   "1." numbers and Heading 1 sections, so it imports as "1\." paragraphs and
   only H1s; `text.pdf` imports `<s>` and `<sup>` as literal tags.
   ([U29](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
-  *From the 2026-10-31 UI/UX survey.*
-- **[A11y] Idea: zoom the whole window.** View › Zoom scales only the editor;
-  the sidebar, the 11–12 pt panel, dialogs and the shelf stay small.
-  ([U30](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
   *From the 2026-10-31 UI/UX survey.*
 
 Ideas from the [2026-10-31 competitor scan](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/competitor-scan-2026-10-31.md),

@@ -6,7 +6,6 @@
 # it. Written by scripts/ios/ios-ui-class-times.py; the nightly refreshes it
 # (scripts/ios/ios-ui-class-times.sh), replacing a row only with 3 parts or more.
 # A class missing here counts as the median.
-AccessibilityAuditExploreUITests	4	37
 DeviceBelowFloorUITests	3	40
 DeviceLongJobsUITests	0	40
 DeviceTapTimingUITests	1	40
@@ -15,7 +14,6 @@ EditToolbarUITests	92	40
 IdentitiesGesturesUITests	289	38
 IdentitiesHeaderUITests	130	13
 IdentitiesSelectUITests	60	34
-LargeTextExploreUITests	0	40
 LivePreviewUITests	114	39
 NewDocumentUITests	53	39
 OCRResumeUITests	0	40

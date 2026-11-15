@@ -244,25 +244,4 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toolbar-formatting"].isHittable)
         XCTAssertTrue(app.buttons["toolbar-hide-keyboard"].isHittable)
     }
-
-    /// The accessibility audit with the table controls up (ADR 0110): no
-    /// issue on the controls. Issues elsewhere (the system keyboard) are
-    /// printed. Opt-in, as the repository's audits are: hosted ci/ios cannot
-    /// finish it in time; run with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`.
-    @MainActor
-    func testTheAccessibilityAuditWithTheTableControlsUp() throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_A11Y_EXPLORE"] == "1", "exploration only")
-        let (app, _) = Self.editCell("Депозит")
-        XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: MdocUITest.timeout))
-        var found: [String] = []
-        try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait, .hitRegion]) { issue in
-            let identifier = issue.element?.identifier ?? ""
-            let line = "\(issue.auditType) | \(issue.compactDescription) | \(issue.element?.label ?? "-") id=\(identifier)"
-            print("A11Y[table-controls] \(line)")
-            let ours = ["toolbar-", "table-", "format-", "formatting-"].contains { identifier.hasPrefix($0) }
-            if ours { found.append(line) }
-            return true
-        }
-        XCTAssertEqual(found, [], "issues on the table controls")
-    }
 }
