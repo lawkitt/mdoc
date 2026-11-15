@@ -71,8 +71,10 @@ what it does in detail.
 
 ## Nightly
 
-`nightly.yml` runs every hosted job on `main` at 02:17 UTC, the timing
-tests, the quarantined tests and cargo-deny's advisories.
+`nightly.yml` runs every hosted job on `main`, the timing tests, the
+quarantined tests and cargo-deny's advisories. Its cron says 12:17 UTC, but
+GitHub starts this repo's scheduled runs about 7 hours late, so it runs
+during the maintainer's night, about 02:00–03:00 GMT+7.
 `nightly-issue.sh` keeps one "Nightly CI is red" issue open while it is red.
 Its `CI targets` job runs `ci-stats.sh --days 7 --nights 3` through
 `ci-targets-issue.sh`, which keeps a "CI targets missed" issue open while a

@@ -14,8 +14,11 @@ name: Nightly
 # (ADR 0113) on a branch, nightly/ui-class-times, which the hub opens as a PR.
 on:
   schedule:
-    # 02:17 UTC, between the maintainer's working days.
-    - cron: "17 2 * * *"
+    # 12:17 UTC, so it starts during the maintainer's night (GMT+7): GitHub
+    # starts this repo's scheduled runs about 7 hours late (02:17 UTC began
+    # at 08:45-09:50 UTC through November 2026), so about 19:00-20:00 UTC,
+    # 02:00-03:00 GMT+7. If that delay goes away, move it to 19:17 UTC.
+    - cron: "17 12 * * *"
   workflow_dispatch:
     inputs:
       drill:
