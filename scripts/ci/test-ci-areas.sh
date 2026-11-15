@@ -50,10 +50,11 @@ check "ci.yml's paths-ignore list is read" [ -n "$ignored" ]
 check "ci.yml's paths-ignore is the table's none lines, in order" [ "$ignored" = "$none" ]
 check "main-caches.yml's paths-ignore is the same" \
   [ "$(tr -d '\r' <.github/workflows/main-caches.yml | paths_ignore)" = "$none" ]
-# The lines above the first none line are exceptions to it: Markdown a test
-# reads. GitHub's paths-ignore takes no `!`, so hosted CI skips them.
-check "the exceptions are under tests/fixtures/, so a README under apps/ is docs" \
-  [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 == "none" { exit } { print $2 }' | grep -v '^tests/fixtures/')" ]
+# The lines above the first none line are exceptions to it: the fixture
+# folders, whose Markdown tests read. GitHub's paths-ignore takes no `!`, so
+# ci.yml's push filter skips them.
+check "the exceptions are fixture folders, so a README under apps/ or crates/ is docs" \
+  [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 == "none" { exit } { print $2 }' | grep -vE '^(tests|crates/(\*\*|[^/*]+))/fixtures/')" ]
 check "the none lines are one block" \
   [ "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 == "none" { inside = 1; next } inside { after = 1 } after && $1 == "none" { bad = 1 } END { print bad + 0 }')" = 0 ]
 check "every line names known areas and one glob" \
@@ -105,7 +106,11 @@ routes "desktop ios" src/main.rs apps/ios/mdoc/App/MdocApp.swift
 routes "ios android" apps/ios/a.swift apps/android/b.kt
 routes recognition tests/fixtures/recognition/en/claim/x.md
 routes recognition tests/fixtures/recognition/en/claim/x.model.json
-routes "" tests/fixtures/pseudonymization/README.md
+# Fixture Markdown is read by tests: each takes its folder's area.
+routes desktop tests/fixtures/import/text.docx.md tests/fixtures/mobile-markdown/review.md tests/fixtures/welcome.md
+routes desktop tests/fixtures/pseudonymization/README.md
+routes "desktop recognition" crates/mdoc-pii/fixtures/restore/en-summary.reply.md
+routes "core desktop recognition ios android ci" crates/mdoc-markdown/fixtures/from_html/chatgpt-ios.md
 routes "" README.md docs/adr/0095-ci-on-a-merge-queue.md LICENSE
 routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md
 routes "ios" apps/ios/README.md apps/ios/a.swift

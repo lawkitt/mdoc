@@ -12,7 +12,8 @@ read there, one bullet with links relative to the repository root:
 ```
 
 `just release` moves every fragment to the top of `## Unreleased`, newest
-merge first, and deletes it. This README is not a fragment.
+merge first, and deletes it. `just lint` (docs-lint) rejects a name or
+first line it would reject. This README is not a fragment.
 
 A change to the iOS or Android app puts its fragment in `changes/ios/` or
 `changes/android/` instead, in the same format and with the same

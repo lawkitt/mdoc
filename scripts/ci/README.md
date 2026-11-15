@@ -52,6 +52,22 @@ what it does in detail.
   the organization's policy lets no workflow open a PR, so the hub opens
   and enqueues it with its own token.
 
+## Docs-only changes
+
+Decided 2026-11-15 (the docs-only CI grill), recorded here instead of in an
+ADR since each part is one table line or one script rule to undo.
+
+- A change of only `none` files (Markdown, `docs/`) runs no job but
+  `lint (ubuntu)`, which holds docs-lint: word budgets, the ADR index,
+  `Folds:` lines and the `changes/` fragments as `just release` reads them.
+  Its `merge-gate` says "Docs only".
+- Markdown that tests read is not docs: the fixture folders
+  (`tests/fixtures/**`, `crates/**/fixtures/**`) precede the `none` lines,
+  each with its folder's area, as the recognition fixtures did since
+  ADR 0093. Fixture folders the apps read still route to desktop only,
+  Markdown or not; that is the broader CI grill's question.
+- No link checker: an external one needs the network and flakes.
+
 ## `main` and caches
 
 - A push to `main` runs no tests. `ci.yml` runs lint and `just mobile --ffi`
