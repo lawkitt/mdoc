@@ -38,8 +38,8 @@
 //! the 2 px accent outline changes. `frames` records each settle or Tab
 //! frame's CPU `layout_paint_ms`, and `raster_readback_ms` the GPU render and
 //! readback, PNG encoding excluded, with no pass or fail budget. PNGs encode
-//! on one bounded background thread, which must finish before the summary is
-//! written.
+//! on one background thread with a one-image queue (no encoder processes),
+//! which must finish before the summary is written.
 //!
 //! CI sets `MDOC_HEADLESS_ARTIFACTS` to a new folder and uploads it; locally
 //! the output stays temporary unless that variable names a new folder. The

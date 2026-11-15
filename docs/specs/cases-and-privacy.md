@@ -61,6 +61,10 @@ in [CONTEXT.md](../../CONTEXT.md).
 - Saved Markdown, sidecars, the session and copied output never carry
   originals.
 - No mapping survives quit without a case.
+- Quit waits for case saves. If one fails, the window and its mappings stay
+  and the prompt offers Retry, Cancel and Quit without saving mappings.
+- A quit that is abandoned clears all its case-quit state, and a failed
+  write for a case removed mid-write never stops the other queued cases.
 
 ## Cases
 

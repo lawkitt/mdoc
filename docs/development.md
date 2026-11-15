@@ -85,9 +85,9 @@ Read this file and your area's spec, its source of truth.
   its CHANGELOG entry as `changes/<slug>.md` (`changes/ios/` or
   `changes/android/` for an app change; format in
   [changes/README.md](../changes/README.md)).
-- Grooming, after each release and acceptance run: close the finished
-  milestone into Current status, triage open issues, pick the next minor's
-  must-fix items, promote from Later, and update the date line.
+- Groom after each release and acceptance run: close the finished milestone
+  into Current status, triage issues, pick the next minor's must-fix items,
+  promote from Later.
 
 ## Code layout
 
@@ -158,7 +158,8 @@ elsewhere. `Cargo.lock` must be what cargo resolves from `Cargo.toml`
 (`just lint` fails otherwise): change a requirement in `Cargo.toml`, never
 the lockfile alone. An exact pin carries its reason in a comment. Bump
 `dirs`, `aes-gcm` and `docxide-pdf` deliberately, one PR each, checking
-their paths, old cases and the preview corpus. Test a fork update in the
+their paths, old cases and the preview corpus; `docxide-pdf` only when a
+rendering fix needs it. Test a fork update in the
 fork first; port reviewed AnyDoc upstream changes rather than merging. If
 Cargo's Git fetch cannot authenticate, use
 `CARGO_NET_GIT_FETCH_WITH_CLI=true`; never change global Cargo
@@ -222,13 +223,13 @@ one whose header says so stays Bash 3.2 compatible for macOS's `/bin/bash`.
   debug information for dependencies. For a debugger, build into
   `target/debugging/`: `cargo run --profile debugging`.
 - A dependency gets its own dev `opt-level` (2) only when a profile shows it
-  hot and the cold test build grows no more than about 30%; blanket levels
-  stay off.
-- Keep one build configuration: don't override profiles or `RUSTFLAGS`
-  through environment variables, and never share a `CARGO_TARGET_DIR`
-  between worktrees, since either invalidates artifacts and a shared one
-  tested stale code.
-- Each worktree has its own `target/`. `just disk` reports their sizes;
+  hot and the cold test build grows no more than about 30% on both macOS and
+  Windows; blanket levels stay off.
+- Don't override profiles or `RUSTFLAGS` through environment variables, and
+  never share a `CARGO_TARGET_DIR` between worktrees: both invalidate
+  artifacts, and a shared one tested stale code.
+- Each worktree has its own `target/`, with no cap or automatic eviction.
+  `just disk` reports their sizes;
   `just retire-worktree <path>` deletes a merged worktree's `target/` and
   then the worktree, refusing uncommitted, untracked or ignored files.
 - Cargo never deletes superseded artifacts: after a toolchain bump or a
@@ -238,10 +239,9 @@ one whose header says so stays Bash 3.2 compatible for macOS's `/bin/bash`.
 
 - Work on other machines follows the maintainer's `fleet` skill (hubs,
   lanes, release runs, machine paths).
-- `windows` takes Windows-only work; `wsl` builds only the platform-neutral
-  crates. A lane stops and reports before adding a dependency, vendoring
-  code, patching `vendor/` or a GPUI platform crate, or editing outside its
-  item.
+- `wsl` builds only the platform-neutral crates. A lane stops and reports
+  before adding a dependency, vendoring code, patching `vendor/` or a GPUI
+  platform crate, or editing outside its item.
 - A dev build uses the real profile: copy `~/Library/Application Support/mdoc`
   aside before a GUI check and restore it after.
 

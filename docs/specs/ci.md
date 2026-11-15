@@ -36,9 +36,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
   squashes.
 - A failing PR is dropped from the queue with a red `merge-gate` naming the
   failing job; fix it on the branch and enqueue it again.
-- Make independent PRs off `main` and enqueue them together. The queue takes
-  only PRs based on `main`, so a stack goes through one PR at a time. Stack
-  only changes that truly depend on each other.
+- Make independent PRs off `main` and enqueue them together: the queue takes
+  only PRs based on `main`, so a stack goes through one PR at a time.
 - Merge `main` into a PR only when GitHub reports it `CONFLICTING`, because
   each new head reruns its checks.
 
@@ -66,10 +65,11 @@ How a PR reaches `main`. The machinery and the PC's runners:
   `.config/quarantine.txt` with its issue, by PR and without asking:
   `<nextest filter>  #<issue>  <expires YYYY-MM-DD>`, or
   `android:<class>#<method>`, or `ios:<target>/<class>/<method>`.
-- No tier runs a quarantined test. A line past its date fails the `scripts`
-  tier until the test is fixed or a PR renews the date and says why.
-- A test that measures speed never decides a merge; the timing tests run
-  only nightly.
+- Every tier skips a quarantined test except `quarantined`, which runs the
+  list nightly without failing. A line past its date fails `scripts` until
+  the test is fixed or a PR renews the date and says why.
+- Tests that measure speed, take screenshots or survey layouts stay off the
+  queue; the timing tests run nightly.
 
 ## Detection snapshots
 

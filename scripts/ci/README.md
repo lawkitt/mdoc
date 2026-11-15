@@ -88,7 +88,13 @@ night red. Run it with `gh workflow run nightly.yml --repo lawkitt/mdoc`
 - Every script suite runs on every change that could break it, on hosted
   Linux at least.
 - Infrastructure steps (emulator boot, Gradle and network fetches, `setup.sh`
-  downloads) retry once, logged; tests do not.
+  downloads) retry once, logged; tests do not. Linux package installs get
+  8 minutes and two retries, the second on kernel.org's HTTPS mirror.
+- Logs stay on GitHub and the PC's tailnet page; no external log store.
+- A dedicated CI Mac is reconsidered only if capacity re-runs still fail
+  more than about once a week.
+- The iOS UI shards each build for themselves: a build-once hand-off would
+  put a serial build on the critical path to save about 3 runner-minutes.
 - Build tools (sccache, other linkers, Cranelift) are reconsidered only when
   a job's warm build step passes 5 minutes; building takes 2 to 4 minutes
   of each job.

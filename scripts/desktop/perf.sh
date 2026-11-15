@@ -8,7 +8,8 @@
 # meaningful on an idle machine: use a fixed viewport, representative legal or
 # OCR Markdown and real scroll and search positions, and report profile,
 # machine, latency, peak memory and lifecycle results. Logs give the editor's
-# real width; outer window sizes alone cannot be compared. Reproduce a cost
+# real width; outer window sizes alone cannot be compared, nor different
+# workloads, nor timings from different CPU models. Reproduce a cost
 # before optimizing it. Debug and headless timings expose costs but establish
 # neither native latency nor a release regression; never raise a failing
 # ceiling to make the tree pass.
