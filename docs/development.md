@@ -218,7 +218,7 @@ apps displaying. For code in `apps/ios` and `apps/android`:
   missing until its issue is fixed, says so with the issue on its line or
   the comment just above: `// timing: <why> (#NNN)`; a deliberate on-screen
   duration (a toast's life, a hint's beats) names the ADR that defines the
-  behaviour: `(ADR NNNN)`. `just lint` checks it (`scripts/fixed-delays.sh`;
+  behaviour: `(ADR NNNN)`. `just lint` checks it (`scripts/dev/fixed-delays.sh`;
   tests and UI tests are exempt). The iOS UI tests wait for an element, its
   state or a settled screen (`apps/ios/mdocUITests/Waits.swift`), not for
   time; Android's follow when it next moves.
@@ -256,12 +256,12 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just ios-core` | macOS: the iOS core into `target/ios` (`MdocCore.xcframework`, Swift bindings, PDFium) |
 | `just android-setup` | Windows, macOS or Linux: the pinned Android SDK (command-line tools, `adb`, build-tools, platform 36, the emulator and an API 36 image with 16 KB pages, x86_64, or arm64-v8a on the Mac), Temurin 21 and NDK r29 under `E:\Android`, `~/Library/Android` or `~/Android` (`MDOC_ANDROID_HOME` overrides), the SDK in `Sdk` there, or `mdoc-sdk` on macOS and Linux, apart from Android Studio's (a folder there it did not install stops it), each archive checked against its published size and SHA-1 or SHA-256; accepts the SDK licences. About 4 GB, once ([ADR 0089](adr/0089-android-app.md)) |
 | `just android-emulator [--window] [phone\|tablet]` | Windows, macOS, or Linux with read and write access to `/dev/kvm`: boots a Pixel 8-sized phone (`emulator-5554`) or Pixel Tablet-sized tablet (`emulator-5556`) on the pinned API 36 image with 16 KB pages, headless unless `--window`, writing its virtual device on first use; prints the adb serial. `adb -s <serial> emu kill` stops it |
-| `just android` | Windows, macOS, or Linux with KVM: the Android job when the commit touches the core or android area (`scripts/ci-areas.txt`; `MDOC_ANDROID_JOB=always` or `never` overrides): `just android-core`, the app's JVM parity and unit tests, the app and test builds and the minified release-like app (the `minified` build type: R8 with `apps/android/app/proguard-rules.pro`, debug-signed, `io.github.lawkitt.mdoc.minified`); on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it, the minified app must open its library on Home (a missing keep rule fails here, [ADR 0091](adr/0091-mobile-ci-and-releases.md)), then the instrumented tests run. The PC's queue runner runs it as `ci/android`, with a 40-minute limit |
+| `just android` | Windows, macOS, or Linux with KVM: the Android job when the commit touches the core or android area (`scripts/ci/ci-areas.txt`; `MDOC_ANDROID_JOB=always` or `never` overrides): `just android-core`, the app's JVM parity and unit tests, the app and test builds and the minified release-like app (the `minified` build type: R8 with `apps/android/app/proguard-rules.pro`, debug-signed, `io.github.lawkitt.mdoc.minified`); on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it, the minified app must open its library on Home (a missing keep rule fails here, [ADR 0091](adr/0091-mobile-ci-and-releases.md)), then the instrumented tests run. The PC's queue runner runs it as `ci/android`, with a 40-minute limit |
 | `just ios-survey <out> [device]` | macOS: the iOS UI survey, `SurveyUITests` on the iPhone 17 Pro (or the device given): every screen light and dark into the folder, usually `docs/evidence/ios-app/current` ([mobile UI guide](mobile-ui.md)). Shuts down only its Simulator. Not part of CI |
 | `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of CI |
 | `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of CI |
 | `just android-core` | Windows, macOS or Linux: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
-| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (unit)`, `ci/ios (ui 1)` and `ci/ios (ui 2)` run those recipes after the core: the unit tests, or one UI shard's classes (`scripts/ios-ui-shards.sh`). Neither: both |
+| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (unit)`, `ci/ios (ui 1)` and `ci/ios (ui 2)` run those recipes after the core: the unit tests, or one UI shard's classes (`scripts/ios/ios-ui-shards.sh`). Neither: both |
 | `just ios-app` / `just ios-test [device] [only...]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.2 Simulator (Xcode 26.2); `only`, xcodebuild's `-only-testing` identifiers (`mdocTests`, `mdocUITests/LivePreviewUITests`), runs just those (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
 | `just ios-release` | macOS: the iOS core, then the app and extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles; `ci/ios (unit)` runs it after the unit tests |
 | `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
@@ -279,7 +279,7 @@ its own watchdog (10 minutes on macOS, 20 on Windows); no retries. A slow
 test is a bug to fix, not a limit to raise. Doctests, which nextest does not
 run, follow through `cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)).
 The script suites (release, CI cache cleanup, the area table, the quarantine
-list) need no build, so `scripts/test.sh` runs them beside the Rust tests and
+list) need no build, so `scripts/dev/test.sh` runs them beside the Rust tests and
 prints their output after them.
 
 `just test-tier <tier>` runs one test tier, as CI's jobs will
@@ -514,10 +514,10 @@ marks those files `ci` in its own table (#622). `merge-gate.yml` runs
 and a dry run of the branch's script against the trial commits, not in the
 trial's own `merge-gate` status.
 
-**Jobs on a queue commit.** `scripts/ci-areas.sh --queue` (in `queue.yml`)
+**Jobs on a queue commit.** `scripts/ci/ci-areas.sh --queue` (in `queue.yml`)
 diffs the commit against `main`'s merge base and picks the jobs from its
 areas; `merge-gate` reads the same diff by the commit's own
-`scripts/ci-areas.txt` (`main`'s when GitHub cannot give it), as the PC
+`scripts/ci/ci-areas.txt` (`main`'s when GitHub cannot give it), as the PC
 does, so a skipped job is one it does not
 wait for.
 
@@ -525,7 +525,7 @@ wait for.
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test-tier rust` (the unit, app, renders and recognition tiers in one nextest run, `mdoc-detect`'s lib tests in one process, then the doctests; the script suites run on hosted Linux and macOS, ADR 0112) | 30 min |
-| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 55 min each (a cold core takes about 19 of them, #879) |
+| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of three parallel jobs on the pinned Xcode: `ci/ios (unit)`, `just ios-app ios-test` of the unit and parity tests (`mdocTests`), then `just ios-release`; `ci/ios (ui 1)` and `ci/ios (ui 2)`, the same of half the UI test classes each (`scripts/ios/ios-ui-shards.sh`), without the timing tests, which only the nightly runs | 55 min each (a cold core takes about 19 of them, #879) |
 | `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
 | `ci/detection` | recognition | hosted `windows-latest` (`ci-detection.yml`, ADR 0113): the detection gate in 12 shards, each warning past 80% of its 5-minute model budget | 20 min a shard |
 
@@ -541,7 +541,7 @@ of its parts ran and passed: `ci/ios (unit)`, `ci/ios (ui 1)` and
 `ci/ios (ui 2)`, one matrix job (id `ios`) split by test target, and the
 UI tests by class (ADR 0112); on a failure its annotations name each part
 that did not pass. A failed part names its failing tests from the xcresult
-(`scripts/ios-failed-tests.py`, ADR 0113), as the PC's status does: an
+(`scripts/ios/ios-failed-tests.py`, ADR 0113), as the PC's status does: an
 annotation "Failed in ci/ios (ui 1): ios:mdocUITests/PanesRowUITests/testX
 and 1 more", every name in its job summary, and `ci/ios` repeats them, in
 the quarantine list's `ios:<target>/<class>/<method>` form. **A failed UI
@@ -561,15 +561,15 @@ unless `TEST_RUNNER_MDOC_TIMING_TESTS=1`, which `ci-ios.yml`'s `timing`
 input sets: the nightly passes it, the queue does not; the UI ones are
 `LivePreviewUITests`', in whichever shard holds it. **The UI shards** split the `mdocUITests` classes by measured time
 ([ADR 0113](adr/0113-ci-targets-by-commit-and-detection-off-macos.md)):
-`scripts/ios-ui-shards.sh` packs them, longest first, each into the shard
+`scripts/ios/ios-ui-shards.sh` packs them, longest first, each into the shard
 with less so far, by `apps/ios/ui-class-times.tsv`, each class's median
 time over the green UI parts of the last 14 days; a class the table lacks,
 such as a new one, counts as the table's median, and `--plan` shows the
 split. Each green UI part (without the timing tests) uploads its class
 times, `ios-ui-times-<part>-<attempt>`, read from its xcresult
-(`scripts/ios-ui-class-times.py collect`; a case passed on its retry
+(`scripts/ios/ios-ui-class-times.py collect`; a case passed on its retry
 counts its passing run only), and the nightly's `UI class
-times` job rebuilds the table from them (`scripts/ios-ui-class-times.sh`):
+times` job rebuilds the table from them (`scripts/ios/ios-ui-class-times.sh`):
 a class measured by fewer than 3 parts in the window keeps its row. When
 that moves a class to the other shard, or measures a class the table lacks,
 it commits the table as one commit on `main` and force-pushes it to
@@ -581,7 +581,7 @@ to `main` and opens no PR, as the organization's Actions policy lets no
 workflow open one. The hub opens the PR from that branch with its own
 token, so CI starts as on any PR, and enqueues it. `lint (ubuntu)` (and the UI parts, before they build) fail on a class
 declared twice or a bad table row. Xcode needs a Simulator runtime of the SDK's version for any
-app build, Release included, so each job runs `scripts/ios-toolchain.sh
+app build, Release included, so each job runs `scripts/ios/ios-toolchain.sh
 --start`: it uses the installed runtime of build `IOS_SIM_RUNTIME_BUILD`
 (of version `IOS_SIM_RUNTIME`), or downloads that build (about 8 GB) in
 the background while the core builds; `--finish` waits for it. The pins,
@@ -591,7 +591,7 @@ image lacks costs each job about 8 GB and 4 minutes. The build is pinned
 because a version alone is ambiguous: `-buildVersion 26.2` resolves to the
 23C52 release candidate (#654). A Mac that runs `just mobile --ios` needs
 the same Xcode and runtime build (`just doctor` checks both);
-`scripts/ios-toolchain.sh` downloads the runtime once, or
+`scripts/ios/ios-toolchain.sh` downloads the runtime once, or
 `xcodebuild -downloadPlatform iOS -buildVersion 23C54 -architectureVariant
 arm64 -exportPath <dir>` exports it for `xcrun simctl runtime add` on
 another Mac. Xcode 26.x is not supported on macOS 27: there the kernel's
@@ -608,7 +608,7 @@ hosted `ci/ios` stays the reference.
 (the number of Simulator clones); it is off, as 2 clones were slower and
 failed UI tests (#617).
 
-**Areas.** `scripts/ci-areas.txt` is the one path table: each line names an
+**Areas.** `scripts/ci/ci-areas.txt` is the one path table: each line names an
 area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, `ci`, or
 two of them) and a glob; a file takes the first line that matches it, desktop when
 none does, and a core change runs every area. Its comment says which
@@ -618,7 +618,7 @@ scripts are desktop, shared (core) or mobile; `crates/mdoc-detect` and
 action are also `recognition,desktop`. App-only files (`src/`, `vendor/`,
 `build/`, and `tests/` outside recognition fixtures) stay desktop and skip
 the detection gate (ADR 0113); core still runs every job.
-`scripts/ci-areas.sh [<from> <to>]` prints the areas a change touches. A new
+`scripts/ci/ci-areas.sh [<from> <to>]` prints the areas a change touches. A new
 script outside `src/` and `tests/` that a mobile job runs needs a line
 there, or it counts as desktop. The ci area is `merge-gate.sh`,
 `queue-runner.sh` and its setup, the CI scripts (`ci-*.sh` but the table's
@@ -629,7 +629,7 @@ gate's two, `nightly.yml`). A workflow that builds or tests the app takes
 the area of what it runs: `ci-desktop.yml`, `queue.yml`
 (which starts them) and `release.yml` are desktop, `ci-ios.yml` ios. When
 unsure, leave a file desktop. `ci.yml`'s `paths-ignore` repeats the `none`
-lines word for word (`scripts/test-ci-areas.sh` checks).
+lines word for word (`scripts/ci/test-ci-areas.sh` checks).
 
 **Test tiers.** `.config/nextest.toml` names them (`unit`, `app`, `renders`,
 `recognition`); `just test-tier <tier>` runs one, `scripts` the script
@@ -692,7 +692,7 @@ snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
 12 shards, on every push (a newer push cancels it), drafts included. Its
 head `merge-gate` waits for `detection-head / ci/detection` beside the fast
 tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
-PR is one with a file on a recognition line of `scripts/ci-areas.txt`
+PR is one with a file on a recognition line of `scripts/ci/ci-areas.txt`
 (the fixtures, `crates/mdoc-detect`, `crates/mdoc-pii`, resources and gate
 machinery; `head_detection` in `scripts/lib.sh`); a core change alone runs
 the gate only in the queue. App-only desktop changes skip it. The
@@ -737,7 +737,7 @@ about 1.1 GB) only when the job failed, so the 20 GB keep about 7 days of
 logs. A runner refuses a job below 40 GB free and says so in a `pending`
 status; it deletes its `target/` past 60 GB or when `rust-toolchain.toml`
 changes. The Android job builds the core for its emulator's ABI only, x86_64 (arm64-v8a on the Mac)
-(`MDOC_ANDROID_ABIS`, which `scripts/android-check.sh` sets when
+(`MDOC_ANDROID_ABIS`, which `scripts/android/android-check.sh` sets when
 `MDOC_ANDROID_JOB=always`); `just android-core` and device runs still build
 arm64-v8a, and `just mobile --ffi` compile-checks it on macOS. Settings are
 the `QUEUE_CI_*` variables in `config()`, set in the home's `runner.env`.
@@ -751,7 +751,7 @@ the `QUEUE_CI_*` variables in `config()`, set in the home's `runner.env`.
   doesn't.
 - **Install:** on the PC, in PowerShell (not as admin), from a checkout of
   current `main`:
-  `powershell -ExecutionPolicy Bypass -File scripts\queue-runner-setup.ps1`.
+  `powershell -ExecutionPolicy Bypass -File scripts\ci\queue-runner-setup.ps1`.
   It clones the CI checkouts (the first Windows build fills about 30 GB),
   copies the runner, registers the tasks and serves `E:\ci\out` at `/ci`.
   `-Uninstall` removes the tasks and keeps the homes.
@@ -767,7 +767,7 @@ the `QUEUE_CI_*` variables in `config()`, set in the home's `runner.env`.
   `tailnet: /ci not served`, restart that task, or run
   `tailscale serve --bg --set-path /ci http://127.0.0.1:8787`.
 
-**Fallback.** `merge-gate` (`scripts/merge-gate.sh`, after each run and
+**Fallback.** `merge-gate` (`scripts/ci/merge-gate.sh`, after each run and
 status, in follow-up passes, and every 5 minutes) dispatches a PC job hosted when the PC has posted nothing
 10 minutes after the queue commit appeared, when its heartbeat is 10
 minutes old, when it posts `error`, or at once for a group with a fork or
@@ -827,7 +827,7 @@ it is not the status itself.
 - **Stale runs.** Runs of queue commits the queue dropped are cancelled; a
   run that finished meanwhile is skipped without a message.
 - **Testing.** `merge-gate.yml` always runs `main`'s script, so a change
-  to it is proven by `scripts/test-merge-gate.sh` (fakes for every GitHub
+  to it is proven by `scripts/ci/test-merge-gate.sh` (fakes for every GitHub
   call, and for `gh` itself under the wrapper) and by a shadow run with a
   deliberately broken job, which shows only that nothing regressed.
 
@@ -854,18 +854,18 @@ toolchain. A red `main` stops enqueueing.
 **The built iOS core.** Building the core takes 5–6 minutes even with a
 cargo cache hit, as rust-cache drops the workspace crates, so `main`'s
 build-only `ios` job also saves `target/ios` (the xcframeworks, the Swift
-bindings and the licences; #631). `scripts/ios-core-cache.sh key` keys it
+bindings and the licences; #631). `scripts/ios/ios-core-cache.sh key` keys it
 on the committed tree of everything the build reads (`crates/`,
 `resources/`, the Cargo manifests and lock, the toolchain, `.cargo/`, the
 `justfile`, the build script with `lib.sh`, and `XCODE_VERSION`). Both iOS jobs restore it
 and on an exact hit skip `just ios-core`, as `just --no-deps` already
-skips it for the app recipes; `scripts/ios-build-info.sh` still writes this
+skips it for the app recipes; `scripts/ios/ios-build-info.sh` still writes this
 commit's `Build.xcconfig`. A miss builds the core as before, then
-`scripts/ios-core-cache.sh check` fails if cargo's dep-info names a file the
+`scripts/ios/ios-core-cache.sh check` fails if cargo's dep-info names a file the
 key does not hash, so a stale core cannot pass. Only `main` saves; the
 cache cleanup keeps its newest key.
 
-**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>] [--nights K]` measures ADR 0113's targets from GitHub's queue commits, read-only, over the last 7 days by default. It first counts the queue commits by class, from the jobs each Queue run started: core (an iOS job and a macOS or detection job), desktop-only (macOS or detection, no iOS), iOS-only, other. Then one line per target:
+**CI targets.** `scripts/ci/ci-stats.sh [--days N | --since <UTC time>] [--nights K]` measures ADR 0113's targets from GitHub's queue commits, read-only, over the last 7 days by default. It first counts the queue commits by class, from the jobs each Queue run started: core (an iOS job and a macOS or detection job), desktop-only (macOS or detection, no iOS), iOS-only, other. Then one line per target:
 - a core queue commit's time to a green `merge-gate`: median 20 minutes or less;
 - a desktop-only one's: median 15 minutes or less;
 - every queue commit's: median 25 minutes or less;
@@ -880,9 +880,9 @@ Each target reads only queue commits from its start, set in one place (`target_s
 desktop jobs on both OSes, iOS, Android (`ci-android.yml`), the detection
 gate, the quarantined tests and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
 red", or comments on the open one; a green night closes it
-(`scripts/nightly-issue.sh`). Its `CI targets` job runs
-`scripts/ci-stats.sh --days 7 --nights 3` through
-`scripts/ci-targets-issue.sh`: a target missed on each of the last 3 nights
+(`scripts/ci/nightly-issue.sh`). Its `CI targets` job runs
+`scripts/ci/ci-stats.sh --days 7 --nights 3` through
+`scripts/ci/ci-targets-issue.sh`: a target missed on each of the last 3 nights
 opens one issue, "CI targets missed", or comments on the open one; a night
 that meets them all closes it. A missed target alone does not make the night
 red. Run it by hand with `gh workflow run nightly.yml --repo lawkitt/mdoc`;
@@ -890,7 +890,7 @@ red. Run it by hand with `gh workflow run nightly.yml --repo lawkitt/mdoc`;
 
 **cargo-deny.** `lint (ubuntu)` checks licences, bans and sources on every
 change, and advisories only when `Cargo.lock` or `deny.toml` changes
-(`scripts/deny-ci.sh`): a newly published advisory turns red the PR that
+(`scripts/ci/deny-ci.sh`): a newly published advisory turns red the PR that
 brings the crate in and the nightly run, never every PR. `just deny` still
 checks everything locally.
 
@@ -1103,7 +1103,7 @@ Unsigned, ad-hoc and debug builds always use their own login-keychain key
 release cases.
 
 Before publishing a release that changes case-key handling, install it on a
-clean macOS user account and run `scripts/keychain-launch-check.sh`. It seeds
+clean macOS user account and run `scripts/desktop/keychain-launch-check.sh`. It seeds
 a key this build cannot read silently and checks that launch shows no
 Keychain dialog and leaves cases locked.
 

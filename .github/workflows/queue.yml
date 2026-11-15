@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   # The jobs this commit needs, from what it brings onto main: the same diff
-  # and the same table merge-gate reads (scripts/ci-areas.sh --queue), so a
+  # and the same table merge-gate reads (scripts/ci/ci-areas.sh --queue), so a
   # job skipped here is one merge-gate does not wait for.
   areas:
     name: areas
@@ -46,7 +46,7 @@ jobs:
           filter: blob:none
 
       - id: areas
-        run: scripts/ci-areas.sh --queue | tee -a "$GITHUB_OUTPUT"
+        run: scripts/ci/ci-areas.sh --queue | tee -a "$GITHUB_OUTPUT"
 
   macos:
     needs: areas

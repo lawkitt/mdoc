@@ -16,7 +16,7 @@ just ios-device-test <hardware UDID>   # the device UI tests on a connected iPho
 ```
 
 They need Xcode 26.2 and the iOS 26.2 Simulator runtime of build 23C54, as
-CI (`scripts/tools.env`; `scripts/ios-toolchain.sh` downloads the runtime,
+CI (`scripts/tools.env`; `scripts/ios/ios-toolchain.sh` downloads the runtime,
 about 8 GB, and `just doctor` checks both). Both build the core first
 (`just ios-core`: `target/ios/MdocCore.xcframework`, its Swift bindings and
 `pdfium.xcframework`; a few seconds when nothing changed). Builds go to
@@ -24,7 +24,7 @@ about 8 GB, and `just doctor` checks both). Both build the core first
 Simulator builds exclude x86_64.
 
 `just ios-core` also writes `target/ios/Build.xcconfig`
-(`scripts/ios-build-info.sh`), which `Config/Build.xcconfig` includes: the
+(`scripts/ios/ios-build-info.sh`), which `Config/Build.xcconfig` includes: the
 build number is the number of commits up to HEAD and `MdocCoreCommit` in
 Info.plist is HEAD, which Settings › About shows and links. Without it a
 build is number 1 from an unknown commit. A shallow clone has too few
@@ -77,12 +77,12 @@ just ios-device-test <hardware UDID>
 just ios-device-test <hardware UDID> below-floor   # or detector: not by the phone's model
 ```
 
-`scripts/ios-device-test.sh` builds for the phone, installs mdoc, copies the
+`scripts/ios/ios-device-test.sh` builds for the phone, installs mdoc, copies the
 fixtures into its data container with `devicectl` (the app ships none), runs
 `ReviewFlowUITests` and the tier's test, and fails on a new
 `mdoc-*.ips` crash report (or when it cannot list them). The fixtures are
 the demo .docx, the 37-page `legal-opinion.docx`, a text PDF and six camera
-pages it renders (`scripts/ios-scan-pages.swift`), in
+pages it renders (`scripts/ios/ios-scan-pages.swift`), in
 `Library/mdoc-ui-fixtures` of the app's container: the UI-testing seed reads
 a fixture there when its Mac path does not exist. The long-jobs test runs
 at the detector tier with real downloads: the scan's Download & continue

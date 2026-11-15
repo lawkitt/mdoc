@@ -276,11 +276,11 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
    nightly full run of every hosted job, the quarantined tier included,
    opens an issue when red; cargo-deny advisories move to
    `Cargo.lock` PRs and a daily run that opens an issue (the local CI
-   scripts are gone; their area checks are `scripts/test-ci-areas.sh`).
+   scripts are gone; their area checks are `scripts/ci/test-ci-areas.sh`).
    *Done when:* a
    nightly drill with a broken fallback job opens an issue.
 
-15. **[CI] CI targets.** A measurement with `scripts/ci-stats.sh --since
+15. **[CI] CI targets.** A measurement with `scripts/ci/ci-stats.sh --since
     2026-11-06T00:35:00Z` once a day of queue traffic has run on items
     8–14, recorded in ADR 0100 (the script is #627; the parallel-testing
     verdict, off, is in #617). *Done when:* the measurement is recorded.
@@ -651,7 +651,7 @@ Android takes what applies. Its clipboard finding is
   stable build reads only `/releases/latest`; let the smoke run point the
   updater at a named draft or pre-release. *From the rc.4 acceptance run.*
 - **Keychain launch check without a fresh account:** run
-  `scripts/keychain-launch-check.sh` and E2 against a throwaway keychain. The
+  `scripts/desktop/keychain-launch-check.sh` and E2 against a throwaway keychain. The
   macOS `acceptance` user (fleet ADR 0011) shows the first Keychain prompt
   only once, since the case-key item outlives a profile rename and agents
   never delete it. *From the rc.4 acceptance run and the 0.2.1 grill.*

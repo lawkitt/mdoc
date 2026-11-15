@@ -41,7 +41,7 @@ import uniffi.mdoc_ffi.TextRange
 /**
  * The UI survey (ADR 0087, 0089): every screen, light and dark, and the
  * review text and Settings at the largest font, saved as PNGs under the
- * app's external files (`survey/`), which `scripts/android-survey.sh` pulls.
+ * app's external files (`survey/`), which `scripts/android/android-survey.sh` pulls.
  * The phone is told it has 16 GB, so name finding and its setup card show.
  * Runs only with the instrumentation argument `mdoc.survey=1`; not in CI.
  */
@@ -287,7 +287,7 @@ class SurveyTest {
         onAllNodes(hasContentDescription(description)).onFirst()
 
     private companion object {
-        /** Where the screenshots wait for scripts/android-survey.sh to pull them. */
+        /** Where the screenshots wait for scripts/android/android-survey.sh to pull them. */
         const val SURVEY = "/data/local/tmp/mdoc-survey"
     }
 

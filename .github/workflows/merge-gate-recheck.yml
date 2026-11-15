@@ -1,6 +1,6 @@
 name: Merge gate recheck
 
-# The follow-up merge-gate pass (ADR 0100): scripts/merge-gate.sh dispatches
+# The follow-up merge-gate pass (ADR 0100): scripts/ci/merge-gate.sh dispatches
 # this when a pass hit a GitHub error or left something pending. It waits 3
 # minutes, then runs merge-gate.yml, so a lost pass or a time-based decision
 # (the PC silent for 10 minutes) never waits for GitHub's best-effort
