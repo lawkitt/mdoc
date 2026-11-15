@@ -32,7 +32,8 @@ Set-StrictMode -Version Latest
 $localWebTaskName = 'mdoc local CI web'
 $webTaskName = 'mdoc queue CI web'
 $bash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe'
-$source = Split-Path -Parent $PSScriptRoot
+# The repository root, two folders above scripts\ci (test-queue-runner.sh checks).
+$source = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $out = Join-Path $Root 'out'
 
 function Get-TaskName([string] $Job) { "mdoc queue CI $Job" }
@@ -167,7 +168,7 @@ foreach ($job in $Jobs) {
     $kept = @()
     if (Test-Path $envPath) {
         $kept = @(Get-Content $envPath | Where-Object {
-                $_ -notmatch '^(# Written by scripts/queue-runner-setup|QUEUE_CI_URL=)'
+                $_ -notmatch '^(# Written by scripts/(ci/)?queue-runner-setup|QUEUE_CI_URL=)'
             })
     }
     $envFile = @(

@@ -522,6 +522,20 @@ run_once windows "$tmp/windows.log"
 last() { awk -F'\t' -v h="$1" -v c="$2" -v OFS='\t' '$1 == h && $2 == c { s = $3; d = $4; u = $5 } END { print s, d, u }' "$FAKE/statuses.tsv"; }
 # shellcheck disable=SC2053 # $3 is a glob
 has() { [[ $(last "$1" "$2") == $3 ]]; }
+# The runner setup (queue-runner-setup.ps1) copies the runner from $source,
+# which must be the repository root: as many `Split-Path -Parent` as the
+# script sits folders deep. A re-run replaces runner.env's header line,
+# whichever path wrote it.
+setup=scripts/ci/queue-runner-setup.ps1
+parents=$(grep -m1 '^\$source = ' "$setup" | grep -o 'Split-Path -Parent' | wc -l | tr -d ' ')
+depth=$(dirname "$setup" | tr '/' '\n' | wc -l | tr -d ' ')
+check "the runner setup's source is the repository root" [ "$parents" = "$depth" ]
+for f in $(sed -n "s/.*foreach (\$file in \(.*\)) {.*/\1/p" "$setup" | tr -d "',"); do
+  check "the runner setup copies scripts/$f, which exists" [ -f "scripts/$f" ]
+done
+check "a re-run drops runner.env's old and new header line" \
+  grep -qF "'^(# Written by scripts/(ci/)?queue-runner-setup|" "$setup"
+
 posts() { awk -F'\t' -v h="$1" -v c="$2" '$1 == h && $2 == c' "$FAKE/statuses.tsv"; }
 ran() { grep "^$1 " "$FAKE/just.log" | cut -d' ' -f2 | tr '\n' ' '; }
 first() { grep -n "^$1 " "$FAKE/just.log" | head -1 | cut -d: -f1; }
