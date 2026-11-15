@@ -262,7 +262,6 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of CI |
 | `just android-core` | Windows, macOS or Linux: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
 | `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (unit)`, `ci/ios (ui 1)` and `ci/ios (ui 2)` run those recipes after the core: the unit tests, or one UI shard's classes (`scripts/ios-ui-shards.sh`). Neither: both |
-| `just local-ci [command]` | The retired local CI runner (ADR 0082): `uninstall` and `status` only matter now; the scripts go with CI redesign item 7 |
 | `just ios-app` / `just ios-test [device] [only...]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.2 Simulator (Xcode 26.2); `only`, xcodebuild's `-only-testing` identifiers (`mdocTests`, `mdocUITests/LivePreviewUITests`), runs just those (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
 | `just ios-release` | macOS: the iOS core, then the app and extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles; `ci/ios (unit)` runs it after the unit tests |
 | `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
@@ -279,7 +278,7 @@ app package's tests at most 4 at a time, and the render test one minute past
 its own watchdog (10 minutes on macOS, 20 on Windows); no retries. A slow
 test is a bug to fix, not a limit to raise. Doctests, which nextest does not
 run, follow through `cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)).
-The script suites (release, CI cache cleanup, local CI runner, the quarantine
+The script suites (release, CI cache cleanup, the area table, the quarantine
 list) need no build, so `scripts/test.sh` runs them beside the Rust tests and
 prints their output after them.
 
@@ -623,14 +622,14 @@ the detection gate (ADR 0113); core still runs every job.
 script outside `src/` and `tests/` that a mobile job runs needs a line
 there, or it counts as desktop. The ci area is `merge-gate.sh`,
 `queue-runner.sh` and its setup, the CI scripts (`ci-*.sh` but the table's
-own `ci-areas.sh`, which is core; `deny-ci.sh`, `nightly-issue.sh`, the
-retired local CI), their suites, and the workflows that build and test
+own `ci-areas.sh`, which is core; `deny-ci.sh`, `nightly-issue.sh`), their
+suites, and the workflows that build and test
 nothing themselves (`ci.yml`, `ci-scripts.yml`, `main-caches.yml`, the
 gate's two, `nightly.yml`). A workflow that builds or tests the app takes
 the area of what it runs: `ci-desktop.yml`, `queue.yml`
 (which starts them) and `release.yml` are desktop, `ci-ios.yml` ios. When
 unsure, leave a file desktop. `ci.yml`'s `paths-ignore` repeats the `none`
-lines word for word (`scripts/test-local-ci.sh` checks).
+lines word for word (`scripts/test-ci-areas.sh` checks).
 
 **Test tiers.** `.config/nextest.toml` names them (`unit`, `app`, `renders`,
 `recognition`); `just test-tier <tier>` runs one, `scripts` the script
