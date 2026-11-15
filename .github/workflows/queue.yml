@@ -26,7 +26,8 @@ concurrency:
 jobs:
   # The jobs this commit needs, from what it brings onto main: the same diff
   # and the same table merge-gate reads (scripts/ci/ci-areas.sh --queue), so a
-  # job skipped here is one merge-gate does not wait for.
+  # job skipped here is one merge-gate does not wait for. None when the
+  # commit's own change, against its parent, is docs only.
   areas:
     name: areas
     runs-on: ubuntu-latest

@@ -210,7 +210,28 @@ cp scripts/ci/ci-areas.sh scripts/ci/ci-areas.txt "$repo_dir/scripts/ci/"
   g add -A && g commit -qm "Gate (#3)"
   eq "$(bash scripts/ci/ci-areas.sh --queue | tr '\n' ' ')" \
     "areas=ci jobs=scripts macos=false ios=false detection=false scripts=true "
-  # No main to diff against: every job.
+  # Docs on top of it: its own change is docs only, so no job, though it
+  # brings the gate change onto main too. Code on top still needs its jobs.
+  mkdir -p docs && echo x >docs/a.md && echo x >README.md
+  g add -A && g commit -qm "Docs (#4)"
+  eq "$(bash scripts/ci/ci-areas.sh --queue | tr '\n' ' ')" \
+    "areas= jobs= macos=false ios=false detection=false scripts=false "
+  echo y >docs/a.md && echo y >src/main.rs
+  g add -A && g commit -qm "Docs and code (#5)"
+  eq "$(bash scripts/ci/ci-areas.sh --queue | tr '\n' ' ')" \
+    "areas=desktop ci jobs=macos windows macos=true ios=false detection=false scripts=false "
+  g reset -q --hard HEAD^
+  # Behind 300 files of code (every area, as GitHub's lists stop there),
+  # docs on top still need no job (Codex on #902).
+  g update-ref refs/remotes/origin/main HEAD
+  mkdir -p src/many && for i in $(seq 1 300); do echo x >"src/many/$i.rs"; done
+  g add -A && g commit -qm "Many (#6)"
+  eq "$(bash scripts/ci/ci-areas.sh --queue | sed -n 2p)" "jobs=macos windows ios android detection"
+  echo z >docs/a.md
+  g add -A && g commit -qm "Docs after many (#7)"
+  eq "$(bash scripts/ci/ci-areas.sh --queue | tr '\n' ' ')" \
+    "areas= jobs= macos=false ios=false detection=false scripts=false "
+  # No main to diff against: every job, docs on top or not.
   g update-ref -d refs/remotes/origin/main
   eq "$(bash scripts/ci/ci-areas.sh --queue | sed -n 2p)" "jobs=macos windows ios android detection"
 ) || exit 1
@@ -440,6 +461,8 @@ fetch_compare() {
   echo '{"files": [{"filename": "docs/lock.md", "previous_filename": "Cargo.lock"}], "commits": [{"commit": {"message": "Web address category (#514)\n\nbody"}}]}'
 }
 fetch_commit_time() { echo $((1793620800 - 720)); }
+# The commit's own change: unknown (no parents), so the diff from main decides.
+fetch_commit() { echo '{}'; }
 fetch_pr() { echo "User false"; }
 fetch_dispatched() { echo 0; }
 dispatch() { echo "$*" >>"$dispatched"; }
@@ -1061,6 +1084,31 @@ fetch_workflow_state() { echo active; }
 queue_pass
 eq "$(cat "$posted")|$(cut -d' ' -f1 "$dispatched")" "qqqq pending Waiting: macos, windows|ci-desktop.yml"
 echo "ok: a CI-only queue commit needs only ci/scripts"
+
+# Docs on top of a code entry (#893 on #898): what it brings onto main is
+# code, but its own change, against its one parent, is docs only. No job.
+saved_commit=$(declare -f fetch_commit)
+own_docs='{"parents": [{"sha": "pppp"}], "files": [{"filename": "scripts/README.md"}, {"filename": "docs/x.md", "previous_filename": "docs/y.md"}]}'
+fetch_commit() { echo "$own_docs"; }
+fetch_check_runs() { echo '{"check_runs": []}'; }
+: >"$posted"
+: >"$dispatched"
+queue_pass
+eq "$(cat "$posted")|$(cat "$dispatched")" "qqqq success Docs only: no job runs|"
+# Its own change touches code, renames code away, has two parents, or GitHub
+# cannot give it: the diff from main decides, and the gate waits.
+for own in '{"parents": [{"sha": "pppp"}], "files": [{"filename": "docs/x.md"}, {"filename": "src/main.rs"}]}' \
+  '{"parents": [{"sha": "pppp"}], "files": [{"filename": "docs/x.md", "previous_filename": "src/main.rs"}]}' \
+  '{"parents": [{"sha": "pppp"}, {"sha": "hhhh"}], "files": [{"filename": "docs/x.md"}]}' \
+  '{"parents": [{"sha": "pppp"}], "files": [{"filename": "tests/fixtures/import/a.md"}]}' fail; do
+  if [ "$own" = fail ]; then fetch_commit() { return 1; }; else own_docs=$own && fetch_commit() { echo "$own_docs"; }; fi
+  : >"$posted"
+  : >"$dispatched"
+  queue_pass
+  eq "$(cut -d' ' -f1-3 "$posted")" "qqqq pending Waiting:"
+done
+eval "$saved_commit"
+echo "ok: a queue commit whose own change is docs only needs no job"
 
 # A group member merged first (#665: db601c3, Queue run 42261854020): the
 # Queue run saw desktop and ci, so ran ci/macos and no ci/scripts; against

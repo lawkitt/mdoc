@@ -18,7 +18,9 @@
 #   for the shadow trial): green only when every job its areas need passed,
 #   each named with where it ran. Its areas come from its own
 #   scripts/ci/ci-areas.txt, as queue.yml and the PC read them (main's when
-#   GitHub cannot give it). Hosted jobs (queue.yml) are check runs
+#   GitHub cannot give it). One whose own change, against its one parent,
+#   is docs only needs no job, whatever the entries ahead bring (docs_only
+#   in lib.sh). Hosted jobs (queue.yml) are check runs
 #   named ci/macos, ci/ios, ci/detection (the detection gate's summary of
 #   its shards) and ci/scripts (the CI machinery's script suites, ADR 0100);
 #   a check counts only when it concluded success, or skipped
@@ -245,6 +247,8 @@ cancel_run() { gh_call text api -X POST "repos/$repo/actions/runs/$1/cancel" >/d
 
 # What a queue commit brings onto main: changed files and commit subjects.
 fetch_compare() { gh_call json api "repos/$repo/compare/$1...$2"; }
+# A commit's parents and the files it changes against its first parent.
+fetch_commit() { gh_call json api "repos/$repo/commits/$1"; }
 
 # A file at a commit, raw; fails with "HTTP 404" when the commit has none.
 fetch_file() { # sha path
@@ -944,7 +948,7 @@ heads_pass() {
 
 queue_pass() {
   local t main branch sha cmp areas jobs checks status made age third prs pr kind cross job hv line state desc url v where u
-  local queue why ready no_hosted='' info disp pcline rc=0 lines wf extra hinfra qrun via mline
+  local queue why ready no_hosted='' info disp pcline rc=0 lines wf extra hinfra qrun via mline table own
   t=$(now)
   main=$(fetch_main) || main=''
   [ -n "$main" ] || {
@@ -966,10 +970,17 @@ queue_pass() {
       rc=1
       continue
     }
+    table=$(commit_table "$sha")
     if [ "$(jq '.files | length' <<<"$cmp")" -ge 300 ]; then
       areas='core desktop recognition ios android ci'
     else
-      areas=$(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$cmp" | areas_of "$(commit_table "$sha")")
+      areas=$(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$cmp" | areas_of "$table")
+    fi
+    # Its own change docs only (docs_only in lib.sh): no job, whatever the
+    # entries ahead bring. Unread, the diff from main decides.
+    if [ -n "$areas" ] && own=$(fetch_commit "$sha") && [ "$(jq '.parents | length' <<<"$own")" = 1 ] &&
+      jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$own" | tr '\n' '\0' | docs_only "$table"; then
+      areas=''
     fi
     jobs=$(needed_jobs "$areas")
     checks=$(fetch_check_runs "$sha") || {

@@ -21,7 +21,9 @@
 # onto main, from main's merge base (origin/main, fetched), the same diff
 # merge-gate reads. It writes `areas=<list>`, `jobs=<list>` (needed_jobs)
 # and `<job>=true|false` for macos, ios, detection and scripts, the hosted
-# jobs queue.yml starts. Windows and Android run on the PC.
+# jobs queue.yml starts. Windows and Android run on the PC. A queue commit
+# whose own change, against its one parent, is docs only (docs_only in
+# lib.sh) needs no job, whatever the entries ahead of it bring.
 source "$(dirname "$0")/../lib.sh"
 
 every='core desktop recognition ios android ci'
@@ -57,10 +59,16 @@ github() {
 queue() {
   local base areas=$every jobs job
   # merge-gate counts every area from 300 files (GitHub's compare lists
-  # at most 300), so the queue does too.
-  if base=$(git merge-base origin/main HEAD 2>/dev/null) &&
-    [ "$(git diff --no-renames --name-only "$base" HEAD | wc -l)" -lt 300 ]; then
-    areas=$(diff_areas "$base" HEAD) || areas=$every
+  # at most 300), so the queue does too. The commit's own change is read
+  # whatever that count, as merge-gate and the PC read it.
+  if base=$(git merge-base origin/main HEAD 2>/dev/null); then
+    if [ "$(git diff --no-renames --name-only "$base" HEAD | wc -l)" -lt 300 ]; then
+      areas=$(diff_areas "$base" HEAD) || areas=$every
+    fi
+    if [ -n "$areas" ] && [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2 ] &&
+      git diff --no-renames --name-only -z HEAD^1 HEAD | docs_only "$(cat scripts/ci/ci-areas.txt)"; then
+      areas=''
+    fi
   fi
   jobs=$(needed_jobs "$areas")
   echo "areas=$areas"

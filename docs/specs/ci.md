@@ -11,14 +11,16 @@ How a PR reaches `main`. The machinery and the PC's runners:
   `lint (ubuntu)` and `merge-gate` on the PR head and on the queue commit.
 - Never merge with `--admin`. The maintainer's bypass is for `just release`
   and break-glass reverts only.
-- A PR head runs the fast tier on hosted Linux: `lint (ubuntu)` and
-  `fast (ubuntu)` (the `unit` and `scripts` tiers). Its `merge-gate` is green
-  when the fast tier passed, or when the PR is docs only.
+- A PR head runs `lint (ubuntu)` and the fast tier, `fast (ubuntu)`
+  (`unit` and `scripts`, idle when docs only), on hosted Linux. Its
+  `merge-gate` is green when the fast tier passed, or when the PR is docs
+  only.
 - A recognition-area PR head also runs the detection gate
   (`detection-head / ci/detection`), and its `merge-gate` waits for it.
-- A queue commit runs the full jobs its areas need; its `merge-gate` is
-  green only when each ran in full and passed. Nothing posts a waiver or a
-  partial result as green.
+- A queue commit runs the full jobs its areas need, none when its own
+  change (against its parent) is docs only: safe only while the queue is
+  `ALLGREEN`. Its `merge-gate` is green only when each ran in full and
+  passed; nothing posts a waiver or partial result as green.
 - `scripts/ci/ci-areas.txt` decides the areas. A core change runs every job,
   docs only none (fixture Markdown is not docs), and a ci-only change only
   `ci/scripts`. A new script a mobile job runs needs a line there, or it
@@ -35,8 +37,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 - Enqueue a green, reviewed PR with `gh pr merge <N> --auto`. The queue
   squashes.
-- A failing PR is dropped from the queue with a red `merge-gate` naming the
-  failing job; fix it on the branch and enqueue it again.
+- A failing PR is dropped with a red `merge-gate` naming the failing job;
+  fix it on the branch and enqueue it again.
 - Make independent PRs off `main` and enqueue them together: the queue takes
   only PRs based on `main`, so a stack goes one PR at a time.
 - Merge `main` into a PR only when GitHub reports it `CONFLICTING`:
@@ -46,15 +48,13 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 - If `merge-gate` says "Waiting" after its checks finished, or a green PR
   with auto-merge is not queued after 5 minutes, run `gh workflow run merge-gate.yml --repo lawkitt/mdoc`. Never
-  re-run the PR's own `pull_request_target` gate run. If the PR still does
-  not enter the queue, turn auto-merge off and on again.
-- A queue failure is unrelated when it is an infrastructure failure, when
-  the same test failed the same way on another PR's queue commit, on `main`
-  or in the nightly within 14 days, or when the failing test is in an area
-  the PR does not touch. Anything else goes back to the PR's author.
-- After an unrelated failure the hub re-queues the PR once, naming the rule
-  that matched in a PR comment. A second drop of the same PR goes to the
-  maintainer.
+  re-run the PR's own `pull_request_target` gate run. If the PR still is
+  not queued, turn auto-merge off and on.
+- A queue failure is unrelated when it is infrastructure, the same test
+  failed the same way on another queue commit, on `main` or in the nightly
+  within 14 days, or the failing test is in an area the PR does not touch. Anything else goes back to the PR's author.
+- After an unrelated failure the hub re-queues the PR once, naming the
+  matching rule in a PR comment. A second drop goes to the maintainer.
 - A red `main` stops enqueueing until fixed.
 
 ## Quarantine
@@ -74,8 +74,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 ## Detection snapshots
 
-- Hosted `windows-latest` is the reference platform, because a developer
-  machine's scores differ in the fourth decimal place.
+- Hosted `windows-latest` is the reference platform: a developer machine's
+  scores differ in the fourth decimal.
 - Never commit your own `--refresh-snapshots` output; it is only a draft
   for a new fixture. Push, let the head's detection gate fail,
   run `just snapshots-fetch <PR>`, review the diff, then commit and push.
