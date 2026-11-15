@@ -36,7 +36,7 @@ GitHub's light and dark backgrounds.
   counterpart with patronymics, inflected surnames ("Павловой", "Павлову М. С.")
   and a husband sharing the surname. Both demos are the inputs of the captured
   AI replies in [tests/fixtures/restore](../../tests/fixtures/restore/README.md)
-  ([ADR 0056](../adr/0056-captured-ai-reply-fixtures.md)).
+  ([ADR 0056](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0056-captured-ai-reply-fixtures.md)).
 
 All people, companies, addresses and numbers are invented; phone numbers are in
 Ofcom's drama range and emails use `.example` domains.

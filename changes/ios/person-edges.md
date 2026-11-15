@@ -9,5 +9,5 @@
   before a surname; Russian initials glued to a surname («Т.Т.Колобова»),
   after a double surname or a court officer's role are found whole, and a
   verb or a preposition before initials comes off
-  ([ADR 0108](docs/adr/0108-recognition-targets.md); part of #503, #489,
+  ([ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md); part of #503, #489,
   #793 and #387).

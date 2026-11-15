@@ -7,4 +7,4 @@
   databases' addresses stay, and `mailto:`/`tel:` stay Email and Phone.
   Settings › Detection › Categories to detect and the category menu list
   Web address after Email, on by default; saved mappings and cases load
-  unchanged ([ADR 0094](docs/adr/0094-url-category.md)).
+  unchanged ([ADR 0094](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0094-url-category.md)).

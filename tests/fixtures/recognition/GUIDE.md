@@ -2,7 +2,7 @@
 
 What a recognition fixture marks, and where each span starts and ends
 ([ADR 0092](../../../docs/adr/0092-recognition-correction-pipeline.md),
-[ADR 0093](../../../docs/adr/0093-flaw-hunt-loop.md)). Gold is
+[recognition spec](../../../docs/specs/recognition.md#fixtures-and-the-gate)). Gold is
 `⟦CATEGORY|text⟧`; anything unmarked must not be proposed. The rules are
 the maintainer's: agents add examples, never change a rule (a change is a
 `decision` issue).

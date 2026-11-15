@@ -1,14 +1,14 @@
 # Reuse selected Rust Presidio components through mdoc's detector adapter
 
-Status: Accepted, 2026-10-08. Extended by
-[ADR 0018](0018-document-local-identity-review.md) (labelled ОГРН/ОГРНИП).
+Status: Accepted, 2026-10-08.
 
 ## Decision
 
 Pin MIT-licensed `presidio-analyzer` 0.1.11 with default features off.
 Configure only email and contextual checksum-valid INN/SNILS in
-`pseudonymization_detector::structured`; GLiNER2 and the shared ONNX Runtime
-stay.
+`mdoc-detect`'s structured rules, beside mdoc's own labelled checksum-valid
+ОГРН/ОГРНИП, which are identifiers, not bank numbers; GLiNER2 and the shared
+ONNX Runtime stay.
 
 Reuse the library's pattern/validator configuration and SNILS checksum. Keep
 mdoc's Unicode email and identifier patterns, strict same-line context and digit

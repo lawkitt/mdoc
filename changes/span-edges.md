@@ -7,5 +7,5 @@
   is proposed as the person. A city, state and ZIP after a public body's
   or a company's name no longer take that name's words ("Review Board
   Washington, DC 20599" is "Washington, DC 20599")
-  ([ADR 0108](docs/adr/0108-recognition-targets.md); part of #502, #374
+  ([ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md); part of #502, #374
   and #793).

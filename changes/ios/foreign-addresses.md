@@ -7,4 +7,4 @@
   their section, road, district or "Jalan" street to the city; Brazilian
   ones run from "Rua …, 412" to the city, state and CEP, and a farm with
   its CEP is an address. The country after the city stays outside
-  ([ADR 0108](docs/adr/0108-recognition-targets.md); #551).
+  ([ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md); #551).

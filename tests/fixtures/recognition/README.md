@@ -1,7 +1,7 @@
 # Recognition fixtures
 
 What the detector must propose, one synthetic document per file
-([ADR 0093](../../../docs/adr/0093-flaw-hunt-loop.md)); the
+([recognition spec](../../../docs/specs/recognition.md#fixtures-and-the-gate)); the
 [guide](GUIDE.md) says what is gold and where a span starts and ends.
 
 ## Layout

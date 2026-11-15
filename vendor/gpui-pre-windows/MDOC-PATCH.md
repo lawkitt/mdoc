@@ -5,7 +5,7 @@ zed@d2a4fb6ded7c470be25d1541281da3882495b65b; Apache-2.0,
 see LICENSE-APACHE). The workspace patches this version without updating the
 GPUI family. Registry checksum:
 `7201762420222d5b5ce5bdf0056996199212a3349bfb2457a3a0238c688681f3`.
-Re-ported from 0.3.2 for [ADR 0117](../../docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md).
+Re-ported from 0.3.2 for [ADR 0117](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md).
 The save dialog now opens through upstream's `dialog::show_dialog`; the
 title is taken before it.
 
