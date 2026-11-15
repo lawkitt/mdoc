@@ -15,7 +15,7 @@ Back and Forward), the macOS menu bar shelf, and the 2026-10-31 UI/UX
 survey's fixes and polish. It went stable from rc.1 with no rc.2 and no
 acceptance run, an exception to
 [ADR 0083](docs/adr/0083-fewer-release-candidates.md) recorded in the
-[2026-11-01 grill](docs/design/roadmap-grill-2026-11-01.md); a targeted run
+[2026-11-01 grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/roadmap-grill-2026-11-01.md); a targeted run
 on the release build follows (0.3.x). No PII model has passed the
 [initial qualification](tests/fixtures/pseudonymization/README.md). Earlier
 releases: [CHANGELOG](CHANGELOG.md).
@@ -42,7 +42,7 @@ Fixing PII recognition flaws on the fly
 ([milestone](https://github.com/lawkitt/mdoc/milestone/7)). The pinned
 model misses things no threshold recovers: neither demo's home address is
 proposed at any score and it has no date-of-birth label; a lone "Марина"
-scores 0.29, under the 0.5 cut ([probe](docs/design/roadmap-grill-2026-11-01.md#probe-what-the-model-sees-in-the-demos)).
+scores 0.29, under the 0.5 cut ([probe](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/roadmap-grill-2026-11-01.md#probe-what-the-model-sees-in-the-demos)).
 A correction pipeline after the model fixes them in layers
 ([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md)), and a flaw
 hunt loop finds, records and fixes them with the maintainer away
@@ -50,8 +50,8 @@ hunt loop finds, records and fixes them with the maintainer away
 curator and Opus fixers, a strict fixture ratchet and a private holdout.
 Items 3 and 4 run as loops once item 2 merges. rc.1, then full acceptance
 on the last RC; no stable without it ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
-Records: [roadmap grill](docs/design/roadmap-grill-2026-11-01.md),
-[recognition grill](docs/design/recognition-grill-2026-11-01.md).
+Records: [roadmap grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/roadmap-grill-2026-11-01.md),
+[recognition grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/recognition-grill-2026-11-01.md).
 
 3. **[Detection] Rule pack.** *From the 2026-11-01 grills (#301).* ADR
    0092's TOML pack replaces `mdoc-detect`'s hardcoded lists and
@@ -61,7 +61,7 @@ Records: [roadmap grill](docs/design/roadmap-grill-2026-11-01.md),
    before detection and readiness. Groundwork (loader, lists moved, no
    behaviour change) starts beside item 2; then a fix loop on hunted flaw
    classes. *Done when (amended by the
-   [run 3 grill](docs/design/recognition-run3-grill-2026-11-09.md),
+   [run 3 grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/recognition-run3-grill-2026-11-09.md),
    [ADR 0108](docs/adr/0108-recognition-targets.md)):* both demos' Copy
    for AI hold no address, date of birth or case number, and the real set
    meets ADR 0108's targets (recall at least 95% overall and 90% per
@@ -86,19 +86,19 @@ The review-first iPhone and iPad app on the shared Rust core
 ([ADR 0085](docs/adr/0085-mobile-apps.md)). One section for every iOS
 version: an item names the version it ships in when that matters. Core-crate
 changes merge when green and leave desktop unchanged. Built so far: 0.1's
-app (#266–#278, [mobile grill](docs/design/mobile-grill-2026-10-31.md)) and
+app (#266–#278, [mobile grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-grill-2026-10-31.md)) and
 0.2's review bar, UI system, theme, Settings, iPad keys and Try a sample
 (#604–#609, [ADR 0098](docs/adr/0098-mobile-review-bar.md),
 [ADR 0099](docs/adr/0099-mobile-ui-system.md),
-[review grill](docs/design/ios-review-grill-2026-11-05.md)). 0.1 is not
+[review grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-review-grill-2026-11-05.md)). 0.1 is not
 released on its own: the next TestFlight build is `ios-v0.2.0-rc.3` and
 runs 0.1's acceptance rows too
-([refactor grill](docs/design/ios-refactor-grill-2026-11-07.md) Q24).
+([refactor grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-refactor-grill-2026-11-07.md) Q24).
 Features are frozen until items 13–19 land (Q4).
 
 1. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
    (#269, #272, #275–#278) and the
-   [TestFlight grill](docs/design/testflight-grill-2026-11-03.md)
+   [TestFlight grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/testflight-grill-2026-11-03.md)
    ([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).* The app record
    exists ("mdoc: private docs for AI"), the upload's pieces are merged
    (#578), and `just ios-device-test` passes on the iPhone 17 Pro on
@@ -132,7 +132,7 @@ Features are frozen until items 13–19 land (Q4).
     ([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
     merged and checked on the device.
 20. **[Mobile] To grill: peek at the originals.** *From the
-    [sidebar grill](docs/design/ios-sidebar-grill-2026-11-06.md) ideas and
+    [sidebar grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-sidebar-grill-2026-11-06.md) ideas and
     Q7.* Press and hold to see the originals in place of the aliases;
     "As the AI sees it" (Later) folds into the same control. *Done when:*
     grilled and built, after item 19.
@@ -145,7 +145,7 @@ Features are frozen until items 13–19 land (Q4).
     a case (Later) on it. *Done when:* grilled and built, after 20 and 21.
 
 23. **[Mobile] Editing (iOS 0.3).** *From the
-    [mobile editor grill](docs/design/mobile-editor-grill-2026-11-09.md)
+    [mobile editor grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-editor-grill-2026-11-09.md)
     ([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).* Edit any
     document in an Obsidian-like edit mode on a shared Rust editor core,
     after items 13–19. Slices, one PR each: (1) the editor core extracted
@@ -159,7 +159,7 @@ Features are frozen until items 13–19 land (Q4).
     checks have no open `ui` findings.
 
 26. **[Mobile] rc.10's drawer, Fix the words and Identities fixes.** *From
-    the [iOS UI grill](docs/design/ios-ui-grill-2026-11-14.md)
+    the [iOS UI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-ui-grill-2026-11-14.md)
     ([ADR 0115](docs/adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).*
     Slices, one PR each: (G) the drawer's shadow on the screen's curve, an
     open drawer closing by a drag from anywhere over it, Identities rows on
@@ -187,7 +187,7 @@ on the Windows PC ([ADR 0089](docs/adr/0089-android-app.md)). Core-crate
 changes merge when green and leave desktop and iOS unchanged. One section
 for every Android version. It follows [ADR 0104](docs/adr/0104-mobile-app-structure.md)
 when it next moves (refactor grill Q25). Record:
-[Android grill](docs/design/android-grill-2026-10-31.md), whose
+[Android grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/android-grill-2026-10-31.md), whose
 Maintainer actions list the steps on the maintainer's side.
 
 2. **[Android] Feasibility spike.** `tools/android-spike` and
@@ -233,7 +233,7 @@ apps to internal tracks and drafts
 ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)). [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)
 moves the iOS job and the Android fallback to hosted runners (CI redesign,
 below). Record:
-[mobile CI grill](docs/design/mobile-ci-grill-2026-11-01.md). Items 2 and 3
+[mobile CI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-ci-grill-2026-11-01.md). Items 2 and 3
 touch separate files and run as parallel lanes; 5 builds on both.
 
 5. **[CI] Dependabot and Gradle metadata.** Dependabot and fork PRs run
@@ -243,7 +243,7 @@ touch separate files and run as parallel lanes; 5 builds on both.
    ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)). *Done when:* a
    Gradle Dependabot PR goes green after its metadata commit.
 6. **[Release] iOS release workflow.** *From the
-   [agents TestFlight grill](docs/design/ios-testflight-agents-grill-2026-11-08.md)
+   [agents TestFlight grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-testflight-agents-grill-2026-11-08.md)
    ([ADR 0107](docs/adr/0107-agents-publish-ios-betas.md)).* The key is in
    `release-ios` (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, body only).
    One PR: `ios-release.yml` on `ios-v*` tags (checks, `ci-ios.yml` on the
@@ -266,9 +266,9 @@ touch separate files and run as parallel lanes; 5 builds on both.
 `main` merges through GitHub's merge queue; PR heads run a fast tier, and
 the full suite runs once per queue group on hosted runners and the PC
 ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), cut over 2026-11-03).
-Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md);
+Record: [CI redesign grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-redesign-grill-2026-11-02.md);
 items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
-[CI fixes grill](docs/design/ci-fixes-grill-2026-11-06.md).
+[CI fixes grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-fixes-grill-2026-11-06.md).
 
 7. **[CI] `main`, supply chain and upkeep.** The detection shards back to
    10 minutes once `main-caches.yml`'s caches make a warm shard fit; a
@@ -288,8 +288,8 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
 
 The queue's long jobs get shorter and its unrelated drops stop needing the
 maintainer ([ADR 0112](docs/adr/0112-ci-speed-after-the-first-fortnight.md),
-[CI speed grill](docs/design/ci-speed-grill-2026-11-12.md)) and the
-[second grill](docs/design/ci-grill-2-2026-11-13.md)
+[CI speed grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-speed-grill-2026-11-12.md)) and the
+[second grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-grill-2-2026-11-13.md)
 ([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
 Items 16–31 have shipped; item 22 (the PC's slow bursts) closed as not
 needed, and item 30 (a prebuilt library for UI test launches) was measured
@@ -300,7 +300,7 @@ and dropped (#857).
 The desktop app moves to `gpui-pre 0.3.12` (macOS 12 minimum), and the
 sidebar's hover reveal gets quicker and smooth
 ([ADR 0117](docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md),
-[GPUI grill](docs/design/gpui-grill-2026-11-14.md)). Items 1 and 2 shipped
+[GPUI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/gpui-grill-2026-11-14.md)). Items 1 and 2 shipped
 (#879, #880) after the maintainer's native check; item 3 is open.
 
 1. **[Desktop] `gpui-pre 0.3.12`.** One change for macOS and Windows: the
@@ -426,14 +426,14 @@ The 2026-10-31 UI/UX survey (build `84fafd3`, macOS, Light and Dark) adds
 the items below, polish first, then ideas. Its twelve bugs are issues
 [#300](https://github.com/lawkitt/mdoc/issues/300)–[#311](https://github.com/lawkitt/mdoc/issues/311)
 in the [0.3.0 milestone](https://github.com/lawkitt/mdoc/milestone/4). Repro
-steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.md)
+steps and screenshots: [evidence](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md)
 (IDs U1–U31).
 
 - **[Editor] Polish: alias chips touch the next character.** The apostrophe
   of "PERSON_2's" sits on the chip border; on italic text the ring covers
   half of it ("ORG_4's"); the popup's alias field draws its pencil flush
   against the alias. Add a hairline of outside spacing, slanted for italics.
-  ([U13](docs/evidence/ui-ux-survey/2026-10-31/README.md#u13-alias-chips-touch-or-cover-the-next-character))
+  ([U13](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#u13-alias-chips-touch-or-cover-the-next-character))
   *From the 2026-10-31 UI/UX survey.*
 - **[Import] Polish: error and OCR cards offer the wrong next step.** Damaged
   and password-protected files offer only "Try again" while the Source pane
@@ -442,45 +442,45 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
   OCR of blank pages returns stray "I"s with no "no text found"; "!" means
   both "needs OCR" and "failed". Offer Close and Open another…, collapse the
   empty pane, and reword.
-  ([U18](docs/evidence/ui-ux-survey/2026-10-31/README.md#u18-import-error-and-ocr-cards))
+  ([U18](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#u18-import-error-and-ocr-cards))
   *From the 2026-10-31 UI/UX survey.*
 - **[Cases] Polish: Save as case asks for the file first.** On an unsaved
   conversion it shows the Save panel, then the Keychain explainer; Not now
   leaves the file saved, no case and no message. Show the explainer first, or
-  say what happened. ([U19](docs/evidence/ui-ux-survey/2026-10-31/README.md#u19-save-as-case-asks-for-a-file-first-then-for-the-keychain))
+  say what happened. ([U19](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#u19-save-as-case-asks-for-a-file-first-then-for-the-keychain))
   *From the 2026-10-31 UI/UX survey.*
 - **[Shelf] Polish: small shelf details.** A converted document's preview
   ends "1...."; the gear's tooltip is clipped at the shelf edge; the "Names
   from … ▾" chooser replaces the document list at the top, far from its
   trigger, and the shelf jumps in height. Beyond the 0.3.0 shelf polish item.
-  ([U23](docs/evidence/ui-ux-survey/2026-10-31/README.md#u23-shelf-details))
+  ([U23](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#u23-shelf-details))
   *From the 2026-10-31 UI/UX survey.*
 - **[UI] Polish: the floating view bar.** It shows only near the bottom
   edge or while scrolling, its zoom pill covers the line beneath, and a
   hovered segment looks selected.
-  ([U24](docs/evidence/ui-ux-survey/2026-10-31/README.md#u24-the-floating-view-bar))
+  ([U24](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#u24-the-floating-view-bar))
   *From the 2026-10-31 UI/UX survey.*
 - **[UI] Polish: Pseudonymize clipboard on Home looks broken.** It jumps to
   the last document tab and replaces only that document's names, so new text
   comes back "unchanged". Say on Home which names it uses, or let it pick a
   source as the shelf does.
-  ([U26](docs/evidence/ui-ux-survey/2026-10-31/README.md#u26-pseudonymize-clipboard-from-home))
+  ([U26](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#u26-pseudonymize-clipboard-from-home))
   *From the 2026-10-31 UI/UX survey.*
 - **[UI] Idea: keep the Source preview next to the editor.** The
   Replacements panel sits between them; and hide Source when it has nothing
-  to show. ([U28](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  to show. ([U28](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
   *From the 2026-10-31 UI/UX survey.*
 - **[Import] Idea: a cleaner demo import.** The demo `.docx` uses literal
   "1." numbers and Heading 1 sections, so it imports as "1\." paragraphs and
   only H1s; `text.pdf` imports `<s>` and `<sup>` as literal tags.
-  ([U29](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  ([U29](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
   *From the 2026-10-31 UI/UX survey.*
 - **[A11y] Idea: zoom the whole window.** View › Zoom scales only the editor;
   the sidebar, the 11–12 pt panel, dialogs and the shelf stay small.
-  ([U30](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  ([U30](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
   *From the 2026-10-31 UI/UX survey.*
 
-Ideas from the [2026-10-31 competitor scan](docs/design/competitor-scan-2026-10-31.md),
+Ideas from the [2026-10-31 competitor scan](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/competitor-scan-2026-10-31.md),
 roughly by expected value; each needs a grill before it is promoted, and
 some reopen a Deferred or ADR decision, as noted. Dates of birth, always and
 never lists, role-aware aliases and hidden Office content moved to 0.4.0.
@@ -550,7 +550,7 @@ never lists, role-aware aliases and hidden Office content moved to 0.4.0.
   core, the identity tools, tokens under `ui/theme`, theme, Settings and
   Home. *From the 2026-11-05 review grill.*
 
-Mobile ideas from the [2026-10-31 mobile UX ideas](docs/design/mobile-ux-ideas-2026-10-31.md)
+Mobile ideas from the [2026-10-31 mobile UX ideas](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-ux-ideas-2026-10-31.md)
 (the iOS survey's after set, the app's code and a scan of mobile
 redaction apps), roughly by expected value; each needs a grill, and
 Android takes what applies. Its clipboard finding is
@@ -615,11 +615,11 @@ Android takes what applies. Its clipboard finding is
 - **[Desktop] To grill: an ink accent.** iOS moved from the teal to ink
   (ADR 0099 as amended 2026-11-08); desktop's focus rings, toggles and
   selection need their own look before it follows. *From the 2026-11-08
-  [gestures grill](docs/design/ios-identities-gestures-grill-2026-11-08.md) Q9.*
+  [gestures grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-identities-gestures-grill-2026-11-08.md) Q9.*
 - **[Mobile] To grill: kept names before sharing.** One line above Copy
   for AI, "Sharing with 2 names kept as they are: …", listing them on a tap,
   so an unmeant Keep shows at the step that can't be undone. *From the
-  [refactor grill](docs/design/ios-refactor-grill-2026-11-07.md) Q7.*
+  [refactor grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-refactor-grill-2026-11-07.md) Q7.*
 - **[Mobile] To grill: long jobs in the Dynamic Island.** A Live Activity
   for OCR and Find names ("Recognizing page 3 of 12"), no title (ADR 0085's
   invariant). Needs a widget extension. *From the sidebar grill ideas.*
@@ -674,7 +674,7 @@ Android takes what applies. Its clipboard finding is
 - Format-preserving pseudonymized DOCX and PDF export, and restoring an AI
   reply into DOCX. DOCX export with rdocx (and rdocx for the preview) was
   grilled and deferred on 2026-10-31
-  ([record](docs/design/docx-export-grill-2026-10-31.md): Anoni's export, an
+  ([record](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/docx-export-grill-2026-10-31.md): Anoni's export, an
   rdocx prototype, 17 open questions). An audit journal and compliance
   report of replacements; a re-identification risk hint. For PDF, Panoply's `pdf.redact`
   shape fits: redraw only matched pages with aliases painted in, an invisible
