@@ -3,13 +3,16 @@
     python -m detection_eval.combo [<combo-id>... | <a>+<b>[+<c>]...]
         [--sets fixtures,holdout,real] [--out DIR]
 
-Every member's spans go to the pipeline. Spans of different members that
-overlap (directly or through a chain) form a group; a group with spans of one
-member only passes unchanged. A mixed group becomes one span over its
-longest span (on a tie, the higher-ranked member's), with the category of
-the highest-ranked member in the group: one entity per label that member
-gave there, at that member's best score for it. Members run in sequence, so
-a combo's peak memory is its largest member's.
+Every member's spans go to the pipeline. Members fold in rank order: the
+higher-ranked side's spans all stay, with their categories; a lower-ranked
+span that overlaps one of them is dropped, and widens it to its own extent
+when it is longer and not inside it (the longest span, the higher-ranked
+member's category; a span nested in another of the same member is not
+widened).
+A lower-ranked span that overlaps nothing passes. A member's own
+overlapping spans (a person inside an organization, say) are kept as the
+member gave them, so a combo of a member with itself is that member.
+Members run in sequence, so a combo's peak memory is its largest member's.
 
 Members are ranked in the order named; their snapshots must exist under
 `<out>/<member>/<set>/` (`detection_eval.run`). With no ids, decision 9's
@@ -28,52 +31,55 @@ from .run import chosen_sets, out_root, write_meta
 
 
 def merge(members: list[list[dict]]) -> list[dict]:
-    """Merged entities (byte offsets, without text) of ranked members."""
-    items = [(rank, e) for rank, entities in enumerate(members) for e in entities]
-    parent = list(range(len(items)))
-
-    def find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    order = sorted(range(len(items)), key=lambda i: items[i][1]["start"])
-    for a_pos, a in enumerate(order):
-        ra, ea = items[a]
-        for b in order[a_pos + 1 :]:
-            rb, eb = items[b]
-            if eb["start"] >= ea["end"]:
-                break
-            if ra != rb:
-                parent[find(a)] = find(b)
-    groups: dict[int, list[int]] = {}
-    for i in range(len(items)):
-        groups.setdefault(find(i), []).append(i)
-    out = []
-    for group in groups.values():
-        ranks = {items[i][0] for i in group}
-        if len(ranks) == 1:
-            out.extend(items[i][1] for i in group)
-            continue
-        longest = min(
-            group,
-            key=lambda i: (
-                -(items[i][1]["end"] - items[i][1]["start"]),
-                items[i][0],
-                items[i][1]["start"],
-            ),
-        )
-        span = items[longest][1]
-        top = min(ranks)
-        best: dict[str, float] = {}
-        for i in group:
-            rank, e = items[i]
-            if rank == top:
-                best[e["label"]] = max(best.get(e["label"], 0.0), e["score"])
-        for label, score in best.items():
-            out.append({"start": span["start"], "end": span["end"], "label": label, "score": score})
+    """Merged entities (byte offsets, without text) of ranked members: each
+    member folded into the result of the higher-ranked ones."""
+    out = dedup(members[0]) if members else []
+    for lower in members[1:]:
+        out = merge_pair(out, lower)
     return out
+
+
+def merge_pair(high: list[dict], low: list[dict]) -> list[dict]:
+    """`high`'s spans keep their categories; a `low` span overlapping one of
+    them is dropped, and widens the outermost ones it overlaps (those not
+    inside another it overlaps) to its own extent when longer: the longest
+    span wins, with the higher rank's category. A `low` span inside a `high`
+    one widens nothing, and one overlapping none passes. Each side's own
+    overlapping spans are left as they are."""
+
+    def length(e: dict) -> int:
+        return e["end"] - e["start"]
+
+    def inside(a: dict, b: dict) -> bool:
+        return b["start"] <= a["start"] and a["end"] <= b["end"]
+
+    widened = [dict(h) for h in high]
+    passed = []
+    for l in low:
+        hits = [i for i, h in enumerate(high) if l["start"] < h["end"] and h["start"] < l["end"]]
+        if not hits:
+            passed.append(dict(l))
+            continue
+        if any(inside(l, high[i]) for i in hits):
+            continue
+        outermost = [
+            i for i in hits
+            if not any(inside(high[i], high[j]) and length(high[j]) > length(high[i]) for j in hits)
+        ]
+        for i in outermost:
+            if length(l) > length(widened[i]):
+                widened[i]["start"], widened[i]["end"] = l["start"], l["end"]
+    return dedup(widened + passed)
+
+
+def dedup(entities: list[dict]) -> list[dict]:
+    """One entity per (start, end, label), at its best score."""
+    best: dict[tuple, dict] = {}
+    for e in entities:
+        key = (e["start"], e["end"], e["label"])
+        if key not in best or e["score"] > best[key]["score"]:
+            best[key] = dict(e)
+    return sorted(best.values(), key=lambda e: (e["start"], e["end"], e["label"]))
 
 
 def combo_members(combo: str) -> list[str]:
@@ -83,36 +89,43 @@ def combo_members(combo: str) -> list[str]:
 def build(combo: str, sets: dict[str, Path], out: Path) -> None:
     members = combo_members(combo)
     for name, root in sets.items():
-        target = out / combo / name
-        count = 0
-        for original, copy in fixtures.mirror(root, target):
-            member_entities = []
-            thresholds = []
-            for member in members:
-                snap_path = fixtures.snapshot_path(out / member / name / original.relative_to(root))
-                snapshot = json.loads(snap_path.read_text(encoding="utf-8"))
-                member_entities.append(snapshot["entities"])
-                thresholds.append(snapshot["threshold"])
-            source = fixtures.source_of(original)
-            data = source.encode("utf-8")
-            merged = merge(member_entities)
-            # Back to character offsets for the shared writer.
-            char_at = {}
-            pos = 0
-            for i, ch in enumerate(source):
-                char_at[pos] = i
-                pos += len(ch.encode("utf-8"))
-            char_at[pos] = len(source)
-            entities = [
-                fixtures.Entity(char_at[e["start"]], char_at[e["end"]], e["label"], e["score"])
-                for e in merged
-                if e["start"] in char_at and e["end"] in char_at
-                and data[e["start"] : e["end"]]
-            ]
-            fixtures.write_snapshot(copy, source, combo, min(thresholds), entities)
-            count += 1
-        write_meta(target, combo, 0.0, {"members": members})
+        missing = [m for m in members if not fixtures.complete(out / m / name)]
+        if missing:
+            raise SystemExit(f"{combo} {name}: no complete run of {', '.join(missing)}")
+        with fixtures.staged(out / combo / name) as target:
+            count = 0
+            for original, copy in fixtures.mirror(root, target):
+                relative = original.relative_to(root)
+                snapshots = [
+                    json.loads(
+                        fixtures.snapshot_path(out / m / name / relative).read_text(encoding="utf-8")
+                    )
+                    for m in members
+                ]
+                write_merged(original, copy, combo, snapshots)
+                count += 1
+            write_meta(target, combo, 0.0, {"members": members})
         print(f"{combo} {name}: {count} snapshots", flush=True)
+
+
+def write_merged(original: Path, copy: Path, combo: str, snapshots: list[dict]) -> None:
+    source = fixtures.source_of(original)
+    data = source.encode("utf-8")
+    merged = merge([s["entities"] for s in snapshots])
+    # Back to character offsets for the shared writer.
+    char_at = {}
+    pos = 0
+    for i, ch in enumerate(source):
+        char_at[pos] = i
+        pos += len(ch.encode("utf-8"))
+    char_at[pos] = len(source)
+    entities = [
+        fixtures.Entity(char_at[e["start"]], char_at[e["end"]], e["label"], e["score"])
+        for e in merged
+        if e["start"] in char_at and e["end"] in char_at and data[e["start"] : e["end"]]
+    ]
+    threshold = min(s["threshold"] for s in snapshots)
+    fixtures.write_snapshot(copy, source, combo, threshold, entities)
 
 
 def main() -> None:

@@ -34,6 +34,16 @@ class Merge(unittest.TestCase):
         b = [entity(3, 10, "person", 0.5)]
         self.assertEqual(merge([a, b]), [entity(3, 10, "person", 0.9)])
 
+    def test_member_with_itself_is_that_member(self):
+        a = [entity(0, 20, "organization"), entity(0, 5, "person"), entity(8, 12, "person", 0.6)]
+        self.assertEqual(merge([a, a]), merge([a]))
+        self.assertCountEqual(merge([a, a]), a)
+
+    def test_nested_spans_of_the_top_member_survive(self):
+        a = [entity(0, 20, "organization"), entity(0, 5, "person")]
+        b = [entity(0, 5, "person", 0.5), entity(30, 34, "email")]
+        self.assertCountEqual(merge([a, b]), a + [entity(30, 34, "email")])
+
     def test_tie_keeps_higher_ranked_span(self):
         a = [entity(0, 5, "person")]
         b = [entity(2, 7, "organization")]
@@ -74,3 +84,82 @@ class Windows(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def board(gold, found, proposed, right):
+    """One option's holdout and real set, English only, split in halves."""
+    half = [gold // 2, found // 2, proposed // 2, right // 2]
+    return {s: {("en", "PERSON"): list(half)} for s in ("holdout", "real")}
+
+
+class Verdict(unittest.TestCase):
+    def setUp(self):
+        from detection_eval import report
+
+        self.report = report
+        self.boards = {
+            "default": board(100, 86, 100, 56),
+            "a": board(100, 92, 100, 50),
+            "b": board(100, 70, 100, 90),
+        }
+
+    def test_pass_and_fail(self):
+        self.assertEqual(self.report.verdict("a", self.boards), "pass")
+        self.assertIn("recall < 90", self.report.verdict("b", self.boards))
+        boards = dict(self.boards, c=board(100, 96, 100, 40))
+        self.assertEqual(self.report.verdict("c", boards), "precision < default − 10")
+
+    def test_no_default_is_incomplete(self):
+        boards = {k: v for k, v in self.boards.items() if k != "default"}
+        self.assertTrue(self.report.verdict("a", boards).startswith("incomplete"))
+
+    def test_missing_set_is_incomplete(self):
+        boards = dict(self.boards, a={"holdout": self.boards["a"]["holdout"]})
+        self.assertTrue(self.report.verdict("a", boards).startswith("incomplete"))
+
+    def test_combo_needs_every_member_and_a_gain(self):
+        self.assertTrue(self.report.verdict("a+b", dict(self.boards, **{"a+b": board(100, 93, 100, 50)}))
+                        .startswith("gain"))
+        boards = {k: v for k, v in self.boards.items() if k != "b"}
+        boards["a+b"] = board(100, 98, 100, 50)
+        self.assertTrue(self.report.verdict("a+b", boards).startswith("incomplete"))
+
+
+class Decode(unittest.TestCase):
+    def test_cut_drops_low_spans_before_joining(self):
+        import numpy as np
+
+        from detection_eval.adapters import decode_tags
+
+        text = "Ann Lee"
+        offsets = [(0, 0), (0, 3), (3, 7), (0, 0)]
+        id2label = {0: "O", 1: "B-NAME", 2: "I-NAME"}
+        probs = np.array([[1, 0, 0], [0.1, 0.9, 0], [0.6, 0, 0.4], [1, 0, 0]], dtype=float)
+        labels = {"NAME": "person"}
+        # Argmax: "Ann" (B), then O for " Lee".
+        self.assertEqual([(e.start, e.end) for e in decode_tags(text, offsets, probs, id2label, labels)], [(0, 3)])
+        self.assertEqual(decode_tags(text, offsets, probs, id2label, labels, cut=0.95), [])
+
+
+class Staged(unittest.TestCase):
+    def test_failed_run_keeps_previous_and_success_drops_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "set"
+            target.mkdir()
+            (target / "old.md").write_text("old", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                with fixtures.staged(target) as partial:
+                    (partial / "new.md").write_text("new", encoding="utf-8")
+                    raise RuntimeError
+            self.assertEqual(sorted(p.name for p in target.iterdir()), ["old.md"])
+            with fixtures.staged(target) as partial:
+                (partial / "new.md").write_text("new", encoding="utf-8")
+            self.assertEqual(sorted(p.name for p in target.iterdir()), ["new.md"])
+            self.assertFalse(fixtures.complete(target))
+
+
+class OutRoot(unittest.TestCase):
+    def test_relative_out_is_absolute(self):
+        from detection_eval.run import out_root
+
+        self.assertTrue(out_root("runs").is_absolute())

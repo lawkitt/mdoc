@@ -48,7 +48,8 @@ python -m detection_eval.report --markdown report.md
 ```
 
 `run <id>...` runs some models; `--sets holdout,real` limits the sets;
-`--device cpu` runs without CUDA. `combo a+b` merges any members already run,
+`--device cpu` runs without CUDA. Relative `--out` paths are taken
+from the current folder. `combo a+b` merges any members already run,
 ranked in the order named. The report prints recall and precision per
 language and set, English pooled over the holdout and real set, English
 recall per category, and each option's decision-7 verdict against
@@ -83,11 +84,21 @@ A combo is an entry in `COMBOS` (members in rank order) or an ad-hoc
   rewrites `L.L.C.` for GLiNER2's word budget; the harness does not, so the
   `gliner2-pii` row (PyTorch, harness windows) beside `default` (the app)
   shows how much the harness itself moves the scores.
-- **Threshold.** 0.5 for every model (the app's default), recorded in each
-  snapshot.
+- **Score cut.** 0.5 (the app's threshold) for the span models, GLiNER2
+  and GLiNER. Token classifiers and PII-Tracer keep their own decision, the
+  argmax or constrained-Viterbi tags their cards report, with no score cut
+  on top: a 0.5 cut on a mean softmax over dozens of tags measures the cut,
+  not the model. Each snapshot records the cut applied (0 for none); set a
+  `threshold` on a model to cut it.
+- **Complete runs only.** Each set is written beside its folder and
+  replaces it only when the run finishes (`meta.json` marks it), so a failed
+  rerun leaves the previous run whole. The report and combos skip a set
+  with no `meta.json`, and a verdict needs complete holdout and real-set
+  runs of the option, the default and, for a combo, every member.
 - **Combos** (decision 11, [combo.py](detection_eval/combo.py)): the union of
-  member snapshots. Overlapping spans of different members merge into the
-  longest, with the higher-ranked member's category. GLiNER2-PII takes part
+  member snapshots. A span that overlaps a higher-ranked member's span
+  merges into it: the longer extent, the higher-ranked member's category.
+  Each member's own overlapping spans are kept. GLiNER2-PII takes part
   as `default`, the app's own snapshots.
 
 ## Self-tests
@@ -114,6 +125,8 @@ python -m detection_eval.time_onnx <id> --onnx <model.onnx> --lang en       # s 
 ```
 
 Both run on ONNX Runtime's CPU provider with 4 threads, as the app does
-(`onnxruntime==1.27.0`, the app's version). A GLiNER2 build runs in the
-app's own engine instead: point `MDOC_PII_MODEL_ROOT` at it and use
-`run default`.
+(`onnxruntime==1.27.0`, the app's version), for the `token` and `gliner`
+families. GLiNER2 and PII-Tracer builds have no ONNX scorer here yet:
+`export_onnx` writes them, but parity and timing need an adapter that runs
+the build with the reference decoding (the app's engine only loads its own
+pinned build).

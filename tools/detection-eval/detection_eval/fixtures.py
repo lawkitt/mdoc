@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -171,7 +173,7 @@ def read_snapshot(fixture: Path) -> dict:
 def mirror(root: Path, out: Path) -> list[tuple[Path, Path]]:
     """Copies every fixture of `root` under `out` at its relative path (so
     language and kind read the same) and returns (original, copy) pairs.
-    Stale snapshots in `out` are kept until overwritten."""
+    `out` is expected empty (`staged`)."""
     pairs = []
     for path in fixture_paths(root):
         copy = out / path.relative_to(root)
@@ -179,3 +181,23 @@ def mirror(root: Path, out: Path) -> list[tuple[Path, Path]]:
         shutil.copyfile(path, copy)
         pairs.append((path, copy))
     return pairs
+
+
+@contextmanager
+def staged(target: Path) -> Iterator[Path]:
+    """A fresh folder beside `target` that replaces it only if the block
+    completes: a failed or partial run never mixes with a previous one, and
+    fixtures removed since are not left behind."""
+    partial = target.with_name(target.name + ".partial")
+    if partial.exists():
+        shutil.rmtree(partial)
+    partial.mkdir(parents=True)
+    yield partial
+    if target.exists():
+        shutil.rmtree(target)
+    partial.rename(target)
+
+
+def complete(folder: Path) -> bool:
+    """A set folder a run finished (`staged` plus its `meta.json`)."""
+    return (folder / "meta.json").is_file()

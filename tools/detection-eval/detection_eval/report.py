@@ -11,7 +11,11 @@ holdout and real set, and per category (English, pooled).
 Decision 7: an option is listed if its pooled English recall is at least
 90% and its pooled English precision is no more than 10 points below the
 default's; a combo must also add at least 2 points of recall over its best
-member.
+member. The default and a combo's members are scored too when options are
+named, and a verdict needs complete holdout and real-set runs of the option
+and of every reference it is judged against; otherwise it reads
+`incomplete`. A set folder without `meta.json` (a run that did not finish)
+is skipped.
 """
 
 from __future__ import annotations
@@ -83,6 +87,40 @@ def add(*counts: list[int]) -> list[int]:
     return [sum(c[i] for c in counts) for i in range(4)]
 
 
+def references(option: str) -> list[str]:
+    """The options a verdict on `option` compares against."""
+    refs = [] if option == "default" else ["default"]
+    if option in COMBOS or "+" in option:
+        refs += [m for m in combo_members(option) if m not in refs]
+    return refs
+
+
+def verdict(option: str, boards: dict[str, dict[str, dict]]) -> str:
+    """Decision 7 on English pooled over the holdout and real set."""
+
+    def pooled_en(name: str) -> list[int]:
+        return add(*(total(boards[name][s], "en") for s in PRIVATE))
+
+    missing = [
+        name for name in [option, *references(option)]
+        if not all(s in boards.get(name, {}) for s in PRIVATE)
+    ]
+    if missing:
+        return "incomplete: no holdout and real-set run of " + ", ".join(missing)
+    recall, precision = rp(pooled_en(option))
+    reasons = []
+    if recall is None or recall < RECALL_BAR:
+        reasons.append(f"recall < {RECALL_BAR:.0f}")
+    default_p = rp(pooled_en("default"))[1]
+    if default_p is not None and (precision is None or precision < default_p - PRECISION_GAP):
+        reasons.append(f"precision < default − {PRECISION_GAP:.0f}")
+    if option in COMBOS or "+" in option:
+        best = max(rp(pooled_en(m))[0] or 0.0 for m in combo_members(option))
+        if (recall or 0.0) < best + COMBO_GAIN:
+            reasons.append(f"gain < {COMBO_GAIN:.0f} over best member")
+    return "; ".join(reasons) or "pass"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("options", nargs="*")
@@ -92,19 +130,21 @@ def main() -> None:
     args = parser.parse_args()
     out = out_root(args.out)
     options = args.options or sorted(p.name for p in out.iterdir() if p.is_dir())
+    scored = list(dict.fromkeys(o for option in options for o in [option, *references(option)]))
     boards: dict[str, dict[str, dict]] = {}
-    for option in options:
+    for option in scored:
         for name in SETS:
             folder = out / option / name
-            if folder.is_dir():
+            if fixtures.complete(folder):
                 boards.setdefault(option, {})[name] = scoreboard(folder)
                 print(f"scored {option} {name}", flush=True)
+            elif folder.is_dir():
+                print(f"skipped {option} {name}: the run did not finish (no meta.json)", flush=True)
 
     def pooled_en(option: str) -> list[int]:
         sets = boards.get(option, {})
         return add(*(total(sets[s], "en") for s in PRIVATE if s in sets))
 
-    default_p = rp(pooled_en("default"))[1] if "default" in boards else None
     lines = [
         "| option | size | EN holdout R / P | EN real R / P | **EN pooled R / P** | RU holdout R / P | RU real R / P | fixtures R / P | decision 7 |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -112,25 +152,12 @@ def main() -> None:
     verdicts = {}
     for option, sets in boards.items():
         pooled = pooled_en(option)
-        recall, precision = rp(pooled)
-        reasons = []
-        if recall is None or recall < RECALL_BAR:
-            reasons.append(f"recall < {RECALL_BAR:.0f}")
-        if default_p is not None and (precision is None or precision < default_p - PRECISION_GAP):
-            reasons.append(f"precision < default − {PRECISION_GAP:.0f}")
-        if option in COMBOS or "+" in option:
-            member_recalls = [rp(pooled_en(m))[0] or 0.0 for m in combo_members(option) if m in boards]
-            if member_recalls and (recall or 0.0) < max(member_recalls) + COMBO_GAIN:
-                reasons.append(f"gain < {COMBO_GAIN:.0f} over best member")
-        verdict = "pass" if not reasons and "holdout" in sets and "real" in sets else (
-            "; ".join(reasons) or "incomplete"
-        )
-        verdicts[option] = verdict
+        verdicts[option] = verdict(option, boards)
         size = BY_ID[option].size if option in BY_ID else ("default" if option == "default" else "combo")
         cell = lambda s, lang: fmt(total(sets[s], lang)) if s in sets else "n/a"  # noqa: E731
         lines.append(
             f"| {option} | {size} | {cell('holdout', 'en')} | {cell('real', 'en')} | **{fmt(pooled)}** | "
-            f"{cell('holdout', 'ru')} | {cell('real', 'ru')} | {cell('fixtures', None)} | {verdict} |"
+            f"{cell('holdout', 'ru')} | {cell('real', 'ru')} | {cell('fixtures', None)} | {verdicts[option]} |"
         )
     categories = sorted({c for sets in boards.values() for s in PRIVATE if s in sets for (_, c) in sets[s]})
     cat_lines = [

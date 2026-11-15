@@ -56,8 +56,7 @@ def load_onnx(model: Model, onnx_file: str, threads: int = 4) -> Adapter:
             path = Path(onnx_file)
             return GlinerOnnxAdapter(model, str(path.parent), path.name, threads)
     raise ValueError(
-        f"{model.id}: no ONNX adapter for family {model.family} (GLiNER2 builds run in the app: "
-        "MDOC_PII_MODEL_ROOT with `run default`)"
+        f"{model.id}: no ONNX scorer for family {model.family} yet (token and gliner only)"
     )
 
 
@@ -104,7 +103,7 @@ class Gliner2Adapter:
             result = self.engine.extract_entities(
                 text,
                 family,
-                threshold=self.model.threshold,
+                threshold=self.model.cut,
                 include_confidence=True,
                 include_spans=True,
             )
@@ -149,7 +148,7 @@ class GlinerAdapter:
 
     def predict(self, text: str) -> list[Entity]:
         found = self.engine.predict_entities(
-            text, self.prompts, threshold=self.model.threshold, flat_ner=True
+            text, self.prompts, threshold=self.model.cut, flat_ner=True
         )
         out = [
             Entity(e["start"], e["end"], self.model.prompts[e["label"]], float(e["score"]))
@@ -191,12 +190,13 @@ class TokenAdapter:
         with torch.no_grad():
             logits = self.engine(**enc).logits[0].float()
         probs = torch.softmax(logits, dim=-1).cpu().numpy()
-        return decode_tags(text, offsets, probs, self.id2label, self.model.labels)
+        return decode_tags(text, offsets, probs, self.id2label, self.model.labels, self.model.cut)
 
 
-def decode_tags(text, offsets, probs, id2label, labels) -> list[Entity]:
+def decode_tags(text, offsets, probs, id2label, labels, cut: float = 0.0) -> list[Entity]:
     """Argmax tags (BIO or BIOES, or bare types) joined into spans; a span's
-    score is its tokens' mean tag probability."""
+    score is its tokens' mean tag probability, and a span under `cut` is
+    dropped (before adjacent parts join)."""
     best = probs.argmax(axis=-1).tolist()
     conf = probs.max(axis=-1).tolist()
     spans: list[list] = []  # [start, end, type, [scores], closed]
@@ -227,8 +227,9 @@ def decode_tags(text, offsets, probs, id2label, labels) -> list[Entity]:
         # Trim the leading space a SentencePiece or BPE offset carries.
         while start < end and text[start].isspace():
             start += 1
-        if start < end:
-            out.append(Entity(start, end, label, sum(scores) / len(scores)))
+        score = sum(scores) / len(scores)
+        if start < end and score >= cut:
+            out.append(Entity(start, end, label, score))
     return _join_adjacent(text, out, {"person", "address"})
 
 
@@ -267,7 +268,7 @@ class TokenOnnxAdapter:
         logits -= logits.max(axis=-1, keepdims=True)
         probs = np.exp(logits)
         probs /= probs.sum(axis=-1, keepdims=True)
-        return decode_tags(text, offsets, probs, self.id2label, self.model.labels)
+        return decode_tags(text, offsets, probs, self.id2label, self.model.labels, self.model.cut)
 
 
 class GlinerOnnxAdapter(GlinerAdapter):
@@ -309,7 +310,7 @@ class PiiTracerAdapter:
         out = []
         for s in spans:
             label = self.model.labels.get(s.label)
-            if label is not None:
-                score = float(getattr(s, "score", 1.0) or 1.0)
+            score = float(getattr(s, "score", 1.0) or 1.0)
+            if label is not None and score >= self.model.cut:
                 out.append(Entity(s.start, s.end, label, score))
         return out

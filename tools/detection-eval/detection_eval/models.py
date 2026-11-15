@@ -1,7 +1,7 @@
 """The shortlist (decision 9 on lawkitt/mdoc#903): one entry per model.
 
 Each entry names its Hugging Face repository and pinned revision, its
-adapter family, a size class, its threshold, and how its labels become the
+adapter family, a size class, its score cut, and how its labels become the
 app's GLiNER2 label names (`fixtures.LABELS`). Labels a model has that map to
 nothing are dropped, as the app drops them (decision 12). A zero-shot model
 (GLiNER, GLiNER2) gets `prompts`: the label words it is asked for, each
@@ -47,10 +47,20 @@ class Model:
     family: str  # gliner2 | gliner | token | pii_tracer
     size: str  # large | mid | small
     licence: str
-    threshold: float = 0.5
+    # The score cut; None takes the family's: 0.5 (the app's) for the span
+    # models (GLiNER2, GLiNER), none for token classifiers and PII-Tracer,
+    # whose argmax or Viterbi decision is their own (and what their cards
+    # report). Recorded in every snapshot.
+    threshold: float | None = None
     prompts: dict[str, str] = field(default_factory=dict)
     labels: dict[str, str] = field(default_factory=dict)
     note: str = ""
+
+    @property
+    def cut(self) -> float:
+        if self.threshold is not None:
+            return self.threshold
+        return 0.5 if self.family in ("gliner2", "gliner") else 0.0
 
 
 MODELS: list[Model] = [
@@ -219,4 +229,9 @@ COMBOS: dict[str, list[str]] = {
     "default+pii-tracer": ["default", "pii-tracer"],
     "default+bardsai-eu-pii-v2": ["default", "bardsai-eu-pii-v2"],
     "default+nuner-zero": ["default", "nuner-zero"],
+    # The Windows hub's extra pairs (#903): members whose English recall is
+    # highest where the default's is lowest (ADDRESS, CASE, ORG).
+    "default+gravitee-bert-small": ["default", "gravitee-bert-small"],
+    "default+nvidia-gliner-pii": ["default", "nvidia-gliner-pii"],
+    "default+nym-pii": ["default", "nym-pii"],
 }

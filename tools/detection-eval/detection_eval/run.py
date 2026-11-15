@@ -6,7 +6,9 @@
     python -m detection_eval.run <model-id> --onnx <model.onnx> --as <name>
 
 Each set is mirrored to `<out>/<option>/<set>/` and every copy gets its
-`<stem>.model.json` from the model. `default` is the app's own detector (the
+`<stem>.model.json` from the model. A set is written beside its folder and
+replaces it only when complete (its `meta.json` marks that), so a failed
+run leaves the previous one whole. `default` is the app's own detector (the
 installed pinned FP16 through `just recognize --refresh-snapshots`): the
 default that decision 7 compares against. `all` runs every model. `--onnx`
 runs one model's ONNX build on ONNX Runtime's CPU provider instead, into
@@ -34,11 +36,14 @@ from .windows import bounded_windows
 
 
 def out_root(arg: str | None) -> Path:
+    """Absolute: `just recognize` runs from the repository root."""
     if arg:
-        return Path(arg)
-    if os.environ.get("MDOC_EVAL_OUT"):
-        return Path(os.environ["MDOC_EVAL_OUT"])
-    return Path.home() / ".cache" / "mdoc-detection-eval"
+        root = Path(arg)
+    elif os.environ.get("MDOC_EVAL_OUT"):
+        root = Path(os.environ["MDOC_EVAL_OUT"])
+    else:
+        root = Path.home() / ".cache" / "mdoc-detection-eval"
+    return root.expanduser().resolve()
 
 
 def chosen_sets(arg: str | None) -> dict[str, Path]:
@@ -54,16 +59,16 @@ def chosen_sets(arg: str | None) -> dict[str, Path]:
 
 def run_app(sets: dict[str, Path], out: Path) -> None:
     for name, root in sets.items():
-        target = out / "default" / name
-        fixtures.mirror(root, target)
-        started = time.time()
-        subprocess.run(
-            ["just", "recognize", "--refresh-snapshots", str(target)],
-            cwd=fixtures.REPO,
-            check=True,
-            stdout=subprocess.DEVNULL,
-        )
-        write_meta(target, "default", time.time() - started, None)
+        with fixtures.staged(out / "default" / name) as target:
+            fixtures.mirror(root, target)
+            started = time.time()
+            subprocess.run(
+                ["just", "recognize", "--refresh-snapshots", str(target)],
+                cwd=fixtures.REPO,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            write_meta(target, "default", time.time() - started, None)
         print(f"default {name}: {time.time() - started:.0f}s", flush=True)
 
 
@@ -85,33 +90,33 @@ def run_model(
     load_seconds = time.time() - loaded
     snapshot_model = f"{option}@{model.revision[:8]}"
     for name, root in sets.items():
-        target = out / option / name
-        started = time.time()
-        chars = 0
-        windows_run = 0
-        for original, copy in fixtures.mirror(root, target):
-            source = fixtures.source_of(original)
-            chars += len(source)
-            cache: dict[str, list[fixtures.Entity]] = {}
-            entities: list[fixtures.Entity] = []
-            for start, end in bounded_windows(source, adapter.fits):
-                text = source[start:end]
-                if text not in cache:
-                    cache[text] = adapter.predict(text)
-                    windows_run += 1
-                for e in cache[text]:
-                    entities.append(
-                        fixtures.Entity(start + e.start, start + e.end, e.label, e.score)
-                    )
-            fixtures.write_snapshot(copy, source, snapshot_model, model.threshold, entities)
-        seconds = time.time() - started
-        write_meta(
-            target,
-            option,
-            seconds,
-            {"load_seconds": round(load_seconds, 1), "chars": chars, "windows": windows_run,
-             "device": "cpu (onnx)" if onnx else device},
-        )
+        with fixtures.staged(out / option / name) as target:
+            started = time.time()
+            chars = 0
+            windows_run = 0
+            for original, copy in fixtures.mirror(root, target):
+                source = fixtures.source_of(original)
+                chars += len(source)
+                cache: dict[str, list[fixtures.Entity]] = {}
+                entities: list[fixtures.Entity] = []
+                for start, end in bounded_windows(source, adapter.fits):
+                    text = source[start:end]
+                    if text not in cache:
+                        cache[text] = adapter.predict(text)
+                        windows_run += 1
+                    for e in cache[text]:
+                        entities.append(
+                            fixtures.Entity(start + e.start, start + e.end, e.label, e.score)
+                        )
+                fixtures.write_snapshot(copy, source, snapshot_model, model.cut, entities)
+            seconds = time.time() - started
+            write_meta(
+                target,
+                option,
+                seconds,
+                {"load_seconds": round(load_seconds, 1), "chars": chars, "windows": windows_run,
+                 "device": "cpu (onnx)" if onnx else device},
+            )
         print(f"{option} {name}: {seconds:.0f}s, {windows_run} windows", flush=True)
     del adapter
     try:
