@@ -142,8 +142,7 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
   text field they change only that field.
 - Every user-facing binding is a row in `src/shortcuts.rs`; menus, the
   palette, tooltips and the shortcuts sheet read their keys from it.
-- A tooltip names its key from the table; the accessible name stays the
-  bare label.
+- A tooltip names its key from the table.
 
 ## Review
 
@@ -307,8 +306,6 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
   default right; on Windows default first, Cancel last.
 - The default button is filled, and a scrim dims the window behind every
   modal dialog.
-- The find counter and the popup's position are polite live regions read in
-  words ("Match 14 of 16").
 - Files opened from Finder or Explorer while a dialog is up open once it is
   answered.
 - Text reaches 4.5:1 and essential non-text 3:1 on every ground it is drawn

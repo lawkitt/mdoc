@@ -25,18 +25,11 @@ from the phone's model: the iPhone 15 Pro and later run
 the app past iOS's grace); earlier phones, or `below-floor`, run
 `DeviceBelowFloorUITests`. Results go to `target/ios/device-test-*.xcresult`.
 
-## Audits and timing
+## Timing
 
-With `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`: `AccessibilityAuditExploreUITests`
-prints each issue (`A11Y[screen] …`) without failing, a guide rather than a
-gate, because iOS 26's translucent sheets give false contrast reports;
-`LivePreviewUITests/testTheAccessibilityAuditInEditMode` and
-`EditToolbarUITests/testTheAccessibilityAuditWithTheToolbarUp` fail on any
-issue. Editing's budgets are a keystroke's restyle under 8 ms and a structural
-core call under 16 ms on the 37-page legal opinion; `LivePreviewUITests`
-measures both nightly (`TEST_RUNNER_MDOC_TIMING_TESTS=1`) without a
-threshold. `LargeTextExploreUITests` saves the main screens at the largest text
-size into `TEST_RUNNER_MDOC_SHOTS_DIR`.
+Editing's budgets are a keystroke's restyle under 8 ms and a structural core
+call under 16 ms on the 37-page legal opinion; `LivePreviewUITests` measures
+both nightly (`TEST_RUNNER_MDOC_TIMING_TESTS=1`) without a threshold.
 
 ## How UI tests launch the app
 

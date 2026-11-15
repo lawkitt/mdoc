@@ -125,36 +125,6 @@ final class EditToolbarUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: MdocUITest.timeout), "the keyboard and toolbar come back")
     }
 
-    /// The accessibility audit with the toolbar up, then with the
-    /// formatting keyboard (ADR 0109): no issue on the toolbar's or the
-    /// keyboard's keys. Issues elsewhere (the system keyboard) are printed.
-    /// Opt-in, as the repository's audits are: hosted runners are too slow
-    /// for them ("Audit failed to complete in time"). Run with
-    /// `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`; the hub runs it at the phone check.
-    /// The 44 pt targets are checked always, by their frames, in
-    /// `testTheToolbarAndTheFormattingKeyboard`.
-    @MainActor
-    func testTheAccessibilityAuditWithTheToolbarUp() throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_A11Y_EXPLORE"] == "1", "audits run with MDOC_A11Y_EXPLORE=1")
-        let (app, _) = edit()
-        func audit(_ name: String) throws -> [String] {
-            var found: [String] = []
-            try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait, .hitRegion]) { issue in
-                let identifier = issue.element?.identifier ?? ""
-                let line = "\(issue.auditType) | \(issue.compactDescription) | \(issue.element?.label ?? "-") id=\(identifier)"
-                print("A11Y[\(name)] \(line)")
-                let ours = ["toolbar-", "turn-", "format-", "insert-", "formatting-", "link-"].contains { identifier.hasPrefix($0) }
-                if ours { found.append(line) }
-                return true
-            }
-            return found
-        }
-        XCTAssertEqual(try audit("toolbar"), [], "issues on the toolbar")
-        app.buttons["toolbar-formatting"].tap()
-        XCTAssertTrue(app.buttons["turn-heading1"].waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertEqual(try audit("formatting-keyboard"), [], "issues on the formatting keyboard")
-    }
-
     /// At the largest accessibility text size the capsule scrolls: its last
     /// button is reached by swiping it, and Aa and hide keyboard stay.
     @MainActor

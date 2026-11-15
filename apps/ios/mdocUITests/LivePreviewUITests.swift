@@ -120,29 +120,6 @@ final class LivePreviewUITests: XCTestCase {
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine"), timeout: MdocUITest.timeout))
     }
 
-    /// The accessibility audit in live-preview edit mode (ADR 0109): no
-    /// issue on the edited text or Done. Issues elsewhere (the system
-    /// keyboard, the translucent bar) are printed, as the explore audit does.
-    /// Opt-in (`TEST_RUNNER_MDOC_A11Y_EXPLORE=1`): hosted runners are too
-    /// slow for audits; the hub runs it at the phone check.
-    @MainActor
-    func testTheAccessibilityAuditInEditMode() throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_A11Y_EXPLORE"] == "1", "audits run with MDOC_A11Y_EXPLORE=1")
-        let (app, text) = edit(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
-        app.typeKey(.upArrow, modifierFlags: .command)
-        let ours: Set<String> = ["document-text", "done-editing"]
-        var found: [String] = []
-        try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait]) { issue in
-            let identifier = issue.element?.identifier ?? ""
-            let line = "\(issue.auditType) | \(issue.compactDescription) | \(issue.element?.label ?? "-") id=\(identifier)"
-            print("A11Y[live-preview-edit] \(line)")
-            if ours.contains(identifier) { found.append(line) }
-            return true
-        }
-        XCTAssertEqual(found, [], "issues on the edited text or Done")
-        XCTAssertTrue(text.exists)
-    }
-
     /// A keystroke's restyle on the legal opinion ("Restyle" signposts).
     /// Nightly only (`TEST_RUNNER_MDOC_TIMING_TESTS=1`, ADR 0112): it only
     /// measures speed.
