@@ -18,6 +18,14 @@ resolver = "2"
 # glob imports; `use super::*` in test modules stays allowed.
 [workspace.lints.clippy]
 wildcard_imports = "deny"
+undocumented_unsafe_blocks = "deny"
+
+# `unsafe` stays fenced (#897): every crate denies it, crates without any
+# forbid it in lib.rs, and only modules that call the OS allow it, each block
+# under a `// SAFETY:` comment. Miri, sanitizers and Valgrind were declined;
+# #897 says when to revisit.
+[workspace.lints.rust]
+unsafe_code = "deny"
 
 [features]
 # The entry point and runner are additionally gated by debug_assertions.

@@ -41,13 +41,20 @@ use gpui::{App, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
 use mdoc_import::docx_preview;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
-fn main() {
-    // The pinned engine chooses providers through this variable. Set it once,
-    // before starting GPUI, executors or native worker threads; never mutate it
-    // while the application is running. Experimental inference is CPU only.
+/// The pinned engine chooses providers through this variable. Experimental
+/// inference is CPU only.
+#[allow(unsafe_code)] // set_var (#897).
+fn set_inference_device() {
+    // SAFETY: called first in `main`, before GPUI, executors or native worker
+    // threads start, so no other thread reads the environment; it is never
+    // mutated while the application is running.
     unsafe {
         std::env::set_var("GLINER2_DEVICE", "cpu");
     }
+}
+
+fn main() {
+    set_inference_device();
     let args = std::env::args_os().collect::<Vec<_>>();
     if args.get(1).is_some_and(|arg| arg == "--headless-renders") {
         #[cfg(all(

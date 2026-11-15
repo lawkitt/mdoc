@@ -441,6 +441,7 @@ pub struct LinkedRuntimes {
 }
 
 #[cfg(target_os = "ios")]
+#[allow(unsafe_code)] // dladdr (#897).
 pub fn linked_runtimes() -> Result<LinkedRuntimes, SetupError> {
     use std::ffi::{CStr, c_char, c_int, c_void};
     #[repr(C)]
@@ -509,6 +510,7 @@ pub fn load_onnx_runtime(path: &Path) -> Result<(), SetupError> {
     result
 }
 
+#[allow(unsafe_code)] // Loads the runtime to check it (#897).
 fn probe_onnx_runtime(path: &Path) -> Result<(), SetupError> {
     // SAFETY: the pinned, digest-verified runtime; loading it runs its initializers.
     let library = unsafe { libloading::Library::new(path) }.map_err(|e| {

@@ -1,5 +1,6 @@
 //! Live-document review policy. Source text is immutable during a detection job;
 //! every edit plan is checked against the current source and editor revision.
+#![forbid(unsafe_code)]
 mod candidates;
 pub mod columns;
 pub mod decisions;

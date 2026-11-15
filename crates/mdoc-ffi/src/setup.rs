@@ -310,6 +310,7 @@ pub fn linked_runtimes() -> Result<Runtimes, CoreError> {
 
 /// Where this library was loaded from, as the dynamic linker reports it.
 #[cfg(target_os = "android")]
+#[allow(unsafe_code)] // dladdr (#897).
 mod android {
     use std::{
         ffi::{CStr, c_char, c_int, c_void},

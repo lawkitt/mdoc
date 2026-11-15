@@ -251,6 +251,7 @@ pub fn input_source_languages() -> Vec<Language> {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(unsafe_code)] // Carbon and Core Foundation calls (#897).
 mod platform {
     //! Text Input Sources (Carbon): each enabled keyboard source's primary
     //! language, e.g. "ru" for Russian – PC.
@@ -322,6 +323,7 @@ mod platform {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)] // A Win32 call (#897).
 mod platform {
     //! The installed keyboard layouts' languages (LANGID primary language).
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardLayoutList, HKL};

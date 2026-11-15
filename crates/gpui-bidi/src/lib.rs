@@ -37,6 +37,7 @@
 //! - **Logical caret movement.** Left/right arrows moving in *logical* order
 //!   needs nothing from here. For the *visual* movement platforms actually do
 //!   in bidi text, see [`VisualMap::step_visual`].
+#![forbid(unsafe_code)]
 
 use std::ops::Range;
 

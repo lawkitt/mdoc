@@ -28,6 +28,7 @@ pub fn claim(_: &[PathBuf]) -> Launch {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)] // The named pipe through Win32 (#897).
 mod windows {
     use super::Launch;
     use std::ffi::{OsStr, OsString};
@@ -61,6 +62,7 @@ mod windows {
     /// signed-in users (or two sessions) from reaching each other's mdoc.
     pub fn pipe_name() -> String {
         let mut session = 0;
+        // SAFETY: `session` is a valid u32 for the call to fill.
         unsafe { ProcessIdToSessionId(GetCurrentProcessId(), &mut session) };
         let user: String = std::env::var("USERNAME")
             .unwrap_or_default()
@@ -94,6 +96,7 @@ mod windows {
                 Ok(pipe) => break pipe,
                 Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
                     let wide = wide(OsStr::new(name));
+                    // SAFETY: `wide` is NUL-terminated and outlives the call.
                     if unsafe { WaitNamedPipeW(wide.as_ptr(), 2000) } == 0 {
                         return Err(error);
                     }
@@ -102,6 +105,7 @@ mod windows {
             }
         };
         // Let the running mdoc take the foreground this launch was given.
+        // SAFETY: no pointers; it only grants a permission.
         unsafe { AllowSetForegroundWindow(ASFW_ANY) };
         pipe.write_all(&encode(paths))?;
         pipe.flush()
@@ -115,6 +119,8 @@ mod windows {
             } else {
                 0
             };
+        // SAFETY: `wide` is NUL-terminated and outlives the call; null
+        // security attributes mean the defaults.
         let pipe = unsafe {
             CreateNamedPipeW(
                 wide.as_ptr(),
@@ -139,16 +145,21 @@ mod windows {
             .spawn(move || {
                 let mut pipe = pipe as HANDLE;
                 loop {
+                    // SAFETY: `pipe` is a pipe handle this listener created
+                    // and still owns; no OVERLAPPED means a blocking connect.
+                    let accepted = unsafe { ConnectNamedPipe(pipe, std::ptr::null_mut()) } != 0;
                     // A launch that connected, wrote and closed before this
                     // call reports NO_DATA; what it wrote is still readable.
-                    let connected = unsafe { ConnectNamedPipe(pipe, std::ptr::null_mut()) } != 0
-                        || matches!(
-                            unsafe { GetLastError() },
-                            ERROR_PIPE_CONNECTED | ERROR_NO_DATA
-                        );
+                    let connected = accepted || {
+                        // SAFETY: reads this thread's last error; no pointers.
+                        let error = unsafe { GetLastError() };
+                        matches!(error, ERROR_PIPE_CONNECTED | ERROR_NO_DATA)
+                    };
                     // The next instance exists before this one closes, so the
                     // name never disappears and no launch misses the owner.
                     let next = create(&name, false);
+                    // SAFETY: `pipe` is a valid handle owned here; the File
+                    // takes ownership and closes it once.
                     let mut client = unsafe { File::from_raw_handle(pipe as RawHandle) };
                     let mut bytes = Vec::new();
                     if connected

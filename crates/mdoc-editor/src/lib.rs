@@ -26,6 +26,7 @@
 //!
 //! Usage: create an [`EditorState`] entity and render it; call [`bind_keys`]
 //! once at startup so the editing actions resolve while it's focused.
+#![forbid(unsafe_code)]
 
 use std::ops::Range;
 use std::sync::Arc;
