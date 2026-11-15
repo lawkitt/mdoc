@@ -11,7 +11,7 @@ is GPUI, which has no iOS or Android backend.
 ## Decision
 
 - **Edit any document, as desktop does:** imported, scanned, pasted and new
-  blank ones. Review keeps working over the edits: proposals and decisions
+  blank ones. No tags, wikilinks or vault. Review keeps working over the edits: proposals and decisions
   follow them, as `mdoc-pii` does for desktop.
 - **Native TextKit 2 plus a shared Rust editor core.** The rendered text
   view becomes editable. Editing rules (Enter, joins, formatting, lists,
@@ -36,8 +36,8 @@ is GPUI, which has no iOS or Android backend.
   view's string.
 
 Rejected: CodeMirror 6 in a web view (a second parser, rules outside the
-core, web accessibility) and rules written in Swift (breaks
-[ADR 0104](0104-mobile-app-structure.md), doubles Android).
+core) and rules written in Swift (breaks
+[ADR 0104](0104-mobile-app-structure.md)).
 
 ## Invariants
 

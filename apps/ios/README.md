@@ -79,14 +79,17 @@ from the phone's model: the iPhone 15 Pro and later run
 the app past iOS's grace); earlier phones, or `below-floor`, run
 `DeviceBelowFloorUITests`. Results go to `target/ios/device-test-*.xcresult`.
 
-### Accessibility audits
+### Audits and timing
 
 With `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`: `AccessibilityAuditExploreUITests`
 prints each issue (`A11Y[screen] …`) without failing, a guide rather than a
 gate, because iOS 26's translucent sheets give false contrast reports;
 `LivePreviewUITests/testTheAccessibilityAuditInEditMode` and
 `EditToolbarUITests/testTheAccessibilityAuditWithTheToolbarUp` fail on any
-issue. `LargeTextExploreUITests` saves the main screens at the largest text
+issue. Editing's budgets are a keystroke's restyle under 8 ms and a structural
+core call under 16 ms on the 37-page legal opinion; `LivePreviewUITests`
+measures both nightly (`TEST_RUNNER_MDOC_TIMING_TESTS=1`) without a
+threshold. `LargeTextExploreUITests` saves the main screens at the largest text
 size into `TEST_RUNNER_MDOC_SHOTS_DIR`.
 
 ## Layout
@@ -130,14 +133,18 @@ The UI and app-structure rules are in
   restyled in place, never given new text: each keystroke restyles its block
   and the caret's lines (`LivePreview`, `markdown_block_styling`), with the
   caret's markers dimmed (`editor_visible_markers`); the caret never rests
-  in a hidden run (`CaretSnap`). Cut and Copy use `InAppClipboard`.
+  in a hidden run (`CaretSnap`). Cut and Copy use `InAppClipboard`; Paste
+  reads it first, unless another app copied since, then the system
+  clipboard.
 - **Offsets are source bytes.** `TextOffsets` converts the core's UTF-8
   offsets for UIKit.
 - **Markdown.** `MarkdownStyling` asks the core for spans;
   `MarkdownStyler` maps them to fonts and colours.
 - **One long job at a time**, kept running in the background by
   `BGContinuedProcessingTask`. It reports a fraction, since iOS stops a
-  continued task that shows no progress. While a job runs, review waits: a
+  continued task that shows no progress. When the system refuses the task,
+  the job gets the short background grace, then cancels, and the app offers
+  to resume on return. While a job runs, review waits: a
   Replace would make the core throw the scan away.
 - **Locked phone.** A job pauses on lock. A result or save that comes while
   locked stays in the session and is saved on unlock (`ProtectedData`,
@@ -155,6 +162,33 @@ The UI and app-structure rules are in
 - **Downloads.** A background `URLSession`; "Waiting for Wi-Fi" comes from
   `NWPathMonitor`, because background sessions never call
   `taskIsWaitingForConnectivity`.
+- **Handlers the system calls on its own queues** carry no actor
+  isolation, because a main-actor check there crashed every long job on a
+  phone.
+- **Drawers.** `SideDrawer`'s drag is one UIKit pan moving layers by
+  transform; it changes no shadow, mask or SwiftUI state per frame, because
+  that lagged. The panel stays built while closed. An `.inspector` never
+  goes inside the drawer's hosting controller, because it reset its child's
+  traits without end.
+- **Edit toolbar.** `EditToolbar`'s host never becomes first responder, and
+  the text keeps room below the caret for it, so the caret's line stays
+  above it.
+- **Menus.** In a system menu an alias is `unbrokenAlias` (whole up to 12
+  characters, else broken only after a separator) and the row's icon
+  carries the category color, because a system menu draws every row's words
+  in one color. A `Menu` or toolbar item uses `primaryGlass()` /
+  `secondaryGlass()`, because it takes only the system's styles.
+- **Candidate links** never show the system's link menu, in any state,
+  because it exposed the raw `mdoc-candidate://` URL and Share.
+- **No cross-fade.** Entering or leaving Adjust Words or Select never
+  cross-fades changed text, because both layouts showed at once.
+- **Table cells.** The text view drags a cell selection's handles itself,
+  because UIKit's gesture hit-tests the table's hidden source.
+- **Tips.** TipKit decides when a hint shows (display frequency
+  immediate); mdoc draws it, never as `TipView` or `.popoverTip`. UI tests
+  hide every tip (`Tips.hideAllTipsForTesting()`) unless
+  `MDOC_SHOW_TIPS=1`. Reset tips resets each tip's eligibility, because
+  `Tips.resetDatastore()` works only before TipKit starts.
 - **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
   each target's `InfoPlist.xcstrings`).
 
