@@ -1,74 +1,40 @@
 # Use reviewable local pseudonymization
 
-Status: Accepted, 2026-10-01. Superseded in part by
-[ADR 0041](0041-cases-and-ai-response-restoration.md) (cases store mappings),
-[ADR 0034](0034-pseudonymization-supported-feature.md) (no experimental label),
-and ADRs 0020, 0032 and 0048 (review surfaces). Amended by
-[ADR 0092](0092-recognition-correction-pipeline.md) (dates of birth and
-case numbers are reviewed).
+Status: Accepted, 2026-10-01.
 
 ## Decision
 
-mdoc assists replacement of identifying information locally, with consistent
-placeholders and user review. Automatic detection never establishes that text is
-anonymous. Reuse existing open-source libraries and models rather than growing a
-detection engine; the shipped integration is Rust, with no bundled Python worker
-or Docker.
+- mdoc replaces identifying information locally with consistent placeholders
+  that the user reviews. It is an assistant: automatic detection never
+  establishes that text is anonymous.
+- It reuses open-source libraries and models rather than growing a detection
+  engine. The shipped integration is Rust, CPU only, with no bundled Python
+  worker or Docker.
+- The detector is GLiNER2 through gliner2-rs with a pinned PII export, run
+  offline through the app's ONNX Runtime after explicit, verified setup.
+- Placeholders are stable category tokens (`PERSON_1`, `ORG_1`).
+- Generic annotations and painted geometry belong in `mdoc-editor`;
+  detection, review policy, grouping and mappings belong in the app's crates.
 
-## Review contract
+## Invariants
 
-- Pseudonymize is explicit; scanning runs in the background and highlights
-  candidates in the editor. Normal editing and find stay available.
-- Generic annotations and painted geometry belong in `mdoc-editor`; detection,
-  review policy, grouping and mapping belong in the app.
-- Review names, organizations, contact details, addresses and identity, tax and
-  bank identifiers, dates in a personal context and labelled case numbers
-  (ADR 0092). Other dates, amounts and legal references stay unless the
-  user selects them. Manual additions and exclusions are allowed.
-- Repeats of an exact value are reviewed together with an explicit
-  single-occurrence option. Initials, inflections and other variants stay
-  separate until the user links them; linking always needs a user action.
-- Applying is one undoable edit. Keep changes no text. Edits invalidate or
-  revalidate affected candidates; stale revisions or offsets never replace the
-  wrong text.
-- Placeholders are stable category tokens (`PERSON_1`, `ORG_1`, `ADDRESS_1`).
-- Scan everything Copy Markdown transfers, including link destinations, image
-  paths, code and HTML; show hidden-source candidates beside their containing
-  element. Preserve Markdown syntax. Source files, filenames and PDF/DOCX
-  originals are outside replacement scope.
-- Rescan keeps valid mappings and explicit exclusions. Cancel stops pending
-  detection and rejects late results without reverting applied edits. Remaining
-  counts never block copy or save.
-- Models are pinned, verified downloads taken only through explicit setup, then
-  run offline. Opening and editing documents never depend on a model.
-- Without a case, mappings live only in the tab and end when it closes.
-
-## Detector
-
-GLiNER2 via gliner2-rs (Hub feature off) with the pinned privacy PII export,
-CPU only, sharing the app's ONNX Runtime. One scan at a time; each scan loads and
-drops its engine. Scans cover the full Markdown source in windows of whole
-paragraphs, so a section scans the same wherever it sits (#302): each heading
-starts a window, a paragraph too long for one is packed by its lines, and only
-a longer line gets overlapping windows. Windows are checked against actual
-token counts; pathological ones are rejected, not truncated. A window repeated
-word for word runs once. Model spans without their category's shape are
-dropped: titles and role words as names ("Ms", "husband", "the Employer"),
-the words for a category ("email", "phone number"), a bank number with `/`.
-Limits: 2 MiB source, 512 tokens per window, a two-minute cooperative
-deadline. Model load and a native inference call cannot be interrupted
-mid-call.
-
-Tokens start with a letter, end with a letter or digit, and use ASCII letters,
-digits, `_` and `-`. HTML tag and attribute names, attribute quotes, list
-prefixes and link delimiters are protected; spans crossing syntax or line
-boundaries need manual narrowing.
+- Pseudonymize is explicit; scanning never blocks normal editing or find.
+- Apply is one undoable edit. Keep changes no text. A stale revision or
+  offset never replaces text.
+- Linking variants of a name into one identity needs a user action, except
+  a form with exactly one candidate full name.
+- The scan covers everything Copy Markdown transfers, hidden source
+  included, and preserves Markdown syntax: protected syntax is never
+  replaced. Original files and file names are outside its scope.
+- Opening and editing documents never depend on a model.
+- Without a saved case, mappings live only in the tab and end when it closes.
 
 ## Consequences
 
-No candidate passed the [initial qualification](../../tests/fixtures/pseudonymization/README.md);
-GLiNER2 ships as review assistance, not as a qualified detector. Open
-qualification work is tracked in the ROADMAP.
+GLiNER2 ships as review assistance, not as a qualified detector; no candidate
+passed the [initial qualification](../../tests/fixtures/pseudonymization/README.md).
+The rules for detection and review are in the recognition and
+cases-and-privacy specs.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0002-reviewable-local-pseudonymization.md),
+References: [full text before the docs doctor](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0002-reviewable-local-pseudonymization.md),
 [inline verification](../../tests/fixtures/pseudonymization/inline-review.md).

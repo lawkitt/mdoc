@@ -4,7 +4,7 @@ The user confirmed Q14: evaluate a small structured-rule prototype alongside
 GLiNER2 before choosing any production additions. This tooling is outside the
 app dependency graph. Q15 subsequently selected email plus contextual
 checksum-valid INN/SNILS for experimental app use under
-[ADR 0014](../../../../docs/adr/0014-highlighted-pii-replacements.md). Read the [measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
+[ADR 0014](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0014-highlighted-pii-replacements.md). Read the [measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
 and [historical OSS source review](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pii-oss-research.md).
 
 ## Corpus

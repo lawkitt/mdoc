@@ -7,4 +7,4 @@
   stray comma. A corner of two streets with its city and ZIP, and a
   letterhead's street line with a floor or a compass part ("1640 Q St.,
   N.W."), are addresses too
-  ([ADR 0108](docs/adr/0108-recognition-targets.md); part of #498).
+  ([ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md); part of #498).

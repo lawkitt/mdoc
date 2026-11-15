@@ -12,4 +12,4 @@
   Universities, state-owned companies with a legal form, private bodies
   that share a word, people after a title and a public body's own contact
   details stay marked
-  ([ADR 0108](docs/adr/0108-recognition-targets.md); #788).
+  ([ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md); #788).

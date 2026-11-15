@@ -5,7 +5,7 @@ zed@d2a4fb6ded7c470be25d1541281da3882495b65b; Apache-2.0,
 see LICENSE-APACHE). The workspace patches this version without updating the
 GPUI family. Registry checksum:
 `2de7d3f4ad51ac387e822495db363fcc1188d349793365731d054444c4cb06ee`.
-Re-ported from 0.3.2 for [ADR 0117](../../docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md):
+Re-ported from 0.3.2 for [ADR 0117](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md):
 upstream moved this crate from `cocoa`/`objc` to `objc2`, so the patches
 below are written against `objc2` and the drag is in `src/text_drag.rs`,
 included into `window.rs` to share its window state.

@@ -46,7 +46,7 @@ scores 0.29, under the 0.5 cut ([probe](https://github.com/lawkitt/mdoc/blob/0aa
 A correction pipeline after the model fixes them in layers
 ([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md)), and a flaw
 hunt loop finds, records and fixes them with the maintainer away
-([ADR 0093](docs/adr/0093-flaw-hunt-loop.md)): Codex hunters, an Opus
+([ADR 0093](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0093-flaw-hunt-loop.md)): Codex hunters, an Opus
 curator and Opus fixers, a strict fixture ratchet and a private holdout.
 Items 3 and 4 run as loops once item 2 merges. rc.1, then full acceptance
 on the last RC; no stable without it ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
@@ -62,7 +62,7 @@ Records: [roadmap grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c
    behaviour change) starts beside item 2; then a fix loop on hunted flaw
    classes. *Done when (amended by the
    [run 3 grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/recognition-run3-grill-2026-11-09.md),
-   [ADR 0108](docs/adr/0108-recognition-targets.md)):* both demos' Copy
+   [ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md)):* both demos' Copy
    for AI hold no address, date of birth or case number, and the real set
    meets ADR 0108's targets (recall at least 95% overall and 90% per
    leaking category, precision at least 85%) with the holdout at or above
@@ -74,7 +74,7 @@ Records: [roadmap grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c
    with initials, inflections, nicknames) become proposals linked to it
    when the candidate is unique. *Done when:* in the Russian demo,
    Павлова's six aliases become one and "Марина" links, and item 3's
-   targets hold ([ADR 0108](docs/adr/0108-recognition-targets.md)).
+   targets hold ([ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md)).
    Run 4 (one Windows hub) works items 3 and 4 together; a model spike
    beside it informs 0.5, not rc.1.
 The 2026-10-31 survey's polish (U13, U18, U19, U23, U24, U26 in Later)
@@ -300,7 +300,7 @@ and dropped (#857).
 
 The desktop app moves to `gpui-pre 0.3.12` (macOS 12 minimum), and the
 sidebar's hover reveal gets quicker and smooth
-([ADR 0117](docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md),
+([ADR 0117](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md),
 [GPUI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/gpui-grill-2026-11-14.md)). Items 1 and 2 shipped
 (#879, #880) after the maintainer's native check; item 3 is open.
 
@@ -351,7 +351,7 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[OCR]** Recover page structure on clean scans, in the AnyDoc/pdf-inspector forks.
 - **[Cases]** System-wide Pseudonymize Clipboard hotkey, via the `global-hotkey`
   crate as in Panoply, with global shortcuts for the shelf and Restore
-  Clipboard ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+  Clipboard ([ADR 0084](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0084-menu-bar-shelf.md)).
 - **[Shelf]** Windows notification-area flyout under ADR 0084's rules, and
   Open at login (`SMAppService` on macOS) under the menu bar setting.
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
@@ -634,7 +634,7 @@ Android takes what applies. Its clipboard finding is
 
 - **Outgoing AI-analysis qualification.** A continuous quality gate, not a
   release blocker, for EN/RU legal text from PDF, DOCX and Markdown
-  ([ADR 0016](docs/adr/0016-pii-production-qualification-scope.md)).
+  ([ADR 0016](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0016-pii-production-qualification-scope.md)).
   *Done when:* numerical release targets are agreed from measured baselines on
   a larger holdout, with the measures and coverage ADR 0016 lists.
 
@@ -691,14 +691,14 @@ Android takes what applies. Its clipboard finding is
 ## Not planned
 
 - Realistic fake-name pseudonyms: harder to restore and may collide with real
-  names ([ADR 0018](docs/adr/0018-document-local-identity-review.md)).
-- An irreversible redaction mode ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)).
+  names ([ADR 0018](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0018-document-local-identity-review.md)).
+- An irreversible redaction mode ([ADR 0022](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0022-remove-anonymization-mode.md)).
 - Watermarking and watched folders (outside AI preparation).
 - MiaoYan's notes-app features (slides, wikilinks, Mermaid and LaTeX, slash
   templates, a synced notes library): outside AI preparation, and
-  [ADR 0030](docs/adr/0030-render-standard-markdown-only.md) renders standard Markdown only.
+  [ADR 0030](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0030-render-standard-markdown-only.md) renders standard Markdown only.
 - Document version history: snapshots would keep client names in plaintext
-  outside the case and the file lifecycle ([ADR 0003](docs/adr/0003-file-based-document-lifecycle.md)).
+  outside the case and the file lifecycle ([ADR 0003](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0003-file-based-document-lifecycle.md)).
 - An editor-wide Markdown reformat: it moves every proposal and alias; cleanup
   belongs at conversion (Later).
 - [xerj](https://github.com/xerj-org/xerj) (local search server for agents): no

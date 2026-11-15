@@ -8,5 +8,5 @@
   after the officer, a notary's "State No." in the notary's block and an
   aircraft's registration mark are identity numbers. Neutral citations, a precedent's docket number, form and
   statute numbers and an aircraft's type alone stay unmarked
-  ([ADR 0108](docs/adr/0108-recognition-targets.md); part of #364 and
+  ([ADR 0108](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0108-recognition-targets.md); part of #364 and
   #483).

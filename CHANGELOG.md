@@ -8,7 +8,7 @@ All notable changes to **mdoc** are documented here.
 
 - **mdoc's M in the menu bar (macOS).** The menu bar item shows the app
   icon's M monogram instead of a generic document symbol, tinted to suit a
-  light or dark menu bar ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+  light or dark menu bar ([ADR 0084](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0084-menu-bar-shelf.md)).
 
 - **Android spike: detector settings.** The Android feasibility spike also
   times the name detector's window at 2, 4, 6 and 8 threads, on ONNX
@@ -20,7 +20,7 @@ All notable changes to **mdoc** are documented here.
   in Explorer on Windows) and Copy path for a tab with a file, and Close
   others, which asks each tab with unsaved changes or an unsaved mapping in
   turn, in sidebar order; Cancel keeps that tab and the rest
-  ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
+  ([ADR 0071](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0071-one-close-and-quit-prompt.md)).
 
 - **A long document scans like its parts.** Detection windows hold whole
   paragraphs and each heading starts one, so a section repeated in a longer
@@ -49,7 +49,7 @@ All notable changes to **mdoc** are documented here.
   the rail by itself and comes back when the window widens, unless you
   collapsed it. Long tab names lose their middle, not their extension, so
   names that share a start still differ
-  ([ADR 0027](docs/adr/0027-chrome-style-vertical-sidebar.md)).
+  ([ADR 0027](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0027-chrome-style-vertical-sidebar.md)).
 
 - **Background tabs are named as their source.** A file opened with others
   and not yet shown reads as its source in the sidebar and its tooltip, not
@@ -93,7 +93,7 @@ All notable changes to **mdoc** are documented here.
   Resolution choice is filled, so a focused one no longer looks selected;
   About no longer ends with a Reset that has nothing to reset; and a long
   page shows a scroll thumb and fades where its rows continue
-  ([ADR 0076](docs/adr/0076-settings-categories.md)).
+  ([ADR 0076](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0076-settings-categories.md)).
 
 - **Long counts keep the Replacements chevron.** An entity row's mention
   count has room for four digits, and the chevron beside it keeps its full
@@ -104,7 +104,7 @@ All notable changes to **mdoc** are documented here.
   (⇧⌘P) show their key; the popup's alias field says "Rename alias"; Home's
   "Documents stay on this Mac" explains itself above the note instead of over
   the buttons beside it
-  ([ADR 0073](docs/adr/0073-keyboard-shortcuts-panel.md)).
+  ([ADR 0073](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0073-keyboard-shortcuts-panel.md)).
 
 - **A selected alias's ring hugs the alias.** After Apply, the ring around
   a selected alias follows its chip, so a short alias like ORG_1 no longer
@@ -122,7 +122,7 @@ All notable changes to **mdoc** are documented here.
 - **Native panels follow the app's theme (macOS).** With Appearance on Light
   or Dark, the Save and Open panels, their alerts and the menus use it too,
   even when macOS is set the other way; System follows macOS
-  ([ADR 0076](docs/adr/0076-settings-categories.md)).
+  ([ADR 0076](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0076-settings-categories.md)).
 
 - **The DOCX source preview draws ₽.** On macOS, where the preview draws a
   missing Calibri or Cambria in Arial, the ruble sign and the newer currency
@@ -136,7 +136,7 @@ All notable changes to **mdoc** are documented here.
   Check for Updates… sits in the mdoc menu (Help on Windows). Copy for AI is
   ⇧⌘C (Ctrl+Shift+C) and Copy Markdown ⇧⌘M (Ctrl+Shift+M). ⌘\ now switches
   to Side by side from Original or Pseudonymized
-  ([ADR 0058](docs/adr/0058-standard-macos-menus.md)).
+  ([ADR 0058](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0058-standard-macos-menus.md)).
 
 - **Android polish.** The Android app's bottom bars sit clear of the
   gesture bar, and its button bars stack at large text instead of wrapping,
@@ -166,8 +166,8 @@ All notable changes to **mdoc** are documented here.
   default at the right), fill the default button, and dim the window behind
   them in Dark too. "Discard" is now "Don't Save". The Quit summary names up
   to five of the documents it asks about, then "and N more"
-  ([ADR 0064](docs/adr/0064-dialog-and-role-semantics.md),
-  [ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
+  ([ADR 0064](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0064-dialog-and-role-semantics.md),
+  [ADR 0071](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0071-one-close-and-quit-prompt.md)).
 
 - **iOS keeps restored replies on the phone.** Copy reply and Copy in
   Restore with mdoc put the restored text, which holds originals, on this
@@ -293,7 +293,7 @@ All notable changes to **mdoc** are documented here.
   Clipboard section; the footer is one row (Open mdoc, Settings, Quit); the
   shelf has a blurred background; a drag shows a card with the title and
   first line, and a hint that goes after the first drop
-  ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+  ([ADR 0084](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0084-menu-bar-shelf.md)).
 
 - **iOS device fixes.** Below the detector floor (8 GB) the app no longer
   runs a rules-only scan: where Find names would be, the document says the
@@ -349,7 +349,7 @@ All notable changes to **mdoc** are documented here.
   into another app or Copy for AI, with Pseudonymize Clipboard and Restore
   Clipboard for the current case. Only reviewed documents leave the shelf;
   with it on, mdoc keeps running after its window closes
-  ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+  ([ADR 0084](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0084-menu-bar-shelf.md)).
 
 - **The core builds for iOS.** `mdoc-import`, `mdoc-detect` and `mdoc-store`
   build for iPhone and the Simulator, and the new `crates/mdoc-ffi` exposes
@@ -374,7 +374,7 @@ All notable changes to **mdoc** are documented here.
   prompts as ⌘Q, and a logout or shutdown goes on once they are answered.
   It used to close mdoc at once, losing unsaved edits, unsaved mappings,
   untitled tabs and OCR results
-  ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
+  ([ADR 0071](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0071-one-close-and-quit-prompt.md)).
 
 - **UI polish from a dev-build walk-through.** A click in the blank page
   under a document's last line puts the caret at the end instead of taking
@@ -398,13 +398,13 @@ All notable changes to **mdoc** are documented here.
   opens its menu in the expanded sidebar and the collapsed rail, with no fn
   on MacBook keyboards, where F10 is the mute key; ⇧F10 still works, and the
   Menu key on Windows. The shortcuts panel lists it
-  ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+  ([ADR 0062](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0062-keyboard-reach.md)).
 
 - **Replace picks a category.** The pill beside a selection reads
   "Replace · Person ▾": Replace adds with the guessed category, as ⌘⌥P
   does, and ▾ (or ⇧⌘⌥P, Ctrl+Alt+Shift+P on Windows) lists the categories
   with the alias each would give, adding in the one picked
-  ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
+  ([ADR 0024](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0024-replace-custom-selection.md)).
 
 - **Local CI is the PR test gate.** Hosted CI runs only `lint (ubuntu)` on
   PRs from branches in the repository; `local/windows` and `local/macos`
@@ -436,7 +436,7 @@ All notable changes to **mdoc** are documented here.
 - **F6 lands on the active tab.** F6 into the sidebar now lands on the
   active tab's row (Home's row on Home), in the expanded sidebar and the
   collapsed rail, instead of the control last focused there, often Settings
-  ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+  ([ADR 0062](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0062-keyboard-reach.md)).
 
 - **The clipboard notice goes away by itself.** The result of Pseudonymize
   Clipboard leaves the document after 8 seconds, or sooner when you edit the
@@ -483,7 +483,7 @@ All notable changes to **mdoc** are documented here.
   renumbering, in the case file too. The reply box keeps a paste exactly
   (no Markdown paste rules) and keeps the caret in view in a long reply;
   Next unrecognised scrolls to its token on the click that opens the Reply
-  view ([ADR 0078](docs/adr/0078-restore-in-place.md)).
+  view ([ADR 0078](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0078-restore-in-place.md)).
 
 - **What you did fixes.** Re-choosing the current category of an identity
   whose mentions are already replaced no longer adds an entry or drops the
@@ -495,7 +495,7 @@ All notable changes to **mdoc** are documented here.
   its page no longer leaves Back pointing at the page shown, and keeps Forward;
   a close or quit prompt you cancel no longer clears Forward; the buttons and
   shortcuts agree on where they go; navigating closes an open tab or case menu
-  ([ADR 0081](docs/adr/0081-workspace-back-forward.md)).
+  ([ADR 0081](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0081-workspace-back-forward.md)).
 
 - **Model status stays accurate across windows.** Settings refreshes remembered model state, shows clearer setup progress, preserves runtime errors, and avoids storing absolute paths or detailed errors in the cache.
 
@@ -511,7 +511,7 @@ All notable changes to **mdoc** are documented here.
   new case starts from that list; existing cases keep theirs. Turning a
   category off removes its unapplied proposals in open documents without a
   case; applied replacements and names you marked stay
-  ([ADR 0076](docs/adr/0076-settings-categories.md)).
+  ([ADR 0076](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0076-settings-categories.md)).
 
 - **Merge hint fixes.** Restored replies use an identity’s longest wording
   after Same as… links a fuller name to a saved short one; merging into a later
@@ -538,7 +538,7 @@ All notable changes to **mdoc** are documented here.
   opening files or reading the case key. Rename it, choose one of eight colours,
   manage membership and detection categories, add or forget names, and delete
   the case from one place. Locked cases show their name and document count until
-  you choose Unlock ([ADR 0077](docs/adr/0077-case-page.md)).
+  you choose Unlock ([ADR 0077](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0077-case-page.md)).
 
 - **Settings by category.** General, Detection, Recognition, Spelling, Cases and About now have their own rows, switches and category-only Reset. Choices save immediately; numbers commit on Enter or blur with inline validation. The keyboard tab list, command palette and model/update links open each category directly, and the dictionary stays inside Spelling.
 
@@ -547,7 +547,7 @@ All notable changes to **mdoc** are documented here.
   its files or it lands on a case header), Open files, or Cancel. Open files
   never touches the case key, one folder opens at most 20 new tabs, and
   several folders get their sheets in turn
-  ([ADR 0075](docs/adr/0075-folder-sheet.md)).
+  ([ADR 0075](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0075-folder-sheet.md)).
 
 - **Choose the theme in Settings.** Appearance offers System, Light and Dark,
   stays in sync with the sidebar theme button, and saves the choice in the
@@ -561,7 +561,7 @@ All notable changes to **mdoc** are documented here.
   command palette or Help › Keyboard Shortcuts lists every shortcut by
   context, with this platform's keys and a filter; the palette's shortcut
   labels come from the same table
-  ([ADR 0073](docs/adr/0073-keyboard-shortcuts-panel.md)).
+  ([ADR 0073](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0073-keyboard-shortcuts-panel.md)).
 
 - **Untitled tabs are numbered.** The first is `Untitled.md`; later tabs take
   the lowest free number, which closing a tab makes available again. Empty
@@ -582,7 +582,7 @@ All notable changes to **mdoc** are documented here.
   now asks about unsaved mappings too, instead of dropping them; with two or
   more documents to lose, a summary comes first (Review…, Discard All,
   Cancel). The Settings switch "Ask before closing an unsaved mapping" covers
-  both ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md), #119).
+  both ([ADR 0071](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0071-one-close-and-quit-prompt.md), #119).
 
 ## [0.2.1] - 2026-10-27
 

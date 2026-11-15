@@ -10,7 +10,7 @@ transactions. With a `SyntaxStyle` installed it renders live-preview
 (WYSIWYG) Markdown — headings, emphasis, links, lists and tasks, tables,
 GitHub alerts, code blocks, images and highlights — revealing syntax near the
 caret; without one it is a raw-text editor. Saved bytes are always the exact
-source. Standard Markdown only ([ADR 0030](../../docs/adr/0030-render-standard-markdown-only.md)).
+source. Standard Markdown only ([ADR 0030](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0030-render-standard-markdown-only.md)).
 
 The host supplies images, file chips, search matches and source annotations
 (pseudonymization), and receives `EditorEvent`s. Right-to-left lines are laid
