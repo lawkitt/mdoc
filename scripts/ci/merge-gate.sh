@@ -18,7 +18,9 @@
 #   for the shadow trial): green only when every job its areas need passed,
 #   each named with where it ran. Its areas come from its own
 #   scripts/ci/ci-areas.txt, as queue.yml and the PC read them (main's when
-#   GitHub cannot give it). Hosted jobs (queue.yml) are check runs
+#   GitHub cannot give it). One whose own change, against its one parent,
+#   is docs only needs no job, whatever the entries ahead bring (docs_only
+#   in lib.sh). Hosted jobs (queue.yml) are check runs
 #   named ci/macos, ci/ios, ci/detection (the detection gate's summary of
 #   its shards) and ci/scripts (the CI machinery's script suites, ADR 0100);
 #   a check counts only when it concluded success, or skipped
