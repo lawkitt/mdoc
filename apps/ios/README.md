@@ -55,7 +55,7 @@ Xcode once and let Signing & Capabilities register it (the command line
 cannot). A new developer certificate needs one tap of an installed app on the
 phone with `ppq.apple.com` reachable before iOS lets it launch.
 
-Device tests, audits, timing and how UI tests launch:
+Device tests, timing and how UI tests launch:
 [ui-tests.md](ui-tests.md).
 
 ## Layout

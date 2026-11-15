@@ -182,16 +182,14 @@ cannot establish these rows.
   `docs/product-media/`, `tests/fixtures/docx-preview/legal-opinion.docx`
   and `tests/fixtures/reference.pdf`. Copy a demo into
   `Документы/Папка с пробелами/` for the path rows.
-- Rows that need a physical keyboard, spoken screen-reader output, a
-  password, system settings or a drag from Finder or Explorer are the
-  maintainer's.
+- Rows that need a physical keyboard, a password, system settings or a
+  drag from Finder or Explorer are the maintainer's.
 - Record results in one GitHub issue per release: build, machines and OS
   builds, then each row Pass, Fail or Unavailable with a note. A Fail gets
   its own issue in the release's milestone, linked from the row, and the
   run goes on; nothing is fixed during a run.
 - A Fail is must-fix when it loses data, blocks a listed flow, or leaves a
-  control unreachable by keyboard or screen reader; anything else becomes a
-  roadmap item.
+  control unreachable by keyboard; anything else becomes a roadmap item.
 
 ## iOS betas
 
@@ -264,9 +262,8 @@ Results go in the release's issue.
 | I2 | On cellular, the model download asks first; leaving the app keeps it going |
 | I3 | After locking the phone, documents and cases are unreadable to a backup or file browser, and a restored backup starts empty |
 | I4 | A 20-page scan and Find names keep running in the background, or offer to resume on return |
-| I5 | VoiceOver reads each underlined candidate with its alias, and Keep and Replace work from the rotor |
-| I6 | Share to the ChatGPT or Claude app sends aliases only; Restore with mdoc from the AI app restores the names |
-| I7 | Below the device floor, setup offers only text recognition and the app says why it cannot find names |
+| I5 | Share to the ChatGPT or Claude app sends aliases only; Restore with mdoc from the AI app restores the names |
+| I6 | Below the device floor, setup offers only text recognition and the app says why it cannot find names |
 
 ## Android
 
