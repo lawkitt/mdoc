@@ -152,7 +152,7 @@ in [CONTEXT.md](../../CONTEXT.md).
   login-keychain key is read quietly, with the explainer and one dialog only if
   that read would ask; it is copied to the data protection keychain, and the
   login item is deleted with dialogs off or left unread if deleting would ask.
-- `scripts/keychain-launch-check.sh` runs on a clean macOS user account with
+- `scripts/desktop/keychain-launch-check.sh` runs on a clean macOS user account with
   the signed release before every release that touches the case key.
 
 ## Case page

@@ -250,9 +250,10 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   fix it.
 - A `pass` fixture never moves back, and no fixture is deleted or loosened,
   without the maintainer.
-- The pipeline runs on committed snapshots on any platform; the Mac is the
-  reference platform is hosted Windows, which records them; the Mac fetches
-  them from CI.
+- The pipeline runs on committed snapshots on any platform.
+- Hosted `windows-latest` is the reference platform: it records the
+  snapshots, and the gate checks them there; the Mac fetches refreshed ones
+  from CI's `detection-snapshots-<k>` artifacts with `just snapshots-fetch`.
 - The detection gate reruns the model, fails on a stale snapshot and asserts
   every fixture's spans.
 - A fix adds no false hit on a negative fixture.
@@ -274,7 +275,7 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - The holdout (private `lawkitt/mdoc-holdout`) and the real set (about 25 EN
   and 25 RU probe documents, gold frozen) never appear in a fixer's brief;
   only their aggregates are posted.
-- `scripts/hub-gate.sh <PR>` runs the detection crates' tests on the merged
+- `scripts/ci/hub-gate.sh <PR>` runs the detection crates' tests on the merged
   candidate and the holdout when its private path is set; a holdout fall
   stops fixing and goes to the maintainer.
 - Targets on the real set: recall at least 95% overall and 90% in each

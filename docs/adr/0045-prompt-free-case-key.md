@@ -41,7 +41,7 @@ look suspicious in a privacy app.
 
 ## Verification
 
-`scripts/keychain-launch-check.sh` runs on a clean macOS user account with the
+`scripts/desktop/keychain-launch-check.sh` runs on a clean macOS user account with the
 signed release before every release that touches the case key. CI cannot see
 system dialogs.
 
