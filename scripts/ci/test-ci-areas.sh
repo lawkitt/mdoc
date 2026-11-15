@@ -121,6 +121,16 @@ check "also beside a known one" \
   [ "$(printf 'some/file\0' | changed_areas $'ios,newarea  some/file')" = "core desktop recognition ios android ci" ]
 check "known names still route as before" \
   [ "$(printf 'some/file\0b.md\0' | changed_areas $'ios,android  some/file\nnone  **/*.md')" = "ios android" ]
+# A queue commit's own change (docs_only): 1 to 299 files, none in an area.
+docs_only_of() { printf '%s\0' "$@" | docs_only "$table"; }
+check "docs files are docs only" docs_only_of README.md docs/a.md changes/x.md
+check "fixture Markdown is not" not docs_only_of README.md tests/fixtures/import/a.md
+check "a code file is not" not docs_only_of README.md src/main.rs
+check "no files is not" not docs_only_of
+many=()
+for i in $(seq 1 300); do many+=("docs/$i.md"); done
+check "300 files are not (GitHub lists no more)" not docs_only_of "${many[@]}"
+check "299 are" docs_only_of "${many[@]:1}"
 # shellcheck disable=SC2317,SC2329 # called through check
 matches() { [[ $1 =~ $(glob_regex "$2") ]]; }
 check "* does not cross directories" not matches scripts/x/ios-a.sh "scripts/ios-*.sh"
