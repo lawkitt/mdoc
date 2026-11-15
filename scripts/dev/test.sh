@@ -145,6 +145,7 @@ suites+=(ci/test-snapshots-fetch.sh)
 suites+=(ci/test-nightly.sh)
 suites+=(ci/test-ci-stats.sh)
 suites+=(dev/test-fixed-delays.sh)
+suites+=(dev/test-docs-lint.sh)
 suites+=(ios/test-ios-ui-shards.sh)
 for suite in "${suites[@]}"; do
   bash "scripts/$suite" </dev/null >"$tmp/${suite//\//-}.log" 2>&1 &

@@ -136,31 +136,14 @@ platform support policy has changed.
 ## Exact pins and licenses
 
 [models.json](../../../tools/pseudonymization/models.json) pins every evaluated
-export/tokenizer/card file to a revision, size and SHA-256.
-[provenance.json](../../../tools/pseudonymization/provenance.json) records exact
-crate source commits, license/notice file digests and upstream model-card pins;
-three tool Cargo lockfiles retain registry checksums and transitive versions.
-
-| Component | Evaluated version/revision | Declared license / finding |
-| --- | --- | --- |
-| gline-rs / orp | 1.1.0 / 1.0.0; source commits in provenance | Apache-2.0; license files checked |
-| gliner2-rs | 0.9.6 / `7626d237d8c58f0fcfadd094e8360e7d5ae9c8ee` | Apache-2.0; LICENSE and NOTICE checked |
-| ort / ort-sys | rc.9 and rc.13 | MIT OR Apache-2.0; both license files checked |
-| tokenizers code | 0.21.4 / 0.23.2 | Apache-2.0; license files checked |
-| GLiNER multi base model | `443d26d654e0324125a96bebd8e796c14ff2efe6` | Apache-2.0 in upstream model card |
-| Multilingual ONNX export / tokenizer | onnx-community `6ddaeb9413b0e71ad8457da1aab378a165b24058` | Export card identifies the base, but has no explicit license declaration; inherited terms/provenance need confirmation before shipping |
-| Knowledgator PII export / tokenizer | `61726e0ad791dcab3e29339bbec3ad42ded65641` | Apache-2.0 in model card; English declared; retained fine-tuned tokenizer includes special tokens |
-| GLiNER2 privacy base | Fastino `1cb4166094dc58fa8d836429f060d6c95f62b495` | Apache-2.0 in model card |
-| GLiNER2 ONNX export / tokenizer | jugaadsrl `e594898629d452e8311796f5f329c7edbeda907c` | Apache-2.0 in export card; derivative weights keep upstream obligations |
-| Base encoder/tokenizer lineage | Microsoft mDeBERTa-v3-base / DeBERTa-v3-small; exact card pins in provenance | MIT in Microsoft cards; fine-tuned tokenizer bytes are separately pinned |
-| Native ONNX Runtime | 1.27.0, existing app pin/digest in `crates/mdoc-import/src/ocr.rs` | MIT; existing runtime license/third-party notices must travel with redistribution |
-
-The original multilingual model provides no ONNX artifact; evaluation uses the
-identified third-party quantized export. These are practical source/license
-checks, not a claim that all training data or derivative provenance has been
-audited. A production package must retain applicable licenses, copyright and
-NOTICE files and revisit the export attribution gap. No weights are committed
-or added to mdoc's shipped distribution.
+export, tokenizer and card file to a revision, size and SHA-256;
+[provenance.json](../../../tools/pseudonymization/provenance.json) records the
+crates' source commits, licence and notice digests and the model-card pins.
+Everything evaluated is Apache-2.0 or MIT, except that the onnx-community
+multilingual export declares no licence: its inherited terms need confirming
+before shipping. A production package keeps the applicable licences, copyright
+and NOTICE files (ONNX Runtime's included). These are practical licence
+checks, not an audit of training data. No weights are committed or shipped.
 
 ## Adoption decision and next gates
 

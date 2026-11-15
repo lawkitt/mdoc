@@ -52,9 +52,8 @@ Read this file and your area's spec, its source of truth.
   or a rewrite to change, or picks a dependency or platform. Sections:
   Problem, Decision, Consequences; status `Status: Accepted, YYYY-MM-DD.`;
   no amendment chain. Product behaviour gets no new ADR.
-- Never renumber an ADR: code cites them by number. Folded numbers resolve
-  through `docs/adr/README.md`. New code doesn't cite ADRs; old citations go
-  when the code is touched.
+- Never renumber an ADR: code cites them by number, and `docs/adr/README.md`
+  resolves folded ones. New code doesn't cite ADRs.
 - No design records in the tree: a grill's output is the spec change and its
   PR, with the record in the PR description or an issue.
 - Documentation of one script or module lives beside it, in its header or a
@@ -63,8 +62,9 @@ Read this file and your area's spec, its source of truth.
   stays only while a rerun script reads it. Platform acceptance results go in
   the release's issue.
 - A PR that folds or trims rules lists each one it dropped, with a reason.
-- Word budgets: this file 2,500, each spec 3,000, `ci.md` 800, each ADR 400
-  (without its Status and References lines), each folder README 1,500.
+- `just lint` runs `scripts/dev/docs-lint.sh --check`: word budgets, no
+  design or dated evidence folders, and every ADR number a file or folded.
+  After an ADR change, run it bare to rewrite the index.
 
 ### Roadmap upkeep
 
@@ -159,8 +159,8 @@ elsewhere. `Cargo.lock` must be what cargo resolves from `Cargo.toml`
 the lockfile alone. An exact pin carries its reason in a comment. Bump
 `dirs`, `aes-gcm` and `docxide-pdf` deliberately, one PR each, checking
 their paths, old cases and the preview corpus; `docxide-pdf` only when a
-rendering fix needs it. Test a fork update in the
-fork first; port reviewed AnyDoc upstream changes rather than merging. If
+rendering fix needs it. Fork updates follow
+[ADR 0001](adr/0001-conversion-and-ocr-in-dependency-forks.md). If
 Cargo's Git fetch cannot authenticate, use
 `CARGO_NET_GIT_FETCH_WITH_CLI=true`; never change global Cargo
 configuration.
@@ -186,7 +186,7 @@ behind the same guard.
 
 ## Recipes
 
-Run by Git Bash on Windows; `just` lists every recipe with a line each.
+`just` lists every recipe; Git Bash runs them on Windows.
 
 | Recipe | What it does |
 | --- | --- |
@@ -204,8 +204,7 @@ Run by Git Bash on Windows; `just` lists every recipe with a line each.
 | `just ios-survey <out>`, `just android-survey <out>` | Every screen, light and dark, into a folder outside the tree (such as `target/ios/survey`); not CI |
 | `just icon`, `just disk`, `just retire-worktree <path>` | Icon assets from `build/appicon.svg`; worktree `target/` sizes; remove a finished worktree |
 
-`.config/nextest.toml` warns on a test past 30 s and kills it at 2 minutes;
-a slow test is a bug to fix, not a limit to raise. Tests never retry.
+A slow test is a bug to fix, not a limit to raise; tests never retry.
 
 ### Shell scripts
 
@@ -237,8 +236,7 @@ one whose header says so stays Bash 3.2 compatible for macOS's `/bin/bash`.
 
 ## Fleet
 
-- Work on other machines follows the maintainer's `fleet` skill (hubs,
-  lanes, release runs, machine paths).
+- Other machines: the maintainer's `fleet` skill.
 - `wsl` builds only the platform-neutral crates. A lane stops and reports
   before adding a dependency, vendoring code, patching `vendor/` or a GPUI
   platform crate, or editing outside its item.

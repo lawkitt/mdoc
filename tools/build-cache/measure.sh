@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Usage: measure.sh <throwaway checkout> <results.tsv> [config...]
-# ADR 0050 measurement. Rewrites Cargo.toml and leaf sources in the checkout,
-# so give it a disposable worktree of the commit under test, never a working
-# copy. Each configuration starts every cold step from an empty target/.
+# The build-cache measurement (development.md, Build cache): cold and warm
+# build sizes and times per profile configuration. Rewrites Cargo.toml and
+# leaf sources in the checkout, so give it a disposable worktree of the commit
+# under test, never a working copy. Each configuration starts every cold step
+# from an empty target/.
 set -euo pipefail
 
 repo=$1 out=$2
