@@ -7,4 +7,4 @@
   raw link with Open, Copy and Share, in any state. A name in a table
   cell shows whole and its table holds still meanwhile. The review card's
   chip row is clipped at the card's edges
-  ([ADR 0115](docs/adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).
+  ([ADR 0115](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).

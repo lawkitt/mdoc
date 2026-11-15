@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Start (docs/mobile-ui.md, Sidebar): the main area when no document is
+/// Start (docs/specs/mobile.md, Navigation): the main area when no document is
 /// open. The setup card while models are missing, the document to go back
 /// to, the three ways in, and Try a sample. Lists live in the sidebar.
 struct StartView: View {

@@ -1,7 +1,7 @@
 import MdocFFI
 import SwiftUI
 
-/// Identities (2026-11-06 grill, round 2; ADR 0115; docs/mobile-ui.md,
+/// Identities (2026-11-06 grill, round 2; ADR 0115; docs/specs/mobile.md,
 /// Identities): the document's names, a drawer from the right edge on iPhone
 /// and the standing right column on iPad. At the top, pinned, the title with
 /// how much is decided and Select, then search and a category filter; then

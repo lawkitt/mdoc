@@ -726,19 +726,18 @@ drag does ([ADR 0106](docs/adr/0106-mobile-identities-gestures.md)).
 **Focus** (mobile review): stepping limited to one identity or one
 category, started from Identities, shown on the progress line with ×.
 
-**Mobile UI guide**: `docs/mobile-ui.md`, the current rules for both mobile
-apps' look and feel (tokens, components, gestures, haptics, motion,
-wording), each pointing at its code; agents read it before UI work and
-every UI PR updates it.
+**Mobile spec**: `docs/specs/mobile.md`, the current rules for both mobile
+apps (the core and the app, tokens, components, gestures, wording); agents
+read it before mobile work and a PR that changes a rule updates it.
 
 **Sample document**: the short contract with made-up names behind "Try a
 sample"; also the UI tests' and previews' fixture, so screenshots of it are
 safe to share.
 
 **UI survey**: light and dark screenshots of every mobile screen, taken by
-`SurveyUITests` (`just ios-survey`) on iOS and `just android-survey` on Android, and kept
-under `docs/evidence/ios-app/current` and `docs/evidence/android-app/current`,
-replaced by each UI PR ([ADR 0099](docs/adr/0099-mobile-ui-system.md)).
+`SurveyUITests` (`just ios-survey`) on iOS and `just android-survey` on Android,
+into a folder outside the repository; before and after shots go in the PR
+description, never in the tree ([spec](docs/specs/mobile.md)).
 
 **Device UI tests**: the review flow and long jobs run on a real phone
 (`just ios-device-test`, `just android-device-test`), by hand before each

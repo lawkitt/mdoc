@@ -1,7 +1,7 @@
 import MdocFFI
 import SwiftUI
 
-/// Identities' rows (docs/mobile-ui.md, Identities): the line a name shows,
+/// Identities' rows (docs/specs/mobile.md, Identities): the line a name shows,
 /// what a tap, a swipe and a long press do, and in Select the ≡ handle.
 extension IdentitiesView {
     func row(_ identity: Identity) -> some View {

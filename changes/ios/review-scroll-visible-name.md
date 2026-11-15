@@ -6,4 +6,4 @@
   above the top of the screen or under the review bar, most often in a
   long document with tables; it now ends in view, and a name that stays
   on its card keeps its place while its wording changes
-  ([ADR 0098](docs/adr/0098-mobile-review-bar.md), amended 2026-11-11).
+  ([ADR 0098](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0098-mobile-review-bar.md), amended 2026-11-11).

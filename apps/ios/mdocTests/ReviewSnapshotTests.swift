@@ -2,7 +2,7 @@ import SwiftUI
 import XCTest
 @testable import mdoc
 
-/// The review bar's parts (docs/mobile-ui.md, Review bar): the full view's
+/// The review bar's parts (docs/specs/mobile.md, Review): the full view's
 /// mention rows with their state marks, the hint line, and the All reviewed
 /// line. The bar itself scrolls and holds menus, which `ImageRenderer`
 /// doesn't draw, so its parts are drawn as the bar stacks them.

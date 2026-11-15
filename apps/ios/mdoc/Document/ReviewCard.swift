@@ -470,7 +470,7 @@ struct SameAsPicker: View {
 /// Pulled up: one row per mention of the identity under review, in
 /// document order. Each shows the words around the name, the name in its
 /// original wording, and the heading above it; a tap scrolls the text there,
-/// and the state pill changes that one mention (docs/mobile-ui.md).
+/// and the state pill changes that one mention (docs/specs/mobile.md).
 struct ReviewDetails: View {
     @Bindable var model: DocumentViewModel
     let candidate: Candidate
@@ -594,7 +594,7 @@ struct StateButtonLabel: View {
     }
 }
 
-/// The round mark itself, 26 points (docs/mobile-ui.md, State marks).
+/// The round mark itself, 26 points (docs/specs/mobile.md, Components).
 /// Replaced is the glyph on its category's tint, the one the text puts
 /// behind a replaced name, never an ink disc: a list of replaced names
 /// would read as a column of buttons in dark mode (ADR 0114). The glyph is

@@ -1,3 +1,3 @@
 - **VoiceOver reads what the document shows.** It no longer reads Markdown
   markers or a table's hidden source; tables are read from their grid
-  ([ADR 0096](docs/adr/0096-rendered-markdown-on-mobile.md)).
+  ([ADR 0096](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0096-rendered-markdown-on-mobile.md)).

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The review bar's cards as a carousel (docs/mobile-ui.md, Review bar):
+/// The review bar's cards as a carousel (docs/specs/mobile.md, Review):
 /// the previous, current and next cards side by side in one strip, the
 /// neighbors peeking in at the bar's edges. The finger moves the whole strip;
 /// let go past a third of a card, or with a fling, and it settles on the

@@ -5,4 +5,4 @@
   cell or a press in the text now ends Adjust Words as Cancel does, and
   the cell shows its alias again, instead of leaving the bar up over
   nothing
-  ([ADR 0116](docs/adr/0116-ios-rc11-adjust-words-identities-and-done.md)).
+  ([ADR 0116](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0116-ios-rc11-adjust-words-identities-and-done.md)).

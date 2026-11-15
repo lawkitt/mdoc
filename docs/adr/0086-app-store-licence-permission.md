@@ -33,4 +33,4 @@ ship through the App Store and Google Play.
 - A dependency under the GPL or LGPL in a mobile-linked crate is refused
   unless its holder grants the same permission.
 
-References: [interview](../design/mobile-grill-2026-10-31.md).
+References: [interview](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-grill-2026-10-31.md).

@@ -3,7 +3,7 @@ import UIKit
 import XCTest
 @testable import mdoc
 
-/// The docked review bar's height (docs/mobile-ui.md, Review bar): compact,
+/// The docked review bar's height (docs/specs/mobile.md, Review): compact,
 /// it keeps one height from card to card, so the text above it doesn't
 /// jump. The mentions chip ("↓ 1 of 2") is taller than the name's line, and
 /// the bar grew by about 20 pt on a card that showed it.

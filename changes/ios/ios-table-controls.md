@@ -5,4 +5,4 @@
   is gone: Aa is the formatting keyboard in a cell too, so strikethrough,
   inline code, highlight and links work there, and Aa, not a Keyboard key,
   brings the system keyboard back
-  ([ADR 0110](docs/adr/0110-mobile-editor-polish.md)).
+  ([ADR 0110](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0110-mobile-editor-polish.md)).

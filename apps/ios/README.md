@@ -1,6 +1,7 @@
 # mdoc for iOS
 
-The iPhone and iPad app ([ADR 0085](../../docs/adr/0085-mobile-apps.md)):
+The iPhone and iPad app ([ADR 0085](../../docs/adr/0085-mobile-apps.md),
+[spec](../../docs/specs/mobile.md)):
 scan or open a document, review the names mdoc finds, share the
 pseudonymized text to an AI app and restore its reply. SwiftUI on iOS 26
 and later over the Rust core (`crates/mdoc-ffi`); no third-party Swift
@@ -23,13 +24,10 @@ about 8 GB, and `just doctor` checks both). Both build the core first
 `target/ios/DerivedData` and are unsigned. The core is arm64 only, so the
 Simulator builds exclude x86_64.
 
-`just ios-core` also writes `target/ios/Build.xcconfig`
-(`scripts/ios-build-info.sh`), which `Config/Build.xcconfig` includes: the
-build number is the number of commits up to HEAD and `MdocCoreCommit` in
-Info.plist is HEAD, which Settings › About shows and links. Without it a
-build is number 1 from an unknown commit. A shallow clone has too few
-commits to count: it warns, and fails with `MDOC_REQUIRE_FULL_HISTORY=1`,
-which every TestFlight build sets. A TestFlight build is a tagged `main`
+`just ios-core` also writes `target/ios/Build.xcconfig`: the build number
+is the commit count up to HEAD and `MdocCoreCommit` is HEAD. A shallow clone
+warns, and fails with `MDOC_REQUIRE_FULL_HISTORY=1`, which every TestFlight
+build sets. A TestFlight build is a tagged `main`
 commit ([ADR 0097](../../docs/adr/0097-ios-testflight-beta.md),
 [release run](../../docs/release-run.md#ios-beta-build)). The app, the
 Restore extension and both embedded frameworks carry a
@@ -62,70 +60,34 @@ phone with `ppq.apple.com` reachable before iOS lets it launch.
 ### Device UI tests
 
 The Simulator refuses `BGContinuedProcessingTask`, so only a phone runs a
-long job through the real background task ([ADR 0088](../../docs/adr/0088-ios-on-real-devices.md)).
-Before every TestFlight build after the first, with the phone connected,
-unlocked, online, and with UI Automation on (Settings → Developer). On
-cellular (or a hotspot) the tests answer Use cellular when mdoc asks, and
-whenever a download waits for Wi-Fi, so a phone can switch networks during a
-run. Each run downloads text recognition (18 MB). At the detector tier the
-test library clones the name detector from the phone's own mdoc library when
-that has it (no copy, no space); otherwise the first run downloads it (about
-630 MB, over the data plan on cellular) and later runs keep it:
+long job through the real background task. Run them before every TestFlight
+build, with the phone connected, unlocked, online and with UI Automation on
+(Settings → Developer). Each run downloads text recognition (18 MB); the
+detector tier reuses the phone's own name detector or downloads it once
+(about 630 MB):
 
 ```sh
 just ios-device-test <hardware UDID>
 just ios-device-test <hardware UDID> below-floor   # or detector: not by the phone's model
 ```
 
-`scripts/ios-device-test.sh` builds for the phone, installs mdoc, copies the
-fixtures into its data container with `devicectl` (the app ships none), runs
-`ReviewFlowUITests` and the tier's test, and fails on a new
-`mdoc-*.ips` crash report (or when it cannot list them). The fixtures are
-the demo .docx, the 37-page `legal-opinion.docx`, a text PDF and six camera
-pages it renders (`scripts/ios-scan-pages.swift`), in
-`Library/mdoc-ui-fixtures` of the app's container: the UI-testing seed reads
-a fixture there when its Mac path does not exist. The long-jobs test runs
-at the detector tier with real downloads: the scan's Download & continue
-fetches text recognition and recognizes the pages while the test
-leaves the app for ten seconds, and Find names underlines the tenant. Find
-names on the legal opinion takes over a minute; the test leaves for 45 s,
-past the grace iOS gives without a continued processing task, and mdoc must
-still be running (not suspended) and finish the job. The text PDF comes in
-last. The name detector comes from the phone's own library or, the first
-time, a download, as above; the test skips on the Simulator.
+`scripts/ios-device-test.sh` copies the fixtures into the app's container
+with `devicectl` (the app ships none), runs `ReviewFlowUITests` and the
+tier's test, and fails on a new `mdoc-*.ips` crash report. The tier comes
+from the phone's model: the iPhone 15 Pro and later run
+`DeviceLongJobsUITests` (real downloads, Find names while the test leaves
+the app past iOS's grace); earlier phones, or `below-floor`, run
+`DeviceBelowFloorUITests`. Results go to `target/ios/device-test-*.xcresult`.
 
-The tier comes from the phone's model: the iPhone 15 Pro (`iPhone16,x`) and
-every iPhone from the 16 on run `DeviceLongJobsUITests`; earlier phones run
-`DeviceBelowFloorUITests`, which also runs on any phone with `below-floor`, as
-UI tests take the tier from a stand-in memory size. Below the floor, Settings
-says the phone cannot find names and Start has no setup card; the scan's
-Download & continue fetches text recognition and recognizes the pages
-while the test leaves for ten seconds; where Find names would be, the
-document says so; a word selected and replaced as a person becomes
-`PERSON_1`, and the text shares. Then the legal opinion comes in (in about
-40 ms, too fast to leave during it) and is whole after the test leaves for
-15 s. Results go to `target/ios/device-test-*.xcresult`.
+### Accessibility audits
 
-### Accessibility audit
-
-`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Start,
-the review, the candidate sheet, Identities, the replaced document and the
-reply sheet, and prints each issue (`A11Y[screen] …` in the log) without
-failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
-`-only-testing:mdocUITests/AccessibilityAuditExploreUITests`. It is a guide,
-not a gate: iOS 26 sheets are translucent, so the audit reports contrast and
-clipping on sheet text (and the system's Cancel and Done) that reads fine;
-missing labels, small targets and text in a category colour are real.
-The edit-mode audits (ADR 0109's acceptance) are opt-in the same way, since
-hosted runners are too slow for an audit: with
-`TEST_RUNNER_MDOC_A11Y_EXPLORE=1`,
+With `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`: `AccessibilityAuditExploreUITests`
+prints each issue (`A11Y[screen] …`) without failing, a guide rather than a
+gate, because iOS 26's translucent sheets give false contrast reports;
 `LivePreviewUITests/testTheAccessibilityAuditInEditMode` and
 `EditToolbarUITests/testTheAccessibilityAuditWithTheToolbarUp` fail on any
-issue on the edited text, Done, the toolbar or the formatting keyboard. The
-hub runs them at the phone check.
-`LargeTextExploreUITests` saves the main screens at the largest accessibility
-text size as PNGs into the folder in `TEST_RUNNER_MDOC_SHOTS_DIR` (it skips
-without it), for checking that rows stack instead of breaking words.
+issue. `LargeTextExploreUITests` saves the main screens at the largest text
+size into `TEST_RUNNER_MDOC_SHOTS_DIR`.
 
 ## Layout
 
@@ -155,114 +117,54 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 
 ## Rules
 
-- **Rust owns state.** View models keep the snapshots the core returns and
-  view state only; every change is a core call. A review tap returns at
-  once and its change saves into the case right after, on a utility queue,
-  once the taps pause (`SaveScheduler`, the core's `save_pending`), or at
-  once when mdoc leaves the foreground, before Copy for AI and Share, and
-  when the document is left for another screen
-  ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)). `CoreFactory`
-  opens `RealCore` for the app and the extension.
-- **Tests run the real core** ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)):
-  over temporary storage with a fixed case key, below the detector floor so
-  no model is needed, the fixture's names proposed as Try a sample proposes
-  its own (`mdocTests/Support`). No test fakes the library or a document:
-  the core's stand-ins are a fake `Setup` for the download tests and
-  `SlowJobs`, a real session whose long jobs wait first, for the timing
-  tests; the platform's are the downloaders and the network
-  (`FakeModelDownloader`, `HeldDownloader`, `FakeNetwork`). Previews use the
-  real core and the sample document. Fakes, the fixed case key and the
-  previews' core are behind `#if DEBUG` or in the test targets: none ships
-  in the app or the extension.
-- **Edit mode types into the core** ([ADR 0109](../../docs/adr/0109-mobile-markdown-editor.md)).
-  Edit (⌘E) shows in live preview and with Show Markdown on; the text view
-  applies typing natively and `TypingBridge` sends each committed edit,
-  never marked IME text, to the session (`type`) as "Typing" steps in the
-  one undo line. Its mirror of the core's text checks the edits UIKit
-  announces, so the view's string stays the core's, which is what saves; a
-  typing pause runs discovery and the save. Return, and ⌫ or ⌦ of one
-  character, ask the editor core (`editor_enter`, `editor_backspace`,
-  `editor_delete_forward`; `StructuralKeys`) and apply its answer as one
-  edit on that path. The view is restyled in place while editing, never
-  given new text: each keystroke restyles only its block and the lines the
-  caret left and entered (`LivePreview`, the core's
-  `markdown_block_styling`), with the caret's markers shown dimmed
-  (`editor_visible_markers`); the caret never rests in a hidden run and
-  steps over tables (`CaretSnap`). Cut and Copy use an app-private
-  pasteboard (`InAppClipboard`); the text view's undo manager is the core's.
-- **Offsets are source bytes.** Mention ranges and Markdown spans are UTF-8
-  offsets into the Markdown source; `TextOffsets` converts them for UIKit.
-- **The core recognizes Markdown.** `MarkdownStyling` asks the core for a
-  text's spans (`mdoc-markdown`, through `mdoc-ffi`'s `markdown_styling`):
-  inline kinds, markers, line roles and the document's own colours.
-  `MarkdownStyler` maps them to the app's fonts and colours, light and dark,
-  with markers dimmed and candidates on top.
-- **One long job at a time**, with progress and cancel. iOS 26 keeps it
-  running in the background through `BGContinuedProcessingTask`; earlier
-  versions get the short grace, then cancel and offer to resume. The job
-  reports a fraction (the detector's windows, recognition's pages), since
-  iOS stops a continued task that shows no progress. While a document's job
-  runs, its review waits: a Replace would make the core throw the scan away.
-- **A job that ends while the phone is locked** cannot write the library
-  (Data Protection Complete). Its result stays in the session and is saved
-  when the phone unlocks or mdoc comes back (`ProtectedData`,
-  `Library.saveDeferred`), as is a tap's change whose save comes after the
-  lock.
-- **Locking the phone pauses a job.** Leaving mdoc does not: the continued
-  processing task keeps Find names going (on the iPhone 17 Pro, 4% to 69%
-  in 45 s away, which `DeviceLongJobsUITests` checks). With the phone
-  locked iOS gives it no time, and it goes on after the unlock. Apple's
-  engineers say iOS may end such tasks on lock; the maintainer accepted
-  the pause for build 1 (2026-11-04).
-- **OCR keeps finished pages.** Recognition imports through
-  `import_file_in`, which keeps each recognized page in the core's
-  `imports/` folder; after a cancel, or mdoc stopping, Resume recognition
-  reads only the pages left. Dropping an import discards its pages
-  (`discard_import`), and deleting a saved document goes through the core
-  (`delete_document`), so it also leaves its case.
-- **Storage.** Everything lives in the App Group container
-  (`group.io.github.lawkitt.mdoc`), excluded from backups: the core's
-  `documents/` and `cases/`, the source files in `originals/`, models and
-  their downloads, and the core's kept OCR pages (`imports/`). All but
-  models use Data Protection Complete. The case key
-  is 32 random bytes in the Keychain (the shared access group, this device
-  only, readable while unlocked).
-- **Intake.** PDF, DOCX and pasted text go to the core as they are; camera
-  and photo pages become upright JPEGs, and several pages one image-only
-  PDF, which the core reads with OCR.
-- **Models.** `Setup` offers what the device's RAM allows; the files
-  download in a background `URLSession` (Wi-Fi unless the user allows
-  cellular), and the core checks and installs each one. On any cellular
-  interface mdoc asks first, whatever iOS's expensive flag says; a download
-  held for Wi-Fi shows "Waiting for Wi-Fi" with Use cellular. That state
-  comes from `NWPathMonitor`: background sessions never call
-  `taskIsWaitingForConnectivity` ([ADR 0088](../../docs/adr/0088-ios-on-real-devices.md)).
-- **Each model downloads on its own.** Settings has a Download button per
-  missing model and Download all; a document's setup card offers the model
-  its job needs (text recognition to recognize, the detector to find
-  names), with Download all models beside it
-  ([ADR 0090](../../docs/adr/0090-ios-models-download-separately.md)).
-- **Below the detector floor** there is no Find names and no detector setup
-  card: where Find names would be, the document says the device cannot find
-  names and that selecting text marks one; Settings says the same. Text
-  recognition is offered in the document that needs it and in Settings.
-- **The extension loads no model.** It restores with the library's current
-  case or one the user picks.
-- **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
-  each target's `InfoPlist.xcstrings`); every visible string goes there.
+The UI and app-structure rules are in
+[docs/specs/mobile.md](../../docs/specs/mobile.md). Beside them:
 
-UI tests launch the app with `-mdoc-ui-testing` (`LaunchConfiguration`
-reads every UI-test flag once): a fresh library of its own in the App Group
-(the extension follows it), its own case key, its own preferences, and a
-device below the detector floor, so no model is needed. The app imports the file in
-`MDOC_SEED_FILE` (the demo DOCX, the Markdown-rich
-`tests/fixtures/mobile-markdown/review.md` as pasted text, or a folder of
-JPEG pages as a scan) and scans it at launch with the structured rules alone:
-the only such scan, which gives the review candidates without a model. On a
-phone, where the Mac path does not exist, the seed reads the file of the same
-name that `just ios-device-test` copied into the app's container. Each launch
-clears the test library but keeps a downloaded name detector;
-`MDOC_KEEP_LIBRARY=1` keeps all of it, for a test that relaunches to check a
-save. Tests that need the OCR model download it and run only with
-`MDOC_OCR_TESTS=1` (the UI test also sets `MDOC_REAL_DOWNLOADS=1` for the
-app); the device long-jobs test sets it and `MDOC_UI_DETECTOR_TIER=1`.
+- **Saving.** A review tap saves on a utility queue once taps pause
+  (`SaveScheduler`, the core's `save_pending`). `CoreFactory` opens
+  `RealCore` for the app and the extension.
+- **Edit mode types into the core.** `TypingBridge` sends each committed
+  edit, never marked IME text, to the session (`type`); its mirror of the
+  core's text checks UIKit's edits, so the view's string stays the core's.
+  Return, ⌫ and ⌦ ask the editor core (`StructuralKeys`). The view is
+  restyled in place, never given new text: each keystroke restyles its block
+  and the caret's lines (`LivePreview`, `markdown_block_styling`), with the
+  caret's markers dimmed (`editor_visible_markers`); the caret never rests
+  in a hidden run (`CaretSnap`). Cut and Copy use `InAppClipboard`.
+- **Offsets are source bytes.** `TextOffsets` converts the core's UTF-8
+  offsets for UIKit.
+- **Markdown.** `MarkdownStyling` asks the core for spans;
+  `MarkdownStyler` maps them to fonts and colours.
+- **One long job at a time**, kept running in the background by
+  `BGContinuedProcessingTask`. It reports a fraction, since iOS stops a
+  continued task that shows no progress. While a job runs, review waits: a
+  Replace would make the core throw the scan away.
+- **Locked phone.** A job pauses on lock. A result or save that comes while
+  locked stays in the session and is saved on unlock (`ProtectedData`,
+  `Library.saveDeferred`), because Data Protection Complete blocks writes.
+- **OCR keeps finished pages** (`import_file_in`, the core's `imports/`);
+  Resume recognition reads only the pages left. Dropping an import or
+  deleting a document goes through the core (`discard_import`,
+  `delete_document`).
+- **Storage.** Everything lives in the App Group container
+  (`group.io.github.lawkitt.mdoc`), excluded from backups; all but models use
+  Data Protection Complete. The case key is in the Keychain's shared access
+  group, this device only.
+- **Intake.** PDF, DOCX and pasted text go to the core as they are; camera
+  and photo pages become upright JPEGs, several pages one image-only PDF.
+- **Downloads.** A background `URLSession`; "Waiting for Wi-Fi" comes from
+  `NWPathMonitor`, because background sessions never call
+  `taskIsWaitingForConnectivity`.
+- **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
+  each target's `InfoPlist.xcstrings`).
+
+## UI test launch
+
+UI tests launch the app with `-mdoc-ui-testing` (`LaunchConfiguration` reads
+every flag once): its own library, case key and preferences, below the
+detector floor. It imports `MDOC_SEED_FILE` and scans it with the structured
+rules alone, the only such scan, so review needs no model. On a phone the
+seed reads the copy `just ios-device-test` put in the container.
+`MDOC_KEEP_LIBRARY=1` keeps the library across launches; `MDOC_OCR_TESTS=1`
+runs the tests that download the OCR model (with `MDOC_REAL_DOWNLOADS=1`);
+`MDOC_UI_DETECTOR_TIER=1` gives the detector tier.

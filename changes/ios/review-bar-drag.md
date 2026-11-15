@@ -5,4 +5,4 @@
   own sentence, with a round mark that replaces or keeps just that one. A
   decided card offers Keep instead and Next; "All 15 reviewed" sums up
   above Share. Tips are now one quiet line in the bar, gone once used
-  ([ADR 0101](docs/adr/0101-mobile-review-bar-polish.md)).
+  ([ADR 0101](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0101-mobile-review-bar-polish.md)).

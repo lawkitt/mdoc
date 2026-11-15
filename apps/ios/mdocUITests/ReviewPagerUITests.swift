@@ -1,6 +1,6 @@
 import XCTest
 
-/// The review card swipes as a carousel (docs/mobile-ui.md, Review bar):
+/// The review card swipes as a carousel (docs/specs/mobile.md, Review):
 /// let go past a third of the card, or with a fling, and the strip settles
 /// on the neighbor; a short slow drag springs back. The same both ways.
 /// First, the text ends where the bottom bar starts.

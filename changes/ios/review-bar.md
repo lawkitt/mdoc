@@ -7,4 +7,4 @@
   proposal; Find in document marks a word the scan missed; Identities
   gains search, a Show filter, mention rows, swipe and long-press actions,
   Review this identity, and dragging one name onto another
-  ([ADR 0098](docs/adr/0098-mobile-review-bar.md)).
+  ([ADR 0098](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0098-mobile-review-bar.md)).

@@ -1,7 +1,7 @@
 import XCTest
 @testable import mdoc
 
-/// The review bar's full view rows (docs/mobile-ui.md): the name whole, in
+/// The review bar's full view rows (docs/specs/mobile.md): the name whole, in
 /// its original wording, with the words of its own paragraph and its
 /// heading, and no Markdown markers.
 final class MentionSnippetTests: XCTestCase {
