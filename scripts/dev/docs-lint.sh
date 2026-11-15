@@ -11,14 +11,15 @@
 #   - a dated (YYYY-MM-DD…) or pr-* folder anywhere under docs/evidence/;
 #   - an ADR number from 0001 to the highest one that is neither a file in
 #     docs/adr/ nor claimed by exactly one `Folds:` line, or that is both. A
-#     `Folds:` line (under docs/, outside docs/adr/) lists 4-digit numbers and
-#     may wrap until a blank line;
+#     `Folds:` line (any Markdown file under docs/ but the index, kept ADRs
+#     included) lists 4-digit numbers and may wrap until a blank line;
 #   - with --check, a stale docs/adr/README.md: its rows must name each number
 #     once, as the kept file or the file whose `Folds:` line claims it.
 # Without --check it writes docs/adr/README.md first: a row per number with
 # its title, and for a folded number the claiming file and a permalink to its
-# last full text in git history. A folded row already in the index keeps its
-# title and permalink, so only new folds read history (a shallow clone cannot).
+# last full text in git history. A folded number already in the index keeps
+# its title and permalink, even when another file claims it now, so only new
+# folds read history (a shallow clone cannot).
 # --check reads no history: CI clones one commit. Bash 3.2 compatible; BWK
 # awk, mawk and gawk. scripts/dev/test-docs-lint.sh checks it.
 # shellcheck source=../lib.sh
@@ -95,7 +96,7 @@ fi
 for f in docs/adr/[0-9][0-9][0-9][0-9]-*.md; do
   [ -f "$f" ] && printf '%s\t%s\n' "$(basename "$f" | cut -c1-4)" "$f" >>"$tmp/files"
 done
-find docs -name '*.md' ! -path 'docs/adr/*' | sort | while IFS= read -r f; do
+find docs -name '*.md' ! -path "$index" | sort | while IFS= read -r f; do
   awk -v file="$f" '
     function claims(line) {
       while (match(line, /[0-9][0-9][0-9][0-9]/)) {
@@ -130,6 +131,7 @@ while [ "$n" -le "$((10#$max))" ]; do
     printf '%s\tkept\t%s\n' "$num" "$(basename "$file")"
   elif [ -n "$claim" ]; then
     case "$claim" in
+      docs/adr/*) target="${claim#docs/adr/}" ;;
       docs/*) target="../${claim#docs/}" ;;
       *) target="../../$claim" ;;
     esac
@@ -185,8 +187,8 @@ else
         echo "| $num | [$title]($target) | Kept |"
         continue
       fi
-      title=$(awk -F'\t' -v n="$num" -v t="$target" '$1 == n && $2 == "folded" && $3 == t && $5 != "" { print $4; exit }' "$tmp/old")
-      link=$(awk -F'\t' -v n="$num" -v t="$target" '$1 == n && $2 == "folded" && $3 == t && $5 != "" { print $5; exit }' "$tmp/old")
+      title=$(awk -F'\t' -v n="$num" '$1 == n && $2 == "folded" && $5 != "" { print $4; exit }' "$tmp/old")
+      link=$(awk -F'\t' -v n="$num" '$1 == n && $2 == "folded" && $5 != "" { print $5; exit }' "$tmp/old")
       if [ -z "$link" ]; then
         # The file as it last was: still in HEAD (deleted in the work tree),
         # or before the commit that deleted it.

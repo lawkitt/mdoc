@@ -85,7 +85,25 @@ run
 expect 0 "wrote" "rewriting an index with a known row fails"
 grep -qF 'blob/kept/docs/adr/0002-folded.md' "$index" || fail "the known row was looked up again: $(cat "$index")"
 
+# A claim that moves to another file keeps the row's title and link, with
+# no history read, and names its new file.
+printf '# Desktop\n\nBody.\n' >"$tmp/repo/docs/specs/desktop.md"
+printf '# Kept choice\n\nStatus: Accepted, 2026-01-01.\n\nFolds: 0002.\n\n%s\n' "$(words 10)" >"$tmp/repo/docs/adr/0001-kept.md"
+run
+expect 0 "wrote" "moving a claim fails"
+grep -qF '| 0002 | Folded choice | [0001-kept.md](0001-kept.md) · [last text](https://github.com/lawkitt/mdoc/blob/kept/docs/adr/0002-folded.md) |' "$index" ||
+  fail "a moved claim lost its row or names the wrong file: $(cat "$index")"
+run --check
+expect 0 "docs-lint: ok" "the index after a moved claim is stale"
+
+# A claim in a kept ADR counts: one in a spec too is a double claim.
+printf '# Desktop\n\nFolds: 0002.\n' >"$tmp/repo/docs/specs/desktop.md"
+run --check
+expect 1 "ADR 0002 is claimed by more than one Folds: line (docs/adr/0001-kept.md docs/specs/desktop.md)" "a spec and a kept ADR both claim one number"
+
 # A number claimed without history: no earlier text.
+printf '# Desktop\n\nFolds: 0002.\n' >"$tmp/repo/docs/specs/desktop.md"
+printf '# Kept choice\n\n%s\n' "$(words 10)" >"$tmp/repo/docs/adr/0001-kept.md"
 printf '# Development\n\nFolds: 0003, 0004.\n' >"$tmp/repo/docs/development.md"
 run
 expect 1 "ADR 0003: no earlier text in git history" "a claim with no history passes"
