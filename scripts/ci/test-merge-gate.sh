@@ -221,6 +221,16 @@ cp scripts/ci/ci-areas.sh scripts/ci/ci-areas.txt "$repo_dir/scripts/ci/"
   eq "$(bash scripts/ci/ci-areas.sh --queue | tr '\n' ' ')" \
     "areas=desktop ci jobs=macos windows macos=true ios=false detection=false scripts=false "
   g reset -q --hard HEAD^
+  # Behind 300 files of code (every area, as GitHub's lists stop there),
+  # docs on top still need no job (Codex on #902).
+  g update-ref refs/remotes/origin/main HEAD
+  mkdir -p src/many && for i in $(seq 1 300); do echo x >"src/many/$i.rs"; done
+  g add -A && g commit -qm "Many (#6)"
+  eq "$(bash scripts/ci/ci-areas.sh --queue | sed -n 2p)" "jobs=macos windows ios android detection"
+  echo z >docs/a.md
+  g add -A && g commit -qm "Docs after many (#7)"
+  eq "$(bash scripts/ci/ci-areas.sh --queue | tr '\n' ' ')" \
+    "areas= jobs= macos=false ios=false detection=false scripts=false "
   # No main to diff against: every job, docs on top or not.
   g update-ref -d refs/remotes/origin/main
   eq "$(bash scripts/ci/ci-areas.sh --queue | sed -n 2p)" "jobs=macos windows ios android detection"
