@@ -4,7 +4,7 @@
     python -m detection_eval.export_onnx <model-id> --quantize-only <model.onnx>
 
 Decision 24 prefers an upstream or third-party build that matches the
-weights; `UPSTREAM` lists the known ones, and `run --backend onnx` re-scores
+weights; `UPSTREAM` lists the known ones, and `run --onnx` re-scores
 any build for parity. Our own export, for a model without one:
 
 - `token`: the token classifier, `input_ids` + `attention_mask` → `logits`,

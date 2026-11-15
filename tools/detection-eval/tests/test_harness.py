@@ -44,6 +44,14 @@ class Merge(unittest.TestCase):
         b = [entity(0, 5, "person", 0.5), entity(30, 34, "email")]
         self.assertCountEqual(merge([a, b]), a + [entity(30, 34, "email")])
 
+    def test_third_member_keeps_the_top_rank_category(self):
+        a = [entity(0, 4, "person")]
+        b = [entity(7, 11, "organization")]
+        c = [entity(2, 12, "address")]
+        self.assertCountEqual(
+            merge([a, b, c]), [entity(2, 12, "person"), entity(7, 11, "organization")]
+        )
+
     def test_tie_keeps_higher_ranked_span(self):
         a = [entity(0, 5, "person")]
         b = [entity(2, 7, "organization")]
@@ -163,3 +171,50 @@ class OutRoot(unittest.TestCase):
         from detection_eval.run import out_root
 
         self.assertTrue(out_root("runs").is_absolute())
+
+
+class Join(unittest.TestCase):
+    def test_separately_tagged_people_stay_apart(self):
+        import numpy as np
+
+        from detection_eval.adapters import decode_tags
+
+        text = "Ann Bo"
+        offsets = [(0, 3), (3, 6)]
+        id2label = {0: "O", 1: "B-NAME", 2: "I-NAME", 3: "B-SURNAME"}
+        apart = np.array([[0, 0.9, 0.1, 0], [0, 0.9, 0.1, 0]], dtype=float)
+        parts = np.array([[0, 0.9, 0.1, 0], [0, 0.1, 0, 0.9]], dtype=float)
+        labels = {"NAME": "person", "SURNAME": "person"}
+        spans = lambda probs: [(e.start, e.end) for e in decode_tags(text, offsets, probs, id2label, labels)]  # noqa: E731
+        self.assertEqual(spans(apart), [(0, 3), (4, 6)])
+        self.assertEqual(spans(parts), [(0, 6)])
+
+
+class Viterbi(unittest.TestCase):
+    def test_path_differs_from_argmax_when_argmax_breaks_bioes(self):
+        import numpy as np
+
+        from detection_eval.adapters import decode_tags, viterbi_tags
+
+        id2label = {0: "O", 1: "B-P", 2: "I-P", 3: "E-P", 4: "S-P"}
+        # Argmax: O, I-P, O, an I with no B. The best path that opens with B
+        # and closes with E: B-P, E-P, O.
+        probs = np.array(
+            [[0.6, 0.3, 0.05, 0.0, 0.05], [0.1, 0.0, 0.5, 0.4, 0.0], [0.9, 0.0, 0.0, 0.0, 0.1]]
+        )
+        self.assertEqual(probs.argmax(axis=-1).tolist(), [0, 2, 0])
+        self.assertEqual(viterbi_tags(probs, id2label), [1, 3, 0])
+        text = "Ann Lee ok"
+        offsets = [(0, 3), (3, 7), (7, 10)]
+        found = decode_tags(text, offsets, probs, id2label, {"P": "person"}, decoder="viterbi")
+        self.assertEqual([(e.start, e.end) for e in found], [(0, 7)])
+
+
+class Corpus(unittest.TestCase):
+    def test_changed_document_changes_the_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.md").write_text("one", encoding="utf-8")
+            before = fixtures.corpus_id(root)
+            (root / "a.md").write_text("two", encoding="utf-8")
+            self.assertNotEqual(fixtures.corpus_id(root), before)

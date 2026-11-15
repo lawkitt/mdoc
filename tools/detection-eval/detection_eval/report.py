@@ -13,7 +13,8 @@ Decision 7: an option is listed if its pooled English recall is at least
 default's; a combo must also add at least 2 points of recall over its best
 member. The default and a combo's members are scored too when options are
 named, and a verdict needs complete holdout and real-set runs of the option
-and of every reference it is judged against; otherwise it reads
+and of every reference it is judged against, on the same documents
+(`fixtures.corpus_id` of each run folder); otherwise it reads
 `incomplete`. A set folder without `meta.json` (a run that did not finish)
 is skipped.
 """
@@ -95,8 +96,12 @@ def references(option: str) -> list[str]:
     return refs
 
 
-def verdict(option: str, boards: dict[str, dict[str, dict]]) -> str:
-    """Decision 7 on English pooled over the holdout and real set."""
+def verdict(
+    option: str, boards: dict[str, dict[str, dict]], corpora: dict[tuple[str, str], str] | None = None
+) -> str:
+    """Decision 7 on English pooled over the holdout and real set; `corpora`
+    ((option, set) → corpus id) must agree between an option and its
+    references."""
 
     def pooled_en(name: str) -> list[int]:
         return add(*(total(boards[name][s], "en") for s in PRIVATE))
@@ -107,6 +112,13 @@ def verdict(option: str, boards: dict[str, dict[str, dict]]) -> str:
     ]
     if missing:
         return "incomplete: no holdout and real-set run of " + ", ".join(missing)
+    if corpora is not None:
+        other = [
+            name for name in references(option)
+            if any(corpora.get((name, s)) != corpora.get((option, s)) for s in PRIVATE)
+        ]
+        if other:
+            return "incomplete: other documents than " + ", ".join(other)
     recall, precision = rp(pooled_en(option))
     reasons = []
     if recall is None or recall < RECALL_BAR:
@@ -132,11 +144,13 @@ def main() -> None:
     options = args.options or sorted(p.name for p in out.iterdir() if p.is_dir())
     scored = list(dict.fromkeys(o for option in options for o in [option, *references(option)]))
     boards: dict[str, dict[str, dict]] = {}
+    corpora: dict[tuple[str, str], str] = {}
     for option in scored:
         for name in SETS:
             folder = out / option / name
             if fixtures.complete(folder):
                 boards.setdefault(option, {})[name] = scoreboard(folder)
+                corpora[(option, name)] = fixtures.corpus_id(folder)
                 print(f"scored {option} {name}", flush=True)
             elif folder.is_dir():
                 print(f"skipped {option} {name}: the run did not finish (no meta.json)", flush=True)
@@ -152,7 +166,7 @@ def main() -> None:
     verdicts = {}
     for option, sets in boards.items():
         pooled = pooled_en(option)
-        verdicts[option] = verdict(option, boards)
+        verdicts[option] = verdict(option, boards, corpora)
         size = BY_ID[option].size if option in BY_ID else ("default" if option == "default" else "combo")
         cell = lambda s, lang: fmt(total(sets[s], lang)) if s in sets else "n/a"  # noqa: E731
         lines.append(

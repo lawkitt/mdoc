@@ -201,3 +201,15 @@ def staged(target: Path) -> Iterator[Path]:
 def complete(folder: Path) -> bool:
     """A set folder a run finished (`staged` plus its `meta.json`)."""
     return (folder / "meta.json").is_file()
+
+
+def corpus_id(root: Path) -> str:
+    """A fingerprint of a set's documents (their paths and bytes, gold
+    included): a run folder's mirrored copies give the corpus it ran on."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    for path in fixture_paths(root):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
+        digest.update(path.read_bytes() + b"\0")
+    return digest.hexdigest()[:16]

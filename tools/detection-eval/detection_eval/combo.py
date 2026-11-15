@@ -32,20 +32,23 @@ from .run import chosen_sets, out_root, write_meta
 
 def merge(members: list[list[dict]]) -> list[dict]:
     """Merged entities (byte offsets, without text) of ranked members: each
-    member folded into the result of the higher-ranked ones."""
-    out = dedup(members[0]) if members else []
-    for lower in members[1:]:
+    member folded into the result of the higher-ranked ones. Every span
+    keeps the rank of the member whose category it carries."""
+    ranked = [[dict(e, rank=r) for e in entities] for r, entities in enumerate(members)]
+    out = dedup(ranked[0]) if ranked else []
+    for lower in ranked[1:]:
         out = merge_pair(out, lower)
-    return out
+    return [{k: v for k, v in e.items() if k != "rank"} for e in out]
 
 
 def merge_pair(high: list[dict], low: list[dict]) -> list[dict]:
     """`high`'s spans keep their categories; a `low` span overlapping one of
     them is dropped, and widens the outermost ones it overlaps (those not
-    inside another it overlaps) to its own extent when longer: the longest
-    span wins, with the higher rank's category. A `low` span inside a `high`
-    one widens nothing, and one overlapping none passes. Each side's own
-    overlapping spans are left as they are."""
+    inside another it overlaps) of the best rank among them to its own
+    extent when longer: the longest span wins, with the highest rank's
+    category. A `low` span inside a `high` one widens nothing, and one
+    overlapping none passes. Each side's own overlapping spans are left as
+    they are."""
 
     def length(e: dict) -> int:
         return e["end"] - e["start"]
@@ -66,8 +69,9 @@ def merge_pair(high: list[dict], low: list[dict]) -> list[dict]:
             i for i in hits
             if not any(inside(high[i], high[j]) and length(high[j]) > length(high[i]) for j in hits)
         ]
+        top = min(high[i].get("rank", 0) for i in outermost)
         for i in outermost:
-            if length(l) > length(widened[i]):
+            if high[i].get("rank", 0) == top and length(l) > length(widened[i]):
                 widened[i]["start"], widened[i]["end"] = l["start"], l["end"]
     return dedup(widened + passed)
 
@@ -92,6 +96,10 @@ def build(combo: str, sets: dict[str, Path], out: Path) -> None:
         missing = [m for m in members if not fixtures.complete(out / m / name)]
         if missing:
             raise SystemExit(f"{combo} {name}: no complete run of {', '.join(missing)}")
+        corpus = fixtures.corpus_id(root)
+        stale = [m for m in members if fixtures.corpus_id(out / m / name) != corpus]
+        if stale:
+            raise SystemExit(f"{combo} {name}: {', '.join(stale)} ran on other documents; rerun them")
         with fixtures.staged(out / combo / name) as target:
             count = 0
             for original, copy in fixtures.mirror(root, target):
@@ -111,6 +119,10 @@ def build(combo: str, sets: dict[str, Path], out: Path) -> None:
 def write_merged(original: Path, copy: Path, combo: str, snapshots: list[dict]) -> None:
     source = fixtures.source_of(original)
     data = source.encode("utf-8")
+    for snapshot in snapshots:
+        for e in snapshot["entities"]:
+            if data[e["start"] : e["end"]].decode("utf-8", "replace") != e["text"]:
+                raise SystemExit(f"{snapshot['model']}: a span of {copy.name} no longer matches its text")
     merged = merge([s["entities"] for s in snapshots])
     # Back to character offsets for the shared writer.
     char_at = {}

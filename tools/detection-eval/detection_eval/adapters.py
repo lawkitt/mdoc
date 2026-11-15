@@ -7,8 +7,9 @@ Families:
   (`fixtures.FAMILIES`), as the app runs GLiNER2-PII.
 - `gliner`: the `gliner` package (GLiNER v1), all prompts in one pass,
   flat NER.
-- `token`: a Transformers token classifier; argmax tags (BIO or BIOES)
-  joined into spans, score the mean tag probability.
+- `token`: a Transformers token classifier; argmax tags (BIO or BIOES),
+  or the constrained Viterbi path where the model's reference decoder takes
+  it, joined into spans, score the mean tag probability.
 - `pii_tracer`: perplexity-ai/PII-Tracer's own `predict` (remote code,
   constrained Viterbi).
 
@@ -60,20 +61,31 @@ def load_onnx(model: Model, onnx_file: str, threads: int = 4) -> Adapter:
     )
 
 
-def _join_adjacent(text: str, entities: list[Entity], labels: set[str]) -> list[Entity]:
+def _join_adjacent(
+    text: str, entities: list[Entity], labels: set[str], kinds: list[str] | None = None
+) -> list[Entity]:
     """Joins same-label spans separated only by spaces (an address also by a
-    comma): token classifiers tag a name's parts or an address's parts
-    apart."""
+    comma). With `kinds` (each entity's own tag type), only parts of
+    different types join, a given name and a surname, say: two spans the
+    model tagged apart with the same type stay apart."""
+    order = sorted(range(len(entities)), key=lambda i: (entities[i].start, entities[i].end))
     out: list[Entity] = []
-    for e in sorted(entities, key=lambda e: (e.start, e.end)):
+    last_kinds: list[set] = []
+    for i in order:
+        e = entities[i]
+        kind = kinds[i] if kinds is not None else None
         if out and e.label in labels and out[-1].label == e.label:
             gap = text[out[-1].end : e.start]
             joinable = gap.strip() == "" or (e.label == "address" and gap.strip() == ",")
+            if kind is not None and kind in last_kinds[-1]:
+                joinable = False
             if joinable and "\n" not in gap and e.start >= out[-1].end:
                 prev = out[-1]
                 out[-1] = Entity(prev.start, e.end, prev.label, min(prev.score, e.score))
+                last_kinds[-1].add(kind)
                 continue
         out.append(e)
+        last_kinds.append({kind})
     return out
 
 
@@ -190,27 +202,78 @@ class TokenAdapter:
         with torch.no_grad():
             logits = self.engine(**enc).logits[0].float()
         probs = torch.softmax(logits, dim=-1).cpu().numpy()
-        return decode_tags(text, offsets, probs, self.id2label, self.model.labels, self.model.cut)
+        return decode_tags(
+            text, offsets, probs, self.id2label, self.model.labels, self.model.cut,
+            self.model.decoder,
+        )
 
 
-def decode_tags(text, offsets, probs, id2label, labels, cut: float = 0.0) -> list[Entity]:
-    """Argmax tags (BIO or BIOES, or bare types) joined into spans; a span's
-    score is its tokens' mean tag probability, and a span under `cut` is
+def _split_tag(tag: str) -> tuple[str, str]:
+    if tag == "O":
+        return "O", ""
+    prefix, sep, kind = tag.partition("-")
+    if not sep or prefix not in ("B", "I", "E", "S"):
+        return "I", tag
+    return prefix, kind
+
+
+def viterbi_tags(probs, id2label) -> list[int]:
+    """The best tag path under BIOES transition rules (constrained Viterbi
+    with no transition biases, the reference decoder's default operating
+    point): a span opens with B or S, continues with I and closes with E,
+    all of one type, and the path ends outside a span."""
+    import numpy as np
+
+    n_tags = probs.shape[1]
+    parts = [_split_tag(id2label[i]) for i in range(n_tags)]
+    log = np.log(np.clip(probs, 1e-12, 1.0))
+    opens = np.array([p in ("O", "B", "S") for p, _ in parts])  # after O, E, S or the start
+    closes = np.array([p in ("O", "E", "S") for p, _ in parts])
+    allowed = np.zeros((n_tags, n_tags), dtype=bool)
+    for a, (pa, ka) in enumerate(parts):
+        for b, (pb, kb) in enumerate(parts):
+            if pa in ("O", "E", "S"):
+                allowed[a, b] = pb in ("O", "B", "S")
+            else:  # B or I: continue the same type
+                allowed[a, b] = pb in ("I", "E") and ka == kb
+    neg = -1e18
+    penalty = np.where(allowed, 0.0, neg)
+    score = np.where(opens, log[0], neg)
+    back = []
+    for t in range(1, len(log)):
+        cand = score[:, None] + penalty
+        back.append(cand.argmax(axis=0))
+        score = cand.max(axis=0) + log[t]
+    score = np.where(closes, score, neg)
+    path = [int(score.argmax())]
+    for pointers in reversed(back):
+        path.append(int(pointers[path[-1]]))
+    return path[::-1]
+
+
+def decode_tags(
+    text, offsets, probs, id2label, labels, cut: float = 0.0, decoder: str = "argmax"
+) -> list[Entity]:
+    """Tags (BIO or BIOES, or bare types; per-token argmax, or the
+    constrained Viterbi path) joined into spans; a span's score is its
+    tokens' mean probability of the tag chosen, and a span under `cut` is
     dropped (before adjacent parts join)."""
-    best = probs.argmax(axis=-1).tolist()
-    conf = probs.max(axis=-1).tolist()
+    import numpy as np
+
+    keep = [i for i, (start, end) in enumerate(offsets) if start != end]  # no special tokens
+    if not keep:
+        return []
+    offsets = [offsets[i] for i in keep]
+    probs = probs[keep]
+    best = viterbi_tags(probs, id2label) if decoder == "viterbi" else probs.argmax(axis=-1).tolist()
+    conf = probs[np.arange(len(best)), best].tolist()
     spans: list[list] = []  # [start, end, type, [scores], closed]
     for (start, end), tag_id, score in zip(offsets, best, conf):
-        if start == end:
-            continue  # special tokens
-        tag = id2label[tag_id]
-        if tag == "O":
+        prefix, kind = _split_tag(id2label[tag_id])
+        if prefix == "O":
             if spans:
                 spans[-1][4] = True
             continue
-        prefix, sep, kind = tag.partition("-")
-        if not sep or prefix not in ("B", "I", "E", "S"):
-            prefix, kind = "I", tag
         open_ = spans and not spans[-1][4] and spans[-1][2] == kind
         if prefix in ("B", "S") or not open_:
             spans.append([start, end, kind, [score], prefix in ("S", "E")])
@@ -220,6 +283,7 @@ def decode_tags(text, offsets, probs, id2label, labels, cut: float = 0.0) -> lis
             if prefix == "E":
                 spans[-1][4] = True
     out = []
+    kinds = []
     for start, end, kind, scores, _ in spans:
         label = labels.get(kind)
         if label is None:
@@ -230,7 +294,8 @@ def decode_tags(text, offsets, probs, id2label, labels, cut: float = 0.0) -> lis
         score = sum(scores) / len(scores)
         if start < end and score >= cut:
             out.append(Entity(start, end, label, score))
-    return _join_adjacent(text, out, {"person", "address"})
+            kinds.append(kind)
+    return _join_adjacent(text, out, {"person", "address"}, kinds)
 
 
 class TokenOnnxAdapter:
@@ -268,7 +333,10 @@ class TokenOnnxAdapter:
         logits -= logits.max(axis=-1, keepdims=True)
         probs = np.exp(logits)
         probs /= probs.sum(axis=-1, keepdims=True)
-        return decode_tags(text, offsets, probs, self.id2label, self.model.labels, self.model.cut)
+        return decode_tags(
+            text, offsets, probs, self.id2label, self.model.labels, self.model.cut,
+            self.model.decoder,
+        )
 
 
 class GlinerOnnxAdapter(GlinerAdapter):

@@ -52,6 +52,9 @@ class Model:
     # whose argmax or Viterbi decision is their own (and what their cards
     # report). Recorded in every snapshot.
     threshold: float | None = None
+    # A token classifier's tag decoding: "argmax" per token, or "viterbi",
+    # the constrained BIOES path its reference decoder takes.
+    decoder: str = "argmax"
     prompts: dict[str, str] = field(default_factory=dict)
     labels: dict[str, str] = field(default_factory=dict)
     note: str = ""
@@ -154,7 +157,7 @@ MODELS: list[Model] = [
     ),
     Model(
         "openai-privacy-filter", "openai/privacy-filter", "7ffa9a043d54d1be65afb281eddf0ffbe629385b",
-        "token", "mid", "Apache-2.0",
+        "token", "mid", "Apache-2.0", decoder="viterbi",
         labels={
             "private_person": "person",
             "private_address": "address",

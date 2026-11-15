@@ -90,6 +90,10 @@ A combo is an entry in `COMBOS` (members in rank order) or an ad-hoc
   on top: a 0.5 cut on a mean softmax over dozens of tags measures the cut,
   not the model. Each snapshot records the cut applied (0 for none); set a
   `threshold` on a model to cut it.
+- **Token spans.** Adjacent parts of a name or an address with different
+  tag types (a given name and a surname) join into one span; spans a model
+  tagged apart with the same type stay apart. OpenAI Privacy Filter decodes
+  with its reference constrained BIOES Viterbi (default operating point).
 - **Complete runs only.** Each set is written beside its folder and
   replaces it only when the run finishes (`meta.json` marks it), so a failed
   rerun leaves the previous run whole. The report and combos skip a set
