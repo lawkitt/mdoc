@@ -20,8 +20,9 @@ How a PR reaches `main`. The machinery and the PC's runners:
   green only when each ran in full and passed. Nothing posts a waiver or a
   partial result as green.
 - `scripts/ci/ci-areas.txt` decides the areas. A core change runs every job,
-  docs only none, and a ci-only change only `ci/scripts`. A new script that
-  a mobile job runs needs a line there, or it counts as desktop.
+  docs only none (fixture Markdown is not docs), and a ci-only change only
+  `ci/scripts`. A new script a mobile job runs needs a line there, or it
+  counts as desktop.
 
 ## Before ready
 
@@ -37,8 +38,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - A failing PR is dropped from the queue with a red `merge-gate` naming the
   failing job; fix it on the branch and enqueue it again.
 - Make independent PRs off `main` and enqueue them together: the queue takes
-  only PRs based on `main`, so a stack goes through one PR at a time.
-- Merge `main` into a PR only when GitHub reports it `CONFLICTING`, because
+  only PRs based on `main`, so a stack goes one PR at a time.
+- Merge `main` into a PR only when GitHub reports it `CONFLICTING`:
   each new head reruns its checks.
 
 ## A red or stale gate
@@ -54,7 +55,7 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - After an unrelated failure the hub re-queues the PR once, naming the rule
   that matched in a PR comment. A second drop of the same PR goes to the
   maintainer.
-- A red `main` stops enqueueing until it is fixed.
+- A red `main` stops enqueueing until fixed.
 
 ## Quarantine
 
@@ -97,7 +98,7 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - Run only the test classes you touched
   (`just ios-test "iPhone 17" mdocUITests/<Class>`), one heavy build at a
   time after checking `uptime`: the full suite takes 25 to 30 minutes on the
-  fanless Air, and parallel runs overheat it.
+  fanless Air; parallel runs overheat it.
 - On macOS 27, Xcode 26.2's test runner hangs: set
   `DEVELOPER_DIR=/Applications/Xcode-27.2.app/Contents/Developer` (the
   pinned iOS 26.2 runtime still). Hosted `ci/ios` stays the reference.

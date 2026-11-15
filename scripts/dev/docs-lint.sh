@@ -13,6 +13,10 @@
 #     docs/adr/ nor claimed by exactly one `Folds:` line, or that is both. A
 #     `Folds:` line (any Markdown file under docs/ but the index, kept ADRs
 #     included) lists 4-digit numbers and may wrap until a blank line;
+#   - a changelog fragment (changes/, changes/ios/, changes/android/; not
+#     their README.md) that `just release` would reject: a name outside
+#     letters, digits, '.', '_' and '-', a first line that is not a '- '
+#     bullet, or top-level fragments with no `## Unreleased` in CHANGELOG.md;
 #   - with --check, a stale docs/adr/README.md: its rows must name each number
 #     once, as the kept file or the file whose `Folds:` line claims it.
 # Without --check it writes docs/adr/README.md first: a row per number with
@@ -80,6 +84,26 @@ while IFS= read -r f; do
   esac
   [ -f "$f" ] && over "$f" 1500 "$(words "$f")"
 done <"$tmp/readmes"
+
+# Changelog fragments (ADR 0072), by release.sh's rules, so a bad one fails
+# here rather than at `just release`.
+# find, as release.sh does: a glob would miss a dot-named one.
+top=0
+for d in changes changes/ios changes/android; do
+  if [ -d "$d" ]; then find "$d" -maxdepth 1 -type f -name '*.md'; fi
+done | LC_ALL=C sort >"$tmp/fragments"
+while IFS= read -r f; do
+  case "$f" in */README.md) continue ;; esac
+  case "$f" in changes/*/*) ;; *) top=1 ;; esac
+  name=${f##*/}
+  case "${name%.md}" in
+    '' | *[!A-Za-z0-9._-]*) err "$f: name fragments with letters, digits, '.', '_' and '-'" ;;
+  esac
+  [ "$(head -c 2 "$f")" = '- ' ] || err "$f must start with a '- ' CHANGELOG bullet"
+done <"$tmp/fragments"
+if [ "$top" = 1 ] && ! grep -q '^## Unreleased' CHANGELOG.md 2>/dev/null; then
+  err "CHANGELOG.md has no ## Unreleased section for changes/"
+fi
 
 # No design records, and no dated or per-PR evidence.
 [ -e docs/design ] && err "docs/design/ exists: a grill's record goes in its PR or an issue"

@@ -4,7 +4,8 @@
 # and each rule fails on its own, naming what broke it: every budget (an ADR's
 # Status and References not counted), a CONTEXT.md entry, a README, a
 # docs/design folder, dated and pr-* evidence, an unclaimed, twice-claimed or
-# both-ways ADR number, and a stale index. The index names each folded ADR's
+# both-ways ADR number, a stale index and a changelog fragment release.sh
+# would reject. The index names each folded ADR's
 # claiming file and a permalink to its last text from history, and keeps a
 # row it already has without reading history. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
@@ -186,6 +187,46 @@ run --check
 expect 0 "docs-lint: ok" "the rewritten index is stale"
 grep -qF '| 0001 | Kept choice | [specs/mobile.md](../specs/mobile.md) · [last text](' "$index" ||
   fail "a newly folded ADR has no row from its last text: $(cat "$index")"
+
+# Changelog fragments, by release.sh's rules: good ones in each folder and
+# the folder READMEs pass; each broken rule fails, naming the file.
+fragments() { # writes good fragments and READMEs
+  mkdir -p "$tmp/repo/changes/ios" "$tmp/repo/changes/android"
+  printf -- '- Desktop.\n' >"$tmp/repo/changes/desk_top-1.2.md"
+  printf -- '- iOS.\n' >"$tmp/repo/changes/ios/phone.md"
+  printf -- '- Android.\n' >"$tmp/repo/changes/android/droid.md"
+  printf '# Changelog fragments\n' >"$tmp/repo/changes/README.md"
+  printf '# Changelog\n\n## Unreleased\n' >"$tmp/repo/CHANGELOG.md"
+}
+base
+run
+fragments
+run --check
+expect 0 "docs-lint: ok" "good fragments fail"
+printf 'Not a bullet.\n' >"$tmp/repo/changes/ios/plain.md"
+run --check
+expect 1 "changes/ios/plain.md must start with a '- ' CHANGELOG bullet" "a fragment that is not a bullet passes"
+base
+run
+fragments
+printf -- '- Spaced.\n' >"$tmp/repo/changes/two words.md"
+run --check
+expect 1 "changes/two words.md: name fragments with letters" "a badly named fragment passes"
+base
+run
+fragments
+printf '# Changelog\n\n## 1.0.0\n' >"$tmp/repo/CHANGELOG.md"
+run --check
+expect 1 "CHANGELOG.md has no ## Unreleased section for changes/" "fragments with no Unreleased section pass"
+rm "$tmp/repo/changes/desk_top-1.2.md"
+run --check
+expect 0 "docs-lint: ok" "app fragments alone need the desktop Unreleased section"
+# A dot-named fragment counts, as release.sh finds it, for its bullet and
+# for the Unreleased section.
+printf 'Hidden.\n' >"$tmp/repo/changes/.hidden.md"
+run --check
+expect 1 "changes/.hidden.md must start with a '- ' CHANGELOG bullet" "a dot-named fragment is skipped"
+expect 1 "CHANGELOG.md has no ## Unreleased section for changes/" "a dot-named fragment needs no Unreleased section"
 
 if [ "$failures" -ne 0 ]; then
   die "$failures docs-lint check(s) failed"
