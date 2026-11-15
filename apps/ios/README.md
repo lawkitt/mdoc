@@ -118,6 +118,14 @@ Archiving in Xcode syncs the `InfoPlist.xcstrings` catalogs from Info.plist
 (its spacing, a `comment` per key, extracted `CFBundleName`); they are
 committed as Xcode writes them, so an archive leaves the checkout clean.
 
+## UI changes
+
+Every component and screen state has a `#Preview` fed by
+`PreviewFixtures`: light, dark, AX5 and iPad. Check a change there, then
+run the snapshot tests; an intended change re-records them with
+`TEST_RUNNER_MDOC_RECORD_SNAPSHOTS=1` and commits the PNGs under
+`apps/ios/mdocTests/Snapshots/`.
+
 ## Rules
 
 The UI and app-structure rules are in
@@ -162,6 +170,13 @@ The UI and app-structure rules are in
 - **Downloads.** A background `URLSession`; "Waiting for Wi-Fi" comes from
   `NWPathMonitor`, because background sessions never call
   `taskIsWaitingForConnectivity`.
+- **Core calls** stay synchronous on the main actor while a review tap on
+  the iPhone 12 Pro takes under about 16 ms.
+- **Undo.** Every core step is registered with the window's undo manager,
+  so shake, the three-finger swipe and ⌘Z share the review bar's history.
+- **Buttons.** Big buttons are Liquid Glass: `.primaryAction()`
+  (ink-tinted prominent glass, semibold) and `.secondaryAction()` (clear
+  glass, ink words).
 - **Handlers the system calls on its own queues** carry no actor
   isolation, because a main-actor check there crashed every long job on a
   phone.
@@ -182,6 +197,8 @@ The UI and app-structure rules are in
   because it exposed the raw `mdoc-candidate://` URL and Share.
 - **No cross-fade.** Entering or leaving Adjust Words or Select never
   cross-fades changed text, because both layouts showed at once.
+- **Drag-merge** is the app's own gesture on the ≡ handle, because
+  SwiftUI's List never delivers a drop of a drag that started inside it.
 - **Table cells.** The text view drags a cell selection's handles itself,
   because UIKit's gesture hit-tests the table's hidden source.
 - **Tips.** TipKit decides when a hint shows (display frequency

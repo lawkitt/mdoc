@@ -13,17 +13,12 @@ in `apps/ios/README.md`.
    Attach screenshots of the [sample document](#sample-document) only, never
    of a real document.
 2. Change the tokens or the components first; a screen only composes them.
-3. iOS: check the change in Xcode previews. Every component and screen
-   state has a `#Preview` fed by `PreviewFixtures`: light, dark, AX5 and
-   iPad.
-4. iOS: run the snapshot tests; an intended change re-records them with
-   `TEST_RUNNER_MDOC_RECORD_SNAPSHOTS=1` and commits the PNGs under
-   `apps/ios/mdocTests/Snapshots/`.
-5. Take before and after shots with `just ios-survey <folder>` or `just
+3. Check previews and snapshots (iOS: `apps/ios/README.md`, UI changes).
+4. Take before and after shots with `just ios-survey <folder>` or `just
    android-survey <folder>` outside the repository, for the PR description;
    survey PNGs are never committed.
-6. Change this page in the same PR when a rule changes.
-7. The maintainer checks the TestFlight build.
+5. Change this page in the same PR when a rule changes.
+6. The maintainer checks the TestFlight build.
 
 A grill is only for a pattern this page lacks, which this page then gains.
 
@@ -38,16 +33,15 @@ A grill is only for a pattern this page lacks, which this page then gains.
   is added to the core's snapshot.
 - View-model and snapshot tests run the real core over temporary storage
   with a fixed case key; there is no fake library or document session.
-- Test fakes and the fixed case key never ship in the app or the extension.
+- Test fakes and the fixed case key are never compiled into the app or the
+  extension.
 - Each piece of state has one owner: one navigation model for what is open
-  and presented; a document's model for intent, with how it shows derived
+  and presented, presented from one place; a document's model for intent, with how it shows derived
   from the window size in one place.
 - Review selection is one value that only the view model changes; views send
-  intents.
+  intents, and tests drive it without a view.
 - Each document has its own undo history; switching documents never undoes
   another document's step.
-- iOS: core calls stay synchronous on the main actor while a review tap on
-  the iPhone 12 Pro takes under about 16 ms.
 - A review action is one core call returning the new snapshot; unchanged
   Markdown is never re-parsed.
 - The platform wrapper keeps no state beside the core's handle.
@@ -78,11 +72,14 @@ A grill is only for a pattern this page lacks, which this page then gains.
 - A download on cellular asks first on any cellular interface, whatever the
   system's expensive or metered flag says.
 - A download held for Wi-Fi says "Waiting for Wi-Fi" with Use cellular.
-- iOS: each model downloads on its own (Download all beside); a document's
-  setup card offers the model its job needs and resumes the job once
-  installed. Android still downloads its models together.
+- iOS: each model downloads on its own, with Download all beside; Android
+  still downloads its models together.
+- A document's setup card offers the model its job needs and resumes the
+  job once installed.
 - Android times one short detector run before offering the detector; a phone
   too slow for the scan budget counts as below the floor.
+- One long job runs at a time, off the main thread, with progress and
+  cooperative cancellation.
 - Nothing starts in the background on its own; only a job the user started
   continues there.
 - The + menu reads New document, Paste, Files, Photos, Scan, the camera
@@ -92,6 +89,8 @@ A grill is only for a pattern this page lacks, which this page then gains.
   titles hold client names.
 - `just ios-device-test <udid>` runs before every TestFlight build, because
   the Simulator never runs the real background task.
+- `just android-device-test` runs by hand before every Android release
+  after the first.
 
 ## Tokens
 
@@ -136,9 +135,8 @@ iOS: `apps/ios/mdoc/Design/`.
 - The accent is ink (`#1c1c1e` light, `#f2f2f7` dark); words on it use
   `Palette.onAccent`; `AccentContrastTests` holds each pair to 4.5:1.
 - Swipe actions use `Palette.swipeAccent`, since their words are white.
-- iOS: big buttons are Liquid Glass, 44 pt high, in two styles only:
-  `.primaryAction()` (ink-tinted prominent glass, semibold) and
-  `.secondaryAction()` (clear glass, ink words).
+- Big buttons are 44 pt high, in two styles only: primary and secondary
+  (iOS: `apps/ios/README.md`, Buttons).
 - At most one primary per view; a drawer or an iPad column counts as its own
   view.
 - Text buttons are the primary text color at medium weight
@@ -163,8 +161,12 @@ iOS: `apps/ios/mdoc/Design/`.
   text in a `TextView`.
 - What to hide and decorate comes from the core (`mdoc-markdown`, through
   `markdown_styling`); the app maps spans to fonts and colors only.
-- A table's cells wrap in columns at least about 140 pt wide, never narrower
-  than their longest word; the table scrolls sideways.
+- Headings and paragraph and list spacing keep desktop's relative sizes,
+  scaled by Dynamic Type.
+- A table's cells wrap in columns at least about 140 pt wide, scaled with
+  Dynamic Type and never narrower than their longest word; the table
+  scrolls sideways.
+- Candidates in cells look and act as in text.
 - A selection stays inside one cell or outside tables.
 - VoiceOver reads a table as a data table.
 - A header row whose cells are all empty isn't drawn outside edit mode; the
@@ -233,11 +235,9 @@ iOS: `apps/ios/mdoc/Design/`.
   wording is the core's fullest form.
 - Merge hints never merge on their own; a dismissed hint is remembered in
   the case.
-- iOS: every core step is registered with the window's undo manager, so
-  shake, the three-finger swipe and ⌘Z share the bar's history.
 - Undo moves the bar back to what it undid and shows no toast.
-- Redo is Undo's long press, ⇧⌘Z and a VoiceOver action; a Redo shows the
-  Undo toast.
+- Redo is Undo's long press, ⇧⌘Z and a VoiceOver action.
+- A Redo shows the Undo toast.
 - "All N reviewed · Undo" shows only when this visit of the bar decided or
   changed something, because its Undo would reach an earlier decision.
 - Decisions and identity changes go through the same core calls as desktop.
@@ -245,6 +245,9 @@ iOS: `apps/ios/mdoc/Design/`.
   name swapped for its original wording.
 - mdoc draws each hint itself, one at a time, never as a popover, because
   popovers hid the bar's controls.
+- A hint covers no control, leaves every button live and is gone once its
+  action is done.
+- The card nudges once to show it swipes.
 - Hide name: a selection outside any name is tinted, never grey; the core
   snaps it to whole words and trims punctuation (`hide_target`).
 - Hide name opens the review card on the new mark.
@@ -276,8 +279,7 @@ iOS: `apps/ios/mdoc/Design/`.
 - In Select, rows have no swipes and no long-press menu; a tap ticks.
 - Rows have VoiceOver actions for every swipe action and Review this
   identity.
-- Drag-to-merge is the app's own gesture on a ≡ handle in Select, because
-  SwiftUI's List never delivers a drop of a drag that started inside it.
+- Drag-to-merge works from a ≡ handle in Select.
 - A drag-merge follows desktop's rule: the target keeps its alias, another
   category takes the target's, one undo step, no confirmation; the
   selection keeps its other names.
@@ -302,8 +304,7 @@ iOS; Android's editor is a later roadmap item.
 - No table command pads or realigns columns.
 - Table controls live in the toolbar with the caret in a cell; nothing is
   drawn in the document.
-- A selection in a cell behaves as in ordinary text and never leaves its
-  cell.
+- A selection in a cell behaves as in ordinary text.
 - With the caret in a cell the text scrolls only to keep that cell in view.
 - Look Up, Translate, Search Web, Share and Writing Tools stay off in edit
   mode.
@@ -319,8 +320,8 @@ iOS; Android's editor is a later roadmap item.
 - Content that scrolls sideways (a wide table, a zoomed Original page), the
   review bar, selection handles and long presses keep their own touches.
 - A swipe from the screen's 22 pt edges opens a drawer over everything.
-- While editing, or while a name's words are adjusted, only the edges open
-  a drawer.
+- While editing only the left edge opens a drawer, the sidebar.
+- While a name's words are adjusted only the edges open a drawer.
 - An open drawer closes by a drag toward its side anywhere over it, a drag
   from the sliver or its inner 20 pt, or a tap on the sliver.
 
