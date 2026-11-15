@@ -15,6 +15,7 @@
 //!   clipboard (ADR 0105).
 //!
 //! Offsets are UTF-8 byte offsets into the source; markers are ASCII.
+#![forbid(unsafe_code)]
 
 pub mod from_html;
 pub mod lines;

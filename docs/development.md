@@ -113,6 +113,9 @@ algorithm changes belong in the dependency forks.
 - mdoc is an application: code the binary cannot reach is dead unless a
   named consumer exists. Crates are internal (`publish = false`, short
   READMEs).
+- `unsafe` lives only in modules marked `#[allow(unsafe_code)]`, each block
+  under a `// SAFETY:` comment. Miri, sanitizers and Valgrind were declined
+  ([#897](https://github.com/lawkitt/mdoc/issues/897)).
 - A refactor preserves behaviour; anything a user can observe needs its own
   decision. Judge it by clearer ownership, explicit effects and measured
   cost; file size alone never justifies a split.

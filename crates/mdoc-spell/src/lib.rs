@@ -12,6 +12,7 @@
 //!
 //! Dictionaries load lazily and are shared process-wide; [`Speller::load`]
 //! blocks while parsing, so call it from a background thread.
+#![forbid(unsafe_code)]
 
 mod words;
 

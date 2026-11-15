@@ -76,6 +76,7 @@ fn render_command() -> Command {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(unsafe_code)] // EnumWindows through Win32 (#897).
 fn native_windows_present(pid: u32) -> Result<bool, String> {
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM},
@@ -86,14 +87,19 @@ fn native_windows_present(pid: u32) -> Result<bool, String> {
         found: bool,
     }
     unsafe extern "system" fn visit(hwnd: HWND, data: LPARAM) -> i32 {
+        // SAFETY: `data` is the `&mut Probe` passed to EnumWindows below,
+        // which outlives the enumeration and is used by nothing else meanwhile.
         let probe = unsafe { &mut *(data as *mut Probe) };
         let mut owner = 0;
+        // SAFETY: `hwnd` comes from EnumWindows; `owner` is a valid u32 to fill.
         unsafe { GetWindowThreadProcessId(hwnd, &mut owner) };
         probe.found |= owner == probe.pid;
         1
     }
     let mut probe = Probe { pid, found: false };
     // Include hidden top-level windows, not just visible/foreground windows.
+    // SAFETY: `visit` matches WNDENUMPROC and reads `probe` only during this
+    // call.
     if unsafe { EnumWindows(Some(visit), &mut probe as *mut Probe as isize) } == 0 {
         return Err(format!("EnumWindows: {}", std::io::Error::last_os_error()));
     }

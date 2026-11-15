@@ -29,6 +29,7 @@
 //! # let _ = view;
 //! # }
 //! ```
+#![forbid(unsafe_code)]
 
 mod focus_ring;
 pub mod scrollbar;

@@ -1164,6 +1164,7 @@ mod key {
     }
 
     #[cfg(windows)]
+    #[allow(unsafe_code)] // DPAPI through Win32 (#897).
     mod dpapi {
         use super::CaseError;
         use windows_sys::Win32::{

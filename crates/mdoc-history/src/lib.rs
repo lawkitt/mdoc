@@ -1,5 +1,6 @@
 //! Generic source transactions and text-history identity. No host policy.
 //! Kept free of dependencies so history-following models need no GUI toolkit.
+#![forbid(unsafe_code)]
 use std::ops::Range;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

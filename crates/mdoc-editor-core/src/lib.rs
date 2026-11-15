@@ -9,6 +9,7 @@
 //! Rules that need the document's block structure (code fences, display
 //! math, tables) read it through [`Blocks`]: desktop lends its cached scan,
 //! a stateless caller builds a [`BlockScan`] from the source.
+#![forbid(unsafe_code)]
 
 use std::ops::Range;
 
