@@ -12,7 +12,7 @@
 # heads or main: polled every 30 s with this machine's gh login, oldest
 # first, one at a time.
 #
-# scripts/merge-gate.sh reads its statuses (its header and pc_job):
+# scripts/ci/merge-gate.sh reads its statuses (its header and pc_job):
 #   - a commit outside the job's area: success "Not affected: no core or
 #     <area> change", or "Docs only", from the diff, without a build;
 #   - a group holding a fork or bot PR: nothing; merge-gate runs it hosted
@@ -45,11 +45,11 @@
 #   once    the loop until nothing is queued or running, then exit
 #   status  the runner's status file and recent log
 #
-# Installed by scripts/queue-runner-setup.ps1 as a copy in
+# Installed by scripts/ci/queue-runner-setup.ps1 as a copy in
 # $QUEUE_CI_HOME/runner/scripts/, which replaces itself with main's
 # queue-runner.sh and lib.sh when idle and they differ. Settings are the
 # QUEUE_CI_* variables in config(), also read from $QUEUE_CI_HOME/runner.env.
-# Bash 3.2 compatible; scripts/test-queue-runner.sh checks it against fakes.
+# Bash 3.2 compatible; scripts/ci/test-queue-runner.sh checks it against fakes.
 # The folder this copy runs from, before lib.sh moves to the repository root.
 runner_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=lib.sh
@@ -89,7 +89,7 @@ config() {
   net_s=${QUEUE_CI_NET_TIMEOUT:-60}
   # How long a failed checkout waits before its one retry.
   clean_wait_s=${QUEUE_CI_CLEAN_WAIT:-30}
-  # The job's area (scripts/ci-areas.txt), steps and whole-job limit (ADR 0095).
+  # The job's area (scripts/ci/ci-areas.txt), steps and whole-job limit (ADR 0095).
   case "$job" in
     windows) area=desktop steps='setup lint test' limit_s=${QUEUE_CI_TIMEOUT:-1800} ;;
     android) area=android steps='setup android' limit_s=${QUEUE_CI_TIMEOUT:-2400} ;;
@@ -99,7 +99,7 @@ config() {
   out_max_kb=$((${QUEUE_CI_OUT_MAX_GB:-20} * 1048576))
   keep_days=${QUEUE_CI_KEEP_DAYS:-7}
   # The tailnet page: `tailscale serve` must list /ci (the web task of
-  # scripts/queue-runner-setup.ps1 sets it); status.txt checks every 10 min.
+  # scripts/ci/queue-runner-setup.ps1 sets it); status.txt checks every 10 min.
   tailscale_cmd=${QUEUE_CI_TAILSCALE:-tailscale}
   tailnet_s=600
 }
@@ -220,7 +220,7 @@ mark_done() {
 # the commit's own area table (every area when it has none).
 commit_areas() { # sha merge-base
   local table
-  if ! table=$(g show "$1:scripts/ci-areas.txt" 2>/dev/null); then
+  if ! table=$(g show "$1:scripts/ci/ci-areas.txt" 2>/dev/null); then
     echo "$every_area"
     return 0
   fi
@@ -799,7 +799,7 @@ on_exit() {
 
 cmd_run() { # run|once
   local mode=$1 now
-  [ -d "$checkout/.git" ] || die "no CI checkout at $checkout; install with scripts/queue-runner-setup.ps1"
+  [ -d "$checkout/.git" ] || die "no CI checkout at $checkout; install with scripts/ci/queue-runner-setup.ps1"
   mkdir -p "$out" "$state"
   lock
   if [ "$mode" = run ] && [ -z "${QUEUE_CI_FOREGROUND:-}" ]; then
@@ -901,7 +901,7 @@ main() {
 
 # The loop never returns to read more of this file, so replacing it while
 # it runs is safe; exit before bash reads past this line anyway.
-# scripts/test-queue-runner.sh sources the functions with QUEUE_RUNNER_SOURCED=1.
+# scripts/ci/test-queue-runner.sh sources the functions with QUEUE_RUNNER_SOURCED=1.
 if [ -z "${QUEUE_RUNNER_SOURCED:-}" ]; then
   main "$@"
   exit

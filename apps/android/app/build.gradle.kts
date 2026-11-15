@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// What scripts/build-android-core.sh made: the core for each ABI and its
+// What scripts/android/build-android-core.sh made: the core for each ABI and its
 // Kotlin bindings, plus a desktop build of the core for the JVM tests.
 val repo = rootDir.resolve("../..")
 val core = repo.resolve("target/android")
@@ -22,7 +22,7 @@ tasks.matching { it.name.endsWith("AndroidTestAssets") }.configureEach { depends
 android {
     namespace = "io.github.lawkitt.mdoc"
     compileSdk = 37
-    // The build-tools scripts/install-android-sdk.sh pins; AGP would
+    // The build-tools scripts/android/install-android-sdk.sh pins; AGP would
     // otherwise fetch its own default.
     buildToolsVersion = "36.1.0"
 
@@ -33,7 +33,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // The core is built for these two only (scripts/build-android-core.sh);
+        // The core is built for these two only (scripts/android/build-android-core.sh);
         // JNA's AAR would otherwise bring 32-bit libraries a phone could
         // install but not load the core with. Release drops x86_64 below.
         ndk {
@@ -50,7 +50,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         // Release as R8 would ship it, signed with the debug key so CI can
-        // install it beside the debug app: scripts/android-check.sh opens
+        // install it beside the debug app: scripts/android/android-check.sh opens
         // its library on the emulator, so a keep rule R8 needs for the
         // core's UniFFI bindings and JNA fails the Android job (ADR 0091).
         create("minified") {

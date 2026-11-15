@@ -11,7 +11,7 @@ name: CI
 # full suite (queue.yml and the PC). Fork and bot (Dependabot) PRs also get
 # the full hosted matrix here, as do manual runs and release.yml's call; the
 # areas job skips clippy and test for a change outside the desktop and core
-# areas (scripts/ci-areas.txt). On a queue commit only `lint (ubuntu)` runs,
+# areas (scripts/ci/ci-areas.txt). On a queue commit only `lint (ubuntu)` runs,
 # a required check. On `main` (ADR 0100) clippy runs as everywhere, with the
 # mdoc-ffi check on macOS, and test only builds the tests: these jobs save
 # the caches ci-desktop.yml's jobs of the same ids (`checks`, `test`)
@@ -19,8 +19,8 @@ name: CI
 on:
   push:
     branches: [main]
-    # The `none` lines of scripts/ci-areas.txt, word for word: files no job
-    # reads (scripts/test-ci-areas.sh fails when the two disagree).
+    # The `none` lines of scripts/ci/ci-areas.txt, word for word: files no job
+    # reads (scripts/ci/test-ci-areas.sh fails when the two disagree).
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
@@ -125,16 +125,16 @@ jobs:
           exit 1
 
       - run: just fmt-check
-      # Advisories only when the dependencies change (scripts/deny-ci.sh);
+      # Advisories only when the dependencies change (scripts/ci/deny-ci.sh);
       # nightly.yml runs them every day.
-      - run: scripts/deny-ci.sh
+      - run: scripts/ci/deny-ci.sh
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           RELEASE_CALL: ${{ inputs.release-call }}
       - run: just lint-scripts
       # Every iOS UI test class in exactly one of ci/ios's UI shards.
-      - run: scripts/ios-ui-shards.sh --check
+      - run: scripts/ios/ios-ui-shards.sh --check
       - run: just lint
 
   # The fast tier (ADR 0095, ADR 0100): the crates' tests and the script
@@ -220,7 +220,7 @@ jobs:
           [ "$SCRIPTS" = success ] || echo "::error::fast (scripts): $SCRIPTS"
           [ "$UNIT" = success ] && [ "$SCRIPTS" = success ]
 
-  # Which areas the change touches (scripts/ci-areas.txt, ADR 0091). Clippy
+  # Which areas the change touches (scripts/ci/ci-areas.txt, ADR 0091). Clippy
   # and test run only for the desktop and core areas: a change to only the
   # iOS or Android app or their scripts skips them (lint (ubuntu) still runs).
   # A PR's merge commit is diffed against its base, a push against the commit
@@ -253,7 +253,7 @@ jobs:
           fetch-depth: 2
 
       - id: areas
-        run: scripts/ci-areas.sh --github >>"$GITHUB_OUTPUT"
+        run: scripts/ci/ci-areas.sh --github >>"$GITHUB_OUTPUT"
         env:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
@@ -339,7 +339,7 @@ jobs:
         with:
           tools: just cargo-nextest
 
-      # The build `just test`'s nextest runs make (scripts/test.sh), flag for
+      # The build `just test`'s nextest runs make (scripts/dev/test.sh), flag for
       # flag, so its dependencies are the ones the test tiers restore.
       - name: Build the tests
         if: env.BUILD_ONLY == 'true'
@@ -382,7 +382,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - run: scripts/ci-cache-cleanup.sh
+      - run: scripts/ci/ci-cache-cleanup.sh
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

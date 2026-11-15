@@ -6,7 +6,7 @@ import XCTest
 /// time it took to show. Tables must come up as grids of cells. Skipped
 /// unless the run sets `MDOC_RENDERING=1` (`TEST_RUNNER_MDOC_RENDERING=1`
 /// through xcodebuild). On a phone the documents are read from the data
-/// container, as `scripts/ios-device-test.sh` copies fixtures there.
+/// container, as `scripts/ios/ios-device-test.sh` copies fixtures there.
 final class RenderedMarkdownUITests: XCTestCase {
     static let documents = [
         "bilingual-contract", "supply-contract-ru", "loan-agreement", "itinerary", "prompt-guide",

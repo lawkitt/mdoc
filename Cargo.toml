@@ -155,7 +155,7 @@ lto = true
 opt-level = 3
 strip = true
 
-# The iOS core (scripts/build-ios-core.sh): release, but unwinding so UniFFI
+# The iOS core (scripts/ios/build-ios-core.sh): release, but unwinding so UniFFI
 # turns a panic into an error instead of ending the app, and unstripped so
 # Xcode's own strip keeps the symbols the app exports (ADR 0085).
 [profile.mobile]
@@ -183,7 +183,7 @@ icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/ico
 # "Open with" registration and its uninstall section.
 # ONNX Runtime (OCR, pseudonymization) needs the x64 VC++ Redistributable
 # despite mdoc.exe's static CRT. Install it, with its own UAC prompt, only when
-# missing; scripts/package.sh supplies the signature-checked installer through
+# missing; scripts/desktop/package.sh supplies the signature-checked installer through
 # MDOC_VC_REDIST at compile time (ADR 0037). Failure doesn't stop the install:
 # the app explains how to get the runtime when OCR is first used.
 preinstall-section = '''
@@ -250,10 +250,10 @@ SectionEnd
 info-plist-path = "resources/Info.plist"
 minimum-system-version = "12.0"
 # Ad-hoc signature (`-`) with the hardened runtime. Release builds are re-signed
-# with the Developer ID and notarized by scripts/macos-sign.sh (ADR 0039).
+# with the Developer ID and notarized by scripts/desktop/macos-sign.sh (ADR 0039).
 signing-identity = "-"
 # Lets the hardened runtime load the downloaded PDFium and ONNX Runtime
-# libraries (see the plist); scripts/package.sh checks it is applied.
+# libraries (see the plist); scripts/desktop/package.sh checks it is applied.
 entitlements = "resources/entitlements.plist"
 
 [dev-dependencies]

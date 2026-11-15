@@ -36,7 +36,7 @@ jobs:
 
       - name: Install actionlint and just
         run: |
-          scripts/install-actionlint.sh "$HOME/.local/bin"
+          scripts/dev/install-actionlint.sh "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           grep -E '^[A-Z_]+=' scripts/tools.env >> "$GITHUB_ENV"
 

@@ -67,7 +67,7 @@ jobs:
       # under it wherever PATH points.
       - name: Script suites under /bin/bash 3.2
         if: runner.os == 'macOS'
-        run: /bin/bash scripts/test.sh --tier scripts
+        run: /bin/bash scripts/dev/test.sh --tier scripts
       - if: runner.os == 'macOS'
         run: just mobile --ffi
 
@@ -114,7 +114,7 @@ jobs:
         id: screens
         if: ${{ !cancelled() && env.SCREENS != '' && steps.renders.outcome != 'skipped' }}
         shell: bash
-        run: bash scripts/ci-screens.sh "$RUNNER_TEMP/renders" "$RUNNER_TEMP/screens" "$SCREENS"
+        run: bash scripts/ci/ci-screens.sh "$RUNNER_TEMP/renders" "$RUNNER_TEMP/screens" "$SCREENS"
       - name: Requested screens
         if: ${{ !cancelled() && steps.screens.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

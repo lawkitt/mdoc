@@ -1,5 +1,5 @@
 # cargo-nextest settings for `just test` (ADR 0082, ADR 0095). No retries,
-# no JUnit. `just test` runs every tier; `scripts/test.sh --tier <name>` runs
+# no JUnit. `just test` runs every tier; `scripts/dev/test.sh --tier <name>` runs
 # one, which CI runs as its own job (ADR 0095):
 #
 #   unit         the crates (everything outside the app package) except the
@@ -9,7 +9,7 @@
 #   renders      the render test (tests/headless_renders.rs)
 #   recognition  the recognition fixtures on their snapshots
 #
-# Quarantined tests (.config/quarantine.txt) are left out by scripts/test.sh.
+# Quarantined tests (.config/quarantine.txt) are left out by scripts/dev/test.sh.
 [profile.default]
 retries = 0
 # Warn at 30 s, kill at 2 min (ADR 0095). A slow test is a bug, not a limit

@@ -3,7 +3,7 @@ name: Merge gate
 # Posts the `merge-gate` status (ADR 0095) on PR heads (the fast tier) and on
 # merge-queue commits (every job their areas need, each named with where it
 # ran), and dispatches the hosted Windows and Android fallbacks when the PC
-# is silent. The rules are in scripts/merge-gate.sh. Runs main's copy of the
+# is silent. The rules are in scripts/ci/merge-gate.sh. Runs main's copy of the
 # script with this workflow's token and never checks out or runs PR code;
 # pull_request_target runs this file as it is on main.
 #
@@ -47,7 +47,7 @@ jobs:
       # ran; read runs, jobs and check runs.
       actions: write
       checks: read
-      # A queue commit's own scripts/ci-areas.txt.
+      # A queue commit's own scripts/ci/ci-areas.txt.
       contents: read
       pull-requests: read
       # Post merge-gate.
@@ -59,7 +59,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts
 
-      - run: bash scripts/merge-gate.sh
+      - run: bash scripts/ci/merge-gate.sh
         env:
           GH_TOKEN: ${{ github.token }}
           MERGE_GATE_REPO: ${{ github.repository }}

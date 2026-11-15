@@ -9,7 +9,7 @@ repository = "https://github.com/lawkitt/mdoc"
 
 [lib]
 # staticlib: linked into the iOS app through MdocCore.xcframework
-# (scripts/build-ios-core.sh); lib: Rust tests and examples.
+# (scripts/ios/build-ios-core.sh); lib: Rust tests and examples.
 crate-type = ["lib", "staticlib"]
 
 [features]

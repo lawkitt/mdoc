@@ -7,7 +7,7 @@ import XCTest
 /// on a phone or, with the timing tests (`TEST_RUNNER_MDOC_TIMING_TESTS=1`),
 /// on a Simulator. Run them with
 /// `-only-testing:mdocUITests/DeviceTapTimingUITests` after
-/// `scripts/ios-device-test.sh` has copied the fixtures.
+/// `scripts/ios/ios-device-test.sh` has copied the fixtures.
 final class DeviceTapTimingUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

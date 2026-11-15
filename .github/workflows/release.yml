@@ -63,7 +63,7 @@ jobs:
           persist-credentials: false
       - name: Tag matches Cargo.toml, Cargo.lock and Info.plist
         if: github.event_name == 'push'
-        run: scripts/verify-version.sh "$GITHUB_REF_NAME"
+        run: scripts/release/verify-version.sh "$GITHUB_REF_NAME"
 
   # CI plus the release gate's OCR smoke test (real runtime/model download,
   # EN/RU recognition) on each shipped target. Always for tags.
@@ -121,7 +121,7 @@ jobs:
       - name: Set test-build version
         if: github.event_name == 'workflow_dispatch'
         shell: bash
-        run: scripts/set-version.sh "$EFFECTIVE_VERSION"
+        run: scripts/release/set-version.sh "$EFFECTIVE_VERSION"
 
       - name: Load Apple signing credentials
         if: runner.os == 'macOS' && env.SIGN == 'true'
@@ -131,7 +131,7 @@ jobs:
           # Optional until created (ADR 0045): without it the case key stays
           # in the login keychain.
           APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
-        run: scripts/ci-apple-credentials.sh setup
+        run: scripts/release/ci-apple-credentials.sh setup
 
       - run: just package
         env:
@@ -147,7 +147,7 @@ jobs:
 
       - name: Remove Apple signing credentials
         if: always() && runner.os == 'macOS' && env.SIGN == 'true'
-        run: scripts/ci-apple-credentials.sh cleanup
+        run: scripts/release/ci-apple-credentials.sh cleanup
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -181,10 +181,10 @@ jobs:
           SCENARIO: ${{ matrix.scenario }}
         run: |
           if ($env:SCENARIO -eq 'startup') {
-            ./scripts/ci-installed-windows.ps1
+            ./scripts/desktop/ci-installed-windows.ps1
           } else {
             # An impossible title must fail, retain UIA diagnostics, and uninstall.
-            pwsh -NoProfile -File scripts/ci-installed-windows.ps1 -ExpectedWindowTitle 'mdoc-intentionally-wrong-title' -StartupTimeoutSeconds 10
+            pwsh -NoProfile -File scripts/desktop/ci-installed-windows.ps1 -ExpectedWindowTitle 'mdoc-intentionally-wrong-title' -StartupTimeoutSeconds 10
             if ($LASTEXITCODE -eq 0) { throw 'Wrong-title startup unexpectedly passed.' }
             $failure = Get-Content installed-windows-evidence/failure.txt -Raw
             if ($failure -notmatch 'did not expose a visible UI Automation main window') {

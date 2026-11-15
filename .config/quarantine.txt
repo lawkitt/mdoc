@@ -5,10 +5,10 @@
 #   android:<class>#<method>  #<issue>  <expires YYYY-MM-DD>
 #   ios:<target>/<class>/<method>  #<issue>  <expires YYYY-MM-DD>
 #
-# scripts/test.sh leaves the Rust ones out of every tier, and `scripts/test.sh
+# scripts/dev/test.sh leaves the Rust ones out of every tier, and `scripts/dev/test.sh
 # --tier quarantined` runs them alone without failing. The Android job
-# (scripts/android-check.sh) and `just ios-test` skip the app UI ones. A line past its date fails
-# the scripts tier (scripts/quarantine.sh check): fix the test and remove the
+# (scripts/android/android-check.sh) and `just ios-test` skip the app UI ones. A line past its date fails
+# the scripts tier (scripts/ci/quarantine.sh check): fix the test and remove the
 # line, or renew the date in a PR that says why. Add a line by PR, with its
 # issue; the hub may add one.
 
