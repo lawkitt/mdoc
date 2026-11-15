@@ -37,9 +37,11 @@ deny-advisories:
 
 # Cargo.lock must match Cargo.toml (ADR 0053); no `#[path]` under src/ (ADR 0069);
 # no GPUI under the GUI-free crates (ADR 0069); no unexplained fixed delay in the
-# mobile apps' code (ADR 0104); then clippy with warnings as errors
+# mobile apps' code (ADR 0104); the docs' budgets, folders and ADR index
+# (scripts/dev/docs-lint.sh); then clippy with warnings as errors
 lint:
     cargo metadata --locked --format-version 1 > /dev/null
+    scripts/dev/docs-lint.sh --check
     if grep -rnE --include='*.rs' '#\[path[[:space:]]*=' src; then echo 'error: #[path] under src/; use a folder module (ADR 0069)' >&2; exit 1; fi
     scripts/dev/gui-free.sh
     scripts/dev/fixed-delays.sh

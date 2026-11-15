@@ -33,7 +33,8 @@
 # review_host_performance's `plain_layout` phase draws the same text without
 # review state at the same width, so each review phase's excess over it is the
 # PII overhead. Headless shaping is not Core Text: confirm shaping-heavy
-# changes natively. Scrub a private DOCX into a layout fixture with
+# changes natively with tools/native-layout (native input, then an
+# Animation Hitches trace summarized). Scrub a private DOCX into a layout fixture with
 # tests/fixtures/docx-preview/scrub.py; never commit the original.
 source "$(dirname "$0")/../lib.sh"
 

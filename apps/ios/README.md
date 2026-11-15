@@ -21,8 +21,7 @@ CI (`scripts/tools.env`; `scripts/ios/ios-toolchain.sh` downloads the runtime,
 about 8 GB, and `just doctor` checks both). Both build the core first
 (`just ios-core`: `target/ios/MdocCore.xcframework`, its Swift bindings and
 `pdfium.xcframework`; a few seconds when nothing changed). Builds go to
-`target/ios/DerivedData` and are unsigned. The core is arm64 only, so the
-Simulator builds exclude x86_64.
+`target/ios/DerivedData`, unsigned, arm64 only.
 
 `just ios-core` also writes `target/ios/Build.xcconfig`: the build number
 is the commit count up to HEAD and `MdocCoreCommit` is HEAD. A shallow clone
@@ -56,40 +55,8 @@ Xcode once and let Signing & Capabilities register it (the command line
 cannot). A new developer certificate needs one tap of an installed app on the
 phone with `ppq.apple.com` reachable before iOS lets it launch.
 
-### Device UI tests
-
-The Simulator refuses `BGContinuedProcessingTask`, so only a phone runs a
-long job through the real background task. Run them before every TestFlight
-build, with the phone connected, unlocked, online and with UI Automation on
-(Settings → Developer). Each run downloads text recognition (18 MB); the
-detector tier reuses the phone's own name detector or downloads it once
-(about 630 MB):
-
-```sh
-just ios-device-test <hardware UDID>
-just ios-device-test <hardware UDID> below-floor   # or detector: not by the phone's model
-```
-
-`scripts/ios/ios-device-test.sh` copies the fixtures into the app's container
-with `devicectl` (the app ships none), runs `ReviewFlowUITests` and the
-tier's test, and fails on a new `mdoc-*.ips` crash report. The tier comes
-from the phone's model: the iPhone 15 Pro and later run
-`DeviceLongJobsUITests` (real downloads, Find names while the test leaves
-the app past iOS's grace); earlier phones, or `below-floor`, run
-`DeviceBelowFloorUITests`. Results go to `target/ios/device-test-*.xcresult`.
-
-### Audits and timing
-
-With `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`: `AccessibilityAuditExploreUITests`
-prints each issue (`A11Y[screen] …`) without failing, a guide rather than a
-gate, because iOS 26's translucent sheets give false contrast reports;
-`LivePreviewUITests/testTheAccessibilityAuditInEditMode` and
-`EditToolbarUITests/testTheAccessibilityAuditWithTheToolbarUp` fail on any
-issue. Editing's budgets are a keystroke's restyle under 8 ms and a structural
-core call under 16 ms on the 37-page legal opinion; `LivePreviewUITests`
-measures both nightly (`TEST_RUNNER_MDOC_TIMING_TESTS=1`) without a
-threshold. `LargeTextExploreUITests` saves the main screens at the largest text
-size into `TEST_RUNNER_MDOC_SHOTS_DIR`.
+Device tests, audits, timing and how UI tests launch:
+[ui-tests.md](ui-tests.md).
 
 ## Layout
 
@@ -207,14 +174,3 @@ The UI and app-structure rules are in
   `Tips.resetDatastore()` works only before TipKit starts.
 - **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
   each target's `InfoPlist.xcstrings`).
-
-## UI test launch
-
-UI tests launch the app with `-mdoc-ui-testing` (`LaunchConfiguration` reads
-every flag once): its own library, case key and preferences, below the
-detector floor. It imports `MDOC_SEED_FILE` and scans it with the structured
-rules alone, the only such scan, so review needs no model. On a phone the
-seed reads the copy `just ios-device-test` put in the container.
-`MDOC_KEEP_LIBRARY=1` keeps the library across launches; `MDOC_OCR_TESTS=1`
-runs the tests that download the OCR model (with `MDOC_REAL_DOWNLOADS=1`);
-`MDOC_UI_DETECTOR_TIER=1` gives the detector tier.
