@@ -63,6 +63,14 @@ check "ci.yml's areas job reads the table" grep -q 'run: scripts/ci/ci-areas.sh 
 check "hosted clippy and test wait for it" \
   [ "$(grep -cE '^    needs: areas$' .github/workflows/ci.yml)" = 3 ] # and detection-head
 check "and run only for the desktop area" grep -q "if: &desktop \${{ needs.areas.outputs.desktop == 'true' }}" .github/workflows/ci.yml
+# A docs-only PR head skips the fast tier's work, by the same table: merge-gate
+# does not read it there.
+check "both fast jobs have the docs-only step" \
+  [ "$(grep -cE '^      - (&docs-only|\*docs-only)$' .github/workflows/ci.yml)" = 2 ]
+# shellcheck disable=SC2016 # the workflow's text, not an expansion
+check "which reads the table" grep -q 'if areas=$(scripts/ci/ci-areas.sh) && \[ -z "$areas" \]; then' .github/workflows/ci.yml
+check "and their test steps wait on it" \
+  [ "$(grep -cE "^      - if: .*steps\.docs-only\.outputs\.docs-only != 'true'$" .github/workflows/ci.yml)" = 2 ]
 
 # Routing: a file takes the first matching line's areas, desktop by default.
 areas_of() { printf '%s\0' "$@" | changed_areas "$table"; }
