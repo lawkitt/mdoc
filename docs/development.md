@@ -106,7 +106,8 @@ algorithm changes belong in the dependency forks.
   `mdoc-import`, `mdoc-detect`, `mdoc-pii`, …), with typed errors.
 - A document reaches the window only through `TabEvent`. No glob imports
   outside test modules (except `gpui::prelude::*`), no `#[path]`; actions
-  live with the feature that handles them.
+  live with the feature that handles them. `just lint` checks boundaries;
+  easement was declined ([#895](https://github.com/lawkitt/mdoc/issues/895)).
 - A user-facing key binding is a row in `src/shortcuts.rs`; plumbing keys
   (Tab in a control group, moving in a menu, caret basics) stay with the
   feature.
