@@ -6,4 +6,4 @@
   Android Studio's. The Android job also builds the minified release-like
   app (R8, `apps/android/app/proguard-rules.pro`) and opens its library on
   the emulator, so a missing keep rule fails it
-  ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+  ([ADR 0091](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0091-mobile-ci-and-releases.md)).

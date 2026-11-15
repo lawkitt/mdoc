@@ -18,6 +18,6 @@ A change to the iOS or Android app puts its fragment in `changes/ios/` or
 `changes/android/` instead, in the same format and with the same
 repository-root links; that app's release joins them into
 `apps/ios/CHANGELOG.md` or `apps/android/CHANGELOG.md`, and the desktop
-release leaves them alone ([ADR 0091](../docs/adr/0091-mobile-ci-and-releases.md)).
+release leaves them alone ([releases](../docs/specs/release.md)).
 A core change users notice on several platforms gets a fragment in each
 folder it affects.

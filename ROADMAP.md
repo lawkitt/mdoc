@@ -3,8 +3,7 @@
 mdoc prepares local documents as editable Markdown for external AI tools.
 This roadmap lists open work as of 2026-11-01 (latest: 0.3.0); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
-How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
-[Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
+How it is kept: [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
 [Issues](https://github.com/lawkitt/mdoc/issues).
 
 ## Current status
@@ -14,7 +13,7 @@ restore without surprises (restore in place, merge hints, What you did,
 Back and Forward), the macOS menu bar shelf, and the 2026-10-31 UI/UX
 survey's fixes and polish. It went stable from rc.1 with no rc.2 and no
 acceptance run, an exception to
-[ADR 0083](docs/adr/0083-fewer-release-candidates.md) recorded in the
+[ADR 0083](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0083-fewer-release-candidates.md) recorded in the
 [2026-11-01 grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/roadmap-grill-2026-11-01.md); a targeted run
 on the release build follows (0.3.x). No PII model has passed the
 [initial qualification](tests/fixtures/pseudonymization/README.md). Earlier
@@ -30,10 +29,10 @@ A severe bug in 0.3.0 gets a patch; other bugs go to the
 
 1. **[Release] 0.3.0 acceptance on the release build.** *From the
    2026-11-01 grill.* 0.3.0 skipped rc.2's acceptance, so the shelf has
-   never had its section run. Run [platform acceptance](docs/platform-acceptance.md)
+   never had its section run. Run the 0.3.0 [platform acceptance](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/platform-acceptance.md)
    section 12, the GUI rows on #254 and #353, and an install, upgrade and
    keychain smoke on both platforms, on the v0.3.0 release build. *Done
-   when:* the evidence is under `docs/evidence/platform/`, #254 and #353
+   when:* the results are in the release's issue, #254 and #353
    are closed, and each must-fix fail is an issue in a 0.3.1 milestone.
 
 ## 0.4.0
@@ -49,7 +48,7 @@ hunt loop finds, records and fixes them with the maintainer away
 ([ADR 0093](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0093-flaw-hunt-loop.md)): Codex hunters, an Opus
 curator and Opus fixers, a strict fixture ratchet and a private holdout.
 Items 3 and 4 run as loops once item 2 merges. rc.1, then full acceptance
-on the last RC; no stable without it ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+on the last RC; no stable without it ([ADR 0083](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0083-fewer-release-candidates.md)).
 Records: [roadmap grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/roadmap-grill-2026-11-01.md),
 [recognition grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/recognition-grill-2026-11-01.md).
 
@@ -99,7 +98,7 @@ Features are frozen until items 13–19 land (Q4).
 1. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
    (#269, #272, #275–#278) and the
    [TestFlight grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/testflight-grill-2026-11-03.md)
-   ([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).* The app record
+   ([ADR 0097](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0097-ios-testflight-beta.md)).* The app record
    exists ("mdoc: private docs for AI"), the upload's pieces are merged
    (#578), and `just ios-device-test` passes on the iPhone 17 Pro on
    cellular and the 12 Pro on Wi-Fi (#583, #584): the maintainer kept the
@@ -231,7 +230,7 @@ Maintainer actions list the steps on the maintainer's side.
 
 Mobile tests stay on local CI with a real fallback, and agents release the
 apps to internal tracks and drafts
-([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)). [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)
+([ADR 0091](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0091-mobile-ci-and-releases.md)). [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)
 moves the iOS job and the Android fallback to hosted runners (CI redesign,
 below). Record:
 [mobile CI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-ci-grill-2026-11-01.md). Items 2 and 3
@@ -245,7 +244,7 @@ touch separate files and run as parallel lanes; 5 builds on both.
    Gradle Dependabot PR goes green after its metadata commit.
 6. **[Release] iOS release workflow.** *From the
    [agents TestFlight grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-testflight-agents-grill-2026-11-08.md)
-   ([ADR 0107](docs/adr/0107-agents-publish-ios-betas.md)).* The key is in
+   ([ADR 0107](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0107-agents-publish-ios-betas.md)).* The key is in
    `release-ios` (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, body only).
    One PR: `ios-release.yml` on `ios-v*` tags (checks, `ci-ios.yml` on the
    tag, a full-history archive with Apple-managed signing, upload, the
@@ -268,7 +267,7 @@ touch separate files and run as parallel lanes; 5 builds on both.
 the full suite runs once per queue group on hosted runners and the PC
 ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), cut over 2026-11-03).
 Record: [CI redesign grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-redesign-grill-2026-11-02.md);
-items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
+items 8–15: [ADR 0100](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0100-ci-reliability-after-the-cutover.md),
 [CI fixes grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-fixes-grill-2026-11-06.md).
 
 7. **[CI] `main`, supply chain and upkeep.** The detection shards back to
@@ -288,10 +287,10 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
 ## CI speed
 
 The queue's long jobs get shorter and its unrelated drops stop needing the
-maintainer ([ADR 0112](docs/adr/0112-ci-speed-after-the-first-fortnight.md),
+maintainer ([ADR 0112](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0112-ci-speed-after-the-first-fortnight.md),
 [CI speed grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-speed-grill-2026-11-12.md)) and the
 [second grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-grill-2-2026-11-13.md)
-([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
+([ADR 0113](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
 Items 16–31 have shipped; item 22 (the PC's slow bursts) closed as not
 needed, and item 30 (a prebuilt library for UI test launches) was measured
 and dropped (#857).
@@ -383,7 +382,7 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   profile. *From the 2026-10-30 grill.*
 - **[Windows]** An all-users `.msi` again when an admin or buyer asks; it and
   the `.exe` detect each other and stop with a message; reuse UpgradeCode
-  `3D50EAE8-D339-41B6-82BC-126389601487` ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+  `3D50EAE8-D339-41B6-82BC-126389601487` ([ADR 0083](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0083-fewer-release-candidates.md)).
 - **[Mobile]** Resumed OCR joins pages with a blank line, so a list that
   continues across a page break differs from desktop; exact joins need
   pdf-inspector's page join made public in the fork (#276).
@@ -419,7 +418,7 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Release]** Release runs reuse `main`'s CI: the `version` job skips the
   called CI when the release commit only bumps versions and the CHANGELOG
   and `main` passed its parent; `smoke-package` adds the Russian fixture
-  ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)). With one RC per
+  ([ADR 0083](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0083-fewer-release-candidates.md)). With one RC per
   minor it saves about 20 minutes a release. *From the 2026-10-30 grill;
   moved from Engineering at the 2026-11-01 grill.*
 
@@ -640,10 +639,10 @@ Android takes what applies. Its clipboard finding is
 
 ## Engineering
 
-- **Build-cache check** ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md)):
+- **Build-cache check** ([ADR 0050](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0050-rust-build-cache-growth.md)):
   `just disk` read 38.5 GiB on 2026-10-23, over the ~30 GiB threshold; evaluate
   `sccache` against a periodic `cargo clean --workspace`.
-- **Cleanup charter** ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)):
+- **Cleanup charter** ([ADR 0029](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0029-codebase-cleanup-charter.md)):
   concrete ownership/test improvements; conversion and OCR changes belong in
   the AnyDoc/pdf-inspector forks.
 - **Update check before publishing:** `just smoke-update` from the last
@@ -705,4 +704,4 @@ Android takes what applies. Its clipboard finding is
   product fit for a single-document editor; a local server and its optional
   off-machine reranker conflict with offline operation.
 - Replacing AnyDoc with rdocx for DOCX-to-Markdown conversion: conversion
-  changes belong in the AnyDoc fork ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)).
+  changes belong in the AnyDoc fork ([ADR 0029](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0029-codebase-cleanup-charter.md)).

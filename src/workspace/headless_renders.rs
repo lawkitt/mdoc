@@ -4,6 +4,47 @@
 //! Scenes live in one module per feature; `scenarios` runs them in order, in
 //! each theme. Every screen a scene captures is listed in
 //! `tests/headless_screens.txt`.
+//!
+//! `just headless-renders <dir>` (macOS and Windows) builds the dev binary
+//! with the `headless-renders` feature and writes light and dark PNGs, Tab
+//! walks and frame costs into `<dir>`, which must be new and whose parent
+//! must exist. Release builds have no runner, even with the feature on. It
+//! uses `HeadlessAppContext` with native text shaping (Core Text,
+//! DirectWrite): the headless Metal renderer on macOS; on Windows a test-only
+//! DirectX 11 WARP device with offscreen textures and staging readback, and
+//! no `WindowsPlatform`, HWND, swap chain or DirectComposition target. It can
+//! run while someone uses the desktop.
+//!
+//! Each run makes and removes a temporary profile, redirects the app data and
+//! cache paths before building app state, injects a temporary case store and
+//! refuses OS case-key access (no Keychain, no DPAPI). It reads only public
+//! fixtures, never the real profile, clipboard or installed models, and
+//! downloads nothing: every app HTTP entry point rejects requests. The
+//! integration test (`tests/headless_renders.rs`) checks the files and the
+//! profile cleanup; on macOS it runs the child under `sandbox-exec`, denying
+//! the real profile, the update cache and the network, and on Windows it
+//! fails if the child owns any top-level HWND. On Windows this is application
+//! isolation, not an OS boundary: no ACL, AppContainer or firewall policy, so
+//! a new unguarded native filesystem or network call would not be denied.
+//!
+//! Output: `summary.json` (schema version 1) and `light/`, `dark/` with one
+//! PNG per screen (2200 × 1520, 1100 × 760 points at 2×) and a folder of
+//! Tab-step PNGs per screen. Each record lists the baseline PNG, ordered
+//! `tab_order` entries with a run-local `focus_id` (not stable across runs),
+//! `key_contexts`, focus-ring PNGs and input cost; `cycle_to` indexes the
+//! first repeated focus and `truncated` flags the 128-press limit. These are
+//! real Tab keystrokes, so the editor may indent and a panel may keep Tab in
+//! its own loop; F6 regions are separate. `focus_rings` pairs check that only
+//! the 2 px accent outline changes. `frames` records each settle or Tab
+//! frame's CPU `layout_paint_ms`, and `raster_readback_ms` the GPU render and
+//! readback, PNG encoding excluded, with no pass or fail budget. PNGs encode
+//! on one bounded background thread, which must finish before the summary is
+//! written.
+//!
+//! CI sets `MDOC_HEADLESS_ARTIFACTS` to a new folder and uploads it; locally
+//! the output stays temporary unless that variable names a new folder. The
+//! images establish neither native input, IME, accessibility nor display
+//! presentation.
 mod cases;
 mod comments;
 mod comparison;

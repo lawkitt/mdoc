@@ -2,4 +2,4 @@
   number and the commit the build was made from, and Source code opens that
   commit. The app carries a privacy manifest and its export-compliance
   answer, ready for TestFlight
-  ([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).
+  ([ADR 0097](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0097-ios-testflight-beta.md)).

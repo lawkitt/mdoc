@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # The iOS UI survey (ADR 0087): run SurveyUITests on a Simulator and export
 # every screen, light and dark, downscaled to 1000 px high, into a folder.
-#   scripts/ios/ios-survey.sh "iPhone 17 Pro" docs/evidence/ios-app/current
+#   scripts/ios/ios-survey.sh "iPhone 17 Pro" target/ios/survey
+# The folder takes no PNGs into the repository: before and after images go in
+# the PR.
 # Needs the core built (`just ios-core`). Shuts its Simulator down after,
 # since a booted one can push the Mac into swap; other Simulators (another
 # agent's) are left alone.

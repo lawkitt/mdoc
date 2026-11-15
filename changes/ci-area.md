@@ -3,4 +3,4 @@
   workflows, their suites) runs `ci/scripts`, the script suites on Linux and
   under `/bin/bash` 3.2, beside `lint (ubuntu)`, instead of `ci/macos`,
   `ci/windows` and the detection gate; a change to `ci-ios.yml` now runs
-  `ci/ios` ([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
+  `ci/ios` ([ADR 0100](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0100-ci-reliability-after-the-cutover.md)).

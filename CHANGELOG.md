@@ -410,7 +410,7 @@ All notable changes to **mdoc** are documented here.
   PRs from branches in the repository; `local/windows` and `local/macos`
   test them on the maintainer's machines. Fork and Dependabot PRs keep the
   full hosted matrix, and `ci.yml` can be run by hand on any branch
-  ([ADR 0082](docs/adr/0082-local-ci.md); fixes #252).
+  ([ADR 0082](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0082-local-ci.md); fixes #252).
 
 - **Save As starts in a folder you use.** Save As for an Untitled tab, pasted
   text or an AI reply starts in the folder of your most recent file, or in
@@ -431,7 +431,7 @@ All notable changes to **mdoc** are documented here.
   `.msi`, and `just setup` no longer installs WiX. If you installed mdoc from
   an `.msi`, remove it in Settings › Apps before running the `.exe`; your
   cases are kept, because the `.msi` never touches `%LOCALAPPDATA%`
-  ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+  ([ADR 0083](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0083-fewer-release-candidates.md)).
 
 - **F6 lands on the active tab.** F6 into the sidebar now lands on the
   active tab's row (Home's row on Home), in the expanded sidebar and the
@@ -446,7 +446,7 @@ All notable changes to **mdoc** are documented here.
   build cache between jobs (each job had built cold), runs at normal
   priority, builds GPUI's layout and paint crates at `opt-level` 2, and
   `just test` runs the script suites beside the Rust tests (fixes #240,
-  [ADR 0082](docs/adr/0082-local-ci.md)).
+  [ADR 0082](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0082-local-ci.md)).
 
 - **Local CI on the Windows PC.** The `local/windows` runner is installed and
   posts statuses. `scripts/local-ci-setup.ps1` now sends the task's output to
@@ -455,19 +455,19 @@ All notable changes to **mdoc** are documented here.
   Python server (the `mdoc local CI web` task) that `tailscale serve`
   proxies, because serving a folder needs a Windows admin. A third lane,
   `windows-lane-3`, is on `D:` (fixes #233,
-  [ADR 0082](docs/adr/0082-local-ci.md)).
+  [ADR 0082](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0082-local-ci.md)).
 
 - **Local CI runner.** `just local-ci` tests each PR's merge with `main` on
   the maintainer's Mac and Windows PC and posts `local/macos` and
   `local/windows` statuses that link to the log and renders over the tailnet
-  ([ADR 0082](docs/adr/0082-local-ci.md), #233).
+  ([ADR 0082](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0082-local-ci.md), #233).
 
 - **Hosted CI hygiene.** CI jobs time out after 15 (lint), 20 (clippy) and
   30 (test) minutes, `just test` runs the workspace tests with cargo-nextest
   (per-test timeouts, doctests through `cargo test --doc`), `main` deletes
   older generations of its cargo caches, renders artifacts are kept 7 days,
   and PRs on any base branch get CI
-  ([ADR 0082](docs/adr/0082-local-ci.md); fixes #231).
+  ([ADR 0082](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0082-local-ci.md); fixes #231).
 
 - **Faster macOS screen renders, fewer render-file conflicts.** The headless
   render test takes 72 s instead of 234 s on the M4: `gpui-pre-apple`,
