@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Anything tappable that is not a button is a chip: a filled capsule. A
 /// chip that opens a menu ends in a small chevron; plain text never acts
-/// (ADR 0098, docs/mobile-ui.md). Use it as the label of a `Button` or a
+/// (ADR 0098, docs/specs/mobile.md). Use it as the label of a `Button` or a
 /// `Menu`.
 struct Chip: View {
     var title: Text

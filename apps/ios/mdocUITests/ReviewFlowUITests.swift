@@ -201,8 +201,8 @@ enum MdocUITest {
         element.tap()
     }
 
-    /// The sidebar holds the documents and Settings (docs/mobile-ui.md,
-    /// Sidebar): on iPhone it slides out from ☰; on a wide iPad it stands
+    /// The sidebar holds the documents and Settings (docs/specs/mobile.md,
+    /// Navigation): on iPhone it slides out from ☰; on a wide iPad it stands
     /// beside the screen already.
     @MainActor
     static func revealSidebar(_ app: XCUIApplication) {

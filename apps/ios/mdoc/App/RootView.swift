@@ -38,7 +38,7 @@ struct RootView: View {
     }
 
     /// iPhone and a narrow iPad: the sidebar lies under the screen, which
-    /// slides aside to show it (docs/mobile-ui.md, Sidebar), and an open
+    /// slides aside to show it (docs/specs/mobile.md, Navigation), and an open
     /// document's Identities under its other side.
     private var drawer: some View {
         SideDrawer(

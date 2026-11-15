@@ -5,4 +5,4 @@
   the caret in line with where it was; Return in a table's last row adds a
   row, and on an empty one leaves the table. Ordered lists show the number
   written (`9.` shows 9.)
-  ([ADR 0110](docs/adr/0110-mobile-editor-polish.md)).
+  ([ADR 0110](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0110-mobile-editor-polish.md)).

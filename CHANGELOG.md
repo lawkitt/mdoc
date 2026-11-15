@@ -64,7 +64,7 @@ All notable changes to **mdoc** are documented here.
   reply have a one-tap Paste button, a pasted text is titled from its first
   line, and the reply sheet names the case whose names come back, as on
   iOS. On a tablet, Home and the text keep a readable width
-  ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  ([ADR 0087](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0087-ios-ui-polish.md),
   [ADR 0089](docs/adr/0089-android-app.md)).
 
 - **Android polish, round 3.** In the Android app, tapping an identity
@@ -76,7 +76,7 @@ All notable changes to **mdoc** are documented here.
   a document from Home, replaces or keeps all of an identity, and a double
   tap zooms the original page. Back and More options
   have names for TalkBack
-  ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  ([ADR 0087](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0087-ios-ui-polish.md),
   [ADR 0089](docs/adr/0089-android-app.md)).
 
 - **Home › Recent badges and conversions.** The "pseudonymized" badge shows
@@ -148,7 +148,7 @@ All notable changes to **mdoc** are documented here.
   file moves to the document's menu. An import interrupted off screen says
   so in the same words as on iOS. The candidate sheet's alias is readable
   in dark mode, and the Identities sheet shows each category's colour
-  ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  ([ADR 0087](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0087-ios-ui-polish.md),
   [ADR 0089](docs/adr/0089-android-app.md)).
 
 - **The shelf's count matches the editor's.** A shelf row's "N replaced"
@@ -232,7 +232,7 @@ All notable changes to **mdoc** are documented here.
 - **Android feasibility spike.** `tools/android-spike` runs the core's spike
   on Android phones in Firebase Test Lab, downloading the models through the
   core's setup as the app will; the first rows are in the
-  [report](docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)
+  [report](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)
   ([ADR 0089](docs/adr/0089-android-app.md)).
 
 - **Android toolchain on Windows.** `just android-setup` installs the pinned
@@ -262,7 +262,7 @@ All notable changes to **mdoc** are documented here.
   while the app is left, a .docx import that is whole after it, the note
   where Find names would be and in Settings, and marking a name by selecting
   it; `below-floor` or `detector` picks one by hand
-  ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).
+  ([ADR 0088](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0088-ios-on-real-devices.md)).
 
 - **iOS: Restore with mdoc leads with Copy.** The restored reply's Copy is
   the prominent button, as most replies go back into a chat or a document;
@@ -281,7 +281,7 @@ All notable changes to **mdoc** are documented here.
   runs the detector and keeps running in the background on a 37-page .docx,
   and a text PDF comes in. The recipe copies the fixtures into the app's
   container with `devicectl` and fails on a new crash report
-  ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).
+  ([ADR 0088](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0088-ios-on-real-devices.md)).
 
 - **Menu bar shelf on by default, and polished (macOS).** "Show mdoc in the
   menu bar" is on unless turned off; the first time the last window closes,
@@ -302,7 +302,7 @@ All notable changes to **mdoc** are documented here.
   shows "Waiting for Wi-Fi" with Use cellular while it is held, an
   interrupted import reads "Import not finished" with Finish import, and the
   + menu reads Paste, Files, Photos, Scan
-  ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).
+  ([ADR 0088](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0088-ios-on-real-devices.md)).
 
 - **iOS: the name detector needs 8 GB of RAM.** The iOS app runs the name
   detector (GLiNER2) only on iPhones and iPads with 8 GB or more: iPhone 15
@@ -310,14 +310,14 @@ All notable changes to **mdoc** are documented here.
   every detector budget (a 20-page scan in 35–43 s, peak memory 1.96–1.97
   GiB, load under 1 s), while the 6 GB iPhone 12 Pro took about two minutes
   for a 20-page scan against a 60-second budget
-  ([evidence](docs/evidence/mobile/2026-10-31/README.md)).
+  ([evidence](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-10-31/README.md)).
 
 - **iOS: fewer steps to share and restore.** Paste takes the text, title and
   case in one sheet; Share opens the share sheet in one tap (a long press
   shares a Markdown file) with the document's title as the preview; a
   restored reply is styled like the review text, in the app and in Restore
   with mdoc, and on the Reply tab the bar shares and copies the reply. A scan
-  that finds nothing says so ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  that finds nothing says so ([ADR 0087](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0087-ios-ui-polish.md),
   [UI survey](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/ios-app/2026-10-31-ui-survey/README.md)).
 
 - **iOS: long jobs no longer crash the app on a device.** Downloading a
@@ -330,7 +330,7 @@ All notable changes to **mdoc** are documented here.
   mode. Home lists documents newest first with their case, and status is a
   symbol and words, never a colour. The document's setup card has Not now,
   Identities has Done and labelled states, and Settings names models by
-  what they do ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).
+  what they do ([ADR 0087](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0087-ios-ui-polish.md)).
 
 - **iOS: polish defects fixed, and an app icon.** The candidate sheet loses
   its empty band and is titled by category; no value is hyphenated at any
@@ -338,7 +338,7 @@ All notable changes to **mdoc** are documented here.
   card shows as a card in light mode and promises only what the rules-only
   tier finds. `just icon` now also makes the iOS icon, and `just ios-survey`
   takes light and dark screenshots of every screen
-  ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).
+  ([ADR 0087](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0087-ios-ui-polish.md)).
 
 - **Backslash escapes dim like other markers.** With the caret on a
   converted list number such as `1\.`, the editor now dims the backslash as
@@ -358,7 +358,7 @@ All notable changes to **mdoc** are documented here.
   framework. A throwaway harness measured GLiNER2 and PP-OCR against the
   mobile detector budgets; phone rows await the maintainer
   ([ADR 0085](docs/adr/0085-mobile-apps.md),
-  [report](docs/evidence/mobile/2026-10-31/README.md)). Desktop is unchanged.
+  [report](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-10-31/README.md)). Desktop is unchanged.
 
 - **Licence permission for app stores.** mdoc stays GPL-3.0-or-later and adds
   a section 7 permission to ship through app stores

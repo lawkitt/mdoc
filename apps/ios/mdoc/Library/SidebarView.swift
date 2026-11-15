@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The sidebar (docs/mobile-ui.md, Sidebar), after the Claude app's: search
+/// The sidebar (docs/specs/mobile.md, Navigation), after the Claude app's: search
 /// at the top, the Cases and Documents rows, then *To review* and *Recent*,
 /// with Settings and New floating at the bottom. On iPhone it lies under the
 /// screen, which slides aside to show it; on a wide iPad it is the standing

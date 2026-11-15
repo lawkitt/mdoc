@@ -7,4 +7,4 @@
   table's last row adds a row, and on an empty last row removes it and
   leaves the table. Ordered lists show the number written (`9.` shows 9.,
   a nested `3.` shows c.), as Copy carries it
-  ([ADR 0110](docs/adr/0110-mobile-editor-polish.md)).
+  ([ADR 0110](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0110-mobile-editor-polish.md)).

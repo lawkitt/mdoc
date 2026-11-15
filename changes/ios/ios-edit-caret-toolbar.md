@@ -3,4 +3,4 @@
   tall and what is typed there is body text; the caret's line stays above
   the floating toolbar with the system keyboard, the formatting keyboard,
   a hardware keyboard and the link chip; and an empty table column is wide
-  enough to tap ([ADR 0110](docs/adr/0110-mobile-editor-polish.md)).
+  enough to tap ([ADR 0110](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0110-mobile-editor-polish.md)).

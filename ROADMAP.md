@@ -88,8 +88,8 @@ version: an item names the version it ships in when that matters. Core-crate
 changes merge when green and leave desktop unchanged. Built so far: 0.1's
 app (#266–#278, [mobile grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-grill-2026-10-31.md)) and
 0.2's review bar, UI system, theme, Settings, iPad keys and Try a sample
-(#604–#609, [ADR 0098](docs/adr/0098-mobile-review-bar.md),
-[ADR 0099](docs/adr/0099-mobile-ui-system.md),
+(#604–#609, [ADR 0098](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0098-mobile-review-bar.md),
+[ADR 0099](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0099-mobile-ui-system.md),
 [review grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-review-grill-2026-11-05.md)). 0.1 is not
 released on its own: the next TestFlight build is `ios-v0.2.0-rc.3` and
 runs 0.1's acceptance rows too
@@ -108,7 +108,7 @@ Features are frozen until items 13–19 land (Q4).
    (#591; a locked phone pauses a job, accepted). Builds `ios-v0.1.0-rc.2`
    (734) and `rc.3` (742) went to the internal group (`rc.1`'s upload
    failed on the export key, now NO). Section 13's Simulator rows and P12
-   ran on 2026-11-04 ([evidence](docs/evidence/mobile/2026-11-04/ios.md)):
+   ran on 2026-11-04 ([evidence](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-11-04/ios.md)):
    all pass except P13, a Later item. Left: the Device rows, and P18's
    device half, by hand on `ios-v0.2.0-rc.3` (`rc.1` and `rc.2` were
    tagged on 2026-11-05, builds 750 and 751).
@@ -121,15 +121,15 @@ Features are frozen until items 13–19 land (Q4).
    issues.
 10. **[Mobile] The review bar follows the finger.** The drag, the full
     view's mention rows, Keep instead and Next, hint lines in place of
-    TipKit, All reviewed ([ADR 0101](docs/adr/0101-mobile-review-bar-polish.md),
+    TipKit, All reviewed ([ADR 0101](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0101-mobile-review-bar-polish.md),
     #659). *Done when:* merged and checked on the iPhone 17 Pro.
 11. **[Mobile] The sidebar.** Claude-style sidebar over the open document,
     Start, Cases and Documents pages, ⌘K and ⌘N
-    ([ADR 0102](docs/adr/0102-mobile-sidebar.md)). *Done when:* merged and
+    ([ADR 0102](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0102-mobile-sidebar.md)). *Done when:* merged and
     checked on the device.
 12. **[Mobile] Identities as a drawer.** The right-edge drawer, ordered by
     what is left, state buttons, Replace N, Looks like, Select
-    ([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
+    ([ADR 0103](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
     merged and checked on the device.
 20. **[Mobile] To grill: peek at the originals.** *From the
     [sidebar grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-sidebar-grill-2026-11-06.md) ideas and
@@ -160,7 +160,7 @@ Features are frozen until items 13–19 land (Q4).
 
 26. **[Mobile] rc.10's drawer, Fix the words and Identities fixes.** *From
     the [iOS UI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ios-ui-grill-2026-11-14.md)
-    ([ADR 0115](docs/adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).*
+    ([ADR 0115](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0115-ios-drawer-close-fix-words-in-place-identities-header.md)).*
     Slices, one PR each: (G) the drawer's shadow on the screen's curve, an
     open drawer closing by a drag from anywhere over it, Identities rows on
     a left swipe; (H) Fix the words in place, no system link menu, the
@@ -172,7 +172,7 @@ Features are frozen until items 13–19 land (Q4).
 
 27. **[Mobile] rc.11's Adjust Words, Identities drawer and Done fixes.**
     *From the maintainer's rc.11 look
-    ([ADR 0116](docs/adr/0116-ios-rc11-adjust-words-identities-and-done.md)).*
+    ([ADR 0116](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0116-ios-rc11-adjust-words-identities-and-done.md)).*
     Slices, one PR each: (J) Adjust Words without a cross-faded first
     frame, and a tap away from a table cell's adjusted words cancels it;
     (K) the Identities drawer slides in from its button, Select and Cancel
@@ -194,7 +194,7 @@ Maintainer actions list the steps on the maintainer's side.
    docs cleanup; restore `tools/android-spike` and
    `scripts/android-spike-device.sh` from git history) on Test Lab phones at 6, 8 and 12 GB
    or more. *Measured 2026-10-31
-   ([report](docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)):*
+   ([report](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)):*
    memory, load, heat and OCR pass on all four phones, but FP16 on the CPU
    scans 3.6 to 9 times slower than the iPhone 17 Pro and misses the 60 s
    budget everywhere; 4 threads is already fastest and XNNPACK can't load

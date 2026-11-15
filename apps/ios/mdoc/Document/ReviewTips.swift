@@ -1,7 +1,7 @@
 import SwiftUI
 import TipKit
 
-/// The hints (docs/mobile-ui.md, Tips; ADR 0114): TipKit decides whether a
+/// The hints (docs/specs/mobile.md, Review; ADR 0114): TipKit decides whether a
 /// hint may show (learned, reset, the UI tests' switch) and mdoc draws it.
 /// No `TipView` and no popovers: the card swipe and the long press are one
 /// quiet line inside the review bar, at most one per document; drag-merge

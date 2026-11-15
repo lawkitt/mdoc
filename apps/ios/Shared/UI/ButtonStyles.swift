@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The app's buttons (ADR 0099, amended 2026-11-08; docs/mobile-ui.md): big
+// The app's buttons (ADR 0099, amended 2026-11-08; docs/specs/mobile.md): big
 // buttons are Liquid Glass, 44 pt high. The primary, at most one per view,
 // is prominent glass tinted ink; every other big button is clear glass with
 // ink words. Screens use these two and `textAction()`, never a literal

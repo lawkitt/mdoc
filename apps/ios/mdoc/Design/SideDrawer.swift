@@ -36,7 +36,7 @@ struct DrawerPanel<Panel: View> {
 }
 
 /// Panels under the screen that the screen slides aside to show, as the
-/// Claude app's sidebar does (docs/mobile-ui.md, Sidebar): the sidebar on
+/// Claude app's sidebar does (docs/specs/mobile.md, Navigation): the sidebar on
 /// the leading side, Identities on the trailing one. The screen moves toward
 /// the far edge, keeps a dimmed sliver with rounded corners, and a tap on
 /// the sliver or a swipe back closes the panel. A panel opens from a

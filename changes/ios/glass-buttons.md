@@ -5,4 +5,4 @@
   44 pt (they were 54), and the sidebar's ⚙ and + New 44 pt (were 52). On
   the Documents page the setup card's Download is clear glass, as Scan is
   the page's main action
-  ([ADR 0099](docs/adr/0099-mobile-ui-system.md), amended 2026-11-08).
+  ([ADR 0099](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0099-mobile-ui-system.md), amended 2026-11-08).

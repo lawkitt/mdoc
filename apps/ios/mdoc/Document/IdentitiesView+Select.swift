@@ -1,7 +1,7 @@
 import MdocFFI
 import SwiftUI
 
-/// Identities' Select (ADR 0114; docs/mobile-ui.md, Identities): the Select
+/// Identities' Select (ADR 0114; docs/specs/mobile.md, Identities): the Select
 /// capsule, Select's header as in Mail and Photos (Cancel, "3 selected",
 /// Select All), and the one-time demo of what Select does: a ghost of the
 /// first row lifts on its ≡ handle and settles on the row below, which shows

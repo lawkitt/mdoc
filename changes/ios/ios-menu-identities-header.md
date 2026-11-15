@@ -6,4 +6,4 @@
   Cancel, "3 selected" and Select All, as in Mail. The first time you open
   Select with two names or more, a short demo shows a name dragged onto
   another. The review hints now run on TipKit, still drawn as mdoc's quiet
-  line ([ADR 0114](docs/adr/0114-ios-menu-swipes-and-name-words.md)).
+  line ([ADR 0114](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0114-ios-menu-swipes-and-name-words.md)).

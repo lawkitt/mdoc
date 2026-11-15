@@ -7,7 +7,7 @@ import SwiftUI
 /// mentions when pulled up, then Undo, Keep and Replace.
 ///
 /// The bar follows the finger: drag the grabber, the progress line or the
-/// card up for the identity's mentions and down again (docs/mobile-ui.md).
+/// card up for the identity's mentions and down again (docs/specs/mobile.md).
 /// It settles compact or full; dragging down on the compact bar springs
 /// back, and only × ends review.
 struct ReviewBar: View {

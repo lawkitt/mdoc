@@ -2,7 +2,7 @@ import SwiftUI
 import XCTest
 @testable import mdoc
 
-/// The design components (docs/mobile-ui.md) in light and dark, and at an
+/// The design components (docs/specs/mobile.md) in light and dark, and at an
 /// accessibility size where it changes their layout.
 @MainActor
 final class ComponentSnapshotTests: XCTestCase {
@@ -135,7 +135,7 @@ final class ComponentSnapshotTests: XCTestCase {
         }
     }
 
-    /// The state marks (docs/mobile-ui.md, State marks; ADR 0114): replaced
+    /// The state marks (docs/specs/mobile.md, Components; ADR 0114): replaced
     /// is its glyph on the category's tint, never an ink disc, readable for
     /// the palest categories (yellow, mint) in light mode too; kept an eye
     /// on the chip fill; proposed a dashed ring.

@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The app's design tokens (ADR 0099, docs/mobile-ui.md). Screens use these
+// The app's design tokens (ADR 0099, docs/specs/mobile.md). Screens use these
 // and the components beside them, never literal spacing, radii or colors.
 
 /// Spacing on a 4 pt grid.
@@ -44,7 +44,7 @@ enum Size {
     static let toastRingLine: CGFloat = 2.5
 }
 
-/// The review bar's measures (ADR 0098, 0101, docs/mobile-ui.md).
+/// The review bar's measures (ADR 0098, 0101, docs/specs/mobile.md).
 enum ReviewBarMetrics {
     /// The bar's widest: centred beyond it on iPad.
     static let maxWidth: CGFloat = 560
