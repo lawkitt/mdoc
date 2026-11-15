@@ -16,3 +16,9 @@ Run them from the repository root; most have a `just` recipe.
 A script sources the helpers with `source "$(dirname "$0")/../lib.sh"`
 (`# shellcheck source=../lib.sh`). A suite that copies scripts into a scratch
 repository keeps this layout there.
+
+Tool pins stay in `tools.env`, `rust-toolchain.toml` and the install
+scripts. mise was weighed and declined
+([#892](https://github.com/lawkitt/mdoc/issues/892)): it covers only 6 of
+the 10 pins, and CI's `taiki-e/install-action` installs are already
+prebuilt and checksummed.
