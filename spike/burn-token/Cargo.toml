@@ -1,0 +1,25 @@
+# Burn spike for token-classifier finalists (lawkitt/mdoc#903). Not part of mdoc's workspace.
+[package]
+name = "burn-token"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+default = []
+fusion = ["burn/fusion", "burn/autotune"]
+
+[dependencies]
+burn = { version = "=0.22.1", default-features = false, features = ["std", "flex", "simd", "rayon", "metal"] }
+burn-store = "=0.22.1"
+serde_json = "1"
+libc = "0.2"
+
+[build-dependencies]
+burn-onnx = "=0.22.0"
+
+[profile.release]
+codegen-units = 16
+lto = "thin"

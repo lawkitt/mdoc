@@ -528,6 +528,12 @@ impl SpanEngine {
         // decides whether that means a host round trip or a device binding, so
         // the two transports cannot drift apart the way they did when they
         // lived in separate crates.
+        // SPIKE (#903): GLINER2_DUMP_IDS=<file> appends each window's encoder ids as a JSON line.
+        if let Ok(path) = std::env::var("GLINER2_DUMP_IDS") {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+            writeln!(f, "{:?}", record.input_ids)?;
+        }
         // SPIKE (#903): GLINER2_PAD=N pads the encoder input to N tokens (mask 0).
         let mut input_ids = record.input_ids.clone();
         let mut attention_mask = record.attention_mask.clone();

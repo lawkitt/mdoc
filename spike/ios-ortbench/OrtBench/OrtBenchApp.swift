@@ -22,7 +22,8 @@ struct OrtBenchApp: App {
         let dump = env["BENCH_DUMP"].map { docs.appendingPathComponent($0).path } ?? ""
         _ = ort_bench(path, env["BENCH_EP"] ?? "cpu", env["BENCH_FORMAT"] ?? "MLProgram", env["BENCH_UNITS"] ?? "ALL",
                       env["BENCH_CACHE"] == "1" ? cache : "", Int32(env["BENCH_SEQ"] ?? "512") ?? 512,
-                      Int32(env["BENCH_RUNS"] ?? "5") ?? 5, Int32(env["BENCH_THREADS"] ?? "4") ?? 4, dump, &out, out.count)
+                      Int32(env["BENCH_RUNS"] ?? "5") ?? 5, Int32(env["BENCH_THREADS"] ?? "4") ?? 4, dump,
+                      env["BENCH_WINDOWS"].map { docs.appendingPathComponent($0).path } ?? "", &out, out.count)
         let line = String(cString: out)
         let results = docs.appendingPathComponent("results.jsonl")
         if let h = try? FileHandle(forWritingTo: results) { h.seekToEndOfFile(); h.write((line + "\n").data(using: .utf8)!); try? h.close() }

@@ -19,7 +19,7 @@ static void footprint(double *cur, double *peak) {
 #define CHECK(expr) do { OrtStatus *s_ = (expr); if (s_) { snprintf(out, outlen, "{\"error\":\"%s\"}", api->GetErrorMessage(s_)); api->ReleaseStatus(s_); return 1; } } while (0)
 
 int ort_bench(const char *model_path, const char *ep, const char *fmt, const char *units, const char *cache_dir,
-              int seq, int runs, int threads, const char *dump_path, char *out, size_t outlen) {
+              int seq, int runs, int threads, const char *dump_path, const char *windows_path, char *out, size_t outlen) {
   const OrtApi *api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
   OrtEnv *env; CHECK(api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "bench", &env));
   OrtSessionOptions *so; CHECK(api->CreateSessionOptions(&so));
@@ -48,15 +48,41 @@ int ort_bench(const char *model_path, const char *ep, const char *fmt, const cha
                                               ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &inputs[i]));
   }
   for (size_t i = 0; i < nout && i < 8; i++) CHECK(api->SessionGetOutputName(sess, i, alloc, &out_names[i]));
+  // Optional real windows: int32 count, then per window int32 n and n int64 ids (mask all ones).
+  int nwin = 0; int64_t **wids = NULL; int32_t *wlen = NULL;
+  if (windows_path && *windows_path) {
+    FILE *wf = fopen(windows_path, "rb");
+    if (!wf) { snprintf(out, outlen, "{\"error\":\"no windows file\"}"); return 1; }
+    int32_t c; fread(&c, 4, 1, wf); nwin = c;
+    wids = calloc(nwin, sizeof(int64_t *)); wlen = calloc(nwin, sizeof(int32_t));
+    for (int w = 0; w < nwin; w++) { fread(&wlen[w], 4, 1, wf); wids[w] = malloc(8 * wlen[w]); fread(wids[w], 8, wlen[w], wf); }
+    fclose(wf);
+  }
   char times[512] = ""; size_t tl = 0; double best = 1e9;
   for (int r = 0; r < runs; r++) {
     OrtValue *outputs[8] = {0};
     t = now();
+    if (nwin) {
+      for (int w = 0; w < nwin; w++) {
+        int64_t sh[2] = {1, wlen[w]}; OrtValue *wi[8] = {0}; OrtValue *wo[8] = {0};
+        int64_t *wb[8];
+        for (size_t i = 0; i < nin; i++) {
+          wb[i] = malloc(8 * wlen[w]);
+          for (int j = 0; j < wlen[w]; j++) wb[i][j] = strstr(in_names[i], "mask") ? 1 : strstr(in_names[i], "type") ? 0 : wids[w][j];
+          CHECK(api->CreateTensorWithDataAsOrtValue(mem, wb[i], 8 * wlen[w], sh, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &wi[i]));
+        }
+        CHECK(api->Run(sess, NULL, (const char *const *)in_names, (const OrtValue *const *)wi, nin,
+                       (const char *const *)out_names, nout, wo));
+        for (size_t i = 0; i < nin; i++) { api->ReleaseValue(wi[i]); free(wb[i]); }
+        for (size_t i = 0; i < nout; i++) api->ReleaseValue(wo[i]);
+      }
+    } else {
     CHECK(api->Run(sess, NULL, (const char *const *)in_names, (const OrtValue *const *)inputs, nin,
                    (const char *const *)out_names, nout, outputs));
+    }
     double dt = now() - t; if (dt < best) best = dt;
     tl += snprintf(times + tl, sizeof(times) - tl, "%s%.3f", r ? "," : "", dt);
-    if (r == runs - 1 && dump_path && *dump_path) {
+    if (!nwin && r == runs - 1 && dump_path && *dump_path) {
       float *data; CHECK(api->GetTensorMutableData(outputs[0], (void **)&data));
       OrtTensorTypeAndShapeInfo *info; CHECK(api->GetTensorTypeAndShape(outputs[0], &info));
       size_t count; CHECK(api->GetTensorShapeElementCount(info, &count));
@@ -67,9 +93,9 @@ int ort_bench(const char *model_path, const char *ep, const char *fmt, const cha
   }
   double f1, p1; footprint(&f1, &p1);
   snprintf(out, outlen,
-           "{\"model\":\"%s\",\"ep\":\"%s\",\"format\":\"%s\",\"units\":\"%s\",\"seq\":%d,\"threads\":%d,\"load_s\":%.2f,"
+           "{\"windows\":%d,\"model\":\"%s\",\"ep\":\"%s\",\"format\":\"%s\",\"units\":\"%s\",\"seq\":%d,\"threads\":%d,\"load_s\":%.2f,"
            "\"runs_s\":[%s],\"best_s\":%.3f,\"footprint_start_mb\":%.0f,\"footprint_end_mb\":%.0f,\"footprint_peak_mb\":%.0f}",
-           strrchr(model_path, '/') ? strrchr(model_path, '/') + 1 : model_path, ep, fmt, units, seq, threads, load,
+           nwin, strrchr(model_path, '/') ? strrchr(model_path, '/') + 1 : model_path, ep, fmt, units, seq, threads, load,
            times, best, f0, f1, p1);
   return 0;
 }

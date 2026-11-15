@@ -1,3 +1,5 @@
 target/
 target-fusion/
 ios-ortbench/build/
+bin/
+burn-token/target/
