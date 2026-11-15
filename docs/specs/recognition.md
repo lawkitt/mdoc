@@ -53,14 +53,19 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   that asked, and a stale continuation is rejected by its generation.
 - Invalid or obsolete stored settings show a notice and need an explicit
   reset; a removed model is never silently substituted.
-- A failed settings save keeps the previous values.
+- Settings persist atomically; a failed save keeps the previous values.
 - Each model's last check is stored as file paths relative to the model root,
   sizes, modification times and a status kind, never content or error text.
+- Settings shows a stored check at once and re-checks quietly, changing a row
+  only on a difference; "Checking…" shows only for a row with no current
+  stored result.
 - Model compare runs on a captured snapshot, never on the working document,
   never changes defaults, and its exported report never holds mappings.
+- Model compare results stay in memory only, until the view closes.
 - Closing model compare cancels queued work and rejects late results.
-- Advanced defaults: OCR at 150 DPI (150, 200 or 300), minimum recognition
-  confidence 0, detection threshold 0.5.
+- Advanced settings: OCR at 150, 200 or 300 DPI (default 150); minimum
+  recognition confidence 0–1 (default 0); detection threshold 0–1 (default
+  0.5).
 
 ## OCR languages
 
@@ -168,7 +173,7 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - Categories to detect are all on by default and stored per case; the
   Settings list filters documents without a case and seeds each new case.
 - Unticking a category removes its unapplied proposals in the affected open
-  documents; applied replacements stay.
+  documents; applied replacements and manual additions stay.
 
 ## Name forms and linking
 
@@ -202,12 +207,12 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 ## Merge hint
 
-- Signals: a short form with one candidate; wordings that differ only in
+- Signals: a short form with one or more candidates; wordings that differ only in
   case, whitespace or punctuation; an edit distance of 1 between names of 6+
   characters; reversed Russian name order.
 - Between two digits a separator difference still counts as a signal, except
   in phone, bank, tax and ID numbers.
-- Never signals: a short form with two or more candidates, a different title
+- Never signals: a different title
   ("Mr" / "Ms Bennett"), Latin/Cyrillic transliteration.
 - The hint is one line under the shorter (or later) identity, "Looks like
   Maya Bennett · Merge ×", with no score.
@@ -246,7 +251,8 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - A `pass` fixture never moves back, and no fixture is deleted or loosened,
   without the maintainer.
 - The pipeline runs on committed snapshots on any platform; the Mac is the
-  reference platform that records them.
+  reference platform is hosted Windows, which records them; the Mac fetches
+  them from CI.
 - The detection gate reruns the model, fails on a stale snapshot and asserts
   every fixture's spans.
 - A fix adds no false hit on a negative fixture.

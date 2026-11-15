@@ -25,7 +25,8 @@ look suspicious in a privacy app.
   mean "may ask", never "denied". The per-query UI flag does not prevent the
   dialog.
 - **Migration on Unlock.** A Protected build with no protected key copies the
-  login-keychain key after one dialog, then deletes the login item with
+  login-keychain key, read quietly or, only if that would ask, after the
+  explainer and one dialog; it then deletes the login item with
   dialogs off, or leaves it unread if deleting would ask.
 - **Signing** embeds the profile only when `APPLE_PROVISIONING_PROFILE` is set,
   adding the application-identifier, team-identifier and access-group

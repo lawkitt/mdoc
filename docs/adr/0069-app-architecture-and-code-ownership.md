@@ -4,9 +4,8 @@ Status: Accepted, 2026-10-25.
 
 ## Decision
 
-- **Goal:** a feature change touches one obvious place, builds and tests stay
-  fast, and every state machine has an explicit owner. File size alone never
-  justifies a split.
+- **Goal:** a feature change touches one obvious place and every state
+  machine has an explicit owner. File size alone never justifies a split.
 - **Crates by dependency weight.** A new workspace crate is allowed when it
   gives a GUI-free boundary; never a service container, trait hierarchy, DI
   or framework.
@@ -35,8 +34,9 @@ Status: Accepted, 2026-10-25.
   `TabEvent`s grouped by owner; the window commands a document through its
   methods. A document holds no handle to its window.
 - **Tests by owner.** Plain owners get GPUI-free unit tests beside them;
-  headless flow tests cover owner interplay under `<owner>/tests/`; shared
-  fixtures live in one `test_support` module.
+  headless flow tests cover owner interplay under `<owner>/tests/`, and
+  become unit tests only when they check one transition; shared fixtures live
+  in one `test_support` module.
 
 ## Invariants
 
@@ -47,7 +47,7 @@ Status: Accepted, 2026-10-25.
 - A refactor preserves behaviour: no user-observable change, and tests are
   adapted, never removed.
 - A refactor touching render or state paths runs
-  `MDOC_PERF_PROFILE=release just perf` before and after and raises no
+  `MDOC_PERF_PROFILE=release just perf` before and after, raising no
   ceiling, and compares `just headless-renders` pixel for pixel, explaining
   every difference.
 

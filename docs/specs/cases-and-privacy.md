@@ -36,6 +36,8 @@ in [CONTEXT.md](../../CONTEXT.md).
 - The primary wording is the longest; a saved or kept primary wins only
   among equally long ones.
 - Apply is explicit and is one undoable edit; Keep changes no text.
+- Each correction (rename, category, assignment, merge, separation) and each
+  Keep is one step in the editor's undo history.
 - Keep original on an applied mention reverts it to the immediate
   pre-replacement text and records Keep; Undo takes it back to proposed.
 - A stale revision or offset never replaces text; the operation is refused.
@@ -105,6 +107,8 @@ in [CONTEXT.md](../../CONTEXT.md).
 
 - Read the key only for an action that needs it: Save as Case (including
   from a close or quit prompt), opening a folder as a case, and Unlock.
+- Unlock also discovers saved cases when an older session has no cached case
+  metadata.
 - Moving a tab into a case needs a loaded case, so it never opens the key.
 - Nothing asks at launch: launch reads the key with dialogs off, and any
   quiet error leaves cases locked.
@@ -144,9 +148,10 @@ in [CONTEXT.md](../../CONTEXT.md).
 - Only cases are kept apart for Dev builds; settings, the session and models
   are shared, and session case members a Dev build cannot find are missing,
   not locked.
-- A Protected build with no protected key migrates on the next Unlock: one
-  dialog, the key is copied to the data protection keychain, and the login
-  item is deleted with dialogs off or left unread if deleting would ask.
+- A Protected build with no protected key migrates on the next Unlock: the
+  login-keychain key is read quietly, with the explainer and one dialog only if
+  that read would ask; it is copied to the data protection keychain, and the
+  login item is deleted with dialogs off or left unread if deleting would ask.
 - `scripts/keychain-launch-check.sh` runs on a clean macOS user account with
   the signed release before every release that touches the case key.
 
@@ -191,6 +196,8 @@ in [CONTEXT.md](../../CONTEXT.md).
   aliases are applied or a reply exists.
 - The reply box keeps exactly what was pasted or typed: no Markdown paste or
   Enter rules.
+- The reply box offers Copy reply (the restored text) and Open as tab (a
+  restore tab, as Paste AI Reply makes).
 - The Reply view is read-only and follows mapping changes live.
 - The summary counts distinct identities restored and distinct unknown
   tokens; Next unrecognized visits every occurrence.

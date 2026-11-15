@@ -44,14 +44,14 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
   open path; a sidebar drop inserts at its line and never replaces a
   document.
 - A dropped folder shows the folder sheet before anything opens: its
-  supported top-level files, all ticked, with subfolders skipped.
-- One folder drop opens at most 20 new tabs; loose files are not capped.
+  supported top-level files, subfolders skipped.
+- The sheet ticks only the first 20 new files by name and refuses more;
+  already open files stay ticked and don't count. Loose files are not capped.
 - The folder sheet's Open files never reads the case key; Open as case and
   Add to "X" read it only after the click.
 - If the case key can't be had, the folder's files open without a case and a
   notice says so.
-- The DOCX preview is approximate; that shows as an ⓘ beside the Source
-  name, never as a notice.
+- The DOCX preview's approximation shows as an ⓘ, never a notice.
 - In the dark theme PDF and DOCX pages are recoloured to the theme
   (`PageTone`), and the Source header toggle restores original paper.
 
@@ -64,9 +64,7 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - ⇧Enter is a CommonMark hard break (`\` then newline), hidden away from the
   caret.
 - ⌫ or ⌦ at a paragraph break removes it in one press, as its own undo step.
-- Opening a document never rewrites its newlines.
-- Typing Enter and ⇧Enter in prose, lists, quotes and tables must render in
-  GFM as the editor shows it (`input::tests`).
+- Read-only panes ignore Enter and ⇧Enter.
 - The editor renders standard Markdown only: wiki links, `#tags`,
   `key:: value` properties, block references and embeds show as plain text.
 - `$…$` math is ordinary text the caret enters; inline image clicks behave
@@ -97,7 +95,9 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
   formatting is skipped and counted.
 - Replace never edits text inside or overlapping an applied alias.
 - One undo reverts a whole Replace all, which searches again first if the
-  document changed.
+  document changed; Undo and Redo in the find fields act on the document.
+- Whole word treats Unicode letters, digits and `_` as word characters, and
+  a typographic apostrophe inside a word as part of it.
 - mdoc's find index is its own; never copy Zed (GPL) source into the MIT
   crates.
 - Spelling never runs on the UI thread, never changes text unless the user
@@ -134,35 +134,29 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - Zoom scales the Markdown column's text, 50–200% in 5% steps, per
   document, never saved.
 - Nothing rests over the text: floating controls hide or move clear of it.
-- Notices that need attention float as toasts and are counted by the bell;
-  closing the popover keeps every notice and the count.
+- Notices float as toasts counted by the bell; closing the popover clears
+  neither.
 - Expected limitations are not notices.
 - macOS menus follow the standard layout, in `src/menus.rs`.
-- Every menu item reaches a handler in a document tab
-  (`every_menu_item_reaches_a_handler_in_a_document`).
 - Edit-menu items use the OS actions, so they reach native panels; in a
   text field they change only that field.
 - Every user-facing binding is a row in `src/shortcuts.rs`; menus, the
   palette, tooltips and the shortcuts sheet read their keys from it.
-- A test fails if a bound action is neither in the shortcut table nor named
-  plumbing, or if a crate's keymap and the table disagree.
 - A tooltip names its key from the table; the accessible name stays the
   bare label.
 
 ## Review
 
-- Ticking or unticking never changes document text; only Apply and undo do.
+- Ticking never changes document text; only Apply, unticking an applied
+  entity and undo do.
 - Unticking an applied entity undoes it and records Keep; ticking a kept
   mention proposes it again, alone.
 - Apply N (⌘↩) applies every proposal as one undo step and closes the popup.
 - A click in the text always places the caret.
-- Proposed mentions get a light category tint with a category underline;
-  applied ones a blue chip; kept ones a dotted muted underline while
-  reviewing.
+- Proposed mentions get a light category tint and underline, applied ones a
+  blue chip, kept ones a dotted muted underline.
 - Category colour never encodes state; fill and chip do.
 - Blue means only "applied".
-- Apply and Undo animate the chip (gold ↔ blue, 700 ms); reduced motion
-  disables the fades.
 - The responsibility line "Review for missed identifiers before sharing."
   stays beside Apply; no surface claims the text is safe to share.
 - The Replacements panel lists category groups in the category menu's fixed
@@ -182,7 +176,10 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - The popup's scope is This one | All N, All by default; no key changes the
   segment except opening another entity, which resets it to All.
 - Enter in the popup applies in the selected scope and moves to the next
-  proposal; on an applied or kept mention it does nothing.
+  proposal; on an applied or kept mention it does nothing; on a fresh manual
+  addition it applies and stays, so Cancel stays offered.
+- While a manual addition and an immediate Apply are the latest steps, one
+  Cancel undoes both.
 - The popup leaves the mention's line and the line below visible, and flips
   above under the same rule.
 - Typing an alias is a draft; choosing or confirming it records the
@@ -216,7 +213,7 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 - Settings is a modal overlay with categories (General, Detection,
   Recognition, Spelling, Cases, About); a click outside closes it.
-- Every setting saves on change; numbers save on Enter or blur, and an
+- Every setting saves on change, atomically; numbers save on Enter or blur, and an
   invalid value keeps the last good one with an inline error.
 - A failed save restores the previous value and says so.
 - Each category's Reset resets only that category.
@@ -225,6 +222,7 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - An action that can't run is left out, never dimmed.
 - On macOS, Light or Dark also sets the app's `NSAppearance`; System clears
   it.
+- Automatic update checks are on by default; Include pre-releases is off.
 - The update check runs once at launch and on Check now, never in the
   background or on the UI thread, and never blocks startup.
 - Update check failures are silent; offline is "no update".
@@ -261,7 +259,9 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 - With "Show mdoc in the menu bar" on (the default on macOS), closing the
   last window hides it and keeps tabs, undo, mappings and unsaved text; ⌘Q
-  or the shelf's Quit really quits.
+  or the shelf's Quit really quits. With it off, the last window quits.
+- The first time the last window closes with it on, a one-time note says mdoc
+  is still in the menu bar and offers Quit when windows close (turns it off).
 - mdoc never restarts unasked; Restart to update goes through the ordinary
   quit and its prompts.
 - The shelf lists at most 8 documents: open tabs with applied aliases, then
@@ -296,7 +296,8 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - Tab moves through controls in window order across regions; in the editor
   Tab indents and F6 leaves.
 - The popup, menus and dialogs keep Tab inside them; modal surfaces make F6
-  do nothing.
+  do nothing, stop window shortcuts and clicks behind them, and return focus
+  on close.
 - A menu opened by keyboard takes focus, and Esc returns it to the opener.
 - One focus ring (`ui::focus_ring`): a 2 px accent ring outside the control,
   never a fill.
@@ -306,8 +307,6 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
   default right; on Windows default first, Cancel last.
 - The default button is filled, and a scrim dims the window behind every
   modal dialog.
-- Settings is a dialog named "Settings"; model choices are radio groups;
-  close buttons say "Close <tab title>".
 - The find counter and the popup's position are polite live regions read in
   words ("Match 14 of 16").
 - Files opened from Finder or Explorer while a dialog is up open once it is

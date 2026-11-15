@@ -30,7 +30,8 @@ Status: Accepted, 2026-10-10.
   word splitting, choosing the language by script, skip rules, dictionaries
   and the per-line cache. The host supplies spell exclusions (code, link
   targets, raw HTML, aliases and PII spans) from `mdoc-editor` and
-  `mdoc-pii`. The mixed-script check still runs inside PII spans.
+  `mdoc-pii`. The mixed-script check still runs inside PII spans, and its
+  suggestions are single-script.
 
 ## Invariants
 

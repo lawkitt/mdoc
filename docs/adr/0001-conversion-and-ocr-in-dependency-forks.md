@@ -29,11 +29,13 @@ Folds: 0007, 0008, 0009.
 - A fork update is adopted only after the fork's checks with OCR enabled,
   mdoc's checks, and a before/after comparison on the controlled EN/RU
   fixtures and the [public corpus](../../tests/fixtures/ocr-upstream/README.md).
+- A structural extraction change needs evidence and its own review.
 - Unexplained text loss, reading-order errors or invariant regressions block
   adoption; a build passing never validates an extraction change.
 - macOS and Windows OCR smoke checks pass; an unavailable platform check is a
   stated blocker, never inferred acceptance.
-- Ports preserve ordinary tables, revision semantics and the partial-PDF API,
+- Ports preserve ordinary tables, revision semantics, unknown-symbol
+  behaviour and the partial-PDF API,
   and every changed corpus output is explained.
 - Editor ports preserve caret and selection, undo, source offsets, search
   geometry, diagnostic remapping and pseudonymization protections, and never

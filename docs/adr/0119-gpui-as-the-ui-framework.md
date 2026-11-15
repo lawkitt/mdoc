@@ -22,6 +22,7 @@ Status: Accepted, 2026-11-15.
 
 - One GPUI type family across every desktop crate.
 - An upgrade keeps behaviour on macOS and Windows and the windowless
-  headless renders working on both.
+  headless renders and the offscreen harness's temporary profile working on
+  both.
 
 References: [GPUI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/gpui-grill-2026-11-14.md).
