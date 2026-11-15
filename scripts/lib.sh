@@ -269,6 +269,21 @@ needed_jobs() { # areas
 }
 
 # The areas between two commits, by this checkout's table.
+# Whether the files on stdin (NUL-separated) are a docs-only change by the
+# area table given as text: 1 to 299 of them (GitHub's compare and commit
+# file lists stop at 300) and none in an area. A merge-queue commit whose own
+# change, against its one parent (the entry ahead, or main), is docs only
+# needs no job (scripts/ci/README.md, "Docs-only changes"): the entry ahead
+# passes on its own commit before either merges (the ruleset's ALLGREEN).
+# ci-areas.sh --queue, merge-gate.sh and queue-runner.sh read it alike.
+docs_only() { # table-text
+  local files n
+  files=$(tr '\0' '\n')
+  n=$(grep -c . <<<"$files") || n=0
+  [ "$n" -gt 0 ] && [ "$n" -lt 300 ] || return 1
+  [ -z "$(grep . <<<"$files" | tr '\n' '\0' | changed_areas "$1")" ]
+}
+
 diff_areas() { # from to
   local table
   table=$(cat scripts/ci/ci-areas.txt)

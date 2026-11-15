@@ -217,11 +217,16 @@ mark_done() {
 }
 
 # The areas a queue commit brings onto main: merge-base(main, sha)..sha, by
-# the commit's own area table (every area when it has none).
+# the commit's own area table (every area when it has none); none when its
+# own change, against its one parent, is docs only (docs_only in lib.sh).
 commit_areas() { # sha merge-base
   local table
   if ! table=$(g show "$1:scripts/ci/ci-areas.txt" 2>/dev/null); then
     echo "$every_area"
+    return 0
+  fi
+  if [ "$2" != "$1" ] && [ "$(g rev-list --parents -n 1 "$1" | wc -w)" -eq 2 ] &&
+    g diff --no-renames --name-only -z "$1^1" "$1" | docs_only "$table"; then
     return 0
   fi
   g diff --no-renames --name-only -z "$2" "$1" | changed_areas "$table"

@@ -14,6 +14,9 @@ what it does in detail.
   against its merge base with `main` and starts the hosted jobs its areas
   need. The PC's runners and `merge-gate.sh` read the same diff with the
   commit's own `ci-areas.txt` (`main`'s when GitHub cannot give it).
+- A commit whose own change against its one parent is docs only
+  (`docs_only` in `../lib.sh`) needs no job, whatever the entries ahead
+  bring: the queue is `ALLGREEN`, so each entry passes on its own commit.
 - `merge-gate.yml` (job `merge-gate pass`) runs `main`'s `merge-gate.sh`,
   never PR code, after each run and status, from `merge-gate-recheck.yml`,
   and every 5 minutes (GitHub runs that schedule rarely; nothing relies on
@@ -54,13 +57,14 @@ what it does in detail.
 
 ## Docs-only changes
 
-Decided 2026-11-15 (the docs-only CI grill), recorded here instead of in an
-ADR since each part is one table line or one script rule to undo.
+Decided 2026-11-15 (the docs-only CI grill); no ADR, since each part is one
+table line or one script rule to undo.
 
 - A change of only `none` files (Markdown, `docs/`) runs no job but
   `lint (ubuntu)`, which holds docs-lint: word budgets, the ADR index,
   `Folds:` lines and the `changes/` fragments as `just release` reads them.
-  Its `merge-gate` says "Docs only".
+  The fast jobs skip their steps; a queue entry needs nothing, even behind
+  a code entry, but still waits for it. `merge-gate` says "Docs only".
 - Markdown that tests read is not docs: the fixture folders
   (`tests/fixtures/**`, `crates/**/fixtures/**`) precede the `none` lines,
   each with its folder's area, as the recognition fixtures did since
@@ -128,7 +132,8 @@ night red. Run it with `gh workflow run nightly.yml --repo lawkitt/mdoc`
   PR code have read-only tokens.
 - Shadow branches (`ci-shadow/main/*`) run as queue commits without merging.
   Their commit subjects end "(#N)" so the group is not taken for
-  third-party code.
+  third-party code. A docs-only top commit runs nothing, so a full-suite
+  trial puts code and docs in one commit.
 
 ## The PC's runners
 

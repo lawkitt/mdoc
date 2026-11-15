@@ -434,7 +434,7 @@ base=$(git_ rev-parse HEAD)
 qc() { # pr behavior [file...]
   local n=$1 behavior=$2 f head
   shift 2
-  git_ checkout --quiet -B queue "$base"
+  git_ checkout --quiet -B queue "${from:-$base}"
   [ "$behavior" = docs ] || echo "$behavior" >"$tmp/work/${at:-ci-behavior}"
   for f in "$@"; do echo "pr $n" >>"$tmp/work/$f"; done
   git_ add -A
@@ -448,6 +448,9 @@ qc() { # pr behavior [file...]
 fail=$(qc 7 fail src/lib.rs)
 pass=$(qc 1 pass src/lib.rs)
 docs=$(qc 2 docs README.md docs/b.md)
+# Docs on top of a code entry: its own change is docs only, so no build,
+# though what it brings onto main is code.
+stacked=$(from=$pass qc 16 docs docs/c.md)
 kotlin=$(at=apps/android/ci-behavior qc 3 kotlin apps/android/App.kt)
 fork=$(qc 4 fork src/lib.rs)
 bot=$(qc 5 bot src/lib.rs)
@@ -552,6 +555,7 @@ check "the log and summary are kept" eval '[ -s "$wout/${pass:0:7}/log.txt" ] &&
 check "a passing job's summary has no log excerpt" not grep -q "^--- log.txt" "$wout/${pass:0:7}/summary.txt"
 check "a docs-only commit passes without a build" has "$docs" "$W" "success	Docs only	"
 check "and is never pending" not eval 'posts "$docs" "$W" | grep -q pending'
+check "so does docs on top of a code entry" has "$stacked" "$W" "success	Docs only	"
 check "an Android-only commit leaves ci/windows not affected" has "$kotlin" "$W" "success	Not affected: no core or desktop change	"
 check "without a build" [ -z "$(ran kotlin)" ]
 check "a CI-only commit leaves ci/windows not affected" has "$gate" "$W" "success	Not affected: no core or desktop change	"
