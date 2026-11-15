@@ -190,8 +190,9 @@ when it next moves (refactor grill Q25). Record:
 [Android grill](docs/design/android-grill-2026-10-31.md), whose
 Maintainer actions list the steps on the maintainer's side.
 
-2. **[Android] Feasibility spike.** `tools/android-spike` and
-   `scripts/android-spike-device.sh` on Test Lab phones at 6, 8 and 12 GB
+2. **[Android] Feasibility spike.** The spike harness (deleted in the
+   docs cleanup; restore `tools/android-spike` and
+   `scripts/android-spike-device.sh` from git history) on Test Lab phones at 6, 8 and 12 GB
    or more. *Measured 2026-10-31
    ([report](docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)):*
    memory, load, heat and OCR pass on all four phones, but FP16 on the CPU
@@ -274,9 +275,9 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
    10 minutes once `main-caches.yml`'s caches make a warm shard fit; a
    nightly full run of every hosted job, the quarantined tier included,
    opens an issue when red; cargo-deny advisories move to
-   `Cargo.lock` PRs and a daily run that opens an issue; the local CI
-   scripts (`local-ci.sh`, `local-ci-fallback.sh`, `local-ci-setup.ps1`)
-   go, their area checks kept. *Done when:* a
+   `Cargo.lock` PRs and a daily run that opens an issue (the local CI
+   scripts are gone; their area checks are `scripts/test-ci-areas.sh`).
+   *Done when:* a
    nightly drill with a broken fallback job opens an issue.
 
 15. **[CI] CI targets.** A measurement with `scripts/ci-stats.sh --since

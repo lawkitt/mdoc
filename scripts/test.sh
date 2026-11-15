@@ -6,8 +6,7 @@
 # doctests, which nextest does not run (ADR 0082). mdoc-detect's lib tests
 # run in one process instead, from the binary nextest built, so its rule pack
 # is built once and not in each test's process (ADR 0113). The script suites (release,
-# CI cache cleanup, local CI runner and its hosted fallback, the quarantine
-# list, the merge gate, the merge-queue runner) need no build and mostly wait on fakes and timers, so they run beside
+# CI cache cleanup, the area table, the quarantine list, the merge gate, the merge-queue runner) need no build and mostly wait on fakes and timers, so they run beside
 # the Rust tests instead of after them: about a minute off a Windows run
 # (#240). Each suite's output is printed after the Rust tests, in order; any
 # failure fails the run.
@@ -96,7 +95,7 @@ detect_lib() {
 
 doctests() { cargo test --doc --workspace --features headless-renders; }
 
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh test-ios-build-info.sh test-ios-release.sh test-ios-failed-tests.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-ci-areas.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh test-ios-build-info.sh test-ios-release.sh test-ios-failed-tests.sh)
 
 # Runs one tier's commands and exits with their status; nothing else runs.
 only() {

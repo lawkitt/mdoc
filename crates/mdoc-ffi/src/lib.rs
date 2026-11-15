@@ -6,10 +6,7 @@
 //! [`document_session`] (import and OCR, scan, review, Copy for AI and Share
 //! text, saving into a case) and [`setup`] (models that fit the device,
 //! verifying and installing downloads). [`editor`] exports the stateless
-//! editing rules edit mode calls (ADR 0109). [`spike`] holds the feasibility
-//! measurements and [`memory`] the footprint they report; they reach the
-//! bindings only with the `spike` feature, which the `tools/` harnesses
-//! turn on and the apps leave off.
+//! editing rules edit mode calls (ADR 0109).
 uniffi::setup_scaffolding!();
 
 pub mod document_session;
@@ -17,9 +14,7 @@ pub mod editor;
 mod error;
 pub mod library;
 pub mod markdown;
-pub mod memory;
 pub mod setup;
-pub mod spike;
 
 pub use document_session::DocumentSession;
 pub use error::{CoreError, ReviewError};
