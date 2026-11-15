@@ -106,7 +106,7 @@ routes "ios android" apps/ios/a.swift apps/android/b.kt
 routes recognition tests/fixtures/recognition/en/claim/x.md
 routes recognition tests/fixtures/recognition/en/claim/x.model.json
 routes "" tests/fixtures/pseudonymization/README.md
-routes "" README.md docs/adr/0091-mobile-ci-and-releases.md LICENSE
+routes "" README.md docs/adr/0095-ci-on-a-merge-queue.md LICENSE
 routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md
 routes "ios" apps/ios/README.md apps/ios/a.swift
 check "no files runs every area" [ "$(changed_areas "$table" </dev/null)" = "core desktop recognition ios android ci" ]

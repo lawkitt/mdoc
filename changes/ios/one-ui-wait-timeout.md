@@ -4,4 +4,4 @@
   away keep their shorter ones, and a look for something that may rightly
   never show keeps 5 seconds as `MdocUITest.probeTimeout`. The unused
   `MDOC_UI_RULES_FIND_NAMES` launch flag is gone
-  ([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
+  ([ADR 0113](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).

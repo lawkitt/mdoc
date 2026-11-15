@@ -11,9 +11,11 @@
 # `Timer(timeInterval:` or `Timer(fire:`, `Timer.publish`, `CountDownTimer`,
 # and a run loop's `run(until:`. A call passes when its line, or the `//`
 # comment lines just above it, carry a marker that names its reason and an
-# issue, or for a deliberate on-screen duration the ADR that defines it:
+# issue, or for a deliberate on-screen duration the mobile spec (or, in older
+# code, the ADR) that defines it:
 #
 #   // timing: iOS 26.2 hangs when the field takes focus too early (#634)
+#   // timing: how long a toast stays (docs/specs/mobile.md)
 #   // timing: how long a toast stays (ADR 0099)
 #
 # Test code and UI tests live outside those folders, so they are exempt.
@@ -72,7 +74,7 @@ echo "$files" | tr '\n' '\0' | xargs -0 awk '
       code ~ /Delayed[ \t]*\(/ || code ~ /afterDelay:/ || code ~ /schedule[ \t]*\([ \t]*after:/ ||
       code ~ /(^|[^A-Za-z0-9_])Timer[ \t]*\([ \t]*(timeInterval|fire):/ || code ~ /Timer\.publish[ \t]*\(/ ||
       code ~ /\.run[ \t]*\([ \t]*(mode:[^)]*)?until:/) {
-      if ((line above) !~ /timing:.*(#[0-9]+|ADR [0-9][0-9][0-9][0-9])/) {
+      if ((line above) !~ /timing:.*(#[0-9]+|ADR [0-9][0-9][0-9][0-9]|\(docs\/specs\/mobile\.md\))/) {
         printf "%s:%d: %s\n", FILENAME, FNR, trimmed
         bad = 1
       }
@@ -81,6 +83,6 @@ echo "$files" | tr '\n' '\0' | xargs -0 awk '
   }
   END { exit bad }
 ' || {
-  echo "error: a fixed delay in app code (ADR 0104): wait for the event instead, or mark the line \`// timing: <why> (#<issue>)\` (a deliberate on-screen duration: \`(ADR <n>)\`)" >&2
+  echo "error: a fixed delay in app code (ADR 0104): wait for the event instead, or mark the line \`// timing: <why> (#<issue>)\` (a deliberate on-screen duration: \`(docs/specs/mobile.md)\`)" >&2
   exit 1
 }

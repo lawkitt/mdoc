@@ -28,8 +28,7 @@ Simulator builds exclude x86_64.
 is the commit count up to HEAD and `MdocCoreCommit` is HEAD. A shallow clone
 warns, and fails with `MDOC_REQUIRE_FULL_HISTORY=1`, which every TestFlight
 build sets. A TestFlight build is a tagged `main`
-commit ([ADR 0097](../../docs/adr/0097-ios-testflight-beta.md),
-[release run](../../docs/release-run.md#ios-beta-build)). The app, the
+commit ([iOS betas](../../docs/specs/release.md#ios-betas)). The app, the
 Restore extension and both embedded frameworks carry a
 `PrivacyInfo.xcprivacy` (no tracking, no collected data, the required-reason
 APIs they call); `Info.plist` answers export compliance

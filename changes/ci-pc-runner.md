@@ -4,4 +4,4 @@
   a passing Windows job drops its renders so 7 days of logs fit, the
   runner keeps the tailnet log page served and reports when it is not, and
   the Android CI job builds the core for the emulator's x86_64 only
-  ([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md), #614).
+  ([ADR 0100](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0100-ci-reliability-after-the-cutover.md), #614).

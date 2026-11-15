@@ -43,7 +43,7 @@ Play's rules.
 - **Real devices:** the emulator, Firebase Test Lab phones (public fixtures
   only) and a borrowed phone.
 - **Distribution:** application ID `io.github.lawkitt.mdoc`, Google Play
-  (Play App Signing, [ADR 0091](0091-mobile-ci-and-releases.md)) and an APK
+  (Play App Signing, [ADR 0091](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0091-mobile-ci-and-releases.md)) and an APK
   on GitHub Releases. Play Data safety: no data collected.
 
 ## Invariants

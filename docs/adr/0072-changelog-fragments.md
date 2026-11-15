@@ -1,44 +1,40 @@
 # Changelog fragments
 
-Status: Accepted, 2026-10-28. Amends [ADR 0059](0059-roadmap-after-0-1-0.md)
-("Done means deleted": where the CHANGELOG entry goes). Amended by
-[ADR 0091](0091-mobile-ci-and-releases.md): iOS and Android fragments go in
-`changes/ios/` and `changes/android/` and feed each app's own CHANGELOG;
-`just release` leaves them.
+Status: Accepted, 2026-10-28.
 
 ## Problem
 
 Every change added its entry at the top of `## Unreleased` in CHANGELOG.md.
-PRs that are open at the same time, like the 0.2.1 fixes (#184–#191),
-conflict on those same lines, and each merge forces the next PR to rebase
-for a text-only conflict.
+PRs open at the same time conflicted on those lines, and each merge forced
+the next PR to rebase for a text-only conflict.
 
 ## Decision
 
 - **One fragment per change.** The commit that finishes a change adds
-  `changes/<slug>.md` instead of editing CHANGELOG.md. The slug is short and
-  unique (the branch name or the issue, such as `close-prompt` or
-  `issue-171`). The file holds that change's CHANGELOG entry as it will
-  read there: one `- **Title.** text` bullet, links relative to the
-  repository root. `changes/README.md` describes the format and is never a
-  fragment.
-- **`just release` joins them.** Every release, pre-releases included, puts
-  the fragments at the top of `## Unreleased`, newest merge first like the
-  hand-written sections, separated by blank lines, deletes them, and commits
-  the result in `release: v…`. A stable release then names the section as
-  before ([ADR 0037](0037-ci-and-release-pipeline.md)). Merge order is the
-  order in which commits on `main`'s first-parent history added each file; a
-  fragment no such commit added goes below the others, by name.
+  `changes/<slug>.md` instead of editing CHANGELOG.md; an iOS or Android app
+  change adds `changes/ios/<slug>.md` or `changes/android/<slug>.md`. The
+  slug is short and unique (the branch or the issue). The file holds the
+  entry as it will read: one `- **Title.** text` bullet, links relative to
+  the repository root. `changes/README.md` describes the format and is never
+  a fragment.
+- **`just release` joins the top-level fragments.** Every desktop release,
+  pre-releases included, puts them at the top of `## Unreleased`, newest
+  merge first, deletes them and commits the result in `release: v…`. Merge
+  order is the order in which commits on `main`'s first-parent history added
+  each file; a fragment no such commit added goes last, by name.
+- **App fragments join their app's changelog** (`apps/ios/CHANGELOG.md`,
+  `apps/android/CHANGELOG.md`) at that app's release, with links rewritten
+  for the app's folder. A core change users see on several platforms gets a
+  fragment in each folder.
 - **A stable release needs an entry:** a fragment or text already under
   Unreleased.
-- **Hand edits stay allowed.** Fixing an entry after its release, or
-  rewording Unreleased before one, edits CHANGELOG.md directly.
+- **Hand edits stay allowed** for fixing a released entry or rewording
+  Unreleased.
 
 ## Consequences
 
 - Parallel PRs touch different files and no longer conflict on the
   CHANGELOG.
-- Between releases, Unreleased lives in `changes/`; CHANGELOG.md shows only
-  what the last release joined.
-- `scripts/test-release.sh` covers the join order, deletion and the stable
-  entry check.
+- Between releases, Unreleased lives in `changes/`.
+- `scripts/release/test-release.sh` covers the join order, deletion and the
+  stable entry check.

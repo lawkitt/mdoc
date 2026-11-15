@@ -6,4 +6,4 @@
   failure gets ADR 0112's same-test-elsewhere rule, and lists retried
   passes and the tests with two unrelated failures to quarantine. Unit,
   Rust, Android and script tests still never retry
-  ([ADR 0113](docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
+  ([ADR 0113](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).

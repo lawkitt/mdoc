@@ -110,7 +110,9 @@ try? await Task.sleep(for: .milliseconds(250)) // timing: the same bug (#634)
 // timing: how long a toast stays,
 // which the UI system sets (ADR 0099)
 try? await Task.sleep(for: .seconds(4))
-withAnimation(.easeOut.delay(0.2)) { shown = true } // timing: the hint fades in late (ADR 0101)'
+withAnimation(.easeOut.delay(0.2)) { shown = true } // timing: the hint fades in late (ADR 0101)
+// timing: the hint fades in late (docs/specs/mobile.md)
+withAnimation(.easeOut.delay(0.2)) { shown = true }'
 put marked apps/android/app/src/main/kotlin/Net.kt '    // timing: polls for a network (#697)
     Thread.sleep(2_000)'
 expect 0 marked
@@ -133,7 +135,7 @@ try await Task.sleep(for: .seconds(1))'
 expect 1 code
 grep -qF 'C.swift:2:' "$tmp/out" || fail "a marker on a line of code covered the next: $(cat "$tmp/out")"
 # A reference must be a number: no bare #, no three-digit ADR.
-for marker in '// timing: a bug (#)' '// timing: a duration (ADR 101)'; do
+for marker in '// timing: a bug (#)' '// timing: a duration (ADR 101)' '// timing: a duration (docs/specs/desktop.md)'; do
   tree badref
   put badref apps/ios/mdoc/F.swift "$marker
 try await Task.sleep(for: .seconds(1))"
