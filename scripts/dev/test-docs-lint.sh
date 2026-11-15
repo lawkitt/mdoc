@@ -221,6 +221,12 @@ expect 1 "CHANGELOG.md has no ## Unreleased section for changes/" "fragments wit
 rm "$tmp/repo/changes/desk_top-1.2.md"
 run --check
 expect 0 "docs-lint: ok" "app fragments alone need the desktop Unreleased section"
+# A dot-named fragment counts, as release.sh finds it, for its bullet and
+# for the Unreleased section.
+printf 'Hidden.\n' >"$tmp/repo/changes/.hidden.md"
+run --check
+expect 1 "changes/.hidden.md must start with a '- ' CHANGELOG bullet" "a dot-named fragment is skipped"
+expect 1 "CHANGELOG.md has no ## Unreleased section for changes/" "a dot-named fragment needs no Unreleased section"
 
 if [ "$failures" -ne 0 ]; then
   die "$failures docs-lint check(s) failed"

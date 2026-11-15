@@ -87,9 +87,12 @@ done <"$tmp/readmes"
 
 # Changelog fragments (ADR 0072), by release.sh's rules, so a bad one fails
 # here rather than at `just release`.
+# find, as release.sh does: a glob would miss a dot-named one.
 top=0
-for f in changes/*.md changes/ios/*.md changes/android/*.md; do
-  [ -f "$f" ] || continue
+for d in changes changes/ios changes/android; do
+  if [ -d "$d" ]; then find "$d" -maxdepth 1 -type f -name '*.md'; fi
+done | LC_ALL=C sort >"$tmp/fragments"
+while IFS= read -r f; do
   case "$f" in */README.md) continue ;; esac
   case "$f" in changes/*/*) ;; *) top=1 ;; esac
   name=${f##*/}
@@ -97,7 +100,7 @@ for f in changes/*.md changes/ios/*.md changes/android/*.md; do
     '' | *[!A-Za-z0-9._-]*) err "$f: name fragments with letters, digits, '.', '_' and '-'" ;;
   esac
   [ "$(head -c 2 "$f")" = '- ' ] || err "$f must start with a '- ' CHANGELOG bullet"
-done
+done <"$tmp/fragments"
 if [ "$top" = 1 ] && ! grep -q '^## Unreleased' CHANGELOG.md 2>/dev/null; then
   err "CHANGELOG.md has no ## Unreleased section for changes/"
 fi
