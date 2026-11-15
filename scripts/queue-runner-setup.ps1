@@ -7,11 +7,11 @@
 # E:\ci\queue-<job>\runner.env and registers a Task Scheduler task (at logon,
 # this user, no window), "mdoc queue CI <job>", that runs
 # `scripts/queue-runner.sh run` in Git Bash with QUEUE_CI_JOB=<job>. Results
-# go to E:\ci\out\queue-<job>, which the local CI web task ("mdoc local CI
-# web", scripts/local-ci-setup.ps1) already serves at /ci on the tailnet;
-# without that task this script registers its own ("mdoc queue CI web",
+# go to E:\ci\out\queue-<job>, which the retired local CI's web task ("mdoc
+# local CI web"), where one is still installed, already serves at /ci on the
+# tailnet; without that task this script registers its own ("mdoc queue CI web",
 # the same server, which also sets /ci again each time it starts; re-run
-# this after `local-ci-setup.ps1 -Uninstall`, which removes the local one).
+# this after removing the local one).
 # The installed runner updates itself from main when idle;
 # re-run this from an updated checkout to update it at once.
 # -Uninstall stops and removes the tasks (and this script's web task and
@@ -113,7 +113,7 @@ if ($localWeb) {
     $served = $null
     if ($localWeb.Actions[0].Arguments -match "--directory '([^']+)'") { $served = $Matches[1] }
     if ($served -ne $outArg) {
-        throw "'$localWebTaskName' serves $served, not ${outArg}: install with that task's -Root, or remove it first (local-ci-setup.ps1 -Uninstall)"
+        throw "'$localWebTaskName' serves $served, not ${outArg}: install with that task's -Root, or remove that task first"
     }
 }
 

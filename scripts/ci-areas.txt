@@ -4,7 +4,7 @@
 # the first line that matches it; a file no line matches is desktop.
 #
 #   none     no job runs: docs and files no build reads. These lines are
-#            ci.yml's paths-ignore list, word for word (scripts/test-local-ci.sh
+#            ci.yml's paths-ignore list, word for word (scripts/test-ci-areas.sh
 #            fails when they disagree), and come first, so a README under
 #            apps/ or crates/ is still docs. Only exceptions precede them:
 #            Markdown under tests/fixtures/ that a test reads (the recognition
@@ -44,8 +44,8 @@
 #
 # scripts/ci-areas.sh prints the areas a change touches (queue.yml's and
 # ci.yml's areas jobs run it); merge-gate.sh and the PC's queue-runner.sh
-# read a queue commit's own copy; local-ci.sh, mobile-check.sh and
-# android-check.sh read it too.
+# read a queue commit's own copy; mobile-check.sh and android-check.sh
+# read it too.
 
 recognition           tests/fixtures/recognition/**
 
@@ -58,7 +58,6 @@ none                  .github/workflows/actionlint.yml
 none                  .github/dependabot.yml
 
 ios                   apps/ios/**
-ios                   tools/ios-spike/**
 ios                   scripts/build-ios-core.sh
 ios                   scripts/ios-*.sh
 ios                   scripts/ios-*.swift
@@ -67,7 +66,6 @@ ios                   .github/workflows/ci-ios.yml
 ios                   .github/workflows/ios-release.yml
 
 android               apps/android/**
-android               tools/android-spike/**
 android               scripts/build-android-core.sh
 android               scripts/install-android-sdk.sh
 android               scripts/android-*.sh
@@ -106,23 +104,19 @@ core                  scripts/doctor.sh
 # The CI machinery (ADR 0100), after core so the table's own script stays
 # core. Their checks are lint (ubuntu), which runs on every commit, and the
 # script suites (ci/scripts); a workflow here runs on the PR or on main, not
-# in the queue. The retired local CI (ADR 0082) is here too.
+# in the queue.
 ci                    scripts/merge-gate.sh
 ci                    scripts/queue-runner.sh
 ci                    scripts/queue-runner-setup.ps1
 ci                    scripts/ci-*.sh
 ci                    scripts/deny-ci.sh
 ci                    scripts/nightly-issue.sh
-ci                    scripts/local-ci.sh
-ci                    scripts/local-ci-fallback.sh
-ci                    scripts/local-ci-setup.ps1
 ci                    scripts/test-merge-gate.sh
 ci                    scripts/test-queue-runner.sh
-ci                    scripts/test-local-ci.sh
-ci                    scripts/test-local-ci-fallback.sh
 ci                    scripts/test-ci-cache-cleanup.sh
 ci                    scripts/test-nightly.sh
 ci                    scripts/test-ci-stats.sh
+ci                    scripts/test-ci-areas.sh
 ci                    .github/workflows/ci.yml
 ci                    .github/workflows/ci-scripts.yml
 ci                    .github/workflows/main-caches.yml

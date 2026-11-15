@@ -20,7 +20,7 @@ on:
   push:
     branches: [main]
     # The `none` lines of scripts/ci-areas.txt, word for word: files no job
-    # reads (scripts/test-local-ci.sh fails when the two disagree).
+    # reads (scripts/test-ci-areas.sh fails when the two disagree).
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
