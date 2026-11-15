@@ -389,8 +389,8 @@ file-level **document session**.
 
 ## Releases and CI
 
-**Release commit**: the commit `just release` makes to set the version; its
-tag must match that version.
+**Release commit**: the commit `just release` makes to set the version, which
+its tag names.
 
 **Pre-release**: a version with a SemVer suffix such as `-rc.2`.
 
@@ -449,7 +449,8 @@ whether it works.
 **Area**: one of desktop, core, recognition, ios, android and ci, from
 `scripts/ci-areas.txt`; a change runs the jobs of the areas it touches.
 
-**Core change**: a change that touches the core area, so it runs every CI job.
+**Core change**: a change that touches the core area; its queue commit runs every
+CI job.
 
 **Android job**: the build of the Android core and app with its JVM and
 emulator tests (`ci/android`).
@@ -553,8 +554,8 @@ of the identity under review. Also "expanded bar".
 **State mark**: a mention's or identity's state as a round mark: dashed ring
 proposed, accent disc replaced, eye kept.
 
-**Hint line**: a one-line tip, at most one per document, gone once its gesture
-is used.
+**Hint line**: a one-line tip in the review bar or Identities about a
+gesture.
 
 **Drag-to-merge** (mobile Identities): dragging one name's row onto another's
 to make them one.
@@ -562,7 +563,7 @@ to make them one.
 **Focus** (mobile review): stepping limited to one identity or one category.
 
 **Mobile spec**: `docs/specs/mobile.md`, the current rules for both mobile
-apps; agents read it before mobile work.
+apps.
 
 **Sample document**: the short contract with made-up names behind "Try a
 sample", also the UI tests' fixture.
