@@ -5,8 +5,9 @@ name: CI
 # models, the OCR download) stay out of everyday CI; release.yml adds the OCR
 # smoke test to the test jobs through the `smoke-ocr` input.
 #
-# On PRs (ADR 0095): `lint (ubuntu)` and the fast tier, `fast (ubuntu)`,
-# and on a recognition-area PR the detection gate (`detection-head`, ADR
+# On PRs (ADR 0095): `lint (ubuntu)` and the fast tier, `fast (ubuntu)`
+# (whose jobs skip their work on a docs-only PR head), and on a
+# recognition-area PR the detection gate (`detection-head`, ADR
 # 0100); `merge-gate` (merge-gate.yml) reads them, and the merge queue runs the
 # full suite (queue.yml and the PC). Fork and bot (Dependabot) PRs also get
 # the full hosted matrix here, as do manual runs and release.yml's call; the
@@ -98,10 +99,9 @@ jobs:
       # mirror stalled on single packages for hours, on both attempts. A third
       # attempt goes to kernel.org's mirror over HTTPS: on 2026-11-11 the
       # runners reached neither Ubuntu host for over an hour.
-      - &linux-deps
-        name: Install Linux build deps
+      - name: Install Linux build deps
         timeout-minutes: 8
-        run: |
+        run: &linux-deps |
           for attempt in 1 2 3; do
             if sudo timeout 60 apt-get update &&
               sudo timeout 80 apt-get install -y -o DPkg::Lock::Timeout=20 \
@@ -144,6 +144,12 @@ jobs:
   # commit. The mdoc-ffi check needs macOS (iOS targets, the NDK's darwin
   # toolchain), so it runs in ci/macos.
   #
+  # A docs-only PR head (no area in scripts/ci/ci-areas.txt) skips both
+  # fast jobs' work, since merge-gate says "Docs only" without reading them;
+  # `lint (ubuntu)` still runs docs-lint. The `docs-only` step decides it
+  # from the merge commit and its base, as the areas job does; anything but
+  # a PR, or a diff it cannot read, runs the tier.
+  #
   # The job id stays `fast-linux`: rust-cache keys its cache by job id, so
   # the unit job keeps the cache main's runs have saved under it. On `main`
   # it only builds the tests, for that cache (ADR 0100).
@@ -163,18 +169,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The merge commit and its base, for the docs-only step.
+          fetch-depth: 2
+
+      - &docs-only
+        id: docs-only
+        if: github.event_name == 'pull_request'
+        run: |
+          if areas=$(scripts/ci/ci-areas.sh) && [ -z "$areas" ]; then
+            echo "Docs only: the fast tier does not run"
+            echo docs-only=true >>"$GITHUB_OUTPUT"
+          fi
 
       - uses: ./.github/actions/setup
+        if: steps.docs-only.outputs.docs-only != 'true'
         with:
           tools: just cargo-nextest
 
-      - *linux-deps
+      - name: Install Linux build deps
+        if: steps.docs-only.outputs.docs-only != 'true'
+        timeout-minutes: 8
+        run: *linux-deps
 
       # The test job's build step (below), for the unit tier's cache.
       - name: Build the tests
         if: env.BUILD_ONLY == 'true'
         run: cargo nextest run --locked --workspace --features headless-renders --no-run
-      - if: env.BUILD_ONLY != 'true'
+      - if: env.BUILD_ONLY != 'true' && steps.docs-only.outputs.docs-only != 'true'
         run: just test-tier unit
 
   # The script suites build nothing and fake cargo: just `just`, at its pin
@@ -191,14 +212,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      - *docs-only
 
       - name: Load the pinned just version
+        if: steps.docs-only.outputs.docs-only != 'true'
         run: grep '^JUST_VERSION=' scripts/tools.env >> "$GITHUB_ENV"
       - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        if: steps.docs-only.outputs.docs-only != 'true'
         with:
           tool: just@${{ env.JUST_VERSION }}
 
-      - run: just test-tier scripts
+      - if: steps.docs-only.outputs.docs-only != 'true'
+        run: just test-tier scripts
 
   # Green only when both fast jobs ran and passed, so a missing, cancelled or
   # skipped part never looks green (as ci/detection). Skipped where the tests
