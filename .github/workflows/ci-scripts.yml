@@ -39,7 +39,7 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      - run: bash scripts/test.sh --tier scripts
+      - run: bash scripts/dev/test.sh --tier scripts
 
   bash32:
     name: ci/scripts (bash 3.2)
@@ -54,7 +54,7 @@ jobs:
       # The runner's `bash` is Apple's 3.2 too; named here so the suites run
       # under it wherever PATH points.
       - name: Script suites under /bin/bash 3.2
-        run: /bin/bash scripts/test.sh --tier scripts
+        run: /bin/bash scripts/dev/test.sh --tier scripts
 
   # The check merge-gate reads. Green only when both jobs ran and passed, so
   # a missing, cancelled or skipped part never looks green (as ci/detection).

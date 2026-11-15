@@ -66,9 +66,9 @@ jobs:
           fi
           if [ "$EVENT" = push ] || [ -n "$FINISH" ]; then
             git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
-            scripts/ios-release.sh --check-tag "$TAG" | tee -a "$GITHUB_OUTPUT"
+            scripts/ios/ios-release.sh --check-tag "$TAG" | tee -a "$GITHUB_OUTPUT"
           else
-            scripts/ios-release.sh --check-main | tee -a "$GITHUB_OUTPUT"
+            scripts/ios/ios-release.sh --check-main | tee -a "$GITHUB_OUTPUT"
           fi
 
   # The tag's commit came from main, but nothing tested it as a release:
@@ -118,12 +118,12 @@ jobs:
           cache-key: ios
 
       # Xcode and the iOS platform, which the image ships.
-      - run: scripts/ios-toolchain.sh >>"$GITHUB_ENV"
+      - run: scripts/ios/ios-toolchain.sh >>"$GITHUB_ENV"
 
       # main's built core, as in ci-ios.yml; this job never saves it.
       - id: core-key
         if: inputs.finish == ''
-        run: scripts/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
+        run: scripts/ios/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
       - id: core
         if: inputs.finish == ''
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -131,31 +131,31 @@ jobs:
           path: ${{ steps.core-key.outputs.paths }}
           key: ${{ steps.core-key.outputs.key }}
       - if: inputs.finish == '' && steps.core.outputs.cache-hit != 'true'
-        run: just ios-core && scripts/ios-core-cache.sh check
+        run: just ios-core && scripts/ios/ios-core-cache.sh check
       - if: inputs.finish == '' && steps.core.outputs.cache-hit == 'true'
-        run: scripts/ios-build-info.sh
+        run: scripts/ios/ios-build-info.sh
 
       - name: The build number is the commit count
         if: inputs.finish == ''
         run: grep -qx "CURRENT_PROJECT_VERSION = $BUILD" target/ios/Build.xcconfig
 
       - if: inputs.finish == ''
-        run: scripts/ios-archive.sh archive
+        run: scripts/ios/ios-archive.sh archive
 
       - name: The App Store Connect key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-        run: echo "ASC_KEY_PATH=$(scripts/ios-asc-key.sh "$RUNNER_TEMP/asc")" >>"$GITHUB_ENV"
+        run: echo "ASC_KEY_PATH=$(scripts/ios/ios-asc-key.sh "$RUNNER_TEMP/asc")" >>"$GITHUB_ENV"
 
       - name: Validate
         if: github.event_name != 'push' && inputs.finish == ''
         run: |
-          scripts/ios-testflight.py check-auth
-          scripts/ios-archive.sh validate
+          scripts/ios/ios-testflight.py check-auth
+          scripts/ios/ios-archive.sh validate
 
       - name: Upload
         if: github.event_name == 'push'
-        run: scripts/ios-archive.sh upload
+        run: scripts/ios/ios-archive.sh upload
 
       - name: Processing, What to Test and the Maintainer group
         if: github.event_name == 'push' || inputs.finish != ''
@@ -163,8 +163,8 @@ jobs:
           TAG: ${{ inputs.finish || github.ref_name }}
         run: |
           git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
-          scripts/ios-what-to-test.sh from-tag "$TAG" >"$RUNNER_TEMP/what-to-test.txt"
-          scripts/ios-testflight.py finish --version "$VERSION" --build "$BUILD" \
+          scripts/ios/ios-what-to-test.sh from-tag "$TAG" >"$RUNNER_TEMP/what-to-test.txt"
+          scripts/ios/ios-testflight.py finish --version "$VERSION" --build "$BUILD" \
             --notes "$RUNNER_TEMP/what-to-test.txt"
 
       - name: Remove the key

@@ -32,7 +32,7 @@ source of most recent bugs.
   without), accepting that a crash in that window loses the last steps.
 - **No fixed delays in app code** except for a named platform bug, a
   missing event or a deliberate on-screen duration, each marked; `just lint`
-  checks it (`scripts/fixed-delays.sh`).
+  checks it (`scripts/dev/fixed-delays.sh`).
 
 ## Invariants
 

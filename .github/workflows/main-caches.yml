@@ -6,7 +6,7 @@ name: Main caches
 # commit helps nothing. ci.yml's main run saves the desktop jobs' (`checks`
 # and `test`, ADR 0100); this saves the iOS core's (`ios`), the detection
 # build's (`detection`) and the detection model, and the built iOS core
-# itself (target/ios, scripts/ios-core-cache.sh), which ci/ios restores to
+# itself (target/ios, scripts/ios/ios-core-cache.sh), which ci/ios restores to
 # skip that build. Same job ids as the queue's jobs, so the keys match.
 on:
   push:

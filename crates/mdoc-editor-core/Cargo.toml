@@ -9,7 +9,7 @@ repository = "https://github.com/lawkitt/mdoc"
 
 # No GUI framework (ADR 0069): the desktop editor (GPUI) and the phones
 # (TextKit, Compose through mdoc-ffi) apply the edits these rules return.
-# `scripts/gui-free.sh` keeps gpui out of this crate's tree.
+# `scripts/dev/gui-free.sh` keeps gpui out of this crate's tree.
 [dependencies]
 # Unicode full default case folding for semantic search (without normalization).
 caseless = "0.2"

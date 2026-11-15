@@ -1,4 +1,4 @@
-# Shared helpers for scripts/*.sh. Sourced, never executed.
+# Shared helpers for the scripts under scripts/. Sourced, never executed.
 # shellcheck shell=bash
 
 set -euo pipefail
@@ -67,7 +67,7 @@ android_home() {
   fi
 }
 
-# The pinned SDK under android_home (scripts/install-android-sdk.sh): Sdk on
+# The pinned SDK under android_home (scripts/android/install-android-sdk.sh): Sdk on
 # Windows, mdoc-sdk on macOS and Linux, where Android Studio's own SDK is
 # ~/Library/Android/sdk (the same folder as Sdk on a case-insensitive disk)
 # or ~/Android/Sdk.
@@ -79,7 +79,7 @@ android_sdk() {
   fi
 }
 
-# The pinned JDK under android_home (scripts/install-android-sdk.sh): a macOS
+# The pinned JDK under android_home (scripts/android/install-android-sdk.sh): a macOS
 # JDK keeps its home inside the bundle.
 android_jdk() {
   if [ "$(platform)" = macos-arm64 ]; then
@@ -205,7 +205,7 @@ set_glob_re() {
 
 # The areas the files on stdin touch, NUL-separated as `git diff -z` prints
 # them (newline-separated output quotes unusual names, which would then match
-# no line), by the area table given as text (scripts/ci-areas.txt): each
+# no line), by the area table given as text (scripts/ci/ci-areas.txt): each
 # file takes the areas of the table's first line that matches it, desktop
 # when none does. A table with CRLF line endings reads the same. Prints them on one line in
 # the order core, desktop, recognition, ios, android, ci; core brings in every
@@ -253,7 +253,7 @@ affects() { [[ " $2 " == *" $1 "* ]]; }
 
 # The jobs a queue commit needs, from its areas: macos, windows, ios,
 # android, detection, scripts (ADR 0095, ADR 0100). merge-gate.sh waits for
-# these and queue.yml (scripts/ci-areas.sh --queue) starts them, so the two
+# these and queue.yml (scripts/ci/ci-areas.sh --queue) starts them, so the two
 # agree. The fixtures alone need only the detection gate; it decides itself
 # whether recognition changed. App-only desktop changes skip detection
 # (ADR 0113). The CI machinery needs only the script suites
@@ -271,7 +271,7 @@ needed_jobs() { # areas
 # The areas between two commits, by this checkout's table.
 diff_areas() { # from to
   local table
-  table=$(cat scripts/ci-areas.txt)
+  table=$(cat scripts/ci/ci-areas.txt)
   git diff --no-renames --name-only -z "$1" "$2" | changed_areas "$table"
 }
 
@@ -281,7 +281,7 @@ diff_areas() { # from to
 # fixtures', recognition code's, resources' or gate machinery's. Core lists
 # every area, so a core change alone runs it only in the queue; app-only
 # desktop changes skip it (ADR 0113).
-# ci.yml's areas job (scripts/ci-areas.sh --github) starts the head run and
+# ci.yml's areas job (scripts/ci/ci-areas.sh --github) starts the head run and
 # merge-gate.sh waits for it.
 head_detection() { # table-text
   local areas

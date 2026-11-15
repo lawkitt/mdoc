@@ -54,7 +54,7 @@ A grill is only for a pattern this page lacks, which this page then gains.
   Share, an import, Move to case or leaving the document.
 - No fixed delay in app code except for a named platform bug, a missing
   event or a deliberate on-screen duration, each marked `// timing:` in a
-  form `scripts/fixed-delays.sh` accepts.
+  form `scripts/dev/fixed-delays.sh` accepts.
 - UI tests wait for elements, never for time.
 - Every bug fix has a test that fails without it.
 - A fresh reviewer agent reviews every iOS PR, whether or not Codex is

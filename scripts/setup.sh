@@ -2,7 +2,7 @@
 # Usage: scripts/setup.sh
 # Installs the tools pinned in scripts/tools.env for this machine: the Rust
 # toolchain, Rust tools through cargo-binstall (or cargo install), actionlint
-# and shfmt (scripts/install-actionlint.sh, scripts/install-shfmt.sh).
+# and shfmt (scripts/dev/install-actionlint.sh, scripts/dev/install-shfmt.sh).
 source "$(dirname "$0")/lib.sh"
 load_tools
 
@@ -25,7 +25,7 @@ crate cargo-deny "$CARGO_DENY_VERSION" cargo deny --version
 crate cargo-nextest "$CARGO_NEXTEST_VERSION" cargo nextest --version
 crate cargo-packager "$CARGO_PACKAGER_VERSION" cargo packager --version
 
-scripts/install-actionlint.sh
-scripts/install-shfmt.sh
+scripts/dev/install-actionlint.sh
+scripts/dev/install-shfmt.sh
 
-scripts/doctor.sh || true
+scripts/dev/doctor.sh || true

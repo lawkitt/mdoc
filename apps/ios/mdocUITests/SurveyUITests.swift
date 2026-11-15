@@ -4,7 +4,7 @@ import XCTest
 /// The UI survey (ADR 0087): every screen the app shows, light and dark,
 /// kept as test attachments named `NN-screen-light` and `NN-screen-dark`.
 /// Skipped unless the run sets `MDOC_SURVEY=1` (`TEST_RUNNER_MDOC_SURVEY=1`
-/// through xcodebuild); `scripts/ios-survey.sh` runs it and exports the
+/// through xcodebuild); `scripts/ios/ios-survey.sh` runs it and exports the
 /// shots. Runs on iPhone and iPad; a few phone-only steps skip on iPad.
 final class SurveyUITests: XCTestCase {
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }

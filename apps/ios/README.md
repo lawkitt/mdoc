@@ -17,7 +17,7 @@ just ios-device-test <hardware UDID>   # the device UI tests on a connected iPho
 ```
 
 They need Xcode 26.2 and the iOS 26.2 Simulator runtime of build 23C54, as
-CI (`scripts/tools.env`; `scripts/ios-toolchain.sh` downloads the runtime,
+CI (`scripts/tools.env`; `scripts/ios/ios-toolchain.sh` downloads the runtime,
 about 8 GB, and `just doctor` checks both). Both build the core first
 (`just ios-core`: `target/ios/MdocCore.xcframework`, its Swift bindings and
 `pdfium.xcframework`; a few seconds when nothing changed). Builds go to
@@ -71,7 +71,7 @@ just ios-device-test <hardware UDID>
 just ios-device-test <hardware UDID> below-floor   # or detector: not by the phone's model
 ```
 
-`scripts/ios-device-test.sh` copies the fixtures into the app's container
+`scripts/ios/ios-device-test.sh` copies the fixtures into the app's container
 with `devicectl` (the app ships none), runs `ReviewFlowUITests` and the
 tier's test, and fails on a new `mdoc-*.ips` crash report. The tier comes
 from the phone's model: the iPhone 15 Pro and later run

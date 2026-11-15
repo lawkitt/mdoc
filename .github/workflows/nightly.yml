@@ -5,11 +5,11 @@ name: Nightly
 # fallback for the PC's job), the detection gate, the quarantined tests and
 # cargo-deny's advisories, which PRs check only when their dependencies
 # change. A red night opens one issue, "Nightly CI is red", or comments on
-# the open one; a green night closes it (scripts/nightly-issue.sh).
+# the open one; a green night closes it (scripts/ci/nightly-issue.sh).
 #
-# It also measures ADR 0113's CI targets (scripts/ci-stats.sh) and keeps a
+# It also measures ADR 0113's CI targets (scripts/ci/ci-stats.sh) and keeps a
 # second issue, "CI targets missed", opened after 3 nights that missed one
-# (scripts/ci-targets-issue.sh). A missed target is not a red night; only an
+# (scripts/ci/ci-targets-issue.sh). A missed target is not a red night; only an
 # error reading GitHub is. And it refreshes the iOS UI shards' class times
 # (ADR 0113) on a branch, nightly/ui-class-times, which the hub opens as a PR.
 on:
@@ -110,7 +110,7 @@ jobs:
           sparse-checkout: |
             scripts
             .config
-      - run: bash scripts/ci-targets-issue.sh --days 7 --nights 3
+      - run: bash scripts/ci/ci-targets-issue.sh --days 7 --nights 3
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -120,7 +120,7 @@ jobs:
   # The UI shards' class times (ADR 0113): refreshed from the last 14 days
   # of green UI parts; a refresh that moves a class to the other shard is
   # one commit on main, force-pushed to nightly/ui-class-times, and named in
-  # a notice and the job summary (scripts/ios-ui-class-times.sh). The hub
+  # a notice and the job summary (scripts/ios/ios-ui-class-times.sh). The hub
   # opens the PR from it: the organization's Actions policy lets no
   # workflow open one. Never a push to main.
   ui-class-times:
@@ -133,7 +133,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: bash scripts/ios-ui-class-times.sh --days 14
+      - run: bash scripts/ios/ios-ui-class-times.sh --days 14
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -155,7 +155,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts
       - run: >-
-          bash scripts/nightly-issue.sh
+          bash scripts/ci/nightly-issue.sh
           macos=${{ needs.macos.result }}
           windows=${{ needs.windows.result }}
           ios=${{ needs.ios.result }}
