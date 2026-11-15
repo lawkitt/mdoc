@@ -1,0 +1,21 @@
+[package]
+name = "gliner2-burn"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+default = ["flex", "cpu", "metal"]
+flex = ["burn/flex", "burn/simd", "burn/rayon"]
+amx = ["burn/apple-amx"]
+cpu = ["burn/cpu"]
+metal = ["burn/metal"]
+fusion = ["burn/fusion"]
+autotune = ["burn/autotune"]
+
+[dependencies]
+burn = { version = "=0.22.1", default-features = false, features = ["std"] }
+burn-store = "=0.22.1"
+
+[build-dependencies]
+burn-onnx = "=0.22.0"

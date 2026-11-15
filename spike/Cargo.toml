@@ -1,0 +1,13 @@
+# Burn spike for lawkitt/mdoc#903 (decision 29). Not part of mdoc's workspace; never merged.
+[workspace]
+members = ["gliner2-rs", "gliner2-burn", "bench"]
+resolver = "2"
+
+[patch.crates-io]
+gliner2-rs = { path = "gliner2-rs" }
+
+[profile.release]
+opt-level = 3
+codegen-units = 16
+lto = "thin"
+debug = false

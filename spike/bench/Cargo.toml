@@ -1,0 +1,15 @@
+[package]
+name = "bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+mdoc-detect = { path = "../../crates/mdoc-detect" }
+mdoc-store = { path = "../../crates/mdoc-store" }
+mdoc-import = { path = "../../crates/mdoc-import" }
+libc = "0.2"
+gliner2-burn = { path = "../gliner2-burn" }
+
+[features]
+fusion = ["gliner2-burn/fusion", "gliner2-burn/autotune"]
