@@ -249,6 +249,22 @@ pub fn build_session(path: &Path, intra_threads: usize) -> Result<Session> {
             providers.clear();
         }
     }
+    // SPIKE (#903): GLINER2_ARENA=0 turns off the CPU arena and ORT's memory pattern, to measure peak footprint.
+    if std::env::var("GLINER2_ARENA").as_deref() == Ok("0") {
+        builder = builder.with_memory_pattern(false).map_err(ort::Error::<()>::from)?;
+        if providers.is_empty() {
+            providers.push(ep::CPU::default().with_arena_allocator(false).build());
+        }
+    }
+    // SPIKE (#903): GLINER2_PREPACK=0 and GLINER2_OPT=disable|basic|extended, to measure load-time memory.
+    if std::env::var("GLINER2_PREPACK").as_deref() == Ok("0") {
+        builder = builder.with_prepacking(false).map_err(ort::Error::<()>::from)?;
+    }
+    if let Ok(level) = std::env::var("GLINER2_OPT") {
+        use ort::session::builder::GraphOptimizationLevel as L;
+        let l = match level.as_str() { "disable" => L::Disable, "basic" => L::Level1, "extended" => L::Level2, _ => L::Level3 };
+        builder = builder.with_optimization_level(l).map_err(ort::Error::<()>::from)?;
+    }
     if !providers.is_empty() {
         builder = builder
             .with_execution_providers(providers)
