@@ -69,19 +69,6 @@ class SetupController(
 
     fun refresh() = mutable.update { it.copy(snapshot = snapshotOrEmpty()) }
 
-    /**
-     * Times a detector installed before mdoc timed it (ADR 0120), once the
-     * core is open: scans then show their estimate and Settings its speed.
-     * A failed run leaves the phone untimed, to try at the next launch.
-     */
-    fun timeIfNeeded() {
-        if (!mutable.value.snapshot.needsTiming || mutable.value.working) return
-        scope.launch {
-            val outcome = jobs.run(JobKind.Install, null, context.getString(R.string.timing_name_finder)) { observer -> models().timeDetector(observer) }
-            if (outcome is JobOutcome.Finished) mutable.update { it.copy(snapshot = outcome.value) }
-        }
-    }
-
     private fun snapshotOrEmpty(): SetupSnapshot = runCatching { models().snapshot() }.getOrDefault(EMPTY)
 
     fun dismissCard() {

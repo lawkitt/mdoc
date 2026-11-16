@@ -183,7 +183,8 @@ impl Setup {
     }
 
     /// Time one short detector run and keep the result: the platform calls
-    /// it right after the detector installs, off the main thread. It runs as
+    /// it right after the detector installs, or before the first scan of a
+    /// detector installed untimed, off the main thread. It runs as
     /// a scan does: it needs the memory free, pauses while the phone is too
     /// hot (both through `progress`) and stops at `cancel_timing`. A device
     /// past the speed ceiling counts as below the floor from then on, and
@@ -272,7 +273,7 @@ impl Setup {
             Path::new(&paths.onnx),
             &mdoc_store::settings::PiiConfig::default(),
             mdoc_detect::ScanLimit::PHONE,
-            &crate::document_session::PhoneScan::new(progress, None),
+            &crate::document_session::PhoneScan::quiet(progress),
         )?;
         let chars = speed::PROBE.chars().count();
         let inference: f64 = timings

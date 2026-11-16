@@ -100,7 +100,6 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     LaunchedEffect(state.loaded, state.error) {
         if (state.loaded && state.error == null) {
             app.setup.refresh()
-            app.setup.timeIfNeeded()
         }
     }
     var open by rememberSaveable { mutableStateOf<String?>(null) }

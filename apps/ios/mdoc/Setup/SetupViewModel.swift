@@ -145,10 +145,10 @@ final class SetupViewModel {
         snapshot = setup.snapshot()
     }
 
-    /// Times the installed detector once (ADR 0120): right after it
-    /// installs, or at launch for one installed before mdoc timed it. The
-    /// result gives scans their estimate and Settings its speed; a phone
-    /// past the speed ceiling is below the floor from then on.
+    /// Times the installed detector once (ADR 0120), right after it
+    /// installs; one installed before mdoc timed it is timed by its first
+    /// scan. The result gives scans their estimate and Settings its speed;
+    /// a phone past the speed ceiling is below the floor from then on.
     func timeDetectorIfNeeded() async {
         guard snapshot.tier == .detector, snapshot.tenPagesSeconds == nil,
               snapshot.offers.contains(where: { $0.purpose == .detector && $0.state == .installed })
@@ -157,8 +157,7 @@ final class SetupViewModel {
         let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Timing the name finder")) { observer in
             try setup.timeDetector(observer: observer)
         }
-        // A failed run leaves the phone untimed: scans show no estimate,
-        // and the next launch times it again.
+        // A failed run leaves the phone untimed: the next scan times it.
         if case .finished(let timed) = outcome {
             snapshot = timed
         }

@@ -87,7 +87,6 @@
     <string name="detector_speed">Speed: %1$s</string>
     <string name="seconds_per_ten_pages">About %1$d s per 10 pages</string>
     <string name="minutes_per_ten_pages">About %1$d min per 10 pages</string>
-    <string name="timing_name_finder">Timing the name finder</string>
     <string name="something_went_wrong">Something went wrong</string>
     <string name="document_gone">This document is no longer in mdoc.</string>
     <string name="download_models_first">Download the models first.</string>

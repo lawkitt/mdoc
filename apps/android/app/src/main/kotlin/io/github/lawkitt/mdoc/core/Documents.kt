@@ -7,6 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import uniffi.mdoc_ffi.CoreException
 import uniffi.mdoc_ffi.DocumentSession as FfiSession
+import uniffi.mdoc_ffi.FloorReason
 import uniffi.mdoc_ffi.ImportOptions
 import uniffi.mdoc_ffi.JobProgress
 import uniffi.mdoc_ffi.JobStage
@@ -263,6 +264,15 @@ class Documents(
 
         /** Finds candidates with the detector; a cancelled scan reruns from the start. */
         fun scan(observer: JobObserver): DocumentSnapshot {
+            // A detector installed before mdoc timed it is timed first, in this
+            // job, so the scan has its estimate (ADR 0120); too slow, it never
+            // scans.
+            if (models?.snapshot()?.needsTiming == true) {
+                observer.stage(JobStage.SCANNING)
+                if (models.timeDetector(observer).belowFloor == FloorReason.SPEED) {
+                    throw AppError.Failed("The name finder is too slow on this phone. Select text to mark a name.")
+                }
+            }
             val detector = models?.detectorPaths() ?: throw AppError.ModelMissing()
             observer.onCancel { ffi.cancel() }
             val scanned = core { ffi.scan(detector, Progress(observer, device)) }

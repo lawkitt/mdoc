@@ -44,6 +44,9 @@ pub(crate) struct PhoneScan<'a> {
     /// Since when the scan has been paused to cool down.
     cooling: Cell<Option<Instant>>,
     cooled: Cell<Duration>,
+    /// Passes windows and time left on; the timed run passes on only its
+    /// pause, as its windows are not the scan the bar shows.
+    reports: bool,
 }
 
 impl<'a> PhoneScan<'a> {
@@ -54,6 +57,15 @@ impl<'a> PhoneScan<'a> {
             started: Cell::new(None),
             cooling: Cell::new(None),
             cooled: Cell::new(Duration::ZERO),
+            reports: true,
+        }
+    }
+
+    /// For the detector's timed run: memory and heat as a scan, no progress.
+    pub(crate) fn quiet(progress: Option<&'a dyn JobProgress>) -> Self {
+        Self {
+            reports: false,
+            ..Self::new(progress, None)
         }
     }
 
@@ -78,7 +90,7 @@ impl<'a> PhoneScan<'a> {
 
 impl ScanObserver for PhoneScan<'_> {
     fn progress(&self, scan: ScanProgress) {
-        let Some(progress) = self.progress else {
+        let Some(progress) = self.progress.filter(|_| self.reports) else {
             return;
         };
         progress.advanced(scan.done as u64, scan.windows as u64);
@@ -211,6 +223,10 @@ mod tests {
         let platform = Platform::default();
         PhoneScan::new(Some(&platform), None).progress(at(0, 0));
         assert_eq!(*platform.heard.lock().unwrap(), ["0/4"]);
+        // The timed run itself shows nothing on the bar.
+        let platform = Platform::default();
+        PhoneScan::quiet(Some(&platform)).progress(at(1, 7_500));
+        assert!(platform.heard.lock().unwrap().is_empty());
     }
 
     #[test]

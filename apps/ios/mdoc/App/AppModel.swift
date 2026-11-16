@@ -63,7 +63,6 @@ final class AppModel {
             }
         }
         core.library.observeSaves { [weak self] event in self?.saved(event) }
-        Task { await setup.timeDetectorIfNeeded() }
     }
 
     /// The app's model over the real core. `open` opens the storage and the

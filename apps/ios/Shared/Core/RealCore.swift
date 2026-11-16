@@ -825,8 +825,15 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     func scan(observer: any JobObserver) throws -> DocumentSnapshot {
         guard let setup = library.setup else { throw CoreError.modelMissing }
+        var state = setup.snapshot()
+        if state.tier == .detector, state.tenPagesSeconds == nil, setup.detectorPaths() != nil {
+            // A detector installed before mdoc timed it is timed first, in
+            // this job, so the scan has its estimate (ADR 0120).
+            observer.progress(JobUpdate(stage: .scanning))
+            state = try setup.timeDetector(observer: observer)
+        }
         let detector: DetectorPaths?
-        switch setup.snapshot().tier {
+        switch state.tier {
         case .detector:
             guard let paths = setup.detectorPaths() else { throw CoreError.modelMissing }
             detector = paths
@@ -836,7 +843,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             // size, gets here: the core's structured rules give it candidates
             // without a model. A phone too slow for the detector never scans
             // with the rules alone, which would miss names (ADR 0120).
-            if setup.snapshot().belowFloor == .speed {
+            if state.belowFloor == .speed {
                 throw CoreError.findNamesFailed(
                     String(localized: "The name finder is too slow on this phone. Select text to mark a name."))
             }
