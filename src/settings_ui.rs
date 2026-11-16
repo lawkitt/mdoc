@@ -696,6 +696,13 @@ impl Panel {
                 .enumerate()
                 .map(|(index, model)| {
                     let paths = &paths[index];
+                    // An install from before #905 converts before its files
+                    // are read, so the check that follows can remember it.
+                    if let Model::Pii(m) = model
+                        && !cfg!(test)
+                    {
+                        mdoc_detect::upgrade_reserved(m);
+                    }
                     let before = Files::read(paths);
                     let result = match model {
                         // Tests never read the real profile's installed models.

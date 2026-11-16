@@ -99,6 +99,12 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - The model is GLiNER2 through gliner2-rs (Hub feature off) with the pinned
   privacy PII export; the threshold and the export change only by maintainer
   decision.
+- Setup re-saves the pinned encoder once with its weights in a `.onnx.data`
+  file beside it, because ONNX Runtime keeps a second copy of weights stored
+  inside a model file.
+- The re-saved pair is pinned by digest and stays the unmodified export; an
+  older install's upstream encoder converts on its next check or scan,
+  without a download.
 - A scan reads the source in windows of whole paragraphs, each heading
   starting one, because a section must scan the same wherever it sits.
 - A paragraph too long for one window is packed by its lines; only a line

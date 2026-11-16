@@ -21,8 +21,7 @@ serde_json = "1"
 thiserror = "2"
 # The rule pack's format (ADR 0092).
 toml = "1"
-
-[dev-dependencies]
+# The encoder's external-data rewrite: its digests and temporary files (#905).
 sha2 = "0.11"
 tempfile = "3"
 

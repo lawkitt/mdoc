@@ -27,7 +27,17 @@
       "path": "fp32_v2/encoder_fp32.onnx",
       "bytes": 1111055954,
       "sha256": "7cd07f04235f5c9e879f69e361088be3b07bb6930bf05340050088f7994f638e",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp32_v2/encoder_fp32.onnx"
+      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp32_v2/encoder_fp32.onnx",
+      "external_data": {
+        "model": {
+          "bytes": 922990,
+          "sha256": "4d905e3d489b5d722a6fca6e0a866bc6298d753e39c35afc30953acb111124bc"
+        },
+        "data": {
+          "bytes": 1110147072,
+          "sha256": "e711e1ffad849926bbd303ba7b3c27fe92f5c66adcd91f5ed59ec33e2f3adfd4"
+        }
+      }
     },
     {
       "path": "fp32_v2/schema_gather_fp32.onnx",
