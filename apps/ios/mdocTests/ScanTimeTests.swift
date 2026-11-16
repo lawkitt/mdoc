@@ -47,6 +47,25 @@ final class ScanTimeTests: XCTestCase {
         XCTAssertTrue(BelowFloor.note(.speed).contains("too slow"))
     }
 
+    /// The estimate shows under Find names, and not once the scan runs.
+    func testTheEstimateShowsBeforeTheScanOnly() async throws {
+        let (core, storage) = try Fixture.core()
+        let real = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: .newCase(name: "Note"))
+        _ = try real.recognize(observer: TestObserver())
+        let session = SlowJobs(real, seconds: 0.3)
+        session.estimate = 3
+        let jobs = LongJobRunner(background: NoBackgroundContinuation())
+        let model = DocumentViewModel(session: session, jobs: jobs, storage: storage, findsNames: true)
+        XCTAssertEqual(model.primaryAction, .findNames)
+        XCTAssertEqual(model.scanEstimate, 3)
+        let scan = Task { await model.findNames() }
+        while model.runningJob == nil { await Task.yield() }
+        XCTAssertNil(model.scanEstimate, "the running bar shows the time left instead")
+        await scan.value
+        let below = DocumentViewModel(session: session, jobs: jobs, storage: storage, findsNames: false)
+        XCTAssertNil(below.scanEstimate, "below the floor there is no Find names")
+    }
+
     /// A detector-tier phone that is not timed yet shows no estimate.
     func testNoEstimateBeforeThePhoneIsTimed() throws {
         let (core, _) = try Fixture.core(memory: Fixture.detectorTier)

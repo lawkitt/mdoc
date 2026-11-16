@@ -18,7 +18,7 @@ interface DeviceConditions {
             private val power = context.getSystemService(PowerManager::class.java)
             private val activities = context.getSystemService(ActivityManager::class.java)
 
-            override fun thermal() = thermal(power.currentThermalStatus)
+            override fun thermal() = fromStatus(power.currentThermalStatus)
 
             override fun freeMemory(): Long = ActivityManager.MemoryInfo().also(activities::getMemoryInfo).availMem
         }
@@ -31,7 +31,7 @@ interface DeviceConditions {
         }
 
         /** Android's statuses on iOS's four steps, as the core counts them. */
-        fun thermal(status: Int): Thermal = when {
+        fun fromStatus(status: Int): Thermal = when {
             status >= PowerManager.THERMAL_STATUS_CRITICAL -> Thermal.CRITICAL
             status >= PowerManager.THERMAL_STATUS_MODERATE -> Thermal.SERIOUS
             status == PowerManager.THERMAL_STATUS_LIGHT -> Thermal.FAIR

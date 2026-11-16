@@ -209,6 +209,21 @@
     "A short agreement with made-up names, to try review without your own documents." : {
 
     },
+    "About %lld min left" : {
+
+    },
+    "About %lld min on this iPad" : {
+
+    },
+    "About %lld min on this iPhone" : {
+
+    },
+    "About %lld min per 10 pages" : {
+
+    },
+    "About %lld s per 10 pages" : {
+
+    },
     "About mdoc" : {
 
     },
@@ -570,6 +585,9 @@
     "Finding names stopped when mdoc left the screen." : {
 
     },
+    "Finding names · %@" : {
+
+    },
     "Finding names. Edit when it finishes." : {
 
     },
@@ -697,6 +715,9 @@
 
     },
     "Left" : {
+
+    },
+    "Less than a minute left" : {
 
     },
     "License" : {
@@ -981,6 +1002,9 @@
 
     },
     "Pasted text" : {
+
+    },
+    "Paused to cool down" : {
 
     },
     "Permission text (LICENSE-APP-STORES.md)" : {
@@ -1312,6 +1336,9 @@
     "Source code" : {
 
     },
+    "Speed" : {
+
+    },
     "Split off as %@" : {
 
     },
@@ -1390,16 +1417,25 @@
     "This iPad" : {
 
     },
-    "This iPad can't find names: the name finder needs 8 GB of memory (an iPad with M1 or later). Select text to mark a name." : {
+    "This iPad can't find names: the name finder is too slow on it. Select text to mark a name." : {
+
+    },
+    "This iPad can't find names: the name finder needs 4 GB of memory. Select text to mark a name." : {
 
     },
     "This iPhone" : {
 
     },
-    "This iPhone can't find names: the name finder needs 8 GB of memory (iPhone 15 Pro or later). Select text to mark a name." : {
+    "This iPhone can't find names: the name finder is too slow on it. Select text to mark a name." : {
+
+    },
+    "This iPhone can't find names: the name finder needs 4 GB of memory. Select text to mark a name." : {
 
     },
     "This one" : {
+
+    },
+    "Timing the name finder" : {
 
     },
     "Tip" : {

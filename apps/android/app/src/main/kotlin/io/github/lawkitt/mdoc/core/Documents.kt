@@ -230,7 +230,7 @@ class Documents(
         fun recognize(observer: JobObserver): DocumentSnapshot {
             val source = synchronized(this) { source } ?: return snapshot()
             observer.onCancel { ffi.cancel() }
-            val progress = Progress(observer)
+            val progress = Progress(observer, device)
             observer.stage(JobStage.READING)
             val imported = when (val input = source.input) {
                 is Originals.Input.Text -> core { ffi.importText(input.text, title) }

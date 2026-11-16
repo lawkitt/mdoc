@@ -9,6 +9,8 @@ import MdocFFI
 final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     let base: any mdoc.DocumentSession
     let seconds: Double
+    /// What `scanEstimate` answers, as a timed phone's core would.
+    var estimate: Int?
 
     init(_ base: any mdoc.DocumentSession, seconds: Double) {
         self.base = base
@@ -36,6 +38,8 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
         try wait(observer, stage: .scanning)
         return try base.scan(observer: observer)
     }
+
+    func scanEstimate() -> Int? { estimate }
 
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot {
         try base.decide(candidate, decision, scope: scope)
