@@ -1,19 +1,39 @@
 //! `Setup` (ADR 0085): the models a device may offer, from the desktop's
-//! pinned manifests, and installing a file the platform downloaded: SHA-256
-//! against the pinned digest, then an atomic move into the model folder.
-//! The platform runs the download; nothing here uses the network.
+//! pinned manifests, installing a file the platform downloaded (SHA-256
+//! against the pinned digest, then an atomic move into the model folder),
+//! and timing the detector once it is installed. The platform runs the
+//! download; nothing here uses the network.
+mod speed;
+
 use crate::CoreError;
 use mdoc_store::settings::{OcrModel, PiiModel};
+pub use speed::DetectorSpeed;
+pub(crate) use speed::PAGE_CHARS;
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool},
 };
 
-/// GLiNER2 FP16's RAM floor: devices sold as 8 GB and up (ADR 0085's floor
-/// rule, until the spike's device rows tune it). Devices report a little
-/// less than their nominal RAM (an 8 GB iPhone about 7.5 GiB, a 6 GB one
-/// about 5.6 GiB), so the cut sits between the two classes.
-pub const DETECTOR_FLOOR_BYTES: u64 = 7 * 1024 * 1024 * 1024;
+const MIB: u64 = 1024 * 1024;
+
+/// GLiNER2 FP16's RAM floor: devices sold as 4 GB and up (ADR 0120).
+/// Devices report a little less than their nominal RAM (a 4 GB iPhone
+/// about 3.6 GiB, a 3 GB one under 3 GiB), so the cut sits between the two
+/// classes, at 3.25 GiB.
+pub const DETECTOR_FLOOR_BYTES: u64 = 13 * 256 * MIB;
+
+/// Memory a scan needs free when it starts: the detector's measured peak in
+/// the app (about 1.1 GB on the iPhone 17 Pro) and a margin.
+pub const DETECTOR_FREE_BYTES: u64 = 5 * 256 * MIB;
+
+/// Why a device offers no detector.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum BelowFloor {
+    /// Under `DETECTOR_FLOOR_BYTES` of RAM.
+    Memory,
+    /// Its timed run is past the speed ceiling.
+    Speed,
+}
 
 /// A downloadable model. Structured rules need none and run everywhere.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -71,6 +91,8 @@ pub struct DetectorPaths {
     /// The GLiNER2 model folder.
     pub model: String,
     pub onnx: String,
+    /// This device's timed run, once there is one: the scan's estimates.
+    pub speed: Option<DetectorSpeed>,
 }
 
 /// What `DocumentSession::import_file` recognizes with.
@@ -124,9 +146,66 @@ impl Setup {
         ModelId::ALL.into_iter().map(|id| self.info(id)).collect()
     }
 
-    /// Whether this device may offer `model` (ADR 0085's floor rule).
+    /// Whether this device may offer `model`: OCR everywhere, the detector
+    /// above the floor.
     pub fn offers(&self, model: ModelId) -> bool {
-        model.ocr().is_some() || self.physical_memory >= DETECTOR_FLOOR_BYTES
+        model.ocr().is_some() || self.below_floor().is_none()
+    }
+
+    /// Why this device offers no detector: too little RAM, or a timed run
+    /// past the speed ceiling. `None` when it offers one.
+    pub fn below_floor(&self) -> Option<BelowFloor> {
+        if self.physical_memory < DETECTOR_FLOOR_BYTES {
+            Some(BelowFloor::Memory)
+        } else if self.detector_speed().is_some_and(|s| s.too_slow()) {
+            Some(BelowFloor::Speed)
+        } else {
+            None
+        }
+    }
+
+    /// This device's timed detector run, once `time_detector` has run for
+    /// the installed model.
+    pub fn detector_speed(&self) -> Option<DetectorSpeed> {
+        speed::read(&self.root, &self.detector_folder_name())
+    }
+
+    /// Seconds a scan of 10 pages takes on this device, for Settings.
+    pub fn ten_pages_seconds(&self) -> Option<u64> {
+        self.detector_speed()
+            .map(|s| s.seconds(10 * PAGE_CHARS).round() as u64)
+    }
+
+    /// Time one short detector run and keep the result: the platform calls
+    /// it right after the detector installs, off the main thread. A device
+    /// past the speed ceiling counts as below the floor from then on, and
+    /// the model it cannot use is removed. `None` when the detector is not
+    /// installed or not offered here.
+    pub fn time_detector(&self, runtimes: Runtimes) -> Result<Option<DetectorSpeed>, CoreError> {
+        let Some(paths) = self.detector_paths(runtimes) else {
+            return Ok(None);
+        };
+        let (_, timings) = mdoc_detect::scan_at(
+            speed::PROBE,
+            &AtomicBool::new(false),
+            Path::new(&paths.model),
+            Path::new(&paths.onnx),
+            &mdoc_store::settings::PiiConfig::default(),
+            mdoc_detect::ScanLimit::PHONE,
+            &|_: mdoc_detect::ScanProgress| {},
+        )?;
+        let chars = speed::PROBE.chars().count();
+        let inference = timings
+            .windows
+            .iter()
+            .map(|w| w.inference.as_secs_f64())
+            .sum();
+        let measured = DetectorSpeed::measured(timings.engine_load.as_secs_f64(), chars, inference);
+        speed::write(&self.root, &self.detector_folder_name(), measured)?;
+        if measured.too_slow() {
+            std::fs::remove_dir_all(self.folder(ModelId::Gliner2Fp16))?;
+        }
+        Ok(Some(measured))
     }
 
     /// Install `downloaded`, the platform's download of `model`'s file
@@ -163,6 +242,7 @@ impl Setup {
         (self.offers(model) && self.info(model).installed).then(|| DetectorPaths {
             model: self.folder(model).display().to_string(),
             onnx: runtimes.onnx,
+            speed: self.detector_speed(),
         })
     }
 
@@ -182,16 +262,17 @@ impl Setup {
     /// `mdoc_detect::root_for` names its folder, `ocr/` as OCR's root.
     fn folder(&self, model: ModelId) -> PathBuf {
         match model.ocr() {
-            None => {
-                let manifest = mdoc_detect::manifest_for(PiiModel::Fp16);
-                self.root.join("pseudonymization").join(format!(
-                    "{}-{}",
-                    manifest.id,
-                    &manifest.revision[..8]
-                ))
-            }
+            None => self
+                .root
+                .join("pseudonymization")
+                .join(self.detector_folder_name()),
             Some(ocr) => mdoc_import::ocr::model_root(&self.ocr_root(), ocr),
         }
+    }
+
+    fn detector_folder_name(&self) -> String {
+        let manifest = mdoc_detect::manifest_for(PiiModel::Fp16);
+        format!("{}-{}", manifest.id, &manifest.revision[..8])
     }
 
     fn ocr_root(&self) -> PathBuf {
@@ -375,7 +456,7 @@ mod tests {
     use super::*;
     use crate::test_support::Scratch;
 
-    const GIB: u64 = 1024 * 1024 * 1024;
+    const GIB: u64 = 1024 * MIB;
 
     fn runtimes() -> Runtimes {
         Runtimes {
@@ -409,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn the_detector_needs_an_eight_gigabyte_device_and_ocr_runs_everywhere() {
+    fn the_detector_needs_a_four_gigabyte_device_and_ocr_runs_everywhere() {
         let offered = |ram: u64| {
             Setup::new("models".into(), ram)
                 .catalog()
@@ -419,12 +500,53 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let ocr = [ModelId::OcrEnglish, ModelId::OcrEnglishRussian];
-        // An iPhone 12 Pro (6 GB) reports about 5.6 GiB; a 4 GB phone less.
+        // A 3 GB phone (the iPhone SE 2nd generation) reports under 3 GiB.
+        assert_eq!(offered(2 * GIB + 800 * MIB), ocr);
         assert_eq!(offered(3 * GIB), ocr);
-        assert_eq!(offered(5 * GIB + 600 * 1024 * 1024), ocr);
-        // An 8 GB iPhone reports about 7.5 GiB; a 12 GB one about 11.
-        assert_eq!(offered(7 * GIB + GIB / 2)[0], ModelId::Gliner2Fp16);
-        assert_eq!(offered(11 * GIB).len(), 3);
+        // A 4 GB phone reports about 3.6 GiB; a 6 GB iPhone 12 Pro 5.6 GiB.
+        assert_eq!(offered(3 * GIB + 600 * MIB).len(), 3);
+        assert_eq!(offered(5 * GIB + 600 * MIB).len(), 3);
+        assert_eq!(
+            Setup::new("models".into(), 3 * GIB).below_floor(),
+            Some(BelowFloor::Memory)
+        );
+    }
+
+    /// A timed run past the ceiling puts the device below the floor;
+    /// another model's record does not count.
+    #[test]
+    fn a_device_past_the_speed_ceiling_offers_no_detector() {
+        let scratch = Scratch::new();
+        let root = scratch.path().join("models");
+        let setup = Setup::new(root.display().to_string(), 6 * GIB);
+        assert_eq!(setup.below_floor(), None);
+        assert_eq!(setup.ten_pages_seconds(), None);
+        let slow = DetectorSpeed {
+            load_seconds: 5.,
+            seconds_per_thousand_chars: 70.,
+        };
+        speed::write(&root, "another-model", slow).unwrap();
+        assert_eq!(setup.below_floor(), None);
+        speed::write(&root, &setup.detector_folder_name(), slow).unwrap();
+        assert_eq!(setup.below_floor(), Some(BelowFloor::Speed));
+        assert!(!setup.offers(ModelId::Gliner2Fp16));
+        assert!(setup.offers(ModelId::OcrEnglish));
+        // 10 pages are 30,000 characters.
+        assert_eq!(setup.ten_pages_seconds(), Some(2105));
+        let fast = DetectorSpeed {
+            load_seconds: 2.,
+            seconds_per_thousand_chars: 2.,
+        };
+        speed::write(&root, &setup.detector_folder_name(), fast).unwrap();
+        assert!(setup.offers(ModelId::Gliner2Fp16));
+        assert_eq!(setup.ten_pages_seconds(), Some(62));
+    }
+
+    #[test]
+    fn timing_needs_an_installed_detector() {
+        let scratch = Scratch::new();
+        let setup = Setup::new(scratch.path().display().to_string(), 6 * GIB);
+        assert_eq!(setup.time_detector(runtimes()).unwrap(), None);
     }
 
     #[test]

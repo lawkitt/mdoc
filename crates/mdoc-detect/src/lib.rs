@@ -2,6 +2,7 @@
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
 #![forbid(unsafe_code)]
 pub mod external;
+mod limits;
 pub mod lists;
 pub mod recognition;
 mod rules;
@@ -12,6 +13,8 @@ use gliner2_rs::{
     ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
     processor::SchemaTransformer,
 };
+use limits::Clock;
+pub use limits::{ScanLimit, ScanObserver, ScanProgress};
 use mdoc_pii::{Category, Detection};
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +48,10 @@ pub enum DetectError {
     #[error("Scan exceeded two minutes. Review a smaller document or add selections manually.")]
     TooSlow,
     #[error(
+        "The scan made no progress for a minute and stopped. Try again, or mark names by selecting them."
+    )]
+    Stalled,
+    #[error(
         "A source word exceeds the model token limit. Add selections manually; no partial scan was accepted."
     )]
     WordTooLong,
@@ -62,10 +69,7 @@ use std::{
     fs,
     ops::Range,
     path::{Path, PathBuf},
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Mutex, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
@@ -112,7 +116,6 @@ fn identifying(text: &str, category: Category) -> bool {
 }
 const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INPUT_TOKENS: usize = 512;
-const MAX_SCAN_TIME: Duration = Duration::from_secs(120);
 static INFERENCE: Mutex<()> = Mutex::new(());
 
 const FAMILIES: &[&[(&str, Category)]] = &[
@@ -447,14 +450,8 @@ pub fn remove_reserved(model: mdoc_store::settings::PiiModel) -> Result<(), Dete
     Ok(())
 }
 
-fn checkpoint(cancel: &AtomicBool, started: Instant) -> Result<(), DetectError> {
-    if cancel.load(Ordering::Relaxed) {
-        return Err(DetectError::Cancelled);
-    }
-    if started.elapsed() > MAX_SCAN_TIME {
-        return Err(DetectError::TooSlow);
-    }
-    Ok(())
+fn checkpoint(cancel: &AtomicBool, clock: &Clock) -> Result<(), DetectError> {
+    clock.check(cancel)
 }
 
 /// Full immutable Markdown source in, verified UTF-8 byte spans out. A scan
@@ -470,6 +467,7 @@ pub fn scan_config(
 /// [`scan_config`] that also reports which model windows are done, so a long
 /// document can show a count. `progress` runs on the scanning thread: once
 /// with no window done when the windows are known, then after each window.
+/// The scan stops two minutes after it starts ([`ScanLimit::DESKTOP`]).
 pub fn scan_config_with_progress(
     source: &str,
     cancel: &AtomicBool,
@@ -478,14 +476,6 @@ pub fn scan_config_with_progress(
 ) -> Result<Vec<Detection>, DetectError> {
     let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
     scan_reserved_with(source, cancel, config, progress)
-}
-
-/// Model windows a scan has finished, out of all of the source's windows. A
-/// window repeated word for word runs and counts once.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ScanProgress {
-    pub done: usize,
-    pub windows: usize,
 }
 
 pub fn scan_reserved(
@@ -514,7 +504,8 @@ fn scan_reserved_with(
         &root_for(config.model)?,
         &mdoc_import::ocr::onnx_runtime(false).map_err(|_| DetectError::NotSetUp)?,
         config,
-        progress,
+        ScanLimit::DESKTOP,
+        &progress,
     )
     .map(|(detections, _)| detections)
 }
@@ -527,7 +518,16 @@ fn scan_in(
     runtime: PathBuf,
     config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, DetectError> {
-    scan_timed(source, cancel, root, &runtime, config, &|_| {}).map(|(detections, _)| detections)
+    scan_timed(
+        source,
+        cancel,
+        root,
+        &runtime,
+        config,
+        ScanLimit::DESKTOP,
+        &|_: ScanProgress| {},
+    )
+    .map(|(detections, _)| detections)
 }
 
 /// Where one scan's time went. Only measurements read it (the mobile
@@ -572,35 +572,27 @@ pub fn scan_rules(source: &str) -> Result<Vec<Detection>, DetectError> {
     Ok(detections)
 }
 
-/// [`scan_reserved`] on explicit model and runtime paths, with its timings.
-/// The mobile core passes the runtime linked into the app
-/// (`mdoc_import::ocr::linked_runtimes`). Takes the model work permit.
+/// [`scan_reserved`] on explicit model and runtime paths, with its timings,
+/// under `limit`. The mobile core passes the runtime linked into the app
+/// (`mdoc_import::ocr::linked_runtimes`) and [`ScanLimit::PHONE`]. `observer`
+/// hears the model windows done, as [`scan_config_with_progress`]'s
+/// `progress` does (a phone passes them on to the system, which stops a
+/// background job that shows no progress), and may pause the scan between
+/// windows. Takes the model work permit.
 pub fn scan_at(
     source: &str,
     cancel: &AtomicBool,
     root: &Path,
     runtime: &Path,
     config: &mdoc_store::settings::PiiConfig,
-) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
-    scan_at_with_progress(source, cancel, root, runtime, config, &|_| {})
-}
-
-/// [`scan_at`] that also reports the model windows done, as
-/// [`scan_config_with_progress`] does: a phone passes them on to the
-/// system, which stops a background job that shows no progress.
-pub fn scan_at_with_progress(
-    source: &str,
-    cancel: &AtomicBool,
-    root: &Path,
-    runtime: &Path,
-    config: &mdoc_store::settings::PiiConfig,
-    progress: &dyn Fn(ScanProgress),
+    limit: ScanLimit,
+    observer: &dyn ScanObserver,
 ) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
     if !mdoc_store::settings::unit_interval(config.threshold) {
         return Err(DetectError::InvalidThreshold);
     }
     let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
-    scan_timed(source, cancel, root, runtime, config, progress)
+    scan_timed(source, cancel, root, runtime, config, limit, observer)
 }
 
 fn scan_timed(
@@ -609,15 +601,17 @@ fn scan_timed(
     root: &Path,
     runtime: &Path,
     config: &mdoc_store::settings::PiiConfig,
-    progress: &dyn Fn(ScanProgress),
+    limit: ScanLimit,
+    observer: &dyn ScanObserver,
 ) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
     let started = Instant::now();
-    let (raw, mut timings) = model_stage(source, cancel, started, root, runtime, config, progress)?;
-    checkpoint(cancel, started)?;
+    let clock = Clock::new(limit);
+    let (raw, mut timings) = model_stage(source, cancel, &clock, root, runtime, config, observer)?;
+    checkpoint(cancel, &clock)?;
     let lap = Instant::now();
     let detections = correct(source, &raw);
     timings.structured = lap.elapsed();
-    checkpoint(cancel, started)?;
+    checkpoint(cancel, &clock)?;
     timings.total = started.elapsed();
     Ok((detections, timings))
 }
@@ -2123,35 +2117,37 @@ fn category_of(label: &str) -> Option<Category> {
 }
 
 /// The model stage: windows, inference and offsets checked, with no
-/// correction. `started` is the scan's start, for its deadline.
-#[allow(clippy::too_many_arguments)]
+/// correction. `clock` holds the scan to its limit; each stage and window
+/// done counts as progress.
 fn model_stage(
     source: &str,
     cancel: &AtomicBool,
-    started: Instant,
+    clock: &Clock,
     root: &Path,
     runtime: &Path,
     config: &mdoc_store::settings::PiiConfig,
-    progress: &dyn Fn(ScanProgress),
+    observer: &dyn ScanObserver,
 ) -> Result<(Vec<RawEntity>, ScanTimings), DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(DetectError::TooLarge);
     }
     let mut timings = ScanTimings::default();
     let mut lap = Instant::now();
+    // Each stage done is progress for the stall guard.
     let mut split = || {
         let now = Instant::now();
         let elapsed = now - lap;
         lap = now;
+        clock.advanced();
         elapsed
     };
-    checkpoint(cancel, started)?;
+    checkpoint(cancel, clock)?;
     let _inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
     split();
-    convert_on_load(root, config.model, &|| checkpoint(cancel, started))?;
+    convert_on_load(root, config.model, &|| checkpoint(cancel, clock))?;
     verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
     timings.verify = split();
-    checkpoint(cancel, started)?;
+    checkpoint(cancel, clock)?;
     mdoc_import::ocr::load_onnx_runtime(runtime)?;
     timings.runtime = split();
     let tasks = schema_tasks();
@@ -2159,19 +2155,20 @@ fn model_stage(
     timings.tokenizer = split();
     let view = mdoc_pii::view::View::new(source);
     let (input, forms) = model_text(&view.text);
-    let windows = distinct_windows(&input, &transformer, &tasks, cancel, started)?;
+    let windows = distinct_windows(&input, &transformer, &tasks, cancel, clock)?;
     timings.windowing = split();
-    let count = windows.len();
-    progress(ScanProgress {
-        done: 0,
-        windows: count,
-    });
+    let mut progress = ScanProgress {
+        windows: windows.len(),
+        chars: windows.iter().map(|(text, ..)| text.chars().count()).sum(),
+        ..ScanProgress::default()
+    };
+    observer.progress(progress);
     let mut engine = load_engine(root, config.model)?;
     timings.engine_load = split();
     let params = inference_params(config);
     let mut raw = Vec::new();
-    for (index, (text, tokens, starts)) in windows.into_iter().enumerate() {
-        checkpoint(cancel, started)?;
+    for (text, tokens, starts) in windows {
+        clock.wait_out_pause(cancel, observer)?;
         split();
         run_window(&mut engine, text, &starts, &tasks, &params, &mut raw)?;
         timings.windows.push(WindowTiming {
@@ -2179,11 +2176,10 @@ fn model_stage(
             tokens,
             inference: split(),
         });
-        checkpoint(cancel, started)?;
-        progress(ScanProgress {
-            done: index + 1,
-            windows: count,
-        });
+        checkpoint(cancel, clock)?;
+        progress.done += 1;
+        progress.chars_done += text.chars().count();
+        observer.progress(progress);
     }
     Ok((to_source(source, &view, &forms, raw), timings))
 }
@@ -2197,7 +2193,9 @@ fn convert_on_load(
     check: &dyn Fn() -> Result<(), DetectError>,
 ) -> Result<(), DetectError> {
     match convert_at(root, model, check) {
-        Err(error @ (DetectError::Cancelled | DetectError::TooSlow)) => Err(error),
+        Err(error @ (DetectError::Cancelled | DetectError::TooSlow | DetectError::Stalled)) => {
+            Err(error)
+        }
         Err(error) => {
             eprintln!("Could not re-save the detector's encoder: {error}");
             Ok(())
@@ -2232,13 +2230,13 @@ fn distinct_windows<'a>(
     transformer: &SchemaTransformer,
     tasks: &[SchemaTask],
     cancel: &AtomicBool,
-    started: Instant,
+    clock: &Clock,
 ) -> Result<Vec<Window<'a>>, DetectError> {
     // A window's proposals depend only on its text, so a repeated paragraph
     // runs once and its results land on every repeat.
     let mut windows: Vec<(&str, usize, Vec<usize>)> = Vec::new();
     let mut seen = std::collections::HashMap::new();
-    for (range, tokens) in bounded_windows(source, transformer, tasks, cancel, started)? {
+    for (range, tokens) in bounded_windows(source, transformer, tasks, cancel, clock)? {
         let text = &source[range.clone()];
         let index = *seen.entry(text).or_insert_with(|| {
             windows.push((text, tokens, Vec::new()));
@@ -2322,19 +2320,19 @@ impl ModelSession {
     }
 
     /// The model stage over one source, as a scan runs it, with the scan's
-    /// size limit and deadline.
+    /// size limit and desktop's deadline.
     pub fn entities(&mut self, source: &str) -> Result<Vec<RawEntity>, DetectError> {
         if source.len() > MAX_SOURCE_BYTES {
             return Err(DetectError::TooLarge);
         }
         let cancel = AtomicBool::new(false);
-        let started = Instant::now();
+        let clock = Clock::new(ScanLimit::DESKTOP);
         let view = mdoc_pii::view::View::new(source);
         let (input, forms) = model_text(&view.text);
-        let windows = distinct_windows(&input, &self.transformer, &self.tasks, &cancel, started)?;
+        let windows = distinct_windows(&input, &self.transformer, &self.tasks, &cancel, &clock)?;
         let mut raw = Vec::new();
         for (text, _, starts) in windows {
-            checkpoint(&cancel, started)?;
+            checkpoint(&cancel, &clock)?;
             run_window(
                 &mut self.engine,
                 text,
@@ -2474,6 +2472,7 @@ pub fn probe_window(
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+    use std::sync::atomic::Ordering;
     #[test]
     fn dotted_legal_forms_fit_the_model_without_changing_other_punctuation() {
         let source = "Pellam Company of Ohio L.L.C.; A. Rowan v. Penrow, Inc. 3.14";
@@ -7027,7 +7026,8 @@ mod tests {
                 &root,
                 &runtime,
                 &mdoc_store::settings::PiiConfig::default(),
-                &|_| {},
+                ScanLimit::DESKTOP,
+                &|_: ScanProgress| {},
             )
             .unwrap();
             let found: std::collections::BTreeSet<_> = detected
@@ -7060,7 +7060,7 @@ mod tests {
             .map_err(|e| e.to_string())
     }
     #[test]
-    fn resource_guards_reject_before_opening_any_model_and_deadlines_reject_partial_work() {
+    fn resource_guards_reject_before_opening_any_model() {
         let source = "x".repeat(MAX_SOURCE_BYTES + 1);
         for model in mdoc_store::settings::PiiModel::ALL {
             let result = scan_in(
@@ -7075,19 +7075,6 @@ mod tests {
             );
             assert!(result.unwrap_err().to_string().contains("2 MiB"));
         }
-        assert!(
-            checkpoint(
-                &AtomicBool::new(false),
-                Instant::now() - Duration::from_secs(121)
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("two minutes")
-        );
-        assert!(matches!(
-            checkpoint(&AtomicBool::new(true), Instant::now()),
-            Err(DetectError::Cancelled)
-        ));
     }
     #[test]
     #[ignore = "requires preverified qualification cache and installed native runtime; no downloads"]
@@ -7103,16 +7090,25 @@ mod tests {
             &root,
             &mdoc_import::ocr::onnx_runtime(false).unwrap(),
             &mdoc_store::settings::PiiConfig::default(),
+            ScanLimit::DESKTOP,
             &|p| reports.borrow_mut().push(p),
         )
         .unwrap();
         // The count starts at none done and steps once per window.
         let windows = timings.windows.len();
         assert!(windows > 1, "a long source spans several windows");
-        let expected: Vec<_> = (0..=windows)
-            .map(|done| ScanProgress { done, windows })
-            .collect();
-        assert_eq!(reports.into_inner(), expected);
+        let reports = reports.into_inner();
+        assert_eq!(
+            reports
+                .iter()
+                .map(|p| (p.done, p.windows))
+                .collect::<Vec<_>>(),
+            (0..=windows)
+                .map(|done| (done, windows))
+                .collect::<Vec<_>>()
+        );
+        let last = reports.last().unwrap();
+        assert_eq!(last.chars_done, last.chars);
         assert!(!detected.is_empty());
         assert!(
             detected
@@ -7345,18 +7341,6 @@ mod tests {
             assert!(!check_reserved_in(dir.path(), &runtime, model).unwrap());
         }
     }
-    #[test]
-    fn cancellation_and_deadline_reject_results() {
-        assert!(checkpoint(&AtomicBool::new(true), Instant::now()).is_err());
-        assert!(
-            checkpoint(
-                &AtomicBool::new(false),
-                Instant::now() - Duration::from_secs(121)
-            )
-            .is_err()
-        );
-    }
-
     /// #412: an email address is the whole address, whatever its local part
     /// holds: `_` (in an autolink's brackets too, without them), a leading
     /// `_` that opens no emphasis, quotes and an apostrophe, with or without
