@@ -116,7 +116,10 @@ fn weights_move_beside_the_model_in_graph_order_and_everything_else_is_kept() {
     convert(&path, &pin(&before), &pins, &|| Ok(())).unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), after);
     assert_eq!(std::fs::read(data_path(&path)).unwrap(), data);
-    assert_eq!(folder_names(dir.path()), ["encoder.onnx", "encoder.onnx.data"]);
+    assert_eq!(
+        folder_names(dir.path()),
+        ["encoder.onnx", "encoder.onnx.data"]
+    );
     assert!(present(&path, &pins));
     verify(&path, &pins).unwrap();
 }

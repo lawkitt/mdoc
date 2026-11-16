@@ -7176,7 +7176,10 @@ mod tests {
             let encoders: Vec<_> = files.iter().filter(|f| f.external_data.is_some()).collect();
             assert_eq!(encoders.len(), 1);
             let encoder = encoders[0];
-            assert!(encoder.path.ends_with(&format!("encoder_{}.onnx", model.folder().trim_end_matches("_v2"))));
+            assert!(encoder.path.ends_with(&format!(
+                "encoder_{}.onnx",
+                model.folder().trim_end_matches("_v2")
+            )));
             for file in &files {
                 if file.external_data.is_none() {
                     sized(&root.path().join(&file.path), file.bytes);

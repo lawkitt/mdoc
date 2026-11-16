@@ -463,7 +463,10 @@ mod tests {
     #[test]
     fn the_detector_is_installed_with_either_encoder_layout() {
         let scratch = Scratch::new();
-        let setup = Setup::new(scratch.path().join("models").display().to_string(), 12 * GIB);
+        let setup = Setup::new(
+            scratch.path().join("models").display().to_string(),
+            12 * GIB,
+        );
         let folder = setup.folder(ModelId::Gliner2Fp16);
         let manifest = mdoc_detect::manifest_for(PiiModel::Fp16);
         // Sparse files at the pinned sizes: presence is checked by size.
@@ -484,7 +487,10 @@ mod tests {
         let path = folder.join(&encoder.path);
         sized(&path, pins.model.bytes);
         // The model without its data file is still to download.
-        assert_eq!(setup.info(ModelId::Gliner2Fp16).missing_bytes, encoder.bytes);
+        assert_eq!(
+            setup.info(ModelId::Gliner2Fp16).missing_bytes,
+            encoder.bytes
+        );
         sized(&mdoc_detect::external::data_path(&path), pins.data.bytes);
         assert!(setup.info(ModelId::Gliner2Fp16).installed);
         assert!(setup.detector_paths(runtimes()).is_some());
