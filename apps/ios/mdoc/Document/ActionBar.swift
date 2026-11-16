@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 import UIKit
 
@@ -192,7 +193,10 @@ struct ActionBar: View {
         case .reading: return String(localized: "Reading the file")
         case .converting: return String(localized: "Converting")
         case .recognizing: return String(localized: "Recognizing text")
-        case .scanning: return String(localized: "Finding names")
+        case .scanning:
+            guard let seconds = progress?.secondsLeft else { return String(localized: "Finding names") }
+            return String(localized: "Finding names · \(ScanTime.left(seconds: seconds))")
+        case .coolingDown: return String(localized: "Paused to cool down")
         case nil:
             switch kind {
             case .recognize: return String(localized: "Reading the file")
@@ -205,8 +209,10 @@ struct ActionBar: View {
 
 /// Below the detector floor, where Find names would be (ADR 0088).
 struct BelowFloorNote: View {
+    let reason: FloorReason?
+
     var body: some View {
-        Label(BelowFloor.note, systemImage: "info.circle")
+        Label(BelowFloor.note(reason), systemImage: "info.circle")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)

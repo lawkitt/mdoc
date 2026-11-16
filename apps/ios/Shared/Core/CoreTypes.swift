@@ -353,7 +353,8 @@ struct ModelOffer: Identifiable, Hashable, Sendable {
     var state: ModelState
 }
 
-/// What the device can run, decided by physical RAM rather than OS version.
+/// What the device can run, decided by physical RAM and the detector's
+/// timed run rather than OS version.
 enum DeviceTier: Hashable, Sendable {
     /// The GLiNER2 detector fits.
     case detector
@@ -366,6 +367,10 @@ struct SetupSnapshot: Hashable, Sendable {
     var physicalMemory: UInt64
     var tier: DeviceTier
     var offers: [ModelOffer]
+    /// Why the device is below the floor: too little memory, or too slow.
+    var belowFloor: FloorReason? = nil
+    /// Seconds 10 pages take on this device, once the detector was timed.
+    var tenPagesSeconds: UInt64? = nil
 
     var missing: [ModelOffer] {
         offers.filter { $0.state != .installed }
@@ -394,6 +399,8 @@ struct JobUpdate: Hashable, Sendable {
     var fraction: Double?
     var page: Int?
     var pageCount: Int?
+    /// A scan's estimate of the seconds it has left.
+    var secondsLeft: UInt64?
 }
 
 // MARK: - Errors

@@ -28,7 +28,14 @@ enum class CancelReason {
     Background,
 }
 
-data class RunningJob(val kind: JobKind, val documentId: DocumentId?, val title: String, val stage: JobStage? = null)
+data class RunningJob(
+    val kind: JobKind,
+    val documentId: DocumentId?,
+    val title: String,
+    val stage: JobStage? = null,
+    /** A scan's estimate of the seconds it has left (ADR 0120). */
+    val secondsLeft: Long? = null,
+)
 
 /** A job that stopped when mdoc left the screen or was ended: the document offers to resume. */
 data class InterruptedJob(val kind: JobKind, val documentId: DocumentId?)
@@ -72,7 +79,10 @@ class Jobs(private val context: Context) {
     fun <T> start(kind: JobKind, documentId: DocumentId?, title: String, work: (JobObserver) -> T): Deferred<JobOutcome<T>>? {
         val job = RunningJob(kind, documentId, title)
         if (!running.compareAndSet(null, job)) return null
-        val token = Token { stage -> running.value = running.value?.copy(stage = stage) }
+        val token = Token(
+            onStage = { stage -> running.value = running.value?.copy(stage = stage) },
+            onRemaining = { seconds -> running.value = running.value?.copy(secondsLeft = seconds) },
+        )
         this.token.set(token)
         if (stopped.value?.documentId == documentId) clearInterrupted()
         return scope.async {
@@ -137,12 +147,14 @@ class Jobs(private val context: Context) {
         InterruptedJob(JobKind.valueOf(item.getString("kind")), item.optString("document").takeIf { it.isNotEmpty() }?.let(::DocumentId))
     }.getOrNull()
 
-    private class Token(private val onStage: (JobStage) -> Unit) : JobObserver {
+    private class Token(private val onStage: (JobStage) -> Unit, private val onRemaining: (Long) -> Unit) : JobObserver {
         @Volatile var reason: CancelReason? = null
             private set
         private val handlers = mutableListOf<() -> Unit>()
 
         override fun stage(stage: JobStage) = onStage(stage)
+
+        override fun remaining(seconds: Long) = onRemaining(seconds)
 
         override fun onCancel(handler: () -> Unit) {
             val now = synchronized(this) {

@@ -146,7 +146,7 @@ struct SettingsView: View {
                 // Below the floor Settings says what the document
                 // says where Find names would be (ADR 0088).
                 if setup.snapshot.tier == .belowFloor {
-                    Text(BelowFloor.note)
+                    Text(BelowFloor.note(setup.snapshot.belowFloor))
                         .accessibilityIdentifier("below-floor-note")
                 }
                 Text("Models download once, on Wi-Fi unless you allow cellular, and then run on this device.")
@@ -254,10 +254,14 @@ struct ModelDetailView: View {
                 if offer.purpose == .detector {
                     Section {
                         LabeledContent(Self.deviceName, value: Self.memoryText(setup.physicalMemory))
+                        if let seconds = setup.snapshot.tenPagesSeconds {
+                            LabeledContent("Speed", value: ScanTime.perTenPages(seconds: seconds))
+                                .accessibilityIdentifier("detector-speed")
+                        }
                     } footer: {
                         Text(setup.snapshot.tier == .detector
                             ? String(localized: "Enough memory to find names on this device.")
-                            : BelowFloor.note)
+                            : BelowFloor.note(setup.snapshot.belowFloor))
                     }
                 }
             }

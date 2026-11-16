@@ -25,9 +25,8 @@ mobile target.
 - **Runtimes in the bundle.** ONNX Runtime and PDFium ship inside the app,
   statically linked or as an embedded signed framework.
 - **Detector budgets** per device class: peak memory ≤ 2 GiB, cold load
-  ≤ 10 s, a 20-page scan ≤ 60 s, no serious throttling. The floor is set by
-  physical RAM and measured
-  ([report](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-10-31/README.md));
+  ≤ 10 s ([report](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-10-31/README.md)).
+  The floor and scan time are [ADR 0120](0120-phone-detector-floor-and-scan-time.md)'s;
   setup offers only the models a device can run. An INT8 export ships only
   if it matches FP16 on the qualification fixtures.
 - **Models** come from desktop's pinned URLs and SHA-256 checks, on Wi-Fi

@@ -116,6 +116,9 @@ class DocumentViewModel(
         finish(JobKind.Recognize, jobs.run(JobKind.Recognize, jobId, title) { session.recognize(it) })
     }
 
+    /** Minutes a scan takes on this phone, when more than about one (ADR 0120). */
+    fun scanEstimate(): Int? = if (findsNames) session.scanEstimate() else null
+
     fun findNames(title: String) = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
         val outcome = jobs.run(JobKind.Scan, jobId, title) { session.scan(it) }

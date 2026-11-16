@@ -145,6 +145,24 @@ final class SetupViewModel {
         snapshot = setup.snapshot()
     }
 
+    /// Times the installed detector once (ADR 0120), right after it
+    /// installs; one installed before mdoc timed it is timed by its first
+    /// scan. The result gives scans their estimate and Settings its speed;
+    /// a phone past the speed ceiling is below the floor from then on.
+    func timeDetectorIfNeeded() async {
+        guard snapshot.tier == .detector, snapshot.tenPagesSeconds == nil,
+              snapshot.offers.contains(where: { $0.purpose == .detector && $0.state == .installed })
+        else { return }
+        let setup = self.setup
+        let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Timing the name finder")) { observer in
+            try setup.timeDetector(observer: observer)
+        }
+        // A failed run leaves the phone untimed: the next scan times it.
+        if case .finished(let timed) = outcome {
+            snapshot = timed
+        }
+    }
+
     private var work: Task<Void, Never>?
     private var continuation: (@MainActor () async -> Void)?
     /// The download started last; one it replaced ends quietly.
@@ -168,6 +186,13 @@ final class SetupViewModel {
         fetching = false
         downloadProgress = [:]
         refresh()
+        let detectorRequested = requested.contains { id in snapshot.offers.contains { $0.id == id && $0.purpose == .detector } }
+        if finished {
+            await timeDetectorIfNeeded()
+        }
+        // Too slow to find names: the job that asked for the detector does
+        // not run, and the document says why instead (ADR 0120).
+        let tooSlow = detectorRequested && snapshot.tier == .belowFloor
         // Replaced by the cellular download: it goes on, with the work that
         // asked for setup.
         guard generation == self.generation else { return }
@@ -175,7 +200,7 @@ final class SetupViewModel {
         allowsCellular = false
         let next = continuation
         continuation = nil
-        if finished && requestedBytes == 0 {
+        if finished && requestedBytes == 0 && !tooSlow {
             await next?()
         }
     }

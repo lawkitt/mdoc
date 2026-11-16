@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.DeviceTier
+import io.github.lawkitt.mdoc.ui.ScanTime
 import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.setup.SetupState
 
@@ -64,7 +65,8 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Heading(R.string.models)
-            if (setup.snapshot.tier == DeviceTier.BelowFloor) Body(stringResource(R.string.below_floor_note))
+            if (setup.snapshot.tier == DeviceTier.BelowFloor) Body(ScanTime.belowFloor(setup.snapshot.belowFloor))
+            setup.snapshot.tenPagesSeconds?.let { Body(stringResource(R.string.detector_speed, ScanTime.perTenPages(it))) }
             SetupCard(setup, onDownload = onDownload, onNotNow = null, onCancel = onCancel, onUseCellular = onUseCellular)
             Body(stringResource(R.string.models_explanation))
             HorizontalDivider()

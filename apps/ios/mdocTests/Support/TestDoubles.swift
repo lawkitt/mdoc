@@ -9,6 +9,8 @@ import MdocFFI
 final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     let base: any mdoc.DocumentSession
     let seconds: Double
+    /// What `scanEstimate` answers, as a timed phone's core would.
+    var estimate: Int?
 
     init(_ base: any mdoc.DocumentSession, seconds: Double) {
         self.base = base
@@ -36,6 +38,8 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
         try wait(observer, stage: .scanning)
         return try base.scan(observer: observer)
     }
+
+    func scanEstimate() -> Int? { estimate }
 
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot {
         try base.decide(candidate, decision, scope: scope)
@@ -95,18 +99,22 @@ final class FakeSetup: mdoc.Setup, @unchecked Sendable {
     static let ocrID = "pp-ocr-v5"
     static let detectorBytes: Int64 = 1_190_000_000
     static let ocrBytes: Int64 = 31_000_000
-    /// The real core's floor (`DETECTOR_FLOOR_BYTES`, 7 GiB).
-    static let detectorFloor: UInt64 = 7 * Fixture.gigabyte
+    /// The real core's floor (`DETECTOR_FLOOR_BYTES`, 3.25 GiB).
+    static let detectorFloor: UInt64 = 13 * Fixture.gigabyte / 4
 
     private let lock = NSLock()
     private let physicalMemory: UInt64
     private var installed: Set<String> = []
+    /// What the detector's timed run finds: too slow, or 62 s per 10 pages.
+    var timesTooSlow = false
+    private var timed = false
 
     init(memory: UInt64) {
         physicalMemory = memory
     }
 
-    private var tier: DeviceTier { physicalMemory >= Self.detectorFloor ? .detector : .belowFloor }
+    private var tooSlow: Bool { timed && timesTooSlow }
+    private var tier: DeviceTier { physicalMemory >= Self.detectorFloor && !tooSlow ? .detector : .belowFloor }
 
     func snapshot() -> SetupSnapshot {
         lock.withLock {
@@ -120,8 +128,18 @@ final class FakeSetup: mdoc.Setup, @unchecked Sendable {
                     id: Self.detectorID, name: "Name detector", purpose: .detector, byteSize: Self.detectorBytes,
                     state: installed.contains(Self.detectorID) ? .installed : .notInstalled), at: 0)
             }
-            return SetupSnapshot(physicalMemory: physicalMemory, tier: tier, offers: offers)
+            return SetupSnapshot(
+                physicalMemory: physicalMemory, tier: tier, offers: offers,
+                belowFloor: tooSlow ? .speed : physicalMemory < Self.detectorFloor ? .memory : nil,
+                tenPagesSeconds: timed ? 62 : nil)
         }
+    }
+
+    func timeDetector(observer: any JobObserver) throws -> SetupSnapshot {
+        lock.withLock {
+            if installed.contains(Self.detectorID) { timed = true }
+        }
+        return snapshot()
     }
 
     func downloadRequests(for model: String) throws -> [ModelDownloadRequest] {

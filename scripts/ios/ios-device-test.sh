@@ -28,14 +28,14 @@ fixtures=target/ios/device-fixtures
 container_fixtures=Library/mdoc-ui-fixtures
 result=target/ios/device-test-$(date +%Y%m%d-%H%M%S).xcresult
 # A pass on a clean checkout is recorded by commit (scripts/ios/ios-gate.sh);
-# `just release-ios` tags only a commit with a below-floor pass on a phone
-# below the floor (ADR 0107).
+# `just release-ios` tags only a commit with a pass on the iPhone 12 Pro at
+# its own tier (ADR 0107).
 commit=$(git rev-parse HEAD)
 clean=no
 ! bash scripts/ios/ios-gate.sh clean || clean=yes
 
 # The phone's model, always: the record names the real phone even when the
-# tier is forced. The detector floor is 8 GB (ADR 0088).
+# tier is forced. The detector floor is 4 GB (ADR 0120).
 details=$(mktemp)
 xcrun devicectl device info details --device "$device" --json-output "$details" >/dev/null 2>&1 ||
   die "could not read the phone's model"

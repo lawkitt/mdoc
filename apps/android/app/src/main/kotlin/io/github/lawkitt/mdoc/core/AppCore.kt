@@ -22,13 +22,14 @@ class AppCore(
     val storage: MdocStorage,
     val library: MdocLibrary,
     val setup: Setup,
+    private val device: DeviceConditions = DeviceConditions.Unknown,
 ) {
     /** ONNX Runtime and PDFium as the APK ships them. */
     val runtimes: Runtimes by lazy { linkedRuntimes() }
 
-    val models = Models(setup, { runtimes }, java.io.File(storage.dir(MdocStorage.Area.Downloads), "installed.json"))
+    val models = Models(setup, { runtimes }, java.io.File(storage.dir(MdocStorage.Area.Downloads), "installed.json"), device)
 
-    val documents = Documents(library, storage, models)
+    val documents = Documents(library, storage, models, device)
 
     companion object {
         init {
@@ -50,6 +51,7 @@ class AppCore(
                 storage = storage,
                 library = MdocLibrary(storage.root.path, keys.key()),
                 setup = Setup(storage.dir(MdocStorage.Area.Models).path, physicalMemory.toULong()),
+                device = DeviceConditions.of(context),
             )
         }
 

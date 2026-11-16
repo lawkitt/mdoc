@@ -113,7 +113,8 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   rejected, never truncated.
 - A window repeated word for word runs once.
 - Limits: 2 MiB of source, 512 tokens per window, a two-minute cooperative
-  deadline.
+  deadline on desktop; a phone stops a scan only after 60 s without
+  progress.
 - One scan runs at a time, and each scan loads and drops its engine.
 - Model load and a native inference call cannot be interrupted mid-call; a
   cancelled scan's late results are rejected.

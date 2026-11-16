@@ -126,3 +126,4 @@ full text is in git history.
 | 0117 | GPUI 0.3.12 and a quicker sidebar reveal | [specs/desktop.md](../specs/desktop.md) · [last text](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0117-gpui-0-3-12-and-a-quicker-sidebar-reveal.md) |
 | 0118 | [Docs are area specs; ADRs are rare](0118-docs-are-area-specs.md) | Kept |
 | 0119 | [GPUI as the UI framework](0119-gpui-as-the-ui-framework.md) | Kept |
+| 0120 | [Phone detector floor and scan time](0120-phone-detector-floor-and-scan-time.md) | Kept |

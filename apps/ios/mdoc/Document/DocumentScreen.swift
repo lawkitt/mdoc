@@ -500,7 +500,9 @@ struct DocumentScreen: View {
                     }
                 }
                 if model.showsBelowFloorNote {
-                    BelowFloorNote()
+                    BelowFloorNote(reason: setup.snapshot.belowFloor)
+                } else if let minutes = model.scanEstimate {
+                    ScanEstimateNote(minutes: minutes)
                 }
                 ActionBar(model: model)
             }

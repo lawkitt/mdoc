@@ -14,7 +14,7 @@ final class AppLaunchTests: XCTestCase {
         let storage = try Fixture.temporaryStorage()
         let keys = LockableKeyStore()
         let open = {
-            (storage, try RealCore.make(storage: storage, keys: keys, physicalMemory: 4 * Fixture.gigabyte))
+            (storage, try RealCore.make(storage: storage, keys: keys, physicalMemory: Fixture.belowFloor))
         }
 
         keys.locked = true

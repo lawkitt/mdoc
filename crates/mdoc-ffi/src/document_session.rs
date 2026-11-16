@@ -11,6 +11,7 @@ mod intake;
 mod origin;
 mod review;
 mod saving;
+mod scanning;
 mod snapshot;
 
 use crate::{
@@ -26,6 +27,8 @@ pub(crate) use review::Counts;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
 pub use saving::SavedChange;
+pub use scanning::Thermal;
+pub(crate) use scanning::{PhoneScan, check_free_memory};
 pub use snapshot::{
     Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
     MentionState, ReviewSnapshot,
@@ -47,9 +50,12 @@ pub enum JobStage {
     /// OCR: loading the models, then recognizing every page.
     Recognizing,
     Scanning,
+    /// A scan paused while the phone is at the critical thermal state.
+    CoolingDown,
 }
 
-/// The platform's view of a long job. Called on the job's thread.
+/// The platform's view of a long job, and of the device conditions a scan
+/// depends on. Called on the job's thread.
 #[uniffi::export(callback_interface)]
 pub trait JobProgress: Send + Sync {
     fn stage(&self, stage: JobStage);
@@ -58,6 +64,14 @@ pub trait JobProgress: Send + Sync {
     /// shows it and passes it to the system, which stops a background job
     /// that reports none.
     fn advanced(&self, done: u64, total: u64);
+    /// A scan's estimate of the seconds it has left.
+    fn remaining(&self, seconds: u64);
+    /// The device's thermal state, asked between a scan's windows.
+    fn thermal(&self) -> Thermal;
+    /// Bytes the app may still allocate, asked when a scan starts (iOS
+    /// `os_proc_available_memory`, Android `ActivityManager.MemoryInfo`);
+    /// `None` where the platform cannot tell, such as the Simulator.
+    fn free_memory(&self) -> Option<u64>;
 }
 
 /// How to import a file.
@@ -357,10 +371,25 @@ impl DocumentSession {
         self.with_document(|_| Ok(()))
     }
 
+    /// Minutes a scan of this document takes on this device, rounded, for
+    /// "About N minutes on this phone" before a scan expected to take more
+    /// than about a minute. `None` for a shorter scan, or before the
+    /// device's timed run.
+    pub fn scan_estimate(&self, detector: DetectorPaths) -> Option<u32> {
+        let chars = {
+            let document = self.lock_document();
+            document.as_ref()?.review.text.chars().count()
+        };
+        detector.speed?.shown_minutes(chars)
+    }
+
     /// Scan for candidates: the GLiNER2 detector and the structured rules.
     /// Without `detector` the rules run alone: only UI tests seed candidates
     /// that way, since below the detector floor the apps offer no Find
-    /// names (ADR 0088). The
+    /// names (ADR 0088). A detector scan has no fixed deadline: it stops
+    /// only after a minute without progress, refuses to start without
+    /// enough free memory, reports the time it has left and pauses while
+    /// the phone is too hot (ADR 0120). The
     /// review stays usable meanwhile; a transition that changes the text
     /// (Replace, Keep of a replaced mention) or a new import discards the
     /// scan's result, as an edit does on desktop.
@@ -375,22 +404,21 @@ impl DocumentSession {
             (document.review.text.clone(), document.generation)
         };
         let cancel = self.start_job();
-        if let Some(progress) = &progress {
+        let progress = progress.as_deref();
+        if let Some(progress) = progress {
             progress.stage(JobStage::Scanning);
         }
         let detections = match &detector {
             Some(paths) => {
-                mdoc_detect::scan_at_with_progress(
+                scanning::check_free_memory(progress)?;
+                mdoc_detect::scan_at(
                     &source,
                     &cancel,
                     std::path::Path::new(&paths.model),
                     std::path::Path::new(&paths.onnx),
                     &mdoc_store::settings::PiiConfig::default(),
-                    &|windows| {
-                        if let Some(progress) = &progress {
-                            progress.advanced(windows.done as u64, windows.windows as u64);
-                        }
-                    },
+                    mdoc_detect::ScanLimit::PHONE,
+                    &scanning::PhoneScan::new(progress, paths.speed),
                 )?
                 .0
             }
@@ -992,6 +1020,13 @@ mod tests {
                 }
             }
             fn advanced(&self, _: u64, _: u64) {}
+            fn remaining(&self, _: u64) {}
+            fn thermal(&self) -> Thermal {
+                Thermal::Nominal
+            }
+            fn free_memory(&self) -> Option<u64> {
+                None
+            }
         }
         let scratch = Scratch::new();
         let path = scratch.path().join("old.md");
@@ -1048,6 +1083,13 @@ mod tests {
             }
         }
         fn advanced(&self, _: u64, _: u64) {}
+        fn remaining(&self, _: u64) {}
+        fn thermal(&self) -> Thermal {
+            Thermal::Nominal
+        }
+        fn free_memory(&self) -> Option<u64> {
+            None
+        }
     }
 
     /// What the platforms call from their main thread returns at once

@@ -101,7 +101,7 @@ class LongJobsTest {
         val find = device.wait(Until.findObject(By.text("Find names")), 20_000)
         assumeTrue("this phone is below the detector floor", find != null)
         find!!.click()
-        need(By.text("Finding names"), 30_000)
+        need(finding, 30_000)
         device.pressHome()
         awayWhileTheJobRuns()
         openDocument(title)
@@ -115,7 +115,7 @@ class LongJobsTest {
         val find = device.wait(Until.findObject(By.text("Find names")), 20_000)
         assumeTrue("this phone is below the detector floor", find != null)
         find!!.click()
-        need(By.text("Finding names"), 30_000)
+        need(finding, 30_000)
         SystemClock.sleep(10_000)
         device.pressHome()
         kill()
@@ -222,7 +222,7 @@ class LongJobsTest {
         // What was found: Replace all, or the note that there was nothing.
         val result = device.wait(Until.findObject(By.text(Pattern.compile("Replace .*|No names found.*"))), 30 * 60_000L)
         assertNotNull("the document shows what was found", result)
-        assertTrue(device.findObjects(By.text("Finding names")).isEmpty())
+        assertTrue(device.findObjects(finding).isEmpty())
     }
 
     /**
@@ -242,6 +242,9 @@ class LongJobsTest {
 
     /** A job's progress line, as the document shows it while the job runs. */
     private val running = By.text(Pattern.compile(RUNNING))
+
+    /** Find names running: the stage, then with its time left (ADR 0120). */
+    private val finding get() = By.text(Pattern.compile("Finding names( · .*)?"))
 
     private fun need(selector: BySelector, timeout: Long): UiObject2 =
         requireNotNull(device.wait(Until.findObject(selector), timeout)) { "not on screen: $selector" }

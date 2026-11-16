@@ -201,12 +201,12 @@ cannot establish these rows.
   with no release commit. `MARKETING_VERSION` stays `x.y.z` and only the
   maintainer changes it; the build number is the commit count on `main` up
   to the tagged commit. Tags are never moved or reused.
-- **Gate:** `just ios-device-test <UDID>` on the iPhone 12 Pro (below the
-  detector floor), on the commit to be tagged, from a clean checkout. If the
-  phone is unreachable, tell the maintainer and tag nothing; the gate is
-  never skipped, and only a phone below the floor counts, never a forced
-  tier on a newer one. A build for Lawyers also passes the detector tier on
-  the iPhone 17 Pro.
+- **Gate:** `just ios-device-test <UDID>` on the iPhone 12 Pro, the slowest
+  phone that finds names, at its own tier, on the commit to be tagged, from
+  a clean checkout. If the phone is unreachable, tell the maintainer and tag
+  nothing; the gate is never skipped, and a forced tier or a newer phone
+  never counts. A build for Lawyers also passes the detector tier on the
+  iPhone 17 Pro.
 - The iPhone 17 Pro gets mdoc from TestFlight only: install nothing on it
   unless the maintainer asks.
 - **What to Test**, in a file outside the repository: first "Test with

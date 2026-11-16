@@ -57,7 +57,7 @@ final class AppModel {
         documents = DocumentStore { id in
             DocumentViewModel(
                 session: try core.library.session(for: id), jobs: jobs, storage: storage,
-                findsNames: setup.snapshot.tier == .detector
+                canFindNames: { [weak setup] in setup?.snapshot.tier == .detector }
             ) { [weak library] in
                 library?.refresh()
             }

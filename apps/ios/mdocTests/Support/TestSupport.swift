@@ -6,7 +6,7 @@ enum Fixture {
     static let gigabyte: UInt64 = 1_073_741_824
     /// Below the detector floor: the core scans with its structured rules
     /// and no model, so the tests need none.
-    static let belowFloor: UInt64 = 4 * gigabyte
+    static let belowFloor: UInt64 = 3 * gigabyte
     /// At the detector tier: a scan needs the name detector, which the
     /// tests never download, so it asks for setup.
     static let detectorTier: UInt64 = 8 * gigabyte

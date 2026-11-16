@@ -18,7 +18,7 @@ final class RealCoreTests: XCTestCase {
     }
 
     private func core() throws -> Core {
-        try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: 4 * Fixture.gigabyte)
+        try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
     }
 
     private static let letter = """
@@ -407,7 +407,7 @@ final class RealCoreTests: XCTestCase {
     }
 
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
-        let small = RealSetup(storage: storage, physicalMemory: 4 * Fixture.gigabyte).snapshot()
+        let small = RealSetup(storage: storage, physicalMemory: Fixture.belowFloor).snapshot()
         XCTAssertEqual(small.tier, .belowFloor)
         XCTAssertEqual(small.offers.map(\.purpose), [.ocr])
         let large = RealSetup(storage: storage, physicalMemory: 8 * Fixture.gigabyte).snapshot()
@@ -420,7 +420,7 @@ final class RealCoreTests: XCTestCase {
     }
 
     func testAWrongDownloadIsRefused() throws {
-        let setup = RealSetup(storage: storage, physicalMemory: 4 * Fixture.gigabyte)
+        let setup = RealSetup(storage: storage, physicalMemory: Fixture.belowFloor)
         let request = try XCTUnwrap(setup.downloadRequests(for: "ocr-english-russian").first)
         let file = storage.url(.downloads).appendingPathComponent("wrong")
         try Data("not a model".utf8).write(to: file)

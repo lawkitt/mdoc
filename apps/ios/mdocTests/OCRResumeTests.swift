@@ -15,7 +15,7 @@ final class OCRResumeTests: XCTestCase {
     override func setUp() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_OCR_TESTS"] == "1", "OCR tests not requested")
         storage = try Fixture.temporaryStorage()
-        core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: 4 * Fixture.gigabyte)
+        core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
         try await Self.installOCR(into: core)
     }
 
@@ -42,7 +42,7 @@ final class OCRResumeTests: XCTestCase {
         XCTAssertTrue(stopped.snapshot().resumesOCR)
 
         // Resume, after mdoc stopped too: the next launch finds the import.
-        core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: 4 * Fixture.gigabyte)
+        core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
         let resumed = try core.library.session(for: stopped.id)
         XCTAssertTrue(resumed.snapshot().resumesOCR)
         let observer = TestObserver()

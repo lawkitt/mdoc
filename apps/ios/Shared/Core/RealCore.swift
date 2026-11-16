@@ -112,34 +112,80 @@ extension CaseSummary {
     }
 }
 
-/// Reports the core's job stages, and how far each is, to a `JobObserver`.
-private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
+/// Reports the core's job stages, how far each is and a scan's time left
+/// to a `JobObserver`, and answers the core's questions about the phone.
+final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
     let observer: any JobObserver
+    private let device: DeviceConditions
     private let lock = NSLock()
-    private var current = JobStage.reading
+    private var last = JobUpdate(stage: .reading)
 
-    init(_ observer: any JobObserver) {
+    init(_ observer: any JobObserver, device: DeviceConditions = .live) {
         self.observer = observer
+        self.device = device
     }
 
     func stage(stage: JobStage) {
-        lock.withLock { current = stage }
-        observer.progress(JobUpdate(stage: stage))
+        let update = lock.withLock {
+            // Pausing to cool down and going on keep the bar's fraction and time.
+            let paused = stage == .coolingDown || last.stage == .coolingDown
+            last = paused
+                ? JobUpdate(stage: stage, fraction: last.fraction, secondsLeft: last.secondsLeft)
+                : JobUpdate(stage: stage)
+            return last
+        }
+        observer.progress(update)
     }
 
     /// The fraction also reaches the background task, whose progress iOS
     /// watches: a continued processing task that shows none is stopped.
     func advanced(done: UInt64, total: UInt64) {
         guard total > 0 else { return }
-        let stage = lock.withLock { current }
-        var update = JobUpdate(stage: stage, fraction: min(1, Double(done) / Double(total)))
-        if stage == .recognizing {
-            // Pages: the bar reads "Recognizing page 3 of 12".
-            update.page = Int(done)
-            update.pageCount = Int(total)
+        let update = lock.withLock {
+            last.fraction = min(1, Double(done) / Double(total))
+            if last.stage == .recognizing {
+                // Pages: the bar reads "Recognizing page 3 of 12".
+                last.page = Int(done)
+                last.pageCount = Int(total)
+            }
+            return last
         }
         observer.progress(update)
     }
+
+    func remaining(seconds: UInt64) {
+        let update = lock.withLock {
+            last.secondsLeft = seconds
+            return last
+        }
+        observer.progress(update)
+    }
+
+    func thermal() -> Thermal { device.thermal() }
+
+    func freeMemory() -> UInt64? { device.freeMemory() }
+}
+
+/// What a scan asks about the phone (ADR 0120); tests stand in their own.
+struct DeviceConditions: Sendable {
+    var thermal: @Sendable () -> Thermal
+    var freeMemory: @Sendable () -> UInt64?
+
+    static let live = DeviceConditions(
+        thermal: {
+            switch ProcessInfo.processInfo.thermalState {
+            case .nominal: .nominal
+            case .fair: .fair
+            case .serious: .serious
+            case .critical: .critical
+            @unknown default: .serious
+            }
+        },
+        freeMemory: {
+            // 0 where the app has no memory limit, as in the Simulator.
+            let free = os_proc_available_memory()
+            return free > 0 ? UInt64(free) : nil
+        })
 }
 
 // MARK: - Library
@@ -162,6 +208,8 @@ final class RealLibrary: Library, @unchecked Sendable {
     var savePause = SaveScheduler.pause
     /// How long typing pauses before its save (ADR 0109); the tests shorten it.
     var typingPause = SaveScheduler.typingPause
+    /// What scans ask about the phone; tests stand in low memory or heat.
+    var device = DeviceConditions.live
     private var saveObserver: (@MainActor @Sendable (SaveEvent) -> Void)?
 
     init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
@@ -770,20 +818,38 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return snapshot()
     }
 
+    func scanEstimate() -> Int? {
+        guard let paths = library.setup?.detectorPaths() else { return nil }
+        return ffi.scanEstimate(detector: paths).map(Int.init)
+    }
+
     func scan(observer: any JobObserver) throws -> DocumentSnapshot {
         guard let setup = library.setup else { throw CoreError.modelMissing }
+        var state = setup.snapshot()
+        if state.tier == .detector, state.tenPagesSeconds == nil, setup.detectorPaths() != nil {
+            // A detector installed before mdoc timed it is timed first, in
+            // this job, so the scan has its estimate (ADR 0120).
+            observer.progress(JobUpdate(stage: .scanning))
+            state = try setup.timeDetector(observer: observer)
+        }
         let detector: DetectorPaths?
-        switch setup.snapshot().tier {
+        switch state.tier {
         case .detector:
             guard let paths = setup.detectorPaths() else { throw CoreError.modelMissing }
             detector = paths
         case .belowFloor:
             // Below the floor the app offers no Find names (ADR 0088). Only
-            // the UI tests' seed (`seedForUITesting`) gets here: the core's
-            // structured rules give it candidates without a model.
+            // the UI tests' seed (`seedForUITesting`), on a stand-in memory
+            // size, gets here: the core's structured rules give it candidates
+            // without a model. A phone too slow for the detector never scans
+            // with the rules alone, which would miss names (ADR 0120).
+            if state.belowFloor == .speed {
+                throw CoreError.findNamesFailed(
+                    String(localized: "The name finder is too slow on this phone. Select text to mark a name."))
+            }
             detector = nil
         }
-        _ = try job(observer) { try ffi.scan(detector: detector, progress: StageReporter(observer)) }
+        _ = try job(observer) { try ffi.scan(detector: detector, progress: StageReporter(observer, device: library.device)) }
         try saveAfterJob { [self] in try save() }
         return snapshot()
     }
@@ -1055,7 +1121,8 @@ final class RealSetup: Setup, @unchecked Sendable {
 
     func snapshot() -> SetupSnapshot {
         let catalog = ffi.catalog()
-        let tier: DeviceTier = ffi.offers(model: .gliner2Fp16) ? .detector : .belowFloor
+        let below = ffi.belowFloor()
+        let tier: DeviceTier = below == nil ? .detector : .belowFloor
         let offers = catalog
             .filter { $0.offered && ($0.id == .gliner2Fp16 || $0.id == Self.ocrModel) }
             .map { info in
@@ -1065,7 +1132,16 @@ final class RealSetup: Setup, @unchecked Sendable {
                     byteSize: Int64(info.installed ? info.bytes : info.missingBytes),
                     state: info.installed ? .installed : .notInstalled)
             }
-        return SetupSnapshot(physicalMemory: physicalMemory, tier: tier, offers: offers)
+        return SetupSnapshot(
+            physicalMemory: physicalMemory, tier: tier, offers: offers, belowFloor: below,
+            tenPagesSeconds: ffi.tenPagesSeconds())
+    }
+
+    func timeDetector(observer: any JobObserver) throws -> SetupSnapshot {
+        let runtimes = try core { try linkedRuntimes() }
+        observer.onCancel { [ffi] in ffi.cancelTiming() }
+        _ = try core { try ffi.timeDetector(runtimes: runtimes, progress: StageReporter(observer)) }
+        return snapshot()
     }
 
     func downloadRequests(for model: String) throws -> [ModelDownloadRequest] {

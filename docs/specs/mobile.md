@@ -64,11 +64,13 @@ A grill is only for a pattern this page lacks, which this page then gains.
 
 - No rules-only tier, because a scan that finds emails but no names gives a
   false sense of safety.
-- Below the detector floor the app still installs, imports, recognizes text
-  and marks names by selection; where Find names would be, and in Settings,
-  it says so and that selecting text marks a name.
-- The floor is 8 GB of physical RAM (`DETECTOR_FLOOR_BYTES`, 7 GiB, between
-  the classes), measured on the iPhone 12 Pro and 17 Pro.
+- Below the floor the app imports, recognizes text and marks names by
+  selection; where Find names would be, and in Settings, it says why and
+  that selecting marks a name.
+- The floor is 4 GB of RAM (`DETECTOR_FLOOR_BYTES`), or a timed run past
+  10 minutes per 10,000 characters.
+- A scan needs about 1.3 GB free to start (`DETECTOR_FREE_BYTES`), because
+  the system would end the app partway.
 - A download on cellular asks first on any cellular interface, whatever the
   system's expensive or metered flag says.
 - A download held for Wi-Fi says "Waiting for Wi-Fi" with Use cellular.
@@ -76,8 +78,11 @@ A grill is only for a pattern this page lacks, which this page then gains.
   still downloads its models together.
 - A document's setup card offers the model its job needs and resumes the
   job once installed.
-- Android times one short detector run before offering the detector; a phone
-  too slow for the scan budget counts as below the floor.
+- The detector is timed once installed; a scan expected past a minute shows
+  its estimate first, Settings the time per 10 pages.
+- A phone scan has no deadline; it shows time left and stops after 60 s
+  without progress.
+- A scan pauses while the phone is critically hot.
 - One long job runs at a time, off the main thread, with progress and
   cooperative cancellation.
 - Nothing starts in the background on its own; only a job the user started

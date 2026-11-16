@@ -17,7 +17,7 @@ final class ResumeDeleteTests: XCTestCase {
     }
 
     private func core() throws -> Core {
-        try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: 4 * Fixture.gigabyte)
+        try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
     }
 
     /// A scanned page waiting for OCR, imported but not read.
