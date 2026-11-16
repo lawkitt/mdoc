@@ -39,7 +39,7 @@ pub(crate) fn check_free_memory(progress: Option<&dyn JobProgress>) -> Result<()
 pub(crate) struct PhoneScan<'a> {
     progress: Option<&'a dyn JobProgress>,
     speed: Option<DetectorSpeed>,
-    /// When the windows were known, before the engine loads.
+    /// When the first window started, after the engine loaded.
     started: Cell<Option<Instant>>,
     /// Since when the scan has been paused to cool down.
     cooling: Cell<Option<Instant>>,
@@ -69,20 +69,25 @@ impl<'a> PhoneScan<'a> {
         }
     }
 
-    /// Seconds left: at the start the device's timed run; then the pace so
-    /// far, time paused to cool down left out.
+    /// Seconds left: the device's timed run until a fifth of the text is
+    /// done, because the first windows are too few to judge a pace by; then
+    /// the pace since the first window, time paused to cool down left out.
     fn remaining(&self, scan: ScanProgress) -> Option<u64> {
         let left = scan.chars.saturating_sub(scan.chars_done);
-        let seconds = if scan.done == 0 {
-            self.started.set(Some(Instant::now()));
-            self.speed?.seconds(scan.chars)
-        } else {
-            let elapsed = self
-                .started
-                .get()?
-                .elapsed()
-                .saturating_sub(self.cooled.get());
-            elapsed.as_secs_f64() * left as f64 / scan.chars_done.max(1) as f64
+        let seconds = match self.speed {
+            Some(speed) if scan.done == 0 => speed.seconds(scan.chars),
+            Some(speed) if scan.chars_done * 5 < scan.chars => {
+                speed.seconds_per_thousand_chars * left as f64 / 1000.
+            }
+            _ if scan.done == 0 => return None,
+            _ => {
+                let elapsed = self
+                    .started
+                    .get()?
+                    .elapsed()
+                    .saturating_sub(self.cooled.get());
+                elapsed.as_secs_f64() * left as f64 / scan.chars_done.max(1) as f64
+            }
         };
         Some(seconds.round() as u64)
     }
@@ -102,6 +107,10 @@ impl ScanObserver for PhoneScan<'_> {
     /// Paused at the critical state; going on once the phone has cooled to
     /// serious or below.
     fn paused(&self) -> bool {
+        // Asked first right before the first window: the pace starts there.
+        if self.started.get().is_none() {
+            self.started.set(Some(Instant::now()));
+        }
         let Some(progress) = self.progress else {
             return false;
         };
@@ -211,13 +220,16 @@ mod tests {
             chars: 30_000,
         };
         scan.progress(at(0, 0));
-        // Pretend a quarter took 30 s: three quarters take 90 s more.
+        // Under a fifth done, still the timed run: 27,000 characters left.
+        scan.progress(at(1, 3_000));
+        // Pretend a quarter took 30 s since the first window: three
+        // quarters take 90 s more.
         scan.started
             .set(Some(Instant::now() - Duration::from_secs(30)));
-        scan.progress(at(1, 7_500));
+        scan.progress(at(2, 7_500));
         assert_eq!(
             *platform.heard.lock().unwrap(),
-            ["0/4", "62 s left", "1/4", "90 s left"]
+            ["0/4", "62 s left", "1/4", "54 s left", "2/4", "90 s left"]
         );
         // Without a timed run the first estimate waits for a window.
         let platform = Platform::default();
