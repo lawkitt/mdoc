@@ -145,6 +145,25 @@ final class SetupViewModel {
         snapshot = setup.snapshot()
     }
 
+    /// Times the installed detector once (ADR 0120): right after it
+    /// installs, or at launch for one installed before mdoc timed it. The
+    /// result gives scans their estimate and Settings its speed; a phone
+    /// past the speed ceiling is below the floor from then on.
+    func timeDetectorIfNeeded() async {
+        guard snapshot.tier == .detector, snapshot.tenPagesSeconds == nil,
+              snapshot.offers.contains(where: { $0.purpose == .detector && $0.state == .installed })
+        else { return }
+        let setup = self.setup
+        let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Timing the name finder")) { _ in
+            try setup.timeDetector()
+        }
+        // A failed run leaves the phone untimed: scans show no estimate,
+        // and the next launch times it again.
+        if case .finished(let timed) = outcome {
+            snapshot = timed
+        }
+    }
+
     private var work: Task<Void, Never>?
     private var continuation: (@MainActor () async -> Void)?
     /// The download started last; one it replaced ends quietly.
@@ -168,6 +187,9 @@ final class SetupViewModel {
         fetching = false
         downloadProgress = [:]
         refresh()
+        if finished {
+            await timeDetectorIfNeeded()
+        }
         // Replaced by the cellular download: it goes on, with the work that
         // asked for setup.
         guard generation == self.generation else { return }

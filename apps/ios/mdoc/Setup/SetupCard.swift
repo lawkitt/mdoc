@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 import UIKit
 
@@ -134,16 +135,22 @@ struct SetupCard: View {
 }
 
 /// What a device below the detector floor says where Find names would be,
-/// and in Settings (ADR 0088). The floor is 8 GB (`DETECTOR_FLOOR_BYTES`
-/// sits between the 6 GB and 8 GB classes): iPhone 15 Pro and later, and
-/// every iPad with an M-series chip. "8 GB" keeps to one line.
+/// and in Settings (ADR 0088, ADR 0120): too little memory (the floor is
+/// 4 GB, every iPhone on iOS 26 but the SE 2nd generation), or too slow by
+/// its timed run. "4 GB" keeps to one line.
 @MainActor
 enum BelowFloor {
-    static var note: String {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            String(localized: "This iPad can't find names: the name finder needs 8\u{00A0}GB of memory (an iPad with M1 or later). Select text to mark a name.")
-        } else {
-            String(localized: "This iPhone can't find names: the name finder needs 8\u{00A0}GB of memory (iPhone 15 Pro or later). Select text to mark a name.")
+    static func note(_ reason: FloorReason?) -> String {
+        let pad = UIDevice.current.userInterfaceIdiom == .pad
+        switch (reason, pad) {
+        case (.speed, true):
+            return String(localized: "This iPad can't find names: the name finder is too slow on it. Select text to mark a name.")
+        case (.speed, false):
+            return String(localized: "This iPhone can't find names: the name finder is too slow on it. Select text to mark a name.")
+        case (_, true):
+            return String(localized: "This iPad can't find names: the name finder needs 4\u{00A0}GB of memory. Select text to mark a name.")
+        case (_, false):
+            return String(localized: "This iPhone can't find names: the name finder needs 4\u{00A0}GB of memory. Select text to mark a name.")
         }
     }
 }

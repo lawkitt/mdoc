@@ -1,6 +1,7 @@
 package io.github.lawkitt.mdoc.core
 
 import uniffi.mdoc_ffi.DetectorPaths
+import uniffi.mdoc_ffi.FloorReason
 import uniffi.mdoc_ffi.ModelFile
 import uniffi.mdoc_ffi.ModelId
 import uniffi.mdoc_ffi.ModelInfo
@@ -15,9 +16,19 @@ enum class DeviceTier { Detector, BelowFloor }
 /** One model setup offers, with what it still needs. */
 data class ModelOffer(val id: ModelId, val name: String, val bytes: Long, val installed: Boolean)
 
-data class SetupSnapshot(val tier: DeviceTier, val offers: List<ModelOffer>) {
+data class SetupSnapshot(
+    val tier: DeviceTier,
+    val offers: List<ModelOffer>,
+    /** Why the phone is below the floor: too little memory, or too slow (ADR 0120). */
+    val belowFloor: FloorReason? = null,
+    /** Seconds 10 pages take on this phone, once the detector was timed. */
+    val tenPagesSeconds: Long? = null,
+) {
     val detector: ModelOffer? get() = offers.firstOrNull { it.id == ModelId.GLINER2_FP16 }
     val ocr: ModelOffer? get() = offers.firstOrNull { it.id == Models.OCR_MODEL }
+
+    /** An installed detector not yet timed on this phone. */
+    val needsTiming: Boolean get() = tier == DeviceTier.Detector && detector?.installed == true && tenPagesSeconds == null
 }
 
 /**
@@ -32,7 +43,8 @@ class Models(
     private val installedRecord: File,
 ) {
     fun snapshot(): SetupSnapshot {
-        val tier = if (ffi.offers(ModelId.GLINER2_FP16)) DeviceTier.Detector else DeviceTier.BelowFloor
+        val below = ffi.belowFloor()
+        val tier = if (below == null) DeviceTier.Detector else DeviceTier.BelowFloor
         val offers = ffi.catalog()
             .filter { it.offered && (it.id == ModelId.GLINER2_FP16 || it.id == OCR_MODEL) }
             .map { info ->
@@ -43,7 +55,17 @@ class Models(
                     info.installed,
                 )
             }
-        return SetupSnapshot(tier, offers)
+        return SetupSnapshot(tier, offers, below, ffi.tenPagesSeconds()?.toLong())
+    }
+
+    /**
+     * Times one short detector run and keeps it (ADR 0120): right after the
+     * detector installs. A phone past the speed ceiling is below the floor
+     * afterwards, and its model is removed.
+     */
+    fun timeDetector(): SetupSnapshot {
+        core { ffi.timeDetector(runtimes()) }
+        return snapshot()
     }
 
     /** Every file of `model` when any is missing (the core reports only the bytes). */

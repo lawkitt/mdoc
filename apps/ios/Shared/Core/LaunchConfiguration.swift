@@ -50,7 +50,7 @@ struct LaunchConfiguration: Sendable, Equatable {
 
     /// Below the detector floor: the app offers no Find names, and only the
     /// UI tests' seed scans, with the structured rules.
-    static let belowFloorMemory: UInt64 = 4 * 1_073_741_824
+    static let belowFloorMemory: UInt64 = 3 * 1_073_741_824
 
     /// The RAM the core plans models for: UI tests stand below the floor
     /// unless they ask for the detector tier.

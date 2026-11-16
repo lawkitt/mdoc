@@ -253,7 +253,7 @@ final class SetupViewModelTests: XCTestCase {
         let (large, _) = model()
         XCTAssertEqual(large.snapshot.missingBytes, 1_190_000_000 + 31_000_000)
         XCTAssertTrue(large.showsCard)
-        let (small, _) = model(memory: 4 * Fixture.gigabyte)
+        let (small, _) = model(memory: Fixture.belowFloor)
         XCTAssertEqual(small.snapshot.tier, .belowFloor)
         XCTAssertEqual(small.snapshot.missingBytes, 31_000_000)
         XCTAssertFalse(small.showsCard)

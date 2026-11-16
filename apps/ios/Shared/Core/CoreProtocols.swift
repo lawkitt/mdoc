@@ -93,6 +93,9 @@ protocol DocumentSession: AnyObject, Sendable {
     func recognize(observer: any JobObserver) throws -> DocumentSnapshot
     /// Finds candidates; a cancelled scan reruns from the start.
     func scan(observer: any JobObserver) throws -> DocumentSnapshot
+    /// Minutes a scan takes on this phone, when it is expected to take more
+    /// than about a minute (ADR 0120); nil otherwise.
+    func scanEstimate() -> Int?
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot
     /// Replaces every proposed mention with its proposed alias.
     func replaceAllPending() throws -> DocumentSnapshot
@@ -203,6 +206,14 @@ protocol Setup: AnyObject, Sendable {
     /// Verifies one downloaded file's size and SHA-256 and moves it into the
     /// model's folder.
     func install(_ request: ModelDownloadRequest, from file: URL) throws -> SetupSnapshot
+    /// Times one short detector run and keeps the result, right after the
+    /// detector installs (ADR 0120). A phone past the speed ceiling is
+    /// below the floor afterwards.
+    func timeDetector() throws -> SetupSnapshot
+}
+
+extension Setup {
+    func timeDetector() throws -> SetupSnapshot { snapshot() }
 }
 
 /// The core objects one process uses.
@@ -212,6 +223,8 @@ struct Core: Sendable {
 }
 
 extension DocumentSession {
+    func scanEstimate() -> Int? { nil }
+
     /// Hide name in the core's guessed category.
     func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
         try markSelection(range, as: nil)

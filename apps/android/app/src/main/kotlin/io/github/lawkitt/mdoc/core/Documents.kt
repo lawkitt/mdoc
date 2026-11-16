@@ -24,6 +24,9 @@ import uniffi.mdoc_ffi.Scope as FfiScope
 interface JobObserver {
     fun stage(stage: JobStage)
 
+    /** A scan's estimate of the seconds it has left. */
+    fun remaining(seconds: Long) {}
+
     /** Runs `handler` once when the job is cancelled (at once if it already is). */
     fun onCancel(handler: () -> Unit)
 }
@@ -37,6 +40,7 @@ class Documents(
     private val ffi: MdocLibrary,
     private val storage: MdocStorage,
     private val models: Models?,
+    private val device: DeviceConditions = DeviceConditions.Unknown,
 ) {
     private val sessions = mutableMapOf<DocumentId, Session>()
 
@@ -254,11 +258,14 @@ class Documents(
             return snapshot()
         }
 
+        /** Minutes a scan takes on this phone, when more than about one (ADR 0120). */
+        fun scanEstimate(): Int? = models?.detectorPaths()?.let { ffi.scanEstimate(it)?.toInt() }
+
         /** Finds candidates with the detector; a cancelled scan reruns from the start. */
         fun scan(observer: JobObserver): DocumentSnapshot {
             val detector = models?.detectorPaths() ?: throw AppError.ModelMissing()
             observer.onCancel { ffi.cancel() }
-            val scanned = core { ffi.scan(detector, Progress(observer)) }
+            val scanned = core { ffi.scan(detector, Progress(observer, device)) }
             synchronized(this) {
                 review = scanned
                 this.scanned = true
@@ -355,11 +362,18 @@ class Documents(
         private var originalFile: File? = source?.file
     }
 
-    private class Progress(private val observer: JobObserver) : JobProgress {
+    /** The core's job stages and a scan's time left, and what it asks about the phone. */
+    private class Progress(private val observer: JobObserver, private val device: DeviceConditions) : JobProgress {
         override fun stage(stage: JobStage) = observer.stage(stage)
 
-        // Android shows stages only; Find names is Later there (ADR 0088).
+        // Android shows stages and a scan's time left, not a fraction.
         override fun advanced(done: ULong, total: ULong) = Unit
+
+        override fun remaining(seconds: ULong) = observer.remaining(seconds.toLong())
+
+        override fun thermal() = device.thermal()
+
+        override fun freeMemory() = device.freeMemory()?.toULong()
     }
 
     private companion object {

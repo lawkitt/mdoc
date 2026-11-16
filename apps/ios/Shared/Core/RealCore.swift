@@ -112,34 +112,79 @@ extension CaseSummary {
     }
 }
 
-/// Reports the core's job stages, and how far each is, to a `JobObserver`.
-private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
+/// Reports the core's job stages, how far each is and a scan's time left
+/// to a `JobObserver`, and answers the core's questions about the phone.
+final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
     let observer: any JobObserver
+    private let device: DeviceConditions
     private let lock = NSLock()
-    private var current = JobStage.reading
+    private var last = JobUpdate(stage: .reading)
 
-    init(_ observer: any JobObserver) {
+    init(_ observer: any JobObserver, device: DeviceConditions = .live) {
         self.observer = observer
+        self.device = device
     }
 
     func stage(stage: JobStage) {
-        lock.withLock { current = stage }
-        observer.progress(JobUpdate(stage: stage))
+        let update = lock.withLock {
+            // Back from cooling down, the bar keeps its fraction and time.
+            last = stage == .scanning && last.stage == .coolingDown
+                ? JobUpdate(stage: stage, fraction: last.fraction, secondsLeft: last.secondsLeft)
+                : JobUpdate(stage: stage)
+            return last
+        }
+        observer.progress(update)
     }
 
     /// The fraction also reaches the background task, whose progress iOS
     /// watches: a continued processing task that shows none is stopped.
     func advanced(done: UInt64, total: UInt64) {
         guard total > 0 else { return }
-        let stage = lock.withLock { current }
-        var update = JobUpdate(stage: stage, fraction: min(1, Double(done) / Double(total)))
-        if stage == .recognizing {
-            // Pages: the bar reads "Recognizing page 3 of 12".
-            update.page = Int(done)
-            update.pageCount = Int(total)
+        let update = lock.withLock {
+            last.fraction = min(1, Double(done) / Double(total))
+            if last.stage == .recognizing {
+                // Pages: the bar reads "Recognizing page 3 of 12".
+                last.page = Int(done)
+                last.pageCount = Int(total)
+            }
+            return last
         }
         observer.progress(update)
     }
+
+    func remaining(seconds: UInt64) {
+        let update = lock.withLock {
+            last.secondsLeft = seconds
+            return last
+        }
+        observer.progress(update)
+    }
+
+    func thermal() -> Thermal { device.thermal() }
+
+    func freeMemory() -> UInt64? { device.freeMemory() }
+}
+
+/// What a scan asks about the phone (ADR 0120); tests stand in their own.
+struct DeviceConditions: Sendable {
+    var thermal: @Sendable () -> Thermal
+    var freeMemory: @Sendable () -> UInt64?
+
+    static let live = DeviceConditions(
+        thermal: {
+            switch ProcessInfo.processInfo.thermalState {
+            case .nominal: .nominal
+            case .fair: .fair
+            case .serious: .serious
+            case .critical: .critical
+            @unknown default: .serious
+            }
+        },
+        freeMemory: {
+            // 0 where the app has no memory limit, as in the Simulator.
+            let free = os_proc_available_memory()
+            return free > 0 ? UInt64(free) : nil
+        })
 }
 
 // MARK: - Library
@@ -162,6 +207,8 @@ final class RealLibrary: Library, @unchecked Sendable {
     var savePause = SaveScheduler.pause
     /// How long typing pauses before its save (ADR 0109); the tests shorten it.
     var typingPause = SaveScheduler.typingPause
+    /// What scans ask about the phone; tests stand in low memory or heat.
+    var device = DeviceConditions.live
     private var saveObserver: (@MainActor @Sendable (SaveEvent) -> Void)?
 
     init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
@@ -770,6 +817,11 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return snapshot()
     }
 
+    func scanEstimate() -> Int? {
+        guard let paths = library.setup?.detectorPaths() else { return nil }
+        return ffi.scanEstimate(detector: paths).map(Int.init)
+    }
+
     func scan(observer: any JobObserver) throws -> DocumentSnapshot {
         guard let setup = library.setup else { throw CoreError.modelMissing }
         let detector: DetectorPaths?
@@ -783,7 +835,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             // structured rules give it candidates without a model.
             detector = nil
         }
-        _ = try job(observer) { try ffi.scan(detector: detector, progress: StageReporter(observer)) }
+        _ = try job(observer) { try ffi.scan(detector: detector, progress: StageReporter(observer, device: library.device)) }
         try saveAfterJob { [self] in try save() }
         return snapshot()
     }
@@ -1055,7 +1107,8 @@ final class RealSetup: Setup, @unchecked Sendable {
 
     func snapshot() -> SetupSnapshot {
         let catalog = ffi.catalog()
-        let tier: DeviceTier = ffi.offers(model: .gliner2Fp16) ? .detector : .belowFloor
+        let below = ffi.belowFloor()
+        let tier: DeviceTier = below == nil ? .detector : .belowFloor
         let offers = catalog
             .filter { $0.offered && ($0.id == .gliner2Fp16 || $0.id == Self.ocrModel) }
             .map { info in
@@ -1065,7 +1118,15 @@ final class RealSetup: Setup, @unchecked Sendable {
                     byteSize: Int64(info.installed ? info.bytes : info.missingBytes),
                     state: info.installed ? .installed : .notInstalled)
             }
-        return SetupSnapshot(physicalMemory: physicalMemory, tier: tier, offers: offers)
+        return SetupSnapshot(
+            physicalMemory: physicalMemory, tier: tier, offers: offers, belowFloor: below,
+            tenPagesSeconds: ffi.tenPagesSeconds())
+    }
+
+    func timeDetector() throws -> SetupSnapshot {
+        let runtimes = try core { try linkedRuntimes() }
+        _ = try core { try ffi.timeDetector(runtimes: runtimes) }
+        return snapshot()
     }
 
     func downloadRequests(for model: String) throws -> [ModelDownloadRequest] {

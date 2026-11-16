@@ -111,6 +111,7 @@ import io.github.lawkitt.mdoc.ui.OriginalView
 import io.github.lawkitt.mdoc.ui.Palette
 import io.github.lawkitt.mdoc.ui.RestoredText
 import io.github.lawkitt.mdoc.ui.ReviewText
+import io.github.lawkitt.mdoc.ui.ScanTime
 import kotlinx.coroutines.launch
 import uniffi.mdoc_ffi.JobStage
 
@@ -247,7 +248,14 @@ fun DocumentScreen(
                     ),
                 )
             }
-            if (!model.findsNames && snapshot.phase == DocumentPhase.Unscanned) Notice(stringResource(R.string.below_floor_note))
+            if (!model.findsNames && snapshot.phase == DocumentPhase.Unscanned) {
+                val reason = setup?.state?.collectAsStateWithLifecycle()?.value?.snapshot?.belowFloor
+                Notice(ScanTime.belowFloor(reason))
+            } else if (snapshot.phase == DocumentPhase.Unscanned && job == null) {
+                // Before a scan expected to take more than about a minute (ADR 0120).
+                val minutes = remember(snapshot.markdown) { model.scanEstimate() }
+                minutes?.let { Notice(stringResource(R.string.scan_estimate, it)) }
+            }
             snapshot.warning?.let { Notice(it) }
             val needs = state.needsSetup
             if (needs != null && setup != null) {
@@ -465,7 +473,7 @@ private fun ActionBar(
                 PrimaryAction.FinishImport -> Primary(stringResource(R.string.finish_import), onRecognize)
                 PrimaryAction.FindNames -> Primary(stringResource(R.string.find_names), onFindNames)
                 is PrimaryAction.Running -> {
-                    Text(stageLabel(action.job.kind, action.job.stage), style = MaterialTheme.typography.bodyMedium)
+                    Text(stageLabel(action.job.kind, action.job.stage, action.job.secondsLeft), style = MaterialTheme.typography.bodyMedium)
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     OutlinedButton(onClick = onCancel, Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
                 }
@@ -524,15 +532,21 @@ private fun Primary(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun stageLabel(kind: JobKind, stage: JobStage?): String = stringResource(
-    when (stage) {
-        JobStage.READING -> R.string.reading_the_file
-        JobStage.CONVERTING -> R.string.converting
-        JobStage.RECOGNIZING -> R.string.recognizing_text
-        JobStage.SCANNING -> R.string.finding_names
-        null -> if (kind == JobKind.Scan) R.string.finding_names else R.string.reading_the_file
-    },
-)
+private fun stageLabel(kind: JobKind, stage: JobStage?, secondsLeft: Long?): String {
+    if (stage == JobStage.SCANNING && secondsLeft != null) {
+        return stringResource(R.string.finding_names_left, ScanTime.left(secondsLeft))
+    }
+    return stringResource(
+        when (stage) {
+            JobStage.READING -> R.string.reading_the_file
+            JobStage.CONVERTING -> R.string.converting
+            JobStage.RECOGNIZING -> R.string.recognizing_text
+            JobStage.SCANNING -> R.string.finding_names
+            JobStage.COOLING_DOWN -> R.string.paused_to_cool_down
+            null -> if (kind == JobKind.Scan) R.string.finding_names else R.string.reading_the_file
+        },
+    )
+}
 
 /** Tapping a candidate: its alias, Keep or Replace, all occurrences or just this one. */
 @OptIn(ExperimentalMaterial3Api::class)

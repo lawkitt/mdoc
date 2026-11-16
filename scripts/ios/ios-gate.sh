@@ -8,12 +8,14 @@
 # requires it. Records live in target/ios/gate/<commit> (MDOC_GATE_DIR).
 #   clean   Succeeds when the checkout has no change, untracked files
 #           included: Xcode builds untracked sources the tag would lack.
-#   tier    The phone's tier by its model (ADR 0088): detector from the
-#           iPhone 15 Pro (iPhone16,x) on, below-floor before it.
+#   tier    The phone's tier by its model (ADR 0120's 4 GB floor):
+#           below-floor for the 3 GB iPhone SE 2nd generation (iPhone12,8),
+#           detector for every other iPhone iOS 26 runs on.
 #   record  Writes the record of a pass.
-#   check   Succeeds when <commit> has a below-floor pass on a phone below
-#           the floor (not a stand-in memory size on a newer one), and
-#           prints its gate line for the tag's trailer.
+#   check   Succeeds when <commit> has a pass at the phone's own tier (not
+#           a forced one) on a phone older than the iPhone 15 Pro, the
+#           slowest class that finds names (the iPhone 12 Pro), and prints
+#           its gate line for the tag's trailer.
 # Bash 3.2.
 source "$(dirname "$0")/../lib.sh"
 gates=${MDOC_GATE_DIR:-target/ios/gate}
@@ -25,7 +27,7 @@ tier_of() {
     iPhone[0-9]*,*) major=${1#iPhone} && major=${major%%,*} ;;
     *) die "not an iPhone model: $1" ;;
   esac
-  if [ "$major" -ge 16 ]; then echo detector; else echo below-floor; fi
+  if [ "$1" = iPhone12,8 ]; then echo below-floor; else echo detector; fi
 }
 
 field() { sed -n "s/^$1=//p" "$2"; }
@@ -51,11 +53,14 @@ case "${1:-}" in
     record=$gates/$commit
     [ -f "$record" ] || die "no gate record for $commit: run \`just ios-device-test <12 Pro UDID>\` on it first"
     [ "$(field commit "$record")" = "$commit" ] || die "the gate record $record names another commit"
-    [ "$(field tier "$record")" = below-floor ] || die "the gate record for $commit is not the below-floor tier"
     phone=$(field phone "$record")
-    [ "$(tier_of "$phone")" = below-floor ] ||
-      die "the gate for $commit ran on $phone, which meets the floor; the gate is a phone below it (the iPhone 12 Pro)"
-    echo "just ios-device-test, below-floor tier, on $phone, passed $(field passed "$record")"
+    tier=$(field tier "$record")
+    [ "$tier" = "$(tier_of "$phone")" ] ||
+      die "the gate record for $commit forced the $tier tier on $phone; the gate runs at the phone's own tier"
+    major=${phone#iPhone} && major=${major%%,*}
+    [ "$major" -lt 16 ] ||
+      die "the gate for $commit ran on $phone; the gate is an older, slower phone (the iPhone 12 Pro)"
+    echo "just ios-device-test, $tier tier, on $phone, passed $(field passed "$record")"
     ;;
   *) die "$usage" ;;
 esac

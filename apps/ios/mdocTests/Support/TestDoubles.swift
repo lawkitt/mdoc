@@ -95,8 +95,8 @@ final class FakeSetup: mdoc.Setup, @unchecked Sendable {
     static let ocrID = "pp-ocr-v5"
     static let detectorBytes: Int64 = 1_190_000_000
     static let ocrBytes: Int64 = 31_000_000
-    /// The real core's floor (`DETECTOR_FLOOR_BYTES`, 7 GiB).
-    static let detectorFloor: UInt64 = 7 * Fixture.gigabyte
+    /// The real core's floor (`DETECTOR_FLOOR_BYTES`, 3.25 GiB).
+    static let detectorFloor: UInt64 = 13 * Fixture.gigabyte / 4
 
     private let lock = NSLock()
     private let physicalMemory: UInt64

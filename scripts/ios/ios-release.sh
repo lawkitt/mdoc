@@ -142,8 +142,8 @@ current=$(marketing_version "$sha")
 git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null && die "tag $tag exists here; tags are never reused"
 [ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ] || die "tag $tag exists on origin; tags are never reused"
 
-# The gate: a below-floor pass on a phone below the floor, for exactly
-# this commit.
+# The gate: a pass on the iPhone 12 Pro at its own tier, for exactly this
+# commit.
 gate=$(bash scripts/ios/ios-gate.sh check "$sha")
 
 build=$(git rev-list --count "$sha")

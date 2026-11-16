@@ -20,9 +20,9 @@ just ios-device-test <hardware UDID> below-floor   # or detector: not by the pho
 `scripts/ios/ios-device-test.sh` copies the fixtures into the app's container
 with `devicectl` (the app ships none), runs `ReviewFlowUITests` and the
 tier's test, and fails on a new `mdoc-*.ips` crash report. The tier comes
-from the phone's model: the iPhone 15 Pro and later run
+from the phone's model: every iPhone but the 3 GB SE 2nd generation runs
 `DeviceLongJobsUITests` (real downloads, Find names while the test leaves
-the app past iOS's grace); earlier phones, or `below-floor`, run
+the app past iOS's grace); the SE, or `below-floor`, runs
 `DeviceBelowFloorUITests`. Results go to `target/ios/device-test-*.xcresult`.
 
 ## Timing

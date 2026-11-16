@@ -28,7 +28,7 @@ pub const DETECTOR_FREE_BYTES: u64 = 5 * 256 * MIB;
 
 /// Why a device offers no detector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum BelowFloor {
+pub enum FloorReason {
     /// Under `DETECTOR_FLOOR_BYTES` of RAM.
     Memory,
     /// Its timed run is past the speed ceiling.
@@ -154,11 +154,11 @@ impl Setup {
 
     /// Why this device offers no detector: too little RAM, or a timed run
     /// past the speed ceiling. `None` when it offers one.
-    pub fn below_floor(&self) -> Option<BelowFloor> {
+    pub fn below_floor(&self) -> Option<FloorReason> {
         if self.physical_memory < DETECTOR_FLOOR_BYTES {
-            Some(BelowFloor::Memory)
+            Some(FloorReason::Memory)
         } else if self.detector_speed().is_some_and(|s| s.too_slow()) {
-            Some(BelowFloor::Speed)
+            Some(FloorReason::Speed)
         } else {
             None
         }
@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(offered(5 * GIB + 600 * MIB).len(), 3);
         assert_eq!(
             Setup::new("models".into(), 3 * GIB).below_floor(),
-            Some(BelowFloor::Memory)
+            Some(FloorReason::Memory)
         );
     }
 
@@ -528,7 +528,7 @@ mod tests {
         speed::write(&root, "another-model", slow).unwrap();
         assert_eq!(setup.below_floor(), None);
         speed::write(&root, &setup.detector_folder_name(), slow).unwrap();
-        assert_eq!(setup.below_floor(), Some(BelowFloor::Speed));
+        assert_eq!(setup.below_floor(), Some(FloorReason::Speed));
         assert!(!setup.offers(ModelId::Gliner2Fp16));
         assert!(setup.offers(ModelId::OcrEnglish));
         // 10 pages are 30,000 characters.

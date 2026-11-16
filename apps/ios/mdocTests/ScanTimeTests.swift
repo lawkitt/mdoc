@@ -1,0 +1,60 @@
+import MdocFFI
+import XCTest
+@testable import mdoc
+
+/// A phone's scan as the bar shows it (ADR 0120): the time left, the pause
+/// to cool down, the estimate before a long scan and the speed in Settings.
+/// The core's own tests cover the stall guard, the free-memory check, the
+/// ceiling and when to pause.
+@MainActor
+final class ScanTimeTests: XCTestCase {
+    func testTheBarShowsTimeLeftAndKeepsItThroughACoolDown() {
+        let observer = TestObserver()
+        let reporter = StageReporter(observer)
+        reporter.stage(stage: .scanning)
+        reporter.advanced(done: 1, total: 4)
+        reporter.remaining(seconds: 200)
+        reporter.stage(stage: .coolingDown)
+        reporter.stage(stage: .scanning)
+        let updates = observer.updates
+        XCTAssertEqual(updates.map(\.stage), [.scanning, .scanning, .scanning, .coolingDown, .scanning])
+        XCTAssertEqual(updates[2], JobUpdate(stage: .scanning, fraction: 0.25, secondsLeft: 200))
+        XCTAssertEqual(ActionBar.progressLabel(.scan, updates[2]), "Finding names · About 3 min left")
+        XCTAssertEqual(ActionBar.progressLabel(.scan, updates[3]), "Paused to cool down")
+        XCTAssertEqual(updates[4], updates[2], "back from cooling down, the bar keeps where it was")
+    }
+
+    func testTheCoreHearsThePhonesHeatAndFreeMemory() {
+        let reporter = StageReporter(
+            TestObserver(), device: DeviceConditions(thermal: { .critical }, freeMemory: { 1_000 }))
+        XCTAssertEqual(reporter.thermal(), .critical)
+        XCTAssertEqual(reporter.freeMemory(), 1_000)
+        // The Simulator has no memory limit, so it reports none.
+        XCTAssertNil(DeviceConditions.live.freeMemory())
+    }
+
+    func testTimeReadsInWholeMinutesOrSecondsUnderOne() {
+        XCTAssertEqual(ScanTime.left(seconds: 45), "Less than a minute left")
+        XCTAssertEqual(ScanTime.left(seconds: 100), "About 2 min left")
+        XCTAssertEqual(ScanTime.perTenPages(seconds: 62), "About 62 s per 10 pages")
+        XCTAssertEqual(ScanTime.perTenPages(seconds: 125), "About 2 min per 10 pages")
+        XCTAssertEqual(ScanTime.estimate(minutes: 3), "About 3 min on this iPhone")
+        XCTAssertEqual(ActionBar.progressLabel(.scan, JobUpdate(stage: .scanning)), "Finding names")
+    }
+
+    func testBelowTheFloorSaysWhy() {
+        XCTAssertTrue(BelowFloor.note(.memory).contains("4\u{00A0}GB of memory"))
+        XCTAssertTrue(BelowFloor.note(.speed).contains("too slow"))
+    }
+
+    /// A detector-tier phone that is not timed yet shows no estimate.
+    func testNoEstimateBeforeThePhoneIsTimed() throws {
+        let (core, _) = try Fixture.core(memory: Fixture.detectorTier)
+        let session = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: .newCase(name: "Note"))
+        _ = try session.recognize(observer: TestObserver())
+        XCTAssertNil(session.scanEstimate())
+        XCTAssertNil(core.setup.snapshot().tenPagesSeconds)
+        XCTAssertNil(core.setup.snapshot().belowFloor)
+        XCTAssertEqual(try core.setup.timeDetector().tier, .detector, "with no detector installed nothing is timed")
+    }
+}

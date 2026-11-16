@@ -105,12 +105,13 @@ release() {
 
 refuses "no gate record" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "no gate record" "$tmp/out" || fail "no gate: $(cat "$tmp/out")"
-gate "$good" detector
-refuses "a detector-tier gate" release 0.2.0-rc.3 "$tmp/good.txt" --yes
-gate "$good" below-floor iPhone17,1
-refuses "a below-floor run on a phone that meets the floor" release 0.2.0-rc.3 "$tmp/good.txt" --yes
-grep -q "meets the floor" "$tmp/out" || fail "forced tier: $(cat "$tmp/out")"
 gate "$good" below-floor
+refuses "a forced below-floor tier" release 0.2.0-rc.3 "$tmp/good.txt" --yes
+grep -q "phone's own tier" "$tmp/out" || fail "forced tier: $(cat "$tmp/out")"
+gate "$good" detector iPhone18,1
+refuses "a run on a newer phone" release 0.2.0-rc.3 "$tmp/good.txt" --yes
+grep -q "older, slower phone" "$tmp/out" || fail "newer phone: $(cat "$tmp/out")"
+gate "$good" detector
 touch "$repo/apps/ios/Untracked.swift"
 refuses "an untracked file" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "untracked" "$tmp/out" || fail "untracked: $(cat "$tmp/out")"
@@ -124,14 +125,14 @@ refuses "bad What to Test" release 0.2.0-rc.3 "$tmp/no-opening.txt" --yes
 # A commit not on origin/main, and one with the export key YES.
 g checkout -q -b side
 g commit -q --allow-empty -m side
-gate "$(g rev-parse HEAD)" below-floor
+gate "$(g rev-parse HEAD)" detector
 refuses "a commit not on main" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "not on origin/main" "$tmp/out" || fail "off main: $(cat "$tmp/out")"
 g checkout -q main
 key true
 g commit -q -am yes
 g push -q origin main
-gate "$(g rev-parse HEAD)" below-floor
+gate "$(g rev-parse HEAD)" detector
 refuses "the export key YES" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "ITSAppUsesNonExemptEncryption" "$tmp/out" || fail "export key: $(cat "$tmp/out")"
 
@@ -147,7 +148,7 @@ release 0.2.0-rc.3 "$tmp/good.txt" --commit "$good" --yes >"$tmp/out" 2>&1 || fa
 message=$(g for-each-ref --format='%(contents)' refs/tags/ios-v0.2.0-rc.3)
 [ "$(echo "$message" | head -1)" = "mdoc for iOS 0.2.0 rc.3 (build 2)" ] || fail "subject: $(echo "$message" | head -1)"
 echo "$message" | grep -qx "Commit: $good" || fail "no commit trailer: $message"
-echo "$message" | grep -q "^Gate: just ios-device-test, below-floor tier, on iPhone13,3" || fail "no gate trailer: $message"
+echo "$message" | grep -q "^Gate: just ios-device-test, detector tier, on iPhone13,3" || fail "no gate trailer: $message"
 (cd "$repo" && bash scripts/ios/ios-what-to-test.sh from-tag ios-v0.2.0-rc.3) >"$tmp/from-tag.txt"
 cmp -s "$tmp/from-tag.txt" "$tmp/good.txt" || fail "from-tag: $(cat "$tmp/from-tag.txt")"
 refuses "a tag that exists" release 0.2.0-rc.3 "$tmp/good.txt" --commit "$good" --yes
@@ -170,8 +171,8 @@ g checkout -q "$good"
 (cd "$repo" && bash scripts/ios/ios-release.sh --check-main) >"$tmp/check" 2>&1 || fail "--check-main failed: $(cat "$tmp/check")"
 grep -qx "build=2" "$tmp/check" || fail "--check-main printed: $(cat "$tmp/check")"
 
-# The tiers by model (ADR 0088).
-for pair in iPhone13,3:below-floor iPhone15,2:below-floor iPhone16,1:detector iPhone18,2:detector; do
+# The tiers by model (ADR 0120): only the 3 GB iPhone SE 2nd generation is below the floor.
+for pair in iPhone12,8:below-floor iPhone12,1:detector iPhone13,3:detector iPhone14,6:detector iPhone18,2:detector; do
   [ "$(bash scripts/ios/ios-gate.sh tier "${pair%%:*}")" = "${pair#*:}" ] || fail "tier of ${pair%%:*}"
 done
 refuses "an iPad model" bash scripts/ios/ios-gate.sh tier iPad16,3

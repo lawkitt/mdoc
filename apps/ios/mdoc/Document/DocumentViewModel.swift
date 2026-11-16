@@ -102,6 +102,21 @@ final class DocumentViewModel {
     /// Below the floor, where Find names would be: the device cannot find
     /// names, and selecting text marks one (ADR 0088).
     var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
+    /// Minutes a scan takes on this phone, under Find names when it is
+    /// expected to take more than about a minute (ADR 0120).
+    var scanEstimate: Int? {
+        guard findsNames, primaryAction == .findNames else { return nil }
+        // Asked again while there is none: the phone may be timed meanwhile.
+        if let kept = estimate, kept.text == snapshot.textRevision, kept.minutes != nil {
+            return kept.minutes
+        }
+        let minutes = session.scanEstimate()
+        estimate = (snapshot.textRevision, minutes)
+        return minutes
+    }
+    /// The estimate for the text it was made for, so a long document's text
+    /// is not counted on every render.
+    @ObservationIgnored private var estimate: (text: UInt64?, minutes: Int?)?
 
     /// An import that stopped before its text was read, of a file that is
     /// not a scan or photo: the document says "Import not finished". A PDF
