@@ -155,18 +155,27 @@ fn a_failed_or_cancelled_rewrite_leaves_the_upstream_layout() {
         assert_eq!(std::fs::read(&path).unwrap(), before);
         assert_eq!(folder_names(dir.path()), ["encoder.onnx"]);
     }
-    let checks = AtomicUsize::new(0);
-    let error = convert(&path, &pin(&before), &pins, &|| {
-        if checks.fetch_add(1, Ordering::Relaxed) == 1 {
-            Err(DetectError::Cancelled)
-        } else {
-            Ok(())
+    // A cancel at each of the rewrite's checks in turn.
+    let mut cancelled = 0;
+    loop {
+        let checks = AtomicUsize::new(0);
+        let result = convert(&path, &pin(&before), &pins, &|| {
+            if checks.fetch_add(1, Ordering::Relaxed) == cancelled {
+                Err(DetectError::Cancelled)
+            } else {
+                Ok(())
+            }
+        });
+        if result.is_ok() {
+            break;
         }
-    })
-    .unwrap_err();
-    assert!(matches!(error, DetectError::Cancelled), "{error:?}");
-    assert_eq!(std::fs::read(&path).unwrap(), before);
-    assert_eq!(folder_names(dir.path()), ["encoder.onnx"]);
+        assert!(matches!(result, Err(DetectError::Cancelled)), "{result:?}");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(folder_names(dir.path()), ["encoder.onnx"]);
+        cancelled += 1;
+    }
+    assert!(cancelled >= 3, "only {cancelled} checks");
+    std::fs::write(&path, &before).unwrap();
     // A stale data file from an interrupted rewrite is replaced.
     std::fs::write(data_path(&path), b"stale").unwrap();
     convert(&path, &pin(&before), &pins, &|| Ok(())).unwrap();
@@ -192,6 +201,16 @@ fn a_truncated_or_unexpected_model_is_refused() {
             Err(DetectError::Download(DownloadError::Integrity))
         ));
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+    // A zero-filled file of the pinned size fails its digest before it is
+    // parsed; one that matched its pin would still be refused at once.
+    let zeros = vec![0u8; before.len()];
+    std::fs::write(&path, &zeros).unwrap();
+    for upstream in [pin(&before), pin(&zeros)] {
+        assert!(matches!(
+            convert(&path, &upstream, &pins, &|| Ok(())),
+            Err(DetectError::Download(DownloadError::Integrity))
+        ));
     }
     std::fs::write(&path, &before).unwrap();
     let mut short = pin(&before);

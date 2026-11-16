@@ -69,9 +69,11 @@ pub fn verify(model: &Path, pins: &ExternalData) -> Result<(), DownloadError> {
 }
 
 /// Re-save the upstream file at `model` (pinned as `upstream`) with
-/// external data, replacing it in place. A crash or error at any point
-/// leaves a loadable layout: the data file is renamed in first, and the
-/// model last, over the upstream file.
+/// external data, replacing it in place. The input is checked against its
+/// pin before it is parsed, so only the pinned bytes reach the parser. A
+/// crash or error at any point leaves a loadable layout: the data file is
+/// renamed in and made durable first, and the model last, over the
+/// upstream file.
 pub fn convert(
     model: &Path,
     upstream: &Pin,
@@ -84,18 +86,30 @@ pub fn convert(
         .ok_or(DownloadError::InvalidPath)?
         .to_owned();
     let folder = model.parent().ok_or(DownloadError::InvalidPath)?;
-    let plan = {
-        let mut input = Input::new(File::open(model)?)?;
-        if input.len != upstream.bytes {
+    let mut buffer = vec![0; 1 << 20];
+    {
+        let mut input = Hashed::new(File::open(model)?);
+        if input.inner.metadata()?.len() != upstream.bytes {
             return Err(DownloadError::SizeMismatch.into());
         }
-        plan(&mut input, &location)?
-    };
+        loop {
+            check()?;
+            let n = input.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+        }
+        let (bytes, sha256) = input.finish();
+        if bytes != upstream.bytes || sha256 != upstream.sha256 {
+            return Err(DownloadError::Integrity.into());
+        }
+    }
+    let plan = plan(&mut Input::new(File::open(model)?, check)?, &location)?;
     check()?;
     let mut model_out = Hashed::new(tempfile::NamedTempFile::new_in(folder)?);
     let mut data_out = Hashed::new(tempfile::NamedTempFile::new_in(folder)?);
+    // Hashed again: the file could have changed since it was checked.
     let mut input = Hashed::new(BufReader::with_capacity(1 << 20, File::open(model)?));
-    let mut buffer = vec![0; 1 << 20];
     let mut copied = 0u64;
     for op in &plan {
         let (len, out): (u64, Option<&mut dyn Write>) = match op {
@@ -144,10 +158,19 @@ pub fn convert(
             .map_err(|e| DownloadError::Persist(std::sync::Arc::new(e)))?;
         Ok(())
     };
+    // The data file's name is durable before the model needs it. On Windows
+    // NTFS journals the renames in order.
     persist(data_out.inner, &data_path(model))?;
+    sync_folder(folder)?;
     persist(model_out.inner, model)?;
+    sync_folder(folder)
+}
+
+fn sync_folder(folder: &Path) -> Result<(), DetectError> {
     #[cfg(unix)]
     File::open(folder)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = folder;
     Ok(())
 }
 
@@ -213,19 +236,26 @@ fn damaged() -> DetectError {
 }
 
 /// The input's structure, read through with weight payloads skipped.
-struct Input {
+struct Input<'a> {
     reader: BufReader<File>,
     pos: u64,
     len: u64,
+    fields: u64,
+    check: &'a dyn Fn() -> Result<(), DetectError>,
 }
 
-impl Input {
-    fn new(file: File) -> io::Result<Self> {
+/// More fields than any `TensorProto` of the pinned exports has.
+const MAX_TENSOR_FIELDS: usize = 256;
+
+impl<'a> Input<'a> {
+    fn new(file: File, check: &'a dyn Fn() -> Result<(), DetectError>) -> io::Result<Self> {
         let len = file.metadata()?.len();
         Ok(Self {
             reader: BufReader::with_capacity(1 << 16, file),
             pos: 0,
             len,
+            fields: 0,
+            check,
         })
     }
 
@@ -265,9 +295,16 @@ impl Input {
         if self.pos == end {
             return Ok(None);
         }
+        self.fields += 1;
+        if self.fields.is_multiple_of(4096) {
+            (self.check)()?;
+        }
         let start = self.pos;
         let tag = self.varint()?;
         let (number, wire) = (tag >> 3, tag & 7);
+        if number == 0 || number > (1 << 29) - 1 {
+            return Err(damaged());
+        }
         let len = match wire {
             0 => {
                 self.varint()?;
@@ -320,8 +357,8 @@ const TENSOR_EXTERNAL_DATA: u64 = 13;
 const TENSOR_DATA_LOCATION: u64 = 14;
 const LOCATION_EXTERNAL: u64 = 1;
 
-fn plan(input: &mut Input, location: &str) -> Result<Vec<Op>, DetectError> {
-    let mut ops = Vec::new();
+fn plan(input: &mut Input<'_>, location: &str) -> Result<Vec<Op>, DetectError> {
+    let mut ops = Ops::default();
     let mut offset = 0;
     while let Some(field) = input.field(input.len)? {
         match field.len {
@@ -343,17 +380,17 @@ fn plan(input: &mut Input, location: &str) -> Result<Vec<Op>, DetectError> {
         // Nothing to move: not the export setup pinned.
         return Err(damaged());
     }
-    Ok(merge(ops))
+    Ok(ops.0)
 }
 
 /// The graph's ops and its new payload size.
 fn plan_graph(
-    input: &mut Input,
+    input: &mut Input<'_>,
     end: u64,
     location: &str,
     offset: &mut u64,
-) -> Result<(Vec<Op>, u64), DetectError> {
-    let mut ops = Vec::new();
+) -> Result<(Ops, u64), DetectError> {
+    let mut ops = Ops::default();
     let mut size = 0;
     while let Some(field) = input.field(end)? {
         match field.len {
@@ -392,21 +429,26 @@ fn plan_graph(
 /// keep their order; `external_data` and `data_location` go where field
 /// order puts them, after every field numbered below them.
 fn plan_tensor(
-    input: &mut Input,
+    input: &mut Input<'_>,
     end: u64,
     location: &str,
     offset: &mut u64,
-) -> Result<(Vec<Op>, Option<u64>), DetectError> {
+) -> Result<(Ops, Option<u64>), DetectError> {
     let mut fields = Vec::new();
     while let Some(field) = input.field(end)? {
         if let Some(len) = field.len {
             input.skip(len)?;
         }
         fields.push(field);
+        if fields.len() > MAX_TENSOR_FIELDS {
+            return Err(damaged());
+        }
     }
     let unchanged = |fields: &[Field]| {
         let size = fields.iter().map(Field::size).sum();
-        Ok((vec![Op::Model(size)], None))
+        let mut ops = Ops::default();
+        ops.push(Op::Model(size));
+        Ok((ops, None))
     };
     let raw: Vec<&Field> = fields
         .iter()
@@ -440,7 +482,7 @@ fn plan_tensor(
     added.extend(varint(TENSOR_DATA_LOCATION << 3));
     added.extend(varint(LOCATION_EXTERNAL));
     *offset += length;
-    let mut ops = Vec::new();
+    let mut ops = Ops::default();
     let mut size = added.len() as u64;
     let mut added = Some(added);
     for field in &fields {
@@ -466,17 +508,25 @@ fn plan_tensor(
     Ok((ops, Some(size)))
 }
 
-/// Adjacent copies of one kind as one.
-fn merge(ops: Vec<Op>) -> Vec<Op> {
-    let mut merged: Vec<Op> = Vec::with_capacity(ops.len());
-    for op in ops {
-        match (merged.last_mut(), op) {
+/// Ops that merge adjacent copies of one kind as they are added, so a
+/// long run of small fields stays one op.
+#[derive(Default)]
+struct Ops(Vec<Op>);
+
+impl Ops {
+    fn push(&mut self, op: Op) {
+        match (self.0.last_mut(), op) {
             (Some(Op::Model(a)), Op::Model(b)) | (Some(Op::Skip(a)), Op::Skip(b)) => *a += b,
             (Some(Op::Emit(a)), Op::Emit(b)) => a.extend(b),
-            (_, op) => merged.push(op),
+            (_, op) => self.0.push(op),
         }
     }
-    merged
+
+    fn extend(&mut self, ops: Ops) {
+        for op in ops.0 {
+            self.push(op);
+        }
+    }
 }
 
 fn varint(mut value: u64) -> Vec<u8> {
