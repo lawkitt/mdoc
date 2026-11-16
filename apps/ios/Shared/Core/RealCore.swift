@@ -127,8 +127,9 @@ final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
 
     func stage(stage: JobStage) {
         let update = lock.withLock {
-            // Back from cooling down, the bar keeps its fraction and time.
-            last = stage == .scanning && last.stage == .coolingDown
+            // Pausing to cool down and going on keep the bar's fraction and time.
+            let paused = stage == .coolingDown || last.stage == .coolingDown
+            last = paused
                 ? JobUpdate(stage: stage, fraction: last.fraction, secondsLeft: last.secondsLeft)
                 : JobUpdate(stage: stage)
             return last

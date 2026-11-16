@@ -21,6 +21,7 @@ final class ScanTimeTests: XCTestCase {
         XCTAssertEqual(updates[2], JobUpdate(stage: .scanning, fraction: 0.25, secondsLeft: 200))
         XCTAssertEqual(ActionBar.progressLabel(.scan, updates[2]), "Finding names · About 3 min left")
         XCTAssertEqual(ActionBar.progressLabel(.scan, updates[3]), "Paused to cool down")
+        XCTAssertEqual(updates[3].fraction, 0.25, "the bar stays where it was while paused")
         XCTAssertEqual(updates[4], updates[2], "back from cooling down, the bar keeps where it was")
     }
 
