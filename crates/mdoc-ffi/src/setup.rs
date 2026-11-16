@@ -145,6 +145,15 @@ impl Setup {
             .ok_or_else(|| CoreError::invalid(format!("{file} is not a file of this model.")))?;
         let target = self.folder(model).join(&pinned.path);
         install_file(&pinned, Path::new(&downloaded), &target)?;
+        if model.ocr().is_none() {
+            // The encoder is re-saved with its weights beside it (#905); a
+            // failure keeps the verified file, and the next scan retries.
+            if let Err(error) =
+                mdoc_detect::convert_at(&self.folder(model), PiiModel::Fp16, &|| Ok(()))
+            {
+                eprintln!("Could not re-save the detector's encoder: {error}");
+            }
+        }
         Ok(self.info(model))
     }
 
@@ -192,11 +201,20 @@ impl Setup {
     fn info(&self, id: ModelId) -> ModelInfo {
         let files = files(id);
         let folder = self.folder(id);
-        let missing_bytes = files
-            .iter()
-            .filter(|f| mdoc_import::model_download::missing(&folder.join(&f.path), f.bytes))
-            .map(|f| f.bytes)
-            .sum();
+        let missing_bytes = match id.ocr() {
+            // An encoder counts in either layout (#905).
+            None => mdoc_detect::manifest_for(PiiModel::Fp16)
+                .files
+                .iter()
+                .filter(|f| mdoc_detect::artifact_missing(&folder, f))
+                .map(|f| f.bytes)
+                .sum(),
+            Some(_) => files
+                .iter()
+                .filter(|f| mdoc_import::model_download::missing(&folder.join(&f.path), f.bytes))
+                .map(|f| f.bytes)
+                .sum(),
+        };
         let (name, title) = match id.ocr() {
             None => (PiiModel::Fp16.name().into(), "Detector".into()),
             Some(ocr) => (ocr.name().into(), mdoc_import::ocr::title(ocr)),
@@ -438,6 +456,46 @@ mod tests {
             Err(CoreError::Invalid { .. })
         ));
         assert_eq!(setup.ocr_paths(model, runtimes()), None);
+    }
+
+    /// The detector reads as installed with its encoder in either layout:
+    /// the upstream file, or the re-saved model and data pair (#905).
+    #[test]
+    fn the_detector_is_installed_with_either_encoder_layout() {
+        let scratch = Scratch::new();
+        let setup = Setup::new(
+            scratch.path().join("models").display().to_string(),
+            12 * GIB,
+        );
+        let folder = setup.folder(ModelId::Gliner2Fp16);
+        let manifest = mdoc_detect::manifest_for(PiiModel::Fp16);
+        // Sparse files at the pinned sizes: presence is checked by size.
+        let sized = |path: &Path, bytes: u64| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::File::create(path).unwrap().set_len(bytes).unwrap();
+        };
+        let mut encoder = None;
+        for file in &manifest.files {
+            match &file.external_data {
+                None => sized(&folder.join(&file.path), file.bytes),
+                Some(pins) => encoder = Some((file, pins)),
+            }
+        }
+        let (encoder, pins) = encoder.expect("the encoder has a re-saved layout");
+        let info = setup.info(ModelId::Gliner2Fp16);
+        assert_eq!(info.missing_bytes, encoder.bytes);
+        let path = folder.join(&encoder.path);
+        sized(&path, pins.model.bytes);
+        // The model without its data file is still to download.
+        assert_eq!(
+            setup.info(ModelId::Gliner2Fp16).missing_bytes,
+            encoder.bytes
+        );
+        sized(&mdoc_detect::external::data_path(&path), pins.data.bytes);
+        assert!(setup.info(ModelId::Gliner2Fp16).installed);
+        assert!(setup.detector_paths(runtimes()).is_some());
+        sized(&path, encoder.bytes);
+        assert!(setup.info(ModelId::Gliner2Fp16).installed);
     }
 
     /// A file matching its pin moves into the folder the desktop layout

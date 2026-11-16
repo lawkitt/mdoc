@@ -14,7 +14,8 @@
 //! and fails when one is not as its status expects; a document without a
 //! status (the holdout) is expected to pass, and without a snapshot the
 //! model runs. The model is the
-//! installed pinned FP16 from the app data (read only, never downloaded;
+//! installed pinned FP16 from the app data (never downloaded, but an
+//! upstream encoder is re-saved in place as every load does;
 //! `MDOC_PII_MODEL_ROOT` and `MDOC_ONNX_RUNTIME` point elsewhere);
 //! `--snapshot` reads each fixture's committed `<id>.model.json` instead.
 //! `--scoreboard` prints recall and precision per language × category ×

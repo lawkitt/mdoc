@@ -1,6 +1,7 @@
 //! Experimental, offline GLiNER2 integration. Network access belongs only to
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
 #![forbid(unsafe_code)]
+pub mod external;
 pub mod lists;
 pub mod recognition;
 mod rules;
@@ -151,6 +152,69 @@ pub struct Artifact {
     pub bytes: u64,
     pub sha256: String,
     pub url: String,
+    /// The file as setup re-saves it, weights beside it (the encoder only).
+    #[serde(default)]
+    pub external_data: Option<external::ExternalData>,
+}
+
+impl Artifact {
+    /// The upstream file's pin.
+    fn pin(&self) -> external::Pin {
+        external::Pin {
+            bytes: self.bytes,
+            sha256: self.sha256.clone(),
+        }
+    }
+
+    /// Re-saved with external data, at its pinned sizes, under `root`.
+    fn converted(&self, root: &Path) -> bool {
+        self.external_data
+            .as_ref()
+            .is_some_and(|pins| external::present(&root.join(&self.path), pins))
+    }
+}
+
+/// Whether `artifact` is still to download into `root`: neither the
+/// upstream file nor its re-saved layout is there at its pinned sizes.
+pub fn artifact_missing(root: &Path, artifact: &Artifact) -> bool {
+    mdoc_import::model_download::missing(&root.join(&artifact.path), artifact.bytes)
+        && !artifact.converted(root)
+}
+
+/// Re-save each upstream encoder under `root` with its weights in a file
+/// beside it ([`external`]); a converted or absent encoder is left alone.
+/// The caller holds model admission. Every scan converts too, so callers
+/// other than setup may ignore a failure: the verified upstream layout
+/// still loads, only with about twice the memory.
+pub fn convert_at(
+    root: &Path,
+    model: mdoc_store::settings::PiiModel,
+    check: &dyn Fn() -> Result<(), DetectError>,
+) -> Result<(), DetectError> {
+    for artifact in manifest_for(model).files {
+        let Some(pins) = &artifact.external_data else {
+            continue;
+        };
+        let path = root.join(&artifact.path);
+        if !mdoc_import::model_download::missing(&path, artifact.bytes) {
+            external::convert(&path, &artifact.pin(), pins, check)?;
+        }
+    }
+    Ok(())
+}
+
+/// [`convert_at`] on an installed model before the settings check reads
+/// its files' metadata, so an old install converts and is checked at once.
+/// The caller holds model admission; a failure leaves the old layout.
+pub fn upgrade_reserved(model: mdoc_store::settings::PiiModel) {
+    if !SUPPORTED || cfg!(test) {
+        return;
+    }
+    if let Ok(root) = root_for(model)
+        && let Err(error) = convert_at(&root, model, &|| Ok(()))
+    {
+        eprintln!("Could not re-save the detector's encoder: {error}");
+    }
 }
 pub fn manifest_for(model: mdoc_store::settings::PiiModel) -> Manifest {
     let source = match model {
@@ -189,7 +253,9 @@ pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, Detect
         .ok_or(DetectError::NoStorage)
 }
 
-/// Model files and the shared runtime, matching `check_reserved`.
+/// Model files and the shared runtime, matching `check_reserved`. A
+/// re-saved encoder's data file is listed too, so an install that kept the
+/// upstream layout reads as incomplete and is checked again.
 pub fn model_files(
     root: &Path,
     ocr_root: &Path,
@@ -198,7 +264,14 @@ pub fn model_files(
     manifest_for(model)
         .files
         .iter()
-        .map(|file| root.join(&file.path))
+        .flat_map(|file| {
+            let path = root.join(&file.path);
+            let data = file
+                .external_data
+                .as_ref()
+                .map(|_| external::data_path(&path));
+            std::iter::once(path).chain(data)
+        })
         .chain(std::iter::once(mdoc_import::ocr::onnx_runtime_path(
             ocr_root,
         )))
@@ -215,11 +288,7 @@ pub fn pending(
     let files = manifest_for(model).files;
     let missing: Vec<u64> = files
         .iter()
-        .filter(|file| {
-            root.is_none_or(|root| {
-                mdoc_import::model_download::missing(&root.join(&file.path), file.bytes)
-            })
-        })
+        .filter(|file| root.is_none_or(|root| artifact_missing(root, file)))
         .map(|file| file.bytes)
         .collect();
     mdoc_import::model_download::Pending {
@@ -229,13 +298,14 @@ pub fn pending(
         runtime: mdoc_import::ocr::onnx_runtime_pending(ocr_root),
     }
 }
+/// Every file against its pin; an encoder in either layout.
 fn verify_model(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
     for artifact in manifest_for(model).files {
-        mdoc_import::model_download::verify(
-            &root.join(&artifact.path),
-            artifact.bytes,
-            &artifact.sha256,
-        )?;
+        let path = root.join(&artifact.path);
+        match &artifact.external_data {
+            Some(pins) if external::present(&path, pins) => external::verify(&path, pins)?,
+            _ => mdoc_import::model_download::verify(&path, artifact.bytes, &artifact.sha256)?,
+        }
     }
     Ok(())
 }
@@ -262,6 +332,12 @@ pub fn setup_reserved(
     let root = root_for(config.model)?;
     fs::create_dir_all(&root)?;
     for artifact in manifest_for(config.model).files {
+        if let Some(pins) = &artifact.external_data
+            && artifact.converted(&root)
+            && external::verify(&root.join(&artifact.path), pins).is_ok()
+        {
+            continue;
+        }
         mdoc_import::model_download::fetch(
             &artifact.url,
             artifact.bytes,
@@ -271,6 +347,8 @@ pub fn setup_reserved(
         )?;
     }
     progress.check()?;
+    progress.phase("Preparing model");
+    convert_at(&root, config.model, &|| Ok(progress.check()?))?;
     mdoc_import::ocr::onnx_runtime_with_progress(progress)?;
     let licenses = root.join("licenses");
     fs::create_dir_all(&licenses)?;
@@ -344,6 +422,9 @@ pub fn check_reserved_in(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error.into()),
         Ok(_) => {}
+    }
+    if let Err(error) = convert_at(root, model, &|| Ok(())) {
+        eprintln!("Could not re-save the detector's encoder: {error}");
     }
     let result = check_engine_in(root, ocr_root, model);
     match result {
@@ -2067,6 +2148,7 @@ fn model_stage(
     checkpoint(cancel, started)?;
     let _inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
     split();
+    convert_on_load(root, config.model, &|| checkpoint(cancel, started))?;
     verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
     timings.verify = split();
     checkpoint(cancel, started)?;
@@ -2104,6 +2186,24 @@ fn model_stage(
         });
     }
     Ok((to_source(source, &view, &forms, raw), timings))
+}
+
+/// [`convert_at`] before loading, so an install from before #905 converts
+/// on its first scan. Only cancelling stops the scan: after any other
+/// failure the verified upstream layout loads as before.
+fn convert_on_load(
+    root: &Path,
+    model: mdoc_store::settings::PiiModel,
+    check: &dyn Fn() -> Result<(), DetectError>,
+) -> Result<(), DetectError> {
+    match convert_at(root, model, check) {
+        Err(error @ (DetectError::Cancelled | DetectError::TooSlow)) => Err(error),
+        Err(error) => {
+            eprintln!("Could not re-save the detector's encoder: {error}");
+            Ok(())
+        }
+        Ok(()) => Ok(()),
+    }
 }
 
 fn transformer(
@@ -2208,6 +2308,7 @@ impl ModelSession {
         }
         let permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
         let inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
+        convert_on_load(root, config.model, &|| Ok(()))?;
         verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
         mdoc_import::ocr::load_onnx_runtime(runtime)?;
         Ok(Self {
@@ -7060,6 +7161,136 @@ mod tests {
             .is_err()
         );
     }
+    /// Nothing is left to download with the encoder in either layout, and
+    /// both pinned encoders have one (#905). Only sizes are read here.
+    #[test]
+    fn pending_counts_an_encoder_in_either_layout() {
+        use mdoc_store::settings::PiiModel;
+        for model in PiiModel::ALL {
+            let root = tempfile::tempdir().unwrap();
+            let sized = |path: &Path, bytes: u64| {
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::File::create(path).unwrap().set_len(bytes).unwrap();
+            };
+            let files = manifest_for(model).files;
+            let encoders: Vec<_> = files.iter().filter(|f| f.external_data.is_some()).collect();
+            assert_eq!(encoders.len(), 1);
+            let encoder = encoders[0];
+            assert!(encoder.path.ends_with(&format!(
+                "encoder_{}.onnx",
+                model.folder().trim_end_matches("_v2")
+            )));
+            for file in &files {
+                if file.external_data.is_none() {
+                    sized(&root.path().join(&file.path), file.bytes);
+                }
+            }
+            let left = || pending(model, Some(root.path()), None).model;
+            assert_eq!(left(), encoder.bytes);
+            let path = root.path().join(&encoder.path);
+            let pins = encoder.external_data.as_ref().unwrap();
+            sized(&path, pins.model.bytes);
+            sized(&external::data_path(&path), pins.data.bytes);
+            assert_eq!(left(), 0);
+            sized(&path, encoder.bytes);
+            assert_eq!(left(), 0);
+            // The data file is part of the install's metadata either way.
+            let listed = model_files(root.path(), Path::new("ocr"), model);
+            assert!(listed.contains(&external::data_path(&path)));
+            assert_eq!(listed.len(), files.len() + 2);
+        }
+    }
+    /// An install from before #905 (the upstream encoder) converts in place
+    /// on the setup check and on load, with no download, and recognizes
+    /// exactly as before; one that cannot convert still loads. Works on a
+    /// copy of an old-layout FP16 install (the qualification cache, or
+    /// `MDOC_PII_MODEL_ROOT`).
+    #[test]
+    #[cfg(unix)]
+    #[ignore = "requires an old-layout FP16 install and installed native runtime; no downloads"]
+    fn an_old_install_converts_in_place_and_still_recognizes() {
+        use mdoc_store::settings::PiiModel;
+        use std::os::unix::fs::PermissionsExt;
+        let model = PiiModel::Fp16;
+        let source = std::env::var_os("MDOC_PII_MODEL_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.qualification/models/gliner2-pii-fp16")
+            });
+        let runtime = std::env::var_os("MDOC_ONNX_RUNTIME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| mdoc_import::ocr::onnx_runtime(false).unwrap());
+        let ocr_root = tempfile::tempdir().unwrap();
+        let runtime_copy = mdoc_import::ocr::onnx_runtime_path(ocr_root.path());
+        fs::create_dir_all(runtime_copy.parent().unwrap()).unwrap();
+        fs::copy(&runtime, &runtime_copy).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let encoder = manifest_for(model)
+            .files
+            .into_iter()
+            .find(|f| f.external_data.is_some())
+            .unwrap();
+        let pins = encoder.external_data.as_ref().unwrap();
+        let encoder_path = root.path().join(&encoder.path);
+        let folder = encoder_path.parent().unwrap().to_owned();
+        let old_layout = || {
+            for file in manifest_for(model).files {
+                let to = root.path().join(&file.path);
+                fs::create_dir_all(to.parent().unwrap()).unwrap();
+                // A clone on APFS, so the copy costs no disk.
+                fs::copy(source.join(&file.path), &to).unwrap();
+            }
+            verify(&encoder_path, &encoder).expect("an upstream (old-layout) encoder");
+        };
+        let nothing_to_download = || {
+            let pending = pending(model, Some(root.path()), Some(ocr_root.path()));
+            assert_eq!((pending.model, pending.runtime), (0, 0));
+        };
+        let config = mdoc_store::settings::PiiConfig::default();
+        let fixtures: Vec<_> = recognition::fixture_paths(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/recognition"),
+        )
+        .unwrap()
+        .into_iter()
+        .step_by(16)
+        .map(|path| recognition::Fixture::read(&path).unwrap().source)
+        .collect();
+        let recognize = || {
+            let mut session = ModelSession::load(root.path(), &runtime, &config).unwrap();
+            fixtures
+                .iter()
+                .map(|source| recognition::Snapshot {
+                    model: model_name(model),
+                    threshold: config.threshold,
+                    entities: session.entities(source).unwrap(),
+                })
+                .collect::<Vec<_>>()
+        };
+        old_layout();
+        nothing_to_download();
+        // A folder it cannot write to keeps the old layout, which loads.
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o555)).unwrap();
+        let before = recognize();
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+        verify(&encoder_path, &encoder).unwrap();
+        // The settings check converts, then loads the converted pair.
+        assert!(check_reserved_in(root.path(), ocr_root.path(), model).unwrap());
+        external::verify(&encoder_path, pins).unwrap();
+        nothing_to_download();
+        assert!(
+            model_files(root.path(), ocr_root.path(), model)
+                .iter()
+                .all(|path| path.is_file())
+        );
+        // The upstream file back over the model, its stale data file beside
+        // it (a rewrite interrupted between its renames): loading converts.
+        old_layout();
+        assert!(external::data_path(&encoder_path).is_file());
+        let after = recognize();
+        external::verify(&encoder_path, pins).unwrap();
+        assert_eq!(after, before);
+    }
     #[test]
     fn pinned_artifacts_reject_partial_and_same_size_corruption() {
         let dir = tempfile::tempdir().unwrap();
@@ -7072,6 +7303,7 @@ mod tests {
                 .map(|byte| format!("{byte:02x}"))
                 .collect(),
             url: String::new(),
+            external_data: None,
         };
         assert!(verify(&path, &artifact).is_err());
         fs::write(&path, b"ab").unwrap();
@@ -7089,16 +7321,21 @@ mod tests {
         for model in mdoc_store::settings::PiiModel::ALL {
             let paths = model_files(dir.path(), &runtime, model);
             let manifest = manifest_for(model);
+            // The encoder's data file follows it (#905).
             let expected = manifest
                 .files
                 .iter()
-                .map(|a| dir.path().join(&a.path))
+                .flat_map(|a| {
+                    let path = dir.path().join(&a.path);
+                    let data = a.external_data.as_ref().map(|_| external::data_path(&path));
+                    std::iter::once(path).chain(data)
+                })
                 .chain(std::iter::once(mdoc_import::ocr::onnx_runtime_path(
                     &runtime,
                 )))
                 .collect::<Vec<_>>();
             assert_eq!(paths, expected);
-            assert_eq!(paths.len(), manifest.files.len() + 1);
+            assert_eq!(paths.len(), manifest.files.len() + 2);
             assert!(
                 matches!(verify_model(dir.path(), model), Err(DetectError::Download(mdoc_import::model_download::DownloadError::Io(error))) if error.kind() == std::io::ErrorKind::NotFound)
             );
