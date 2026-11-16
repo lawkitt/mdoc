@@ -14,8 +14,9 @@
 //! size_threshold=1024)` writes for these models, so the pinned digests can
 //! be reproduced with it.
 //!
-//! The input streams through twice and is never held in memory: one pass
-//! reads the protobuf structure, skipping weight payloads, and one copies
+//! The input streams through three times and is never held in memory: its
+//! digest is checked first, so only the pinned bytes are parsed; one pass
+//! reads the protobuf structure, skipping weight payloads; and one copies
 //! bytes to the two outputs while hashing all three files. Outputs land in
 //! temporary files beside the encoder and replace it only when the input and
 //! both outputs match their pinned digests.
