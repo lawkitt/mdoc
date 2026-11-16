@@ -1,4 +1,4 @@
-"""The shortlist (decision 9 on lawkitt/mdoc#903): one entry per model.
+"""The candidates (lawkitt/mdoc#903: decision 9, then round 7), one per entry.
 
 Each entry names its Hugging Face repository and pinned revision, its
 adapter family, a size class, its score cut, and how its labels become the
@@ -97,7 +97,7 @@ MODELS: list[Model] = [
     Model(
         "bardsai-eu-pii-v2", "bardsai/eu-pii-anonimization-multilang-v2", "07a9a69b0d75c551f5f9450b290f864bfc7dfb51",
         "token", "mid", "Apache-2.0",
-        labels={
+        labels=(BARDSAI := {
             "PERSON_NAME": "person",
             "PERSON_ALIAS": "person",
             "ORGANIZATION_NAME": "organization",
@@ -110,7 +110,7 @@ MODELS: list[Model] = [
             "BANK_ACCOUNT_IDENTIFIER": "bank_account",
             "ACCOUNT_IDENTIFIER": "bank_account",
             "PAYMENT_CARD": "bank_account",
-        },
+        }),
     ),
     Model(
         "nym-pii", "Wismut/nym-pii-multilingual", "0ed0242d67a30ca6a83e5f118506ff1e1daf83ca",
@@ -223,6 +223,78 @@ MODELS: list[Model] = [
     ),
 ]
 
+# Round 7 (decisions 39 and 51 on #903). Bare places (city, LOCATION) stay
+# unmapped where a model also has a street-address tag, as in the shortlist.
+HORIZON = {
+    "PERSON": "person",
+    "ORGANIZATION": "organization",
+    "EMAIL": "email",
+    "PHONE": "phone_number",
+    "STREET_ADDRESS": "address",
+    "POSTCODE": "address",
+    "PASSPORT": "passport_number",
+    "NATIONAL_ID": "national_id_number",
+    "DRIVER_LICENSE": "national_id_number",
+    # As nym's MEDICAL_RECORD_NUMBER and LICENSE_PLATE.
+    "MEDICAL_ID": "national_id_number",
+    "VEHICLE_ID": "national_id_number",
+    "TAX_ID": "tax_id",
+    "BANK_ACCOUNT": "bank_account",
+    "ACCOUNT_ID": "bank_account",
+    "CREDIT_CARD": "bank_account",
+}
+
+MODELS += [
+    Model(
+        "gliner2-guardrails", "fastino/GLiNER2-Guardrails-PII-Multi", "aad696b2f6815e3dfc2d95908129eea5ed598562",
+        "gliner2", "large", "Apache-2.0", prompts=APP_PROMPTS,
+        note="same label vocabulary as the default; gliner2-rs reads its layout",
+    ),
+    Model(
+        "bardsai-eu-pii-v3", "bardsai/eu-pii-anonimization-multilang-v3", "091984b5fbce4c161abc4776ed0f4e3206e1b374",
+        "token", "mid", "Apache-2.0", labels=BARDSAI,
+        note="v2's map; new DATE_TIME, URL and DOCUMENT_REFERENCE map to nothing (decision 52)",
+    ),
+    Model(
+        "horizon-pii-base", "Horizon-Labs/pii-redactor-base", "ef0eff8e63c1711ec0c997c5ca9ea3b78a068684",
+        "token", "mid", "Apache-2.0", labels=HORIZON,
+    ),
+    Model(
+        "horizon-pii-small", "Horizon-Labs/pii-redactor-small", "a20835db9e671267b21a2951f5bf2c76e4901708",
+        "token", "small", "Apache-2.0", labels=HORIZON,
+    ),
+    Model(
+        "knowledgator-gliner-pii-large", "knowledgator/gliner-pii-large-v1.0", "f847f54fbc97ad6e78bfa20ed9c5e5d5c43327b9",
+        "gliner", "large", "Apache-2.0", prompts=KNOWLEDGATOR,
+    ),
+    Model(
+        "openmed-pii-large", "OpenMed/OpenMed-PII-SuperClinical-Large-434M-v1", "df7af994d39d358e52f929ff1b3a40d894adf022",
+        "token", "large", "Apache-2.0",
+        labels={
+            "first_name": "person",
+            "last_name": "person",
+            "company_name": "organization",
+            "email": "email",
+            "phone_number": "phone_number",
+            "fax_number": "phone_number",
+            "street_address": "address",
+            "postcode": "address",
+            "ssn": "national_id_number",
+            # As nym's labels of the same names.
+            "employee_id": "national_id_number",
+            "customer_id": "national_id_number",
+            "medical_record_number": "national_id_number",
+            "license_plate": "national_id_number",
+            "tax_id": "tax_id",
+            "account_number": "bank_account",
+            "credit_debit_card": "bank_account",
+            "bank_routing_number": "routing_number",
+            "swift_bic": "routing_number",
+        },
+        note="English only; first_name and last_name tags of one name join into one person span",
+    ),
+]
+
 BY_ID = {m.id: m for m in MODELS}
 
 # Decision 9's combos, members in rank order (the first wins a category).
@@ -237,4 +309,6 @@ COMBOS: dict[str, list[str]] = {
     "default+gravitee-bert-small": ["default", "gravitee-bert-small"],
     "default+nvidia-gliner-pii": ["default", "nvidia-gliner-pii"],
     "default+nym-pii": ["default", "nym-pii"],
+    # Round 7 (decision 46).
+    "default+bardsai-eu-pii-v3": ["default", "bardsai-eu-pii-v3"],
 }

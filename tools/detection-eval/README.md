@@ -55,6 +55,25 @@ language and set, English pooled over the holdout and real set, English
 recall per category, and each option's decision-7 verdict against
 `default`.
 
+## Where to look
+
+Every re-run on new releases (#903, decision 36) starts with a search for
+new candidates (decision 50):
+
+- The PIIMB leaderboard:
+  [piimb/pii-masking-benchmark-leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard).
+  Its synthetic English sets do not predict our real set, so treat it as a
+  list of names, not a ranking.
+- These Hugging Face authors' models: `fastino`, `jugaadsrl`,
+  `knowledgator`, `bardsai`, `Horizon-Labs`, `OpenMed`.
+- Hugging Face model searches for `gliner`, `pii`, `privacy`, `redact` and
+  `anonymi`, each sorted by recently updated, downloads and likes.
+
+Take only PII-oriented models: general extraction, chat, code, secrets and
+clinical models stay out. Look at English models first, then multilingual
+ones (English with Russian or EU languages), then models for one other
+language (decision 38).
+
 ## Add a model
 
 1. Add a `Model` to `MODELS` in [models.py](detection_eval/models.py): an
