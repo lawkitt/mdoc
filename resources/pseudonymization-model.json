@@ -1,79 +1,79 @@
 {
-  "id": "gliner2-pii-fp16",
+  "id": "gliner2-guardrails-fp16",
   "engine": "gliner2",
-  "repository": "jugaadsrl/gliner2-privacy-filter-PII-multi-onnx",
+  "repository": "jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx",
   "license": "Apache-2.0; encoder MIT",
-  "revision": "e594898629d452e8311796f5f329c7edbeda907c",
+  "revision": "d5d1efdfa1ece30fef6830a4a074fccda991cb3e",
   "files": [
     {
       "path": "fp16_v2/classifier_fp16.onnx",
-      "bytes": 2366948,
-      "sha256": "05496dbc57d06ae19a41ee740419880baf00c704ce78ced483732703ce336a6c",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/classifier_fp16.onnx"
+      "bytes": 2366845,
+      "sha256": "ed15311d3fe89b87f446e0dfdd0f250dbb046cc81081403cda4c99a01fcec134",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/classifier_fp16.onnx"
     },
     {
       "path": "fp16_v2/count_lstm_fixed_fp16.onnx",
-      "bytes": 21288145,
-      "sha256": "83d4f991fbdb65226ef1dfdf6095f08b960547c3a1a6c1e3d45cd539ff92a1b3",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/count_lstm_fixed_fp16.onnx"
+      "bytes": 21494330,
+      "sha256": "6dc5e2d4479da9ae40e9f096e3ccb88d11b51411ef8beb03e7ddb1fa14579912",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/count_lstm_fixed_fp16.onnx"
     },
     {
       "path": "fp16_v2/count_pred_argmax_fp16.onnx",
-      "bytes": 2425035,
-      "sha256": "a353e6b967a09f78d520e28c237b52ccfda5113de6e4345158d1e5e5cb963c9b",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/count_pred_argmax_fp16.onnx"
+      "bytes": 2425036,
+      "sha256": "b915483618c9a561f98992a29cef83b7f3e407a8f14218c43445a237937298a3",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/count_pred_argmax_fp16.onnx"
     },
     {
       "path": "fp16_v2/encoder_fp16.onnx",
-      "bytes": 556324340,
-      "sha256": "fd75d6cd79523848e788d473a806de918f7fcc9b20b26ef3091238234eedee6c",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/encoder_fp16.onnx",
+      "bytes": 556324341,
+      "sha256": "8f7adb788611d32e5d60df2833b219054a76b245efba943f2831d945724ce938",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/encoder_fp16.onnx",
       "external_data": {
         "model": {
-          "bytes": 1264973,
-          "sha256": "69b17edb9fc3c56f3037ee7d73367d3212a88ba482bb9e82c4d1550abb87c5ba"
+          "bytes": 1264974,
+          "sha256": "ee8614193c8db8345d6f94836036aa5ee75d13c19578da53111c5829ab52cfa7"
         },
         "data": {
           "bytes": 555073536,
-          "sha256": "46e55d7608b797eebefa38f358b1bad1202c5e653637a957122f406f4b89df56"
+          "sha256": "2b835c0dfbef8fc2b57a8bd811ac6bf79e4beb902abe7ae02a216321dec6eb7a"
         }
       }
     },
     {
       "path": "fp16_v2/schema_gather_fp16.onnx",
-      "bytes": 2145,
-      "sha256": "255437e8b4a2af91951421309208fc188859b74062b88359ea565bdb0309ccdf",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/schema_gather_fp16.onnx"
+      "bytes": 2146,
+      "sha256": "020f5d0a4f17ee3b3f45784ed759fd3d266855692eb1dec7ab1324b6600e0074",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/schema_gather_fp16.onnx"
     },
     {
       "path": "fp16_v2/scorer_fp16.onnx",
-      "bytes": 5876,
-      "sha256": "ebbdf71ab00f6382f1effe04c586207ab85ac0b941688063005c384fa2e0458e",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/scorer_fp16.onnx"
+      "bytes": 5877,
+      "sha256": "51acf0dcd506ec6b9cfa69ed0c6051c98b663594914948e0171af635b76d68d4",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/scorer_fp16.onnx"
     },
     {
       "path": "fp16_v2/span_rep_fp16.onnx",
-      "bytes": 33074792,
-      "sha256": "df0d2e318daf16e0b85c1c5ed0b223d529f26a09865aea29e805e0191b8041c2",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/span_rep_fp16.onnx"
+      "bytes": 33074793,
+      "sha256": "082c7c45724bcb9d7340f8b956c565622170eeaf88a66e9a352822dfde5e3638",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/span_rep_fp16.onnx"
     },
     {
       "path": "fp16_v2/token_gather_fp16.onnx",
-      "bytes": 524,
-      "sha256": "9f69059ca4db687f07d6a11d1c8f3c59780aff374978aec6fc51798beb13313a",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/token_gather_fp16.onnx"
+      "bytes": 525,
+      "sha256": "7e71eaccdc645a848968302c2127840cf7c23383389d77390acd68e232bbb325",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/token_gather_fp16.onnx"
     },
     {
       "path": "fp16_v2/tokenizer.json",
       "bytes": 16020604,
       "sha256": "f6df10ec83bea993035b2dd7c39345a3d4fcf23421c2adb6cb4ffc1e6d1bc4b5",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/tokenizer.json"
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/tokenizer.json"
     },
     {
       "path": "README.md",
-      "bytes": 8085,
-      "sha256": "240b8eed6ddf54b4e42e9ee2838b7ffebea482cec932968d0eb37f6caf60bbae",
-      "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/README.md"
+      "bytes": 21257,
+      "sha256": "01335354c7ac740d2974576d149bfab48b67065da27bc5f4e3683d6450b07d2a",
+      "url": "https://huggingface.co/jugaadsrl/GLiNER2-Guardrails-PII-Multi-onnx/resolve/d5d1efdfa1ece30fef6830a4a074fccda991cb3e/README.md"
     }
   ]
 }

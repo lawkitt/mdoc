@@ -144,10 +144,10 @@ pub fn convert(
     }
     let matches =
         |hashed: (u64, String), pin: &Pin| hashed.0 == pin.bytes && hashed.1 == pin.sha256;
-    if !matches(input.finish(), upstream)
-        || !matches(model_out.finish(), &pins.model)
-        || !matches(data_out.finish(), &pins.data)
-    {
+    // SCRATCH (#903 Round 7): print the converted files' pins.
+    let (fi, fm, fd) = (input.finish(), model_out.finish(), data_out.finish());
+    eprintln!("SCRATCH external pins: model {} {} data {} {}", fm.0, fm.1, fd.0, fd.1);
+    if !matches(fi, upstream) || !matches(fm, &pins.model) || !matches(fd, &pins.data) {
         return Err(DownloadError::Integrity.into());
     }
     // Windows refuses to replace a file that is still open.
