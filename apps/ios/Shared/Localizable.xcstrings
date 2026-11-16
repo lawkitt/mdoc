@@ -1402,6 +1402,9 @@
     "The model could not be installed: %@" : {
 
     },
+    "The name finder is too slow on this phone. Select text to mark a name." : {
+
+    },
     "The scanned pages could not be read." : {
 
     },

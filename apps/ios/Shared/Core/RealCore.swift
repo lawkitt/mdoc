@@ -832,8 +832,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             detector = paths
         case .belowFloor:
             // Below the floor the app offers no Find names (ADR 0088). Only
-            // the UI tests' seed (`seedForUITesting`) gets here: the core's
-            // structured rules give it candidates without a model.
+            // the UI tests' seed (`seedForUITesting`), on a stand-in memory
+            // size, gets here: the core's structured rules give it candidates
+            // without a model. A phone too slow for the detector never scans
+            // with the rules alone, which would miss names (ADR 0120).
+            if setup.snapshot().belowFloor == .speed {
+                throw CoreError.findNamesFailed(
+                    String(localized: "The name finder is too slow on this phone. Select text to mark a name."))
+            }
             detector = nil
         }
         _ = try job(observer) { try ffi.scan(detector: detector, progress: StageReporter(observer, device: library.device)) }
@@ -1124,9 +1130,10 @@ final class RealSetup: Setup, @unchecked Sendable {
             tenPagesSeconds: ffi.tenPagesSeconds())
     }
 
-    func timeDetector() throws -> SetupSnapshot {
+    func timeDetector(observer: any JobObserver) throws -> SetupSnapshot {
         let runtimes = try core { try linkedRuntimes() }
-        _ = try core { try ffi.timeDetector(runtimes: runtimes) }
+        observer.onCancel { [ffi] in ffi.cancelTiming() }
+        _ = try core { try ffi.timeDetector(runtimes: runtimes, progress: StageReporter(observer)) }
         return snapshot()
     }
 

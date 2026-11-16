@@ -207,13 +207,15 @@ protocol Setup: AnyObject, Sendable {
     /// model's folder.
     func install(_ request: ModelDownloadRequest, from file: URL) throws -> SetupSnapshot
     /// Times one short detector run and keeps the result, right after the
-    /// detector installs (ADR 0120). A phone past the speed ceiling is
-    /// below the floor afterwards.
-    func timeDetector() throws -> SetupSnapshot
+    /// detector installs (ADR 0120). It runs as a scan does: it needs the
+    /// memory free, pauses while the phone is too hot and stops when
+    /// `observer` is cancelled. A phone past the speed ceiling is below the
+    /// floor afterwards.
+    func timeDetector(observer: any JobObserver) throws -> SetupSnapshot
 }
 
 extension Setup {
-    func timeDetector() throws -> SetupSnapshot { snapshot() }
+    func timeDetector(observer: any JobObserver) throws -> SetupSnapshot { snapshot() }
 }
 
 /// The core objects one process uses.

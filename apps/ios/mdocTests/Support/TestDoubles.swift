@@ -105,12 +105,16 @@ final class FakeSetup: mdoc.Setup, @unchecked Sendable {
     private let lock = NSLock()
     private let physicalMemory: UInt64
     private var installed: Set<String> = []
+    /// What the detector's timed run finds: too slow, or 62 s per 10 pages.
+    var timesTooSlow = false
+    private var timed = false
 
     init(memory: UInt64) {
         physicalMemory = memory
     }
 
-    private var tier: DeviceTier { physicalMemory >= Self.detectorFloor ? .detector : .belowFloor }
+    private var tooSlow: Bool { timed && timesTooSlow }
+    private var tier: DeviceTier { physicalMemory >= Self.detectorFloor && !tooSlow ? .detector : .belowFloor }
 
     func snapshot() -> SetupSnapshot {
         lock.withLock {
@@ -124,8 +128,18 @@ final class FakeSetup: mdoc.Setup, @unchecked Sendable {
                     id: Self.detectorID, name: "Name detector", purpose: .detector, byteSize: Self.detectorBytes,
                     state: installed.contains(Self.detectorID) ? .installed : .notInstalled), at: 0)
             }
-            return SetupSnapshot(physicalMemory: physicalMemory, tier: tier, offers: offers)
+            return SetupSnapshot(
+                physicalMemory: physicalMemory, tier: tier, offers: offers,
+                belowFloor: tooSlow ? .speed : physicalMemory < Self.detectorFloor ? .memory : nil,
+                tenPagesSeconds: timed ? 62 : nil)
         }
+    }
+
+    func timeDetector(observer: any JobObserver) throws -> SetupSnapshot {
+        lock.withLock {
+            if installed.contains(Self.detectorID) { timed = true }
+        }
+        return snapshot()
     }
 
     func downloadRequests(for model: String) throws -> [ModelDownloadRequest] {

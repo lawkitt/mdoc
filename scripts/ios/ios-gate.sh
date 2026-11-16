@@ -12,10 +12,10 @@
 #           below-floor for the 3 GB iPhone SE 2nd generation (iPhone12,8),
 #           detector for every other iPhone iOS 26 runs on.
 #   record  Writes the record of a pass.
-#   check   Succeeds when <commit> has a pass at the phone's own tier (not
-#           a forced one) on a phone older than the iPhone 15 Pro, the
-#           slowest class that finds names (the iPhone 12 Pro), and prints
-#           its gate line for the tag's trailer.
+#   check   Succeeds when <commit> has a detector-tier pass at the phone's
+#           own tier (not a forced one) on a phone older than the iPhone 15
+#           Pro, the slowest class that finds names (the iPhone 12 Pro), and
+#           prints its gate line for the tag's trailer.
 # Bash 3.2.
 source "$(dirname "$0")/../lib.sh"
 gates=${MDOC_GATE_DIR:-target/ios/gate}
@@ -57,6 +57,8 @@ case "${1:-}" in
     tier=$(field tier "$record")
     [ "$tier" = "$(tier_of "$phone")" ] ||
       die "the gate record for $commit forced the $tier tier on $phone; the gate runs at the phone's own tier"
+    [ "$tier" = detector ] ||
+      die "the gate for $commit ran on $phone, below the floor; the gate finds names (the iPhone 12 Pro)"
     major=${phone#iPhone} && major=${major%%,*}
     [ "$major" -lt 16 ] ||
       die "the gate for $commit ran on $phone; the gate is an older, slower phone (the iPhone 12 Pro)"

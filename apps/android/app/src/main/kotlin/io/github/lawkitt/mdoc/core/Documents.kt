@@ -363,7 +363,7 @@ class Documents(
     }
 
     /** The core's job stages and a scan's time left, and what it asks about the phone. */
-    private class Progress(private val observer: JobObserver, private val device: DeviceConditions) : JobProgress {
+    internal class Progress(private val observer: JobObserver, private val device: DeviceConditions) : JobProgress {
         override fun stage(stage: JobStage) = observer.stage(stage)
 
         // Android shows stages and a scan's time left, not a fraction.

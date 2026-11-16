@@ -104,6 +104,14 @@ impl Clock {
         self.last.set(Instant::now());
     }
 
+    /// A step returned: checked against the limit first, so a step that ran
+    /// past it stops the scan rather than counting as progress.
+    pub(crate) fn step_done(&self, cancel: &AtomicBool) -> Result<(), DetectError> {
+        self.check(cancel)?;
+        self.advanced();
+        Ok(())
+    }
+
     /// Waits while `observer` asks the scan to pause, until cancelled. The
     /// wait counts toward neither limit.
     pub(crate) fn wait_out_pause(
@@ -171,6 +179,24 @@ mod tests {
         assert!(stalled.to_string().contains("no progress for a minute"));
         clock.advanced();
         assert!(clock.check(&AtomicBool::new(false)).is_ok());
+    }
+
+    /// A window or stage that took longer than the stall limit stops the
+    /// scan when it returns, even though it finished.
+    #[test]
+    fn a_step_that_ran_past_the_stall_limit_is_not_progress() {
+        let clock = Clock::starting_at(ago(600), ScanLimit::PHONE);
+        clock.last.set(ago(80));
+        assert!(matches!(
+            clock.step_done(&AtomicBool::new(false)),
+            Err(DetectError::Stalled)
+        ));
+        clock.last.set(ago(30));
+        assert!(clock.step_done(&AtomicBool::new(false)).is_ok());
+        assert!(
+            clock.last.get().elapsed() < Duration::from_secs(1),
+            "and it is progress"
+        );
     }
 
     #[test]

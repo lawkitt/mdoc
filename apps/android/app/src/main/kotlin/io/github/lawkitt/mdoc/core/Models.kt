@@ -41,6 +41,7 @@ class Models(
     private val runtimes: () -> Runtimes,
     /** Files the core installed, by model, so a retry fetches only the rest. */
     private val installedRecord: File,
+    private val device: DeviceConditions = DeviceConditions.Unknown,
 ) {
     fun snapshot(): SetupSnapshot {
         val below = ffi.belowFloor()
@@ -60,11 +61,14 @@ class Models(
 
     /**
      * Times one short detector run and keeps it (ADR 0120): right after the
-     * detector installs. A phone past the speed ceiling is below the floor
-     * afterwards, and its model is removed.
+     * detector installs. It runs as a scan does: it needs the memory free,
+     * pauses while the phone is too hot and stops when the job is cancelled.
+     * A phone past the speed ceiling is below the floor afterwards, and its
+     * model is removed.
      */
-    fun timeDetector(): SetupSnapshot {
-        core { ffi.timeDetector(runtimes()) }
+    fun timeDetector(observer: JobObserver): SetupSnapshot {
+        observer.onCancel { ffi.cancelTiming() }
+        core { ffi.timeDetector(runtimes(), Documents.Progress(observer, device)) }
         return snapshot()
     }
 

@@ -11,7 +11,10 @@ pub use speed::DetectorSpeed;
 pub(crate) use speed::PAGE_CHARS;
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 const MIB: u64 = 1024 * 1024;
@@ -127,6 +130,8 @@ impl OcrPaths {
 pub struct Setup {
     root: PathBuf,
     physical_memory: u64,
+    /// Set by `cancel_timing`; cleared when a timed run ends.
+    timing_cancelled: AtomicBool,
 }
 
 #[uniffi::export]
@@ -138,6 +143,7 @@ impl Setup {
         Arc::new(Self {
             root: PathBuf::from(models_root),
             physical_memory: physical_memory_bytes,
+            timing_cancelled: AtomicBool::new(false),
         })
     }
 
@@ -177,35 +183,26 @@ impl Setup {
     }
 
     /// Time one short detector run and keep the result: the platform calls
-    /// it right after the detector installs, off the main thread. A device
+    /// it right after the detector installs, off the main thread. It runs as
+    /// a scan does: it needs the memory free, pauses while the phone is too
+    /// hot (both through `progress`) and stops at `cancel_timing`. A device
     /// past the speed ceiling counts as below the floor from then on, and
     /// the model it cannot use is removed. `None` when the detector is not
     /// installed or not offered here.
-    pub fn time_detector(&self, runtimes: Runtimes) -> Result<Option<DetectorSpeed>, CoreError> {
-        let Some(paths) = self.detector_paths(runtimes) else {
-            return Ok(None);
-        };
-        let (_, timings) = mdoc_detect::scan_at(
-            speed::PROBE,
-            &AtomicBool::new(false),
-            Path::new(&paths.model),
-            Path::new(&paths.onnx),
-            &mdoc_store::settings::PiiConfig::default(),
-            mdoc_detect::ScanLimit::PHONE,
-            &|_: mdoc_detect::ScanProgress| {},
-        )?;
-        let chars = speed::PROBE.chars().count();
-        let inference = timings
-            .windows
-            .iter()
-            .map(|w| w.inference.as_secs_f64())
-            .sum();
-        let measured = DetectorSpeed::measured(timings.engine_load.as_secs_f64(), chars, inference);
-        speed::write(&self.root, &self.detector_folder_name(), measured)?;
-        if measured.too_slow() {
-            std::fs::remove_dir_all(self.folder(ModelId::Gliner2Fp16))?;
-        }
-        Ok(Some(measured))
+    pub fn time_detector(
+        &self,
+        runtimes: Runtimes,
+        progress: Option<Box<dyn crate::document_session::JobProgress>>,
+    ) -> Result<Option<DetectorSpeed>, CoreError> {
+        let result = self.timed_run(runtimes, progress.as_deref());
+        // A cancel belongs to this run only.
+        self.timing_cancelled.store(false, Ordering::Relaxed);
+        result
+    }
+
+    /// Stops the running `time_detector`, or the next one if none runs yet.
+    pub fn cancel_timing(&self) {
+        self.timing_cancelled.store(true, Ordering::Relaxed);
     }
 
     /// Install `downloaded`, the platform's download of `model`'s file
@@ -258,6 +255,39 @@ impl Setup {
 }
 
 impl Setup {
+    /// `time_detector`'s run, as a scan runs it.
+    fn timed_run(
+        &self,
+        runtimes: Runtimes,
+        progress: Option<&dyn crate::document_session::JobProgress>,
+    ) -> Result<Option<DetectorSpeed>, CoreError> {
+        let Some(paths) = self.detector_paths(runtimes) else {
+            return Ok(None);
+        };
+        crate::document_session::check_free_memory(progress)?;
+        let (_, timings) = mdoc_detect::scan_at(
+            speed::PROBE,
+            &self.timing_cancelled,
+            Path::new(&paths.model),
+            Path::new(&paths.onnx),
+            &mdoc_store::settings::PiiConfig::default(),
+            mdoc_detect::ScanLimit::PHONE,
+            &crate::document_session::PhoneScan::new(progress, None),
+        )?;
+        let chars = speed::PROBE.chars().count();
+        let inference: f64 = timings
+            .windows
+            .iter()
+            .map(|w| w.inference.as_secs_f64())
+            .sum();
+        let measured = DetectorSpeed::measured(timings.engine_load.as_secs_f64(), chars, inference);
+        speed::write(&self.root, &self.detector_folder_name(), measured)?;
+        if measured.too_slow() {
+            std::fs::remove_dir_all(self.folder(ModelId::Gliner2Fp16))?;
+        }
+        Ok(Some(measured))
+    }
+
     /// The desktop's layouts under the models root: `pseudonymization/` as
     /// `mdoc_detect::root_for` names its folder, `ocr/` as OCR's root.
     fn folder(&self, model: ModelId) -> PathBuf {
@@ -543,10 +573,52 @@ mod tests {
     }
 
     #[test]
-    fn timing_needs_an_installed_detector() {
+    fn timing_needs_an_installed_detector_and_a_cancel_lasts_one_run() {
         let scratch = Scratch::new();
         let setup = Setup::new(scratch.path().display().to_string(), 6 * GIB);
-        assert_eq!(setup.time_detector(runtimes()).unwrap(), None);
+        setup.cancel_timing();
+        assert_eq!(setup.time_detector(runtimes(), None).unwrap(), None);
+        assert!(
+            !setup.timing_cancelled.load(Ordering::Relaxed),
+            "the next run starts uncancelled"
+        );
+    }
+
+    /// A phone short of free memory is not timed: the timed run would load
+    /// the detector as a scan does.
+    #[test]
+    fn timing_needs_the_memory_a_scan_needs() {
+        use crate::document_session::{JobProgress, JobStage, Thermal};
+        struct Short;
+        impl JobProgress for Short {
+            fn stage(&self, _: JobStage) {}
+            fn advanced(&self, _: u64, _: u64) {}
+            fn remaining(&self, _: u64) {}
+            fn thermal(&self) -> Thermal {
+                Thermal::Nominal
+            }
+            fn free_memory(&self) -> Option<u64> {
+                Some(DETECTOR_FREE_BYTES / 2)
+            }
+        }
+        let scratch = Scratch::new();
+        let setup = Setup::new(scratch.path().join("models").display().to_string(), 6 * GIB);
+        let folder = setup.folder(ModelId::Gliner2Fp16);
+        for file in &mdoc_detect::manifest_for(PiiModel::Fp16).files {
+            let path = folder.join(&file.path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::File::create(&path)
+                .unwrap()
+                .set_len(file.bytes)
+                .unwrap();
+        }
+        assert!(setup.info(ModelId::Gliner2Fp16).installed);
+        let refused = setup.time_detector(runtimes(), Some(Box::new(Short)));
+        assert!(
+            matches!(&refused, Err(CoreError::Detect { message }) if message.contains("memory")),
+            "{refused:?}"
+        );
+        assert_eq!(setup.detector_speed(), None);
     }
 
     #[test]

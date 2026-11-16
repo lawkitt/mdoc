@@ -77,7 +77,7 @@ class SetupController(
     fun timeIfNeeded() {
         if (!mutable.value.snapshot.needsTiming || mutable.value.working) return
         scope.launch {
-            val outcome = jobs.run(JobKind.Install, null, context.getString(R.string.timing_name_finder)) { models().timeDetector() }
+            val outcome = jobs.run(JobKind.Install, null, context.getString(R.string.timing_name_finder)) { observer -> models().timeDetector(observer) }
             if (outcome is JobOutcome.Finished) mutable.update { it.copy(snapshot = outcome.value) }
         }
     }
@@ -126,7 +126,7 @@ class SetupController(
         scope.launch {
             val outcome = jobs.run(JobKind.Install, null, context.getString(R.string.downloading_models)) { observer ->
                 observer.onCancel { cancelled = true }
-                install()
+                install(observer)
             }
             val next = continuation
             continuation = null
@@ -142,11 +142,14 @@ class SetupController(
                     },
                 )
             }
-            if (outcome is JobOutcome.Finished && !mutable.value.needsSetup) next?.invoke()
+            // Too slow to find names (ADR 0120): the job that asked for the
+            // detector does not run; the document says why instead.
+            val tooSlow = mutable.value.snapshot.belowFloor == uniffi.mdoc_ffi.FloorReason.SPEED
+            if (outcome is JobOutcome.Finished && !mutable.value.needsSetup && !tooSlow) next?.invoke()
         }
     }
 
-    private fun install() {
+    private fun install(observer: io.github.lawkitt.mdoc.core.JobObserver) {
         val models = models()
         val downloader = ModelDownloader(
             network = { network.wifi ?: if (allowsCellular) network.cellular else null },
@@ -179,7 +182,7 @@ class SetupController(
         }
         // Right after the detector installs, in the same job: time it (ADR 0120).
         // A failed run leaves it installed and untimed, for the next launch.
-        if (models.snapshot().needsTiming) runCatching { models.timeDetector() }
+        if (models.snapshot().needsTiming) runCatching { models.timeDetector(observer) }
     }
 
     private companion object {

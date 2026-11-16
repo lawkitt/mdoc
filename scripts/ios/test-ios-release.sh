@@ -108,6 +108,9 @@ grep -q "no gate record" "$tmp/out" || fail "no gate: $(cat "$tmp/out")"
 gate "$good" below-floor
 refuses "a forced below-floor tier" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "phone's own tier" "$tmp/out" || fail "forced tier: $(cat "$tmp/out")"
+gate "$good" below-floor iPhone12,8
+refuses "a below-floor run on an iPhone SE" release 0.2.0-rc.3 "$tmp/good.txt" --yes
+grep -q "below the floor" "$tmp/out" || fail "SE: $(cat "$tmp/out")"
 gate "$good" detector iPhone18,1
 refuses "a run on a newer phone" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "older, slower phone" "$tmp/out" || fail "newer phone: $(cat "$tmp/out")"

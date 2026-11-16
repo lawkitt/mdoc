@@ -26,7 +26,7 @@ pub enum Thermal {
 
 /// Refuses a scan that starts with less memory free than the detector
 /// needs, because the system would end the app partway instead.
-pub(super) fn check_free_memory(progress: Option<&dyn JobProgress>) -> Result<(), CoreError> {
+pub(crate) fn check_free_memory(progress: Option<&dyn JobProgress>) -> Result<(), CoreError> {
     match progress.and_then(|p| p.free_memory()) {
         Some(free) if free < DETECTOR_FREE_BYTES => Err(CoreError::Detect {
             message: "Not enough memory is free to find names right now. Close other apps, then try again.".into(),
@@ -36,7 +36,7 @@ pub(super) fn check_free_memory(progress: Option<&dyn JobProgress>) -> Result<()
 }
 
 /// The detector's observer on a phone.
-pub(super) struct PhoneScan<'a> {
+pub(crate) struct PhoneScan<'a> {
     progress: Option<&'a dyn JobProgress>,
     speed: Option<DetectorSpeed>,
     /// When the windows were known, before the engine loads.
@@ -47,7 +47,7 @@ pub(super) struct PhoneScan<'a> {
 }
 
 impl<'a> PhoneScan<'a> {
-    pub(super) fn new(progress: Option<&'a dyn JobProgress>, speed: Option<DetectorSpeed>) -> Self {
+    pub(crate) fn new(progress: Option<&'a dyn JobProgress>, speed: Option<DetectorSpeed>) -> Self {
         Self {
             progress,
             speed,

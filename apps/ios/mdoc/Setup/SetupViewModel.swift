@@ -154,8 +154,8 @@ final class SetupViewModel {
               snapshot.offers.contains(where: { $0.purpose == .detector && $0.state == .installed })
         else { return }
         let setup = self.setup
-        let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Timing the name finder")) { _ in
-            try setup.timeDetector()
+        let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Timing the name finder")) { observer in
+            try setup.timeDetector(observer: observer)
         }
         // A failed run leaves the phone untimed: scans show no estimate,
         // and the next launch times it again.
@@ -187,9 +187,13 @@ final class SetupViewModel {
         fetching = false
         downloadProgress = [:]
         refresh()
+        let detectorRequested = requested.contains { id in snapshot.offers.contains { $0.id == id && $0.purpose == .detector } }
         if finished {
             await timeDetectorIfNeeded()
         }
+        // Too slow to find names: the job that asked for the detector does
+        // not run, and the document says why instead (ADR 0120).
+        let tooSlow = detectorRequested && snapshot.tier == .belowFloor
         // Replaced by the cellular download: it goes on, with the work that
         // asked for setup.
         guard generation == self.generation else { return }
@@ -197,7 +201,7 @@ final class SetupViewModel {
         allowsCellular = false
         let next = continuation
         continuation = nil
-        if finished && requestedBytes == 0 {
+        if finished && requestedBytes == 0 && !tooSlow {
             await next?()
         }
     }

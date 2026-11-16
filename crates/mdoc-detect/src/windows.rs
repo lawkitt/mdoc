@@ -7,7 +7,7 @@
 //! Ltd") became a proposal for every repeat. Each heading starts a window,
 //! so a section's windows don't depend on what precedes it. A paragraph
 //! alone loses the context the model needs, so short ones share a window.
-use super::{Clock, DetectError, MAX_INPUT_TOKENS, checkpoint};
+use super::{Clock, DetectError, MAX_INPUT_TOKENS};
 use gliner2_rs::{
     Chunker, SchemaTask,
     processor::{SchemaTransformer, WhitespaceTokenSplitter},
@@ -27,7 +27,8 @@ pub(super) fn bounded_windows(
     // tokenized once.
     let mut fits = std::collections::HashMap::new();
     while let Some(range) = pending.pop() {
-        checkpoint(cancel, clock)?;
+        // Each window tokenized is progress for the stall guard.
+        clock.step_done(cancel)?;
         let text = &source[range.clone()];
         if let Some(&tokens) = fits.get(text) {
             windows.push((range, tokens));

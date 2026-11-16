@@ -2133,30 +2133,30 @@ fn model_stage(
     }
     let mut timings = ScanTimings::default();
     let mut lap = Instant::now();
-    // Each stage done is progress for the stall guard.
+    // Each stage done is progress for the stall guard, unless it was itself
+    // past the limit when it returned.
     let mut split = || {
         let now = Instant::now();
         let elapsed = now - lap;
         lap = now;
-        clock.advanced();
-        elapsed
+        clock.step_done(cancel).map(|()| elapsed)
     };
     checkpoint(cancel, clock)?;
     let _inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
-    split();
+    split()?;
     convert_on_load(root, config.model, &|| checkpoint(cancel, clock))?;
     verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
-    timings.verify = split();
+    timings.verify = split()?;
     checkpoint(cancel, clock)?;
     mdoc_import::ocr::load_onnx_runtime(runtime)?;
-    timings.runtime = split();
+    timings.runtime = split()?;
     let tasks = schema_tasks();
     let transformer = transformer(root, config.model)?;
-    timings.tokenizer = split();
+    timings.tokenizer = split()?;
     let view = mdoc_pii::view::View::new(source);
     let (input, forms) = model_text(&view.text);
     let windows = distinct_windows(&input, &transformer, &tasks, cancel, clock)?;
-    timings.windowing = split();
+    timings.windowing = split()?;
     let mut progress = ScanProgress {
         windows: windows.len(),
         chars: windows.iter().map(|(text, ..)| text.chars().count()).sum(),
@@ -2164,17 +2164,17 @@ fn model_stage(
     };
     observer.progress(progress);
     let mut engine = load_engine(root, config.model)?;
-    timings.engine_load = split();
+    timings.engine_load = split()?;
     let params = inference_params(config);
     let mut raw = Vec::new();
     for (text, tokens, starts) in windows {
         clock.wait_out_pause(cancel, observer)?;
-        split();
+        split()?;
         run_window(&mut engine, text, &starts, &tasks, &params, &mut raw)?;
         timings.windows.push(WindowTiming {
             bytes: text.len(),
             tokens,
-            inference: split(),
+            inference: split()?,
         });
         checkpoint(cancel, clock)?;
         progress.done += 1;

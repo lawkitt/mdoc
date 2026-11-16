@@ -67,6 +67,44 @@ final class ScanTimeTests: XCTestCase {
         XCTAssertNil(below.scanEstimate, "below the floor there is no Find names")
     }
 
+    /// The detector is timed once it installs. A phone found too slow does
+    /// not run the scan that asked for setup, and its open documents stop
+    /// offering Find names rather than scanning with the rules alone.
+    func testAPhoneTimedTooSlowStopsFindingNames() async throws {
+        let setup = FakeSetup(memory: Fixture.detectorTier)
+        setup.timesTooSlow = true
+        let model = SetupViewModel(
+            setup: setup, downloader: FakeModelDownloader(seconds: 0), network: FakeNetwork(.wifi),
+            jobs: LongJobRunner(background: NoBackgroundContinuation()), preferences: Fixture.preferences())
+        let (core, storage) = try Fixture.core()
+        let real = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: .newCase(name: "Note"))
+        _ = try real.recognize(observer: TestObserver())
+        let document = DocumentViewModel(
+            session: real, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage,
+            canFindNames: { model.snapshot.tier == .detector })
+        XCTAssertTrue(document.findsNames)
+        var continued = false
+        model.download { continued = true }
+        await model.waitForDownload()
+        XCTAssertEqual(model.snapshot.belowFloor, .speed)
+        XCTAssertFalse(continued, "the scan that asked for setup does not run")
+        XCTAssertFalse(document.findsNames)
+        XCTAssertTrue(document.showsBelowFloorNote)
+    }
+
+    /// A phone timed within the ceiling keeps its speed for Settings.
+    func testATimedPhoneShowsItsSpeed() async {
+        let model = SetupViewModel(
+            setup: FakeSetup(memory: Fixture.detectorTier), downloader: FakeModelDownloader(seconds: 0),
+            network: FakeNetwork(.wifi), jobs: LongJobRunner(background: NoBackgroundContinuation()),
+            preferences: Fixture.preferences())
+        var continued = false
+        model.download { continued = true }
+        await model.waitForDownload()
+        XCTAssertEqual(model.snapshot.tenPagesSeconds, 62)
+        XCTAssertTrue(continued)
+    }
+
     /// A detector-tier phone that is not timed yet shows no estimate.
     func testNoEstimateBeforeThePhoneIsTimed() throws {
         let (core, _) = try Fixture.core(memory: Fixture.detectorTier)
@@ -75,6 +113,7 @@ final class ScanTimeTests: XCTestCase {
         XCTAssertNil(session.scanEstimate())
         XCTAssertNil(core.setup.snapshot().tenPagesSeconds)
         XCTAssertNil(core.setup.snapshot().belowFloor)
-        XCTAssertEqual(try core.setup.timeDetector().tier, .detector, "with no detector installed nothing is timed")
+        XCTAssertEqual(
+            try core.setup.timeDetector(observer: TestObserver()).tier, .detector, "with no detector installed nothing is timed")
     }
 }

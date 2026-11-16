@@ -28,6 +28,7 @@ use review::ReviewText;
 pub use review::{Scope, StepKind};
 pub use saving::SavedChange;
 pub use scanning::Thermal;
+pub(crate) use scanning::{PhoneScan, check_free_memory};
 pub use snapshot::{
     Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
     MentionState, ReviewSnapshot,

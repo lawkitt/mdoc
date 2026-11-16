@@ -30,8 +30,10 @@ final class DocumentViewModel {
 
     let session: any DocumentSession
     /// The device runs the name detector. Below the floor the document
-    /// offers no Find names and says why (ADR 0088).
-    let findsNames: Bool
+    /// offers no Find names and says why (ADR 0088); a phone timed past the
+    /// speed ceiling drops below it while documents are open (ADR 0120).
+    var findsNames: Bool { canFindNames() }
+    private let canFindNames: @MainActor () -> Bool
     private let jobs: LongJobRunner
     private let storage: MdocStorage
     /// The lists show what changed: a title, a phase.
@@ -142,10 +144,10 @@ final class DocumentViewModel {
 
     init(
         session: any DocumentSession, jobs: LongJobRunner, storage: MdocStorage, findsNames: Bool = true,
-        onChange: @escaping () -> Void = {}
+        canFindNames: (@MainActor () -> Bool)? = nil, onChange: @escaping () -> Void = {}
     ) {
         self.session = session
-        self.findsNames = findsNames
+        self.canFindNames = canFindNames ?? { findsNames }
         self.jobs = jobs
         self.storage = storage
         self.onChange = onChange
