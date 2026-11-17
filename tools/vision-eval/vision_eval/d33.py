@@ -104,7 +104,7 @@ def qr(out: Path, sources: dict) -> None:
     cdir = out / "d33" / "crops"
     cdir.mkdir(parents=True, exist_ok=True)
     rng = random.Random(911)
-    jobs = []  # (crop path, kind, set, how)
+    jobs = []  # (crop path, kind, set, how, truth text or None)
     for set_name in ("overlays", "ru-filings", "en-recap"):
         if set_name not in found:
             continue
@@ -117,7 +117,7 @@ def qr(out: Path, sources: dict) -> None:
                 cb = _crop_box(a["box"], t["width"], t["height"], img.width / t["width"])
                 pos = cdir / f"pos-{set_name}-{len(jobs):03d}.png"
                 img.crop(cb).save(pos)
-                jobs.append((pos, "positive", set_name, how))
+                jobs.append((pos, "positive", set_name, how, a.get("text")))
                 # A code-free crop of the same size, page and position from Random(911).
                 n = rng.choice(code_free)
                 nimg, nhow = _render(n, sources.get(n["id"]))
@@ -125,20 +125,24 @@ def qr(out: Path, sources: dict) -> None:
                 x = rng.randint(0, max(0, nimg.width - cw)); y = rng.randint(0, max(0, nimg.height - ch))
                 neg = cdir / f"neg-{set_name}-{len(jobs):03d}.png"
                 nimg.crop((x, y, x + cw, y + ch)).save(neg)
-                jobs.append((neg, "negative", set_name, nhow))
+                jobs.append((neg, "negative", set_name, nhow, None))
     env = dict(os.environ, RXING_FORMATS="2d")
     res = subprocess.run([exe("rxing-host")] + [str(j[0]) for j in jobs], capture_output=True, text=True, env=env, check=True)
     lines = [json.loads(l) for l in res.stdout.splitlines() if l.strip()]
-    agg = defaultdict(lambda: {"crops": 0, "decoded": 0, "formats": defaultdict(int)})
-    for (path, kind, set_name, how), r in zip(jobs, lines):
+    agg = defaultdict(lambda: {"crops": 0, "decoded": 0, "correct": 0, "checked": 0, "formats": defaultdict(int)})
+    for (path, kind, set_name, how, truth), r in zip(jobs, lines):
         k = agg[(set_name, kind, how)]
         k["crops"] += 1
         if r.get("codes"):
             k["decoded"] += 1
             for c in r["codes"]:
                 k["formats"][c["format"]] += 1
+        if truth:
+            k["checked"] += 1
+            k["correct"] += any(c["text"] == truth for c in r.get("codes", []))
     for (set_name, kind, how), k in sorted(agg.items()):
-        print(f"{set_name} {kind} [{how}]: {k['decoded']}/{k['crops']} with a decode; formats {dict(k['formats'])}")
+        content = f"; content correct {k['correct']}/{k['checked']}" if k["checked"] else ("; content unverified" if kind == "positive" else "")
+        print(f"{set_name} {kind} [{how}]: {k['decoded']}/{k['crops']} with a decode{content}; formats {dict(k['formats'])}")
 
 
 def main() -> None:
