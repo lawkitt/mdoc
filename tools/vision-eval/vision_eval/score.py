@@ -29,7 +29,7 @@ from .run import out_root
 IOU = 0.5
 IOU_LOOSE = 0.3
 BARS = {"recall": 0.90, "precision": 0.85, "cer": 0.10, "time": 0.30, "memory_mb": 300, "lost_words": 0}
-DETECTORS = ["mirage", "layout", "rxing"]
+DETECTORS = ["mirage", "mirage-kw", "layout", "rxing"]
 READERS = ["seal", "seal-mobile", "seal-gt", "seal-mobile-gt"]
 
 
@@ -67,7 +67,7 @@ def predictions(candidate: str, raw: dict) -> list[dict]:
     if candidate == "layout":
         return [{"class": i["class"], "box": i["box"], "score": i["score"]}
                 for i in raw.get("items", []) if i["class"] and i["score"] >= classes.LAYOUT_THRESHOLD]
-    if candidate == "mirage":
+    if candidate in ("mirage", "mirage-kw"):
         return [{"class": o["class"], "box": o["box"], "score": o["score"]}
                 for o in raw.get("objects", []) if o["class"]]
     if candidate == "rxing":
@@ -120,7 +120,7 @@ def all_boxes(candidate: str, raw: dict) -> list[list[float]]:
     """Every box a detector output, whatever its name or label (diagnostic)."""
     if candidate == "layout":
         return [i["box"] for i in raw.get("items", []) if i["score"] >= classes.LAYOUT_THRESHOLD]
-    if candidate == "mirage":
+    if candidate in ("mirage", "mirage-kw"):
         return [o["box"] for o in raw.get("objects", [])]
     return [c["box"] for c in raw.get("codes", [])]
 
@@ -182,6 +182,28 @@ def _reference_words(words: list[dict], truth_text: str | None) -> tuple[list[di
     return keep, True
 
 
+def reference_words(page: dict, ocr_run: dict) -> tuple[list[dict], bool]:
+    """A page's reference words: the OCR run's words whose centre lies outside
+    every annotated artifact, aligned to the ground-truth text when the
+    annotation has it (`_reference_words`). Returns (words, checked)."""
+    truth = page["truth"]
+    words = (ocr_run["outputs"].get(page["id"]) or {}).get("words", [])
+    true_boxes = [a["box"] for a in truth["artifacts"]]
+    outside = []
+    for w in words:
+        b = w["box"]
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        if not any(t[0] <= cx <= t[2] and t[1] <= cy <= t[3] for t in true_boxes):
+            outside.append(w)
+    return _reference_words(outside, truth.get("text"))
+
+
+def lost_under(word_box: list[float], box: list[float]) -> bool:
+    """A word is lost when at least half its box lies inside a replacing box."""
+    a = geometry.area(word_box)
+    return a > 0 and geometry.intersection(word_box, box) / a >= 0.5
+
+
 def text_loss(set_pages: list[dict], ocr_run: dict, run: dict, candidate: str) -> dict:
     """Reference words lost under predicted boxes of text-replacing classes.
 
@@ -193,27 +215,16 @@ def text_loss(set_pages: list[dict], ocr_run: dict, run: dict, candidate: str) -
     lost = defaultdict(int)
     reference = checked = 0
     for page in set_pages:
-        truth = page["truth"]
         raw = run["outputs"].get(page["id"])
-        words = (ocr_run["outputs"].get(page["id"]) or {}).get("words", [])
-        if truth is None or raw is None:
+        if page["truth"] is None or raw is None:
             continue
-        true_boxes = [a["box"] for a in truth["artifacts"]]
-        outside = []
-        for w in words:
-            b = w["box"]
-            cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
-            if not any(t[0] <= cx <= t[2] and t[1] <= cy <= t[3] for t in true_boxes):
-                outside.append(w)
-        refs, was_checked = _reference_words(outside, truth.get("text"))
+        refs, was_checked = reference_words(page, ocr_run)
         checked += was_checked
         preds = [x for x in predictions(candidate, raw) if x["class"] in classes.REPLACING]
         for w in refs:
-            b = w["box"]
             reference += 1
-            a = geometry.area(b)
             for x in preds:
-                if a > 0 and geometry.intersection(b, x["box"]) / a >= 0.5:
+                if lost_under(w["box"], x["box"]):
                     lost[x["class"]] += 1
                     break
     return {"reference_words": reference, "checked_pages": checked, "lost": dict(lost),
@@ -336,7 +347,7 @@ def report(out: Path, set_names: list[str]) -> tuple[str, dict]:
             ag = agnostic_recall(sp, run, cand)
             if ag:
                 diag.append(f"- {cand}: " + ", ".join(f"{k} {h}/{t}" for k, (h, t) in sorted(ag.items())))
-            if cand == "mirage" and n_truth:
+            if cand in ("mirage", "mirage-kw") and n_truth:
                 names = mirage_names(sp, run)
                 diag.append("- mirage's most frequent object names: " + ", ".join(f"`{n}` {c}" for n, c in names))
         if diag:

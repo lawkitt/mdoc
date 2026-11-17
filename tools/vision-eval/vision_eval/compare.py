@@ -30,7 +30,7 @@ def _items(candidate: str, raw: dict) -> list[dict]:
         return [{"key": "line", "text": l["text"], "box": l["box"], "score": l["conf"]} for l in raw["lines"]]
     if candidate == "layout":
         return [{"key": i["label"], "text": "", "box": i["box"], "score": i["score"]} for i in raw["items"]]
-    if candidate == "mirage":
+    if candidate in ("mirage", "mirage-kw"):
         return ([{"key": "object:" + o["name"], "text": "", "box": o["box"], "score": o["score"] or 0} for o in raw["objects"]]
                 + [{"key": "text", "text": t["string"], "box": t["box"], "score": t["score"] or 0} for t in raw["text"]])
     if candidate == "rxing":

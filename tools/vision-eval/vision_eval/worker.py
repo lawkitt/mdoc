@@ -17,7 +17,6 @@ import platform
 import re
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -28,7 +27,9 @@ import onnxruntime as ort
 from . import classes, geometry, memory, ocr, pages
 from .fetch import host_platform, models_dir
 
-CANDIDATES = ["ocr", "mirage", "layout", "seal", "seal-mobile", "rxing"]
+CANDIDATES = ["ocr", "mirage", "mirage-kw", "layout", "seal", "seal-mobile", "rxing"]
+# Decision 33 (#911): Mirage with keywords, fixed in the pre-registration.
+MIRAGE_KEYWORDS = ["seal", "stamp", "signature", "handwriting", "QR code", "barcode"]
 SEAL_GATE = 0.90  # inline a seal's text only at this reader confidence or above (fixed before any scores)
 MIRAGE_OPTIONS = {}  # the engine's defaults: sections objects and text
 
@@ -138,16 +139,6 @@ def run_seal(set_pages: list[dict], variant: str, regions: str) -> tuple[dict, d
     return out, ms, load
 
 
-def write_ppm(path: Path, page: dict) -> tuple[int, int]:
-    bgr = cv2.imread(str(page["path"]))
-    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    h, w = rgb.shape[:2]
-    with open(path, "wb") as f:
-        f.write(f"P6\n{w} {h}\n255\n".encode())
-        f.write(np.ascontiguousarray(rgb).tobytes())
-    return w, h
-
-
 _NAN = re.compile(r"-?nan(?:\(ind\))?", re.IGNORECASE)
 
 
@@ -184,43 +175,48 @@ def parse_host_line(line: str) -> tuple[dict, int]:
     return json.loads("".join(out)), count
 
 
-def run_mirage(set_pages: list[dict]) -> tuple[dict, dict, float, int]:
-    env = dict(os.environ, CACTUS_TELEMETRY="0", DO_NOT_TRACK="1", HF_HUB_OFFLINE="1")
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        (tmp / "options.json").write_text(json.dumps(MIRAGE_OPTIONS), encoding="utf-8")
-        ppms = []
-        for i, page in enumerate(set_pages):
-            p = tmp / f"{i:05d}.ppm"
-            write_ppm(p, page)
-            ppms.append(p)
-        # The first image twice: its first call is the warm-up.
-        args = [exe("mirage_host"), str(models_dir() / "mirage/mirage.cact"), str(tmp / "options.json"),
-                str(ocr.THREADS)] + [str(ppms[0])] + [str(p) for p in ppms]
-        t = time.perf_counter()
-        proc = subprocess.run(args, env=env, capture_output=True, text=True, encoding="utf-8", check=True)
-        parsed = [parse_host_line(l) for l in proc.stdout.splitlines() if l.strip()]
-        lines = [p for p, _ in parsed]
-        nans = [n for _, n in parsed]
-        load = next((float(l.split()[2]) for l in proc.stderr.splitlines() if l.startswith("loaded in")), 0.0)
-    peak = lines[-1]["peak_bytes"]
-    results = lines[1:-1]
+def mirage_objects(res: dict, w: int, h: int, x0: float = 0.0, y0: float = 0.0, sx: float = 1.0, sy: float = 1.0) -> list[dict]:
+    """A describe result's objects in page pixels. The result is for an image
+    of w×h pixels whose pixel (u, v) is page pixel (x0 + u·sx, y0 + v·sy):
+    the whole page, or a tile or crop of it (`tune.py`). Masks are polygons
+    on the same 0–1000 scale as boxes."""
+    def px(b):
+        u0, v0, u1, v1 = geometry.mirage_box(b, w, h)
+        return [round(x0 + u0 * sx, 1), round(y0 + v0 * sy, 1), round(x0 + u1 * sx, 1), round(y0 + v1 * sy, 1)]
+    out = []
+    for o in res.get("objects", []):
+        if not o.get("bbox"):
+            continue
+        obj = {"name": o.get("name", ""), "class": classes.mirage_class(o.get("name", "")),
+               "score": o.get("score"), "bbox_1000": o.get("bbox"), "box": px(o["bbox"])}
+        m = o.get("mask")
+        if isinstance(m, list) and len(m) >= 6 and all(isinstance(v, (int, float)) for v in m):
+            obj["mask"] = [round(v, 1) for i in range(0, len(m) - 1, 2)
+                           for v in px([m[i], m[i + 1], m[i], m[i + 1]])[:2]]
+        if isinstance(o.get("description"), dict) and o["description"].get("color"):
+            obj["color"] = o["description"]["color"]
+        out.append(obj)
+    return out
+
+
+def run_mirage(set_pages: list[dict], keywords: list[str] | None = None) -> tuple[dict, dict, float, int]:
+    from . import mirage
+    images = [mirage.page_rgb(p["path"]) for p in set_pages]
+    results, load, peak = mirage.describe(images, MIRAGE_OPTIONS, keywords, exe("mirage_host"))
     out, ms = {}, {}
-    for page, r, nan_count in zip(set_pages, results, nans[1:-1]):
+    for page, r in zip(set_pages, results):
         if "error" in r:
             out[page["id"]] = {"error": r["error"]}
             continue
         w, h = r["width"], r["height"]
         res = r["result"]
-        objects = [{"name": o.get("name", ""), "class": classes.mirage_class(o.get("name", "")),
-                    "score": o.get("score"), "bbox_1000": o.get("bbox"),
-                    "box": [round(v, 1) for v in geometry.mirage_box(o["bbox"], w, h)]}
-                   for o in res.get("objects", []) if o.get("bbox")]
+        objects = [{k: v for k, v in o.items() if k in ("name", "class", "score", "bbox_1000", "box")}
+                   for o in mirage_objects(res, w, h)]
         text = [{"string": t.get("string", ""), "score": t.get("score"), "bbox_1000": t.get("bbox"),
                  "box": [round(v, 1) for v in geometry.mirage_box(t["bbox"], w, h)]}
                 for t in res.get("text", []) if t.get("bbox")]
         out[page["id"]] = {"objects": objects, "text": text, "scene": res.get("scene"),
-                           "regions": res.get("regions", []), "nan_values": nan_count}
+                           "regions": res.get("regions", []), "nan_values": r["nan_values"]}
         ms[page["id"]] = r["ms"]
     return out, ms, load, peak
 
@@ -293,13 +289,15 @@ def main() -> None:
         out, ms, load = run_seal(meta["pages"], args.candidate, args.regions)
     elif args.candidate == "mirage":
         out, ms, load, child_peak = run_mirage(meta["pages"])
+    elif args.candidate == "mirage-kw":
+        out, ms, load, child_peak = run_mirage(meta["pages"], MIRAGE_KEYWORDS)
     else:
         out, ms, load, child_peak = run_rxing(meta["pages"])
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for pid, data in out.items():
         (args.out_dir / f"{pid}.json").write_text(
             json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    native = args.candidate in ("mirage", "rxing")
+    native = args.candidate in ("mirage", "mirage-kw", "rxing")
     run = {
         "candidate": args.candidate, "set": meta["name"], "pages": len(meta["pages"]),
         "regions": args.regions if args.regions in (None, "gt") else "layout",

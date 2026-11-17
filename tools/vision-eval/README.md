@@ -97,3 +97,7 @@ The `ocr` run reproduces the app's OCR settings (detector cap 960 px, scores 0.3
 ## The seal reader
 
 PaddleOCR's seal pipeline straightens curved text before recognition. `seal.py` does the same in a simpler way. A detected polygon that fills its minimum-area rectangle is straight text, and gets a perspective crop. Any other polygon is a ring arc, which is unwrapped around the seal's centre with a polar transform and read in both directions, keeping the more confident reading. A whole ring starts at its widest blank run. These are the harness's choices, not upstream's, and are part of the candidate as measured.
+
+## Mirage usage tuning (#918)
+
+`python -m vision_eval.tune` runs lawkitt/mdoc#918's decision 15 on the `tune-seal` set: the disjointness check, objects-only variant runs, the gate, the sweep and one final run. `vision_eval.mirage` rejects option keys libcactus 4.1.1 ignores. The commands and rules are in `vision_eval/tune.py`'s docstring.

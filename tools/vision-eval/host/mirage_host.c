@@ -6,7 +6,9 @@
  *   {"image": "<path>", "width": W, "height": H, "ms": T, "result": <describe JSON>}
  * or {"image": "<path>", "error": "<message>"}, then a last line {"peak_bytes": N}
  * (the process's peak footprint on macOS, peak working set on Windows).
- * Timing covers cactus_describe only.
+ * Timing covers cactus_describe only. MIRAGE_KEYWORDS, when set, is passed as
+ * cactus_describe's keywords (one keyword per line, as Cactus's Python wrapper
+ * joins them).
  * Report-only evaluation tool (lawkitt/mdoc#911); nothing here ships.
  */
 #include <stdio.h>
@@ -133,7 +135,8 @@ int main(int argc, char **argv) {
             printf(",\"error\":\"not a binary 8-bit PPM\"}\n");
         } else {
             double s = now_ms();
-            int code = cactus_describe(p, w, h, (const char *)options, NULL, NULL, out, cap);
+            const char *kw = getenv("MIRAGE_KEYWORDS");
+            int code = cactus_describe(p, w, h, (const char *)options, NULL, (kw && *kw) ? kw : NULL, out, cap);
             double ms = now_ms() - s;
             if (code < 0) {
                 printf(",\"error\":");
