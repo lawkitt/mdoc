@@ -676,7 +676,8 @@ impl DocumentView {
                     .preview
                     .accept(generation, this.theme.clone(), region, window, cx)
                 {
-                    this.sync_source_controls(cx);
+                    // A switch made while this rendering ran draws again.
+                    this.source_display_changed(window, cx);
                 }
             } else {
                 return;

@@ -217,6 +217,10 @@ fn card_text(thread: &Thread) -> String {
 enum Item {
     Nowhere,
     Thread(usize),
+    /// In a narrow pane: the cards open under a line (named by its first
+    /// thread), and "Not on the page" with its cards.
+    Open(usize),
+    NowhereList,
 }
 
 pub struct CommentRail {
@@ -321,6 +325,11 @@ impl CommentRail {
     #[cfg(test)]
     pub(crate) fn open(&self) -> Option<usize> {
         self.open
+    }
+
+    #[cfg(test)]
+    pub(crate) fn marker_focus(&self, i: usize) -> FocusHandle {
+        self.markers[i].clone()
     }
 
     #[cfg(test)]
@@ -490,10 +499,14 @@ impl CommentRail {
         if narrow {
             self.open = Some(target);
         }
-        if target < self.placed {
+        let (top, bottom) = if target < self.placed {
             let (top, bottom) = self.line(target, &layout);
-            pdf.update(cx, |pdf, cx| pdf.reveal(top, bottom + 60., cx));
-        }
+            (top, bottom + 60.)
+        } else {
+            // "Not on the page" heads the rail and the first page.
+            (0., 40.)
+        };
+        pdf.update(cx, |pdf, cx| pdf.reveal(top, bottom, cx));
         window.focus(&self.cards[target], cx);
         self.marks_changed(cx);
     }
@@ -527,7 +540,6 @@ impl CommentRail {
         let thread = &self.threads[i];
         let c = &thread.comment;
         let resolved = c.resolved;
-        let pdf = self.pdf.clone();
         let copy = card_text(thread);
         let person = |comment: &DocxComment, size: f32| {
             div()
@@ -648,23 +660,9 @@ impl CommentRail {
                 })
             })
             .on_click(cx.listener(move |rail, _, _, cx| rail.toggle(i, cx)))
-            .on_key_down(cx.listener(move |rail, event: &KeyDownEvent, window, cx| {
+            .on_key_down(cx.listener(move |_, event: &KeyDownEvent, _, cx| {
                 let keys = &event.keystroke;
-                if keys.key == "escape" {
-                    // Back to the page; an open marker card closes.
-                    let narrow = pdf
-                        .upgrade()
-                        .is_some_and(|pdf| pdf.read(cx).layout().rail_width <= 0.);
-                    if narrow {
-                        rail.open = None;
-                        rail.marks_changed(cx);
-                    }
-                    if let Some(pdf) = pdf.upgrade() {
-                        let focus = pdf.read(cx).focus_handle(cx);
-                        window.focus(&focus, cx);
-                    }
-                    cx.stop_propagation();
-                } else if keys.key == "c" && keys.modifiers.secondary(cx) {
+                if keys.key == "c" && keys.modifiers.secondary(cx) {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy.clone()));
                     cx.stop_propagation();
                 }
@@ -726,6 +724,39 @@ impl CommentRail {
                 rail.nowhere_open = !rail.nowhere_open;
                 cx.notify();
             }))
+            .into_any_element()
+    }
+
+    /// `child` at `top`, `left`, its height kept for the scroll extent.
+    fn measured(
+        &self,
+        item: Item,
+        top: f32,
+        left: f32,
+        child: AnyElement,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let heights = self.heights.clone();
+        let entity = cx.entity_id();
+        div()
+            .absolute()
+            .top(px(top))
+            .left(px(left))
+            .child(child)
+            .on_children_prepainted(move |bounds, _, cx| {
+                let Some(height) = bounds.first().map(|b| f32::from(b.size.height)) else {
+                    return;
+                };
+                let mut heights = heights.borrow_mut();
+                if heights
+                    .get(&item)
+                    .is_none_or(|old| (old - height).abs() > 0.5)
+                {
+                    heights.insert(item, height);
+                    drop(heights);
+                    cx.notify(entity);
+                }
+            })
             .into_any_element()
     }
 
@@ -849,26 +880,23 @@ impl CommentRail {
         let mut open_cards = Vec::new();
         let mut bottom: f32 = 0.;
         if self.placed < self.threads.len() {
-            open_cards.push(
-                div()
-                    .absolute()
-                    .top(px(4.))
-                    .left(px(card_x))
-                    .w(px(card_width))
-                    .flex()
-                    .flex_col()
-                    .items_end()
-                    .gap(px(4.))
-                    .child(self.nowhere_row(cx))
-                    .when(self.nowhere_open, |v| {
-                        v.children(
-                            (self.placed..self.threads.len())
-                                .map(|i| self.thread_card(i, true, card_width, cx))
-                                .collect::<Vec<_>>(),
-                        )
-                    })
-                    .into_any_element(),
-            );
+            let list = div()
+                .w(px(card_width))
+                .flex()
+                .flex_col()
+                .items_end()
+                .gap(px(4.))
+                .child(self.nowhere_row(cx))
+                .when(self.nowhere_open, |v| {
+                    v.children(
+                        (self.placed..self.threads.len())
+                            .map(|i| self.thread_card(i, true, card_width, cx))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .into_any_element();
+            open_cards.push(self.measured(Item::NowhereList, 4., card_x, list, cx));
+            bottom = bottom.max(4. + self.height(Item::NowhereList, 24.));
         }
         for (_, top, line_bottom, group) in &lines {
             let first = group[0];
@@ -933,18 +961,15 @@ impl CommentRail {
                     .iter()
                     .map(|&i| self.thread_card(i, true, card_width, cx))
                     .collect();
-                open_cards.push(
-                    div()
-                        .absolute()
-                        .left(px(card_x))
-                        .top(px(card_top))
-                        .flex()
-                        .flex_col()
-                        .gap(px(6.))
-                        .children(cards)
-                        .into_any_element(),
-                );
-                bottom = bottom.max(card_top + CARD_GUESS * 2.);
+                let column = div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .children(cards)
+                    .into_any_element();
+                open_cards.push(self.measured(Item::Open(first), card_top, card_x, column, cx));
+                // The pane scrolls far enough to show the whole thread.
+                bottom = bottom.max(card_top + self.height(Item::Open(first), CARD_GUESS * 2.));
             }
         }
         elements.extend(open_cards);
@@ -977,6 +1002,23 @@ impl Render for CommentRail {
                     .size_0()
                     .track_focus(&self.region)
                     .key_context("CommentRail")
+                    // Esc from a card, chip, marker or row: back to the
+                    // page; an open marker card closes.
+                    .on_key_down(cx.listener(|rail, event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key != "escape" {
+                            return;
+                        }
+                        let Some(pdf) = rail.pdf.upgrade() else {
+                            return;
+                        };
+                        if pdf.read(cx).layout().rail_width <= 0. {
+                            rail.open = None;
+                            rail.marks_changed(cx);
+                        }
+                        let focus = pdf.read(cx).focus_handle(cx);
+                        window.focus(&focus, cx);
+                        cx.stop_propagation();
+                    }))
                     .children(elements),
             )
             .into_any_element()

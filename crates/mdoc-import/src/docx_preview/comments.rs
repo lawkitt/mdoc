@@ -307,7 +307,9 @@ fn on(node: Node<'_, '_>) -> bool {
 
 /// Counts the passages of hidden text in a part and, with `edits`, lifts
 /// it: a run's `w:vanish` becomes a dotted underline in muted ink (its own
-/// underline and colour give way), and a hidden paragraph mark shows.
+/// underline and colour give way) with an explicit `vanish` off, so a
+/// character style's `vanish` cannot hide it again, and a hidden paragraph
+/// mark shows.
 fn hidden_text(doc: &roxmltree::Document<'_>, mut edits: Option<&mut Vec<Edit>>) -> usize {
     let w = doc
         .root_element()
@@ -358,7 +360,7 @@ fn hidden_text(doc: &roxmltree::Document<'_>, mut edits: Option<&mut Vec<Edit>>)
                 end: node.range().end,
                 rank: 1,
                 text: format!(
-                    "<mdocw:u xmlns:mdocw=\"{w}\" mdocw:val=\"dotted\"/><mdocw:color xmlns:mdocw=\"{w}\" mdocw:val=\"{HIDDEN_INK}\"/>"
+                    "<mdocw:u xmlns:mdocw=\"{w}\" mdocw:val=\"dotted\"/><mdocw:color xmlns:mdocw=\"{w}\" mdocw:val=\"{HIDDEN_INK}\"/><mdocw:vanish xmlns:mdocw=\"{w}\" mdocw:val=\"0\"/>"
                 ),
             });
         } else if owner.is_some_and(|o| word(o, "pPr")) {
@@ -1219,7 +1221,7 @@ mod tests {
         assert_eq!(shown.hidden, 1);
         assert_eq!(
             hidden_run(&body_of(shown.render.unwrap())),
-            ["u=dotted", &format!("color={HIDDEN_INK}")]
+            ["u=dotted", &format!("color={HIDDEN_INK}"), "vanish=0"]
         );
     }
 
@@ -1235,14 +1237,14 @@ mod tests {
         assert!(plain.render.is_none(), "nothing to change");
         let shown = body_of(prepare(&package, true).unwrap().render.unwrap());
         let doc = roxmltree::Document::parse(&shown).unwrap();
-        // Only the switched-off vanish is left; the run's own colour and
-        // underline gave way.
+        // Each hidden run's vanish is now explicitly off; the run's own
+        // colour and underline gave way.
         let vanish: Vec<_> = doc
             .descendants()
             .filter(|n| word(*n, "vanish"))
             .map(|n| attr(n, "val"))
             .collect();
-        assert_eq!(vanish, ["false"]);
+        assert_eq!(vanish, ["0", "0", "0", "0", "false"]);
         assert!(!shown.contains("FF0000") && !shown.contains("single"));
         assert_eq!(
             doc.descendants().filter(|n| word(*n, "u")).count(),

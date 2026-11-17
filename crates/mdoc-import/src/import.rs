@@ -810,6 +810,17 @@ mod tests {
             hidden.left_out.line(true).as_deref(),
             Some("7 hidden passages not imported.")
         );
+        // The whole note the apps show keeps its old order: comments first.
+        let whole = Imported {
+            left_out: all,
+            ..comments
+        };
+        assert_eq!(
+            whole.note().as_deref(),
+            Some(
+                "2 comments not imported. 1 picture not imported.                  2 hidden passages not imported. 3 form field names not imported."
+            )
+        );
     }
 
     #[test]

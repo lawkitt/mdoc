@@ -236,6 +236,10 @@ fn a_narrow_window_shows_markers_that_open_cards_under_their_line(cx: &mut TestA
         assert_eq!(rail.read(cx).open(), None);
         assert!(pdf.read(cx).focus_handle(cx).is_focused(window));
     });
+    // Esc from a marker returns to the page too.
+    cx.update(|window, cx| window.focus(&rail.read(cx).marker_focus(1), cx));
+    key(cx, "escape");
+    cx.update(|window, cx| assert!(pdf.read(cx).focus_handle(cx).is_focused(window)));
     // Next comment opens the next line's card and focuses it.
     cx.dispatch_action(NextComment);
     draw(cx);
