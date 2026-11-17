@@ -318,6 +318,59 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
+## Comments
+
+Comments and hidden text render with the original instead of a detached
+list, and the import note splits into a notice and a quiet left-out line
+([spec](docs/specs/originals.md), [grill](https://github.com/lawkitt/mdoc/issues/927),
+[milestone](https://github.com/lawkitt/mdoc/milestone/9)). One Mac hub;
+items merge after v0.4.0-rc.3 is tagged, because they change snapshots and
+the note.
+
+1. **[Desktop] docxide 0.21, comment anchors, fonts and a fidelity check.**
+   *From the comments grill (#927).* Bump `docxide-pdf` to 0.21.x with a
+   preview-corpus before/after. Spike the anchors: the render copy wraps
+   each comment range in a `mdoc-comment:<id>` link and its `/Link`
+   rectangles, read through gpui-pdf, become anchors (not clickable links);
+   cover ranges over several lines, overlapping comments, comments over
+   hyperlinks and point comments. If the spike fails, stop and report:
+   forking docxide is the maintainer's call. Bundle Carlito, Caladea and
+   Liberation Sans, Serif and Mono through `DOCXSIDE_FONTS`. Add the
+   fidelity-check script with about 8 synthetic or scrubbed EN/RU legal
+   DOCX fixtures. *Done when:* every changed corpus output is explained; a
+   test pins anchors for those cases; the fonts load below installed fonts
+   on macOS and Windows; the script runs and reports, with the Word
+   reference PDFs listed for the maintainer to export if they are missing.
+2. **[Import] Comments and hidden content from the forks.** *From the
+   comments grill (#927).* AnyDoc reports comments (DOCX, ODT, RTF; DOC,
+   PPTX and XLSX counted if cheap) and hidden-text passages as structured
+   data with author, date, text, anchor text, replies and resolved state;
+   pdf-inspector reports annotations that carry text. mdoc's two DOCX
+   comment parsers go. Builds on #925's AnyDoc W1 and pdf-inspector M1.
+   *Done when:* the import result carries them, each format has a fixture,
+   and the note's counts and the Source cards come from the same data.
+3. **[Desktop] Comment rail, markers and hidden text in Source.** *From the
+   comments grill (#927).* The spec's Comments in Source, Hidden text in
+   Source, import note and accessibility rules on desktop; the bottom
+   comments list goes. *Done when:* headless renders of a wide pane with
+   the rail, a narrow pane with markers and an open card, a resolved chip,
+   hidden text shown and the left-out line, light and dark; keyboard-flow
+   and contrast tests pass.
+4. **[iOS] DOCX Original on phones.** *From the comments grill (#927).*
+   The left-out line under the title. Then measure docxide in process on the
+   iPhone 12 Pro (time and peak memory on legal-opinion, coverage and a
+   100-page DOCX). Within budget: DOCX in the Original pane with comment
+   markers, the thread sheet, the iPad rail, VoiceOver and the Comments
+   rotor, and ADR 0085's runtimes line amended. Over budget: stop with the
+   numbers and add a Later line. *Done when:* the numbers are in #927, and
+   either the Original pane shows a DOCX with its comments or the Later line
+   is written.
+5. **[Desktop] PDF annotations in the rail.** *From the comments grill
+   (#927).* pdf-inspector's annotations on the same rail and markers, their
+   highlight areas tinted by mdoc and the PDF's own note icons and popups
+   hidden. *Done when:* headless renders of a PDF with notes, FreeText and
+   highlights, light and dark.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -334,6 +387,9 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*
   As a second opinion, they also flag lines where the two engines disagree,
   since a misread name escapes detection. *From the vision grill (#911).*
+- **[Comments]** Opt-in comments in Copy for AI, scanned and pseudonymized
+  with the same mapping, for asks like replying to the other side's
+  comments. *From the comments grill (#927).*
 - **[Perf]** Stress tier (2 MiB / 20,000 mentions) and numerical budgets.
 - **[Editor]** To grill: Fix the words on desktop. The core action that
   replaces a found name's wording everywhere, keeping its identity, given

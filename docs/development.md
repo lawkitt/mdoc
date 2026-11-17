@@ -31,7 +31,7 @@ merges is in [specs/ci.md](specs/ci.md).
 Read this file and your area's spec, its source of truth.
 
 - [specs/desktop.md](specs/desktop.md), [specs/mobile.md](specs/mobile.md),
-  [specs/recognition.md](specs/recognition.md),
+  [specs/originals.md](specs/originals.md), [specs/recognition.md](specs/recognition.md),
   [specs/cases-and-privacy.md](specs/cases-and-privacy.md): product rules.
 - [specs/ci.md](specs/ci.md): how a PR reaches `main`.
 - [specs/release.md](specs/release.md): releases, signing and acceptance.
@@ -162,8 +162,8 @@ elsewhere. `Cargo.lock` must be what cargo resolves from `Cargo.toml`
 (`just lint` fails otherwise): change a requirement in `Cargo.toml`, never
 the lockfile alone. An exact pin carries its reason in a comment. Bump
 `dirs`, `aes-gcm` and `docxide-pdf` deliberately, one PR each, checking
-their paths, old cases and the preview corpus; `docxide-pdf` only when a
-rendering fix needs it. Fork updates follow
+their paths, old cases and the preview corpus; `docxide-pdf` as
+[originals](specs/originals.md) says. Fork updates follow
 [ADR 0001](adr/0001-conversion-and-ocr-in-dependency-forks.md). If
 Cargo's Git fetch cannot authenticate, use
 `CARGO_NET_GIT_FETCH_WITH_CLI=true`; never change global Cargo

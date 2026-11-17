@@ -51,7 +51,8 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
   Add to "X" read it only after the click.
 - If the case key can't be had, the folder's files open without a case and a
   notice says so.
-- The DOCX preview's approximation shows as an ⓘ, never a notice.
+- The DOCX preview's approximation shows as an ⓘ, never a notice; its
+  comments and hidden text follow [originals](originals.md).
 - In the dark theme PDF and DOCX pages are recoloured to the theme
   (`PageTone`), and the Source header toggle restores original paper.
 

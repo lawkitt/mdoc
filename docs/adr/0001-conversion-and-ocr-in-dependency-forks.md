@@ -26,8 +26,9 @@ Folds: 0007, 0008, 0009.
 - Upstream is checked at the start of each desktop milestone and on demand
   for user-facing fixes.
 - Hidden content (comments, hidden-formatted or invisible text, form field
-  names) never enters the Markdown; the forks report what they left out and
-  the import note counts it.
+  names) never enters the Markdown; the forks report what they left out
+  (comments and hidden passages as structured data: author, date, text,
+  anchor, replies, resolved) and mdoc counts or shows it.
 - **Zorite** (the editor, PDF viewer and BiDi crates' origin): only
   correctness and rendering fixes are ported, with attribution. Journal,
   property, template and import/export features stay out.
