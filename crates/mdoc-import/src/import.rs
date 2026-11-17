@@ -491,6 +491,7 @@ mod tests {
             "handmade-revisions.doc",
             "handmade-hidden.docx",
             "handmade-hidden.rtf",
+            "handmade-hidden.doc",
             "sheet.xls",
             "sheet.xlsx",
             "text.pdf",
@@ -519,6 +520,7 @@ mod tests {
                 ),
                 "handmade-hidden.docx" => Some("7 hidden passages not imported."),
                 "handmade-hidden.rtf" => Some("6 hidden passages not imported."),
+                "handmade-hidden.doc" => Some("3 hidden passages not imported."),
                 _ => None,
             };
             assert_eq!(imported.warning.as_deref(), expected_note, "{name}");
@@ -545,7 +547,11 @@ mod tests {
     /// counts its stretches (#925 decision 9); so does a renamed copy.
     #[test]
     fn the_note_counts_hidden_text_left_out() {
-        for (name, count) in [("handmade-hidden.docx", 7), ("handmade-hidden.rtf", 6)] {
+        for (name, count) in [
+            ("handmade-hidden.docx", 7),
+            ("handmade-hidden.rtf", 6),
+            ("handmade-hidden.doc", 3),
+        ] {
             let imported = convert(&fixture(name)).unwrap();
             assert!(!imported.markdown.contains("SECRET"), "{name}");
             let note = format!("{count} hidden passages not imported.");
