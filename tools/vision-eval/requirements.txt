@@ -1,0 +1,11 @@
+# Runtime (every lane)
+onnxruntime==1.27.0
+numpy
+pillow
+opencv-python-headless
+pyclipper
+shapely
+pypdfium2==5.15.2
+# Seal detection ONNX conversion only (vision_eval.fetch)
+paddlepaddle==3.3.1
+paddle2onnx==2.1.0
