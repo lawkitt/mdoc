@@ -488,16 +488,12 @@ fn import_failure_and_stale_completion_keep_current_document(cx: &mut TestAppCon
     cx.simulate_input("keep edits");
     app.update_in(cx, |app, window, cx| {
         assert!(app.import.job_mut().begin(false));
-        app.import.job_mut().complete(
-            app.session.generation,
-            Err(import::ImportError::ConverterNeedsOcr),
-        );
+        app.import
+            .job_mut()
+            .complete(app.session.generation, Err(import::ImportError::Damaged));
         app.resume_import(window, cx);
         assert_eq!(app.editor.read(cx).text(), "keep edits");
-        assert_eq!(
-            app.error,
-            Some(import::ImportError::ConverterNeedsOcr.to_string())
-        );
+        assert_eq!(app.error, Some(import::ImportError::Damaged.to_string()));
         let generation = app.session.generation;
         let mut replacement = converted(path);
         replacement.markdown = "other".into();

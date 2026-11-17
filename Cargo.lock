@@ -300,16 +300,15 @@ dependencies = [
 [[package]]
 name = "anydoc"
 version = "0.2.4"
-source = "git+https://github.com/lawkitt/anydoc.git?rev=ec33d99591b80694172736353f6698a7bf476081#ec33d99591b80694172736353f6698a7bf476081"
+source = "git+https://github.com/lawkitt/anydoc.git?rev=520ae174d75e85bc8e1edc03678cdefdf5f2a126#520ae174d75e85bc8e1edc03678cdefdf5f2a126"
 dependencies = [
  "cfb",
  "csv",
  "encoding_rs",
  "flate2",
  "log",
- "pdf-inspector 1.14.2",
  "quick-xml",
- "zip 9.3.0",
+ "zip 9.5.1",
 ]
 
 [[package]]
@@ -1402,6 +1401,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "constant_time_eq"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2093,15 +2101,6 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "ecb"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a8bfa975b1aec2145850fcaa1c6fe269a16578c44705a532ae3edc92b8881c7"
-dependencies = [
- "cipher 0.4.4",
-]
-
-[[package]]
-name = "ecb"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26f2a8b3e564eba0877223dc343703ad0385794e882e6d13f3a4dd5c6b1f41ac"
@@ -2250,7 +2249,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3661,7 +3660,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -4045,12 +4044,10 @@ dependencies = [
  "defmt",
  "jiff-core",
  "jiff-static",
- "jiff-tzdb-platform",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -4073,21 +4070,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "jiff-tzdb"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "142bd39932ad231f10513df9ab62661fead8719872150b7ad02a2df79f4e141e"
-
-[[package]]
-name = "jiff-tzdb-platform"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "875a5a69ac2bab1a891711cf5eccbec1ce0341ea805560dcd90b7a2e925132e8"
-dependencies = [
- "jiff-tzdb",
 ]
 
 [[package]]
@@ -4332,37 +4314,6 @@ dependencies = [
 
 [[package]]
 name = "lopdf"
-version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25aab26d99567469098e64a02f42679f8965c6401263eefa31d8f2dcc37a221c"
-dependencies = [
- "aes 0.8.4",
- "bitflags 2.13.1",
- "cbc 0.1.2",
- "chrono",
- "ecb 0.1.2",
- "encoding_rs",
- "flate2",
- "getrandom 0.4.3",
- "indexmap",
- "itoa",
- "jiff",
- "log",
- "md-5 0.10.6",
- "nom 8.0.0",
- "rand 0.10.2",
- "rangemap",
- "rayon",
- "sha2 0.10.9",
- "stringprep",
- "thiserror 2.0.21",
- "time",
- "ttf-parser",
- "weezl 0.1.12",
-]
-
-[[package]]
-name = "lopdf"
 version = "0.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfffda0fe1ab0157e1a13c14bebd3f28671f2fccb7922f0722ec53926e6922d3"
@@ -4372,7 +4323,7 @@ dependencies = [
  "brotli-decompressor",
  "cbc 0.2.1",
  "chrono",
- "ecb 0.2.1",
+ "ecb",
  "encoding_rs",
  "flate2",
  "getrandom 0.4.3",
@@ -4400,7 +4351,7 @@ dependencies = [
  "bitflags 2.13.1",
  "brotli-decompressor",
  "cbc 0.2.1",
- "ecb 0.2.1",
+ "ecb",
  "encoding_rs",
  "flate2",
  "getrandom 0.4.3",
@@ -4604,7 +4555,7 @@ dependencies = [
  "mdoc-pii",
  "mdoc-spell",
  "mdoc-store",
- "pdf-inspector 1.25.2",
+ "pdf-inspector",
  "regex",
  "roxmltree 0.21.2",
  "semver",
@@ -4617,7 +4568,7 @@ dependencies = [
  "ureq",
  "url",
  "windows-sys 0.61.2",
- "zip 9.3.0",
+ "zip 9.5.1",
 ]
 
 [[package]]
@@ -4694,7 +4645,7 @@ dependencies = [
  "libloading 0.9.0",
  "mdoc-store",
  "ort",
- "pdf-inspector 1.25.2",
+ "pdf-inspector",
  "roxmltree 0.21.2",
  "serde",
  "serde_json",
@@ -4705,7 +4656,7 @@ dependencies = [
  "ureq",
  "url",
  "windows-sys 0.61.2",
- "zip 9.3.0",
+ "zip 9.5.1",
 ]
 
 [[package]]
@@ -5764,26 +5715,8 @@ dependencies = [
 
 [[package]]
 name = "pdf-inspector"
-version = "1.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e024ae242c514e2adf6aee186678e0eabdc2e5ecfbb2159186881b4498593cb"
-dependencies = [
- "env_logger",
- "include_dir",
- "log",
- "lopdf 0.42.0",
- "once_cell",
- "rayon",
- "regex",
- "thiserror 2.0.21",
- "ttf-parser",
- "unicode-normalization",
-]
-
-[[package]]
-name = "pdf-inspector"
-version = "1.25.2"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=727f3228f43aab9ff3f24ab64ede578ef7451121#727f3228f43aab9ff3f24ab64ede578ef7451121"
+version = "1.26.1"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=7c18a7d3a3993d9066d7c865f7c85755aa90e6fd#7c18a7d3a3993d9066d7c865f7c85755aa90e6fd"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
@@ -6852,7 +6785,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6909,7 +6842,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7466,7 +7399,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a"
 dependencies = [
  "foldhash",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -7767,10 +7700,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7867,7 +7800,6 @@ dependencies = [
  "powerfmt",
  "serde_core",
  "time-core",
- "time-macros",
 ]
 
 [[package]]
@@ -7875,16 +7807,6 @@ name = "time-core"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
-
-[[package]]
-name = "time-macros"
-version = "0.2.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85"
-dependencies = [
- "num-conv",
- "time-core",
-]
 
 [[package]]
 name = "tiny-keccak"
@@ -9069,7 +8991,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -10002,7 +9924,7 @@ checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
 dependencies = [
  "aes 0.9.3",
  "bzip2",
- "constant_time_eq",
+ "constant_time_eq 0.4.2",
  "crc32fast",
  "deflate64",
  "flate2",
@@ -10023,10 +9945,11 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "9.3.0"
+version = "9.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaeb7f16d2605b49aef586996ded29e65642fab7259a3077e537351df6d80426"
+checksum = "e3476fd497ac8af5b1ec7b51acab7bef380f7e8dd8e0487595bafd839417a302"
 dependencies = [
+ "constant_time_eq 0.6.1",
  "crc32fast",
  "flate2",
  "getrandom 0.4.3",
@@ -10036,6 +9959,7 @@ dependencies = [
  "nix",
  "typed-path 0.13.0",
  "windows-sys 0.61.2",
+ "zeroize",
  "zopfli",
 ]
 
