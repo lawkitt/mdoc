@@ -124,6 +124,61 @@ impl Installed {
             ..OcrPdfOptions::default()
         }
     }
+
+    /// Measurement only, never the app: `pdf` through [`Self::options`] at
+    /// this config's resolution (or without OCR when `ocr` is false), timed,
+    /// with the raw recognition kept. The outputs are the files
+    /// `tools/ocr-upstream/compare.py` scores.
+    pub fn measure(&self, pdf: &[u8], ocr: bool) -> Result<Measured, SetupError> {
+        let mut options = OcrPdfOptions {
+            retain_recognition: true,
+            ..self.options()
+        };
+        if !ocr {
+            options.ocr = options.ocr.mode(OcrMode::Off);
+        }
+        let start = std::time::Instant::now();
+        let result = pdf_inspector::vision::process_pdf_with_ocr_mem(pdf, options)
+            .map_err(|e| SetupError::Engine(e.to_string()))?;
+        let seconds = start.elapsed().as_secs_f64();
+        let page = result
+            .pages
+            .first()
+            .ok_or_else(|| SetupError::Engine("The PDF has no pages.".into()))?;
+        Ok(Measured {
+            recognition: result
+                .recognition
+                .iter()
+                .flat_map(|page| page.spans.iter())
+                .map(|span| span.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            metadata: format!(
+                "source={:?}\nrouted={:?}\nrecommended={:?}\nwarnings={:?}\nmodel={:?}\n",
+                page.provenance.source,
+                result.pages_routed_to_ocr,
+                result.pages_recommended_for_ocr,
+                page.provenance.warnings,
+                result.recognition.first().map(|page| &page.model),
+            ),
+            pages: result.page_count,
+            markdown: result.markdown,
+            seconds,
+        })
+    }
+}
+
+/// One [`Installed::measure`] run.
+#[derive(Clone, Debug)]
+pub struct Measured {
+    pub markdown: String,
+    /// Every recognized span's text, one per line.
+    pub recognition: String,
+    /// Routing, provenance and model, as the corpus captures record them.
+    pub metadata: String,
+    pub pages: u32,
+    /// Wall time of the conversion, the engine's loading included.
+    pub seconds: f64,
 }
 
 /// Plain-language row title for a bundle: the languages it reads,
@@ -291,6 +346,11 @@ pub fn model_files(root: &Path, model: mdoc_store::settings::OcrModel) -> Vec<Pa
 /// Shared runtime required by the detection model's check.
 pub fn onnx_runtime_path(root: &Path) -> PathBuf {
     root.join(RUNTIMES[1].library)
+}
+
+/// The PDFium library OCR setup installs under `root`.
+pub fn pdfium_path(root: &Path) -> PathBuf {
+    root.join(RUNTIMES[0].library)
 }
 
 /// No downloads, including when files are missing or invalid.

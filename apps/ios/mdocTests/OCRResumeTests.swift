@@ -144,7 +144,7 @@ final class OCRResumeTests: XCTestCase {
     }
 
     /// Downloads the OCR model's files and has the core verify and install them.
-    private static func installOCR(into core: Core) async throws {
+    static func installOCR(into core: Core) async throws {
         let setup = try XCTUnwrap(core.setup as? RealSetup)
         for request in try setup.downloadRequests(for: "ocr-english-russian") {
             let (file, response) = try await URLSession.shared.download(from: request.url)
