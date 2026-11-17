@@ -5,6 +5,33 @@ import ctypes
 import sys
 
 
+def _windows_peak(handle) -> int:
+    """PeakWorkingSetSize of a process handle (this process when None).
+
+    HANDLE types are declared explicitly: ctypes' default int return type
+    truncates the 64-bit pseudo-handle and the call fails.
+    """
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+            (n, ctypes.c_size_t) for n in (
+                "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
+                "PagefileUsage", "PeakPagefileUsage")]
+    kernel32 = ctypes.WinDLL("kernel32")
+    psapi = ctypes.WinDLL("psapi")
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+    c = Counters()
+    c.cb = ctypes.sizeof(c)
+    h = kernel32.GetCurrentProcess() if handle is None else wintypes.HANDLE(handle)
+    if psapi.GetProcessMemoryInfo(h, ctypes.byref(c), c.cb):
+        return int(c.PeakWorkingSetSize)
+    return 0
+
+
 def peak_bytes() -> int:
     if sys.platform == "darwin":
         # proc_pid_rusage(RUSAGE_INFO_V4): ri_lifetime_max_phys_footprint is the
@@ -30,19 +57,9 @@ def peak_bytes() -> int:
         if libc.proc_pid_rusage(os.getpid(), 4, ctypes.byref(info)) == 0:
             return int(info.ri_lifetime_max_phys_footprint)
     if sys.platform == "win32":
-        from ctypes import wintypes
-
-        class Counters(ctypes.Structure):
-            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
-                (n, ctypes.c_size_t) for n in (
-                    "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
-                    "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
-                    "PagefileUsage", "PeakPagefileUsage")]
-        c = Counters()
-        c.cb = ctypes.sizeof(c)
-        handle = ctypes.windll.kernel32.GetCurrentProcess()
-        if ctypes.windll.psapi.GetProcessMemoryInfo(handle, ctypes.byref(c), c.cb):
-            return int(c.PeakWorkingSetSize)
+        peak = _windows_peak(None)
+        if peak:
+            return peak
     import resource
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
 
@@ -53,22 +70,10 @@ def run_child(args: list[str], **kwargs) -> tuple["subprocess.CompletedProcess",
     over finished children, so run one host at a time)."""
     import subprocess
     if sys.platform == "win32":
-        from ctypes import wintypes
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 encoding="utf-8")
         out, err = proc.communicate()
-
-        class Counters(ctypes.Structure):
-            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
-                (n, ctypes.c_size_t) for n in (
-                    "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
-                    "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
-                    "PagefileUsage", "PeakPagefileUsage")]
-        c = Counters()
-        c.cb = ctypes.sizeof(c)
-        peak = 0
-        if ctypes.windll.psapi.GetProcessMemoryInfo(int(proc._handle), ctypes.byref(c), c.cb):
-            peak = int(c.PeakWorkingSetSize)
+        peak = _windows_peak(int(proc._handle))
         result = subprocess.CompletedProcess(args, proc.returncode, out, err)
         result.check_returncode()
         return result, peak

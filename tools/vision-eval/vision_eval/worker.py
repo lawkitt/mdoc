@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -147,6 +148,16 @@ def write_ppm(path: Path, page: dict) -> tuple[int, int]:
     return w, h
 
 
+_NAN = re.compile(r'(?<=[:\[,])(\s*)-?nan(?:\(ind\))?(?=\s*[,\]}])', re.IGNORECASE)
+
+
+def parse_host_line(line: str) -> tuple[dict, int]:
+    """The engine prints bare NaN (`nan`, `-nan(ind)` on Windows), which is not
+    JSON: such values become null, and their count is returned."""
+    fixed, count = _NAN.subn(r"\1null", line)
+    return json.loads(fixed), count
+
+
 def run_mirage(set_pages: list[dict]) -> tuple[dict, dict, float, int]:
     env = dict(os.environ, CACTUS_TELEMETRY="0", DO_NOT_TRACK="1", HF_HUB_OFFLINE="1")
     with tempfile.TemporaryDirectory() as tmp:
@@ -162,12 +173,14 @@ def run_mirage(set_pages: list[dict]) -> tuple[dict, dict, float, int]:
                 str(ocr.THREADS)] + [str(ppms[0])] + [str(p) for p in ppms]
         t = time.perf_counter()
         proc = subprocess.run(args, env=env, capture_output=True, text=True, encoding="utf-8", check=True)
-        lines = [json.loads(l) for l in proc.stdout.splitlines() if l.strip()]
+        parsed = [parse_host_line(l) for l in proc.stdout.splitlines() if l.strip()]
+        lines = [p for p, _ in parsed]
+        nans = [n for _, n in parsed]
         load = next((float(l.split()[2]) for l in proc.stderr.splitlines() if l.startswith("loaded in")), 0.0)
     peak = lines[-1]["peak_bytes"]
     results = lines[1:-1]
     out, ms = {}, {}
-    for page, r in zip(set_pages, results):
+    for page, r, nan_count in zip(set_pages, results, nans[1:-1]):
         if "error" in r:
             out[page["id"]] = {"error": r["error"]}
             continue
@@ -181,7 +194,7 @@ def run_mirage(set_pages: list[dict]) -> tuple[dict, dict, float, int]:
                  "box": [round(v, 1) for v in geometry.mirage_box(t["bbox"], w, h)]}
                 for t in res.get("text", []) if t.get("bbox")]
         out[page["id"]] = {"objects": objects, "text": text, "scene": res.get("scene"),
-                           "regions": res.get("regions", [])}
+                           "regions": res.get("regions", []), "nan_values": nan_count}
         ms[page["id"]] = r["ms"]
     return out, ms, load, peak
 

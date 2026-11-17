@@ -108,6 +108,21 @@ class Coverage(unittest.TestCase):
         self.assertEqual(score.missing(pages_, run), 1)
 
 
+class MirageHost(unittest.TestCase):
+    def test_bare_nan_scores_become_null(self):
+        from vision_eval.worker import parse_host_line
+        line = '{"result":{"objects":[{"id":1,"score":-nan(ind),"bbox":[1,2,3,4]},{"score":nan}],"x":[nan, 1]}}'
+        data, count = parse_host_line(line)
+        self.assertEqual(count, 3)
+        self.assertIsNone(data["result"]["objects"][0]["score"])
+        self.assertEqual(data["result"]["x"], [None, 1])
+
+    def test_words_containing_nan_are_untouched(self):
+        from vision_eval.worker import parse_host_line
+        data, count = parse_host_line('{"text":[{"string":"financial nan","score":0.5}]}')
+        self.assertEqual((count, data["text"][0]["string"]), (0, "financial nan"))
+
+
 class Compare(unittest.TestCase):
     def test_canonical_rounds_boxes_and_scores(self):
         raw = {"codes": [{"format": "QR_CODE", "text": "x", "box": [10.4, 10.6, 20.5, 30.49]}]}

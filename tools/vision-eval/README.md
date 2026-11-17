@@ -28,6 +28,8 @@ Run every command from `tools/vision-eval/` with that interpreter.
 python -m vision_eval.fetch        # download, verify, check the layout classes, convert seal detection
 ```
 
+On Windows, run `fetch --no-convert` and convert seal detection on Linux, WSL or macOS: paddle2onnx 2.1.0's extension doesn't load against paddlepaddle 3.3.1 on native Windows. The Windows lane's conversions were byte-identical to the macOS ones.
+
 `fetch` stores the files under `MDOC_VISION_MODELS` (default `~/.cache/mdoc-vision-eval/models`). It reports whether your seal-detection conversion matches the macOS digest; a different digest is fine as long as the outputs agree (see `compare`).
 
 Next, build the two native hosts into `MDOC_VISION_BIN` (default `~/.cache/mdoc-vision-eval/bin`).
