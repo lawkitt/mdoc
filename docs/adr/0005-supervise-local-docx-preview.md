@@ -23,11 +23,12 @@ each desktop milestone's start against the preview corpus and mdoc's
 Word-reference fidelity check; forked only if a patch is unavoidable.
 
 **Fonts.** Metric-compatible fallbacks (Carlito, Caladea, Liberation) ship
-with the app and reach docxide through `DOCXSIDE_FONTS`, below installed
-fonts.
+with the app and reach docxide as its `font_dirs` option; an installed
+Calibri or Cambria still wins, because docxide looks up the requested
+family first.
 
 **Comments and hidden text** never enter the Markdown. The render copy marks
-each comment range as a `mdoc-comment:<id>` link, whose rectangles anchor
+each commented run as a `mdoc-comment:<k>` link, whose rectangles anchor
 mdoc's own comment rail, and lifts hidden text with a dotted underline when
 shown; docxide's built-in comment pane stays off. Rules:
 [originals](../specs/originals.md).
