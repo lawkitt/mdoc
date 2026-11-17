@@ -55,22 +55,36 @@ with ZipFile(Path(__file__).with_name('coverage.docx'),'w') as archive:
         archive.writestr(info, data.encode() if isinstance(data,str) else data)
 
 # Separate small comments fixture: ranges across paragraphs, overlap, a point
-# comment, and an unanchored comment. Keep the coverage document unchanged.
+# comment, an unanchored comment, a reply, a resolved thread (Word 2012's
+# commentsExtended part) and a passage of hidden text. Keep the coverage
+# document unchanged.
+W14 = 'http://schemas.microsoft.com/office/word/2010/wordml'
+W15 = 'http://schemas.microsoft.com/office/word/2012/wordml'
+def cp(text, para):
+    return f'<w:p w14:paraId="{para}"><w:r><w:t>{text}</w:t></w:r></w:p>'
 comment_parts = dict(parts)
 comment_parts['word/document.xml'] = f'''<w:document xmlns:w="{W}"><w:body>
-<w:p><w:commentRangeStart w:id="0"/><w:r><w:t>First quoted paragraph.</w:t></w:r></w:p>
-<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Second quoted paragraph.</w:t></w:r><w:commentRangeEnd w:id="1"/><w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/><w:commentReference w:id="1"/></w:r></w:p>
+<w:p><w:commentRangeStart w:id="0"/><w:commentRangeStart w:id="5"/><w:r><w:t>First quoted paragraph.</w:t></w:r></w:p>
+<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Second quoted paragraph.</w:t></w:r><w:commentRangeEnd w:id="1"/><w:commentRangeEnd w:id="0"/><w:commentRangeEnd w:id="5"/><w:r><w:commentReference w:id="0"/><w:commentReference w:id="1"/><w:commentReference w:id="5"/></w:r></w:p>
 <w:p><w:r><w:t>Point comment context.</w:t><w:commentReference w:id="2"/></w:r></w:p>
+<w:p><w:commentRangeStart w:id="4"/><w:r><w:t>A settled clause.</w:t></w:r><w:commentRangeEnd w:id="4"/><w:r><w:commentReference w:id="4"/></w:r><w:r><w:t xml:space="preserve"> Visible text</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:t xml:space="preserve"> with a hidden drafting note</w:t></w:r><w:r><w:t>.</w:t></w:r></w:p>
 <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:bottom="1440" w:left="1440" w:right="1440"/></w:sectPr>
 </w:body></w:document>'''
-comment_parts['word/comments.xml'] = f'''<w:comments xmlns:w="{W}">
-<w:comment w:id="0" w:author="Reviewer" w:date="2026-09-19T10:00:00Z">{p('Please check this clause.')}{p('Second line: &amp; &lt;literal&gt;.')}</w:comment>
-<w:comment w:id="1" w:author="Ирина">{p('Проверить условия.')}</w:comment>
-<w:comment w:id="2" w:author="Point reviewer">{p('Point note.')}</w:comment>
-<w:comment w:id="3">{p('Unanchored note is still visible.')}</w:comment>
+comment_parts['word/comments.xml'] = f'''<w:comments xmlns:w="{W}" xmlns:w14="{W14}">
+<w:comment w:id="0" w:author="Reviewer" w:date="2026-09-19T10:00:00Z">{p('Please check this clause.')}{cp('Second line: &amp; &lt;literal&gt;.', '00000001')}</w:comment>
+<w:comment w:id="1" w:author="Ирина">{cp('Проверить условия.', '00000002')}</w:comment>
+<w:comment w:id="2" w:author="Point reviewer">{cp('Point note.', '00000003')}</w:comment>
+<w:comment w:id="3">{cp('Unanchored note is still visible.', '00000004')}</w:comment>
+<w:comment w:id="4" w:author="Counsel" w:date="2026-09-20T09:30:00Z">{cp('Agreed with the other side.', '00000005')}</w:comment>
+<w:comment w:id="5" w:author="Associate" w:date="2026-09-19T12:15:00Z">{cp('Checked: it matches the term sheet.', '00000006')}</w:comment>
 </w:comments>'''
-comment_parts['word/_rels/document.xml.rels'] = rels([('styles','styles','styles.xml',''),('comments','comments','comments.xml','')])
-comment_parts['[Content_Types].xml'] = comment_parts['[Content_Types].xml'].replace('</Types>', '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>')
+comment_parts['word/commentsExtended.xml'] = f'''<w15:commentsEx xmlns:w15="{W15}">
+<w15:commentEx w15:paraId="00000001" w15:done="0"/>
+<w15:commentEx w15:paraId="00000005" w15:done="1"/>
+<w15:commentEx w15:paraId="00000006" w15:paraIdParent="00000001" w15:done="0"/>
+</w15:commentsEx>'''
+comment_parts['word/_rels/document.xml.rels'] = rels([('styles','styles','styles.xml',''),('comments','comments','comments.xml','')]).replace('</Relationships>', '<Relationship Id="commentsEx" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/></Relationships>')
+comment_parts['[Content_Types].xml'] = comment_parts['[Content_Types].xml'].replace('</Types>', '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/><Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/></Types>')
 with ZipFile(Path(__file__).with_name('comments.docx'),'w') as archive:
     for name, data in sorted(comment_parts.items()):
         info = ZipInfo(name, date_time=(2026,1,1,0,0,0))

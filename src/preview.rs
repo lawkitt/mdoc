@@ -11,7 +11,7 @@ use crate::{
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
 use gpui_pdf::PdfView;
 use mdoc_import::docx_preview::{self, PreviewError};
-use mdoc_store::session_store;
+use mdoc_store::{session_store, settings};
 use std::{
     cell::Cell,
     path::{Path, PathBuf},
@@ -387,7 +387,31 @@ impl Drop for PreviewState {
     }
 }
 
+/// The Source pane's app-wide display choices (Settings' General choices).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SourceDisplay {
+    /// "💬 N": comments beside the page.
+    pub comments: bool,
+    /// "Hidden text (N)": Word's hidden text drawn in place.
+    pub hidden_text: bool,
+}
+
 impl DocumentView {
+    /// Show comments and Show hidden text, as Settings holds them now.
+    pub(crate) fn source_display(&self) -> SourceDisplay {
+        let defaults = settings::GeneralConfig::default();
+        let general = self
+            .preferences
+            .borrow()
+            .current
+            .as_ref()
+            .map_or(defaults, |p| p.general);
+        SourceDisplay {
+            comments: general.show_comments,
+            hidden_text: general.show_hidden_text,
+        }
+    }
+
     pub(super) fn toggle_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.preview.visible = !self.preview.visible;
         if !self.preview.visible && self.active && self.lifecycle.ready() {
@@ -525,12 +549,15 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         self.preview.queued = false;
+        let options = docx_preview::RenderOptions {
+            show_hidden_text: self.source_display().hidden_text,
+        };
         let task = cx.background_executor().spawn(async move {
             // Headless UI tests cannot launch the test harness as a worker.
             if cfg!(test) {
-                docx_preview::render_in_process(&path, cancel, read_comment_marks)
+                docx_preview::render_in_process(&path, cancel, read_comment_marks, options)
             } else {
-                docx_preview::render_with_cancel(&path, cancel)
+                docx_preview::render_with_cancel(&path, cancel, options)
             }
         });
         let task = cx.spawn_in(window, async move |this, cx| {

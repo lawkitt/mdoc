@@ -13,7 +13,7 @@ use std::{
 pub(super) struct Imported {
     pub title: String,
     pub markdown: String,
-    pub warning: Option<String>,
+    pub note: ImportNote,
     /// OCR's kept pages, removed once the session takes the document.
     pub kept: Option<mdoc_import::resume::Completed>,
 }
@@ -48,7 +48,7 @@ pub(super) fn import_file(
         return Ok(Imported {
             title,
             markdown,
-            warning: None,
+            note: ImportNote::default(),
             kept: None,
         });
     }
@@ -122,10 +122,26 @@ pub(super) fn import_file(
     }
     Ok(Imported {
         title,
+        note: ImportNote {
+            warning: imported.note(),
+            notice: imported.warning.clone(),
+            // Phones show no rendering of a document's comments yet.
+            left_out: imported.left_out.line(false),
+        },
         markdown: imported.markdown,
-        warning: imported.warning,
         kept: completed,
     })
+}
+
+/// What an import says it left out.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(super) struct ImportNote {
+    /// The notice and the counts as one note, as the apps show it today.
+    pub warning: Option<String>,
+    /// The notice alone: a partial import (pages OCR skipped).
+    pub notice: Option<String>,
+    /// The left-out line: what else the Markdown leaves out, counted.
+    pub left_out: Option<String>,
 }
 
 /// A document's title: its file name without the extension, read as a
@@ -340,6 +356,31 @@ mod tests {
             Err(other) => panic!("{other}"),
             Ok(_) => panic!("a blank image has no text"),
         }
+    }
+
+    /// The whole note stays as the apps show it today; the notice and the
+    /// left-out line come apart beside it, comments counted as not shown
+    /// because phones render no DOCX yet.
+    #[test]
+    fn the_note_comes_whole_and_split() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/import/handmade-hidden-content.docx");
+        let imported = import_file(
+            &path,
+            &ImportOptions::default(),
+            &AtomicBool::new(false),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            imported.note,
+            ImportNote {
+                warning: Some("2 comments not imported.".into()),
+                notice: None,
+                left_out: Some("2 comments not shown.".into()),
+            }
+        );
     }
 
     #[test]

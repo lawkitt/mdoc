@@ -104,7 +104,7 @@ pub struct SavedDocument {
 
 struct Document {
     title: String,
-    warning: Option<String>,
+    note: intake::ImportNote,
     review: ReviewText,
     /// The case the document joined or started; it never changes.
     case: Option<String>,
@@ -264,7 +264,7 @@ impl DocumentSession {
         let imported = intake::Imported {
             title,
             markdown: text,
-            warning: None,
+            note: intake::ImportNote::default(),
             kept: None,
         };
         self.open(imported, &cancel, Some(Opened::begun(origin)))
@@ -296,7 +296,7 @@ impl DocumentSession {
         let imported = intake::Imported {
             title: crate::library::title_of(Path::new(&path)),
             markdown: stored.saved.clone(),
-            warning: None,
+            note: intake::ImportNote::default(),
             kept: None,
         };
         let opened = Opened {
@@ -782,7 +782,7 @@ impl Document {
         self.review.sync_ids();
         snapshot::of(
             &self.title,
-            self.warning.as_deref(),
+            &self.note,
             &self.review,
             self.case.as_deref(),
             self.scanned,
@@ -819,7 +819,7 @@ impl DocumentSession {
         let imported_kept = imported.kept;
         let mut document = Document {
             title: imported.title,
-            warning: imported.warning,
+            note: imported.note,
             review: ReviewText::new(imported.markdown),
             case: None,
             skip: HashSet::new(),

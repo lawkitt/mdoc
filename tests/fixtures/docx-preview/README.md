@@ -23,11 +23,15 @@ python3 tests/fixtures/docx-preview/generate.py
 Run from the repository root. The generator rewrites the archives
 deterministically: identical to the included bytes with the zlib that made
 them (Windows' Python compresses `comments.docx` and `coverage.docx` to other
-bytes with the same content).
+bytes with the same content; `comments.docx` was last made by Windows'
+Python, so macOS gives other bytes for it).
+
+`comments.docx` also carries a reply, a resolved thread (Word 2012's
+`commentsExtended.xml`) and a passage of hidden text, for the comment rail.
 
 Verified SHA-256 digests:
 
-- `comments.docx`: `6e5eac8104d6310c0da4d21c92ed18e35c52001cc01351e892b097537428b5e1`
+- `comments.docx`: `6d75ab1fcf0aa12581bba9e2c3b953b86248f396c3342fe38a73ef3c7fff445a`
 - `coverage.docx`: `baa3f1b2c5cef58afc57d6680fb172d4720c57c8f3d1e1c0f6be1ad344e707d1`
 - `comment-anchors.docx`: `022631407e7bd4981b49d7c84900d43735d47712b922391205bc5fa68840c9bd`
 

@@ -305,6 +305,14 @@ pub struct GeneralConfig {
     /// none: the default. The window clamps it to its range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidebar_width: Option<u16>,
+    /// "💬 N" in the Source header: comments show beside the page. On by
+    /// default; never per document.
+    #[serde(default = "on")]
+    pub show_comments: bool,
+    /// "Hidden text (N)" in the Source header: Word's hidden text shows in
+    /// place. Off by default, so the page matches what Word prints.
+    #[serde(default)]
+    pub show_hidden_text: bool,
 }
 fn on() -> bool {
     true
@@ -316,6 +324,8 @@ impl Default for GeneralConfig {
             menu_bar_note_shown: false,
             shelf_drag_hint_shown: false,
             sidebar_width: None,
+            show_comments: true,
+            show_hidden_text: false,
         }
     }
 }
@@ -776,6 +786,24 @@ mod tests {
         let loaded = load(&path).unwrap().general;
         assert!(loaded.menu_bar && loaded.shelf_drag_hint_shown);
         assert_eq!(loaded.sidebar_width, None);
+    }
+    #[test]
+    fn comments_show_and_hidden_text_does_not_until_switched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let general = Preferences::default().general;
+        assert!(general.show_comments && !general.show_hidden_text);
+        // A file from before the switches gets the defaults.
+        let mut stored = serde_json::to_value(Preferences::default()).unwrap();
+        stored["general"] = serde_json::json!({ "menu_bar": false });
+        std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        let loaded = load(&path).unwrap().general;
+        assert!(loaded.show_comments && !loaded.show_hidden_text);
+        let mut prefs = Preferences::default();
+        prefs.general.show_comments = false;
+        prefs.general.show_hidden_text = true;
+        save(&path, &prefs).unwrap();
+        assert_eq!(load(&path).unwrap(), prefs);
     }
     #[test]
     fn a_dragged_sidebar_width_is_saved_and_absent_while_default() {

@@ -23,6 +23,17 @@ pub use comments::{AnchorRect, COMMENT_SCHEME, CommentAnchor, DocxComment, LinkM
 /// a rendered PDF. The app passes gpui-pdf's reader: this crate parses no PDF.
 pub type MarkReader = fn(&Path) -> Result<Vec<LinkMark>, String>;
 
+/// How the worker draws a document.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RenderOptions {
+    /// Draw Word's hidden text in place, with a dotted underline and muted
+    /// ink, instead of leaving it out as Word prints it.
+    pub show_hidden_text: bool,
+}
+
+/// The worker's argument for [`RenderOptions::show_hidden_text`].
+pub const SHOW_HIDDEN_ARG: &str = "--show-hidden";
+
 const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
 const MAX_PART_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
@@ -36,6 +47,10 @@ pub struct DocxPreview {
     pub comments: Arc<Vec<DocxComment>>,
     /// Where the comments sit on the rendered pages, in document order.
     pub anchors: Arc<Vec<CommentAnchor>>,
+    /// Passages of hidden text in the document, drawn or not.
+    pub hidden_text: usize,
+    /// The options it was drawn with.
+    pub options: RenderOptions,
     directory: Option<TempDir>,
 }
 
@@ -164,21 +179,24 @@ pub fn render_in_process(
     path: &Path,
     cancelled: Arc<AtomicBool>,
     read_marks: MarkReader,
+    options: RenderOptions,
 ) -> Result<DocxPreview, PreviewError> {
     check_cancel(&cancelled)?;
-    render_direct(path, read_marks)
+    render_direct(path, read_marks, options)
 }
 
 /// Render in a supervised worker: this executable, run as the DOCX worker.
 pub fn render_with_cancel(
     path: &Path,
     cancelled: Arc<AtomicBool>,
+    options: RenderOptions,
 ) -> Result<DocxPreview, PreviewError> {
     render_with_executable(
         path,
         cancelled,
         &std::env::current_exe()?,
         MAX_CONVERSION_TIME,
+        options,
     )
 }
 
@@ -195,6 +213,7 @@ pub fn render_with_executable(
     cancelled: Arc<AtomicBool>,
     executable: &Path,
     timeout: Duration,
+    options: RenderOptions,
 ) -> Result<DocxPreview, PreviewError> {
     let _lock = loop {
         check_cancel(&cancelled)?;
@@ -211,6 +230,7 @@ pub fn render_with_executable(
         .arg("--mdoc-docx-worker")
         .arg(path)
         .arg(&pdf_path)
+        .args(options.show_hidden_text.then_some(SHOW_HIDDEN_ARG))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -249,10 +269,12 @@ pub fn render_with_executable(
                 .lines()
                 .map(str::to_owned)
                 .collect();
-            let (comments, anchors) = read_comments(&pdf_path)?;
+            let metadata = read_metadata(&pdf_path)?;
             return Ok(DocxPreview {
-                comments,
-                anchors,
+                comments: Arc::new(metadata.comments),
+                anchors: Arc::new(metadata.anchors),
+                hidden_text: metadata.hidden,
+                options,
                 pdf_path,
                 warnings,
                 directory: Some(directory),
@@ -265,11 +287,16 @@ pub fn render_with_executable(
 /// A reader for tests in this crate, which cannot parse the PDF: no anchors.
 #[cfg(test)]
 pub fn render_for_test(path: &Path) -> Result<DocxPreview, PreviewError> {
-    render_direct(path, |_| Ok(Vec::new()))
+    render_direct(path, |_| Ok(Vec::new()), RenderOptions::default())
 }
 
-pub fn run_worker(input: &Path, output: &Path, read_marks: MarkReader) -> Result<(), PreviewError> {
-    render_direct_to(input, output, read_marks)
+pub fn run_worker(
+    input: &Path,
+    output: &Path,
+    read_marks: MarkReader,
+    options: RenderOptions,
+) -> Result<(), PreviewError> {
+    render_direct_to(input, output, read_marks, options)
 }
 
 /// Runs the worker and, on failure, leaves the error report beside `output`
@@ -278,24 +305,31 @@ pub fn run_worker_reporting(
     input: &Path,
     output: &Path,
     read_marks: MarkReader,
+    options: RenderOptions,
 ) -> Result<(), PreviewError> {
-    run_worker(input, output, read_marks).inspect_err(|error| {
+    run_worker(input, output, read_marks, options).inspect_err(|error| {
         let _ = fs::write(output.with_extension("error"), error.report());
     })
 }
 
-fn render_direct(path: &Path, read_marks: MarkReader) -> Result<DocxPreview, PreviewError> {
+fn render_direct(
+    path: &Path,
+    read_marks: MarkReader,
+    options: RenderOptions,
+) -> Result<DocxPreview, PreviewError> {
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
-    run_worker(path, &pdf_path, read_marks)?;
+    run_worker(path, &pdf_path, read_marks, options)?;
     let warnings = fs::read_to_string(pdf_path.with_extension("warnings"))?
         .lines()
         .map(str::to_owned)
         .collect();
-    let (comments, anchors) = read_comments(&pdf_path)?;
+    let metadata = read_metadata(&pdf_path)?;
     Ok(DocxPreview {
-        comments,
-        anchors,
+        comments: Arc::new(metadata.comments),
+        anchors: Arc::new(metadata.anchors),
+        hidden_text: metadata.hidden,
+        options,
         pdf_path,
         warnings,
         directory: Some(directory),
@@ -308,6 +342,7 @@ fn render_direct_to(
     path: &Path,
     output: &Path,
     read_marks: MarkReader,
+    options: RenderOptions,
 ) -> Result<(), PreviewError> {
     let file = fs::File::open(path)?;
     if file.metadata()?.len() > MAX_INPUT_BYTES {
@@ -323,7 +358,8 @@ fn render_direct_to(
         render: render_input,
         comments,
         markers,
-    } = comments::prepare(&bytes)?;
+        hidden,
+    } = comments::prepare(&bytes, options.show_hidden_text)?;
     let mut render_input = render_input.unwrap_or(bytes);
     if let Some(fallback) = glyph_fallback::platform_fallback()
         && let Some(copy) = glyph_fallback::prepare(&render_input, fallback)?
@@ -339,8 +375,12 @@ fn render_direct_to(
     };
     fs::write(
         output.with_extension("comments.json"),
-        serde_json::to_vec(&(&comments, &anchors))
-            .map_err(|e| PreviewError::Render(e.to_string()))?,
+        serde_json::to_vec(&Metadata {
+            comments,
+            anchors,
+            hidden,
+        })
+        .map_err(|e| PreviewError::Render(e.to_string()))?,
     )?;
     fs::write(output.with_extension("warnings"), warnings.join("\n"))?;
     Ok(())
@@ -570,14 +610,18 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
     Ok(warnings)
 }
 
-type CommentData = (Arc<Vec<DocxComment>>, Arc<Vec<CommentAnchor>>);
+/// What the worker learns about a document besides its pages, written
+/// beside the PDF.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Metadata {
+    comments: Vec<DocxComment>,
+    anchors: Vec<CommentAnchor>,
+    hidden: usize,
+}
 
-fn read_comments(pdf: &Path) -> Result<CommentData, PreviewError> {
-    serde_json::from_slice::<(Vec<DocxComment>, Vec<CommentAnchor>)>(&fs::read(
-        pdf.with_extension("comments.json"),
-    )?)
-    .map(|(comments, anchors)| (Arc::new(comments), Arc::new(anchors)))
-    .map_err(|e| PreviewError::Render(format!("invalid comment metadata: {e}")))
+fn read_metadata(pdf: &Path) -> Result<Metadata, PreviewError> {
+    serde_json::from_slice(&fs::read(pdf.with_extension("comments.json"))?)
+        .map_err(|e| PreviewError::Render(format!("invalid comment metadata: {e}")))
 }
 
 #[cfg(test)]
@@ -635,6 +679,7 @@ mod tests {
             Arc::new(AtomicBool::new(true)),
             Path::new("no-such-executable"),
             MAX_CONVERSION_TIME,
+            RenderOptions::default(),
         );
         assert!(matches!(result, Err(PreviewError::Cancelled)));
     }

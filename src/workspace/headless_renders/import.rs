@@ -57,6 +57,7 @@ fn comments_note(d: &mut Driver) -> Result<()> {
         &imported.source,
         Arc::new(AtomicBool::new(false)),
         crate::preview::read_comment_marks,
+        Default::default(),
     ) else {
         return Err("the preview renders tracked changes now; show it instead".into());
     };

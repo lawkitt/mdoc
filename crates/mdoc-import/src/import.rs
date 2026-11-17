@@ -76,9 +76,83 @@ pub struct Imported {
     pub ocr_configuration: Option<mdoc_store::settings::OcrConfig>,
     pub source: PathBuf,
     pub markdown: String,
+    /// The notice: a partial import (pages OCR skipped, or may have read
+    /// badly).
     pub warning: Option<String>,
+    /// What else the Markdown leaves out, counted for the left-out line.
+    pub left_out: LeftOut,
     pub is_pdf: bool,
     pub is_docx: bool,
+}
+
+/// What the Markdown of an import leaves out besides skipped pages.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LeftOut {
+    /// Pictures: the Markdown carries their alt text at most, and OCR reads
+    /// the text drawn in a picture, not the picture.
+    pub pictures: u64,
+    /// Passages of hidden-formatted Word text, or stretches of invisible PDF
+    /// text (render mode 3, a scan's hidden OCR layer included).
+    pub hidden_text: u64,
+    /// AcroForm field names; the fields' values stay.
+    pub field_names: u64,
+    /// A Word or ODT document's comments, which only a rendering shows.
+    pub comments: crate::hidden_content::Comments,
+}
+
+impl LeftOut {
+    /// What a PDF's pages hold that its Markdown leaves out, from its native
+    /// pass, which OCR doesn't change.
+    pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult) -> Self {
+        fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
+            pages.iter().map(|page| u64::from(count(page))).sum()
+        }
+        Self {
+            pictures: sum(&native.images_by_page, |page| page.images),
+            hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches),
+            field_names: sum(&native.form_field_names_by_page, |page| page.names),
+            comments: Default::default(),
+        }
+    }
+
+    /// The note's lines for the counts other than comments, in order.
+    fn counts(&self) -> [Option<String>; 3] {
+        [
+            pictures_note(self.pictures),
+            hidden_text_note(self.hidden_text),
+            left_out_note(self.field_names, "form field name", "form field names"),
+        ]
+    }
+
+    /// The left-out line, if anything is left out. Comments count only where
+    /// no rendering of the document shows them (`comments_shown` false).
+    pub fn line(&self, comments_shown: bool) -> Option<String> {
+        let [pictures, hidden, field_names] = self.counts();
+        join_notes([
+            pictures,
+            hidden,
+            field_names,
+            (!comments_shown)
+                .then(|| self.comments.not_shown())
+                .flatten(),
+        ])
+    }
+}
+
+impl Imported {
+    /// The notice and the counts as one note, as the apps show it until
+    /// they show the left-out line (ROADMAP Comments item 4): the order the
+    /// note had before the split.
+    pub fn note(&self) -> Option<String> {
+        let [pictures, hidden, field_names] = self.left_out.counts();
+        join_notes([
+            self.warning.clone(),
+            self.left_out.comments.note(),
+            pictures,
+            hidden,
+            field_names,
+        ])
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -180,7 +254,7 @@ pub fn prepare_cancellable(
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
     // Comments never reach the Markdown (AnyDoc reads no Word comments part
-    // and skips ODT annotations); the note says how many were left out.
+    // and skips ODT annotations); the left-out line says how many.
     // AnyDoc picks the parser by content, so both counters look at the
     // package whatever its extension; each counts nothing in the other's.
     let comments = crate::hidden_content::docx_comments(&source)
@@ -188,17 +262,25 @@ pub fn prepare_cancellable(
     // Nor do Word's pictures: embedded ones render as their alt text at
     // most (ROADMAP Vision item 1).
     let format = anydoc::Format::from_path(&source);
-    let pictures = matches!(format, Some(anydoc::Format::Docx) | None)
-        .then(|| pictures_note(u64::from(converted.images_left_out)))
-        .flatten();
-    // Nor does hidden-formatted text (DOCX, RTF and DOC; 0 elsewhere).
-    let hidden = hidden_text_note(u64::from(converted.hidden_text_left_out));
-    let warning = join_notes([comments.note(), pictures, hidden]);
+    let pictures = if matches!(format, Some(anydoc::Format::Docx) | None) {
+        u64::from(converted.images_left_out)
+    } else {
+        0
+    };
     Ok(Imported {
         ocr_configuration: None,
         source,
         markdown: converted.markdown,
-        warning,
+        // Only a PDF's import can be partial.
+        warning: None,
+        left_out: LeftOut {
+            pictures,
+            // Nor does hidden-formatted text (DOCX, RTF and DOC; 0
+            // elsewhere).
+            hidden_text: u64::from(converted.hidden_text_left_out),
+            field_names: 0,
+            comments,
+        },
         is_pdf: false,
         is_docx,
     })
@@ -222,7 +304,7 @@ fn convert_pdf(
     let bytes = read_pdf(&source)?;
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
-    let left_out = PdfLeftOut::of(&native);
+    let left_out = LeftOut::of_pdf(&native);
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(
@@ -264,8 +346,6 @@ fn convert_pdf(
         );
     }
     let warning = pdf_warning(&result.markdown, warning_pages, result.page_count, used_ocr)?;
-    let [pictures, hidden, field_names] = left_out.notes();
-    let warning = join_notes([warning, pictures, hidden, field_names]);
     Ok(Imported {
         ocr_configuration: if used_ocr {
             installed.map(|i| i.config.clone())
@@ -275,6 +355,7 @@ fn convert_pdf(
         source,
         markdown: result.markdown,
         warning,
+        left_out,
         is_pdf: true,
         is_docx: false,
     })
@@ -329,41 +410,6 @@ pub(crate) fn pdf_warning(
     } else {
         format!("Partial import: pages {pages} of {page_count} require OCR and were skipped.")
     }))
-}
-
-/// What a PDF's pages hold that its Markdown leaves out, from its native
-/// pass, which OCR doesn't change.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct PdfLeftOut {
-    /// Pictures: OCR reads the text drawn in a picture, not the picture.
-    pictures: u64,
-    /// Stretches of invisible text (render mode 3), a scan's hidden OCR
-    /// layer included.
-    hidden_text: u64,
-    /// AcroForm field names; the fields' values stay.
-    field_names: u64,
-}
-
-impl PdfLeftOut {
-    pub(crate) fn of(native: &pdf_inspector::vision::OcrPdfResult) -> Self {
-        fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
-            pages.iter().map(|page| u64::from(count(page))).sum()
-        }
-        Self {
-            pictures: sum(&native.images_by_page, |page| page.images),
-            hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches),
-            field_names: sum(&native.form_field_names_by_page, |page| page.names),
-        }
-    }
-
-    /// The import note's lines for them, in order.
-    pub(crate) fn notes(self) -> [Option<String>; 3] {
-        [
-            pictures_note(self.pictures),
-            hidden_text_note(self.hidden_text),
-            left_out_note(self.field_names, "form field name", "form field names"),
-        ]
-    }
 }
 
 /// The import note's line for `count` things that did not reach the
@@ -517,7 +563,7 @@ mod tests {
                 "handmade-hidden.doc" => Some("3 hidden passages not imported."),
                 _ => None,
             };
-            assert_eq!(imported.warning.as_deref(), expected_note, "{name}");
+            assert_eq!(imported.note().as_deref(), expected_note, "{name}");
         }
     }
 
@@ -549,11 +595,11 @@ mod tests {
             let imported = convert(&fixture(name)).unwrap();
             assert!(!imported.markdown.contains("SECRET"), "{name}");
             let note = format!("{count} hidden passages not imported.");
-            assert_eq!(imported.warning.as_deref(), Some(note.as_str()), "{name}");
+            assert_eq!(imported.note().as_deref(), Some(note.as_str()), "{name}");
             let dir = tempfile::tempdir().unwrap();
             let renamed = dir.path().join("renamed.bin");
             std::fs::copy(fixture(name), &renamed).unwrap();
-            assert_eq!(convert(&renamed).unwrap().warning, imported.warning);
+            assert_eq!(convert(&renamed).unwrap().left_out, imported.left_out);
         }
         assert_eq!(hidden_text_note(0), None);
         assert_eq!(
@@ -624,22 +670,24 @@ mod tests {
         for kept in ["Client:", "Ivanov Ivan", "Visible clause."] {
             assert!(imported.markdown.contains(kept), "{}", imported.markdown);
         }
+        assert_eq!(imported.warning, None);
         assert_eq!(
-            imported.warning.as_deref(),
+            imported.note().as_deref(),
             Some("1 hidden passage not imported. 2 form field names not imported.")
         );
-        let left_out = PdfLeftOut {
+        let left_out = LeftOut {
             pictures: 3,
             hidden_text: 2,
             field_names: 1,
+            ..LeftOut::default()
         };
         assert_eq!(
-            join_notes(left_out.notes()).as_deref(),
+            left_out.line(true).as_deref(),
             Some(
                 "3 pictures not imported. 2 hidden passages not imported. 1 form field name not imported."
             )
         );
-        assert_eq!(PdfLeftOut::default().notes(), [None, None, None]);
+        assert_eq!(LeftOut::default().line(false), None);
     }
 
     /// ODT comments are left out of the Markdown (AnyDoc skips
@@ -666,9 +714,11 @@ mod tests {
         zip.finish().unwrap();
         let imported = convert(&path).unwrap();
         assert_eq!(imported.markdown.trim(), "Lambdaword\n\nSecond paragraph.");
+        assert_eq!(imported.note().as_deref(), Some("2 comments not imported."));
+        // No rendering shows an ODT's comments.
         assert_eq!(
-            imported.warning.as_deref(),
-            Some("2 comments not imported.")
+            imported.left_out.line(false).as_deref(),
+            Some("2 comments not shown.")
         );
         // AnyDoc reads the content, whatever the extension says; so does
         // the count.
@@ -677,7 +727,7 @@ mod tests {
             std::fs::copy(&path, &renamed).unwrap();
             let converted = convert(&renamed).unwrap();
             assert_eq!(converted.markdown, imported.markdown, "{name}");
-            assert_eq!(converted.warning, imported.warning, "{name}");
+            assert_eq!(converted.left_out, imported.left_out, "{name}");
         }
     }
 
@@ -686,7 +736,7 @@ mod tests {
     /// line. A scanned page's image counts even though OCR may read it.
     #[test]
     fn the_note_counts_pictures_left_out() {
-        let note = |name: &str| convert(&fixture(name)).unwrap().warning;
+        let note = |name: &str| convert(&fixture(name)).unwrap().note();
         assert_eq!(
             note("text.docx").as_deref(),
             Some("1 picture not imported.")
@@ -707,8 +757,58 @@ mod tests {
         let comments = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/docx-preview/comments.docx");
         assert_eq!(
-            convert(&comments).unwrap().warning.as_deref(),
-            Some("4 comments not imported.")
+            convert(&comments).unwrap().note().as_deref(),
+            Some("6 comments not imported.")
+        );
+    }
+
+    /// The notice keeps only a partial import; the counts are the left-out
+    /// line, where comments count only without a rendering to show them.
+    #[test]
+    fn the_note_splits_into_the_notice_and_the_left_out_line() {
+        let partly = convert(&fixture("handmade-partly-scanned.pdf")).unwrap();
+        assert_eq!(
+            partly.warning.as_deref(),
+            Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
+        );
+        assert_eq!(
+            partly.left_out.line(true).as_deref(),
+            Some("2 pictures not imported.")
+        );
+        let comments = convert(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/docx-preview/comments.docx"),
+        )
+        .unwrap();
+        assert_eq!(comments.warning, None);
+        assert_eq!(comments.left_out.line(true), None);
+        assert_eq!(
+            comments.left_out.line(false).as_deref(),
+            Some("6 comments not shown.")
+        );
+        let all = LeftOut {
+            pictures: 1,
+            hidden_text: 2,
+            field_names: 3,
+            comments: crate::hidden_content::Comments {
+                count: 2,
+                at_least: false,
+            },
+        };
+        assert_eq!(
+            all.line(false).as_deref(),
+            Some(
+                "1 picture not imported. 2 hidden passages not imported. \
+                 3 form field names not imported. 2 comments not shown."
+            )
+        );
+        // Hidden text is left out of the Markdown whether or not the Source
+        // shows it.
+        let hidden = convert(&fixture("handmade-hidden.docx")).unwrap();
+        assert_eq!(hidden.warning, None);
+        assert_eq!(
+            hidden.left_out.line(true).as_deref(),
+            Some("7 hidden passages not imported.")
         );
     }
 
@@ -756,16 +856,14 @@ mod tests {
             1,
             "moved text appears once, where it now is"
         );
-        assert_eq!(
-            imported.warning.as_deref(),
-            Some("2 comments not imported.")
-        );
+        assert_eq!(imported.note().as_deref(), Some("2 comments not imported."));
+        assert_eq!(imported.left_out.comments.count, 2);
         // Content detection counts them too, for a renamed copy.
         let dir = tempfile::tempdir().unwrap();
         for name in ["renamed.bin", "renamed.odt"] {
             let renamed = dir.path().join(name);
             std::fs::copy(&path, &renamed).unwrap();
-            assert_eq!(convert(&renamed).unwrap().warning, imported.warning);
+            assert_eq!(convert(&renamed).unwrap().left_out, imported.left_out);
         }
     }
 
@@ -773,7 +871,7 @@ mod tests {
     fn partial_pdf_keeps_original_page_numbers_outside_markdown() {
         let imported = convert(&fixture("handmade-partly-scanned.pdf")).unwrap();
         assert_eq!(
-            imported.warning.as_deref(),
+            imported.note().as_deref(),
             Some(
                 "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported."
             )
@@ -781,7 +879,7 @@ mod tests {
         assert!(!imported.markdown.contains("OCR"));
         let mixed = convert(&fixture("handmade-mixed.pdf")).unwrap();
         assert_eq!(
-            mixed.warning.as_deref(),
+            mixed.note().as_deref(),
             Some(
                 "Partial import: pages 2 of 2 require OCR and were skipped. 1 picture not imported."
             )

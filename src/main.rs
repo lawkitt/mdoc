@@ -88,10 +88,16 @@ fn main() {
             std::process::exit(2);
         };
         let output = PathBuf::from(output);
+        let options = docx_preview::RenderOptions {
+            show_hidden_text: args
+                .get(4)
+                .is_some_and(|arg| arg == docx_preview::SHOW_HIDDEN_ARG),
+        };
         if docx_preview::run_worker_reporting(
             &PathBuf::from(input),
             &output,
             preview::read_comment_marks,
+            options,
         )
         .is_err()
         {
