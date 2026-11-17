@@ -18,6 +18,7 @@ LAYOUT_PADDLE_REV = "aa52b8528c84f9b1a34ac3a88fe0e576edb9d11d"
 SEAL_SERVER_REV = "a66e4245e02aeccedf63d6bc6ef2dab4726e3956"
 SEAL_MOBILE_REV = "22ecaa81550a4c159bf3779293aa15d4b4797346"
 OAR_REC = "https://github.com/GreatV/oar-ocr/releases/download/v0.3.0"
+OAR_OCR = "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0"
 
 ONNX_RUNTIME = "1.27.0"  # the app's runtime, crates/mdoc-import/src/ocr.rs
 RXING = ("rxing", "0.9.4", "6fbf2a0e464c316b30b4cab99e898f20a9d8e42ca3d7a767e670c9a330f2202f")
@@ -93,6 +94,14 @@ PINS: list[Pin] = [
     # PP-OCRv5 Cyrillic mobile recognition: the app's own pinned file
     # (pdf-inspector PP_OCR_CYRILLIC), output-identical to PaddlePaddle's
     # cyrillic_PP-OCRv5_mobile_rec_onnx.
+    # The app's OCR (pdf-inspector PP_OCR_V6_SMALL): the harness reads page
+    # words and times OCR with the same files.
+    Pin("ocr/pp-ocrv6_small_det.onnx", f"{OAR_OCR}/pp-ocrv6_small_det.onnx",
+        "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e", 9_880_512),
+    Pin("ocr/pp-ocrv6_small_rec.onnx", f"{OAR_OCR}/pp-ocrv6_small_rec.onnx",
+        "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634", 21_159_378),
+    Pin("ocr/ppocrv6_dict.txt", f"{OAR_OCR}/ppocrv6_dict.txt",
+        "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d", 74_947),
     Pin("ocr/cyrillic_pp-ocrv5_mobile_rec.onnx", f"{OAR_REC}/cyrillic_pp-ocrv5_mobile_rec.onnx",
         "a18d96d7c8d73d90f2ed056549caa1de3a8e6cb744cccba16cd593ea8cd2d569", 8_076_390),
     Pin("ocr/ppocrv5_cyrillic_dict.txt", f"{OAR_REC}/ppocrv5_cyrillic_dict.txt",

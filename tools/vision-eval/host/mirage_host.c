@@ -4,7 +4,9 @@
  *
  * Loads the archive once, then prints one JSON line per image to stdout:
  *   {"image": "<path>", "width": W, "height": H, "ms": T, "result": <describe JSON>}
- * or {"image": "<path>", "error": "<message>"}. Timing covers cactus_describe only.
+ * or {"image": "<path>", "error": "<message>"}, then a last line {"peak_bytes": N}
+ * (the process's peak footprint on macOS, peak working set on Windows).
+ * Timing covers cactus_describe only.
  * Report-only evaluation tool (lawkitt/mdoc#911); nothing here ships.
  */
 #include <stdio.h>
@@ -15,6 +17,12 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <psapi.h>
+static unsigned long long peak_bytes(void) {
+    PROCESS_MEMORY_COUNTERS c;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &c, sizeof c)) return (unsigned long long)c.PeakWorkingSetSize;
+    return 0;
+}
 static double now_ms(void) {
     LARGE_INTEGER f, c;
     QueryPerformanceFrequency(&f);
@@ -22,6 +30,22 @@ static double now_ms(void) {
     return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
 }
 #else
+#include <sys/resource.h>
+#ifdef __APPLE__
+#include <libproc.h>
+#include <unistd.h>
+#endif
+/* The macOS peak footprint (what /usr/bin/time -l prints), else max RSS. */
+static unsigned long long peak_bytes(void) {
+#ifdef __APPLE__
+    struct rusage_info_v4 info;
+    if (proc_pid_rusage(getpid(), RUSAGE_INFO_V4, (rusage_info_t *)&info) == 0)
+        return info.ri_lifetime_max_phys_footprint;
+#endif
+    struct rusage u;
+    getrusage(RUSAGE_SELF, &u);
+    return (unsigned long long)u.ru_maxrss * 1024ULL;
+}
 static double now_ms(void) {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
@@ -122,6 +146,7 @@ int main(int argc, char **argv) {
         fflush(stdout);
         free(img);
     }
+    printf("{\"peak_bytes\":%llu}\n", peak_bytes());
     free(out);
     free(cact);
     free(options);

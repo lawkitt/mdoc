@@ -1,4 +1,5 @@
 __pycache__/
 *.pyc
-/host/build/
+.venv/
+report.md
 /rxing-host/target/
