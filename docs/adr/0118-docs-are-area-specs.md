@@ -17,7 +17,7 @@ hotspots at 300–400 PRs a week.
   without it and code, tests or lint don't already say so. History lives in
   git and PRs.
 - **Living area specs are the source of truth**:
-  `docs/specs/{desktop,mobile,recognition,cases-and-privacy,ci,release}.md`.
+  `docs/specs/{desktop,mobile,originals,recognition,cases-and-privacy,ci,release}.md`.
   A change edits one place. Specs have one rule per bullet, no ADR numbers
   and a `Folds:` line naming the ADRs they absorbed.
 - **ADRs are rare**: only choices whose change needs a migration or a

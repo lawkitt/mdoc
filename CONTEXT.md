@@ -16,6 +16,9 @@ is extracted.
 Markdown edits; DOCX rendering is approximate. UI label: **Source**.
 "Original" names the view switcher's pre-pseudonymization view.
 
+**Comment rail**: comment cards beside the Source page at their passages;
+**comment markers** when the pane is narrow.
+
 **Page tone**: how Original pages are painted: *original* paper or *themed*
 (paper and ink remapped to the dark theme). Avoid "invert".
 
