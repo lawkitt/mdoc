@@ -241,6 +241,25 @@ class Tuning(unittest.TestCase):
         with self.assertRaises(SystemExit):
             tune.require_role({"name": "tune-seal", "role": "tune"}, False)
 
+    def test_a_saved_setting_must_match_what_final_runs(self):
+        from vision_eval import d33
+        from vision_eval.worker import MIRAGE_KEYWORDS
+        v = [x for x in tune.variants() if tune.variant_id(x) == "c10-kw-crop1p25"][0]
+        good = {"variant": v, "variant_id": "c10-kw-crop1p25", "options": tune.options(v),
+                "keywords": MIRAGE_KEYWORDS, "name_map": {"seal": dict(d33.D33_MAP)["seal"]}, "nms_iou": 0.5,
+                "crop_rule": {"per_page": 1, "side": [0.02, 0.30], "max_aspect": 3.0}, "pool": "d33",
+                "rules": {k: None for k in tune.RULE_GRID}}
+        self.assertEqual(tune.setting_problems(good), [])
+        for key, bad in (("keywords", ["stamp"]), ("nms_iou", 0.3), ("crop_rule", {"per_page": 2}),
+                         ("pool", "all"), ("rules", {"max_aspect": 9.0})):
+            self.assertTrue(tune.setting_problems(dict(good, **{key: bad})), key)
+
+    def test_pages_without_provenance_are_found(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "sources.json").write_text(json.dumps({"a": {"item": "x"}, "b": {"note": "?"}}))
+            self.assertEqual(tune.page_source_ids(Path(d), ["a", "b", "c"]), {"a": {"item:x"}})
+
     def test_source_ids_name_the_docket_behind_a_page(self):
         import json, tempfile
         with tempfile.TemporaryDirectory() as d:

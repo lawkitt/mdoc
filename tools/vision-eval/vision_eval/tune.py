@@ -434,6 +434,8 @@ def sweep(out: Path, set_name: str, write: Path | None) -> dict | None:
     meta = load_set(out, set_name)
     require_role(meta, True)
     ocr_run = score.load_run(out / "runs" / set_name / "ocr")
+    if ocr_run is None or score.missing(meta["pages"], ocr_run):
+        raise SystemExit(f"run `python -m vision_eval.run ocr --sets {set_name}` first")
     combos = rule_combos()
     cands, per_variant = [], []
     for run in tune_runs(out, set_name):
@@ -441,6 +443,8 @@ def sweep(out: Path, set_name: str, write: Path | None) -> dict | None:
             continue
         c = cost(meta, run, ocr_run)
         prep = prepared(meta, run, ocr_run)
+        if not sum(len(p["refs"]) for p in prep if p["tier"] == "real"):
+            raise SystemExit("no reference words on the real pages: words lost can't be checked")
         within = c["overhead"] is not None and c["overhead"] <= BARS["time"] and c["peak_mb"] <= BARS["memory_mb"]
         best_v = None
         for pi, pool in enumerate(POOLS):
@@ -482,6 +486,25 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def setting_problems(setting: dict) -> list[str]:
+    """Every field of a saved setting must equal what this harness executes."""
+    v = setting.get("variant") or {}
+    if v not in variants():
+        return ["unknown variant"]
+    expected = {"variant_id": variant_id(v), "options": options(v),
+                "keywords": MIRAGE_KEYWORDS if v["keywords"] else None,
+                "name_map": {"seal": dict(d33.D33_MAP)["seal"]}, "nms_iou": IOU,
+                "crop_rule": {"per_page": v["crops"], "side": list(CROP_SIDE), "max_aspect": CROP_ASPECT}}
+    out = [f"{k} differs" for k, want in expected.items() if setting.get(k) != want]
+    if setting.get("pool") not in POOLS:
+        out.append("unknown pool")
+    rules = setting.get("rules")
+    if not isinstance(rules, dict) or set(rules) != set(RULE_GRID) or any(
+            rules[k] not in RULE_GRID[k] for k in RULE_GRID):
+        out.append("rules outside the grid")
+    return out
+
+
 def final(out: Path, setting_path: Path, set_names: list[str]) -> None:
     """The one run of the pre-registered setting on #911's sets (decision 12)."""
     marker = out / "tune-final.json"
@@ -490,10 +513,9 @@ def final(out: Path, setting_path: Path, set_names: list[str]) -> None:
     setting = json.loads(setting_path.read_text(encoding="utf-8"))
     sha = digest(setting_path)
     v = setting["variant"]
-    if options(v) != setting["options"] or setting["pool"] not in POOLS or set(setting["rules"]) - set(RULE_GRID):
-        raise SystemExit("the setting doesn't match this harness's options, pools or rules")
-    if setting["name_map"]["seal"] != dict(d33.D33_MAP)["seal"]:
-        raise SystemExit("the setting's name map differs from decision 33's")
+    problems = setting_problems(setting)
+    if problems:
+        raise SystemExit("the setting doesn't match what this harness would run: " + "; ".join(problems))
     metas = [load_set(out, n) for n in set_names]
     for meta in metas:
         require_role(meta, False)
@@ -534,24 +556,39 @@ def final(out: Path, setting_path: Path, set_names: list[str]) -> None:
 
 # ---- disjointness ----
 
+# Sets with no sources.json whose pages are generated from public fixtures
+# (`overlay.py`): compared by page hashes only.
+HASH_ONLY = {"overlays"}
+
+
+def entry_ids(entry) -> set[str]:
+    entry = entry if isinstance(entry, dict) else {"file": str(entry)}
+    out = set()
+    if entry.get("item"):
+        out.add(f"item:{entry['item']}")
+    if entry.get("file"):
+        f = str(entry["file"])
+        out.add(f"item:{f.split('__')[0]}" if "__" in f else f"file:{f}")
+    for k in ("url", "sha256", "source_sha256"):
+        if entry.get(k):
+            out.add(f"{k}:{entry[k]}")
+    return out
+
+
+def page_source_ids(set_dir: Path, page_ids: list[str]) -> dict[str, set[str]]:
+    """Per page, its source identifiers from the set's sources.json: a RECAP
+    item (the docket behind the page), a source file, a URL or a file digest.
+    A page without any is missing from the result."""
+    path = set_dir / "sources.json"
+    src = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return {pid: ids for pid in page_ids if (ids := entry_ids(src.get(pid, {})))}
+
+
 def source_ids(set_dir: Path) -> set[str]:
-    """Source identifiers from a set's sources.json: a RECAP item (the docket
-    behind a page), a source file, a URL or a file digest."""
     path = set_dir / "sources.json"
     if not path.exists():
         return set()
-    out = set()
-    for entry in json.loads(path.read_text(encoding="utf-8")).values():
-        entry = entry if isinstance(entry, dict) else {"file": str(entry)}
-        if entry.get("item"):
-            out.add(f"item:{entry['item']}")
-        if entry.get("file"):
-            f = str(entry["file"])
-            out.add(f"item:{f.split('__')[0]}" if "__" in f else f"file:{f}")
-        for k in ("url", "sha256", "source_sha256"):
-            if entry.get(k):
-                out.add(f"{k}:{entry[k]}")
-    return out
+    return set().union(*(entry_ids(e) for e in json.loads(path.read_text(encoding="utf-8")).values()))
 
 
 def dhash(path: Path) -> int:
@@ -565,12 +602,22 @@ def dhash(path: Path) -> int:
 def disjoint(out: Path, tune_name: str, against: list[str]) -> bool:
     tmeta = load_set(out, tune_name)
     require_role(tmeta, True)
-    tids = source_ids(tmeta["dir"])
+    tper = page_source_ids(tmeta["dir"], [p["id"] for p in tmeta["pages"]])
+    unknown = len(tmeta["pages"]) - len(tper)
+    if unknown:
+        print(f"{tune_name}: {unknown} pages without source ids: provenance is incomplete")
+        return False
+    tids = set().union(*tper.values())
     tpages = {p["id"]: (pages.rgb_digest(p["path"]), dhash(p["path"])) for p in tmeta["pages"]}
     ok = True
     for name in against:
         meta = load_set(out, name)
-        ids = source_ids(meta["dir"])
+        per = page_source_ids(meta["dir"], [p["id"] for p in meta["pages"]])
+        ids = set().union(set(), *per.values())
+        lacking = len(meta["pages"]) - len(per)
+        if lacking and name not in HASH_ONLY:
+            print(f"{tune_name} vs {name}: {lacking} pages of {name} without source ids: provenance is incomplete")
+            ok = False
         shared = tids & ids
         digests = {pages.rgb_digest(p["path"]): p["id"] for p in meta["pages"]}
         hashes = [dhash(p["path"]) for p in meta["pages"]]
