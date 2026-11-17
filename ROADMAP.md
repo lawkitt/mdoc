@@ -678,6 +678,18 @@ Android takes what applies. Its clipboard finding is
 - **[Mobile] To grill: document thumbnails.** The first page of a PDF or
   scan on the Documents page; the cache stays out of backups. *From the
   sidebar grill ideas.*
+- **[Eval] Outside sets: manifests and fetch.** `tools/sets` manifests,
+  locks and the verifying fetch script (byte ranges for Zenodo zips) for
+  pdf-pii-bench, Sinabis 1k, Hyperbots stamped, doc2json, a MIDV-500 subset
+  and MIDV-2020 scans; commits pii-bench's 25 tune documents and about 10
+  Hyperbots pages to `tests/fixtures/outside/`. *From #916.*
+- **[Eval] Outside sets in the harnesses.** pii-bench (25 held-out) and
+  doc2json's RU fields in `tools/detection-eval`; Hyperbots and MIDV's photo
+  and signature boxes in `tools/vision-eval`; Sinabis and doc2json as
+  converter and OCR regression, on fleet machines. *From #916.*
+- **[Eval] ID coverage.** A per-country table for the MIDV sets, scored for
+  IDENTITY and OCR; gaps toward every country's IDs and passports picked
+  from it, with MIDV-UP first in line. *From #916.*
 
 ## Ongoing tracks
 

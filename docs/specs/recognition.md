@@ -325,3 +325,13 @@ after the evaluation in lawkitt/mdoc#911 picks which classes ship.
   appears in 3 real-set documents or 5% of its false hits, otherwise it goes
   to the "Recognition backlog" milestone.
 - Synthetic documents only reproduce real-set or probe misses as fixtures.
+
+## Outside sets
+
+- An outside set is pinned by a manifest in `tools/sets/` with a role: `tune`
+  (may be fitted to), `held-out` (scored only, never in a fixer's brief) or
+  `regression` (pass or fail); [checklist](../../tools/sets/README.md).
+- A held-out set turns `tune` only with the maintainer, never back.
+- Outside fixtures (`tests/fixtures/outside/`) keep their licence, aren't
+  recognition fixtures and don't gate detection.
+- Outside sets and fixtures run on fleet machines, never on hosted runners.
