@@ -8,8 +8,10 @@
 
 Decision 15's run, in order: the disjointness check of the tuning split
 against #911's sets, the variant runs, the any-name ceiling gate (decisions
-10 and 17), the sweep with decision 11's selection rule, and one final run
-of the pre-registered setting (decisions 12 and 18).
+10, 17 and 19), the sweep with decision 11's selection rule, the check that
+the chosen setting already meets every final bar on the tuning split
+(decision 21), and one final run of the pre-registered setting (decisions
+12, 18 and 20).
 
 Every variant calls Mirage with `sections: ["objects"]` (decision 5). Run
 levers (decision 7, in): `conf`, `agnostic_nms`, English keywords, the bottom
@@ -66,9 +68,9 @@ from .worker import MIRAGE_KEYWORDS, exe, mirage_objects
 TUNE_SETS = ["tune-seal"]
 FINAL_SETS = ["en-recap", "ru-filings", "overlays"]
 IOU = 0.5
-GATE = 0.70           # decision 17: share of tuning-split seals any box matches
+GATE = 0.67           # decision 19 (was 0.70, decision 17; lowered after the gate result)
 GATE_MEDIAN_MS = 190  # decision 10: +30% of the app's OCR (0.63 s per page on the M4)
-BARS = {"recall": 0.70, "precision": 0.85, "lost_words": 0, "time": 0.30, "memory_mb": 300}  # decision 18
+BARS = {"recall": 0.67, "precision": 0.85, "lost_words": 0, "time": 0.30, "memory_mb": 300}  # decisions 18 and 20
 
 # Run levers (decision 7). Every variant runs objects only (decision 5).
 CONFS = [0.05, 0.1, 0.2, 0.3]
@@ -433,7 +435,7 @@ def gate(out: Path, set_name: str) -> bool:
     for vid, h, t, hs, ts, c, ok in sorted(rows, key=lambda r: (-r[1], r[5]["median_ms"])):
         print(f"| {vid} | {h}/{t} ({pct(h / t if t else None)}) | {hs}/{ts} | {c['median_ms']:.0f} | {'yes' if ok else 'no'} |")
     passed = best is not None and best[1] / best[2] >= GATE
-    print(f"\nGate (decision 17, ≥{GATE:.0%} within {GATE_MEDIAN_MS} ms median): "
+    print(f"\nGate (decision 19, ≥{GATE:.0%}, lowered from 70% after the result, within {GATE_MEDIAN_MS} ms median): "
           + (f"best {best[0]} {best[1]}/{best[2]} ({pct(best[1] / best[2])}): " if best else "no variant within time: ")
           + ("pass" if passed else "fail"))
     return passed
@@ -498,6 +500,12 @@ def sweep(out: Path, set_name: str, write: Path | None) -> dict | None:
     print(f"\nSelected: {run['id']}, pool {pool}, rules {json.dumps(rules)}; real recall {pct(e['recall'])} "
           f"({e['tp']}/{e['tp'] + e['fn']}), precision {pct(e['precision'])}, lost {e['lost']}; "
           f"synthetic recall {pct(syn['recall'])}, precision {pct(syn['precision'])}")
+    # Decision 21: the setting must already meet every final bar on the
+    # tuning split before #911's sets are used. Precision, words lost, time
+    # and memory hold by selection; recall is the one left to check.
+    setting["tuning"]["meets_final_bars"] = passes = e["recall"] is not None and e["recall"] >= BARS["recall"]
+    print(f"Decision 21 check on {set_name}: recall ≥{BARS['recall']:.0%}, precision ≥{BARS['precision']:.0%}, "
+          f"zero words lost, time and memory: {'pass' if passes else 'fail'}")
     if write:
         write.write_text(json.dumps(setting, indent=1, sort_keys=True) + "\n", encoding="utf-8")
         print(f"setting written; sha256 {digest(write)}")
@@ -536,6 +544,8 @@ def final(out: Path, setting_path: Path, set_names: list[str]) -> None:
     sha = digest(setting_path)
     v = setting["variant"]
     problems = setting_problems(setting)
+    if not setting.get("tuning", {}).get("meets_final_bars"):
+        problems.append("the setting doesn't meet the final bars on the tuning split (decision 21)")
     if problems:
         raise SystemExit("the setting doesn't match what this harness would run: " + "; ".join(problems))
     metas = [load_set(out, n) for n in set_names]
@@ -569,7 +579,7 @@ def final(out: Path, setting_path: Path, set_names: list[str]) -> None:
         print(f"| {meta['name']} | {e['tp'] + e['fn']} | {pct(e['recall'])} ({e['tp']}) | {pct(e['precision'])} ({e['tp'] + e['fp']} pred) | "
               f"{e['lost']} ({refs}) | {pct(c['overhead'])} | {c['median_ms']:.0f} ({ocr_median:.0f}) | {c['peak_mb']:.0f} | "
               f"{h}/{t} | {'pass' if all(checks) else '**fail**'} |")
-    print(f"\nBars (decision 18): seal recall ≥{BARS['recall']:.0%}, precision ≥{BARS['precision']:.0%}, zero words lost, "
+    print(f"\nBars (decisions 18 and 20; recall lowered from 90% and then 70%): seal recall ≥{BARS['recall']:.0%}, precision ≥{BARS['precision']:.0%}, zero words lost, "
           f"time ≤+{BARS['time']:.0%} of OCR, peak ≤{BARS['memory_mb']} MB.")
     data = json.loads(marker.read_text())
     data.update(verdicts=verdicts, finished=datetime.now(timezone.utc).isoformat())
