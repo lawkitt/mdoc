@@ -1213,6 +1213,28 @@ mod tests {
             .to_string()
     }
 
+    /// The phones' import note counts hidden-formatted text left out, as
+    /// the desktop's does; the text itself never reaches the document.
+    #[test]
+    fn the_import_note_counts_hidden_text() {
+        for (name, note) in [
+            (
+                "import/handmade-hidden.docx",
+                "7 hidden passages not imported.",
+            ),
+            (
+                "import/handmade-hidden.rtf",
+                "6 hidden passages not imported.",
+            ),
+        ] {
+            let snapshot = DocumentSession::new()
+                .import_file(fixture(name), ImportOptions::default(), None)
+                .unwrap();
+            assert_eq!(snapshot.warning.as_deref(), Some(note), "{name}");
+            assert!(!snapshot.text.contains("SECRET"), "{name}");
+        }
+    }
+
     /// Without OCR, importing into a library is `import_file`, and keeps
     /// nothing.
     #[test]

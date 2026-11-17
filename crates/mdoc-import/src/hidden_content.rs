@@ -3,7 +3,7 @@
 //! out comments, deleted and moved-from tracked changes and document
 //! properties, with no option to keep them; `import`'s tests pin that on
 //! `handmade-hidden-content.docx`. This module counts the comments left
-//! out, for the import note.
+//! out of Word and OpenDocument text documents, for the import note.
 use std::{
     collections::HashMap,
     io::{ErrorKind, Read, Seek},
@@ -24,8 +24,33 @@ const WORD_NAMESPACES: [&str; 2] = [
     "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
     "http://purl.oclc.org/ooxml/wordprocessingml/main",
 ];
+/// OpenDocument's office vocabulary, which `annotation` belongs to.
+const OFFICE_NAMESPACE: [&str; 1] = ["urn:oasis:names:tc:opendocument:xmlns:office:1.0"];
 
-/// The comments a Word document holds.
+/// Where a format keeps its comments: the root element of the part that
+/// holds them, the namespaces that root may be bound to, and the element of
+/// one comment, in the root's namespace.
+struct Vocabulary {
+    root: &'static str,
+    namespaces: &'static [&'static str],
+    comment: &'static str,
+}
+
+const WORD: Vocabulary = Vocabulary {
+    root: "comments",
+    namespaces: &WORD_NAMESPACES,
+    comment: "comment",
+};
+
+/// ODF text documents keep comments in the body (`office:annotation`; a
+/// range's end is `office:annotation-end`, which does not count).
+const ODT: Vocabulary = Vocabulary {
+    root: "document-content",
+    namespaces: &OFFICE_NAMESPACE,
+    comment: "annotation",
+};
+
+/// The comments a Word or OpenDocument text document holds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Comments {
     pub count: usize,
@@ -81,11 +106,30 @@ fn package_comments<R: Read + Seek>(reader: R) -> Comments {
         let Ok(entry) = archive.by_index(index) else {
             continue;
         };
-        let found = count_part(entry, &mut budget);
+        let found = count_part(entry, &mut budget, &WORD);
         total.count += found.count;
         total.at_least |= found.at_least;
     }
     total
+}
+
+/// The comments in an OpenDocument text's body (`content.xml`), or none
+/// when `path` is not an OpenDocument package or cannot be read. Best
+/// effort, like [`docx_comments`]. AnyDoc leaves them out of the Markdown.
+pub fn odt_comments(path: &Path) -> Comments {
+    std::fs::File::open(path)
+        .ok()
+        .map_or_else(Comments::default, odf_package_comments)
+}
+
+fn odf_package_comments<R: Read + Seek>(reader: R) -> Comments {
+    let Ok(mut archive) = ZipArchive::new(reader) else {
+        return Comments::default();
+    };
+    let Ok(entry) = archive.by_name("content.xml") else {
+        return Comments::default();
+    };
+    count_part(entry, &mut BUDGET.clone(), &ODT)
 }
 
 /// The internal targets, as part names, of `source`'s relationships whose
@@ -142,24 +186,25 @@ fn resolve(dir: &str, target: &str) -> Option<String> {
     (!segments.is_empty()).then(|| segments.join("/"))
 }
 
-/// The comments in one comments part, read to its end within `budget`. A
-/// part whose root is not WordprocessingML's `comments` counts none. The
-/// count is of `comment` start tags in the root's namespace prefix, which is
-/// how Word writes them; text inside an XML comment that looks like one would
-/// count too, which Word never writes.
-fn count_part(mut part: impl Read, budget: &mut u64) -> Comments {
+/// The comments in one part, read to its end within `budget`. A part whose
+/// root is not `vocabulary`'s counts none. The count is of comment start
+/// tags in the root's namespace prefix, which is how Word and OpenDocument
+/// editors write them; text inside an XML comment that looks like one would
+/// count too, which they never write.
+fn count_part(mut part: impl Read, budget: &mut u64, vocabulary: &Vocabulary) -> Comments {
     let mut head = Vec::new();
     if (&mut part).take(HEAD).read_to_end(&mut head).is_err() {
         return Comments::default();
     }
     let text = decode(&head);
-    let Some(prefix) = word_comments_prefix(&text) else {
+    let Some(prefix) = root_prefix(&text, vocabulary) else {
         return Comments::default();
     };
+    let comment = vocabulary.comment;
     let element = if prefix.is_empty() {
-        "<comment".to_owned()
+        format!("<{comment}")
     } else {
-        format!("<{prefix}:comment")
+        format!("<{prefix}:{comment}")
     };
     let (encode, step): (fn(&str) -> Vec<u8>, usize) = match head.as_slice() {
         [0xFF, 0xFE, ..] => (|s| s.encode_utf16().flat_map(u16::to_le_bytes).collect(), 2),
@@ -243,12 +288,12 @@ impl Counter {
     }
 }
 
-/// The namespace prefix of `xml`'s root when it is WordprocessingML's
-/// `comments` (`""` for a default namespace), checked by the namespace the
-/// prefix is bound to.
-fn word_comments_prefix(xml: &str) -> Option<&str> {
+/// The namespace prefix of `xml`'s root when it is `vocabulary`'s root
+/// (`""` for a default namespace), checked by the namespace the prefix is
+/// bound to.
+fn root_prefix<'a>(xml: &'a str, vocabulary: &Vocabulary) -> Option<&'a str> {
     let root = start_tags(xml).next()?;
-    if local_name(root) != "comments" {
+    if local_name(root) != vocabulary.root {
         return None;
     }
     let name = root.split(|c: char| c.is_whitespace() || c == '/').next()?;
@@ -259,7 +304,7 @@ fn word_comments_prefix(xml: &str) -> Option<&str> {
         format!("xmlns:{prefix}")
     };
     attribute(root, &declaration)
-        .filter(|namespace| WORD_NAMESPACES.contains(namespace))
+        .filter(|namespace| vocabulary.namespaces.contains(namespace))
         .map(|_| prefix)
 }
 
@@ -347,7 +392,11 @@ mod tests {
     const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
     fn count(xml: &str) -> Comments {
-        count_part(Cursor::new(xml.as_bytes().to_vec()), &mut BUDGET.clone())
+        count_part(
+            Cursor::new(xml.as_bytes().to_vec()),
+            &mut BUDGET.clone(),
+            &WORD,
+        )
     }
 
     fn found(count: usize) -> Comments {
@@ -395,7 +444,7 @@ mod tests {
         ] {
             let mut bytes = bom.to_vec();
             bytes.extend(part.encode_utf16().flat_map(unit));
-            let counted = count_part(Cursor::new(bytes), &mut BUDGET.clone());
+            let counted = count_part(Cursor::new(bytes), &mut BUDGET.clone(), &WORD);
             assert_eq!(counted, found(comments));
         }
     }
@@ -408,7 +457,7 @@ mod tests {
         );
         let size = part.len() as u64;
         let mut budget = size - 1_000;
-        let short = count_part(Cursor::new(part.clone().into_bytes()), &mut budget);
+        let short = count_part(Cursor::new(part.clone().into_bytes()), &mut budget, &WORD);
         assert!(short.at_least && short.count < 5_000, "{short:?}");
         assert_eq!(
             short.note().unwrap(),
@@ -416,19 +465,61 @@ mod tests {
         );
         // Exactly enough budget is a complete count.
         assert_eq!(
-            count_part(Cursor::new(part.into_bytes()), &mut size.clone()),
+            count_part(Cursor::new(part.into_bytes()), &mut size.clone(), &WORD),
             found(5_000)
         );
     }
 
-    fn package(parts: &[(&str, String)]) -> Comments {
+    fn zipped(parts: &[(&str, String)]) -> Cursor<Vec<u8>> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, data) in parts {
             zip.start_file(*name, zip::write::SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(data.as_bytes()).unwrap();
         }
-        package_comments(Cursor::new(zip.finish().unwrap().into_inner()))
+        Cursor::new(zip.finish().unwrap().into_inner())
+    }
+
+    fn package(parts: &[(&str, String)]) -> Comments {
+        package_comments(zipped(parts))
+    }
+
+    /// ODT comments: each `annotation` in the office namespace, replies
+    /// included, never a range's `annotation-end`; another root, another
+    /// vocabulary or another part counts none.
+    #[test]
+    fn counts_opendocument_annotations() {
+        const OFFICE: &str = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
+        let body = |root: &str, prefix: &str, namespace: &str| {
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<{prefix}:{root} xmlns:{prefix}="{namespace}" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><{prefix}:body><{prefix}:text>
+<text:p>Lamb<{prefix}:annotation {prefix}:name="a"><text:p>first</text:p></{prefix}:annotation>da<{prefix}:annotation-end {prefix}:name="a"/></text:p>
+<text:p><{prefix}:annotation><text:p>reply</text:p></{prefix}:annotation><{prefix}:annotation/></text:p>
+</{prefix}:text></{prefix}:body></{prefix}:{root}>"#
+            )
+        };
+        let content = |xml: String| odf_package_comments(zipped(&[("content.xml", xml)]));
+        assert_eq!(
+            content(body("document-content", "office", OFFICE)),
+            found(3)
+        );
+        assert_eq!(content(body("document-content", "o", OFFICE)), found(3));
+        assert_eq!(
+            content(body("document-content", "office", "urn:app")),
+            found(0)
+        );
+        assert_eq!(content(body("document-styles", "office", OFFICE)), found(0));
+        let styles = body("document-content", "office", OFFICE);
+        assert_eq!(
+            odf_package_comments(zipped(&[("styles.xml", styles)])),
+            found(0)
+        );
+        assert_eq!(
+            odf_package_comments(Cursor::new(b"not a zip".to_vec())),
+            found(0)
+        );
+        assert_eq!(odt_comments(Path::new("missing.odt")), found(0));
     }
 
     fn rels(items: &[(&str, &str)]) -> String {

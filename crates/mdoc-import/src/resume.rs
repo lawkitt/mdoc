@@ -8,8 +8,8 @@
 //! taken the result ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
-    ImportError, Imported, OcrFailure, check_cancel, join_notes, pdf_error, pdf_warning,
-    pictures_drawn, pictures_note, read_pdf,
+    ImportError, Imported, OcrFailure, PdfLeftOut, check_cancel, join_notes, pdf_error,
+    pdf_warning, read_pdf,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -206,7 +206,7 @@ pub fn prepare_resumable(
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
-    let (page_count, pictures) = (native.page_count, pictures_drawn(&native));
+    let (page_count, left_out) = (native.page_count, PdfLeftOut::of(&native));
     drop(native);
     check_cancel(cancel)?;
     let digest = digest(&bytes);
@@ -237,7 +237,8 @@ pub fn prepare_resumable(
     drop(permit);
     let (markdown, review) = assemble(&pages);
     let warning = pdf_warning(&markdown, review, page_count, true)?;
-    let warning = join_notes([warning, pictures_note(pictures)]);
+    let [pictures, hidden, field_names] = left_out.notes();
+    let warning = join_notes([warning, pictures, hidden, field_names]);
     Ok((
         Imported {
             ocr_configuration: Some(installed.config.clone()),

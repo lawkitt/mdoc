@@ -15,10 +15,12 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - A scan covers everything Copy Markdown transfers, hidden source included
   (link targets, image paths, code, HTML); original files, file names and
   attachments are outside it.
-- The import note counts what the Markdown leaves out: Word comments, and
-  pictures in PDFs and Word documents ("3 pictures not imported"), a scanned
-  page's image included even when OCR read its text. Its planned split
-  into a notice and the left-out line is in [originals](originals.md).
+- The import note counts what the Markdown leaves out: Word and ODT
+  comments; pictures in PDFs and Word documents ("3 pictures not imported"),
+  a scanned page's image included even when OCR read its text; hidden Word
+  and invisible PDF text ("2 hidden passages not imported"); and PDF form
+  field names. Its planned split into a notice and the left-out line is in
+  [originals](originals.md).
 - Code that chooses, detects or reports a language takes a list of languages;
   each engine maps the list to what it can read and names what it cannot.
 - Never add an EN/RU boolean or two-way switch; convert an existing one when
