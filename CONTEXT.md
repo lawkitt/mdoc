@@ -98,8 +98,7 @@ listing its files to tick ([spec](docs/specs/desktop.md)).
 
 ## Models and processing
 
-**OCR**: recognizing text from document images when direct extraction is
-insufficient.
+**OCR**: recognizing text in page images.
 
 **Recognition languages**: the languages OCR is asked to read; each engine
 maps them to its models or packs ([spec](docs/specs/recognition.md)). Avoid
@@ -128,13 +127,21 @@ run.
 **Model comparison**: isolated sequential QA runs on one captured input, with
 read-only results.
 
-**Recognition output**: OCR text and evidence before native-text fusion and
-final Markdown preparation.
+**Recognition output**: OCR text and evidence before fusion with native
+text.
 
-**Prepared Markdown**: the final converter output, possibly combining native
-text and OCR.
+**Prepared Markdown**: the converter's final output, from native text, OCR
+or both.
 
 **Scan status**: the spinner and timed stage label beside Pseudonymize.
+
+**Page artifact**: a non-text mark OCR misreads: a seal, signature,
+barcode, watermark or repeated header.
+
+**Stand-in**: a bracketed line such as `[Seal]` replacing a page artifact
+or dropped picture. Avoid "placeholder".
+
+**Vision bundle**: the pinned models that find page artifacts.
 
 ## Pseudonymization and review
 

@@ -318,6 +318,45 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
+## Vision
+
+A vision layer beside OCR finds page artifacts (seals, signatures, QR codes,
+watermarks, repeated headers) and puts stand-ins in their place; PP-OCR keeps
+reading all text ([ADR 0121](docs/adr/0121-mirage-on-candle-as-the-vision-engine.md),
+[grill record #911](https://github.com/lawkitt/mdoc/issues/911)). The rules
+waiting for the build-in are the recognition spec's
+[Page artifacts (pending)](docs/specs/recognition.md#page-artifacts-pending).
+Items 1–3 run in parallel; 4 waits for 3, and 5 for 2 and 3.
+
+1. **[Import] Pictures not imported.** The import note counts pictures that
+   don't reach the Markdown ("3 pictures not imported"), for PDF and DOCX,
+   counted in the forks. *Done when:* a PDF and a DOCX fixture with pictures
+   show the count, and one without shows none.
+2. **[Vision] Evaluation run (report only).** A Mac hub and a Windows
+   Claude Code Desktop session measure Mirage (through libcactus),
+   PP-DocLayout_plus-L, PaddleOCR's seal reader and `rxing` on a private,
+   hand-annotated EN/RU set, against #911's bars fixed in advance; harness in
+   `tools/vision-eval`. *Done when:* the report on #911 gives a verdict per
+   class and engine.
+3. **[Vision] `mirage-rs` stage 1.** Mirage's `objects` and `text` sections
+   ported to Rust on candle from the upstream weights. *Done when:* it does
+   at least as well as libcactus on #911's bars and passes ADR 0121's parity
+   check.
+4. **[Vision] `mirage-rs` stage 2.** Relations, reasoning, forms and
+   keywords. *Done when:* each section matches libcactus on its own outputs
+   (relation triples between matched objects, form field values,
+   keyword-guided detections; the reasoning trace only as well-formed
+   output), against bars recorded on #911 before stage 2's first run.
+5. **[Vision] Page artifacts in the desktop app.** pdf-inspector's
+   `RegionDetector` with the engines item 2 passed, stand-ins and dropped
+   header repeats in fusion, and the vision bundle on the OCR setup card;
+   Paddle-only classes may land once item 2 passes them, without waiting for
+   item 3. *Done when:* the pending spec rules hold on the evaluation set's
+   public pages and the section loses its "pending".
+6. **[Mobile] Page artifacts on phones.** *Done when:* the vision bundle's
+   iPhone 17 Pro peak fits beside the detector's under the phone memory
+   floor (#907), and iOS and Android run item 5's rules.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -332,6 +371,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[OCR]** OS engines (Apple Vision, `Windows.Media.Ocr`) as the no-download
   default where they beat PP-OCR on our fixtures by character error rate; Vision
   reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*
+  As a second opinion, they also flag lines where the two engines disagree,
+  since a misread name escapes detection. *From the vision grill (#911).*
 - **[Perf]** Stress tier (2 MiB / 20,000 mentions) and numerical budgets.
 - **[Editor]** To grill: Fix the words on desktop. The core action that
   replaces a found name's wording everywhere, keeping its identity, given
@@ -374,7 +415,19 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   Open at login (`SMAppService` on macOS) under the menu bar setting.
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
 - **[Import]** Images (screenshots, photos of pages) through OCR, like Anoni's
-  Image → text.
+  Image → text. On desktop, Mirage's masks give the page outline.
+  *From the vision grill (#911).*
+- **[Vision]** Typed stand-ins for dropped pictures ("[Picture: photo of a
+  damaged car bumper]"), scanned by the detector. *From the vision grill
+  (#911).*
+- **[Vision]** A warning before Copy for AI when a page looks like a passport
+  or ID card. *From the vision grill (#911).*
+- **[Vision]** A warning when a page has handwriting that wasn't read.
+  *From the vision grill (#911).*
+- **[Vision]** Fine-tune Mirage's reader for Cyrillic, behind `mirage-rs`.
+  *From the vision grill (#911).*
+- **[Vision]** A redacted copy of the original scan or PDF, from OCR and
+  vision boxes, beside Copy for AI. *From the vision grill (#911).*
 - **[Models]** Model choices show what each detects (Person, Email, Address…)
   and the memory of the active set ("2.3 GB in memory"). *From Anoni 0.86.1.*
 - **[Windows]** Caption buttons and resize borders respond to synthetic input

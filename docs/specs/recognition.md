@@ -94,6 +94,36 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - Tests inject the input-source signal and never read the machine's
   keyboards.
 
+## Page artifacts (pending)
+
+Planned, not built: these rules land with the roadmap's Vision build-in,
+after the evaluation in lawkitt/mdoc#911 picks which classes ship.
+
+- A vision layer beside OCR finds page artifacts; PP-OCR keeps reading all
+  text, and Mirage never does text OCR.
+- Mirage runs from the `mirage-rs` port on candle, the one exception to
+  inference through the app's one ONNX Runtime; libcactus never ships.
+- OCR text inside a page artifact is replaced by a stand-in, never dropped
+  silently.
+- A signature becomes `[Signature]` and is never transcribed.
+- A seal becomes `[Seal: …]` with the seal reader's text when that text
+  meets the qualification bar, else `[Seal]`.
+- A QR code or barcode becomes `[QR code: …]` with its decoded contents.
+- Stand-ins are Markdown, so the detector scans and pseudonymizes them like
+  any other text.
+- On a scan, a repeated header or footer stays on its first page and its
+  exact repeats are dropped, only with a layout header or footer box and a
+  text match on at least 3 pages; the import note counts the pages.
+- Vision runs only inside OCR the user chose, with no toggle of its own;
+  opening a native-text PDF never runs it.
+- The vision bundle downloads on the OCR setup card with its own size line;
+  without it OCR still runs and the result says page artifacts weren't
+  checked.
+- Desktop first; phones only once the vision bundle fits beside the
+  detector under the phone memory floor.
+- Pictures that don't reach the Markdown are counted in the import note
+  ("3 pictures not imported").
+
 ## Detector
 
 - The model is GLiNER2 through gliner2-rs (Hub feature off) with the pinned
