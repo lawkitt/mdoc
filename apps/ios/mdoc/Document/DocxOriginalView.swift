@@ -9,6 +9,10 @@ import SwiftUI
 /// "Comments N" shows or hides them, an app-wide setting.
 struct DocxOriginalView: View {
     let source: URL
+    /// A long job runs on the document: the render waits for it, because
+    /// one long job runs at a time and docxide beside the detector is
+    /// memory the budgets never measured.
+    var waits = false
     @Environment(\.preferences) private var preferences
     @State private var rendering = Rendering.working
     /// The sheet: a marker's threads, or those with no place on the page.
@@ -23,6 +27,11 @@ struct DocxOriginalView: View {
         case failed(String)
     }
 
+    private struct TaskKey: Equatable {
+        let source: URL
+        let waits: Bool
+    }
+
     struct Sheet: Identifiable {
         let id: String
         let title: String
@@ -34,7 +43,9 @@ struct DocxOriginalView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(uiColor: .secondarySystemBackground))
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            .task(id: source) {
+            .task(id: TaskKey(source: source, waits: waits)) {
+                guard !waits else { return }
+                if case .ready(let shown) = rendering, shown.source == source { return }
                 rendering = .working
                 rendering = await RenderedDocx.render(source)
             }
@@ -48,13 +59,20 @@ struct DocxOriginalView: View {
     @ViewBuilder
     private var content: some View {
         switch rendering {
+        case .working where waits:
+            ContentUnavailableView(
+                "Original waits", systemImage: "hourglass",
+                description: Text("The original page shows once mdoc finishes the current job."))
         case .working:
             ProgressView("Rendering the original…")
                 .accessibilityIdentifier("docx-rendering")
         case .failed(let message):
+            // The import counted the comments here, so they are counted here
+            // when the page can't show them.
             ContentUnavailableView(
                 "No original page", systemImage: "doc.plaintext",
-                description: Text(message))
+                description: Text(([message] + [docxCommentsNotShown(source: source.path)].compactMap { $0 })
+                    .joined(separator: "\n")))
         case .ready(let rendered):
             CommentedPDFView(
                 url: rendered.pdf,
@@ -118,11 +136,13 @@ struct DocxOriginalView: View {
 /// this lives.
 final class RenderedDocx: Sendable {
     let original: DocxOriginal
+    let source: URL
     let pdf: URL
     let comments: DocxComments
 
-    private init(original: DocxOriginal) {
+    private init(original: DocxOriginal, source: URL) {
         self.original = original
+        self.source = source
         pdf = URL(fileURLWithPath: original.pdfPath())
         comments = DocxComments(comments: original.comments(), anchors: original.anchors())
     }
@@ -134,7 +154,7 @@ final class RenderedDocx: Sendable {
             do {
                 let folder = try folder()
                 let original = try DocxOriginal.render(source: source.path, folder: folder.path, marks: CommentMarks())
-                return .ready(RenderedDocx(original: original))
+                return .ready(RenderedDocx(original: original, source: source))
             } catch {
                 return .failed(CoreError(error).localizedDescription)
             }

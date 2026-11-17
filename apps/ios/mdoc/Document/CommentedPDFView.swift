@@ -150,6 +150,7 @@ final class CommentedPDFContainer: UIView {
         markerButtons = []
         cards = []
         readingOrder = nil
+        voiceOverChanged()
         guard showsComments, let document = pdfView.document else {
             placeComments()
             return
@@ -168,7 +169,7 @@ final class CommentedPDFContainer: UIView {
                 for thread in marker.threads {
                     let card = CommentRailCard(thread: thread)
                     card.expanded = thread.id == active
-                    card.addAction(UIAction { [weak self] _ in self?.onCard(thread.id) }, for: .primaryActionTriggered)
+                    card.addAction(UIAction { [weak self] _ in self?.onCard(thread.id) }, for: .touchUpInside)
                     card.onFocus = { [weak self] in self?.reveal(marker) }
                     railView.addSubview(card)
                     cards.append(card)
@@ -278,6 +279,16 @@ final class CommentedPDFContainer: UIView {
             card.frame = CGRect(x: Space.xs, y: top, width: width, height: height)
             bottom = top + height
         }
+        // At the end of the document the page can't scroll the last cards
+        // up to the rail, so they stack up from its bottom instead.
+        guard let scroll = pdfView.firstSubview(of: UIScrollView.self),
+            scroll.contentOffset.y >= scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom - 1
+        else { return }
+        var limit = railView.bounds.height - Space.xs
+        for card in cards.reversed() where card.frame.maxY > limit {
+            card.frame.origin.y = max(limit - card.frame.height, 0)
+            limit = card.frame.minY - Space.xs
+        }
     }
 
     /// Scrolls a marker's line into view, when it isn't, without animation.
@@ -307,18 +318,20 @@ final class CommentedPDFContainer: UIView {
 
     // MARK: Accessibility
 
+    /// While VoiceOver runs with comments on the page, the page's lines and
+    /// the comments in reading order replace PDFKit's own elements.
+    private var readsLines: Bool {
+        UIAccessibility.isVoiceOverRunning && showsComments && !comments.markers.isEmpty
+    }
+
     @objc private func voiceOverChanged() {
-        // The page's lines and the comments in reading order replace
-        // PDFKit's own elements while VoiceOver runs.
-        pdfView.accessibilityElementsHidden = UIAccessibility.isVoiceOverRunning && showsComments
+        pdfView.accessibilityElementsHidden = readsLines
         readingOrder = nil
     }
 
     override var accessibilityElements: [Any]? {
         get {
-            guard UIAccessibility.isVoiceOverRunning, showsComments, !comments.markers.isEmpty else {
-                return [pdfView]
-            }
+            guard readsLines else { return [pdfView] }
             if let readingOrder { return readingOrder }
             let lines = lineElements ?? buildLines()
             lineElements = lines
@@ -489,8 +502,8 @@ final class CommentMarkerButton: UIButton {
 final class CommentRailCard: UIControl {
     let commentID: String
     var onFocus: () -> Void = {}
-    private let body = UILabel()
-    private let replies = UILabel()
+    private let body = CardText()
+    private let replies = CardText()
     private let replyCount: Int
     private let replyText: String
 
@@ -499,11 +512,17 @@ final class CommentRailCard: UIControl {
     }
 
     private func showExpanded() {
-        body.numberOfLines = expanded ? 0 : 2
-        replies.numberOfLines = 0
-        replies.text = expanded && replyCount > 0 ? replyText : replyCount == 0 ? nil
+        body.textContainer.maximumNumberOfLines = expanded ? 0 : 2
+        // Expanded, the text selects and copies like the page's.
+        body.isUserInteractionEnabled = expanded
+        replies.isUserInteractionEnabled = expanded
+        let shown: String? = replyCount == 0 ? nil : expanded ? replyText
             : replyCount == 1 ? String(localized: "1 reply") : String(localized: "\(replyCount) replies")
-        replies.isHidden = replies.text == nil
+        replies.text = shown ?? ""
+        replies.isHidden = shown == nil
+        // The text view keeps its old height until it lays out again.
+        body.invalidateIntrinsicContentSize()
+        replies.invalidateIntrinsicContentSize()
         layer.borderWidth = expanded ? 2 : 0
         accessibilityValue = expanded ? String(localized: "Expanded") : nil
     }
@@ -538,7 +557,7 @@ final class CommentRailCard: UIControl {
         date.adjustsFontForContentSizeCategory = true
         body.text = comment.text
         body.font = .preferredFont(forTextStyle: .footnote)
-        body.numberOfLines = 2
+        body.textColor = .label
         body.adjustsFontForContentSizeCategory = true
         replies.font = .preferredFont(forTextStyle: .caption1)
         replies.textColor = .secondaryLabel
@@ -554,7 +573,6 @@ final class CommentRailCard: UIControl {
         let stack = UIStackView(arrangedSubviews: [header, body, replies])
         stack.axis = .vertical
         stack.spacing = Space.xxs
-        stack.isUserInteractionEnabled = false
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -576,9 +594,44 @@ final class CommentRailCard: UIControl {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    /// Touches on expanded text select it; anywhere else they tap the card.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard self.point(inside: point, with: event) else { return nil }
+        for text in [body, replies] where text.isUserInteractionEnabled && !text.isHidden {
+            let inText = convert(point, to: text)
+            if text.point(inside: inText, with: event) { return text.hitTest(inText, with: event) ?? self }
+        }
+        return self
+    }
+
+    override func accessibilityActivate() -> Bool {
+        sendActions(for: .touchUpInside)
+        return true
+    }
+
     override func accessibilityElementDidBecomeFocused() {
         onFocus()
     }
+}
+
+/// A card's read-only text: selectable once its card is expanded, laid out
+/// like a label.
+private final class CardText: UITextView {
+    init() {
+        super.init(frame: .zero, textContainer: nil)
+        isEditable = false
+        isSelectable = true
+        isScrollEnabled = false
+        backgroundColor = .clear
+        textContainerInset = .zero
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = .byTruncatingTail
+        isAccessibilityElement = false
+        isUserInteractionEnabled = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
 /// A view that takes only touches on its subviews.

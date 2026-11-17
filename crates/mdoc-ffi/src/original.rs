@@ -100,6 +100,14 @@ fn read_marks(pdf: &Path) -> Result<Vec<LinkMark>, String> {
     })
 }
 
+/// The left-out count of `source`'s comments, for an original that could
+/// not render: the import counted them on the original instead of the
+/// left-out line, so nothing is lost without a note.
+#[uniffi::export]
+pub fn docx_comments_not_shown(source: String) -> Option<String> {
+    mdoc_import::hidden_content::docx_comments(Path::new(&source)).not_shown()
+}
+
 #[uniffi::export]
 impl DocxOriginal {
     /// Renders `source` into a new folder under `folder`, whose file
@@ -237,6 +245,26 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+    }
+
+    #[test]
+    fn a_failed_original_still_counts_its_comments() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/import/handmade-hidden-content.docx");
+        let folder = Scratch::new();
+        // Tracked changes: the preview refuses it.
+        assert!(
+            DocxOriginal::render(
+                source.to_string_lossy().into_owned(),
+                folder.path().to_string_lossy().into_owned(),
+                Box::new(OneMark),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            docx_comments_not_shown(source.to_string_lossy().into_owned()).as_deref(),
+            Some("2 comments not shown.")
+        );
     }
 
     #[test]

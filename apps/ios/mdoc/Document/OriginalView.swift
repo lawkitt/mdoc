@@ -6,6 +6,8 @@ import UIKit
 /// zoomable image view for scans and photos (ADR 0085).
 struct OriginalView: View {
     let original: OriginalSource
+    /// A long job runs on the document (`DocxOriginalView.waits`).
+    var jobRuns = false
 
     var body: some View {
         switch original {
@@ -18,7 +20,7 @@ struct OriginalView: View {
             PDFKitView(url: url)
                 .accessibilityLabel(Text("Original PDF"))
         case .docx(let url):
-            DocxOriginalView(source: url)
+            DocxOriginalView(source: url, waits: jobRuns)
         case .images(let urls):
             TabView {
                 ForEach(Array(urls.enumerated()), id: \.offset) { index, url in

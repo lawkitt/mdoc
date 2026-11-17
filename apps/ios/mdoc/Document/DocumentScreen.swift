@@ -124,7 +124,7 @@ struct DocumentScreen: View {
                 } else if model.pane == .reply, let reply = model.snapshot.reply {
                     ReplyPane(reply: reply, onClear: model.clearReply)
                 } else {
-                    OriginalView(original: model.snapshot.original)
+                    OriginalView(original: model.snapshot.original, jobRuns: model.runningJob != nil)
                 }
             }
         } else {
@@ -139,7 +139,7 @@ struct DocumentScreen: View {
                 case .text:
                     EmptyView()
                 case .original:
-                    OriginalView(original: model.snapshot.original)
+                    OriginalView(original: model.snapshot.original, jobRuns: model.runningJob != nil)
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
