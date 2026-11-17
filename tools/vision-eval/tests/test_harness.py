@@ -77,6 +77,34 @@ class TextLoss(unittest.TestCase):
         self.assertEqual(score.text_loss([p], ocr_run, run, "layout")["lost_total"], 0)
 
 
+class GroundTruthAlignment(unittest.TestCase):
+    def test_a_hallucinated_duplicate_does_not_stand_in_for_the_real_word(self):
+        # OCR reads a junk "PAYMENT" in a margin above the real one; ground truth has one.
+        p = {"id": "p", "lang": "en", "truth": {"artifacts": [], "text": "Payment due today"}}
+        words = [{"text": "PAYMENT", "box": [900, 10, 980, 20]},
+                 {"text": "Payment", "box": [10, 100, 80, 110]}, {"text": "due", "box": [90, 100, 120, 110]},
+                 {"text": "today", "box": [130, 100, 180, 110]}]
+        ocr_run = {"outputs": {"p": {"words": words}}, "page_ms": {"p": 1}}
+        run = {"outputs": {"p": {"items": [
+            {"label": "seal", "class": "seal", "score": 0.9, "box": [0, 90, 85, 120]}]}}}
+        loss = score.text_loss([p], ocr_run, run, "layout")
+        self.assertEqual(loss["lost_total"], 1)  # the real "Payment" under the seal box
+
+
+class Timing(unittest.TestCase):
+    def test_only_the_sets_pages_count(self):
+        sp = [{"id": "a"}]
+        run = {"page_ms": {"a": 100.0, "stale": 0.0}, "peak_bytes": 0, "idle_peak_bytes": 0}
+        ocr_run = {"page_ms": {"a": 100.0, "stale": 10000.0}}
+        self.assertAlmostEqual(score.timing(sp, run, ocr_run)["overhead"], 1.0)
+
+
+class Names(unittest.TestCase):
+    def test_unlisted_names_are_counted_as_other(self):
+        run = {"outputs": {"p": {"objects": [{"name": "text block"}, {"name": "Romashka LLC sign"}]}}}
+        self.assertEqual(dict(score.mirage_names([{"id": "p"}], run)), {"text block": 1, "other": 1})
+
+
 class Detection(unittest.TestCase):
     def test_counts_per_class_and_language(self):
         p = {"id": "p", "lang": "ru", "truth": {"artifacts": [
@@ -117,6 +145,12 @@ class MirageHost(unittest.TestCase):
         self.assertIsNone(data["result"]["objects"][0]["score"])
         self.assertEqual(data["result"]["x"], [None, 1])
 
+    def test_nan_inside_a_string_is_untouched(self):
+        from vision_eval.worker import parse_host_line
+        data, count = parse_host_line('{"text":[{"string":"value: nan, tail \\" nan","score":nan}]}')
+        self.assertEqual(count, 1)
+        self.assertEqual(data["text"][0]["string"], 'value: nan, tail " nan')
+
     def test_words_containing_nan_are_untouched(self):
         from vision_eval.worker import parse_host_line
         data, count = parse_host_line('{"text":[{"string":"financial nan","score":0.5}]}')
@@ -127,6 +161,11 @@ class Compare(unittest.TestCase):
     def test_canonical_rounds_boxes_and_scores(self):
         raw = {"codes": [{"format": "QR_CODE", "text": "x", "box": [10.4, 10.6, 20.5, 30.49]}]}
         self.assertEqual(compare.canonical("rxing", raw), [["QR_CODE", "x", [10, 11, 20, 30], 1.0]])
+
+    def test_seal_inline_decision_is_part_of_the_digest(self):
+        a = {"seals": [{"text": "X", "box": [0, 0, 1, 1], "conf": 0.8999, "inline": False}]}
+        b = {"seals": [{"text": "X", "box": [0, 0, 1, 1], "conf": 0.9001, "inline": True}]}
+        self.assertNotEqual(compare.canonical("seal", a), compare.canonical("seal", b))
 
 
 if __name__ == "__main__":

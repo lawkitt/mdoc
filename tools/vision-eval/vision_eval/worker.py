@@ -148,14 +148,40 @@ def write_ppm(path: Path, page: dict) -> tuple[int, int]:
     return w, h
 
 
-_NAN = re.compile(r'(?<=[:\[,])(\s*)-?nan(?:\(ind\))?(?=\s*[,\]}])', re.IGNORECASE)
+_NAN = re.compile(r"-?nan(?:\(ind\))?", re.IGNORECASE)
 
 
 def parse_host_line(line: str) -> tuple[dict, int]:
     """The engine prints bare NaN (`nan`, `-nan(ind)` on Windows), which is not
-    JSON: such values become null, and their count is returned."""
-    fixed, count = _NAN.subn(r"\1null", line)
-    return json.loads(fixed), count
+    JSON: such values outside strings become null, and their count is
+    returned. Text inside JSON strings is never touched."""
+    out, i, count, in_str = [], 0, 0, False
+    while i < len(line):
+        ch = line[i]
+        if in_str:
+            out.append(ch)
+            if ch == "\\":
+                out.append(line[i + 1] if i + 1 < len(line) else "")
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        m = _NAN.match(line, i)
+        if m:
+            out.append("null")
+            count += 1
+            i = m.end()
+            continue
+        out.append(ch)
+        i += 1
+    return json.loads("".join(out)), count
 
 
 def run_mirage(set_pages: list[dict]) -> tuple[dict, dict, float, int]:

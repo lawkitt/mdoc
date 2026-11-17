@@ -140,10 +140,46 @@ def agnostic_recall(set_pages: list[dict], run: dict, candidate: str) -> dict[st
     return {k: tuple(v) for k, v in out.items()}
 
 
+# Mirage's names are open vocabulary and could repeat words from a private
+# page, so the report prints only names from this generic list (and the
+# mapped classes); every other name is counted as "other".
+GENERIC_NAMES = {
+    "text", "text block", "document", "paper", "page", "book page", "book cover", "logo", "stamp", "seal",
+    "circular seal", "signature", "handwriting", "header text", "arrow", "circle", "blue circle", "line",
+    "table", "barcode", "qr code", "photo", "picture", "image", "watermark", "face", "person", "form",
+}
+
+
 def mirage_names(set_pages: list[dict], run: dict) -> list[tuple[str, int]]:
     from collections import Counter
-    c = Counter(o["name"] for p in set_pages for o in run["outputs"].get(p["id"], {}).get("objects", []))
+    c = Counter()
+    for p in set_pages:
+        for o in run["outputs"].get(p["id"], {}).get("objects", []):
+            name = o["name"].strip().lower()
+            c[name if name in GENERIC_NAMES else "other"] += 1
     return c.most_common(12)
+
+
+def _reference_words(words: list[dict], truth_text: str | None) -> tuple[list[dict], bool]:
+    """OCR words that stand for ground-truth words.
+
+    Without ground-truth text every OCR word counts. With it, the OCR words
+    in reading order are aligned to the ground-truth words in order
+    (difflib's longest matching blocks), and only aligned words count: a
+    hallucinated or duplicated OCR word out of sequence never stands in for
+    a real one.
+    """
+    if not truth_text:
+        return words, False
+    import difflib
+    ordered = sorted(words, key=lambda w: (round(w["box"][1] / 12), w["box"][0]))
+    tok = [(_tokens(w["text"]) or [""])[0] for w in ordered]
+    gt = _tokens(truth_text)
+    sm = difflib.SequenceMatcher(a=tok, b=gt, autojunk=False)
+    keep = []
+    for block in sm.get_matching_blocks():
+        keep.extend(ordered[block.a:block.a + block.size])
+    return keep, True
 
 
 def text_loss(set_pages: list[dict], ocr_run: dict, run: dict, candidate: str) -> dict:
@@ -151,10 +187,9 @@ def text_loss(set_pages: list[dict], ocr_run: dict, run: dict, candidate: str) -
 
     Reference words are the OCR run's words whose centre lies outside every
     annotated artifact. When the annotation carries the page's ground-truth
-    text, only OCR words found in it count (one for one), so OCR junk is not
-    a reference word; `checked_pages` counts those pages.
+    text, only OCR words aligned to it in reading order count
+    (`_reference_words`); `checked_pages` counts those pages.
     """
-    from collections import Counter
     lost = defaultdict(int)
     reference = checked = 0
     for page in set_pages:
@@ -163,20 +198,18 @@ def text_loss(set_pages: list[dict], ocr_run: dict, run: dict, candidate: str) -
         words = (ocr_run["outputs"].get(page["id"]) or {}).get("words", [])
         if truth is None or raw is None:
             continue
-        gt = Counter(_tokens(truth["text"])) if truth.get("text") else None
-        checked += gt is not None
         true_boxes = [a["box"] for a in truth["artifacts"]]
-        preds = [x for x in predictions(candidate, raw) if x["class"] in classes.REPLACING]
+        outside = []
         for w in words:
             b = w["box"]
             cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
-            if any(t[0] <= cx <= t[2] and t[1] <= cy <= t[3] for t in true_boxes):
-                continue
-            if gt is not None:
-                tok = _tokens(w["text"])
-                if not tok or gt[tok[0]] <= 0:
-                    continue
-                gt[tok[0]] -= 1
+            if not any(t[0] <= cx <= t[2] and t[1] <= cy <= t[3] for t in true_boxes):
+                outside.append(w)
+        refs, was_checked = _reference_words(outside, truth.get("text"))
+        checked += was_checked
+        preds = [x for x in predictions(candidate, raw) if x["class"] in classes.REPLACING]
+        for w in refs:
+            b = w["box"]
             reference += 1
             a = geometry.area(b)
             for x in preds:
@@ -223,9 +256,10 @@ def seal_text(set_pages: list[dict], run: dict) -> dict:
             "inlined_over_bar": inlined_over + inlined_unmatched}
 
 
-def timing(run: dict, ocr_run: dict) -> dict:
-    ids = [i for i in run["page_ms"] if i in ocr_run["page_ms"]]
-    if not ids or len(ids) != len(ocr_run["page_ms"]):
+def timing(set_pages: list[dict], run: dict, ocr_run: dict) -> dict:
+    """Costs over exactly the set's pages (a stale run's extra pages never count)."""
+    ids = [p["id"] for p in set_pages if p["id"] in run["page_ms"] and p["id"] in ocr_run["page_ms"]]
+    if not ids:
         return {}
     cand = sum(run["page_ms"][i] for i in ids)
     base = sum(ocr_run["page_ms"][i] for i in ids)
@@ -321,7 +355,7 @@ def report(out: Path, set_names: list[str]) -> tuple[str, dict]:
                 if missing(sp, run):
                     lines.append(f"| {cand} | – | – | – | – | – | incomplete: {missing(sp, run)} pages without output |")
                     continue
-                t = timing(run, ocr_run)
+                t = timing(sp, run, ocr_run)
                 loss = text_loss(sp, ocr_run, run, cand) if cand in DETECTORS else None
                 sd.setdefault("cost", {})[cand] = {"timing": t, "loss": loss}
                 lost = "–" if loss is None else (f"{loss['lost_total']}" + (

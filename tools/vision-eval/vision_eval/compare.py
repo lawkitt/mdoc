@@ -36,7 +36,8 @@ def _items(candidate: str, raw: dict) -> list[dict]:
     if candidate == "rxing":
         return [{"key": c["format"], "text": c["text"], "box": c["box"], "score": 1} for c in raw["codes"]]
     if candidate.startswith("seal"):
-        return [{"key": "seal", "text": s["text"], "box": s["box"], "score": s["conf"]} for s in raw["seals"]]
+        return [{"key": "seal:" + ("inline" if s["inline"] else "withheld"), "text": s["text"], "box": s["box"],
+                 "score": s["conf"]} for s in raw["seals"]]
     return []
 
 
