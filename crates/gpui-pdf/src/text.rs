@@ -85,11 +85,12 @@ impl Collector {
             Some(BfString::String(s)) => s,
             None => return, // no unicode → can't match against a quote; skip
         };
-        // Zero-width format characters draw nothing and break no word (mdoc's
-        // DOCX comment marks carry a zero-width space): find and copy skip them.
+        // A zero-width space, word joiner or BOM draws nothing and means
+        // nothing (mdoc's DOCX comment marks carry a zero-width space): find and
+        // copy skip it. ZWNJ and ZWJ shape words, so they stay.
         if text
             .chars()
-            .all(|c| matches!(c, '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{FEFF}'))
+            .all(|c| matches!(c, '\u{200B}' | '\u{2060}' | '\u{FEFF}'))
         {
             return;
         }

@@ -90,6 +90,20 @@ fn run(dir: &Path, update: bool) -> Result<bool, String> {
             println!("  {}", path.display());
         }
     }
+    // Nothing scored or nothing compared is not a pass: say so.
+    let unbaselined = scores.keys().filter(|n| !baseline.contains_key(*n)).count();
+    println!(
+        "\n{} of {} fixtures scored; {} without a reference, {} without a baseline{}",
+        scores.len(),
+        fixtures.len(),
+        missing.len(),
+        unbaselined,
+        if missing.is_empty() && unbaselined == 0 {
+            ""
+        } else {
+            ": the check is incomplete"
+        }
+    );
     if update && !scores.is_empty() {
         let text: String = scores
             .iter()

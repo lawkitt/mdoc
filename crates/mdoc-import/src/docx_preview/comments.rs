@@ -295,15 +295,16 @@ impl Markers {
 
 /// A relationship ID prefix no existing ID starts with.
 fn relationship_prefix(rels: &str) -> String {
+    let ids: Vec<String> = relationships_with_ids(rels).into_keys().collect();
     let mut prefix = String::from("mdocComment");
-    while rels.contains(&format!("\"{prefix}")) {
+    while ids.iter().any(|id| id.starts_with(&prefix)) {
         prefix.push('_');
     }
     prefix
 }
 
-/// The body's hyperlink relationships: ID → target.
-fn relationships(rels: &str) -> HashMap<String, String> {
+/// Every relationship's ID with its target (or nothing), as parsed.
+fn relationships_with_ids(rels: &str) -> HashMap<String, Option<String>> {
     let Ok(doc) = roxmltree::Document::parse(rels) else {
         return HashMap::new();
     };
@@ -313,9 +314,17 @@ fn relationships(rels: &str) -> HashMap<String, String> {
         .filter_map(|n| {
             Some((
                 n.attribute("Id")?.to_owned(),
-                n.attribute("Target")?.to_owned(),
+                n.attribute("Target").map(str::to_owned),
             ))
         })
+        .collect()
+}
+
+/// The body's relationships: ID → target.
+fn relationships(rels: &str) -> HashMap<String, String> {
+    relationships_with_ids(rels)
+        .into_iter()
+        .filter_map(|(id, target)| Some((id, target?)))
         .collect()
 }
 
@@ -329,38 +338,55 @@ fn escape_attribute(text: &str) -> String {
 const RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const STRICT_RELATIONSHIPS: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
 
-/// Children of a run that the renderer draws as text.
+/// Whether a run draws something with width: text, a tab or a symbol. A
+/// break or an empty text has no rectangle to anchor to.
 fn draws_text(run: Node<'_, '_>) -> bool {
     run.children().any(|c| {
-        ["t", "tab", "sym", "noBreakHyphen", "softHyphen", "br", "cr"]
-            .iter()
-            .any(|name| word(c, name))
+        (word(c, "t") && c.text().is_some_and(|t| !t.is_empty()))
+            || ["tab", "sym", "noBreakHyphen"]
+                .iter()
+                .any(|name| word(c, name))
     })
 }
 
-/// A run the renderer reads where a link may wrap it: a fldSimple's runs are
-/// the field itself, and its first run must stay its direct child.
-fn wrappable(run: Node<'_, '_>) -> bool {
-    run.parent().is_some_and(|p| {
+/// A node whose parent may hold a link around it.
+fn wrappable(node: Node<'_, '_>) -> bool {
+    node.parent().is_some_and(|p| {
         ["p", "hyperlink", "smartTag", "customXml", "sdtContent"]
             .iter()
             .any(|name| word(p, name))
     })
 }
 
-/// The target of the hyperlink a run sits in: its relationship's target, or
-/// `#bookmark` for an in-document link.
-fn enclosing_link(run: Node<'_, '_>, links: &HashMap<String, String>) -> Option<String> {
-    let link = run.ancestors().skip(1).find(|n| word(*n, "hyperlink"))?;
-    let rid = link
-        .attribute((RELATIONSHIPS, "id"))
-        .or_else(|| link.attribute((STRICT_RELATIONSHIPS, "id")));
-    match rid {
-        Some(rid) => links.get(rid).cloned(),
-        None => link
-            .attribute((link.tag_name().namespace()?, "anchor"))
-            .map(|a| format!("#{a}")),
+/// What a marker link wraps for a run: the run, or the whole simple field it
+/// belongs to (a fldSimple's runs are the field itself, and its first run must
+/// stay its direct child).
+fn wrap_target<'a, 'input>(run: Node<'a, 'input>) -> Option<Node<'a, 'input>> {
+    if wrappable(run) {
+        return Some(run);
     }
+    run.parent()
+        .filter(|p| word(*p, "fldSimple") && wrappable(*p))
+}
+
+/// The target of the hyperlink a run sits in, as the renderer reads it: the
+/// innermost link with a target (its relationship's, or `#bookmark` for an
+/// in-document link) wins.
+fn enclosing_link(run: Node<'_, '_>, links: &HashMap<String, String>) -> Option<String> {
+    run.ancestors()
+        .skip(1)
+        .filter(|n| word(*n, "hyperlink"))
+        .find_map(|link| {
+            let rid = link
+                .attribute((RELATIONSHIPS, "id"))
+                .or_else(|| link.attribute((STRICT_RELATIONSHIPS, "id")));
+            match rid {
+                Some(rid) => links.get(rid).cloned(),
+                None => link
+                    .attribute((link.tag_name().namespace()?, "anchor"))
+                    .map(|a| format!("#{a}")),
+            }
+        })
 }
 
 /// Fills in each comment's quote and collects the edits of the render copy:
@@ -395,7 +421,7 @@ fn quote_and_mark(
     let mut active: Vec<usize> = Vec::new();
     // Ranged comments that drew something; the rest are point comments.
     let mut ranged = vec![false; comments.len()];
-    let mut pending_runs = Vec::new();
+    let mut pending_runs: Vec<(Node<'_, '_>, Vec<usize>)> = Vec::new();
     for node in doc.descendants() {
         if word(node, "commentRangeStart") {
             if let Some(&i) = by_id.get(attr(node, "id"))
@@ -418,13 +444,21 @@ fn quote_and_mark(
                 }
             }
         }
-        if word(node, "r") && !active.is_empty() && draws_text(node) && wrappable(node) {
-            let mut open_comments = active.clone();
-            open_comments.sort_unstable();
-            for &i in &open_comments {
+        if word(node, "r")
+            && !active.is_empty()
+            && draws_text(node)
+            && let Some(target) = wrap_target(node)
+        {
+            for &i in &active {
                 ranged[i] = true;
             }
-            pending_runs.push((node, open_comments));
+            // A simple field's runs share one link: the comments over any of them.
+            match pending_runs.last_mut() {
+                Some((last, open_comments)) if *last == target => {
+                    open_comments.extend(active.iter().copied());
+                }
+                _ => pending_runs.push((target, active.clone())),
+            }
         }
         if word(node, "commentRangeStart")
             || word(node, "commentRangeEnd")
@@ -457,7 +491,9 @@ fn quote_and_mark(
     };
     let id_prefix = markers.prefix.clone();
     let id_prefix = id_prefix.as_str();
-    for (run, open_comments) in pending_runs {
+    for (run, mut open_comments) in pending_runs {
+        open_comments.sort_unstable();
+        open_comments.dedup();
         let rel = markers.relationship(
             Marker {
                 comments: open_comments,
@@ -784,11 +820,102 @@ mod tests {
 
     #[test]
     fn marker_ids_never_reuse_an_existing_relationship_id() {
-        assert_eq!(relationship_prefix(r#"<r Id="rId1"/>"#), "mdocComment");
+        let rels = |ids: &str| format!("<Relationships>{ids}</Relationships>");
         assert_eq!(
-            relationship_prefix(r#"<r Id="mdocComment0"/><r Id="mdocComment_1"/>"#),
+            relationship_prefix(&rels(r#"<Relationship Id="rId1"/>"#)),
+            "mdocComment"
+        );
+        // Single quotes and character references are the same IDs.
+        assert_eq!(
+            relationship_prefix(&rels(
+                r#"<Relationship Id='mdocComment0'/><Relationship Id="&#109;docComment_1"/>"#
+            )),
             "mdocComment__"
         );
+    }
+
+    /// A package whose body is `body`, with comments 1 to 4 and a link `ext`.
+    fn package_with(body: &str) -> Vec<u8> {
+        let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        let r = RELATIONSHIPS;
+        let document = format!(
+            r#"<w:document xmlns:w="{w}" xmlns:r="{r}"><w:body>{body}</w:body></w:document>"#
+        );
+        let comments = format!(
+            r#"<w:comments xmlns:w="{w}">{}</w:comments>"#,
+            (1..=4)
+                .map(|i| format!(
+                    r#"<w:comment w:id="{i}"><w:p><w:r><w:t>c{i}</w:t></w:r></w:p></w:comment>"#
+                ))
+                .collect::<String>()
+        );
+        let rels = format!(
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="ext" Type="{r}/hyperlink" Target="https://example.com/a" TargetMode="External"/></Relationships>"#
+        );
+        super::super::tests::package(&[
+            (BODY, document.as_bytes()),
+            ("word/comments.xml", comments.as_bytes()),
+            (BODY_RELS, rels.as_bytes()),
+        ])
+    }
+
+    #[test]
+    fn fields_nested_links_and_empty_ranges_still_get_their_place() {
+        let reference = |i: u32| format!(r#"<w:r><w:commentReference w:id="{i}"/></w:r>"#);
+        let range = |i: u32, inner: &str| {
+            format!(
+                r#"<w:commentRangeStart w:id="{i}"/>{inner}<w:commentRangeEnd w:id="{i}"/>{}"#,
+                reference(i)
+            )
+        };
+        let body = [
+            // 1: over a simple field, whose run must stay its direct child.
+            range(
+                1,
+                r#"<w:fldSimple w:instr=" DATE "><w:r><w:t>18.11.2026</w:t></w:r></w:fldSimple>"#,
+            ),
+            // 2: in a targetless link inside a real one, which docxide follows.
+            format!(
+                r#"<w:hyperlink r:id="ext"><w:hyperlink>{}</w:hyperlink></w:hyperlink>"#,
+                range(2, "<w:r><w:t>inner</w:t></w:r>")
+            ),
+            // 3 and 4: ranges holding only an empty text and only a break.
+            range(3, "<w:r><w:t/></w:r>"),
+            range(4, "<w:r><w:br/></w:r>"),
+        ]
+        .map(|p| format!("<w:p>{p}</w:p>"))
+        .concat();
+        let prepared = prepare(&package_with(&body)).unwrap();
+        let copy = prepared.render.clone().unwrap();
+        let body = part(&copy, BODY);
+        let doc = roxmltree::Document::parse(&body).unwrap();
+        // The field sits whole inside its marker link.
+        let field = doc.descendants().find(|n| word(*n, "fldSimple")).unwrap();
+        let link = field.parent().unwrap();
+        assert!(word(link, "hyperlink"));
+        let rels = relationships(&part(&copy, BODY_RELS));
+        let target =
+            |node: Node<'_, '_>| rels[node.attribute((RELATIONSHIPS, "id")).unwrap()].clone();
+        assert_eq!(ids(&prepared, &target(link)), ["1"]);
+        // The inner run keeps the outer link's target after its marker.
+        let inner = marked_runs(&copy)
+            .into_iter()
+            .find(|(t, _)| t == "inner")
+            .unwrap()
+            .1
+            .unwrap();
+        assert!(inner.ends_with(";https://example.com/a"), "{inner}");
+        // Ranges with nothing to draw become point comments.
+        let point = |id: &str| {
+            prepared
+                .markers
+                .iter()
+                .find(|m| m.comments.iter().any(|&i| prepared.comments[i].id == id))
+                .map(|m| m.point)
+        };
+        assert_eq!(point("3"), Some(true));
+        assert_eq!(point("4"), Some(true));
+        assert_eq!(point("1"), Some(false));
     }
 
     fn rect(x: f32, y: f32, w: f32) -> AnchorRect {
