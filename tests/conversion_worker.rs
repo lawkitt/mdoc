@@ -114,6 +114,18 @@ fn a_garbled_result_is_an_import_error() {
     }
 }
 
+/// A worker that answers with more than the supervisor reads is stopped,
+/// and the import fails instead of exhausting this process's memory.
+#[test]
+fn an_oversized_result_is_an_import_error() {
+    let (result, elapsed) = with_fault("flood", &AtomicBool::new(false), Duration::from_secs(100));
+    assert!(
+        matches!(&result, Err(ImportError::ConverterFailed(detail)) if detail.contains("MiB")),
+        "{result:?}"
+    );
+    assert!(elapsed < Duration::from_secs(60), "{elapsed:?}");
+}
+
 /// A worker past its timeout is killed and reaped: supervision waits for
 /// it to end, so returning well before its two-minute sleep proves it.
 #[test]

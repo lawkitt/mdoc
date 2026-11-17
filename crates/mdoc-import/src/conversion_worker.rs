@@ -34,6 +34,9 @@ const VERSION: u32 = 1;
 /// recurse, and a process's main thread is 1 MiB on Windows.
 const STACK_BYTES: usize = 8 * 1024 * 1024;
 const POLL: Duration = Duration::from_millis(10);
+/// The largest message the supervisor reads: the import limit, so a worker
+/// cannot exhaust the app's memory with its answer.
+pub const MAX_MESSAGE_BYTES: u64 = 256 * 1024 * 1024;
 /// The most app quit waits for running workers to be killed and reaped.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
@@ -56,15 +59,17 @@ pub(crate) fn installed() -> Option<&'static Path> {
 /// Called off-thread by GPUI's graceful-quit hook: running workers are
 /// killed and reaped, and no new one starts.
 pub fn shutdown_workers() {
-    SHUTTING_DOWN.store(true, Ordering::Relaxed);
+    // Sequentially consistent with `Running::enter` and `check_cancel`: a
+    // supervision this does not count sees the flag and starts no worker.
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
     let started = Instant::now();
-    while RUNNING.load(Ordering::Acquire) != 0 && started.elapsed() < SHUTDOWN_WAIT {
+    while RUNNING.load(Ordering::SeqCst) != 0 && started.elapsed() < SHUTDOWN_WAIT {
         thread::sleep(Duration::from_millis(5));
     }
 }
 
 fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
-    if cancel.load(Ordering::Relaxed) || SHUTTING_DOWN.load(Ordering::Relaxed) {
+    if cancel.load(Ordering::Relaxed) || SHUTTING_DOWN.load(Ordering::SeqCst) {
         Err(ImportError::Cancelled)
     } else {
         Ok(())
@@ -148,13 +153,13 @@ impl Drop for Worker {
 struct Running;
 impl Running {
     fn enter() -> Self {
-        RUNNING.fetch_add(1, Ordering::AcqRel);
+        RUNNING.fetch_add(1, Ordering::SeqCst);
         Self
     }
 }
 impl Drop for Running {
     fn drop(&mut self) {
-        RUNNING.fetch_sub(1, Ordering::AcqRel);
+        RUNNING.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -179,8 +184,10 @@ pub fn convert_with_command(
     mut command: Command,
     timeout: Duration,
 ) -> Result<Converted, ImportError> {
-    check_cancel(cancel)?;
+    // Counted before the shutdown check, so app quit either waits for this
+    // worker or this sees the quit (`shutdown_workers`).
     let _running = Running::enter();
+    check_cancel(cancel)?;
     command.arg(WORKER_FLAG);
     if let Some(extension) = extension {
         command.arg(extension);
@@ -207,9 +214,20 @@ pub fn convert_with_command(
         }
     });
     let stdout = worker.0.stdout.take();
-    let drain = thread::spawn(move || {
-        let mut message = Vec::new();
-        stdout.map(|mut stdout| stdout.read_to_end(&mut message).map(|_| message))
+    let oversized = std::sync::Arc::new(AtomicBool::new(false));
+    let drain = thread::spawn({
+        let oversized = oversized.clone();
+        move || {
+            let mut message = Vec::new();
+            let read = stdout?
+                .take(MAX_MESSAGE_BYTES + 1)
+                .read_to_end(&mut message);
+            if message.len() as u64 > MAX_MESSAGE_BYTES {
+                oversized.store(true, Ordering::Relaxed);
+                return None;
+            }
+            read.ok().map(|_| message)
+        }
     });
     let started = Instant::now();
     let outcome = loop {
@@ -218,6 +236,12 @@ pub fn convert_with_command(
         }
         if started.elapsed() >= timeout {
             break Err(ImportError::ConverterTimeout);
+        }
+        if oversized.load(Ordering::Relaxed) {
+            break Err(ImportError::ConverterFailed(format!(
+                "the worker's result is over {} MiB",
+                MAX_MESSAGE_BYTES / 1024 / 1024
+            )));
         }
         match worker.0.try_wait() {
             Ok(Some(status)) => break Ok(status),
@@ -231,7 +255,7 @@ pub fn convert_with_command(
     };
     drop(worker);
     let _ = feeder.join();
-    let message = drain.join().ok().flatten().and_then(Result::ok);
+    let message = drain.join().ok().flatten();
     read_message(outcome?, message)
 }
 
@@ -351,6 +375,13 @@ mod fault {
                 Some(1)
             }
             "exit" => Some(3),
+            // More output than the supervisor reads.
+            "flood" => {
+                let chunk = vec![b'x'; 1024 * 1024];
+                let mut stdout = std::io::stdout().lock();
+                while stdout.write_all(&chunk).is_ok() {}
+                Some(1)
+            }
             "garbage" => Some(write(b"\x00not a message")),
             "version" => Some(write(br#"{"version":999,"outcome":{}}"#)),
             _ => None,
