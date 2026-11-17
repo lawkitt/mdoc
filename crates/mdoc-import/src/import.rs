@@ -203,10 +203,12 @@ pub fn prepare_cancellable(
     let comments = word
         .then(|| crate::hidden_content::docx_comments(&source))
         .and_then(crate::hidden_content::Comments::note);
-    let warning = match (warning, comments) {
-        (Some(pages), Some(comments)) => Some(format!("{pages} {comments}")),
-        (pages, comments) => pages.or(comments),
-    };
+    // Nor do Word's pictures: embedded ones render as their alt text at
+    // most (ROADMAP Vision item 1).
+    let pictures = word
+        .then(|| pictures_note(u64::from(converted.images_left_out)))
+        .flatten();
+    let warning = join_notes([warning, comments, pictures]);
     Ok(Imported {
         ocr_configuration: None,
         source,
@@ -235,6 +237,7 @@ fn convert_pdf(
     let bytes = read_pdf(&source)?;
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
+    let pictures = pictures_drawn(&native);
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(
@@ -276,6 +279,7 @@ fn convert_pdf(
         );
     }
     let warning = pdf_warning(&result.markdown, warning_pages, result.page_count, used_ocr)?;
+    let warning = join_notes([warning, pictures_note(pictures)]);
     Ok(Imported {
         ocr_configuration: if used_ocr {
             installed.map(|i| i.config.clone())
@@ -339,6 +343,32 @@ pub(crate) fn pdf_warning(
     } else {
         format!("Partial import: pages {pages} of {page_count} require OCR and were skipped.")
     }))
+}
+
+/// The pictures a PDF's pages show, from its native pass. None reaches the
+/// Markdown: OCR reads the text drawn in a picture, not the picture.
+pub(crate) fn pictures_drawn(native: &pdf_inspector::vision::OcrPdfResult) -> u64 {
+    native
+        .images_by_page
+        .iter()
+        .map(|page| u64::from(page.images))
+        .sum()
+}
+
+/// The import note's line for pictures that did not reach the Markdown, if
+/// any.
+pub(crate) fn pictures_note(count: u64) -> Option<String> {
+    match count {
+        0 => None,
+        1 => Some("1 picture not imported.".to_owned()),
+        n => Some(format!("{n} pictures not imported.")),
+    }
+}
+
+/// An import note from its lines, in order: none when every line is.
+pub(crate) fn join_notes<const N: usize>(lines: [Option<String>; N]) -> Option<String> {
+    let lines: Vec<String> = lines.into_iter().flatten().collect();
+    (!lines.is_empty()).then(|| lines.join(" "))
 }
 
 /// Why the native text pass could not read a PDF.
@@ -450,11 +480,61 @@ mod tests {
             assert_eq!(std::fs::read(path).unwrap(), original);
             assert_eq!(imported.is_pdf, name.ends_with("pdf"));
             assert_eq!(imported.is_docx, name.ends_with("docx"));
-            assert_eq!(
-                imported.warning.is_some(),
-                name == "handmade-partly-scanned.pdf"
-            );
+            let expected_note = match name {
+                "text.docx" | "text.pdf" => Some("1 picture not imported."),
+                "handmade-partly-scanned.pdf" => Some(
+                    "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported.",
+                ),
+                _ => None,
+            };
+            assert_eq!(imported.warning.as_deref(), expected_note, "{name}");
         }
+    }
+
+    /// Pictures never reach the Markdown, so the note counts them, for PDF
+    /// and Word (ROADMAP Vision item 1); a document without any gets no
+    /// line. A scanned page's image counts even though OCR may read it.
+    #[test]
+    fn the_note_counts_pictures_left_out() {
+        let note = |name: &str| convert(&fixture(name)).unwrap().warning;
+        assert_eq!(
+            note("text.docx").as_deref(),
+            Some("1 picture not imported.")
+        );
+        assert_eq!(note("handmade-tables.docx"), None);
+        // `text.docx` saved as PDF keeps its picture; the DocLayNet page
+        // draws none.
+        assert_eq!(note("text.pdf").as_deref(), Some("1 picture not imported."));
+        assert_eq!(note("../ocr-upstream/en-doclaynet-law-4.native.pdf"), None);
+        assert_eq!(
+            note("handmade-partly-scanned.pdf").as_deref(),
+            Some(
+                "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported."
+            )
+        );
+        // A picture the package holds but the document never shows is not
+        // left out of anything.
+        let comments = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/docx-preview/comments.docx");
+        assert_eq!(
+            convert(&comments).unwrap().warning.as_deref(),
+            Some("4 comments not imported.")
+        );
+    }
+
+    #[test]
+    fn picture_note_names_the_count() {
+        assert_eq!(pictures_note(0), None);
+        assert_eq!(pictures_note(1).as_deref(), Some("1 picture not imported."));
+        assert_eq!(
+            pictures_note(3).as_deref(),
+            Some("3 pictures not imported.")
+        );
+        assert_eq!(join_notes::<2>([None, None]), None);
+        assert_eq!(
+            join_notes([Some("A.".into()), None, Some("B.".into())]).as_deref(),
+            Some("A. B.")
+        );
     }
 
     /// A DOCX whose comments, deleted and moved-from changes and document
@@ -502,13 +582,17 @@ mod tests {
         let imported = convert(&fixture("handmade-partly-scanned.pdf")).unwrap();
         assert_eq!(
             imported.warning.as_deref(),
-            Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
+            Some(
+                "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported."
+            )
         );
         assert!(!imported.markdown.contains("OCR"));
         let mixed = convert(&fixture("handmade-mixed.pdf")).unwrap();
         assert_eq!(
             mixed.warning.as_deref(),
-            Some("Partial import: pages 2 of 2 require OCR and were skipped.")
+            Some(
+                "Partial import: pages 2 of 2 require OCR and were skipped. 1 picture not imported."
+            )
         );
     }
 
