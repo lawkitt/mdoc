@@ -1,6 +1,7 @@
 # Mirage on candle as the vision engine
 
-Status: Accepted, 2026-11-17.
+Status: Paused, 2026-11-17: no class passed #911's evaluation; resumes only
+on a follow-up run that passes.
 
 ## Problem
 

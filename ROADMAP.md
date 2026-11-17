@@ -318,41 +318,6 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
-## Vision
-
-A vision layer beside OCR finds page artifacts (seals, signatures, QR codes,
-watermarks, repeated headers) and puts stand-ins in their place; PP-OCR keeps
-reading all text ([ADR 0121](docs/adr/0121-mirage-on-candle-as-the-vision-engine.md),
-[grill record #911](https://github.com/lawkitt/mdoc/issues/911)). The rules
-waiting for the build-in are the recognition spec's
-[Page artifacts (pending)](docs/specs/recognition.md#page-artifacts-pending).
-Items 2 and 3 run in parallel; 4 waits for 3, and 5 for 2 and 3.
-
-2. **[Vision] Evaluation run (report only).** A Mac hub and a Windows
-   Claude Code Desktop session measure Mirage (through libcactus),
-   PP-DocLayout_plus-L, PaddleOCR's seal reader and `rxing` on a private,
-   hand-annotated EN/RU set, against #911's bars fixed in advance; harness in
-   `tools/vision-eval`. *Done when:* the report on #911 gives a verdict per
-   class and engine.
-3. **[Vision] `mirage-rs` stage 1.** Mirage's `objects` and `text` sections
-   ported to Rust on candle from the upstream weights. *Done when:* it does
-   at least as well as libcactus on #911's bars and passes ADR 0121's parity
-   check.
-4. **[Vision] `mirage-rs` stage 2.** Relations, reasoning, forms and
-   keywords. *Done when:* each section matches libcactus on its own outputs
-   (relation triples between matched objects, form field values,
-   keyword-guided detections; the reasoning trace only as well-formed
-   output), against bars recorded on #911 before stage 2's first run.
-5. **[Vision] Page artifacts in the desktop app.** pdf-inspector's
-   `RegionDetector` with the engines item 2 passed, stand-ins and dropped
-   header repeats in fusion, and the vision bundle on the OCR setup card;
-   Paddle-only classes may land once item 2 passes them, without waiting for
-   item 3. *Done when:* the pending spec rules hold on the evaluation set's
-   public pages and the section loses its "pending".
-6. **[Mobile] Page artifacts on phones.** *Done when:* the vision bundle's
-   iPhone 17 Pro peak fits beside the detector's under the phone memory
-   floor (#907), and iOS and Android run item 5's rules.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -690,6 +655,21 @@ Android takes what applies. Its clipboard finding is
 - **[Eval] ID coverage.** A per-country table for the MIDV sets, scored for
   IDENTITY and OCR; gaps toward every country's IDs and passports picked
   from it, with MIDV-UP first in line. *From #916.*
+- **[Vision]** Vision layer for page artifacts: paused (#911, ADR 0121);
+  resumes when an engine, a new Mirage setting (#918) or a fine-tuned Mirage
+  passes #911's bars, or #918's reduced-recall guard, on a rerun.
+- **[Vision]** Fine-tune Mirage's naming on seals and stamps. The known route
+  is Oasis (`phanerozoic/oasis`) and Cactus's Needle LoRA recipe; it waits on
+  a licence check of #916's sources. *From #911 and #918.*
+- **[OCR]** Repeated headers and footers: a text-only rule in pdf-inspector
+  drops a line repeating on at least 3 pages in the same position band and
+  counts the dropped lines in the import note
+  ([spec](docs/specs/recognition.md#repeated-headers-and-footers-planned)).
+  *From #911.*
+- **[Import]** QR contents from embedded images in PDF and DOCX via `rxing`
+  (native resolution, no OCR or vision model). *From #911.*
+- **[OCR]** QR codes on scans: re-measure `rxing` on at least 20 real scanned
+  codes. *From #911.*
 
 ## Ongoing tracks
 

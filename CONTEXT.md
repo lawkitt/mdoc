@@ -138,11 +138,6 @@ or both.
 **Page artifact**: a non-text mark OCR misreads: a seal, signature,
 barcode, watermark or repeated header.
 
-**Stand-in**: a bracketed line such as `[Seal]` replacing a page artifact
-or dropped picture. Avoid "placeholder".
-
-**Vision bundle**: the pinned models that find page artifacts.
-
 ## Pseudonymization and review
 
 **Pseudonymization**: reviewable replacement of identifying information with
