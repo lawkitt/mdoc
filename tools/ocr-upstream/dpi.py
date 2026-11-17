@@ -27,17 +27,32 @@ MIB = 2**20
 
 
 def recall(reference, output):
-    """Reference lines found whole, and number tokens found, in the output."""
-    text = normalize(output)
-    lines = [normalize(line) for line in reference.splitlines() if normalize(line)]
-    pool = NUMBER.findall(text)
+    """Reference lines found whole, and number tokens found, in the output.
+
+    A line counts when its words appear as a run of whole output words not
+    already claimed by another line, longest lines first; a number counts
+    once per equal output number.
+    """
+    words = normalize(output).split()
+    claimed = [False] * len(words)
+    lines = [normalize(line).split() for line in reference.splitlines() if normalize(line)]
+    found_lines = 0
+    for line in sorted(lines, key=len, reverse=True):
+        for start in range(len(words) - len(line) + 1):
+            span = range(start, start + len(line))
+            if words[start:start + len(line)] == line and not any(claimed[i] for i in span):
+                for i in span:
+                    claimed[i] = True
+                found_lines += 1
+                break
+    pool = NUMBER.findall(normalize(output))
     wanted = NUMBER.findall(normalize(reference))
     found = 0
     for token in wanted:
         if token in pool:
             pool.remove(token)
             found += 1
-    return {"lines": sum(line in text for line in lines), "lines_total": len(lines),
+    return {"lines": found_lines, "lines_total": len(lines),
             "numbers": found, "numbers_total": len(wanted)}
 
 

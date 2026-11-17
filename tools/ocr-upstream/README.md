@@ -35,4 +35,5 @@ python3 tools/ocr-upstream/dpi.py --root target/ocr-dpi/root --out target/ocr-dp
 `small_print.swift` writes the small-print probe: a self-made 30-row
 statement in English and Russian at 6–10 pt, image-only at 300 dpi.
 `scripts/ios/ios-ocr-dpi.sh` runs the same corpus on an iPhone or a
-Simulator and scores it here with `--runs-from`.
+Simulator and scores it here with `--runs-from`. The recall counts' self-tests:
+`python3 -m unittest discover tools/ocr-upstream/tests`.

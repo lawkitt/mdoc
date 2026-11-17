@@ -56,7 +56,8 @@ final class OCRResolutionTests: XCTestCase {
 
     /// The corpus and the output folder: on the Simulator the Mac's
     /// repository and `MDOC_OCR_DPI_OUT`; on a phone the folders the script
-    /// copies to and from the app's data container.
+    /// copies to and from the app's data container, the output one per
+    /// script run (`MDOC_OCR_DPI_TAG`), so an earlier run's tables stay out.
     private static func folders(_ environment: [String: String]) -> ([URL], URL) {
         let fixtures = Fixture.repository.appendingPathComponent("tests/fixtures", isDirectory: true)
         let container = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
@@ -71,6 +72,7 @@ final class OCRResolutionTests: XCTestCase {
         }
         let output = environment["MDOC_OCR_DPI_OUT"].map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? container.appendingPathComponent("out", isDirectory: true)
+                .appendingPathComponent(environment["MDOC_OCR_DPI_TAG"] ?? "untagged", isDirectory: true)
         return (corpus, output)
     }
 }

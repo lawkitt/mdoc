@@ -21,8 +21,11 @@ resolutions=("$@")
 runs=${MDOC_OCR_DPI_RUNS:-3}
 bundle=io.github.lawkitt.mdoc
 team=F33DLM8K53
+# A fresh OUTPUT, so only this run's tables are scored.
+[ ! -e "$output" ] || [ -z "$(ls -A "$output")" ] || die "$output is not empty"
 mkdir -p "$output"
 output=$(cd "$output" && pwd)
+tag=$(date +%Y%m%d-%H%M%S)
 
 if [[ $target =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}$ ]]; then
   device=yes
@@ -49,12 +52,13 @@ else
     -derivedDataPath "$derived" -quiet build-for-testing
 fi
 
-# The Simulator writes straight into OUTPUT; a phone into its container.
-extra=()
-[ "$device" = yes ] || extra=(TEST_RUNNER_MDOC_OCR_DPI_OUT="$output")
+# The Simulator writes straight into OUTPUT; a phone into a folder of this
+# run's own in its container.
+extra=(TEST_RUNNER_MDOC_OCR_DPI_TAG="$tag")
+[ "$device" = yes ] || extra+=(TEST_RUNNER_MDOC_OCR_DPI_OUT="$output")
 for dpi in "${resolutions[@]}"; do
   echo "OCR at $dpi dpi, $runs runs a page"
-  env TEST_RUNNER_MDOC_OCR_DPI="$dpi" TEST_RUNNER_MDOC_OCR_DPI_RUNS="$runs" ${extra[@]+"${extra[@]}"} \
+  env TEST_RUNNER_MDOC_OCR_DPI="$dpi" TEST_RUNNER_MDOC_OCR_DPI_RUNS="$runs" "${extra[@]}" \
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "$destination" \
     -derivedDataPath "$derived" -only-testing:mdocTests/OCRResolutionTests/testResolution \
     -quiet test-without-building
@@ -62,10 +66,14 @@ done
 
 if [ "$device" = yes ]; then
   xcrun devicectl device copy from --device "$target" --domain-type appDataContainer \
-    --domain-identifier "$bundle" --source Library/mdoc-ocr-dpi/out --destination "$output/device"
+    --domain-identifier "$bundle" --source "Library/mdoc-ocr-dpi/out/$tag" --destination "$output/device"
 fi
-# Each runs-<dpi>.tsv sits beside its <dpi>/ outputs, wherever the copy put them.
+# This run's runs-<dpi>.tsv, one per resolution, each beside its <dpi>/
+# outputs wherever the copy put them.
 tables=()
-while IFS= read -r table; do tables+=("$table"); done < <(find "$output" -name 'runs-*.tsv' | sort)
-[ ${#tables[@]} -gt 0 ] || die "no runs-*.tsv under $output"
+for dpi in "${resolutions[@]}"; do
+  found=$(find "$output" -name "runs-$dpi.tsv")
+  [ "$(printf '%s\n' "$found" | grep -c .)" = 1 ] || die "expected one runs-$dpi.tsv under $output"
+  tables+=("$found")
+done
 python3 tools/ocr-upstream/dpi.py --out "$output" --runs-from "${tables[@]}"
