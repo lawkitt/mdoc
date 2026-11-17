@@ -2,14 +2,14 @@
 //! Failure preserves the displayed preview; committing releases old PDF data
 //! before deleting its temporary DOCX backing file.
 use crate::{
-    comment_panel,
+    comment_rail::CommentRail,
     document_view::{Background, DocumentView},
     markdown_search,
     style::Theme,
     workspace,
 };
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
-use gpui_pdf::PdfView;
+use gpui_pdf::{HeaderToggle, PdfView};
 use mdoc_import::docx_preview::{self, PreviewError};
 use mdoc_store::{session_store, settings};
 use std::{
@@ -90,7 +90,8 @@ pub(super) struct PreviewState {
     restore_position: Option<(usize, f32, session_store::PreviewFit)>,
     pdf: Option<Entity<PdfView>>,
     docx: Option<docx_preview::DocxPreview>,
-    comment_panel: Option<Entity<comment_panel::CommentPanel>>,
+    /// The DOCX's comments beside its page, when it has any.
+    comments: Option<Entity<CommentRail>>,
     pending: Option<PendingPreview>,
     message: Option<String>,
     loading: bool,
@@ -136,8 +137,31 @@ impl PreviewState {
         self.docx.as_ref()
     }
 
-    pub(super) fn comment_panel(&self) -> Option<&Entity<comment_panel::CommentPanel>> {
-        self.comment_panel.as_ref()
+    pub(crate) fn comment_rail(&self) -> Option<&Entity<CommentRail>> {
+        self.comments.as_ref()
+    }
+
+    /// The comments show beside the page now: the "comments" F6 region.
+    pub(super) fn comments_shown(&self, cx: &App) -> bool {
+        self.comments
+            .as_ref()
+            .is_some_and(|rail| rail.read(cx).shown())
+    }
+
+    /// A rendering of the source shows its comments: a DOCX whose preview
+    /// has not failed.
+    pub(super) fn renders_comments(&self) -> bool {
+        !self.failed
+            && self
+                .source
+                .as_ref()
+                .and_then(|p| p.extension())
+                .is_some_and(|e| e.eq_ignore_ascii_case("docx"))
+    }
+
+    /// Passages of hidden text in the DOCX shown.
+    fn hidden_text(&self) -> usize {
+        self.docx.as_ref().map_or(0, |docx| docx.hidden_text)
     }
 
     /// The pane's one plain message, if any.
@@ -306,6 +330,7 @@ impl PreviewState {
         &mut self,
         generation: u64,
         theme: Rc<Cell<Theme>>,
+        region: gpui::FocusHandle,
         window: &mut Window,
         cx: &mut Context<DocumentView>,
     ) -> bool {
@@ -326,11 +351,23 @@ impl PreviewState {
             .docx
             .as_ref()
             .and_then(|d| (!d.warnings.is_empty()).then(|| d.warnings.join(" ")));
-        self.comment_panel = pending
+        self.comments = pending
             .docx
             .as_ref()
             .filter(|d| !d.comments.is_empty())
-            .map(|d| cx.new(|_| comment_panel::CommentPanel::new(d.comments.clone(), theme)));
+            .map(|d| {
+                cx.new(|cx| {
+                    CommentRail::new(
+                        &d.comments,
+                        &d.anchors,
+                        &pending.pdf,
+                        theme,
+                        region,
+                        window,
+                        cx,
+                    )
+                })
+            });
         self.docx = pending.docx;
         if let Some(source) = self.source.as_ref() {
             let name = source
@@ -367,7 +404,7 @@ impl PreviewState {
             pdf.update(cx, |pdf, cx| pdf.release(window, cx));
         }
         self.docx = None;
-        self.comment_panel = None;
+        self.comments = None;
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut App) {
@@ -397,6 +434,132 @@ pub(crate) struct SourceDisplay {
 }
 
 impl DocumentView {
+    /// The Source header's "💬 N" and "Hidden text (N)", and the rail,
+    /// follow Show comments and Show hidden text.
+    pub(crate) fn sync_source_controls(&mut self, cx: &mut Context<Self>) {
+        let display = self.source_display();
+        let Some(pdf) = self.preview.pdf().cloned() else {
+            return;
+        };
+        let comments = self.preview.comments.clone();
+        if let Some(rail) = &comments {
+            rail.update(cx, |rail, cx| rail.set_shown(display.comments, cx));
+        }
+        let count = comments.map_or(0, |rail| rail.read(cx).count());
+        let hidden = self.preview.hidden_text();
+        let owner = cx.entity().downgrade();
+        let toggle = move |change: SourceDisplay| {
+            let owner = owner.clone();
+            Rc::new(move |_: &mut Window, cx: &mut App| {
+                let _ = owner.update(cx, |_, cx| {
+                    cx.emit(workspace::TabEvent::SourceDisplay(change));
+                });
+            }) as gpui_pdf::ActionFn
+        };
+        let mut toggles = Vec::new();
+        if count > 0 {
+            toggles.push(HeaderToggle {
+                id: "source-comments",
+                label: format!("💬 {count}").into(),
+                description: if display.comments {
+                    "Hide comments"
+                } else {
+                    "Show comments"
+                }
+                .into(),
+                on: display.comments,
+                action: toggle(SourceDisplay {
+                    comments: !display.comments,
+                    ..display
+                }),
+            });
+        }
+        if hidden > 0 {
+            toggles.push(HeaderToggle {
+                id: "source-hidden-text",
+                label: format!("Hidden text ({hidden})").into(),
+                description: if display.hidden_text {
+                    "Hide hidden text"
+                } else {
+                    "Show hidden text"
+                }
+                .into(),
+                on: display.hidden_text,
+                action: toggle(SourceDisplay {
+                    hidden_text: !display.hidden_text,
+                    ..display
+                }),
+            });
+        }
+        pdf.update(cx, |pdf, cx| pdf.set_header_toggles(toggles, cx));
+    }
+
+    /// Show comments or Show hidden text changed, here or in another tab:
+    /// the rail follows, and a DOCX with hidden text is drawn again in the
+    /// same place.
+    pub(crate) fn source_display_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_source_controls(cx);
+        let display = self.source_display();
+        let redraw = self.preview.docx.as_ref().is_some_and(|docx| {
+            docx.hidden_text > 0 && docx.options.show_hidden_text != display.hidden_text
+        });
+        if !redraw || self.preview.loading {
+            return;
+        }
+        if let Some(pdf) = self.preview.pdf.as_ref() {
+            let pdf = pdf.read(cx);
+            let (page, zoom) = pdf.reading_position();
+            let fit = match pdf.fit_mode() {
+                Some(gpui_pdf::FitMode::Width) => session_store::PreviewFit::Width,
+                Some(gpui_pdf::FitMode::Page) => session_store::PreviewFit::Page,
+                None => session_store::PreviewFit::Manual,
+            };
+            self.preview.restore_position = Some((page, zoom, fit));
+        }
+        if let Some(path) = self.preview.attachment.clone() {
+            self.open_docx(path, window, cx);
+        }
+    }
+
+    /// Next comment: scroll to it and focus its card.
+    pub(super) fn next_comment(
+        &mut self,
+        _: &crate::comment_rail::NextComment,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(rail) = self.preview.comments.clone() {
+            rail.update(cx, |rail, cx| rail.step(true, window, cx));
+        }
+    }
+
+    /// Previous comment: scroll to it and focus its card.
+    pub(super) fn previous_comment(
+        &mut self,
+        _: &crate::comment_rail::PreviousComment,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(rail) = self.preview.comments.clone() {
+            rail.update(cx, |rail, cx| rail.step(false, window, cx));
+        }
+    }
+
+    /// The left-out line: what the Markdown leaves out, comments counted
+    /// only while no rendering shows them.
+    pub(crate) fn left_out(&self) -> Option<String> {
+        let comments = self
+            .session
+            .comments_left_out
+            .clone()
+            .filter(|_| !self.preview.renders_comments());
+        let lines: Vec<String> = [self.session.left_out.clone(), comments]
+            .into_iter()
+            .flatten()
+            .collect();
+        (!lines.is_empty()).then(|| lines.join(" "))
+    }
+
     /// Show comments and Show hidden text, as Settings holds them now.
     pub(crate) fn source_display(&self) -> SourceDisplay {
         let defaults = settings::GeneralConfig::default();
@@ -500,8 +663,13 @@ impl DocumentView {
                     false,
                 );
             } else if pdf.read(cx).is_loaded() {
-                this.preview
-                    .accept(generation, this.theme.clone(), window, cx);
+                let region = this.comments_region.clone();
+                if this
+                    .preview
+                    .accept(generation, this.theme.clone(), region, window, cx)
+                {
+                    this.sync_source_controls(cx);
+                }
             } else {
                 return;
             }
@@ -668,6 +836,51 @@ mod tests {
         assert!(cancel.load(Ordering::Relaxed));
     }
 
+    #[test]
+    fn only_a_docx_rendering_that_drew_shows_comments() {
+        let mut preview = PreviewState::default();
+        assert!(!preview.renders_comments());
+        let generation = preview.begin("a.docx".into());
+        assert!(preview.renders_comments());
+        assert!(preview.fail(generation, "refused".into(), false));
+        assert!(!preview.renders_comments());
+        preview.begin("a.pdf".into());
+        assert!(!preview.renders_comments());
+    }
+
+    /// The left-out line in the document header: the counts, with the
+    /// comments only while no rendering of the source shows them.
+    #[gpui::test]
+    fn the_left_out_line_counts_comments_only_without_a_rendering(cx: &mut gpui::TestAppContext) {
+        let (app, cx) = crate::document_view::tests::boot(cx);
+        app.update(cx, |app, cx| {
+            app.session.left_out = Some("1 picture not imported.".into());
+            app.session.comments_left_out = Some("2 comments not shown.".into());
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert_eq!(
+                app.read(cx).left_out().as_deref(),
+                Some("1 picture not imported. 2 comments not shown.")
+            );
+        });
+        assert!(cx.debug_bounds("left-out").is_some());
+        app.update(cx, |app, _| {
+            app.preview.begin("contract.docx".into());
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                app.read(cx).left_out().as_deref(),
+                Some("1 picture not imported.")
+            );
+        });
+        app.update(cx, |app, _| {
+            app.session.left_out = None;
+        });
+        cx.update(|_, cx| assert_eq!(app.read(cx).left_out(), None));
+    }
+
     #[gpui::test]
     fn stale_accept_cannot_consume_newer_pending_preview(cx: &mut gpui::TestAppContext) {
         let (app, cx) = crate::document_view::tests::boot(cx);
@@ -676,14 +889,22 @@ mod tests {
             let current = app.begin_preview("new.pdf".into());
             app.load_preview("new.pdf".into(), None, window, cx);
             let pending = app.preview.pending.as_ref().unwrap().pdf.entity_id();
-            assert!(!app.preview.accept(old, app.theme.clone(), window, cx));
+            let region = app.comments_region.clone();
+            assert!(
+                !app.preview
+                    .accept(old, app.theme.clone(), region, window, cx)
+            );
             assert_eq!(
                 app.preview.pending.as_ref().unwrap().pdf.entity_id(),
                 pending
             );
             assert!(app.preview.is_current(current));
             app.close_preview(window, cx);
-            assert!(!app.preview.accept(current, app.theme.clone(), window, cx));
+            let region = app.comments_region.clone();
+            assert!(
+                !app.preview
+                    .accept(current, app.theme.clone(), region, window, cx)
+            );
             assert!(app.preview.pending.is_none());
         });
     }

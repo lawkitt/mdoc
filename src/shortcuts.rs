@@ -1154,6 +1154,26 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
+        "Source: next comment",
+        &[on!(
+            App,
+            Some("PdfView"),
+            &["alt-down"],
+            crate::comment_rail::NextComment
+        )],
+    ),
+    row(
+        Panel,
+        "Source: previous comment",
+        &[on!(
+            App,
+            Some("PdfView"),
+            &["alt-up"],
+            crate::comment_rail::PreviousComment
+        )],
+    ),
+    row(
+        Panel,
         "Source: go to page",
         &[on!(Pdf, Some("PdfView"), &[], gpui_pdf::GoToPage)
             .mac(&["cmd-alt-g"])

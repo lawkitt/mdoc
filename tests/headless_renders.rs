@@ -336,8 +336,31 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "{theme}/{name}"
                 );
                 if *name == "import-comments-note" {
+                    // No rendering shows them: the left-out line counts the
+                    // comments, and no notice does.
+                    assert!(record["state"]["import_note"].is_null(), "{theme}/{name}");
                     assert_eq!(
-                        record["state"]["import_note"], "2 comments not imported.",
+                        record["state"]["left_out"], "2 comments not shown.",
+                        "{theme}/{name}"
+                    );
+                }
+                // The rail in a wide pane, markers in a 640×480 window.
+                if let Some(rail) = match *name {
+                    "comments-rail" | "comments-resolved" | "comments-hidden-text" => Some(true),
+                    "comments-markers" => Some(false),
+                    _ => None,
+                } {
+                    let state = &record["state"]["comment_rail"];
+                    assert_eq!(state["shown"], true, "{theme}/{name}");
+                    assert_eq!(state["rail"], rail, "{theme}/{name}");
+                    let toggles = record["state"]["source_toggles"].as_array().unwrap();
+                    assert_eq!(toggles[0]["label"], "💬 5", "{theme}/{name}");
+                    assert_eq!(
+                        toggles[1],
+                        serde_json::json!({
+                            "label": "Hidden text (1)",
+                            "on": *name == "comments-hidden-text"
+                        }),
                         "{theme}/{name}"
                     );
                 }
@@ -463,6 +486,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 }
                 // Under the 1100 points other screens use, still over 900.
                 "narrow-sidebar-names" | "sidebar-wide" => [1000., 700.],
+                // Wide enough for the comment rail beside the page; and the
+                // 640×480 window the comments spec names for markers.
+                "comments-rail" | "comments-resolved" | "comments-hidden-text" => [1500., 900.],
+                "comments-markers" => [640., 480.],
                 _ => [1100., 760.],
             };
             assert_eq!(viewport, &serde_json::json!(expected), "{theme}/{name}");
@@ -512,7 +539,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             "settings-row",
             "settings-appearance",
             "beside-selected-tab",
-            "comments-toggle",
+            "comment-card",
             "decision-row",
             "navigation-back",
             "navigation-forward",

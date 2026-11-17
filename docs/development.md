@@ -142,7 +142,7 @@ algorithm changes belong in the dependency forks.
 | `src/document_view.rs`, `src/document_view/` | One tab: editor, source preview, import and OCR state, toolbar |
 | `src/document_view/{case_link,document_lifecycle,import_flow}.rs` | The tab's owners: its case link, its lifecycle, its conversion |
 | `src/pii.rs`, `src/pii/ui*` | Pseudonymization UI: scan and edit controller, Replacements panel, word popup |
-| `src/{preview,comment_panel,markdown_search,search_session,images,style,models,spelling,updater,system_quit}.rs` | Preview, DOCX comments, find, local images, styling, model listings, spellcheck UI, the update check, macOS quit hooks |
+| `src/{preview,comment_rail,markdown_search,search_session,images,style,models,spelling,updater,system_quit}.rs` | Preview, the comment rail, find, local images, styling, model listings, spellcheck UI, the update check, macOS quit hooks |
 | `src/shelf.rs`, `src/shelf/`, `src/menu_bar.rs`, `src/shelf_ui.rs`, `src/shelf_ui/` | The menu bar shelf's GPUI-free model, the menu bar item and the shelf's view |
 | `src/document_view/tests.rs`, `src/workspace/tests.rs`, their `tests/`, `src/perf_tests.rs` | Headless flows, one file per owner, and opt-in performance tests |
 | `src/workspace/headless_renders*`, `tests/headless_renders.rs`, `tests/headless_screens.txt` | Dev-only offscreen screen renders (the module header documents them) |

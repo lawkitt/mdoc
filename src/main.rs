@@ -3,7 +3,7 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
-mod comment_panel;
+mod comment_rail;
 mod comparison;
 mod comparison_ui;
 mod confirm_dialog;

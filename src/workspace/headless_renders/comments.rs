@@ -1,40 +1,100 @@
-//! Read-only DOCX comments beside the Source pane.
-use super::{Driver, Result};
+//! The comment rail beside the DOCX Source page (originals spec): the rail
+//! in a wide pane with one card expanded, a resolved thread and "Not on the
+//! page", markers in a 640×480 window with a card open, and hidden text
+//! shown with its header toggle.
+use super::{Driver, HEIGHT, Result, WIDTH};
+use gpui::Entity;
+use mdoc_import::docx_preview::{self, RenderOptions};
 use std::{path::PathBuf, sync::Arc};
 
-/// The public DOCX comments fixture supplies the actual Source pane and its
-/// full-width comments toggle, including the content card's clip.
-pub(super) fn scenes(d: &mut Driver) -> Result<()> {
+/// The public comments fixture, with a reply, a resolved thread, a comment
+/// with no place and hidden text.
+fn render(options: RenderOptions) -> Result<(PathBuf, docx_preview::DocxPreview)> {
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
-    let preview = mdoc_import::docx_preview::render_in_process(
+    let preview = docx_preview::render_in_process(
         &source,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::preview::read_comment_marks,
-        Default::default(),
+        options,
     )
     .map_err(|e| e.to_string())?;
-    let comments_view = d.change(|w, window, cx| {
+    Ok((source, preview))
+}
+
+fn rail(
+    d: &mut Driver,
+    view: &Entity<crate::document_view::DocumentView>,
+) -> Result<Entity<crate::comment_rail::CommentRail>> {
+    d.change(|_, _, cx| {
+        view.read(cx)
+            .preview
+            .comment_rail()
+            .cloned()
+            .ok_or_else(|| "the comments fixture has comments".to_string())
+    })?
+}
+
+pub(super) fn scenes(d: &mut Driver) -> Result<()> {
+    // Wide enough for the rail beside the page.
+    d.resize(1500., 900.)?;
+    let (source, preview) = render(RenderOptions::default())?;
+    let view = d.change(|w, window, cx| {
         w.new_tab(window, cx);
         let view = w.active_view().unwrap();
         view.update(cx, |v, cx| {
+            v.preview.set_split(0.25);
             v.begin_preview(source);
             v.load_preview(preview.pdf_path.clone(), Some(preview), window, cx);
         });
         view
     })?;
     d.settle()?;
-    d.change(|_, window, cx| {
-        let view = comments_view.read(cx);
-        assert!(
-            view.preview.comment_panel().is_some(),
-            "comments fixture loaded"
-        );
-        let region = view.comments_region.clone();
-        window.focus(&region, cx);
+    let rail = rail(d, &view)?;
+    d.change(|_, _, cx| {
+        rail.update(cx, |rail, cx| rail.show_open(Some("0"), false, cx));
     })?;
-    d.key("tab")?;
-    let toggle = d.change(|_, window, cx| window.focused(cx).expect("comments toggle"))?;
-    d.focus_pair("comments-toggle", toggle)?;
-    d.capture("comments")
+    d.capture("comments-rail")?;
+    // The focused card: only the accent ring changes.
+    let card = d.change(|_, _, cx| rail.read(cx).card_focus(0))?;
+    d.focus_pair("comment-card", card)?;
+    d.change(|w, window, cx| window.focus(&w.focus, cx))?;
+    d.change(|_, _, cx| {
+        rail.update(cx, |rail, cx| rail.show_open(Some("4"), true, cx));
+    })?;
+    d.capture("comments-resolved")?;
+    // A 640×480 window: markers, one card open under its line.
+    d.resize(640., 480.)?;
+    d.change(|_, _, cx| {
+        // The window shows one pane at a time: the Source.
+        view.update(cx, |v, cx| {
+            v.original_selected = true;
+            cx.notify();
+        });
+        rail.update(cx, |rail, cx| rail.show_open(Some("0"), false, cx));
+    })?;
+    d.capture("comments-markers")?;
+    d.change(|_, _, cx| {
+        view.update(cx, |v, cx| {
+            v.original_selected = false;
+            cx.notify();
+        })
+    })?;
+    d.resize(1500., 900.)?;
+    // Hidden text shown: the setting, and the page drawn with it.
+    let (source, preview) = render(RenderOptions {
+        show_hidden_text: true,
+    })?;
+    d.change(|w, window, cx| {
+        let _ = w.update_general(|general| general.show_hidden_text = true, cx);
+        view.update(cx, |v, cx| {
+            v.begin_preview(source);
+            v.load_preview(preview.pdf_path.clone(), Some(preview), window, cx);
+        });
+    })?;
+    d.capture("comments-hidden-text")?;
+    d.change(|w, _, cx| {
+        let _ = w.update_general(|general| general.show_hidden_text = false, cx);
+    })?;
+    d.resize(WIDTH, HEIGHT)
 }
