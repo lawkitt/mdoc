@@ -343,7 +343,10 @@ Items 1–3 run in parallel; 4 waits for 3, and 5 for 2 and 3.
    at least as well as libcactus on #911's bars and passes ADR 0121's parity
    check.
 4. **[Vision] `mirage-rs` stage 2.** Relations, reasoning, forms and
-   keywords. *Done when:* each section passes the same parity check.
+   keywords. *Done when:* each section matches libcactus on its own outputs
+   (relation triples between matched objects, form field values,
+   keyword-guided detections; the reasoning trace only as well-formed
+   output), against bars recorded on #911 before stage 2's first run.
 5. **[Vision] Page artifacts in the desktop app.** pdf-inspector's
    `RegionDetector` with the engines item 2 passed, stand-ins and dropped
    header repeats in fusion, and the vision bundle on the OCR setup card;
