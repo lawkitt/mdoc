@@ -29,7 +29,7 @@ from .run import out_root
 IOU = 0.5
 IOU_LOOSE = 0.3
 BARS = {"recall": 0.90, "precision": 0.85, "cer": 0.10, "time": 0.30, "memory_mb": 300, "lost_words": 0}
-DETECTORS = ["mirage", "layout", "rxing"]
+DETECTORS = ["mirage", "mirage-kw", "layout", "rxing"]
 READERS = ["seal", "seal-mobile", "seal-gt", "seal-mobile-gt"]
 
 
@@ -67,7 +67,7 @@ def predictions(candidate: str, raw: dict) -> list[dict]:
     if candidate == "layout":
         return [{"class": i["class"], "box": i["box"], "score": i["score"]}
                 for i in raw.get("items", []) if i["class"] and i["score"] >= classes.LAYOUT_THRESHOLD]
-    if candidate == "mirage":
+    if candidate in ("mirage", "mirage-kw"):
         return [{"class": o["class"], "box": o["box"], "score": o["score"]}
                 for o in raw.get("objects", []) if o["class"]]
     if candidate == "rxing":
@@ -120,7 +120,7 @@ def all_boxes(candidate: str, raw: dict) -> list[list[float]]:
     """Every box a detector output, whatever its name or label (diagnostic)."""
     if candidate == "layout":
         return [i["box"] for i in raw.get("items", []) if i["score"] >= classes.LAYOUT_THRESHOLD]
-    if candidate == "mirage":
+    if candidate in ("mirage", "mirage-kw"):
         return [o["box"] for o in raw.get("objects", [])]
     return [c["box"] for c in raw.get("codes", [])]
 
@@ -336,7 +336,7 @@ def report(out: Path, set_names: list[str]) -> tuple[str, dict]:
             ag = agnostic_recall(sp, run, cand)
             if ag:
                 diag.append(f"- {cand}: " + ", ".join(f"{k} {h}/{t}" for k, (h, t) in sorted(ag.items())))
-            if cand == "mirage" and n_truth:
+            if cand in ("mirage", "mirage-kw") and n_truth:
                 names = mirage_names(sp, run)
                 diag.append("- mirage's most frequent object names: " + ", ".join(f"`{n}` {c}" for n, c in names))
         if diag:

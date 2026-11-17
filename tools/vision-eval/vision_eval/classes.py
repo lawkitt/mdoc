@@ -48,6 +48,7 @@ MIRAGE_WORDS = [
 # The classes each detector can output at all; the report scores only these.
 CAPABLE = {
     "mirage": [c for c in CLASSES],
+    "mirage-kw": [c for c in CLASSES],
     "layout": sorted(set(LAYOUT.values())),
     "rxing": ["qr_code", "barcode"],
 }

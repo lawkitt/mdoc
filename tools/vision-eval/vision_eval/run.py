@@ -28,7 +28,7 @@ from . import pages
 
 # The server seal readers peak near 8 GB, so they run last: memory pressure
 # right after them slowed the next candidate tenfold on the M4.
-ORDER = ["ocr", "layout", "seal-mobile", "seal-mobile-gt", "mirage", "rxing", "seal", "seal-gt"]
+ORDER = ["ocr", "layout", "seal-mobile", "seal-mobile-gt", "mirage", "mirage-kw", "rxing", "seal", "seal-gt"]
 
 
 def out_root(arg: str | None) -> Path:

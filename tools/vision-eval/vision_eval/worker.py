@@ -28,7 +28,9 @@ import onnxruntime as ort
 from . import classes, geometry, memory, ocr, pages
 from .fetch import host_platform, models_dir
 
-CANDIDATES = ["ocr", "mirage", "layout", "seal", "seal-mobile", "rxing"]
+CANDIDATES = ["ocr", "mirage", "mirage-kw", "layout", "seal", "seal-mobile", "rxing"]
+# Decision 33 (#911): Mirage with keywords, fixed in the pre-registration.
+MIRAGE_KEYWORDS = ["seal", "stamp", "signature", "handwriting", "QR code", "barcode"]
 SEAL_GATE = 0.90  # inline a seal's text only at this reader confidence or above (fixed before any scores)
 MIRAGE_OPTIONS = {}  # the engine's defaults: sections objects and text
 
@@ -184,8 +186,11 @@ def parse_host_line(line: str) -> tuple[dict, int]:
     return json.loads("".join(out)), count
 
 
-def run_mirage(set_pages: list[dict]) -> tuple[dict, dict, float, int]:
+def run_mirage(set_pages: list[dict], keywords: list[str] | None = None) -> tuple[dict, dict, float, int]:
     env = dict(os.environ, CACTUS_TELEMETRY="0", DO_NOT_TRACK="1", HF_HUB_OFFLINE="1")
+    env.pop("MIRAGE_KEYWORDS", None)
+    if keywords:
+        env["MIRAGE_KEYWORDS"] = "\n".join(keywords)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         (tmp / "options.json").write_text(json.dumps(MIRAGE_OPTIONS), encoding="utf-8")
@@ -293,13 +298,15 @@ def main() -> None:
         out, ms, load = run_seal(meta["pages"], args.candidate, args.regions)
     elif args.candidate == "mirage":
         out, ms, load, child_peak = run_mirage(meta["pages"])
+    elif args.candidate == "mirage-kw":
+        out, ms, load, child_peak = run_mirage(meta["pages"], MIRAGE_KEYWORDS)
     else:
         out, ms, load, child_peak = run_rxing(meta["pages"])
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for pid, data in out.items():
         (args.out_dir / f"{pid}.json").write_text(
             json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    native = args.candidate in ("mirage", "rxing")
+    native = args.candidate in ("mirage", "mirage-kw", "rxing")
     run = {
         "candidate": args.candidate, "set": meta["name"], "pages": len(meta["pages"]),
         "regions": args.regions if args.regions in (None, "gt") else "layout",
