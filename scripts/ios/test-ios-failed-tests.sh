@@ -6,8 +6,14 @@
 # summary and output; a case that passed on its retry, warned in a green part
 # or a red one and never a failure; ci/ios names each part that did not pass,
 # and every retried case, from those outputs; a part with no xcresult, an
-# unreadable one or no failed case names none. Bash 3.2 compatible.
+# unreadable one or no failed case names none. Skipped on Windows: the
+# script runs only on macOS and Linux runners (ci-ios.yml), and Python there
+# cannot run the fake xcrun, a bash script. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
+if [ "$(platform)" = windows-x64 ]; then
+  echo "skip: ios-failed-tests.py runs only on macOS and Linux"
+  exit 0
+fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
