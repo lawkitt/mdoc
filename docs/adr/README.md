@@ -127,3 +127,4 @@ full text is in git history.
 | 0118 | [Docs are area specs; ADRs are rare](0118-docs-are-area-specs.md) | Kept |
 | 0119 | [GPUI as the UI framework](0119-gpui-as-the-ui-framework.md) | Kept |
 | 0120 | [Phone detector floor and scan time](0120-phone-detector-floor-and-scan-time.md) | Kept |
+| 0121 | [Mirage on candle as the vision engine](0121-mirage-on-candle-as-the-vision-engine.md) | Kept |
