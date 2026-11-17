@@ -167,8 +167,7 @@ pub(super) fn prepare(bytes: &[u8], show_hidden: bool) -> Result<Prepared, Previ
                 }
                 if let Some(paragraph) = node
                     .descendants()
-                    .filter(|n| word(*n, "p"))
-                    .last()
+                    .rfind(|n| word(*n, "p"))
                     .and_then(|p| p.attribute((W14, "paraId")))
                 {
                     by_paragraph.insert(paragraph.to_ascii_uppercase(), comments.len());
