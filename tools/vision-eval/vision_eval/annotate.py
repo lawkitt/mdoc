@@ -3,13 +3,15 @@
     python -m vision_eval.annotate grid <page.png> <out.png> [--crop x0,y0,x1,y1]
     python -m vision_eval.annotate check <set-dir>
     python -m vision_eval.annotate sample <set-dir> --share 0.2 --seed <n>
+    python -m vision_eval.annotate review <set-dir> <out-dir> <page-id>...
 
 `grid` draws a labelled pixel grid over a page (every 50 px, labels every
 100) or over a crop of it (every 10 px, labels every 50), so an annotator can
 read box coordinates off the picture. It shows the page only, never a
 candidate's output. `check` validates every annotation against the format in
 pages.py. `sample` picks the random share of pages for the maintainer's
-agreement review.
+agreement review; `review` draws those pages' annotated boxes, numbered,
+with a list of each box's class and text, for the reviewer to mark.
 """
 from __future__ import annotations
 
@@ -89,6 +91,39 @@ def sample(set_dir: Path, share: float, seed: int) -> None:
         print(pid)
 
 
+COLOURS = {"seal": (220, 30, 30), "signature": (30, 90, 230), "handwriting": (0, 150, 60),
+           "header": (200, 120, 0), "footer": (200, 120, 0), "qr_code": (150, 0, 200),
+           "barcode": (150, 0, 200), "picture": (90, 90, 90)}
+
+
+def review(set_dir: Path, out: Path, ids: list[str]) -> None:
+    meta = pages.load(set_dir)
+    by_id = {p["id"]: p for p in meta["pages"]}
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 22)
+    except OSError:
+        font = ImageFont.load_default()
+    lines = []
+    for pid in ids:
+        p = by_id[pid]
+        im = Image.open(p["path"]).convert("RGB")
+        d = ImageDraw.Draw(im)
+        lines.append(f"## {pid}\n")
+        for n, a in enumerate(p["truth"]["artifacts"], 1):
+            c = COLOURS.get(a["class"], (0, 0, 0))
+            d.rectangle(a["box"], outline=c, width=3)
+            d.text((a["box"][0] + 3, a["box"][1] + 2), str(n), fill=c, font=font)
+            text = " | ".join(a.get("segments") or []) or a.get("text", "")
+            lines.append(f"- [ ] {n} `{a['class']}` {[round(v) for v in a['box']]}" + (f" — {text}" if text else ""))
+        lines.append("- missing boxes: \n")
+        im.save(out / f"{pid}.png")
+    (out / "review.md").write_text(
+        "# Annotation review\n\nTick each box you agree with (class and extent); list anything missing.\n"
+        "Agreement = ticked boxes / (all boxes + missing boxes); the set is accepted at 95% or better.\n\n"
+        + "\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -102,13 +137,19 @@ def main() -> None:
     s.add_argument("set_dir", type=Path)
     s.add_argument("--share", type=float, default=0.2)
     s.add_argument("--seed", type=int, required=True)
+    r = sub.add_parser("review")
+    r.add_argument("set_dir", type=Path)
+    r.add_argument("out", type=Path)
+    r.add_argument("ids", nargs="+")
     args = ap.parse_args()
     if args.cmd == "grid":
         grid(args.src, args.out, [int(v) for v in args.crop.split(",")] if args.crop else None)
     elif args.cmd == "check":
         check(args.set_dir)
-    else:
+    elif args.cmd == "sample":
         sample(args.set_dir, args.share, args.seed)
+    else:
+        review(args.set_dir, args.out, args.ids)
 
 
 if __name__ == "__main__":
