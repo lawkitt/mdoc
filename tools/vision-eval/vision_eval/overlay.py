@@ -182,6 +182,8 @@ def _paste_code(page: np.ndarray, img: Image.Image, xy: tuple[int, int]) -> list
 
 
 def degrade(img: Image.Image, rng: random.Random) -> Image.Image:
+    if rng.random() < 0.3:  # many real scans are grey
+        img = img.convert("L").convert("RGB")
     img = img.filter(ImageFilter.GaussianBlur(rng.uniform(0.3, 0.9)))
     a = np.asarray(img, np.float32)
     a += np.random.default_rng(rng.randint(0, 2**31)).normal(0, rng.uniform(2, 7), a.shape)
