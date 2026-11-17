@@ -294,7 +294,14 @@ impl CommentRail {
 
     /// Expand the thread of comment `id` and open "Not on the page", for
     /// renders and tests.
-    #[cfg(any(test, feature = "headless-renders"))]
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
     pub(crate) fn show_open(&mut self, id: Option<&str>, nowhere: bool, cx: &mut Context<Self>) {
         self.open = id.and_then(|id| self.threads.iter().position(|t| t.comment.id == id));
         self.nowhere_open = nowhere;
@@ -302,7 +309,14 @@ impl CommentRail {
     }
 
     /// Thread `i`'s card, to focus.
-    #[cfg(any(test, feature = "headless-renders"))]
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
     pub(crate) fn card_focus(&self, i: usize) -> FocusHandle {
         self.cards[i].clone()
     }

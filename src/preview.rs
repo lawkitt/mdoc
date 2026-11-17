@@ -137,6 +137,14 @@ impl PreviewState {
         self.docx.as_ref()
     }
 
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
     pub(crate) fn comment_rail(&self) -> Option<&Entity<CommentRail>> {
         self.comments.as_ref()
     }
