@@ -21,6 +21,28 @@ OCR text inside, ink colour) whose thresholds come from the tuning split.
 `run`, `gate` and `sweep` refuse a set whose `set.json` role isn't `tune`;
 `final` refuses one whose role is, and runs only once per output folder.
 Only aggregates are printed.
+Details:
+- Sets: `tune-seal` pages carry `tier: real` (RECAP) or `tier: synthetic`
+  (Hyperbots). The gate and the sweep count real pages and report the
+  synthetic tier beside them.
+- Options: `mirage.check_options` rejects keys and values libcactus 4.1.1's
+  parser doesn't know; `mirage.check_applied` asserts on every result that
+  the options took effect (no text when only objects were asked for, no
+  score under `conf`).
+- Tiles: the bottom half as two tiles 60% of the page wide, so Mirage's
+  512 px canvas sees each at about twice the page's scale.
+- Crops: at most 2 seal-sized boxes per page (`crop_candidates`), padded
+  25% or 50% of their larger side.
+- Pools: boxes named a seal by the decision 33 map; those plus boxes whose
+  crop has such a name; or every box. Rules (each may be off): aspect, long
+  side as a share of the page's, mask roundness (4πA/P²), the share of the
+  box covered by OCR words, the share of its ink that is coloured. Kept boxes
+  go through non-maximum suppression at IoU 0.5.
+- Time: a page's time is the sum of its calls without warm-ups; peak is the
+  largest host process's.
+- `sweep --write` saves the setting for pre-registration and prints its
+  SHA-256; `final` checks every field of it against what it would run, then
+  writes `tune-final.json` in the output folder and refuses to run again.
 """
 from __future__ import annotations
 

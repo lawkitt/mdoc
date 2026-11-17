@@ -100,22 +100,4 @@ PaddleOCR's seal pipeline straightens curved text before recognition. `seal.py` 
 
 ## Mirage usage tuning (#918)
 
-`vision_eval.tune` runs lawkitt/mdoc#918's decision 15: it changes only how the harness calls the released Mirage (libcactus 4.1.1) for seals and stamps, with no training.
-
-```sh
-python -m vision_eval.tune disjoint                  # tune-seal against #911's sets: source ids and page hashes
-python -m vision_eval.run ocr --sets tune-seal       # reference words, the time baseline, crop ranking
-python -m vision_eval.tune run                       # every variant on tune-seal
-python -m vision_eval.tune gate                      # decisions 10 and 17
-python -m vision_eval.tune sweep --write setting.json
-python -m vision_eval.tune final setting.json        # once, on en-recap, ru-filings and overlays
-```
-
-- **Sets:** `tune-seal` has role `tune` in its `set.json`, with real RECAP pages (`tier: real`) and Hyperbots' synthetic stamped pages (`tier: synthetic`). The gate and the sweep count real pages only and report the synthetic tier beside them. `run`, `gate` and `sweep` refuse any other role; `final` refuses role `tune`.
-- **Options:** every variant runs `sections: ["objects"]` (decision 5). `mirage.check_options` rejects option keys and values that libcactus 4.1.1's parser doesn't know, since the library silently ignores unknown keys. `mirage.check_applied` asserts on every result that the options took effect: no text when only objects were asked for, and no score under `conf`.
-- **Run levers** (decision 7): `conf` 0.05–0.3, `agnostic_nms`, the decision 33 keywords, the bottom half at 2× and a crop pass. The bottom half is cut into two tiles 60% of the page wide, so Mirage's 512 px canvas sees each at about twice the page's scale. The crop pass re-describes at most 2 seal-sized boxes per page with 25–50% padding. Boxes not already named a seal come first, then those least covered by OCR words, then the highest score.
-- **Score levers**, applied to the raw output without rerunning: the candidate pool and the rule layer. The pool is boxes named a seal by the decision 33 map, those plus boxes whose crop has such a name, or every box. The rule layer has these thresholds, each of which may be off: box aspect, long side as a share of the page's, mask roundness (4πA/P² of Mirage's mask polygon), the share of the box covered by OCR words, and the share of its ink that is coloured. Kept boxes go through non-maximum suppression at IoU 0.5.
-- **Time:** a page's time is the sum of its calls, with warm-ups excluded. Peak is the largest of the host processes.
-- **Gate:** the share of real `tune-seal` seals that any box (page, tile or crop, any name) matches at IoU 0.5, among variants with a median of at most 190 ms per page. The gate is 70%.
-- **Sweep** (decision 11): keep settings with zero words lost, precision ≥85%, time within +30% of OCR and peak ≤300 MB. Then take the highest recall. Ties go to the faster variant, then to higher precision, then to fewer active rules. `--write` saves the setting for pre-registration and prints its SHA-256.
-- **Final** (decisions 12 and 18): checks the setting against the harness, runs it on each set and scores it against recall ≥70%, precision ≥85%, zero words lost, +30% time and +300 MB. It writes `tune-final.json` in the output folder and refuses to run again.
+`python -m vision_eval.tune` runs lawkitt/mdoc#918's decision 15 on the `tune-seal` set: the disjointness check, objects-only variant runs, the gate, the sweep and one final run. `vision_eval.mirage` rejects option keys libcactus 4.1.1 ignores. The commands and rules are in `vision_eval/tune.py`'s docstring.
