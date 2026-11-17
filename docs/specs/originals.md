@@ -47,10 +47,11 @@ imported".
   bump; no fork unless a patch is unavoidable.
 - Upstream docxide issues carry synthetic fixtures only, never a user's
   document.
-- Bundled fallback fonts reach docxide through `DOCXSIDE_FONTS` at the
-  lowest priority, so installed fonts win: Carlito for Calibri, Caladea for
-  Cambria, Liberation Sans, Serif and Mono for Arial, Times New Roman and
-  Courier New.
+- Bundled fallback fonts reach docxide as its `font_dirs` option, never the
+  environment: Carlito for Calibri, Caladea for Cambria, and Liberation
+  Sans, Serif and Mono. docxide looks up the requested family first, so an
+  installed Calibri or Cambria still wins; the bundle outranks only a
+  user-installed copy of the same bundled family.
 - The currency-sign fallback stays until a test shows the bundled fonts
   draw ₽ and the newer signs.
 - The fidelity check scores docxide against Word-for-Mac reference PDFs of
@@ -62,9 +63,10 @@ imported".
 
 ## Comments in Source
 
-- The render copy wraps each comment's range in a link to
-  `mdoc-comment:<id>`; its `/Link` rectangles are the anchors, never
-  clickable links, and mdoc draws the highlight itself.
+- The render copy wraps each commented run in a link to `mdoc-comment:<k>`,
+  `k` indexing the set of comments open over that run; its `/Link`
+  rectangles are the anchors, never clickable links, and mdoc draws the
+  highlight itself.
 - An anchored passage gets a soft, theme-aware tint that stays readable
   under both page tones.
 - A wide Source pane shows the **comment rail**: cards beside the page at
