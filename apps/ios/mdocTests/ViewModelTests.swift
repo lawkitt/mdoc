@@ -214,16 +214,22 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
-    /// The core's import note (here, Word comments left out) shows once the
-    /// text is read.
-    func testAnImportWarningShowsWithTheText() async throws {
+    /// The core's left-out line (here, a picture) shows once the text is
+    /// read; a Word file's comments count on its Original instead.
+    func testTheLeftOutLineShowsWithTheText() async throws {
         let model = try imported(
-            { try .file(Fixture.copy("tests/fixtures/import/handmade-hidden-content.docx", into: $0), .docx) },
+            { try .file(Fixture.copy("tests/fixtures/import/text.docx", into: $0), .docx) },
             title: "Lease")
-        XCTAssertNil(model.snapshot.warning)
+        XCTAssertNil(model.snapshot.leftOut)
         await model.recognize()
         XCTAssertEqual(model.snapshot.phase, .unscanned)
-        XCTAssertEqual(model.snapshot.warning, "2 comments not imported.")
+        XCTAssertEqual(model.snapshot.leftOut, "1 picture not imported.")
+        XCTAssertNil(model.snapshot.notice)
+        let comments = try imported(
+            { try .file(Fixture.copy("tests/fixtures/import/handmade-hidden-content.docx", into: $0), .docx) },
+            title: "Notes")
+        await comments.recognize()
+        XCTAssertNil(comments.snapshot.leftOut)
     }
 
     /// A cancelled recognition ends the job and offers it again. Resume,

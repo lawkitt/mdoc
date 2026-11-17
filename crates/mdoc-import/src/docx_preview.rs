@@ -312,6 +312,25 @@ pub fn run_worker_reporting(
     })
 }
 
+/// Render in this process into a new folder under `parent`, for the iOS app,
+/// which has no worker process: the same input limits as the worker, but no
+/// deadline, because nothing can stop the renderer mid-document. A renderer
+/// panic is a failed render, not a crash. `parent` decides the PDF's file
+/// protection.
+pub fn render_in(
+    parent: &Path,
+    path: &Path,
+    read_marks: MarkReader,
+    options: RenderOptions,
+) -> Result<DocxPreview, PreviewError> {
+    let directory = tempfile::tempdir_in(parent)
+        .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
+    let pdf_path = directory.path().join("preview.pdf");
+    std::panic::catch_unwind(|| run_worker(path, &pdf_path, read_marks, options))
+        .unwrap_or_else(|_| Err(PreviewError::Render("the renderer stopped".into())))?;
+    finish(directory, pdf_path, options)
+}
+
 fn render_direct(
     path: &Path,
     read_marks: MarkReader,
@@ -320,6 +339,15 @@ fn render_direct(
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
     run_worker(path, &pdf_path, read_marks, options)?;
+    finish(directory, pdf_path, options)
+}
+
+/// The preview of the PDF and metadata the worker steps left in `directory`.
+fn finish(
+    directory: TempDir,
+    pdf_path: PathBuf,
+    options: RenderOptions,
+) -> Result<DocxPreview, PreviewError> {
     let warnings = fs::read_to_string(pdf_path.with_extension("warnings"))?
         .lines()
         .map(str::to_owned)

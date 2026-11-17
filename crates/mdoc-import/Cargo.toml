@@ -28,8 +28,9 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dy
 # Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
 libloading = "0.9"
 
-# The supervised DOCX preview worker is a child process: desktop only (ADR 0085).
-[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+# The DOCX preview: a supervised worker process on desktop, in process on
+# iOS (ADR 0085); Android has no Original pane for DOCX yet.
+[target.'cfg(not(target_os = "android"))'.dependencies]
 # Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
 docxide-pdf = { version = "=0.21.4", default-features = false }
 roxmltree = "0.21"

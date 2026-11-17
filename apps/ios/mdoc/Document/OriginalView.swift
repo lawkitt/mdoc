@@ -2,8 +2,8 @@ import PDFKit
 import SwiftUI
 import UIKit
 
-/// The page the text came from: PDFKit for PDFs, a zoomable image view for
-/// scans and photos (ADR 0085).
+/// The page the text came from: PDFKit for PDFs and rendered DOCX files, a
+/// zoomable image view for scans and photos (ADR 0085).
 struct OriginalView: View {
     let original: OriginalSource
 
@@ -13,10 +13,12 @@ struct OriginalView: View {
             ContentUnavailableView(
                 "No original page",
                 systemImage: "doc.plaintext",
-                description: Text("DOCX files and pasted text show their text only."))
+                description: Text("Pasted text shows its text only."))
         case .pdf(let url):
             PDFKitView(url: url)
                 .accessibilityLabel(Text("Original PDF"))
+        case .docx(let url):
+            DocxOriginalView(source: url)
         case .images(let urls):
             TabView {
                 ForEach(Array(urls.enumerated()), id: \.offset) { index, url in

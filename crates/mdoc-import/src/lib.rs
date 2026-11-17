@@ -1,9 +1,9 @@
 //! GUI-free document import (ADR 0069): conversion and its sessions, OCR and
 //! its verified setup, OCR that keeps finished pages (`resume`, ADR 0085),
 //! recognition languages, model downloads and the one-at-a-time model work
-//! permit, and the supervised DOCX preview worker (desktop only: the mobile
-//! apps convert DOCX in-process and have no preview, ADR 0085).
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+//! permit, and the DOCX preview (a supervised worker on desktop, in process
+//! on iOS; Android has none yet).
+#[cfg(not(target_os = "android"))]
 pub mod docx_preview;
 pub mod hidden_content;
 pub mod import;

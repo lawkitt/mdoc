@@ -14,6 +14,7 @@ final class Preferences: @unchecked Sendable {
         case theme
         case serif = "documentFontSerif"
         case showsSource = "showsMarkdownSource"
+        case showsComments
         case haptics
         case swipeLearned = "hint.swipe.learned"
         case longPressLearned = "hint.longPress.learned"
@@ -77,6 +78,12 @@ final class Preferences: @unchecked Sendable {
     var showsSource: Bool {
         get { access(keyPath: \.showsSource); return bool(.showsSource) }
         set { withMutation(keyPath: \.showsSource) { store.set(newValue, forKey: name(.showsSource)) } }
+    }
+
+    /// The Original pane's comments on a DOCX page, on by default.
+    var showsComments: Bool {
+        get { access(keyPath: \.showsComments); return bool(.showsComments, default: true) }
+        set { withMutation(keyPath: \.showsComments) { store.set(newValue, forKey: name(.showsComments)) } }
     }
 
     // MARK: Review
