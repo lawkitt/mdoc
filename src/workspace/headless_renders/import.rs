@@ -56,6 +56,7 @@ fn comments_note(d: &mut Driver) -> Result<()> {
     let Err(failure) = mdoc_import::docx_preview::render_in_process(
         &imported.source,
         Arc::new(AtomicBool::new(false)),
+        crate::preview::read_comment_marks,
     ) else {
         return Err("the preview renders tracked changes now; show it instead".into());
     };

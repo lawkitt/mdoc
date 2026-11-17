@@ -82,6 +82,10 @@ try {
     if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $uninstaller)) {
         throw 'NSIS did not install mdoc.exe and uninstall.exe.'
     }
+    # The DOCX preview's fallback fonts ship beside mdoc.exe with their licences.
+    foreach ($font in 'Carlito-Regular.ttf', 'Caladea-Regular.ttf', 'LiberationSans-Regular.ttf', 'Carlito-OFL.txt', 'Caladea-OFL.txt', 'Liberation-LICENSE.txt') {
+        if (-not (Test-Path -LiteralPath (Join-Path $installDir "fonts\$font"))) { throw "NSIS did not install fonts\$font." }
+    }
     Write-Host "Installed executable: $exe"
     Get-FileHash -Algorithm SHA256 -LiteralPath $exe | Format-List
     $app = Start-Process -FilePath $exe -PassThru

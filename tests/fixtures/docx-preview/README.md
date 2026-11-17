@@ -1,26 +1,35 @@
 # Synthetic DOCX fixtures
 
 `generate.py` uses only Python's standard library and produces deterministic
-`coverage.docx` and `comments.docx` archives. Neither contains private documents.
+`coverage.docx`, `comments.docx` and `comment-anchors.docx` archives. None
+contains private documents.
 `legal-opinion.docx` is a scrubbed real document; see
 [below](#scrubbed-legal-opinion).
 The comments fixture is required at compile time by the comment-extraction tests
-and at runtime by preview lifecycle/worker tests.
+and at runtime by preview lifecycle/worker tests. `comment-anchors.docx` holds
+every comment shape the preview anchors (a range over several lines, two
+paragraphs, overlapping ranges, over and inside a link, over a
+cross-reference, a point comment, an empty range, a table cell, Russian text,
+across a page break, and a comment with no place); the worker tests pin each
+anchor.
 
-Both synthetic archives are included in the changes. To regenerate them before
+The synthetic archives are included in the changes. To regenerate them before
 running Cargo:
 
 ```sh
 python3 tests/fixtures/docx-preview/generate.py
 ```
 
-Run from the repository root. The generator rewrites both archives
-deterministically (identical to the included bytes).
+Run from the repository root. The generator rewrites the archives
+deterministically: identical to the included bytes with the zlib that made
+them (Windows' Python compresses `comments.docx` and `coverage.docx` to other
+bytes with the same content).
 
 Verified SHA-256 digests:
 
 - `comments.docx`: `6e5eac8104d6310c0da4d21c92ed18e35c52001cc01351e892b097537428b5e1`
 - `coverage.docx`: `baa3f1b2c5cef58afc57d6680fb172d4720c57c8f3d1e1c0f6be1ad344e707d1`
+- `comment-anchors.docx`: `022631407e7bd4981b49d7c84900d43735d47712b922391205bc5fa68840c9bd`
 
 ## Scrubbed legal opinion
 

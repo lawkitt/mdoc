@@ -1,5 +1,9 @@
 //! Comment extraction runs in the conversion worker, before the renderer sees
-//! a temporary copy with its unreliable comment-margin rendering disabled.
+//! a temporary copy. The copy keeps the renderer's own comment pane off (it
+//! bakes comments into the page and shrinks the body) and marks where each
+//! comment sits: every commented run of the body is wrapped in a link to
+//! `mdoc-comment:<k>`, and those links' `/Link` rectangles in the rendered PDF
+//! become the comments' anchors (`anchors`). They are never clickable links.
 use super::{PreviewError, replace_parts, word, xml_text};
 use roxmltree::Node;
 use std::{
@@ -8,6 +12,14 @@ use std::{
 };
 use zip::ZipArchive;
 
+/// The scheme of the marker links. A marker's URI is `mdoc-comment:<k>`, or
+/// `mdoc-comment:<k>;<target>` when the run sat inside a real hyperlink, whose
+/// target the PDF preview keeps clickable (gpui-pdf's `page_links`).
+pub const COMMENT_SCHEME: &str = "mdoc-comment:";
+
+const BODY: &str = "word/document.xml";
+const BODY_RELS: &str = "word/_rels/document.xml.rels";
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DocxComment {
     pub id: String,
@@ -15,6 +27,58 @@ pub struct DocxComment {
     pub date: String,
     pub text: String,
     pub quote: String,
+}
+
+/// Where a comment sits on one page of the rendered preview. A comment whose
+/// range crosses a page break has one anchor per page; a comment with none (a
+/// footnote, a header, no range or reference) has no place on the page.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct CommentAnchor {
+    /// The comment's `DocxComment::id`.
+    pub id: String,
+    /// 0-based page index.
+    pub page: usize,
+    /// One rectangle per line the range covers on this page, in reading order.
+    pub rects: Vec<AnchorRect>,
+    /// A point comment (no range, or a range with no text): its one
+    /// rectangle is a 1 pt, zero-width spot on the baseline where the comment
+    /// was inserted, to mark rather than tint.
+    pub point: bool,
+}
+
+/// A rectangle in normalized page coordinates: 0..1 of the page, top-left
+/// origin, matching the rendered page image (as gpui-pdf's links).
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct AnchorRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+/// A `/Link` annotation of the rendered PDF whose URI starts with
+/// [`COMMENT_SCHEME`], as the app's PDF reader found it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinkMark {
+    pub page: usize,
+    pub rect: AnchorRect,
+    /// The URI after the scheme.
+    pub target: String,
+}
+
+/// What marker `k` stands for: the comments open over its runs (indexes into
+/// the comment list), and whether it marks a point comment.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub(super) struct Marker {
+    comments: Vec<usize>,
+    point: bool,
+}
+
+pub(super) struct Prepared {
+    /// The render copy, or `None` when the document has no comments.
+    pub render: Option<Vec<u8>>,
+    pub comments: Vec<DocxComment>,
+    pub markers: Vec<Marker>,
 }
 
 fn attr<'a>(node: Node<'a, '_>, name: &str) -> &'a str {
@@ -41,21 +105,30 @@ fn text(node: Node<'_, '_>) -> String {
     out.trim().to_owned()
 }
 
-pub(super) fn prepare(bytes: &[u8]) -> Result<(Option<Vec<u8>>, Vec<DocxComment>), PreviewError> {
+pub(super) fn prepare(bytes: &[u8]) -> Result<Prepared, PreviewError> {
     let invalid = |e: zip::result::ZipError| PreviewError::Package(e.to_string());
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(invalid)?;
     let mut comments = Vec::new();
     let mut by_id = HashMap::new();
     let mut xml_parts = Vec::new();
+    let mut body_rels = None;
     // Input has already passed the package expansion/entry limits.
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(invalid)?;
-        if !entry.name().map_err(invalid)?.ends_with(".xml") {
+        let name = match entry.name() {
+            Ok(name) => name.to_string(),
+            Err(_) => return Err(PreviewError::Package("unreadable entry name".into())),
+        };
+        if !(name.ends_with(".xml") || name == BODY_RELS) {
             continue;
         }
         let mut raw = Vec::new();
         entry.read_to_end(&mut raw)?;
         let source = xml_text(&raw)?.into_owned();
+        if name == BODY_RELS {
+            body_rels = Some((i, source));
+            continue;
+        }
         let doc = roxmltree::Document::parse(&source)
             .map_err(|e| PreviewError::Package(e.to_string()))?;
         if word(doc.root_element(), "comments") {
@@ -79,13 +152,24 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<(Option<Vec<u8>>, Vec<DocxComment>
                 });
             }
         }
-        xml_parts.push((i, source));
+        xml_parts.push((i, name, source));
     }
     if comments.is_empty() {
-        return Ok((None, comments));
+        return Ok(Prepared {
+            render: None,
+            comments,
+            markers: Vec::new(),
+        });
     }
     let mut replacements = HashMap::new();
-    for (index, source) in xml_parts {
+    let mut markers = Markers {
+        prefix: body_rels
+            .as_ref()
+            .map(|(_, rels)| relationship_prefix(rels))
+            .unwrap_or_default(),
+        ..Markers::default()
+    };
+    for (index, name, source) in xml_parts {
         let doc = roxmltree::Document::parse(&source)
             .map_err(|e| PreviewError::Package(e.to_string()))?;
         if word(doc.root_element(), "comments") {
@@ -98,79 +182,454 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<(Option<Vec<u8>>, Vec<DocxComment>
             );
             continue;
         }
-        let mut active = Vec::new();
-        let mut removals = Vec::new();
-        for node in doc.descendants() {
-            if word(node, "commentRangeStart") {
-                if let Some(&i) = by_id.get(attr(node, "id")) {
-                    active.push(i);
-                }
-            } else if word(node, "commentRangeEnd") {
-                if let Some(&i) = by_id.get(attr(node, "id")) {
-                    active.retain(|a| *a != i);
-                }
-            } else if word(node, "t") {
-                for &i in &active {
-                    comments[i].quote.push_str(node.text().unwrap_or_default());
-                }
-            } else if word(node, "p") || word(node, "br") || word(node, "tab") {
-                for &i in &active {
-                    if !comments[i].quote.is_empty() {
-                        comments[i].quote.push(' ');
-                    }
-                }
+        // Only the body's links reach the PDF as annotations the reader can
+        // place (docxide reads the body and its relationships by these names).
+        let marks = name == BODY && body_rels.is_some();
+        let links = if marks {
+            relationships(&body_rels.as_ref().unwrap().1)
+        } else {
+            HashMap::new()
+        };
+        let mut edits = Vec::new();
+        quote_and_mark(
+            &doc,
+            &by_id,
+            &mut comments,
+            &links,
+            marks.then_some(&mut markers),
+            &mut edits,
+        );
+        if !edits.is_empty() {
+            replacements.insert(index, apply(&source, edits));
+        }
+    }
+    if !markers.list.is_empty()
+        && let Some((index, rels)) = body_rels
+    {
+        replacements.insert(index, markers.add_relationships(&rels)?);
+    }
+    Ok(Prepared {
+        render: Some(replace_parts(&mut archive, &replacements)?),
+        comments,
+        markers: markers.list,
+    })
+}
+
+/// An edit to a part's text: replace `start..end` with `text`. `rank` orders
+/// edits at one offset: closing a link before what follows it, opening one
+/// after what precedes it.
+struct Edit {
+    start: usize,
+    end: usize,
+    rank: u8,
+    text: String,
+}
+
+fn apply(source: &str, mut edits: Vec<Edit>) -> String {
+    edits.sort_by_key(|e| (e.start, e.rank));
+    let mut out = String::with_capacity(source.len() + edits.len() * 64);
+    let mut cursor = 0;
+    for edit in edits {
+        if edit.start >= cursor {
+            out.push_str(&source[cursor..edit.start]);
+            cursor = edit.start;
+        }
+        out.push_str(&edit.text);
+        cursor = cursor.max(edit.end);
+    }
+    out.push_str(&source[cursor..]);
+    out
+}
+
+#[derive(Default)]
+struct Markers {
+    /// The relationship IDs' prefix, which no existing ID starts with.
+    prefix: String,
+    list: Vec<Marker>,
+    /// Marker and the hyperlink target it carries → relationship index.
+    links: Vec<(usize, Option<String>)>,
+}
+
+impl Markers {
+    /// The relationship index for a run under `comments` inside a link to `target`.
+    fn relationship(&mut self, marker: Marker, target: Option<String>) -> usize {
+        let k = match self.list.iter().position(|m| *m == marker) {
+            Some(k) => k,
+            None => {
+                self.list.push(marker);
+                self.list.len() - 1
             }
-            if word(node, "commentRangeStart")
-                || word(node, "commentRangeEnd")
-                || word(node, "commentReference")
-            {
-                removals.push(node.range());
+        };
+        let link = (k, target);
+        match self.links.iter().position(|l| *l == link) {
+            Some(i) => i,
+            None => {
+                self.links.push(link);
+                self.links.len() - 1
             }
         }
-        // Point comments have no selected range: show their paragraph as context.
-        for node in doc.descendants().filter(|n| word(*n, "commentReference")) {
+    }
+
+    /// The body's relationships with one external hyperlink per marker link.
+    fn add_relationships(&self, rels: &str) -> Result<String, PreviewError> {
+        let close = rels
+            .rfind("</")
+            .ok_or_else(|| PreviewError::Package("invalid relationships part".into()))?;
+        let prefix = &self.prefix;
+        let mut added = String::new();
+        for (i, (k, target)) in self.links.iter().enumerate() {
+            let uri = match target {
+                Some(target) => format!("{COMMENT_SCHEME}{k};{target}"),
+                None => format!("{COMMENT_SCHEME}{k}"),
+            };
+            added.push_str(&format!(
+                "<Relationship xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\" Id=\"{prefix}{i}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>",
+                escape_attribute(&uri)
+            ));
+        }
+        let mut out = rels.to_owned();
+        out.insert_str(close, &added);
+        Ok(out)
+    }
+}
+
+/// A relationship ID prefix no existing ID starts with.
+fn relationship_prefix(rels: &str) -> String {
+    let mut prefix = String::from("mdocComment");
+    while rels.contains(&format!("\"{prefix}")) {
+        prefix.push('_');
+    }
+    prefix
+}
+
+/// The body's hyperlink relationships: ID → target.
+fn relationships(rels: &str) -> HashMap<String, String> {
+    let Ok(doc) = roxmltree::Document::parse(rels) else {
+        return HashMap::new();
+    };
+    doc.root_element()
+        .children()
+        .filter(|n| n.tag_name().name() == "Relationship")
+        .filter_map(|n| {
+            Some((
+                n.attribute("Id")?.to_owned(),
+                n.attribute("Target")?.to_owned(),
+            ))
+        })
+        .collect()
+}
+
+fn escape_attribute(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+const RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const STRICT_RELATIONSHIPS: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
+
+/// Children of a run that the renderer draws as text.
+fn draws_text(run: Node<'_, '_>) -> bool {
+    run.children().any(|c| {
+        ["t", "tab", "sym", "noBreakHyphen", "softHyphen", "br", "cr"]
+            .iter()
+            .any(|name| word(c, name))
+    })
+}
+
+/// A run the renderer reads where a link may wrap it: a fldSimple's runs are
+/// the field itself, and its first run must stay its direct child.
+fn wrappable(run: Node<'_, '_>) -> bool {
+    run.parent().is_some_and(|p| {
+        ["p", "hyperlink", "smartTag", "customXml", "sdtContent"]
+            .iter()
+            .any(|name| word(p, name))
+    })
+}
+
+/// The target of the hyperlink a run sits in: its relationship's target, or
+/// `#bookmark` for an in-document link.
+fn enclosing_link(run: Node<'_, '_>, links: &HashMap<String, String>) -> Option<String> {
+    let link = run.ancestors().skip(1).find(|n| word(*n, "hyperlink"))?;
+    let rid = link
+        .attribute((RELATIONSHIPS, "id"))
+        .or_else(|| link.attribute((STRICT_RELATIONSHIPS, "id")));
+    match rid {
+        Some(rid) => links.get(rid).cloned(),
+        None => link
+            .attribute((link.tag_name().namespace()?, "anchor"))
+            .map(|a| format!("#{a}")),
+    }
+}
+
+/// Fills in each comment's quote and collects the edits of the render copy:
+/// comment markup goes, and with `markers` each commented run is wrapped in a
+/// marker link and each point comment gets a marker where it was inserted.
+fn quote_and_mark(
+    doc: &roxmltree::Document<'_>,
+    by_id: &HashMap<String, usize>,
+    comments: &mut [DocxComment],
+    links: &HashMap<String, String>,
+    markers: Option<&mut Markers>,
+    edits: &mut Vec<Edit>,
+) {
+    let w = doc
+        .root_element()
+        .tag_name()
+        .namespace()
+        .unwrap_or_default();
+    let r = if w.starts_with("http://purl.oclc.org/") {
+        STRICT_RELATIONSHIPS
+    } else {
+        RELATIONSHIPS
+    };
+    // Our own prefixes, declared on each inserted element: the run inside keeps
+    // whatever prefixes the document gave it.
+    let open = |rel: usize, id_prefix: &str| {
+        format!(
+            "<mdocw:hyperlink xmlns:mdocw=\"{w}\" xmlns:mdocr=\"{r}\" mdocr:id=\"{id_prefix}{rel}\">"
+        )
+    };
+    let close = "</mdocw:hyperlink>";
+    let mut active: Vec<usize> = Vec::new();
+    // Ranged comments that drew something; the rest are point comments.
+    let mut ranged = vec![false; comments.len()];
+    let mut pending_runs = Vec::new();
+    for node in doc.descendants() {
+        if word(node, "commentRangeStart") {
             if let Some(&i) = by_id.get(attr(node, "id"))
-                && comments[i].quote.is_empty()
+                && !active.contains(&i)
+            {
+                active.push(i);
+            }
+        } else if word(node, "commentRangeEnd") {
+            if let Some(&i) = by_id.get(attr(node, "id")) {
+                active.retain(|a| *a != i);
+            }
+        } else if word(node, "t") {
+            for &i in &active {
+                comments[i].quote.push_str(node.text().unwrap_or_default());
+            }
+        } else if word(node, "p") || word(node, "br") || word(node, "tab") {
+            for &i in &active {
+                if !comments[i].quote.is_empty() {
+                    comments[i].quote.push(' ');
+                }
+            }
+        }
+        if word(node, "r") && !active.is_empty() && draws_text(node) && wrappable(node) {
+            let mut open_comments = active.clone();
+            open_comments.sort_unstable();
+            for &i in &open_comments {
+                ranged[i] = true;
+            }
+            pending_runs.push((node, open_comments));
+        }
+        if word(node, "commentRangeStart")
+            || word(node, "commentRangeEnd")
+            || word(node, "commentReference")
+        {
+            edits.push(Edit {
+                start: node.range().start,
+                end: node.range().end,
+                rank: 1,
+                text: String::new(),
+            });
+        }
+    }
+    // Point comments have no selected range: show their paragraph as context.
+    let mut points = Vec::new();
+    for node in doc.descendants().filter(|n| word(*n, "commentReference")) {
+        if let Some(&i) = by_id.get(attr(node, "id"))
+            && !ranged[i]
+        {
+            if comments[i].quote.is_empty()
                 && let Some(paragraph) = node.ancestors().find(|n| word(*n, "p"))
             {
                 comments[i].quote = text(paragraph);
             }
-        }
-        if !removals.is_empty() {
-            let mut modified = source.clone();
-            for range in removals.into_iter().rev() {
-                modified.replace_range(range, "");
-            }
-            replacements.insert(index, modified);
+            points.push((node, i));
         }
     }
-    Ok((Some(replace_parts(&mut archive, &replacements)?), comments))
+    let Some(markers) = markers else {
+        return;
+    };
+    let id_prefix = markers.prefix.clone();
+    let id_prefix = id_prefix.as_str();
+    for (run, open_comments) in pending_runs {
+        let rel = markers.relationship(
+            Marker {
+                comments: open_comments,
+                point: false,
+            },
+            enclosing_link(run, links),
+        );
+        edits.push(Edit {
+            start: run.range().start,
+            end: run.range().start,
+            rank: 2,
+            text: open(rel, id_prefix),
+        });
+        edits.push(Edit {
+            start: run.range().end,
+            end: run.range().end,
+            rank: 0,
+            text: close.to_owned(),
+        });
+    }
+    for (reference, i) in points {
+        // The reference sits in a run of its own (or at a run's end); the
+        // marker follows that run, as a zero-width text the line can carry.
+        let Some(run) = reference.ancestors().find(|n| word(*n, "r")) else {
+            continue;
+        };
+        if !wrappable(run) {
+            continue;
+        }
+        let rel = markers.relationship(
+            Marker {
+                comments: vec![i],
+                point: true,
+            },
+            enclosing_link(run, links),
+        );
+        // 1 pt, so the marker never raises its line, even where the font
+        // lacks the character and another face draws it.
+        edits.push(Edit {
+            start: run.range().end,
+            end: run.range().end,
+            rank: 2,
+            text: format!(
+                "{}<mdocw:r><mdocw:rPr><mdocw:sz mdocw:val=\"2\"/><mdocw:szCs mdocw:val=\"2\"/></mdocw:rPr><mdocw:t>{POINT}</mdocw:t></mdocw:r>{close}",
+                open(rel, id_prefix)
+            ),
+        });
+    }
+}
+
+/// The point marker's text: zero width, no break.
+const POINT: char = '\u{200B}';
+
+/// The anchors the marks read from the rendered PDF give each comment, in
+/// document order, with a range's rectangles on one line merged.
+pub fn anchors(
+    marks: &[LinkMark],
+    markers: &[Marker],
+    comments: &[DocxComment],
+) -> Vec<CommentAnchor> {
+    let mut out: Vec<CommentAnchor> = Vec::new();
+    for mark in marks {
+        let k = mark.target.split(';').next().unwrap_or_default();
+        let Some(marker) = k.parse::<usize>().ok().and_then(|k| markers.get(k)) else {
+            continue;
+        };
+        for &i in &marker.comments {
+            let Some(comment) = comments.get(i) else {
+                continue;
+            };
+            let anchor = match out
+                .iter_mut()
+                .find(|a| a.id == comment.id && a.page == mark.page)
+            {
+                Some(anchor) => anchor,
+                None => {
+                    out.push(CommentAnchor {
+                        id: comment.id.clone(),
+                        page: mark.page,
+                        rects: Vec::new(),
+                        point: marker.point,
+                    });
+                    out.last_mut().unwrap()
+                }
+            };
+            add_rect(&mut anchor.rects, mark.rect);
+        }
+    }
+    for anchor in &mut out {
+        anchor.rects.sort_by(line_order);
+        if anchor.point {
+            // A zero-width space has no width to keep.
+            for rect in &mut anchor.rects {
+                rect.w = 0.0;
+            }
+        }
+    }
+    out.sort_by(|a, b| {
+        a.page
+            .cmp(&b.page)
+            .then_with(|| line_order(&a.rects[0], &b.rects[0]))
+    });
+    out
+}
+
+/// Reading order: by line (tops within half a line height), then left to right.
+fn line_order(a: &AnchorRect, b: &AnchorRect) -> std::cmp::Ordering {
+    if same_line(a, b) {
+        a.x.total_cmp(&b.x)
+    } else {
+        a.y.total_cmp(&b.y)
+    }
+}
+
+fn same_line(a: &AnchorRect, b: &AnchorRect) -> bool {
+    (a.y - b.y).abs() < a.h.min(b.h) / 2.0
+}
+
+/// Adds `rect`, merged into a rectangle on the same line that it touches.
+fn add_rect(rects: &mut Vec<AnchorRect>, rect: AnchorRect) {
+    // Within about a space of a 10 pt line on a Letter page.
+    const GAP: f32 = 0.006;
+    if let Some(line) = rects
+        .iter_mut()
+        .find(|r| same_line(r, &rect) && rect.x <= r.x + r.w + GAP && r.x <= rect.x + rect.w + GAP)
+    {
+        let x0 = line.x.min(rect.x);
+        let y0 = line.y.min(rect.y);
+        let x1 = (line.x + line.w).max(rect.x + rect.w);
+        let y1 = (line.y + line.h).max(rect.y + rect.h);
+        *line = AnchorRect {
+            x: x0,
+            y: y0,
+            w: x1 - x0,
+            h: y1 - y0,
+        };
+    } else {
+        rects.push(rect);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn rendering_copy_removes_comment_markup_without_changing_source_text() {
-        let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comments.docx");
-        let (copy, comments) = prepare(bytes).unwrap();
-        assert_eq!(comments.len(), 4);
-        let mut zip = ZipArchive::new(Cursor::new(copy.unwrap())).unwrap();
+    fn body_of(copy: Vec<u8>) -> String {
+        let mut zip = ZipArchive::new(Cursor::new(copy)).unwrap();
         let mut body = String::new();
-        zip.by_name("word/document.xml")
+        zip.by_name(BODY)
             .unwrap()
             .read_to_string(&mut body)
             .unwrap();
+        body
+    }
+
+    #[test]
+    fn rendering_copy_removes_comment_markup_without_changing_source_text() {
+        let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comments.docx");
+        let prepared = prepare(bytes).unwrap();
+        assert_eq!(prepared.comments.len(), 4);
+        let copy = prepared.render.unwrap();
+        let body = body_of(copy.clone());
         let doc = roxmltree::Document::parse(&body).unwrap();
         assert!(!doc.descendants().any(|n| matches!(
             n.tag_name().name(),
             "commentRangeStart" | "commentRangeEnd" | "commentReference"
         )));
         assert_eq!(
-            text(doc.root_element()),
+            text(doc.root_element()).replace('\u{200B}', ""),
             "First quoted paragraph.\nSecond quoted paragraph.\nPoint comment context."
         );
+        let mut zip = ZipArchive::new(Cursor::new(copy)).unwrap();
         let mut xml = String::new();
         zip.by_name("word/comments.xml")
             .unwrap()
@@ -182,11 +641,220 @@ mod tests {
 
     #[test]
     fn no_comments_keeps_original_render_input() {
-        let (copy, comments) = prepare(include_bytes!(
+        let prepared = prepare(include_bytes!(
             "../../../../tests/fixtures/docx-preview/coverage.docx"
         ))
         .unwrap();
-        assert!(copy.is_none());
-        assert!(comments.is_empty());
+        assert!(prepared.render.is_none());
+        assert!(prepared.comments.is_empty());
+    }
+
+    fn part(copy: &[u8], name: &str) -> String {
+        let mut zip = ZipArchive::new(Cursor::new(copy)).unwrap();
+        let mut xml = String::new();
+        zip.by_name(name).unwrap().read_to_string(&mut xml).unwrap();
+        xml
+    }
+
+    /// Each run's text with the target of the marker link around it, if any.
+    fn marked_runs(copy: &[u8]) -> Vec<(String, Option<String>)> {
+        let rels = relationships(&part(copy, BODY_RELS));
+        let body = part(copy, BODY);
+        let doc = roxmltree::Document::parse(&body).unwrap();
+        doc.descendants()
+            .filter(|n| word(*n, "r"))
+            .map(|run| {
+                let text = run
+                    .children()
+                    .filter(|c| word(*c, "t"))
+                    .filter_map(|c| c.text())
+                    .collect();
+                let target = run
+                    .parent()
+                    .filter(|p| word(*p, "hyperlink"))
+                    .and_then(|p| p.attribute((RELATIONSHIPS, "id")))
+                    .and_then(|id| rels.get(id))
+                    .filter(|t| t.starts_with(COMMENT_SCHEME))
+                    .cloned();
+                (text, target)
+            })
+            .collect()
+    }
+
+    /// The ids of the comments a marker target stands for.
+    fn ids(prepared: &Prepared, target: &str) -> Vec<String> {
+        let k: usize = target[COMMENT_SCHEME.len()..]
+            .split(';')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        prepared.markers[k]
+            .comments
+            .iter()
+            .map(|&i| prepared.comments[i].id.clone())
+            .collect()
+    }
+
+    #[test]
+    fn render_copy_marks_every_commented_run() {
+        let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comment-anchors.docx");
+        let prepared = prepare(bytes).unwrap();
+        let copy = prepared.render.clone().unwrap();
+        let runs = marked_runs(&copy);
+        let marker = |text: &str| {
+            runs.iter()
+                .find(|(t, _)| t == text)
+                .unwrap_or_else(|| panic!("no run {text:?}"))
+                .1
+                .clone()
+        };
+        let marked = |text: &str| ids(&prepared, &marker(text).expect(text));
+        // Several lines, two paragraphs, a cell, Russian, across a page break.
+        assert_eq!(marked(&runs[1].0), ["0"]);
+        assert_eq!(
+            marked("First paragraph of a range over two paragraphs."),
+            ["1"]
+        );
+        assert_eq!(marked("Second paragraph of that range."), ["1"]);
+        assert_eq!(marked("Commented cell"), ["7"]);
+        assert_eq!(marked("Срок оплаты — тридцать дней."), ["8"]);
+        assert_eq!(marked("Before the page break."), ["12"]);
+        assert_eq!(marked("After the page break."), ["12"]);
+        // Overlapping comments: the shared run stands for both.
+        assert_eq!(marked("Alpha beta "), ["2"]);
+        assert_eq!(marked("gamma"), ["2", "3"]);
+        assert_eq!(marked(" delta"), ["3"]);
+        assert_eq!(marker(" epsilon."), None);
+        // A run inside a real link keeps its target after the marker.
+        assert!(
+            marker("public register")
+                .unwrap()
+                .ends_with(";https://example.com/register")
+        );
+        assert!(
+            marker("register")
+                .unwrap()
+                .ends_with(";https://example.com/register")
+        );
+        assert_eq!(marked("register"), ["11"]);
+        assert!(marker("clause 5").unwrap().ends_with(";#clause5"));
+        // Point comments and an empty range get a zero-width marker of their own.
+        let points: Vec<_> = runs
+            .iter()
+            .filter(|(t, _)| t == "\u{200B}")
+            .map(|(_, target)| ids(&prepared, target.as_ref().unwrap()))
+            .collect();
+        assert_eq!(points, [["5"], ["6"]]);
+        let point = |id: &str| {
+            prepared
+                .markers
+                .iter()
+                .find(|m| m.comments.iter().any(|&i| prepared.comments[i].id == id))
+                .unwrap()
+                .point
+        };
+        assert!(point("5") && point("6") && !point("0"));
+        // A comment with no range and no reference has no marker.
+        let nowhere = prepared.comments.iter().position(|c| c.id == "10").unwrap();
+        assert!(
+            !prepared
+                .markers
+                .iter()
+                .any(|m| m.comments.contains(&nowhere))
+        );
+        // No comment markup is left, and only the marker runs were added.
+        let body = part(&copy, BODY);
+        let doc = roxmltree::Document::parse(&body).unwrap();
+        assert!(
+            !doc.descendants()
+                .any(|n| n.tag_name().name().starts_with("comment"))
+        );
+        let source = part(bytes, BODY);
+        let original = roxmltree::Document::parse(&source).unwrap();
+        assert_eq!(
+            text(doc.root_element()).replace('\u{200B}', ""),
+            text(original.root_element())
+        );
+        // Each marker link is an external relationship the source never had.
+        let rels = part(&copy, BODY_RELS);
+        assert!(rels.contains(r#"Target="mdoc-comment:0" TargetMode="External""#));
+        assert!(!part(bytes, BODY_RELS).contains(COMMENT_SCHEME));
+    }
+
+    #[test]
+    fn marker_ids_never_reuse_an_existing_relationship_id() {
+        assert_eq!(relationship_prefix(r#"<r Id="rId1"/>"#), "mdocComment");
+        assert_eq!(
+            relationship_prefix(r#"<r Id="mdocComment0"/><r Id="mdocComment_1"/>"#),
+            "mdocComment__"
+        );
+    }
+
+    fn rect(x: f32, y: f32, w: f32) -> AnchorRect {
+        AnchorRect { x, y, w, h: 0.014 }
+    }
+
+    fn mark(page: usize, rect: AnchorRect, target: &str) -> LinkMark {
+        LinkMark {
+            page,
+            rect,
+            target: target.into(),
+        }
+    }
+
+    #[test]
+    fn anchors_merge_a_line_and_follow_the_pages() {
+        let comment = |id: &str| DocxComment {
+            id: id.into(),
+            author: String::new(),
+            date: String::new(),
+            text: String::new(),
+            quote: String::new(),
+        };
+        let comments = [comment("a"), comment("b"), comment("p")];
+        let markers = [
+            Marker {
+                comments: vec![0],
+                point: false,
+            },
+            Marker {
+                comments: vec![0, 1],
+                point: false,
+            },
+            Marker {
+                comments: vec![2],
+                point: true,
+            },
+        ];
+        let marks = [
+            mark(1, rect(0.1, 0.1, 0.2), "0"),
+            mark(0, rect(0.1, 0.5, 0.2), "0"),
+            // Touches the run before it on the same line: one rectangle.
+            mark(0, rect(0.302, 0.5, 0.1), "1;https://example.com"),
+            mark(0, rect(0.1, 0.52, 0.3), "1"),
+            mark(0, rect(0.4, 0.3, 0.0), "2"),
+            // Not a marker this render made.
+            mark(0, rect(0.1, 0.1, 0.1), "9"),
+            mark(0, rect(0.1, 0.1, 0.1), "x"),
+        ];
+        let anchors = anchors(&marks, &markers, &comments);
+        let got: Vec<_> = anchors
+            .iter()
+            .map(|a| (a.id.as_str(), a.page, a.rects.len(), a.point))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("p", 0, 1, true),
+                ("a", 0, 2, false),
+                ("b", 0, 2, false),
+                ("a", 1, 1, false)
+            ]
+        );
+        let a = &anchors[1].rects;
+        assert!((a[0].x - 0.1).abs() < 1e-6 && (a[0].w - 0.302).abs() < 1e-6);
+        assert!((a[1].y - 0.52).abs() < 1e-6);
+        assert_eq!(anchors[0].rects[0].w, 0.0);
     }
 }

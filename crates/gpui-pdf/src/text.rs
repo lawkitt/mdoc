@@ -85,6 +85,14 @@ impl Collector {
             Some(BfString::String(s)) => s,
             None => return, // no unicode → can't match against a quote; skip
         };
+        // Zero-width format characters draw nothing and break no word (mdoc's
+        // DOCX comment marks carry a zero-width space): find and copy skip them.
+        if text
+            .chars()
+            .all(|c| matches!(c, '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{FEFF}'))
+        {
+            return;
+        }
         // On-page bbox: the glyph outline transformed by `m` (the run's transform
         // times the glyph's own, mirroring hayro's renderer). Device space here is
         // page points with a top-left origin (we run at scale 1 with

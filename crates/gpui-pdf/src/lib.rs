@@ -59,7 +59,7 @@ pub use text::{NormRect, PageText, extract_page_text};
 
 /// PDF outline / table-of-contents + link extraction (always available — no deps).
 mod outline;
-pub use outline::{LinkTarget, page_links};
+pub use outline::{LinkMark, LinkTarget, MARK_SCHEME, link_marks, page_links};
 pub(crate) use outline::{OutlineItem, PdfLink};
 
 mod forms;
@@ -254,6 +254,35 @@ fn composite(src: &[u8], out: &mut [u8], tone: impl Fn([u8; 3]) -> [u8; 3]) {
         ]);
         *out = [b, g, r, 255];
     }
+}
+
+/// A page (0-based) rasterized at `scale` as 8-bit luminance composited onto
+/// white: `(width, height, pixels)`, row-major. For comparing renders (the
+/// DOCX fidelity check), not for display.
+pub fn page_luma(doc: &Document, idx: usize, scale: f32) -> Result<(u32, u32, Vec<u8>), String> {
+    let pixmap = hayro::render_pdf(
+        doc,
+        scale,
+        InterpreterSettings::default(),
+        &hayro::RenderSettings::default(),
+        Some(idx..=idx),
+    )
+    .and_then(|pages| pages.into_iter().next())
+    .ok_or_else(|| format!("render page {idx}"))?;
+    let (w, h) = (u32::from(pixmap.width()), u32::from(pixmap.height()));
+    let luma = pixmap
+        .data_as_u8_slice()
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|p| {
+            // Premultiplied: white shows through what alpha leaves.
+            let white = 255 - u32::from(p[3]);
+            let [r, g, b] = [p[0], p[1], p[2]].map(|c| u32::from(c) + white);
+            ((r * 299 + g * 587 + b * 114) / 1000).min(255) as u8
+        })
+        .collect();
+    Ok((w, h, luma))
 }
 
 /// Rasterize a single page (0-based) of an already-parsed [`Document`] at `scale`

@@ -185,6 +185,10 @@ description = "Prepare legal documents for AI on your own computer."
 long-description = "Convert PDF, scans and Word documents to Markdown and pseudonymize client details before you paste them into an AI tool."
 before-packaging-command = "cargo build --release"
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
+# The DOCX preview's fallback fonts and their licences (crates/mdoc-import/src/
+# docx_preview/fonts.rs): Contents/Resources/fonts on macOS, fonts\ beside
+# mdoc.exe on Windows.
+resources = [{ src = "resources/fonts", target = "fonts" }]
 
 [package.metadata.packager.nsis]
 # The template inserts this text between its sections, so it also carries the

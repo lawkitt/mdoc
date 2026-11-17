@@ -127,44 +127,101 @@ pub struct PdfLink {
 /// annotation rectangles would need rotating to line up with the render).
 pub fn page_links(doc: &Pdf) -> Vec<Vec<PdfLink>> {
     let page_index = build_page_index(doc);
-    let mut out = Vec::with_capacity(doc.pages().len());
-    for page in doc.pages().iter() {
-        let mut links = Vec::new();
+    let mut out = vec![Vec::new(); doc.pages().len()];
+    for_each_link(doc, |page, (x, y, w, h), annot| {
+        if let Some(target) = link_target(annot, &page_index) {
+            out[page].push(PdfLink { x, y, w, h, target });
+        }
+    });
+    out
+}
+
+/// The scheme of mdoc's own marks in a PDF it rendered: a DOCX comment's
+/// anchors (`mdoc_import::docx_preview::COMMENT_SCHEME`). A mark is never a
+/// clickable link; `mdoc-comment:<k>;<target>` marks text that was a link to
+/// `<target>`, which stays clickable.
+pub const MARK_SCHEME: &str = "mdoc-comment:";
+
+/// A `/Link` annotation whose URI starts with [`MARK_SCHEME`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinkMark {
+    /// 0-based page index.
+    pub page: usize,
+    /// Normalized like [`PdfLink`]: 0..1 of the crop box, top-left origin.
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    /// The URI after the scheme.
+    pub target: String,
+}
+
+/// Every mark, in page order and each page's annotation order.
+pub fn link_marks(doc: &Pdf) -> Vec<LinkMark> {
+    let mut out = Vec::new();
+    for_each_link(doc, |page, (x, y, w, h), annot| {
+        if let Some(target) =
+            uri(annot).and_then(|u| u.strip_prefix(MARK_SCHEME).map(str::to_owned))
+        {
+            out.push(LinkMark {
+                page,
+                x,
+                y,
+                w,
+                h,
+                target,
+            });
+        }
+    });
+    out
+}
+
+/// Calls `f` with each unrotated page's `/Link` annotations and their
+/// rectangles, normalized to the crop box with a top-left origin.
+fn for_each_link(doc: &Pdf, mut f: impl FnMut(usize, (f32, f32, f32, f32), &Dict)) {
+    for (index, page) in doc.pages().iter().enumerate() {
         let cb = page.crop_box();
         let (pw, ph) = (cb.width(), cb.height());
         if !matches!(page.rotation(), Rotation::None) || pw <= 0.0 || ph <= 0.0 {
-            out.push(links);
             continue;
         }
-        if let Some(annots) = page.raw().get::<Array>("Annots") {
-            for annot in annots.iter::<Dict>() {
-                if annot
-                    .get::<Name>("Subtype")
-                    .is_none_or(|n| n.as_str() != "Link")
-                {
-                    continue;
-                }
-                let (Some(target), Some(r)) =
-                    (link_target(&annot, &page_index), annot.get::<Rect>("Rect"))
-                else {
-                    continue;
-                };
-                // `/Rect` is in PDF user space (bottom-left origin); normalize to the
-                // crop box with a top-left origin so it overlays the rendered page.
-                let (ax0, ax1) = (r.x0.min(r.x1), r.x0.max(r.x1));
-                let (ay0, ay1) = (r.y0.min(r.y1), r.y0.max(r.y1));
-                links.push(PdfLink {
-                    x: (((ax0 - cb.x0) / pw) as f32).clamp(0.0, 1.0),
-                    y: (((cb.y1 - ay1) / ph) as f32).clamp(0.0, 1.0),
-                    w: (((ax1 - ax0) / pw) as f32).clamp(0.0, 1.0),
-                    h: (((ay1 - ay0) / ph) as f32).clamp(0.0, 1.0),
-                    target,
-                });
+        let Some(annots) = page.raw().get::<Array>("Annots") else {
+            continue;
+        };
+        for annot in annots.iter::<Dict>() {
+            if annot
+                .get::<Name>("Subtype")
+                .is_none_or(|n| n.as_str() != "Link")
+            {
+                continue;
             }
+            let Some(r) = annot.get::<Rect>("Rect") else {
+                continue;
+            };
+            // `/Rect` is in PDF user space (bottom-left origin); normalize to the
+            // crop box with a top-left origin so it overlays the rendered page.
+            let (ax0, ax1) = (r.x0.min(r.x1), r.x0.max(r.x1));
+            let (ay0, ay1) = (r.y0.min(r.y1), r.y0.max(r.y1));
+            let rect = (
+                (((ax0 - cb.x0) / pw) as f32).clamp(0.0, 1.0),
+                (((cb.y1 - ay1) / ph) as f32).clamp(0.0, 1.0),
+                (((ax1 - ax0) / pw) as f32).clamp(0.0, 1.0),
+                (((ay1 - ay0) / ph) as f32).clamp(0.0, 1.0),
+            );
+            f(index, rect, &annot);
         }
-        out.push(links);
     }
-    out
+}
+
+/// A link annotation's `/URI` action, decoded.
+fn uri(annot: &Dict) -> Option<String> {
+    let action = annot.get::<Dict>("A")?;
+    if action.get::<Name>("S")?.as_str() != "URI" {
+        return None;
+    }
+    Some(decode_pdf_string(
+        action.get::<PdfString>("URI")?.as_bytes(),
+    ))
 }
 
 /// Whether a `/URI` action may reach the OS URL opener (`NSWorkspace openURL:`
@@ -194,7 +251,11 @@ fn link_target(annot: &Dict, page_index: &HashMap<ObjRef, usize>) -> Option<Link
     let action = annot.get::<Dict>("A")?;
     match action.get::<Name>("S").as_ref().map(|n| n.as_str()) {
         Some("URI") => {
-            let uri = decode_pdf_string(action.get::<PdfString>("URI")?.as_bytes());
+            let mut uri = decode_pdf_string(action.get::<PdfString>("URI")?.as_bytes());
+            if let Some(mark) = uri.strip_prefix(MARK_SCHEME) {
+                // A mark, never a link itself: only the link it carries counts.
+                uri = mark.split_once(';')?.1.to_owned();
+            }
             if !is_safe_external_uri(&uri) {
                 // Dropped here rather than at the click: no annotation, no
                 // overlay, so a hostile URI never even reads as clickable.
