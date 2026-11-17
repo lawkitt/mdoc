@@ -218,6 +218,10 @@ reports flaws, one audits gold and lands fixtures, one fixes a flaw class.
 **Probe**: a real public document in `lawkitt/mdoc-probes` run through mdoc
 to find flaw classes; never a fixture.
 
+**Outside set**: a public document set from outside mdoc, pinned by a
+manifest with a role: tune, held-out or regression
+([checklist](tools/sets/README.md)).
+
 **Judge**: the agent that reads a probe beside mdoc's proposals and lists its
 flaws.
 
@@ -441,8 +445,8 @@ queued PRs on a **queue commit** (`gh-readonly-queue/main/*`)
 
 **`merge-gate`**: the one aggregate required status beside `lint (ubuntu)`.
 
-**Infrastructure failure**: a hosted CI job that ended without a result, as
-opposed to a test failure.
+**Infrastructure failure**: a hosted CI job that ended without a result, not a
+test failure.
 
 **Follow-up pass**: a `merge-gate` pass started by `merge-gate-recheck.yml`
 after one that left something pending.
@@ -450,20 +454,19 @@ after one that left something pending.
 **Quarantine list**: `.config/quarantine.txt`, tests CI excludes for a while,
 each with an issue and an expiry date.
 
-**Timing test**: a test that measures how fast something runs rather than
-whether it works.
+**Timing test**: a test of speed, not of correctness.
 
 **Area**: one of desktop, core, recognition, ios, android and ci, from
-`scripts/ci-areas.txt`; a change runs the jobs of the areas it touches.
+`scripts/ci-areas.txt`; a change runs its areas' jobs.
 
-**Core change**: a change that touches the core area; its queue commit runs every
-CI job.
+**Core change**: a change to the core area; its queue commit runs every CI
+job.
 
-**Android job**: the build of the Android core and app with its JVM and
-emulator tests (`ci/android`).
+**Android job**: the Android core and app build with JVM and emulator tests
+(`ci/android`).
 
-**iOS job**: the build of the iOS core and app with XCTest and XCUITest on the
-pinned Simulator (`ci/ios`).
+**iOS job**: the iOS core and app build with XCTest and XCUITest on the pinned
+Simulator (`ci/ios`).
 
 **Mobile release draft**: where an agent-started mobile release stops, before
 anything users can install.
@@ -471,8 +474,8 @@ anything users can install.
 **Beta build** (iOS): a TestFlight build tagged `ios-v<x.y.z>-rc.N`; the
 plain `ios-v<x.y.z>` tag marks the build sent to App Store review.
 
-**Lawyers group**: the one external TestFlight group, and Play's closed
-testing track of the same name.
+**Lawyers group**: the one external TestFlight group, and Play's same-named
+closed testing track.
 
 **Never-client-files line**: the sentence that opens every beta description:
 "Test with documents you are allowed to share, never client files; check a
