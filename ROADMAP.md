@@ -19,6 +19,16 @@ on the release build follows (0.3.x). No PII model has passed the
 [initial qualification](tests/fixtures/pseudonymization/README.md). Earlier
 releases: [CHANGELOG](CHANGELOG.md).
 
+0.4.0 is in release candidates: `v0.4.0-rc.1` and `rc.2` were tagged on
+2026-11-17. rc.3 adds the converter fork sync
+([#925](https://github.com/lawkitt/mdoc/issues/925)): pdf-inspector 1.26.1
+with eleven community fixes, AnyDoc's upstream and community fixes and a
+build without its PDF path, and hidden content (hidden Word text, invisible
+PDF text, form field names, ODT comments) left out of the Markdown and
+counted in the import note. Full desktop acceptance runs on the last RC.
+#925's phase 2 (white text, repeated headers and footers, table and scan
+fixes) merges after rc.3 is tagged.
+
 Three tracks run in parallel and each releases when ready: desktop 0.4.0,
 iOS (the first to ship) and Android.
 
