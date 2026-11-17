@@ -224,6 +224,10 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
         guard let screen = order.firstIndex(of: clip) else { return false }
         return [leadingPanel, trailingPanel].allSatisfy { (order.firstIndex(of: $0.host.view) ?? .max) < screen }
     }
+    /// For tests: whether `side`'s panel is drawn at all.
+    func panelIsHidden(_ side: DrawerSide) -> Bool {
+        panel(side).host.view.isHidden
+    }
     /// The active panel is there: open, dragged or sliding to rest.
     private var showsPanel: Bool { isOpen || dragging || settling }
 
@@ -551,8 +555,9 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
             let this = side == active
             // Shown under the opaque screen even while closed, so its layers
             // are drawn before a drag: unhidden as the drag began, they were
-            // drawn in its first frame.
-            view.isHidden = !panel(side).present
+            // drawn in its first frame. Hidden while the other panel shows,
+            // over it: whatever fades in that panel never shows this one.
+            view.isHidden = !panel(side).present || (shows && !this)
             view.isUserInteractionEnabled = this && (isOpen || dragging)
             // Closed, a panel is not there for VoiceOver (or tests); open,
             // the panel and the sliver, its close button, are all there is.

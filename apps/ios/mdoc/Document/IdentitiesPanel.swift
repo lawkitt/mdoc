@@ -63,15 +63,16 @@ extension IdentitiesPanel {
 }
 
 /// The document's toast ("Replaced Maya Bennett · Undo") over the drawer.
+/// Always the same views, only no toast while not `enabled`: a branch on
+/// it made the whole panel anew whenever the drawer opened, cross-faded by
+/// the drawer's animation, and the sidebar under it showed through.
 private struct DrawerToast: ViewModifier {
     @Bindable var model: DocumentViewModel
     let enabled: Bool
 
     func body(content: Content) -> some View {
-        if enabled {
-            content.toast($model.toast)
-        } else {
-            content
-        }
+        content.toast(Binding(
+            get: { enabled ? model.toast : nil },
+            set: { model.toast = $0 }))
     }
 }
