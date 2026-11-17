@@ -374,9 +374,9 @@ fn hidden_text(doc: &roxmltree::Document<'_>, mut edits: Option<&mut Vec<Edit>>)
     count
 }
 
-/// The muted ink of hidden text shown, as Word draws it: mid grey, which
-/// stays muted under the themed page tone.
-const HIDDEN_INK: &str = "7F7F7F";
+/// The muted ink of hidden text shown: a grey that still reads at 4.5:1 on
+/// white paper and stays muted under the themed page tone.
+const HIDDEN_INK: &str = "6F6F6F";
 
 /// An edit to a part's text: replace `start..end` with `text`. `rank` orders
 /// edits at one offset: closing a link before what follows it, opening one
@@ -1049,7 +1049,7 @@ mod tests {
         ]
         .map(|p| format!("<w:p>{p}</w:p>"))
         .concat();
-        let prepared = prepare(&package_with(&body)).unwrap();
+        let prepared = prepare(&package_with(&body), false).unwrap();
         let copy = prepared.render.clone().unwrap();
         let body = part(&copy, BODY);
         let doc = roxmltree::Document::parse(&body).unwrap();
