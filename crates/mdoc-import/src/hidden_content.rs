@@ -68,6 +68,14 @@ impl Comments {
             n => Some(format!("{at_least}{n} comments not imported.")),
         }
     }
+
+    /// Both counts together.
+    pub fn and(self, other: Self) -> Self {
+        Self {
+            count: self.count + other.count,
+            at_least: self.at_least || other.at_least,
+        }
+    }
 }
 
 /// The comments in the parts a Word package's main document names as its
@@ -114,7 +122,8 @@ fn package_comments<R: Read + Seek>(reader: R) -> Comments {
 }
 
 /// The comments in an OpenDocument text's body (`content.xml`), or none
-/// when `path` is not an OpenDocument package or cannot be read. Best
+/// when `path` is not an OpenDocument text package (by its `mimetype`
+/// entry, so a spreadsheet's cell notes don't count) or cannot be read. Best
 /// effort, like [`docx_comments`]. AnyDoc leaves them out of the Markdown.
 pub fn odt_comments(path: &Path) -> Comments {
     std::fs::File::open(path)
@@ -122,10 +131,20 @@ pub fn odt_comments(path: &Path) -> Comments {
         .map_or_else(Comments::default, odf_package_comments)
 }
 
+/// ODF text, text template and master document.
+const ODT_MIMETYPE: &str = "application/vnd.oasis.opendocument.text";
+
 fn odf_package_comments<R: Read + Seek>(reader: R) -> Comments {
     let Ok(mut archive) = ZipArchive::new(reader) else {
         return Comments::default();
     };
+    let mut mimetype = Vec::new();
+    let read = archive
+        .by_name("mimetype")
+        .map(|entry| entry.take(256).read_to_end(&mut mimetype));
+    if !matches!(read, Ok(Ok(_))) || !mimetype.starts_with(ODT_MIMETYPE.as_bytes()) {
+        return Comments::default();
+    }
     let Ok(entry) = archive.by_name("content.xml") else {
         return Comments::default();
     };
@@ -499,7 +518,9 @@ mod tests {
 </{prefix}:text></{prefix}:body></{prefix}:{root}>"#
             )
         };
-        let content = |xml: String| odf_package_comments(zipped(&[("content.xml", xml)]));
+        let text = ("mimetype", ODT_MIMETYPE.to_owned());
+        let content =
+            |xml: String| odf_package_comments(zipped(&[text.clone(), ("content.xml", xml)]));
         assert_eq!(
             content(body("document-content", "office", OFFICE)),
             found(3)
@@ -512,8 +533,33 @@ mod tests {
         assert_eq!(content(body("document-styles", "office", OFFICE)), found(0));
         let styles = body("document-content", "office", OFFICE);
         assert_eq!(
-            odf_package_comments(zipped(&[("styles.xml", styles)])),
+            odf_package_comments(zipped(&[text.clone(), ("styles.xml", styles)])),
             found(0)
+        );
+        // A spreadsheet's cell notes, or a package with no mimetype, are
+        // not an ODT's comments.
+        let full = body("document-content", "office", OFFICE);
+        let sheet = (
+            "mimetype",
+            "application/vnd.oasis.opendocument.spreadsheet".to_owned(),
+        );
+        assert_eq!(
+            odf_package_comments(zipped(&[sheet, ("content.xml", full.clone())])),
+            found(0)
+        );
+        assert_eq!(
+            odf_package_comments(zipped(&[("content.xml", full)])),
+            found(0)
+        );
+        assert_eq!(
+            found(2).and(Comments {
+                count: 1,
+                at_least: true
+            }),
+            Comments {
+                count: 3,
+                at_least: true
+            }
         );
         assert_eq!(
             odf_package_comments(Cursor::new(b"not a zip".to_vec())),

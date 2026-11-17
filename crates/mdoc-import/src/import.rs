@@ -181,19 +181,13 @@ pub fn prepare_cancellable(
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
     // Comments never reach the Markdown (AnyDoc reads no Word comments part
     // and skips ODT annotations); the note says how many were left out.
-    use crate::hidden_content::{Comments, docx_comments, odt_comments};
-    let format = anydoc::Format::from_path(&source);
-    let comments = match format {
-        Some(anydoc::Format::Docx) => docx_comments(&source),
-        Some(anydoc::Format::Odt) => odt_comments(&source),
-        // Found by content: a package is one or the other.
-        None => Some(docx_comments(&source))
-            .filter(|comments| comments.count > 0)
-            .unwrap_or_else(|| odt_comments(&source)),
-        Some(_) => Comments::default(),
-    };
+    // AnyDoc picks the parser by content, so both counters look at the
+    // package whatever its extension; each counts nothing in the other's.
+    let comments = crate::hidden_content::docx_comments(&source)
+        .and(crate::hidden_content::odt_comments(&source));
     // Nor do Word's pictures: embedded ones render as their alt text at
     // most (ROADMAP Vision item 1).
+    let format = anydoc::Format::from_path(&source);
     let pictures = matches!(format, Some(anydoc::Format::Docx) | None)
         .then(|| pictures_note(u64::from(converted.images_left_out)))
         .flatten();
@@ -676,9 +670,15 @@ mod tests {
             imported.warning.as_deref(),
             Some("2 comments not imported.")
         );
-        let renamed = dir.path().join("renamed.bin");
-        std::fs::copy(&path, &renamed).unwrap();
-        assert_eq!(convert(&renamed).unwrap().warning, imported.warning);
+        // AnyDoc reads the content, whatever the extension says; so does
+        // the count.
+        for name in ["renamed.bin", "renamed.docx", "renamed.rtf"] {
+            let renamed = dir.path().join(name);
+            std::fs::copy(&path, &renamed).unwrap();
+            let converted = convert(&renamed).unwrap();
+            assert_eq!(converted.markdown, imported.markdown, "{name}");
+            assert_eq!(converted.warning, imported.warning, "{name}");
+        }
     }
 
     /// Pictures never reach the Markdown, so the note counts them, for PDF
@@ -762,9 +762,11 @@ mod tests {
         );
         // Content detection counts them too, for a renamed copy.
         let dir = tempfile::tempdir().unwrap();
-        let renamed = dir.path().join("renamed.bin");
-        std::fs::copy(&path, &renamed).unwrap();
-        assert_eq!(convert(&renamed).unwrap().warning, imported.warning);
+        for name in ["renamed.bin", "renamed.odt"] {
+            let renamed = dir.path().join(name);
+            std::fs::copy(&path, &renamed).unwrap();
+            assert_eq!(convert(&renamed).unwrap().warning, imported.warning);
+        }
     }
 
     #[test]

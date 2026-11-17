@@ -18,7 +18,9 @@ use std::{
 };
 
 /// Bumped when a kept page's meaning changes, so older pages are not reused.
-const FORMAT: u32 = 1;
+/// 2: the pdf-inspector 1.26.1 sync (#925), whose pages leave out form
+/// field names that format 1's pages carry.
+const FORMAT: u32 = 2;
 
 /// The folder that keeps finished pages, one subfolder per file and OCR
 /// configuration.
@@ -74,9 +76,18 @@ impl KeptPages {
     }
 
     fn folder(&self, digest: &str, config: &mdoc_store::settings::OcrConfig) -> Folder {
+        self.folder_in_format(FORMAT, digest, config)
+    }
+
+    fn folder_in_format(
+        &self,
+        format: u32,
+        digest: &str,
+        config: &mdoc_store::settings::OcrConfig,
+    ) -> Folder {
         let manifest = crate::ocr::manifest::for_model(config.model);
         let key = format!(
-            "{FORMAT}\n{}\n{}\n{}",
+            "{format}\n{}\n{}\n{}",
             serde_json::to_string(config).unwrap_or_default(),
             manifest.id,
             manifest.revision
@@ -315,6 +326,21 @@ mod tests {
 
     fn config() -> mdoc_store::settings::OcrConfig {
         mdoc_store::settings::OcrConfig::default()
+    }
+
+    /// Pages kept before a format change (form field names in their text,
+    /// before #925) are recognized again, not reused.
+    #[test]
+    fn pages_kept_in_an_older_format_are_not_reused() {
+        let dir = tempfile::tempdir().unwrap();
+        let kept = KeptPages::new(dir.path().into());
+        let older = kept.folder_in_format(FORMAT - 1, "abc", &config());
+        older.open();
+        older.store(&page(1));
+        assert_eq!(older.load(1), Some(page(1)));
+        let current = kept.folder("abc", &config());
+        current.open();
+        assert_eq!(current.load(1), None);
     }
 
     /// Cancelled after two of five pages, the run keeps them; the resumed
