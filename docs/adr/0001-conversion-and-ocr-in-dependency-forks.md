@@ -6,20 +6,28 @@ Folds: 0007, 0008, 0009.
 
 ## Decision
 
-- mdoc extracts documents through its forks of AnyDoc and pdf-inspector.
-  Algorithm and output-quality changes belong in those forks, never in a
-  second implementation in the app.
+- mdoc extracts documents through its forks of AnyDoc and pdf-inspector,
+  separate repositories pinned by exact tested revision; no subtree,
+  merged crate or crates.io release. Algorithm and output-quality changes
+  belong in the forks, never in a second implementation in the app.
 - The app owns scheduling, explicit OCR consent, warnings, the document
   lifecycle and the Markdown handoff. Converter and editor crates stay
   host-agnostic.
-- mdoc pins the exact tested revision of each fork.
+- Every PDF goes to pdf-inspector; mdoc builds AnyDoc without its `pdf`
+  feature.
 - **pdf-inspector:** upstream updates come in as complete merges into the
   fork, keeping its history and the local OCR extensions (pinned Cyrillic
   manifests, explicit runtime paths, offline recognition, explicit consent,
   recognition output before fusion).
-- **AnyDoc:** only selected upstream changes are ported, each with
-  attribution and only the mechanical changes it needs; a material deviation
-  is reviewed first.
+- **AnyDoc:** a squashed snapshot of upstream; upstream changes come in as
+  selected cherry-picks with only the mechanical changes they need.
+- Either fork may port an unmerged community PR, with its author's
+  attribution and the same evidence. Fork changes are not offered upstream.
+- Upstream is checked at the start of each desktop milestone and on demand
+  for user-facing fixes.
+- Hidden content (comments, hidden-formatted or invisible text, form field
+  names) never enters the Markdown; the forks report what they left out and
+  the import note counts it.
 - **Zorite** (the editor, PDF viewer and BiDi crates' origin): only
   correctness and rendering fixes are ported, with attribution. Journal,
   property, template and import/export features stay out.
