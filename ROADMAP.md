@@ -656,11 +656,16 @@ Android takes what applies. Its clipboard finding is
   IDENTITY and OCR; gaps toward every country's IDs and passports picked
   from it, with MIDV-UP first in line. *From #916.*
 - **[Vision]** Vision layer for page artifacts: paused (#911, ADR 0121);
-  resumes when an engine, a new Mirage setting (#918) or a fine-tuned Mirage
-  passes #911's bars, or #918's reduced-recall guard, on a rerun.
-- **[Vision]** Fine-tune Mirage's naming on seals and stamps. The known route
-  is Oasis (`phanerozoic/oasis`) and Cactus's Needle LoRA recipe; it waits on
-  a licence check of #916's sources. *From #911 and #918.*
+  resumes when an engine, a new Mirage setting or a fine-tuned Mirage passes
+  #911's bars, or #918's reduced-recall guard, on a rerun. Tuning how the
+  released Mirage is called (keywords, thresholds, crops, rules on its boxes)
+  was tried and failed (#918).
+- **[Vision]** Fine-tune Mirage to box and name seals and stamps: it boxes
+  61–77% of real seals at best, a third of them only as a text line inside
+  the stamp. The known route is Oasis (`phanerozoic/oasis`) and Cactus's
+  Needle LoRA recipe, which have trained only readers or decoders, so
+  detection-head training is untried; it waits on a licence check of #916's
+  sources. *From #911 and #918.*
 - **[OCR]** Repeated headers and footers: a text-only rule in pdf-inspector
   drops a line repeating on at least 3 pages in the same position band and
   counts the dropped lines in the import note
