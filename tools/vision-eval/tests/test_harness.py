@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from vision_eval import classes, compare, geometry, score  # noqa: E402
+from vision_eval import classes, compare, geometry, mirage, score, tune  # noqa: E402
 
 
 class Geometry(unittest.TestCase):
@@ -166,6 +166,89 @@ class Compare(unittest.TestCase):
         a = {"seals": [{"text": "X", "box": [0, 0, 1, 1], "conf": 0.8999, "inline": False}]}
         b = {"seals": [{"text": "X", "box": [0, 0, 1, 1], "conf": 0.9001, "inline": True}]}
         self.assertNotEqual(compare.canonical("seal", a), compare.canonical("seal", b))
+
+
+class MirageOptions(unittest.TestCase):
+    def test_known_options_pass_and_unknown_keys_are_rejected(self):
+        ok = {"sections": ["objects"], "conf": 0.05, "agnostic_nms": True, "max_objects": 64}
+        self.assertEqual(mirage.check_options(ok), ok)
+        for bad in ({"nms": True}, {"sections": ["objects"], "confidence": 0.1}, {"form": {}},
+                    {"sections": ["bogus"]}, {"sections": []}, {"conf": 5}, {"conf": True},
+                    {"agnostic_nms": 1}, {"max_tokens": 0}, {"mask_format": "polygon"}):
+            with self.assertRaises(ValueError, msg=bad):
+                mirage.check_options(bad)
+
+    def test_output_must_show_the_options_took_effect(self):
+        opts = {"sections": ["objects"], "conf": 0.2}
+        mirage.check_applied(opts, {"objects": [{"score": 0.2}, {"score": 0.9}]})
+        with self.assertRaises(AssertionError):
+            mirage.check_applied(opts, {"objects": [], "text": [{"string": "x"}]})
+        with self.assertRaises(AssertionError):
+            mirage.check_applied(opts, {"objects": [{"score": 0.1}]})
+
+    def test_every_tune_variant_runs_objects_only_with_valid_options(self):
+        ids = set()
+        for v in tune.variants():
+            self.assertEqual(tune.options(v)["sections"], ["objects"])
+            ids.add(tune.variant_id(v))
+        self.assertEqual(len(ids), len(tune.variants()))
+
+
+class Tuning(unittest.TestCase):
+    def test_bottom_tiles_cover_the_bottom_half_at_about_twice_the_scale(self):
+        t = tune.tiles(1275, 1650, "bottom2x")
+        self.assertEqual(t, [(0, 825, 765, 1650), (510, 825, 1275, 1650)])
+        for x0, y0, x1, y1 in t:  # Mirage's canvas: long side 512
+            self.assertGreater((512 / max(x1 - x0, y1 - y0)) / (512 / 1650), 1.9)
+        self.assertEqual(tune.tiles(1275, 1650, None), [])
+
+    def test_crop_candidates_prefer_unnamed_seal_sized_boxes(self):
+        objs = [{"name": "stamp", "score": 0.9, "box": [100, 100, 200, 200]},
+                {"name": "sign", "score": 0.5, "box": [400, 100, 500, 190]},
+                {"name": "text block", "score": 0.8, "box": [0, 300, 1200, 400]},  # too wide
+                {"name": "number", "score": 0.4, "box": [402, 101, 501, 190]},     # duplicate of the sign
+                {"name": "sticker", "score": 0.3, "box": [600, 600, 680, 680]}]
+        self.assertEqual(tune.crop_candidates(objs, 1275, 1650), [1, 4])
+        self.assertEqual(tune.crop_candidates(objs, 1275, 1650, 1), [1])
+        words = [{"box": [405, 105, 495, 185]}]  # the sign is covered by OCR words
+        self.assertEqual(tune.crop_candidates(objs, 1275, 1650, 2, words), [4, 1])
+        self.assertEqual(tune.crop_box([100, 100, 200, 140], 0.5, 1275, 1650), (50, 50, 251, 191))
+
+    def test_roundness(self):
+        circle = [v for a in range(64) for v in (100 + 50 * __import__("math").cos(a / 64 * 6.2832),
+                                                  100 + 50 * __import__("math").sin(a / 64 * 6.2832))]
+        self.assertGreater(tune.roundness(circle), 0.99)
+        self.assertAlmostEqual(tune.roundness([0, 0, 10, 0, 10, 10, 0, 10]), 0.785, places=3)
+        self.assertIsNone(tune.roundness(None))
+
+    def test_rules_filter_then_suppress_and_score(self):
+        f = lambda box, named, ocr=0.0: {"box": box, "score": 0.5, "pools": {"d33": named, "d33+crop": named, "any": True},
+                                         "aspect": 1.0, "side": 0.05, "round": None, "ocr": ocr, "colour": 0.0}
+        prep = [{"tier": "real", "seals": [[0, 0, 100, 100]], "refs": [[300, 300, 340, 320]],
+                 "feats": [f([0, 0, 100, 100], True), f([2, 0, 100, 100], True), f([290, 290, 400, 400], False, 0.6)]}]
+        e = tune.evaluate(prep, "d33", {})
+        self.assertEqual((e["tp"], e["fp"], e["lost"]), (1, 0, 0))  # the duplicate is suppressed
+        e = tune.evaluate(prep, "any", {})
+        self.assertEqual((e["tp"], e["fp"], e["lost"]), (1, 1, 1))
+        e = tune.evaluate(prep, "any", {"max_ocr": 0.4})
+        self.assertEqual((e["tp"], e["fp"], e["lost"]), (1, 0, 0))
+
+    def test_roles_keep_tuning_and_final_sets_apart(self):
+        tune.require_role({"name": "tune-seal", "role": "tune"}, True)
+        tune.require_role({"name": "en-recap"}, False)
+        with self.assertRaises(SystemExit):
+            tune.require_role({"name": "en-recap"}, True)
+        with self.assertRaises(SystemExit):
+            tune.require_role({"name": "tune-seal", "role": "tune"}, False)
+
+    def test_source_ids_name_the_docket_behind_a_page(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "sources.json").write_text(json.dumps({
+                "a": {"file": "gov.uscourts.x.1__gov.uscourts.x.1.5.0__p2.png"},
+                "b": {"item": "gov.uscourts.x.2", "url": "https://example.org/b"}}))
+            self.assertEqual(tune.source_ids(Path(d)),
+                             {"item:gov.uscourts.x.1", "item:gov.uscourts.x.2", "url:https://example.org/b"})
 
 
 if __name__ == "__main__":
