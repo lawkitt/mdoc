@@ -59,6 +59,7 @@ model-comparison
 conversion-failed
 ocr-consent
 import-comments-note
+import-hidden-note
 restored-reply
 comments
 docx-source
