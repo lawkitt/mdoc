@@ -195,6 +195,13 @@ class MirageOptions(unittest.TestCase):
 
 
 class Tuning(unittest.TestCase):
+    def test_reports_say_the_bars_moved_after_the_result(self):
+        self.assertEqual(tune.BARS["recall"], 0.67)
+        self.assertEqual(tune.GATE, 0.67)
+        for phrase in ("67%", "after seeing the gate result", "90%", "70%"):
+            self.assertIn(phrase, tune.BARS_NOTE)
+        self.assertEqual(tune.GUARD, "reduced-recall seal guard")
+
     def test_bottom_tiles_cover_the_bottom_half_at_about_twice_the_scale(self):
         t = tune.tiles(1275, 1650, "bottom2x")
         self.assertEqual(t, [(0, 825, 765, 1650), (510, 825, 1275, 1650)])
