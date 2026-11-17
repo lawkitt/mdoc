@@ -38,7 +38,7 @@ mod workspace;
 
 use document_view::bind_markdown_search_keys;
 use gpui::{App, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
-use mdoc_import::docx_preview;
+use mdoc_import::{conversion_worker, docx_preview};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 /// The pinned engine chooses providers through this variable. Experimental
@@ -105,6 +105,12 @@ fn main() {
         }
         return;
     }
+    if args
+        .get(1)
+        .is_some_and(|arg| arg == conversion_worker::WORKER_FLAG)
+    {
+        std::process::exit(conversion_worker::run_worker(&args[2..]));
+    }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-self-test") {
         let (Some(pdf), Some(expected)) = (args.get(2), args.get(3)) else {
             eprintln!("usage: mdoc --mdoc-self-test <pdf> <expected.txt>");
@@ -137,6 +143,11 @@ fn main() {
     };
     // The app itself, not its worker modes, records panics (ADR 0047).
     crash::install();
+    // Documents other than PDFs convert in a supervised worker, so a
+    // converter crash ends an import, not the app (#925 decision 10).
+    if let Ok(executable) = std::env::current_exe() {
+        conversion_worker::supervise(executable);
+    }
     let application = gpui_platform::application();
     let open_context = Rc::new(RefCell::new(
         None::<(gpui::WindowHandle<workspace::Workspace>, gpui::AsyncApp)>,
@@ -178,6 +189,7 @@ fn main() {
             async move {
                 executor
                     .spawn(async {
+                        conversion_worker::shutdown_workers();
                         docx_preview::shutdown_workers();
                     })
                     .await
