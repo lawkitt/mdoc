@@ -300,7 +300,7 @@ dependencies = [
 [[package]]
 name = "anydoc"
 version = "0.2.4"
-source = "git+https://github.com/lawkitt/anydoc.git?rev=d01cce0dda4a8918fc4b603c4afe9c329102371c#d01cce0dda4a8918fc4b603c4afe9c329102371c"
+source = "git+https://github.com/lawkitt/anydoc.git?rev=ec33d99591b80694172736353f6698a7bf476081#ec33d99591b80694172736353f6698a7bf476081"
 dependencies = [
  "cfb",
  "csv",
@@ -5783,7 +5783,7 @@ dependencies = [
 [[package]]
 name = "pdf-inspector"
 version = "1.25.2"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=dd94189df44a979c009192a5abda049d06580981#dd94189df44a979c009192a5abda049d06580981"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=727f3228f43aab9ff3f24ab64ede578ef7451121#727f3228f43aab9ff3f24ab64ede578ef7451121"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",

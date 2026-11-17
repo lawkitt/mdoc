@@ -326,12 +326,8 @@ reading all text ([ADR 0121](docs/adr/0121-mirage-on-candle-as-the-vision-engine
 [grill record #911](https://github.com/lawkitt/mdoc/issues/911)). The rules
 waiting for the build-in are the recognition spec's
 [Page artifacts (pending)](docs/specs/recognition.md#page-artifacts-pending).
-Items 1–3 run in parallel; 4 waits for 3, and 5 for 2 and 3.
+Items 2 and 3 run in parallel; 4 waits for 3, and 5 for 2 and 3.
 
-1. **[Import] Pictures not imported.** The import note counts pictures that
-   don't reach the Markdown ("3 pictures not imported"), for PDF and DOCX,
-   counted in the forks. *Done when:* a PDF and a DOCX fixture with pictures
-   show the count, and one without shows none.
 2. **[Vision] Evaluation run (report only).** A Mac hub and a Windows
    Claude Code Desktop session measure Mirage (through libcactus),
    PP-DocLayout_plus-L, PaddleOCR's seal reader and `rxing` on a private,
