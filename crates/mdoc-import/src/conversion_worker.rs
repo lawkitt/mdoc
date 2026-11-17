@@ -7,10 +7,11 @@
 //! ends the worker, and the import fails with a plain error.
 //!
 //! The document's bytes go to the worker on stdin and its file extension as
-//! an argument, so the worker never opens the user's file. The worker writes
-//! one versioned JSON message to the path it is given and exits 0. The
-//! supervisor kills and reaps it on timeout, cancellation or app quit; any
-//! other exit, or a missing or unreadable message, is a failed converter.
+//! an argument, so the worker never opens the user's file; it answers with
+//! one versioned JSON message on stdout and exits 0. Nothing is written to
+//! disk. The supervisor kills and reaps it on timeout, cancellation or app
+//! quit; any other exit, or a missing or unreadable message, is a failed
+//! converter.
 use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -180,15 +181,13 @@ pub fn convert_with_command(
 ) -> Result<Converted, ImportError> {
     check_cancel(cancel)?;
     let _running = Running::enter();
-    let directory = tempfile::tempdir().map_err(ImportError::Io)?;
-    let message = directory.path().join("conversion.json");
-    command.arg(WORKER_FLAG).arg(&message);
+    command.arg(WORKER_FLAG);
     if let Some(extension) = extension {
         command.arg(extension);
     }
     command
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null());
     #[cfg(windows)]
     {
@@ -198,13 +197,19 @@ pub fn convert_with_command(
     let mut worker = Worker(command.spawn().map_err(|error| {
         ImportError::ConverterFailed(format!("the worker did not start: {error}"))
     })?);
-    // Fed from its own thread, so a worker that stops reading cannot stall
-    // supervision; the write fails once the worker is gone.
+    // Fed and drained from threads of their own, so a worker that stops
+    // reading, or a message larger than the pipe, cannot stall supervision;
+    // both end once the worker is gone.
     let stdin = worker.0.stdin.take();
     let feeder = thread::spawn(move || {
         if let Some(mut stdin) = stdin {
             let _ = stdin.write_all(&bytes);
         }
+    });
+    let stdout = worker.0.stdout.take();
+    let drain = thread::spawn(move || {
+        let mut message = Vec::new();
+        stdout.map(|mut stdout| stdout.read_to_end(&mut message).map(|_| message))
     });
     let started = Instant::now();
     let outcome = loop {
@@ -215,7 +220,7 @@ pub fn convert_with_command(
             break Err(ImportError::ConverterTimeout);
         }
         match worker.0.try_wait() {
-            Ok(Some(status)) => break read_message(status, &message),
+            Ok(Some(status)) => break Ok(status),
             Ok(None) => thread::sleep(POLL),
             Err(error) => {
                 break Err(ImportError::ConverterFailed(format!(
@@ -226,16 +231,17 @@ pub fn convert_with_command(
     };
     drop(worker);
     let _ = feeder.join();
-    outcome
+    let message = drain.join().ok().flatten().and_then(Result::ok);
+    read_message(outcome?, message)
 }
 
-/// The result of a worker that exited with `status`, from its message.
-fn read_message(status: ExitStatus, message: &Path) -> Result<Converted, ImportError> {
+/// The result of a worker that exited with `status`, from its `message`.
+fn read_message(status: ExitStatus, message: Option<Vec<u8>>) -> Result<Converted, ImportError> {
     let failed = |detail: String| Err(ImportError::ConverterFailed(detail));
     if !status.success() {
         return failed(format!("the worker stopped: {status}"));
     }
-    let Ok(text) = std::fs::read(message) else {
+    let Some(text) = message.filter(|text| !text.is_empty()) else {
         return failed("the worker sent no result".into());
     };
     match serde_json::from_slice::<Header>(&text) {
@@ -260,16 +266,12 @@ fn read_message(status: ExitStatus, message: &Path) -> Result<Converted, ImportE
     }
 }
 
-/// The worker mode: `args` follow [`WORKER_FLAG`] (the message path, then
-/// the document's extension, if it has one). Reads the document from stdin,
-/// converts it and writes the message. Returns the process's exit code.
+/// The worker mode: `args` follow [`WORKER_FLAG`] (the document's
+/// extension, if it has one). Reads the document from stdin, converts it and
+/// writes the message to stdout. Returns the process's exit code.
 pub fn run_worker(args: &[std::ffi::OsString]) -> i32 {
-    let Some(message) = args.first().map(PathBuf::from) else {
-        eprintln!("usage: mdoc {WORKER_FLAG} <message-path> [extension]");
-        return 2;
-    };
     let extension = args
-        .get(1)
+        .first()
         .and_then(|extension| extension.to_str())
         .map(str::to_owned);
     let mut bytes = Vec::new();
@@ -278,7 +280,7 @@ pub fn run_worker(args: &[std::ffi::OsString]) -> i32 {
         return 1;
     }
     #[cfg(debug_assertions)]
-    if let Some(code) = fault::inject(&message) {
+    if let Some(code) = fault::inject() {
         return code;
     }
     let converting = thread::Builder::new()
@@ -309,7 +311,11 @@ pub fn run_worker(args: &[std::ffi::OsString]) -> i32 {
             return 1;
         }
     };
-    match std::fs::write(&message, message_text) {
+    let mut stdout = std::io::stdout().lock();
+    match stdout
+        .write_all(&message_text)
+        .and_then(|()| stdout.flush())
+    {
         Ok(()) => 0,
         Err(error) => {
             eprintln!("conversion worker could not write its result: {error}");
@@ -323,13 +329,13 @@ pub fn run_worker(args: &[std::ffi::OsString]) -> i32 {
 /// way a broken converter would, after reading its input.
 #[cfg(debug_assertions)]
 mod fault {
-    use std::path::Path;
+    use std::io::Write;
 
     pub(super) const VARIABLE: &str = "MDOC_CONVERSION_WORKER_FAULT";
 
     /// The exit code to end with, for the faults that end without a
     /// message; the others never return.
-    pub(super) fn inject(message: &Path) -> Option<i32> {
+    pub(super) fn inject() -> Option<i32> {
         match std::env::var(VARIABLE).ok()?.as_str() {
             // A release worker aborts on a panic; a debug one unwinds out of
             // `main` and exits with 101.
@@ -345,14 +351,14 @@ mod fault {
                 Some(1)
             }
             "exit" => Some(3),
-            "garbage" => Some(write(message, b"\x00not a message")),
-            "version" => Some(write(message, br#"{"version":999,"outcome":{}}"#)),
+            "garbage" => Some(write(b"\x00not a message")),
+            "version" => Some(write(br#"{"version":999,"outcome":{}}"#)),
             _ => None,
         }
     }
 
-    fn write(message: &Path, text: &[u8]) -> i32 {
-        i32::from(std::fs::write(message, text).is_err())
+    fn write(text: &[u8]) -> i32 {
+        i32::from(std::io::stdout().write_all(text).is_err())
     }
 
     /// Recurses until the stack overflows.
