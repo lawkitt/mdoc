@@ -3,9 +3,10 @@
     python -m vision_eval.score [--sets ...] [--out DIR] [--markdown report.md] [--json scores.json]
 
 Per class and candidate: recall and precision at box IoU 0.5 (0.3 as a
-diagnostic). Text loss: page words (from the `ocr` run) whose centre lies
-outside every annotated artifact but at least half of whose box falls inside
-a candidate's predicted box of a text-replacing class. Seal text: CER of the
+diagnostic). Text loss: page words (from the `ocr` run, kept only where the
+annotation's ground-truth text has them) whose centre lies outside every
+annotated artifact but at least half of whose box falls inside a candidate's
+predicted box of a text-replacing class; no reference words, no verdict. Seal text: CER of the
 seal reader on matched seals, and of the readings it would inline (reader
 confidence at or above the gate). Time: a candidate's total page time over
 the `ocr` run's on the same pages. Memory: a Python runner's peak minus its
@@ -39,6 +40,26 @@ def load_run(folder: Path) -> dict | None:
     run["outputs"] = {p.stem: json.loads(p.read_text(encoding="utf-8"))
                       for p in folder.glob("*.json") if p.name != "run.json"}
     return run
+
+
+def missing(set_pages: list[dict], run: dict) -> int:
+    """Pages of the set with no output in the run: a stale or partial run."""
+    def absent(pid: str) -> bool:
+        if pid not in run["outputs"]:
+            return True
+        # A page the host rejected has an error output and no time; any
+        # other page must have been timed.
+        return pid not in run["page_ms"] and "error" not in run["outputs"][pid]
+    return sum(1 for p in set_pages if absent(p["id"]))
+
+
+def _tokens(text: str) -> list[str]:
+    out = []
+    for t in geometry.normalize_text(text).split():
+        t = t.strip(".,;:!?()[]\"'«»")
+        if t:
+            out.append(t)
+    return out
 
 
 def predictions(candidate: str, raw: dict) -> list[dict]:
@@ -95,15 +116,55 @@ def cross_class(set_pages: list[dict], run: dict, candidate: str, truth_cls: str
     return hit, total
 
 
+def all_boxes(candidate: str, raw: dict) -> list[list[float]]:
+    """Every box a detector output, whatever its name or label (diagnostic)."""
+    if candidate == "layout":
+        return [i["box"] for i in raw.get("items", []) if i["score"] >= classes.LAYOUT_THRESHOLD]
+    if candidate == "mirage":
+        return [o["box"] for o in raw.get("objects", [])]
+    return [c["box"] for c in raw.get("codes", [])]
+
+
+def agnostic_recall(set_pages: list[dict], run: dict, candidate: str) -> dict[str, tuple[int, int]]:
+    """Per annotated class: artifacts matched by any box of any name at IoU 0.5."""
+    out = defaultdict(lambda: [0, 0])
+    for page in set_pages:
+        raw = run["outputs"].get(page["id"])
+        if page["truth"] is None or raw is None:
+            continue
+        boxes = all_boxes(candidate, raw)
+        for cls in {a["class"] for a in page["truth"]["artifacts"]}:
+            g = [a["box"] for a in page["truth"]["artifacts"] if a["class"] == cls]
+            out[cls][0] += len(geometry.match(g, boxes, IOU))
+            out[cls][1] += len(g)
+    return {k: tuple(v) for k, v in out.items()}
+
+
+def mirage_names(set_pages: list[dict], run: dict) -> list[tuple[str, int]]:
+    from collections import Counter
+    c = Counter(o["name"] for p in set_pages for o in run["outputs"].get(p["id"], {}).get("objects", []))
+    return c.most_common(12)
+
+
 def text_loss(set_pages: list[dict], ocr_run: dict, run: dict, candidate: str) -> dict:
+    """Reference words lost under predicted boxes of text-replacing classes.
+
+    Reference words are the OCR run's words whose centre lies outside every
+    annotated artifact. When the annotation carries the page's ground-truth
+    text, only OCR words found in it count (one for one), so OCR junk is not
+    a reference word; `checked_pages` counts those pages.
+    """
+    from collections import Counter
     lost = defaultdict(int)
-    reference = 0
+    reference = checked = 0
     for page in set_pages:
         truth = page["truth"]
         raw = run["outputs"].get(page["id"])
         words = (ocr_run["outputs"].get(page["id"]) or {}).get("words", [])
         if truth is None or raw is None:
             continue
+        gt = Counter(_tokens(truth["text"])) if truth.get("text") else None
+        checked += gt is not None
         true_boxes = [a["box"] for a in truth["artifacts"]]
         preds = [x for x in predictions(candidate, raw) if x["class"] in classes.REPLACING]
         for w in words:
@@ -111,18 +172,24 @@ def text_loss(set_pages: list[dict], ocr_run: dict, run: dict, candidate: str) -
             cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
             if any(t[0] <= cx <= t[2] and t[1] <= cy <= t[3] for t in true_boxes):
                 continue
+            if gt is not None:
+                tok = _tokens(w["text"])
+                if not tok or gt[tok[0]] <= 0:
+                    continue
+                gt[tok[0]] -= 1
             reference += 1
             a = geometry.area(b)
             for x in preds:
                 if a > 0 and geometry.intersection(b, x["box"]) / a >= 0.5:
                     lost[x["class"]] += 1
                     break
-    return {"reference_words": reference, "lost": dict(lost), "lost_total": sum(lost.values())}
+    return {"reference_words": reference, "checked_pages": checked, "lost": dict(lost),
+            "lost_total": sum(lost.values())}
 
 
 def seal_text(set_pages: list[dict], run: dict) -> dict:
     errors = chars = inl_errors = inl_chars = 0
-    read = inlined = inlined_over = unread = 0
+    read = inlined = inlined_over = unread = inlined_unmatched = 0
     worst = 0.0
     for page in set_pages:
         truth = page["truth"]
@@ -133,6 +200,10 @@ def seal_text(set_pages: list[dict], run: dict) -> dict:
         seals = raw.get("seals", [])
         pairs = geometry.match([a["box"] for a in gt], [s["box"] for s in seals], IOU)
         unread += len(gt) - len(pairs)
+        matched = {si for _, si in pairs}
+        for si, r in enumerate(seals):
+            if si not in matched and r["inline"]:
+                inlined_unmatched += 1  # text inlined where no seal is: always over the bar
         for gi, si in pairs:
             e, n = geometry.seal_cer(gt[gi]["segments"], seals[si]["text"])
             errors += e
@@ -148,12 +219,13 @@ def seal_text(set_pages: list[dict], run: dict) -> dict:
     return {"seals_read": read, "seals_not_found": unread,
             "cer": errors / chars if chars else None,
             "inlined": inlined, "inlined_cer": inl_errors / inl_chars if inl_chars else None,
-            "inlined_worst_cer": worst if inlined else None, "inlined_over_bar": inlined_over}
+            "inlined_worst_cer": worst if inlined else None, "inlined_without_seal": inlined_unmatched,
+            "inlined_over_bar": inlined_over + inlined_unmatched}
 
 
 def timing(run: dict, ocr_run: dict) -> dict:
     ids = [i for i in run["page_ms"] if i in ocr_run["page_ms"]]
-    if not ids:
+    if not ids or len(ids) != len(ocr_run["page_ms"]):
         return {}
     cand = sum(run["page_ms"][i] for i in ids)
     base = sum(ocr_run["page_ms"][i] for i in ids)
@@ -196,6 +268,10 @@ def report(out: Path, set_names: list[str]) -> tuple[str, dict]:
             run = load_run(runs_dir / cand)
             if run is None:
                 continue
+            gone = missing(sp, run)
+            if gone:
+                lines.append(f"| {cand} | – | – | – | – | – | – | – | incomplete: {gone} pages without output |")
+                continue
             counts = detection_scores(sp, run, cand)
             sd.setdefault("detection", {})[cand] = {f"{k[0]}/{k[1]}": dict(v) for k, v in counts.items()}
             for (cls, lang), c in sorted(counts.items(), key=lambda kv: (classes.CLASSES.index(kv[0][0]), kv[0][1])):
@@ -214,11 +290,27 @@ def report(out: Path, set_names: list[str]) -> tuple[str, dict]:
                 lines.append(f"| {cand} | {cls} | {lang} | {gt} | {pred} | {pct(rec)} | {pct(prec)} | {pct(recl)} | {verdict(ok)} |")
         lines.append("")
         layout = load_run(runs_dir / "layout")
-        if layout:
+        if layout and not missing(sp, layout):
             hit, total = cross_class(sp, layout, "layout", "signature", "picture")
             if total:
                 lines += [f"Diagnostic: layout `image` boxes match {hit} of {total} annotated signatures at IoU 0.5.", ""]
+        diag = []
+        for cand in DETECTORS:
+            run = load_run(runs_dir / cand)
+            if run is None or missing(sp, run):
+                continue
+            ag = agnostic_recall(sp, run, cand)
+            if ag:
+                diag.append(f"- {cand}: " + ", ".join(f"{k} {h}/{t}" for k, (h, t) in sorted(ag.items())))
+            if cand == "mirage" and n_truth:
+                names = mirage_names(sp, run)
+                diag.append("- mirage's most frequent object names: " + ", ".join(f"`{n}` {c}" for n, c in names))
+        if diag:
+            lines += ["Diagnostic, class-agnostic recall (any box of any name at IoU 0.5):", ""] + diag + [""]
         # Text loss, time and memory.
+        if ocr_run and missing(sp, ocr_run):
+            lines += [f"The `ocr` run lacks {missing(sp, ocr_run)} pages: no text-loss, time or memory verdicts.", ""]
+            ocr_run = None
         if ocr_run:
             lines += ["| Candidate | Reference words | Words lost (by predicted class) | Time vs OCR | Median ms (OCR) | Added peak | Verdicts (loss, time, memory) |",
                       "|---|---|---|---|---|---|---|"]
@@ -226,14 +318,17 @@ def report(out: Path, set_names: list[str]) -> tuple[str, dict]:
                 run = load_run(runs_dir / cand)
                 if run is None:
                     continue
+                if missing(sp, run):
+                    lines.append(f"| {cand} | – | – | – | – | – | incomplete: {missing(sp, run)} pages without output |")
+                    continue
                 t = timing(run, ocr_run)
                 loss = text_loss(sp, ocr_run, run, cand) if cand in DETECTORS else None
                 sd.setdefault("cost", {})[cand] = {"timing": t, "loss": loss}
                 lost = "–" if loss is None else (f"{loss['lost_total']}" + (
                     " (" + ", ".join(f"{k} {v}" for k, v in sorted(loss["lost"].items())) + ")" if loss["lost"] else ""))
-                ref = "–" if loss is None else str(loss["reference_words"])
+                ref = "–" if loss is None else f"{loss['reference_words']} ({loss['checked_pages']}/{len(sp)} pages checked)"
                 mem = t.get("added_peak_mb")
-                v_loss = None if loss is None else loss["lost_total"] <= BARS["lost_words"]
+                v_loss = None if loss is None or not loss["reference_words"] else loss["lost_total"] <= BARS["lost_words"]
                 v_time = None if t.get("overhead") is None else t["overhead"] <= BARS["time"]
                 v_mem = None if mem is None else mem <= BARS["memory_mb"]
                 lines.append(f"| {cand} | {ref} | {lost} | {pct(t.get('overhead'))} | {t.get('median_ms', 0):.0f} ({t.get('ocr_median_ms', 0):.0f}) | "
@@ -245,13 +340,16 @@ def report(out: Path, set_names: list[str]) -> tuple[str, dict]:
             run = load_run(runs_dir / cand)
             if run is None:
                 continue
+            if missing(sp, run):
+                rows.append(f"| {cand} | incomplete: {missing(sp, run)} pages without output |||||||| – |")
+                continue
             st = seal_text(sp, run)
             sd.setdefault("seal_text", {})[cand] = st
-            if st["seals_read"] + st["seals_not_found"] == 0:
+            if st["seals_read"] + st["seals_not_found"] + st["inlined_without_seal"] == 0:
                 continue
-            ok = None if not st["inlined"] else st["inlined_over_bar"] == 0
+            ok = None if not (st["inlined"] or st["inlined_without_seal"]) else st["inlined_over_bar"] == 0
             rows.append(f"| {cand} | {st['seals_read']} | {st['seals_not_found']} | {pct(st['cer'])} | {st['inlined']} | "
-                        f"{pct(st['inlined_cer'])} | {pct(st['inlined_worst_cer'])} | {st['inlined_over_bar']} | {verdict(ok)} |")
+                        f"{pct(st['inlined_cer'])} | {pct(st['inlined_worst_cer'])} | {st['inlined_over_bar']} ({st['inlined_without_seal']} without a seal) | {verdict(ok)} |")
         if rows:
             lines += ["| Reader | Seals read | Not found | CER (all read) | Inlined | CER (inlined) | Worst inlined | Inlined over 10% | Verdict |",
                       "|---|---|---|---|---|---|---|---|---|"] + rows + [""]

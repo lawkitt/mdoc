@@ -2,7 +2,8 @@
 
 The app (pdf-inspector `vision::oar`, PP-OCRv6 Small detector) caps the
 detector's longest side at 960 px with score 0.3, box 0.6 and unclip 2.0, and
-recognises 48 px high crops. This module reproduces that closely enough to
+recognises 48 px high crops padded to at least 320 px, keeping every
+recognised span (minimum confidence 0, the app's default). This module reproduces that closely enough to
 list a page's words with boxes (the text-loss measure) and to time OCR; it is
 not the app's code. The seal reader reuses the same pieces with the seal
 detector's own settings (polygons, unclip 0.5).
@@ -155,10 +156,17 @@ class Recognizer:
         self.chars = ["<blank>"] + chars + [" "]
 
     def __call__(self, crop_bgr: np.ndarray) -> tuple[str, float]:
+        # PaddleOCR's resize_norm_img, as OAR applies it: 48 px high at the
+        # crop's ratio, zero-padded (after normalising) to at least 320 px.
         h, w = crop_bgr.shape[:2]
-        width = int(min(3200, max(16, math.ceil(48 * w / max(h, 1)))))
-        x = cv2.resize(crop_bgr, (width, 48)).astype(np.float32) / 255.0
-        x = ((x - 0.5) / 0.5).transpose(2, 0, 1)[None].astype(np.float32)
+        ratio = w / max(h, 1)
+        target_w = int(min(3200, 48 * max(320 / 48, ratio)))
+        resized_w = int(min(target_w, max(1, math.ceil(48 * ratio))))
+        x = cv2.resize(crop_bgr, (resized_w, 48)).astype(np.float32) / 255.0
+        x = ((x - 0.5) / 0.5).transpose(2, 0, 1)
+        padded = np.zeros((3, 48, target_w), np.float32)
+        padded[:, :, :resized_w] = x
+        x = padded[None]
         probs = self.sess.run(None, {self.sess.get_inputs()[0].name: x})[0][0]
         idx = probs.argmax(-1)
         text, confs, prev = [], [], -1
@@ -170,7 +178,7 @@ class Recognizer:
         return "".join(text), (float(np.mean(confs)) if confs else 0.0)
 
 
-def read_lines(det: ort.InferenceSession, rec: Recognizer, bgr: np.ndarray, min_conf: float = 0.5) -> list[dict]:
+def read_lines(det: ort.InferenceSession, rec: Recognizer, bgr: np.ndarray, min_conf: float = 0.0) -> list[dict]:
     """The page's text lines: box (axis-aligned bounds), quad, text, confidence."""
     lines = []
     for quad, score in detect(det, bgr, APP_DET):

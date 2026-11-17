@@ -26,7 +26,9 @@ from pathlib import Path
 
 from . import pages
 
-ORDER = ["ocr", "layout", "seal", "seal-mobile", "seal-gt", "seal-mobile-gt", "mirage", "rxing"]
+# The server seal readers peak near 8 GB, so they run last: memory pressure
+# right after them slowed the next candidate tenfold on the M4.
+ORDER = ["ocr", "layout", "seal-mobile", "seal-mobile-gt", "mirage", "rxing", "seal", "seal-gt"]
 
 
 def out_root(arg: str | None) -> Path:

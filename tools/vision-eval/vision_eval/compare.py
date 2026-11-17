@@ -7,7 +7,8 @@
 outputs: boxes rounded to whole pixels, scores to two decimals, text as is,
 timing left out. Equal digests mean equal outputs at that rounding. `diff`
 matches each page's items between two runs (same class or label, same text,
-box IoU ≥ 0.9) and counts what differs, since float noise across CPUs moves
+box IoU ≥ 0.9) over the union of both runs' pages and folders, and counts
+what differs, including pages or runs present on one side only, since float noise across CPUs moves
 a box by a pixel or a score by a hundredth.
 """
 from __future__ import annotations
@@ -73,6 +74,10 @@ def digests(out: Path, sets: list[str] | None) -> None:
 
 
 def diff(a: Path, b: Path, sets: list[str] | None) -> None:
+    in_a = {(s, r.name) for s, r in runs(a, sets)}
+    for set_name, run_b in runs(b, sets):
+        if (set_name, run_b.name) not in in_a:
+            print(f"{set_name}/{run_b.name}: missing in {a}")
     for set_name, run_a in runs(a, sets):
         run_b = b / "runs" / set_name / run_a.name
         if not (run_b / "run.json").exists():
@@ -81,11 +86,14 @@ def diff(a: Path, b: Path, sets: list[str] | None) -> None:
         cand = _candidate(run_a)
         same = only_a = only_b = text_diff = 0
         dscore = 0.0
-        for f in sorted(run_a.glob("*.json")):
-            if f.name == "run.json":
-                continue
-            fb = run_b / f.name
-            ia = _items(cand, json.loads(f.read_text(encoding="utf-8")))
+        names = {f.name for f in run_a.glob("*.json")} | {f.name for f in run_b.glob("*.json")}
+        names.discard("run.json")
+        pages_only_a = pages_only_b = 0
+        for name in sorted(names):
+            fa, fb = run_a / name, run_b / name
+            pages_only_a += not fb.exists()
+            pages_only_b += not fa.exists()
+            ia = _items(cand, json.loads(fa.read_text(encoding="utf-8"))) if fa.exists() else []
             ib = _items(cand, json.loads(fb.read_text(encoding="utf-8"))) if fb.exists() else []
             used = set()
             for x in ia:
@@ -104,6 +112,8 @@ def diff(a: Path, b: Path, sets: list[str] | None) -> None:
                 text_diff += x["text"] != ib[bi]["text"]
                 dscore = max(dscore, abs(float(x["score"]) - float(ib[bi]["score"])))
             only_b += len(ib) - len(used)
+        if pages_only_a or pages_only_b:
+            print(f"{set_name}/{run_a.name}: {pages_only_a} pages only in A, {pages_only_b} pages only in B")
         print(f"{set_name}/{run_a.name}: {same} matched, {only_a} only in A, {only_b} only in B, "
               f"{text_diff} matched with different text, max score Δ {dscore:.3f}")
 

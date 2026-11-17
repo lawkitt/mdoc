@@ -211,8 +211,7 @@ def _extend_linear(gray: np.ndarray, box: list[float]) -> list[float]:
 
 def run_rxing(set_pages: list[dict]) -> tuple[dict, dict, float, int]:
     paths = [str(p["path"]) for p in set_pages]
-    proc = subprocess.run([exe("rxing-host")] + paths[:1] + paths, capture_output=True, text=True,
-                          encoding="utf-8", check=True)
+    proc, peak = memory.run_child([exe("rxing-host")] + paths[:1] + paths)
     lines = [json.loads(l) for l in proc.stdout.splitlines() if l.strip()]
     out, ms = {}, {}
     for page, r in zip(set_pages, lines[1:]):
@@ -232,7 +231,7 @@ def run_rxing(set_pages: list[dict]) -> tuple[dict, dict, float, int]:
                           "box": [round(v, 1) for v in box], "points": c["points"]})
         out[page["id"]] = {"codes": codes}
         ms[page["id"]] = round(r["ms"], 2)
-    return out, ms, 0.0, 0
+    return out, ms, 0.0, peak
 
 
 def main() -> None:
@@ -266,8 +265,9 @@ def main() -> None:
         "candidate": args.candidate, "set": meta["name"], "pages": len(meta["pages"]),
         "regions": args.regions if args.regions in (None, "gt") else "layout",
         "page_ms": ms, "load_ms": round(load, 1),
-        # Native hosts report their own peak; Python runners report this
-        # process's peak and the peak before any model loaded.
+        # Native hosts: Mirage reports its own peak footprint, rxing's is
+        # measured on exit (max RSS; peak working set on Windows). Python
+        # runners report this process's peak and the peak before any model.
         "peak_bytes": child_peak if native else memory.peak_bytes(),
         "idle_peak_bytes": 0 if native else idle_peak,
         "platform": host_platform(), "machine": platform.processor() or platform.machine(),

@@ -45,3 +45,36 @@ def peak_bytes() -> int:
             return int(c.PeakWorkingSetSize)
     import resource
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+
+
+def run_child(args: list[str], **kwargs) -> tuple["subprocess.CompletedProcess", int]:
+    """Runs a native host and returns its result and peak memory: the peak
+    working set on Windows, the maximum resident set elsewhere (getrusage
+    over finished children, so run one host at a time)."""
+    import subprocess
+    if sys.platform == "win32":
+        from ctypes import wintypes
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                encoding="utf-8")
+        out, err = proc.communicate()
+
+        class Counters(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+                (n, ctypes.c_size_t) for n in (
+                    "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                    "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
+                    "PagefileUsage", "PeakPagefileUsage")]
+        c = Counters()
+        c.cb = ctypes.sizeof(c)
+        peak = 0
+        if ctypes.windll.psapi.GetProcessMemoryInfo(int(proc._handle), ctypes.byref(c), c.cb):
+            peak = int(c.PeakWorkingSetSize)
+        result = subprocess.CompletedProcess(args, proc.returncode, out, err)
+        result.check_returncode()
+        return result, peak
+    import resource
+    before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True, **kwargs)
+    after = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    scale = 1 if sys.platform == "darwin" else 1024  # bytes on macOS, KiB on Linux
+    return result, (after if after > before else 0) * scale

@@ -61,7 +61,15 @@ class TextLoss(unittest.TestCase):
             {"label": "header", "class": "header", "score": 0.9, "box": [390, 0, 450, 30]},  # headers replace nothing
         ]}}}
         loss = score.text_loss([p], ocr_run, run, "layout")
-        self.assertEqual(loss, {"reference_words": 2, "lost": {"seal": 1}, "lost_total": 1})
+        self.assertEqual(loss, {"reference_words": 2, "checked_pages": 0, "lost": {"seal": 1}, "lost_total": 1})
+
+    def test_ground_truth_text_keeps_only_its_words_as_reference(self):
+        p, ocr_run = page([], [[10, 10, 30, 20], [200, 10, 240, 20]])
+        p["truth"]["text"] = "W"  # one true word; the second OCR "w" is junk
+        run = {"outputs": {"p": {"objects": [
+            {"name": "signature", "class": "signature", "score": 0.5, "box": [0, 0, 300, 30]}]}}}
+        loss = score.text_loss([p], ocr_run, run, "mirage")
+        self.assertEqual((loss["reference_words"], loss["checked_pages"], loss["lost_total"]), (1, 1, 1))
 
     def test_layout_scores_below_the_cut_are_ignored(self):
         p, ocr_run = page([], [[10, 10, 30, 20]])
@@ -79,6 +87,25 @@ class Detection(unittest.TestCase):
         c = score.detection_scores([p], run, "mirage")
         self.assertEqual((c[("seal", "all")]["tp"], c[("seal", "ru")]["fp"]), (1, 0))
         self.assertEqual((c[("signature", "all")]["fp"], c[("signature", "all")]["fn"]), (1, 1))
+
+
+class SealText(unittest.TestCase):
+    def test_an_inlined_reading_without_a_seal_fails(self):
+        p = {"id": "p", "lang": "ru", "truth": {"artifacts": [
+            {"class": "seal", "box": [0, 0, 100, 100], "segments": ["ИНН 7701234567"]}]}}
+        run = {"outputs": {"p": {"seals": [
+            {"box": [0, 0, 100, 100], "text": "ИНН 7701234567", "conf": 0.95, "inline": True},
+            {"box": [500, 500, 600, 600], "text": "BOGUS", "conf": 0.95, "inline": True}]}}}
+        st = score.seal_text([p], run)
+        self.assertEqual((st["inlined"], st["inlined_cer"], st["inlined_without_seal"], st["inlined_over_bar"]),
+                         (1, 0.0, 1, 1))
+
+
+class Coverage(unittest.TestCase):
+    def test_a_page_without_output_makes_the_run_incomplete(self):
+        pages_ = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+        run = {"outputs": {"a": {}, "c": {"error": "not a PPM"}}, "page_ms": {"a": 1.0}}
+        self.assertEqual(score.missing(pages_, run), 1)
 
 
 class Compare(unittest.TestCase):
