@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import mdoc
 
@@ -97,5 +98,27 @@ final class DrawerDragTests: XCTestCase {
         XCTAssertFalse(controller.panelsLieUnderScreen, "Reduce Motion: the panel over the screen")
         controller.reduceMotion = false
         XCTAssertTrue(controller.panelsLieUnderScreen, "Reduce Motion off: under the screen again")
+    }
+
+    /// The panel that is not showing is hidden under the one that is: a
+    /// fade in Identities showed the sidebar through it (17 Pro, 2026-11-17).
+    /// Shut, both are drawn again, ready for the next drag.
+    @MainActor
+    func testTheOtherPanelHidesWhileOneShows() {
+        let controller = DrawerController()
+        controller.loadViewIfNeeded()
+        for side in [DrawerSide.leading, .trailing] {
+            controller.configure(side, present: true, closeLabel: "Close", opens: .anywhere, view: AnyView(EmptyView())) { _ in }
+        }
+        controller.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        controller.view.layoutIfNeeded()
+        XCTAssertFalse(controller.panelIsHidden(.leading), "shut: the sidebar is drawn")
+        XCTAssertFalse(controller.panelIsHidden(.trailing), "shut: Identities is drawn")
+        controller.show(leading: false, trailing: true, animation: nil)
+        XCTAssertTrue(controller.panelIsHidden(.leading), "Identities open: the sidebar is hidden")
+        XCTAssertFalse(controller.panelIsHidden(.trailing))
+        controller.show(leading: false, trailing: false, animation: nil)
+        XCTAssertFalse(controller.panelIsHidden(.leading), "shut again: the sidebar is drawn")
+        XCTAssertFalse(controller.panelIsHidden(.trailing))
     }
 }
