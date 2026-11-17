@@ -70,6 +70,10 @@ FINAL_SETS = ["en-recap", "ru-filings", "overlays"]
 IOU = 0.5
 GATE = 0.67           # decision 19 (was 0.70, decision 17; lowered after the gate result)
 GATE_MEDIAN_MS = 190  # decision 10: +30% of the app's OCR (0.63 s per page on the M4)
+# Decisions 19 and 20: every report says the bars moved after the gate result.
+BARS_NOTE = ("The gate threshold and the final recall bar are 67%, lowered after seeing the gate result "
+             "(decisions 19 and 20); the earlier bars were 90% (#911 decision 13) and 70% (decisions 17 and 18).")
+GUARD = "reduced-recall seal guard"
 BARS = {"recall": 0.67, "precision": 0.85, "lost_words": 0, "time": 0.30, "memory_mb": 300}  # decisions 18 and 20
 
 # Run levers (decision 7). Every variant runs objects only (decision 5).
@@ -435,7 +439,8 @@ def gate(out: Path, set_name: str) -> bool:
     for vid, h, t, hs, ts, c, ok in sorted(rows, key=lambda r: (-r[1], r[5]["median_ms"])):
         print(f"| {vid} | {h}/{t} ({pct(h / t if t else None)}) | {hs}/{ts} | {c['median_ms']:.0f} | {'yes' if ok else 'no'} |")
     passed = best is not None and best[1] / best[2] >= GATE
-    print(f"\nGate (decision 19, ≥{GATE:.0%}, lowered from 70% after the result, within {GATE_MEDIAN_MS} ms median): "
+    print("\n" + BARS_NOTE)
+    print(f"Gate (decision 19, ≥{GATE:.0%}, lowered from 70% after the result, within {GATE_MEDIAN_MS} ms median): "
           + (f"best {best[0]} {best[1]}/{best[2]} ({pct(best[1] / best[2])}): " if best else "no variant within time: ")
           + ("pass" if passed else "fail"))
     return passed
@@ -486,8 +491,9 @@ def sweep(out: Path, set_name: str, write: Path | None) -> dict | None:
     for run, c, within, b, _ in sorted(per_variant, key=lambda x: (x[3][0] if x[3] else (1,))):
         best_s = "none" if not b else f"{b[1]}, {pct(b[3]['recall'])} ({b[3]['tp']}/{b[3]['tp'] + b[3]['fn']}), {pct(b[3]['precision'])}, {b[3]['lost']}"
         print(f"| {run['id']} | {pct(c['overhead'])} | {c['median_ms']:.0f} | {c['peak_mb']:.0f} | {'yes' if within else 'no'} | {best_s} |")
+    print("\n" + BARS_NOTE)
     if not cands:
-        print("\nNo setting meets zero words lost, precision ≥85% and the time and memory bars.")
+        print("No setting meets zero words lost, precision ≥85% and the time and memory bars.")
         return None
     key, run, c, pool, rules, e, prep = min(cands, key=lambda x: x[0])
     syn = evaluate(prep, pool, rules, "synthetic")
@@ -497,7 +503,7 @@ def sweep(out: Path, set_name: str, write: Path | None) -> dict | None:
                "nms_iou": IOU, "crop_rule": {"per_page": run["variant"]["crops"], "side": list(CROP_SIDE), "max_aspect": CROP_ASPECT},
                "tuning": {"set": set_name, "real": e, "synthetic": syn,
                           "median_ms": c["median_ms"], "overhead": c["overhead"], "peak_mb": c["peak_mb"]}}
-    print(f"\nSelected: {run['id']}, pool {pool}, rules {json.dumps(rules)}; real recall {pct(e['recall'])} "
+    print(f"Selected: {run['id']}, pool {pool}, rules {json.dumps(rules)}; real recall {pct(e['recall'])} "
           f"({e['tp']}/{e['tp'] + e['fn']}), precision {pct(e['precision'])}, lost {e['lost']}; "
           f"synthetic recall {pct(syn['recall'])}, precision {pct(syn['precision'])}")
     # Decision 21: the setting must already meet every final bar on the
@@ -581,6 +587,12 @@ def final(out: Path, setting_path: Path, set_names: list[str]) -> None:
               f"{h}/{t} | {'pass' if all(checks) else '**fail**'} |")
     print(f"\nBars (decisions 18 and 20; recall lowered from 90% and then 70%): seal recall ≥{BARS['recall']:.0%}, precision ≥{BARS['precision']:.0%}, zero words lost, "
           f"time ≤+{BARS['time']:.0%} of OCR, peak ≤{BARS['memory_mb']} MB.")
+    print(BARS_NOTE)
+    real = [n for n in verdicts if n != "overlays"]
+    if real and all(verdicts[n] for n in real):
+        print(f"Outcome: pass on the real sets, reported as a {GUARD} (seal recall bar 67%, not #911's 90%).")
+    else:
+        print("Outcome: fail (a real set misses a bar).")
     data = json.loads(marker.read_text())
     data.update(verdicts=verdicts, finished=datetime.now(timezone.utc).isoformat())
     marker.write_text(json.dumps(data, indent=1) + "\n")
