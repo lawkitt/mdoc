@@ -210,6 +210,24 @@ impl Source {
     }
 }
 
+/// NuGet's Microsoft.ML.OnnxRuntime 1.27.0, the ONNX Runtime source when
+/// GitHub's release cannot be downloaded (it returned 404 from 2026-11-17,
+/// #925). One package holds every platform's library: 135 MB, against the
+/// GitHub archives' 32 MB (macOS) and 77 MB (Windows).
+#[cfg(any(test, all(target_os = "windows", target_arch = "x86_64")))]
+const fn onnx_runtime_nuget(
+    archive_library: &'static str,
+    library_sha: Option<&'static str>,
+) -> Source {
+    Source {
+        url: "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.27.0/microsoft.ml.onnxruntime.1.27.0.nupkg",
+        size: 134_994_248,
+        archive_sha: "c725e8cefdfe4de08befb9f79b3f218c162439cdcdb97cbbb5192888d58ea669",
+        archive_library,
+        library_sha,
+    }
+}
+
 #[cfg(any(test, not(all(target_os = "windows", target_arch = "x86_64"))))]
 const MAC_RUNTIMES: &[Runtime] = &[
     Runtime {
@@ -256,13 +274,17 @@ const WINDOWS_RUNTIMES: &[Runtime] = &[
         name: "onnx",
         library: "onnxruntime.dll",
         library_sha: "fd6dd0a8b1f5562d642abdcbd36bc54251482d2ebaa3f4f88669bfdad92e7525",
-        sources: &[Source {
-            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-win-x64-1.27.0.zip",
-            size: 77_086_915,
-            archive_sha: "c5c81710938e68079ff1a192b04897faabe4b43830d48f39f27ecd4e16138bfc",
-            archive_library: "lib/onnxruntime.dll",
-            library_sha: None,
-        }],
+        sources: &[
+            Source {
+                url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-win-x64-1.27.0.zip",
+                size: 77_086_915,
+                archive_sha: "c5c81710938e68079ff1a192b04897faabe4b43830d48f39f27ecd4e16138bfc",
+                archive_library: "lib/onnxruntime.dll",
+                library_sha: None,
+            },
+            // The same onnxruntime.dll, byte for byte.
+            onnx_runtime_nuget("runtimes/win-x64/native/onnxruntime.dll", None),
+        ],
     },
 ];
 
