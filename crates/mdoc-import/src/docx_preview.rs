@@ -15,8 +15,13 @@ use tempfile::{TempDir, tempdir};
 use zip::ZipArchive;
 
 mod comments;
+mod fonts;
 mod glyph_fallback;
-pub use comments::DocxComment;
+pub use comments::{AnchorRect, COMMENT_SCHEME, CommentAnchor, DocxComment, LinkMark};
+
+/// Reads the `/Link` annotations whose URI starts with [`COMMENT_SCHEME`] from
+/// a rendered PDF. The app passes gpui-pdf's reader: this crate parses no PDF.
+pub type MarkReader = fn(&Path) -> Result<Vec<LinkMark>, String>;
 
 const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
@@ -29,6 +34,8 @@ pub struct DocxPreview {
     pub pdf_path: PathBuf,
     pub warnings: Vec<String>,
     pub comments: Arc<Vec<DocxComment>>,
+    /// Where the comments sit on the rendered pages, in document order.
+    pub anchors: Arc<Vec<CommentAnchor>>,
     directory: Option<TempDir>,
 }
 
@@ -156,9 +163,10 @@ impl PreviewError {
 pub fn render_in_process(
     path: &Path,
     cancelled: Arc<AtomicBool>,
+    read_marks: MarkReader,
 ) -> Result<DocxPreview, PreviewError> {
     check_cancel(&cancelled)?;
-    render_direct(path)
+    render_direct(path, read_marks)
 }
 
 /// Render in a supervised worker: this executable, run as the DOCX worker.
@@ -206,6 +214,12 @@ pub fn render_with_executable(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    // docxide refuses to convert while a variable with its old prefix is set.
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("DOCXSIDE_") {
+            command.env_remove(key);
+        }
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -235,9 +249,10 @@ pub fn render_with_executable(
                 .lines()
                 .map(str::to_owned)
                 .collect();
-            let comments = read_comments(&pdf_path)?;
+            let (comments, anchors) = read_comments(&pdf_path)?;
             return Ok(DocxPreview {
                 comments,
+                anchors,
                 pdf_path,
                 warnings,
                 directory: Some(directory),
@@ -247,34 +262,40 @@ pub fn render_with_executable(
     }
 }
 
+/// A reader for tests in this crate, which cannot parse the PDF: no anchors.
 #[cfg(test)]
 pub fn render_for_test(path: &Path) -> Result<DocxPreview, PreviewError> {
-    render_direct(path)
+    render_direct(path, |_| Ok(Vec::new()))
 }
 
-pub fn run_worker(input: &Path, output: &Path) -> Result<(), PreviewError> {
-    render_direct_to(input, output)
+pub fn run_worker(input: &Path, output: &Path, read_marks: MarkReader) -> Result<(), PreviewError> {
+    render_direct_to(input, output, read_marks)
 }
 
 /// Runs the worker and, on failure, leaves the error report beside `output`
 /// for `render_with_executable`.
-pub fn run_worker_reporting(input: &Path, output: &Path) -> Result<(), PreviewError> {
-    run_worker(input, output).inspect_err(|error| {
+pub fn run_worker_reporting(
+    input: &Path,
+    output: &Path,
+    read_marks: MarkReader,
+) -> Result<(), PreviewError> {
+    run_worker(input, output, read_marks).inspect_err(|error| {
         let _ = fs::write(output.with_extension("error"), error.report());
     })
 }
 
-fn render_direct(path: &Path) -> Result<DocxPreview, PreviewError> {
+fn render_direct(path: &Path, read_marks: MarkReader) -> Result<DocxPreview, PreviewError> {
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
-    run_worker(path, &pdf_path)?;
+    run_worker(path, &pdf_path, read_marks)?;
     let warnings = fs::read_to_string(pdf_path.with_extension("warnings"))?
         .lines()
         .map(str::to_owned)
         .collect();
-    let comments = read_comments(&pdf_path)?;
+    let (comments, anchors) = read_comments(&pdf_path)?;
     Ok(DocxPreview {
         comments,
+        anchors,
         pdf_path,
         warnings,
         directory: Some(directory),
@@ -283,7 +304,11 @@ fn render_direct(path: &Path) -> Result<DocxPreview, PreviewError> {
 
 // Validation and rendering share one bounded snapshot inside the terminable
 // worker. The deadline therefore includes package inflation and validation.
-fn render_direct_to(path: &Path, output: &Path) -> Result<(), PreviewError> {
+fn render_direct_to(
+    path: &Path,
+    output: &Path,
+    read_marks: MarkReader,
+) -> Result<(), PreviewError> {
     let file = fs::File::open(path)?;
     if file.metadata()?.len() > MAX_INPUT_BYTES {
         return Err(PreviewError::InputTooLarge);
@@ -294,7 +319,11 @@ fn render_direct_to(path: &Path, output: &Path) -> Result<(), PreviewError> {
         return Err(PreviewError::InputTooLarge);
     }
     let warnings = inspect_package(&bytes)?;
-    let (render_input, comments) = comments::prepare(&bytes)?;
+    let comments::Prepared {
+        render: render_input,
+        comments,
+        markers,
+    } = comments::prepare(&bytes)?;
     let mut render_input = render_input.unwrap_or(bytes);
     if let Some(fallback) = glyph_fallback::platform_fallback()
         && let Some(copy) = glyph_fallback::prepare(&render_input, fallback)?
@@ -302,20 +331,29 @@ fn render_direct_to(path: &Path, output: &Path) -> Result<(), PreviewError> {
         render_input = copy;
     }
     render_bytes(&render_input, output)?;
+    let anchors = if markers.is_empty() {
+        Vec::new()
+    } else {
+        let marks = read_marks(output).map_err(PreviewError::Render)?;
+        comments::anchors(&marks, &markers, &comments)
+    };
     fs::write(
         output.with_extension("comments.json"),
-        serde_json::to_vec(&comments).map_err(|e| PreviewError::Render(e.to_string()))?,
+        serde_json::to_vec(&(&comments, &anchors))
+            .map_err(|e| PreviewError::Render(e.to_string()))?,
     )?;
     fs::write(output.with_extension("warnings"), warnings.join("\n"))?;
     Ok(())
 }
 
 fn render_bytes(bytes: &[u8], output: &Path) -> Result<(), PreviewError> {
-    docxide_pdf::convert_docx_bytes_to_pdf(bytes, output).map_err(|error| match error {
-        // Writing the PDF failed, not the document: storage can recover.
-        docxide_pdf::Error::Io(error) => PreviewError::TemporaryStorage(error.to_string()),
-        _ => PreviewError::Rejected,
-    })?;
+    docxide_pdf::convert_docx_bytes_to_pdf_with(bytes, output, &fonts::options()).map_err(
+        |error| match error {
+            // Writing the PDF failed, not the document: storage can recover.
+            docxide_pdf::Error::Io(error) => PreviewError::TemporaryStorage(error.to_string()),
+            _ => PreviewError::Rejected,
+        },
+    )?;
     Ok(())
 }
 
@@ -532,10 +570,14 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
     Ok(warnings)
 }
 
-fn read_comments(pdf: &Path) -> Result<Arc<Vec<DocxComment>>, PreviewError> {
-    serde_json::from_slice(&fs::read(pdf.with_extension("comments.json"))?)
-        .map(Arc::new)
-        .map_err(|e| PreviewError::Render(format!("invalid comment metadata: {e}")))
+type CommentData = (Arc<Vec<DocxComment>>, Arc<Vec<CommentAnchor>>);
+
+fn read_comments(pdf: &Path) -> Result<CommentData, PreviewError> {
+    serde_json::from_slice::<(Vec<DocxComment>, Vec<CommentAnchor>)>(&fs::read(
+        pdf.with_extension("comments.json"),
+    )?)
+    .map(|(comments, anchors)| (Arc::new(comments), Arc::new(anchors)))
+    .map_err(|e| PreviewError::Render(format!("invalid comment metadata: {e}")))
 }
 
 #[cfg(test)]

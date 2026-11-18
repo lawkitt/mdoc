@@ -85,6 +85,15 @@ impl Collector {
             Some(BfString::String(s)) => s,
             None => return, // no unicode → can't match against a quote; skip
         };
+        // A zero-width space, word joiner or BOM draws nothing and means
+        // nothing (mdoc's DOCX comment marks carry a zero-width space): find and
+        // copy skip it. ZWNJ and ZWJ shape words, so they stay.
+        if text
+            .chars()
+            .all(|c| matches!(c, '\u{200B}' | '\u{2060}' | '\u{FEFF}'))
+        {
+            return;
+        }
         // On-page bbox: the glyph outline transformed by `m` (the run's transform
         // times the glyph's own, mirroring hayro's renderer). Device space here is
         // page points with a top-left origin (we run at scale 1 with

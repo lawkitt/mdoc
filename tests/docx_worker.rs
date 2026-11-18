@@ -355,3 +355,260 @@ fn uploaded_comments_preserved() {
         assert!(gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).is_ok());
     }
 }
+
+/// The real worker on `path`, with its PDF parsed.
+fn render_parsed(
+    path: &Path,
+) -> (
+    mdoc_import::docx_preview::DocxPreview,
+    Arc<gpui_pdf::Document>,
+) {
+    let preview = render_with_executable(
+        path,
+        Arc::new(AtomicBool::new(false)),
+        Path::new(env!("CARGO_BIN_EXE_mdoc")),
+        Duration::from_secs(30),
+    )
+    .unwrap();
+    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    (preview, pdf)
+}
+
+/// A copy of a DOCX fixture with each XML part passed through `edit`.
+fn edited_copy(
+    source: &Path,
+    dir: &Path,
+    name: &str,
+    edit: impl Fn(&str, String) -> String,
+) -> std::path::PathBuf {
+    use std::io::{Read, Write};
+    let mut input = zip::ZipArchive::new(std::fs::File::open(source).unwrap()).unwrap();
+    let path = dir.join(name);
+    let mut output = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    for i in 0..input.len() {
+        let mut entry = input.by_index(i).unwrap();
+        let entry_name = entry.name().unwrap().to_string();
+        let mut data = Vec::new();
+        entry.read_to_end(&mut data).unwrap();
+        if entry_name.ends_with(".xml") {
+            data = edit(&entry_name, String::from_utf8(data).unwrap()).into_bytes();
+        }
+        output
+            .start_file(entry_name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        output.write_all(&data).unwrap();
+    }
+    output.finish().unwrap();
+    path
+}
+
+/// The fixture's body font replaced by `font`.
+fn in_font(name: &str, xml: String, font: &str) -> String {
+    if name == "word/styles.xml" {
+        xml.replace(
+            r#"w:ascii="Arial" w:hAnsi="Arial""#,
+            &format!(r#"w:ascii="{font}" w:hAnsi="{font}" w:cs="{font}""#),
+        )
+    } else {
+        xml
+    }
+}
+
+/// Every comment shape the render copy marks has its place on the page,
+/// marks stay out of the clickable links, and a link under a comment stays
+/// clickable (ROADMAP Comments item 1; the rail of item 3 builds on these).
+#[test]
+fn comment_anchors_cover_every_range_shape() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/docx-preview/comment-anchors.docx");
+    let (preview, pdf) = render_parsed(&source);
+    let anchors = |id: &str| -> Vec<_> { preview.anchors.iter().filter(|a| a.id == id).collect() };
+    let one = |id: &str| {
+        let found = anchors(id);
+        assert_eq!(found.len(), 1, "comment {id}: {found:?}");
+        found[0].clone()
+    };
+    // Several lines: a rectangle per line, all from the left margin but the last.
+    let lines = one("0");
+    assert_eq!(lines.rects.len(), 3);
+    assert!(lines.rects.windows(2).all(|r| r[0].y < r[1].y));
+    assert!(lines.rects[..2].iter().all(|r| r.w > 0.7));
+    // Two paragraphs, a cell, Russian text: one rectangle per line.
+    assert_eq!(one("1").rects.len(), 2);
+    assert_eq!(one("7").rects.len(), 1);
+    assert_eq!(one("8").rects.len(), 1);
+    // Overlapping comments share "gamma": each range overhangs the other.
+    let (a, b) = (one("2").rects[0], one("3").rects[0]);
+    assert!((a.y - b.y).abs() < 1e-4);
+    assert!(a.x < b.x && b.x < a.x + a.w && a.x + a.w < b.x + b.w);
+    // A comment over a link and one inside a link, and the link stays clickable.
+    let links = gpui_pdf::page_links(&pdf);
+    let register = gpui_pdf::LinkTarget::Uri("https://example.com/register".into());
+    let clickable = |r: &mdoc_import::docx_preview::AnchorRect| {
+        links[0].iter().any(|l| {
+            l.target == register && (l.y - r.y).abs() < 1e-4 && l.x < r.x + r.w && r.x < l.x + l.w
+        })
+    };
+    assert!(clickable(&one("4").rects[0]));
+    assert!(clickable(&one("11").rects[0]));
+    // No mark is a link of its own; the commented cross-reference loses its
+    // jump in the preview (a gpui-pdf link cannot resolve `#clause5`).
+    assert!(links.iter().flatten().all(|l| l.target == register));
+    assert_eq!(one("9").rects.len(), 1);
+    // A point comment and an empty range: a zero-width spot on their line.
+    for id in ["5", "6"] {
+        let point = one(id);
+        assert!(point.point && point.rects.len() == 1 && point.rects[0].w == 0.0);
+    }
+    let point = one("5").rects[0];
+    let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap();
+    let here = text.find_matches("Point comment here")[0][0];
+    assert!(
+        (here.x + here.w - point.x).abs() < 0.005,
+        "{here:?} {point:?}"
+    );
+    assert!(point.y > here.y && point.y < here.y + here.h);
+    // Across a page break: an anchor on each page.
+    let pages: Vec<_> = anchors("12").iter().map(|a| a.page).collect();
+    assert_eq!(pages, [0, 1]);
+    // No range, no reference: no place on the page.
+    assert!(anchors("10").is_empty());
+    // In document order.
+    let order: Vec<_> = preview.anchors.iter().map(|a| a.id.as_str()).collect();
+    assert_eq!(
+        order,
+        [
+            "0", "1", "2", "3", "4", "11", "5", "6", "7", "8", "9", "12", "12"
+        ]
+    );
+}
+
+/// The marker links never move a line, also where the font lacks the point
+/// marker's zero-width space (Caladea): the render copy prints as Word does.
+#[test]
+fn comment_marks_never_move_a_line() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/docx-preview/comment-anchors.docx");
+    let dir = tempfile::tempdir().unwrap();
+    let strip = |name: &str, xml: String| -> String {
+        if name == "word/comments.xml" {
+            return r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#.into();
+        }
+        let doc = roxmltree::Document::parse(&xml).unwrap();
+        let mut ranges: Vec<_> = doc
+            .descendants()
+            .filter(|n| n.tag_name().name().starts_with("comment"))
+            .map(|n| n.range())
+            .collect();
+        ranges.reverse();
+        let mut out = xml.clone();
+        for range in ranges {
+            out.replace_range(range, "");
+        }
+        out
+    };
+    for font in ["Arial", "Caladea"] {
+        let marked = edited_copy(
+            &fixture,
+            dir.path(),
+            &format!("marked-{font}.docx"),
+            |n, x| in_font(n, x, font),
+        );
+        let plain = edited_copy(
+            &fixture,
+            dir.path(),
+            &format!("plain-{font}.docx"),
+            |n, x| strip(n, in_font(n, x, font)),
+        );
+        let (marked_preview, marked) = render_parsed(&marked);
+        let (plain_preview, plain) = render_parsed(&plain);
+        assert!(!marked_preview.anchors.is_empty() && plain_preview.anchors.is_empty());
+        assert_eq!(marked.pages().len(), plain.pages().len());
+        for page in 0..marked.pages().len() {
+            let (a, b) = (
+                gpui_pdf::extract_page_text(&marked, page).unwrap(),
+                gpui_pdf::extract_page_text(&plain, page).unwrap(),
+            );
+            for line in a.text().lines().filter(|l| !l.trim().is_empty()) {
+                let needle: String = line.chars().take(12).collect();
+                let (Some(m), Some(p)) = (
+                    a.find_matches(&needle).first().cloned(),
+                    b.find_matches(&needle).first().cloned(),
+                ) else {
+                    panic!("{font} page {page}: {needle:?} is missing");
+                };
+                // A tenth of a point on a Letter page.
+                assert!((m[0].y - p[0].y).abs() < 1.3e-4, "{font}: {needle:?} moved");
+                assert!((m[0].x - p[0].x).abs() < 1.7e-4, "{font}: {needle:?} moved");
+            }
+        }
+    }
+}
+
+/// The bundled fonts load, below installed fonts: a document in Calibri uses
+/// an installed Calibri and falls to Carlito only without one, and one in
+/// Liberation Serif, which no system ships, uses the bundle.
+#[test]
+fn bundled_fonts_rank_below_installed_ones() {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
+    let dir = tempfile::tempdir().unwrap();
+    let embedded = |font: &str| {
+        let copy = edited_copy(&fixture, dir.path(), &format!("{font}.docx"), |n, x| {
+            in_font(n, x, font)
+        });
+        let (preview, _) = render_parsed(&copy);
+        let pdf = std::fs::read(&preview.pdf_path).unwrap();
+        // The fonts' ToUnicode maps, outside the compressed object streams.
+        let key = b"/CMapName /";
+        let mut names: Vec<String> = pdf
+            .windows(key.len())
+            .enumerate()
+            .filter(|(_, w)| *w == key)
+            .map(|(i, _)| {
+                pdf[i + key.len()..]
+                    .iter()
+                    .take_while(|b| b.is_ascii_alphanumeric() || **b == b'-')
+                    .map(|b| char::from(*b))
+                    .collect()
+            })
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    };
+    let calibri_installed = cfg!(windows) || mac_has_font("calibri");
+    let expected = if calibri_installed {
+        "Calibri"
+    } else {
+        "Carlito"
+    };
+    assert_eq!(embedded("Calibri"), [format!("{expected}-UTF16")]);
+    let serif = embedded("Liberation Serif");
+    assert_eq!(serif.len(), 1);
+    assert!(serif[0].starts_with("LiberationSerif"), "{serif:?}");
+}
+
+/// Whether a font file whose name starts with `stem` sits where docxide looks
+/// on macOS (Office keeps its own copies elsewhere, which docxide never reads).
+fn mac_has_font(stem: &str) -> bool {
+    let home = std::env::var("HOME").unwrap_or_default();
+    [
+        "/Library/Fonts",
+        "/System/Library/Fonts",
+        "/System/Library/Fonts/Supplemental",
+    ]
+    .iter()
+    .map(std::path::PathBuf::from)
+    .chain([Path::new(&home).join("Library/Fonts")])
+    .filter_map(|dir| std::fs::read_dir(dir).ok())
+    .flatten()
+    .flatten()
+    .any(|entry| {
+        entry
+            .file_name()
+            .to_string_lossy()
+            .to_lowercase()
+            .starts_with(stem)
+    })
+}

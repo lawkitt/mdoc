@@ -1,12 +1,13 @@
 //! Currency signs the substituted fonts lack get a system face that has them.
 //!
 //! A Word document usually asks for Calibri or Cambria. Where neither is
-//! installed the renderer draws the text in Arial, whose macOS copy (like Times
-//! New Roman and Courier New there) stops at U+20B5, so ₽ came out as an empty
-//! box (#305). The renderer rescues only East Asian characters per glyph, so the
-//! worker's render copy moves the newer Currency Symbols into runs of their own
-//! in a system face that covers them. Windows' copies of those fonts already
-//! carry the block, and the source document is never changed.
+//! installed the renderer draws the text in the bundled Carlito or Caladea
+//! (`fonts`), and before them in Arial; none of them, nor macOS's Arial, Times
+//! New Roman and Courier New, has ₽, which came out as an empty box (#305). The
+//! renderer rescues a missing glyph only from Word's own fallback faces, which
+//! macOS lacks, so the worker's render copy moves the newer Currency Symbols
+//! into runs of their own in a system face that covers them. Windows' copies of
+//! those fonts already carry the block, and the source document is never changed.
 use super::{PreviewError, replace_parts, word};
 use roxmltree::Node;
 use std::{

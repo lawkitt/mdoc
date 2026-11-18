@@ -88,7 +88,13 @@ fn main() {
             std::process::exit(2);
         };
         let output = PathBuf::from(output);
-        if docx_preview::run_worker_reporting(&PathBuf::from(input), &output).is_err() {
+        if docx_preview::run_worker_reporting(
+            &PathBuf::from(input),
+            &output,
+            preview::read_comment_marks,
+        )
+        .is_err()
+        {
             std::process::exit(1);
         }
         return;

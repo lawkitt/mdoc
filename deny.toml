@@ -17,33 +17,6 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 unmaintained. Transitive via gpui-component, gpui (Zed-git), and image/rav1e. Can't fix without upstream bumps; revisit at each gpui pull." },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained (no safe upgrade). Transitive via fontdb, whose parents are all upstream: usvg (gpui + gpui-component), mermaid-rs-renderer (Zed), and ratex-render/-svg. Clears when upstreams move to skrifa; revisit at each gpui/ratex pull." },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz unmaintained (no safe upgrade; maintainer points at harfrust). Transitive via usvg <- gpui and gpui-component. Clears when upstream usvg/Zed migrate shapers; revisit at each gpui pull." },
-    # zip 8.x: each affects only code paths mdoc never reaches (extracting to disk,
-    # ZipStreamReader, password decryption, legacy decoders; see each reason).
-    # mdoc and anydoc are on zip 9; zip 8 comes only
-    # from docxide-pdf, which reads entries into memory through `ZipArchive::by_name`.
-    # docxide-pdf 0.21.4 (2026-11) requires zip ^9.4; we are on 0.18. Take it
-    # with the next planned docxide-pdf upgrade
-    # (https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/dependabot-grill-2026-10-31.md); then all zip-8 entries go.
-    #
-    # GitHub's alerts for the zip-8 advisories are dismissed as unused code.
-    # cargo-deny matches only primary ids, not GHSA aliases: a new zip-8
-    # advisory is added here by its RUSTSEC id once `just deny` names it.
-    { id = "RUSTSEC-2026-0367", reason = "zip extract() keeps SUID/SGID bits. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
-    { id = "RUSTSEC-2026-0368", reason = "zip extract() writes symlinks outside the destination. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
-    { id = "RUSTSEC-2026-0369", reason = "zip extract() applies permissions through symlinks. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
-    { id = "RUSTSEC-2026-0429", reason = "zip extract() aborts on a symlink entry with a huge declared size (GHSA-q7v9-x93c-xqv3). We never extract to disk; docxide-pdf reads entries with by_name; blocked on docxide-pdf requiring zip ^8." },
-    { id = "RUSTSEC-2026-0545", reason = "zip AES entries skip the HMAC check on early EOF (GHSA-8hxf-qr8p-62x4). Nothing decrypts with a password, and mdoc rejects encrypted packages before docxide-pdf; blocked on docxide-pdf 0.18 requiring zip ^8." },
-    { id = "RUSTSEC-2026-0546", reason = "zip extract() writes outside the destination through symlink targets (GHSA-hjqx-j4rw-g7xv). We never extract to disk; blocked on docxide-pdf 0.18 requiring zip ^8." },
-    { id = "RUSTSEC-2026-0547", reason = "zip legacy Shrink/Reduce/Implode decoders preallocate the declared size (GHSA-9hj8-73fh-9963). The legacy-zip feature is off; blocked on docxide-pdf 0.18 requiring zip ^8." },
-    { id = "RUSTSEC-2026-0548", reason = "zip ZipStreamReader trusts local-header names (GHSA-m665-v7pm-7grj). Nothing uses ZipStreamReader; every reader trusts the central directory; blocked on docxide-pdf 0.18 requiring zip ^8." },
-    # zstd 0.13 / zstd-safe 7 (added 2026-10-27): fixed only in zstd 0.14.3 and
-    # zstd-safe 8.2, but zip 8 requires zstd ^0.13 and docxide-pdf requires zip ^8.
-    # zip 8 builds zstd without features (no `legacy`, no `seekable`) and calls only
-    # `zstd::Decoder::with_buffer` (read) and `Encoder::new`, never `with_context`.
-    # Clears with the zip 9 move above. zstd-sys's RUSTSEC-2026-0410 is fixed in 2.1.2.
-    { id = "RUSTSEC-2026-0391", reason = "zstd with_context leaks an abandoned stream into the next. zip 8 never passes a context; blocked on docxide-pdf requiring zip ^8." },
-    { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress overruns a Vec. The seekable feature is off; blocked on docxide-pdf requiring zip ^8." },
-    { id = "RUSTSEC-2026-0403", reason = "zstd-safe legacy-frame stream error exposes memory via the write::Decoder. Legacy is off and zip 8 reads through read::Decoder; blocked on docxide-pdf requiring zip ^8." },
     # zbus 5 subcrates, merged into zbus 6 (no safe upgrade). Linux only, via
     # gpui-pre-linux -> accesskit_unix / atspi; clears when upstream moves to zbus 6.
     { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6). Transitive via gpui-pre-linux -> accesskit_unix/atspi; revisit at each gpui pull." },

@@ -41,6 +41,11 @@ case "$(platform)" in
     elif [ -n "${MDOC_REQUIRE_SIGNING:-}" ]; then
       die "the packaged app is not signed with a Developer ID"
     fi
+    # The DOCX preview's fallback fonts ship in the bundle with their licences.
+    fonts="Carlito-Regular.ttf Caladea-Regular.ttf LiberationSans-Regular.ttf"
+    for font in $fonts Carlito-OFL.txt Caladea-OFL.txt Liberation-LICENSE.txt; do
+      [ -f "$app/Contents/Resources/fonts/$font" ] || die "mdoc.app has no fonts/$font"
+    done
     "$app/Contents/MacOS/mdoc" "${args[@]}"
     ;;
   windows-x64)

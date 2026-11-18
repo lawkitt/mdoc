@@ -76,3 +76,43 @@ with ZipFile(Path(__file__).with_name('comments.docx'),'w') as archive:
         info = ZipInfo(name, date_time=(2026,1,1,0,0,0))
         info.compress_type = ZIP_DEFLATED
         archive.writestr(info, data.encode() if isinstance(data,str) else data)
+
+# Comment anchors (ROADMAP Comments item 1): every range shape the render
+# copy turns into `mdoc-comment:` links. Ids name the case in the tests.
+def cs(id): return f'<w:commentRangeStart w:id="{id}"/>'
+def ce(id): return f'<w:commentRangeEnd w:id="{id}"/><w:r><w:commentReference w:id="{id}"/></w:r>'
+def r(text): return f'<w:r><w:t xml:space="preserve">{text}</w:t></w:r>'
+long = ('This clause runs over several lines so that its comment covers more than one line of the page: '
+        'the supplier delivers the goods to the buyer at the agreed place within thirty days of the order, '
+        'and the risk passes to the buyer on delivery.')
+anchors_body = f'''<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>{r('Comment anchors')}</w:p>
+<w:p>{cs(0)}{r(long)}{ce(0)}</w:p>
+<w:p>{cs(1)}{r('First paragraph of a range over two paragraphs.')}</w:p>
+<w:p>{r('Second paragraph of that range.')}{ce(1)}</w:p>
+<w:p>{cs(2)}{r('Alpha beta ')}{cs(3)}{r('gamma')}{ce(2)}{r(' delta')}{ce(3)}{r(' epsilon.')}</w:p>
+<w:p>{r('See ')}{cs(4)}{r('the ')}<w:hyperlink r:id="register">{r('public register')}</w:hyperlink>{ce(4)}{r(' today.')}</w:p>
+<w:p>{r('Inside a link: ')}<w:hyperlink r:id="register">{r('the ')}{cs(11)}{r('register')}{ce(11)}</w:hyperlink>{r('.')}</w:p>
+<w:p>{r('Point comment here')}<w:r><w:commentReference w:id="5"/></w:r>{r(' and the rest of the line.')}</w:p>
+<w:p>{r('Empty')}{cs(6)}{ce(6)}{r(' range comment.')}</w:p>
+<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4800"/><w:gridCol w:w="4800"/></w:tblGrid><w:tr><w:tc><w:p>{r('Cell one')}</w:p></w:tc><w:tc><w:p>{cs(7)}{r('Commented cell')}{ce(7)}</w:p></w:tc></w:tr></w:tbl>
+<w:p>{r('Русский текст: ')}{cs(8)}{r('Срок оплаты — тридцать дней.')}{ce(8)}</w:p>
+<w:p>{r('As agreed in ')}{cs(9)}<w:hyperlink w:anchor="clause5">{r('clause 5')}</w:hyperlink>{ce(9)}{r('.')}</w:p>
+<w:p>{cs(12)}{r('Before the page break.')}</w:p>
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+<w:p>{r('After the page break.')}{ce(12)}</w:p>
+<w:p><w:bookmarkStart w:id="0" w:name="clause5"/>{r('Clause 5. Payment.')}<w:bookmarkEnd w:id="0"/></w:p>
+<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:bottom="1440" w:left="1440" w:right="1440"/></w:sectPr>'''
+anchor_parts = dict(parts)
+anchor_parts['word/document.xml'] = f'<w:document xmlns:w="{W}" xmlns:r="{R}"><w:body>{anchors_body}</w:body></w:document>'
+anchor_parts['word/comments.xml'] = f'<w:comments xmlns:w="{W}">' + ''.join(
+    f'<w:comment w:id="{id}" w:author="Reviewer" w:date="2026-11-18T10:00:00Z">{p(text)}</w:comment>'
+    for id, text in [(0, 'Several lines.'), (1, 'Two paragraphs.'), (2, 'Overlaps the next.'), (3, 'Overlapped.'),
+                     (4, 'Over a link.'), (5, 'Point.'), (6, 'Empty range.'), (7, 'In a cell.'), (8, 'По-русски.'),
+                     (9, 'Over a cross-reference.'), (10, 'Nowhere.'), (11, 'Inside a link.'), (12, 'Across pages.')]) + '</w:comments>'
+anchor_parts['word/_rels/document.xml.rels'] = rels([('styles','styles','styles.xml',''),('comments','comments','comments.xml',''),('register','hyperlink','https://example.com/register',' TargetMode="External"')])
+anchor_parts['[Content_Types].xml'] = comment_parts['[Content_Types].xml']
+with ZipFile(Path(__file__).with_name('comment-anchors.docx'),'w') as archive:
+    for name, data in sorted(anchor_parts.items()):
+        info = ZipInfo(name, date_time=(2026,1,1,0,0,0))
+        info.compress_type = ZIP_DEFLATED
+        archive.writestr(info, data.encode() if isinstance(data,str) else data)

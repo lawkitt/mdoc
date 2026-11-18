@@ -14,7 +14,7 @@ use mdoc_import::docx_preview::{self, PreviewError};
 use mdoc_store::session_store;
 use std::{
     cell::Cell,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::{
         Arc,
@@ -26,6 +26,26 @@ actions!(mdoc, [RetryPreview]);
 /// DOCX previews are rendered locally and only approximate Word's layout
 /// (ADR 0005); the Markdown is converted from the file itself.
 pub(crate) const DOCX_NOTE: &str = "Approximate preview: the layout may differ from Word. The Markdown is converted from the file itself.";
+
+/// The DOCX worker's reader for the comment marks in the PDF it rendered
+/// (`docx_preview::MarkReader`): the anchors' rectangles, read through gpui-pdf.
+pub(crate) fn read_comment_marks(pdf: &Path) -> Result<Vec<docx_preview::LinkMark>, String> {
+    let bytes = std::fs::read(pdf).map_err(|e| e.to_string())?;
+    let doc = gpui_pdf::parse(Arc::new(bytes)).map_err(|e| format!("{e:?}"))?;
+    Ok(gpui_pdf::link_marks(&doc)
+        .into_iter()
+        .map(|m| docx_preview::LinkMark {
+            page: m.page,
+            rect: docx_preview::AnchorRect {
+                x: m.x,
+                y: m.y,
+                w: m.w,
+                h: m.h,
+            },
+            target: m.target,
+        })
+        .collect())
+}
 
 /// Give the preview's find bar a text input, so typing goes through the
 /// text-input path and IME works.
@@ -508,7 +528,7 @@ impl DocumentView {
         let task = cx.background_executor().spawn(async move {
             // Headless UI tests cannot launch the test harness as a worker.
             if cfg!(test) {
-                docx_preview::render_in_process(&path, cancel)
+                docx_preview::render_in_process(&path, cancel, read_comment_marks)
             } else {
                 docx_preview::render_with_cancel(&path, cancel)
             }
