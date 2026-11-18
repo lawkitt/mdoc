@@ -185,11 +185,12 @@ fn main() {
             // Blocking on purpose: GPUI waits only briefly for async quit
             // work, and a staged update must be swapped in before exit.
             updater::apply_at_quit(cx);
+            // Blocking too: a conversion worker must not outlive the app.
+            conversion_worker::shutdown_workers();
             let executor = cx.background_executor().clone();
             async move {
                 executor
                     .spawn(async {
-                        conversion_worker::shutdown_workers();
                         docx_preview::shutdown_workers();
                     })
                     .await

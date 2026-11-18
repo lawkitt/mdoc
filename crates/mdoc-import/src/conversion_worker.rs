@@ -38,7 +38,7 @@ const POLL: Duration = Duration::from_millis(10);
 /// cannot exhaust the app's memory with its answer.
 pub const MAX_MESSAGE_BYTES: u64 = 256 * 1024 * 1024;
 /// The most app quit waits for running workers to be killed and reaped.
-const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
+const SHUTDOWN_WAIT: Duration = Duration::from_secs(2);
 
 static EXECUTABLE: OnceLock<PathBuf> = OnceLock::new();
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
@@ -56,8 +56,9 @@ pub(crate) fn installed() -> Option<&'static Path> {
     EXECUTABLE.get().map(PathBuf::as_path)
 }
 
-/// Called off-thread by GPUI's graceful-quit hook: running workers are
-/// killed and reaped, and no new one starts.
+/// Called by GPUI's quit hook, before it returns (GPUI gives asynchronous
+/// quit work only moments): running workers are killed and reaped, and no
+/// new one starts. Each supervisor sees the quit within a poll.
 pub fn shutdown_workers() {
     // Sequentially consistent with `Running::enter` and `check_cancel`: a
     // supervision this does not count sees the flag and starts no worker.
@@ -206,29 +207,37 @@ pub fn convert_with_command(
     })?);
     // Fed and drained from threads of their own, so a worker that stops
     // reading, or a message larger than the pipe, cannot stall supervision;
-    // both end once the worker is gone.
+    // both end once the worker is gone. A thread the system refuses fails
+    // the import; returning kills and reaps the worker.
+    let no_thread = |error: std::io::Error| {
+        ImportError::ConverterFailed(format!("no thread to supervise the worker: {error}"))
+    };
     let stdin = worker.0.stdin.take();
-    let feeder = thread::spawn(move || {
-        if let Some(mut stdin) = stdin {
-            let _ = stdin.write_all(&bytes);
-        }
-    });
+    let feeder = thread::Builder::new()
+        .spawn(move || {
+            if let Some(mut stdin) = stdin {
+                let _ = stdin.write_all(&bytes);
+            }
+        })
+        .map_err(no_thread)?;
     let stdout = worker.0.stdout.take();
     let oversized = std::sync::Arc::new(AtomicBool::new(false));
-    let drain = thread::spawn({
-        let oversized = oversized.clone();
-        move || {
-            let mut message = Vec::new();
-            let read = stdout?
-                .take(MAX_MESSAGE_BYTES + 1)
-                .read_to_end(&mut message);
-            if message.len() as u64 > MAX_MESSAGE_BYTES {
-                oversized.store(true, Ordering::Relaxed);
-                return None;
+    let drain = thread::Builder::new()
+        .spawn({
+            let oversized = oversized.clone();
+            move || {
+                let mut message = Vec::new();
+                let read = stdout?
+                    .take(MAX_MESSAGE_BYTES + 1)
+                    .read_to_end(&mut message);
+                if message.len() as u64 > MAX_MESSAGE_BYTES {
+                    oversized.store(true, Ordering::Relaxed);
+                    return None;
+                }
+                read.ok().map(|_| message)
             }
-            read.ok().map(|_| message)
-        }
-    });
+        })
+        .map_err(no_thread)?;
     let started = Instant::now();
     let outcome = loop {
         if let Err(cancelled) = check_cancel(cancel) {
