@@ -75,11 +75,11 @@ impl Config {
         match self {
             Self::Ocr(c) => {
                 let m = mdoc_import::ocr::manifest::for_model(c.model);
-                serde_json::json!({"model":m.id,"revision":m.revision,"mode":"Force","runtime":"ONNX Runtime 1.27.0","renderer":"PDFium native-v7988","artifacts":m.artifacts.iter().map(|a|serde_json::json!({"file":a.filename,"sha256":a.sha256})).collect::<Vec<_>>()})
+                serde_json::json!({"model":m.id,"revision":m.revision,"mode":"Force","runtime":"ONNX Runtime 1.32.0","renderer":"PDFium native-v7988","artifacts":m.artifacts.iter().map(|a|serde_json::json!({"file":a.filename,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
             Self::Pii(c) => {
                 let m = mdoc_detect::manifest_for(c.model);
-                serde_json::json!({"model":m.id,"revision":m.revision,"repository":m.repository,"runtime":"ONNX Runtime 1.27.0","engine":c.model.engine(),"model_card":c.model.hugging_face_url(),"languages":c.model.languages(),"description":c.model.description(),"confidence":"GLiNER2 span confidence","execution":"CPU","threads":4,"artifacts":m.files.iter().map(|a|serde_json::json!({"file":a.path,"sha256":a.sha256})).collect::<Vec<_>>()})
+                serde_json::json!({"model":m.id,"revision":m.revision,"repository":m.repository,"runtime":"ONNX Runtime 1.32.0","engine":c.model.engine(),"model_card":c.model.hugging_face_url(),"languages":c.model.languages(),"description":c.model.description(),"confidence":"GLiNER2 span confidence","execution":"CPU","threads":4,"artifacts":m.files.iter().map(|a|serde_json::json!({"file":a.path,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
         }
     }

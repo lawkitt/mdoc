@@ -2,9 +2,9 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":180,"end":190,"label":"person","score":0.98148894,"text":"Ivo Harrow"},
-    {"start":0,"end":6,"label":"person","score":0.6050992,"text":"Pellam"},
+    {"start":180,"end":190,"label":"person","score":0.9814179,"text":"Ivo Harrow"},
+    {"start":0,"end":6,"label":"person","score":0.60504085,"text":"Pellam"},
     {"start":207,"end":218,"label":"organization","score":0.79897225,"text":"Quillon Ltd"},
-    {"start":141,"end":158,"label":"organization","score":0.7668179,"text":"Rooke & Larkfield"}
+    {"start":141,"end":158,"label":"organization","score":0.7676898,"text":"Rooke & Larkfield"}
   ]
 }

@@ -7,8 +7,8 @@
     {"start":78,"end":104,"label":"organization","score":0.9944017,"text":"Copper Dusk Facilities Ltd"},
     {"start":1250,"end":1264,"label":"person","score":0.98481095,"text":"Veylin Raskett"},
     {"start":739,"end":749,"label":"person","score":0.6531269,"text":"respondent"},
-    {"start":898,"end":908,"label":"person","score":0.5074267,"text":"respondent"},
-    {"start":739,"end":749,"label":"organization","score":0.65599746,"text":"respondent"},
-    {"start":898,"end":908,"label":"organization","score":0.53855854,"text":"respondent"}
+    {"start":898,"end":908,"label":"person","score":0.5073351,"text":"respondent"},
+    {"start":739,"end":749,"label":"organization","score":0.655336,"text":"respondent"},
+    {"start":898,"end":908,"label":"organization","score":0.5381945,"text":"respondent"}
   ]
 }

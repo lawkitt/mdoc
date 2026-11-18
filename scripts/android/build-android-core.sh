@@ -12,7 +12,7 @@
 # job (scripts/android/android-check.sh) builds only its emulator's ABI, x86_64 (or
 # arm64-v8a on the Mac); aarch64 stays compile-checked by `just mobile --ffi`
 # on macOS. ONNX
-# Runtime 1.27.0 (Microsoft's Maven AAR) and PDFium 7988 (bblanchon) are pinned, checksum-verified downloads; nothing is
+# Runtime 1.32.0 (Microsoft's Maven AAR) and PDFium 7988 (bblanchon) are pinned, checksum-verified downloads; nothing is
 # downloaded at run time. Fails if any library is not aligned for 16 KB pages
 # or needs a shared library Android does not provide.
 # Windows x64, Apple Silicon macOS or Linux x86_64.
@@ -26,13 +26,14 @@ case "$(platform)" in
 esac
 
 api=31
-ort_url=https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.27.0/onnxruntime-android-1.27.0.aar
-ort_sha=077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb
+ort_url=https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.32.0/onnxruntime-android-1.32.0.aar
+ort_sha=8e8dbb412ed4939675a157702f0c1e3621b436a645af7f7244536ac20bfad628
 # The AAR has no LICENSE, and GitHub's copy is gone since 2026-11-17 (#925):
 # NuGet's 1 MB managed package of the same release holds it, with CRLF line
-# endings. The pin below is that LICENSE.txt with LF, as GitHub served it.
-ort_license_pkg_url=https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.managed/1.27.0/microsoft.ml.onnxruntime.managed.1.27.0.nupkg
-ort_license_pkg_sha=970be27b444dae817ed5eecd6304aa2bc2e898088fbd050a5d63cbca90ef778a
+# endings. The pin below is that LICENSE.txt with LF, as GitHub served it
+# (unchanged since 1.27.0).
+ort_license_pkg_url=https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.managed/1.32.0/microsoft.ml.onnxruntime.managed.1.32.0.nupkg
+ort_license_pkg_sha=7a353aae8873bcd621ba959f23ded579c9b116a018eca7af6242d05ee3a4e753
 ort_license_sha=2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c
 pdfium_base=https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7988
 # <rust target> <android abi> <pdfium archive> <pdfium sha256>
