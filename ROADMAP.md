@@ -337,20 +337,6 @@ list, and the import note splits into a notice and a quiet left-out line
 items merge after v0.4.0-rc.3 is tagged, because they change snapshots and
 the note.
 
-1. **[Desktop] docxide 0.21, comment anchors, fonts and a fidelity check.**
-   *From the comments grill (#927).* Bump `docxide-pdf` to 0.21.x with a
-   preview-corpus before/after. Spike the anchors: the render copy wraps
-   each comment range in a `mdoc-comment:<id>` link and its `/Link`
-   rectangles, read through gpui-pdf, become anchors (not clickable links);
-   cover ranges over several lines, overlapping comments, comments over
-   hyperlinks and point comments. If the spike fails, stop and report:
-   forking docxide is the maintainer's call. Bundle Carlito, Caladea and
-   Liberation Sans, Serif and Mono through `DOCXSIDE_FONTS`. Add the
-   fidelity-check script with about 8 synthetic or scrubbed EN/RU legal
-   DOCX fixtures. *Done when:* every changed corpus output is explained; a
-   test pins anchors for those cases; the fonts load below installed fonts
-   on macOS and Windows; the script runs and reports, with the Word
-   reference PDFs listed for the maintainer to export if they are missing.
 2. **[Import] Comments and hidden content from the forks.** *From the
    comments grill (#927).* AnyDoc reports comments (DOCX, ODT, RTF; DOC,
    PPTX and XLSX counted if cheap) and hidden-text passages as structured
