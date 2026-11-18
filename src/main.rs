@@ -54,6 +54,9 @@ fn set_inference_device() {
 }
 
 fn main() {
+    // First, so no crash in any mode reaches Windows Error Reporting.
+    #[cfg(windows)]
+    crash::keep_out_of_windows_error_reporting();
     set_inference_device();
     let args = std::env::args_os().collect::<Vec<_>>();
     if args.get(1).is_some_and(|arg| arg == "--headless-renders") {
