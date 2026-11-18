@@ -5668,7 +5668,7 @@ dependencies = [
 [[package]]
 name = "pdf-inspector"
 version = "1.26.1"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=6802f53b4982683f0c4212bbf729c006c229a67d#6802f53b4982683f0c4212bbf729c006c229a67d"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=1ff7413bdaafe1496a0581479ec3d0fd732acb50#1ff7413bdaafe1496a0581479ec3d0fd732acb50"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
@@ -5683,6 +5683,7 @@ dependencies = [
  "ort",
  "rayon",
  "regex",
+ "serde",
  "sha2 0.11.0",
  "thiserror 2.0.21",
  "ttf-parser",
