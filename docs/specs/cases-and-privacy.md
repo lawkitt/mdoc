@@ -287,3 +287,10 @@ in [CONTEXT.md](../../CONTEXT.md).
   offers Send… (a prefilled GitHub issue, cut to about 6,000 characters) and
   Copy, and each of them deletes the report.
 - Nothing is sent automatically.
+- On Windows every mdoc process (the app and its DOCX and conversion
+  workers) turns off Windows Error Reporting for itself at startup
+  (`SetErrorMode` with `SEM_NOGPFAULTERRORBOX`, which children inherit). A
+  crash, abort or allocation failure then ends the process without a WER
+  report: no report is archived under ProgramData or uploaded to Microsoft,
+  no memory dump is written, and no Application Error event is logged.
+  Nothing is written to the registry.

@@ -19,6 +19,10 @@ pseudonymizing all run locally. mdoc goes online only for:
 Text reaches an AI tool only when you paste it there yourself, and that tool's
 own data terms then apply.
 
+When mdoc stops on an error it can record (a panic in its own code), it offers
+a masked crash report at the next launch and sends it only if you choose to. On Windows, mdoc keeps itself
+out of Windows Error Reporting, so a crash files nothing with Microsoft.
+
 > [!WARNING]
 > Pseudonymization finds most identifying details, not all of them. Dates,
 > amounts and context are not replaced and may still identify the parties.

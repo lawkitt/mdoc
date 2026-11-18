@@ -82,6 +82,35 @@ pub fn install() {
     }));
 }
 
+/// Keep this process, and the workers it starts, out of Windows Error
+/// Reporting: a crash would otherwise be archived under ProgramData and
+/// uploaded to Microsoft, and the process holds document text. Called first in
+/// `main`, so it covers the app and every worker mode. Microsoft documents
+/// SEM_NOGPFAULTERRORBOX as "the system does not invoke Windows Error
+/// Reporting"; it also holds for fast-fail aborts (a release panic, an
+/// allocation failure), which skip in-process handlers. Children inherit the
+/// error mode; nothing is written outside the process.
+#[cfg(windows)]
+#[allow(unsafe_code)] // SetErrorMode (#897).
+pub fn keep_out_of_windows_error_reporting() {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        GetErrorMode, SEM_NOGPFAULTERRORBOX, SetErrorMode,
+    };
+    // SAFETY: no pointers; it only changes this process's error-mode flags,
+    // keeping the ones already set.
+    unsafe {
+        SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX);
+    }
+}
+
+/// This process's error mode, for the test that keeps the call above in place.
+#[cfg(all(windows, debug_assertions))]
+#[allow(unsafe_code)] // GetErrorMode (#897).
+pub fn error_mode() -> u32 {
+    // SAFETY: no pointers; it only reads this process's error-mode flags.
+    unsafe { windows_sys::Win32::System::Diagnostics::Debug::GetErrorMode() }
+}
+
 /// Lines that place a crash: the first frame in mdoc's own code, whether the
 /// program changed since launch, and what the window showed.
 fn context(backtrace: &str, rebuilt: bool, state: String) -> String {
