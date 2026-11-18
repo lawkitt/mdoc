@@ -1414,9 +1414,14 @@ impl DocumentView {
                     )
                     .child(
                         div()
+                            .id((id, 2usize))
                             .flex_1()
                             .min_w_0()
                             .text_color(palette.header_muted)
+                            // Plain text isn't in the accessibility tree; a Label
+                            // node lets VoiceOver and Narrator read the notice.
+                            .role(gpui::Role::Label)
+                            .aria_label(format!("{title}: {detail}"))
                             .child(detail),
                     )
                     .when(id == "preview-notice" && self.preview.retryable(), |v| {
