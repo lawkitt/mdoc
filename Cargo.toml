@@ -4,7 +4,7 @@ version = "0.4.0-rc.3"
 edition = "2024"
 description = "Prepare legal documents for AI on your own computer."
 license = "GPL-3.0-or-later"
-authors = ["lawkitt", "packetThrower"]
+authors = ["lawkitt"]
 repository = "https://github.com/lawkitt/mdoc"
 publish = false
 
