@@ -557,6 +557,10 @@ mod tests {
             let original = std::fs::read(&pdf).unwrap();
             let never = AtomicBool::new(false);
             let desktop = crate::import::prepare(&pdf, Some(&installed), false).unwrap();
+            if name.ends_with("handmade-partly-scanned.pdf") {
+                // OCR read the scanned pages, so their pictures count (#949).
+                assert_eq!(desktop.left_out.pictures, 2, "{name}");
+            }
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));
             let (whole, completed) =

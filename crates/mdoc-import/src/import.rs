@@ -110,6 +110,7 @@ impl LeftOut {
         fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
             pages.iter().map(|page| u64::from(count(page))).sum()
         }
+        let skipped: std::collections::HashSet<u32> = skipped.iter().copied().collect();
         Self {
             pictures: sum(&native.images_by_page, |page| {
                 if skipped.contains(&page.page) {
@@ -403,8 +404,6 @@ fn convert_pdf(
     let bytes = read_pdf(&source)?;
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
-    let read_all = LeftOut::of_pdf(&native, &[]);
-    let skipped_some = LeftOut::of_pdf(&native, &native.pages_recommended_for_ocr);
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(
@@ -414,6 +413,13 @@ fn convert_pdf(
             native.page_count,
         ));
     }
+    // Without OCR the pages it would read are skipped, and the notice
+    // reports them whole: their pictures don't count again (#949).
+    let left_out = if !skip_ocr && installed.is_some() {
+        LeftOut::of_pdf(&native, &[])
+    } else {
+        LeftOut::of_pdf(&native, &native.pages_recommended_for_ocr)
+    };
     let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
         let _permit = crate::model_work::Permit::acquire_for("text recognition")
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
@@ -446,7 +452,6 @@ fn convert_pdf(
         );
     }
     let warning = pdf_warning(&result.markdown, warning_pages, result.page_count, used_ocr)?;
-    let left_out = if used_ocr { read_all } else { skipped_some };
     Ok(Imported {
         ocr_configuration: if used_ocr {
             installed.map(|i| i.config.clone())
