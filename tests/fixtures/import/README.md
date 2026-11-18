@@ -102,3 +102,17 @@ shifted by up to 2 pt. With OCR, the desktop's whole-document import and the
 phones' page-at-a-time import (`resume.rs`, after lawkitt/pdf-inspector PR
 19) both keep them on page 1 only, and the note counts "6 repeated header
 and footer lines removed."
+
+## Sentence matching the header on a sparse page, 2026-11-19
+
+`handmade-sparse-page-header.pdf` (native text) and
+`handmade-scanned-sparse-page-header.pdf` (an image-only scan of the same
+pages) are from `gen_sparse_page_header.py` (Python 3, standard library;
+the scan also needs macOS `sips` and reuses `gen_scanned_running_header.py`
+with its page offsets). Pages 1-3 carry that fixture's header and footer;
+page 4 has only two body lines, the second the header's sentence, 130 pt
+below the header's position. With the pdf-inspector fork after
+lawkitt/pdf-inspector PR 22, the sentence stays on page 4, the header and
+footer stay on page 1 only, and the note counts "4 repeated header and
+footer lines removed.", on the desktop and on the phones. Before PR 22,
+page 4 lost the sentence and the note counted 5.

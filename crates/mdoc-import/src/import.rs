@@ -1102,6 +1102,37 @@ mod tests {
         );
     }
 
+    /// On a sparse last page, the header's sentence in the body is body
+    /// text: it stays and isn't counted, while the header and footer still
+    /// go from pages 2 and 3 (#925 M16, lawkitt/pdf-inspector#22).
+    #[test]
+    fn a_header_sentence_in_a_sparse_pages_body_stays() {
+        let imported = convert(&fixture("handmade-sparse-page-header.pdf")).unwrap();
+        let header = "Annual Report of the Board 2026 Confidential";
+        let (pages_1_to_3, page_4) = imported.markdown.split_once("Item 4.1.").unwrap();
+        assert_eq!(
+            pages_1_to_3.matches(header).count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert_eq!(page_4.matches(header).count(), 1, "{}", imported.markdown);
+        assert_eq!(
+            imported
+                .markdown
+                .matches("Prepared for the shareholders")
+                .count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert_eq!(imported.warning, None);
+        assert_eq!(
+            imported.left_out.line(true).as_deref(),
+            Some("4 repeated header and footer lines removed.")
+        );
+    }
+
     /// Comments never reach the Markdown, whatever the format: the import
     /// equals the fork's reviewed snapshot, and no comment's text or author
     /// (an annotation's, for a PDF) is in it. The import carries them beside

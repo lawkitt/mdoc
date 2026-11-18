@@ -867,7 +867,8 @@ mod tests {
     /// first pages resumes with the rest only and gives the same. The
     /// scanned running header and footer go from the pages after the first
     /// across pages recognized in separate runs, kept or not, as they do in
-    /// the desktop's single run, with the same count in the note.
+    /// the desktop's single run, with the same count in the note; the
+    /// header's sentence in a sparse page's body stays on both.
     #[test]
     #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
     #[cfg(any(
@@ -887,6 +888,12 @@ mod tests {
                 2,
             ),
             (fixtures.join("import/handmade-running-header.pdf"), 1),
+            // The sparse page 4 is recognized in a run of its own (#925 M16).
+            (
+                fixtures.join("import/handmade-scanned-sparse-page-header.pdf"),
+                3,
+            ),
+            (fixtures.join("import/handmade-sparse-page-header.pdf"), 1),
         ] {
             let name = pdf.display().to_string();
             let original = std::fs::read(&pdf).unwrap();
@@ -898,6 +905,12 @@ mod tests {
             }
             if name.contains("running-header") {
                 assert!(desktop.left_out.repeated_lines >= 3, "{name}");
+            }
+            if name.contains("sparse-page-header") {
+                // The header's sentence stays in page 4's body, uncounted.
+                let header = "Annual Report of the Board 2026 Confidential";
+                assert_eq!(desktop.markdown.matches(header).count(), 2, "{name}");
+                assert_eq!(desktop.left_out.repeated_lines, 4, "{name}");
             }
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));
