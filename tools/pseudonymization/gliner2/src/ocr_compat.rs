@@ -62,7 +62,7 @@ fn recognize(ocr: &Path, fixtures: &Path) -> Result<Vec<serde_json::Value>> {
 
 fn runtime_path(root: &Path) -> PathBuf {
     root.join(if cfg!(windows) {
-        "onnxruntime.dll"
+        "onnxruntime.1.32.0.dll"
     } else {
         "libonnxruntime.1.32.0.dylib"
     })

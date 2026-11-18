@@ -89,7 +89,7 @@ recorded in each report; they are experiments, not accepted product settings.
 The dated macOS runs prefixed the executable with
 `sandbox-exec -p '(version 1)(allow default)(deny network*)'`, denying network
 access to the supervisor and its child. Windows reproduction uses the `.exe`
-executables, the installed `onnxruntime.dll`, and an externally enforced network
+executables, the installed `onnxruntime.1.32.0.dll`, and an externally enforced network
 block. Linux requires a separately verified compatible native runtime. Those
 platforms have not been run in this qualification.
 

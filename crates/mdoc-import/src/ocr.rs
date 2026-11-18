@@ -267,7 +267,12 @@ const WINDOWS_RUNTIMES: &[Runtime] = &[
     },
     Runtime {
         name: "onnx",
-        library: "onnxruntime.dll",
+        // Named by version, like the macOS library, so the 1.27.0
+        // `onnxruntime.dll` an earlier setup left reads as a runtime still to
+        // download (OCR's and pseudonymization's setup cards count it), not
+        // as a damaged one. Nothing links to the DLL by name: it is loaded
+        // by full path.
+        library: "onnxruntime.1.32.0.dll",
         library_sha: "348c3d29d6995eee37e3451825eaddb7ea7400be3afda6ca2286b12bc775f042",
         sources: &[onnx_runtime_nuget(
             "runtimes/win-x64/native/onnxruntime.dll",
@@ -1202,7 +1207,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            fs::read(dir.path().join("onnxruntime.dll")).unwrap(),
+            fs::read(dir.path().join(WINDOWS_RUNTIMES[1].library)).unwrap(),
             b"runtime"
         );
         assert_eq!(
@@ -1531,8 +1536,25 @@ mod tests {
         }
     }
 
-    /// A version bump changes every ONNX Runtime source and the macOS
-    /// library's installed name together.
+    /// 1.27.0's libraries, left by an earlier setup, are a runtime still to
+    /// download: setup cards count it and checks read "not set up".
+    #[test]
+    fn an_earlier_onnx_runtime_reads_as_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        for old in ["libonnxruntime.1.27.0.dylib", "onnxruntime.dll"] {
+            fs::write(dir.path().join(old), b"ONNX Runtime 1.27.0").unwrap();
+        }
+        assert_eq!(onnx_runtime_pending(Some(dir.path())), onnx_runtime_size());
+        assert_eq!(
+            pending(Some(dir.path()), OcrModel::Cyrillic).runtime,
+            RUNTIMES.iter().map(Runtime::size).sum::<u64>()
+        );
+        assert!(onnx_runtime_in(dir.path()).unwrap_err().is_missing());
+    }
+
+    /// A version bump changes every ONNX Runtime source and both installed
+    /// library names together, so an earlier version's library reads as
+    /// missing rather than damaged.
     #[test]
     fn onnx_runtime_sources_match_the_installed_version() {
         let version = MAC_RUNTIMES[1]
@@ -1540,6 +1562,10 @@ mod tests {
             .strip_prefix("libonnxruntime.")
             .and_then(|name| name.strip_suffix(".dylib"))
             .unwrap();
+        assert_eq!(
+            WINDOWS_RUNTIMES[1].library,
+            format!("onnxruntime.{version}.dll")
+        );
         for runtime in [&MAC_RUNTIMES[1], &WINDOWS_RUNTIMES[1]] {
             assert_eq!(runtime.name, "onnx");
             for source in runtime.sources {
