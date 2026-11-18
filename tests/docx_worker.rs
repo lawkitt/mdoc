@@ -16,6 +16,7 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
         Arc::new(AtomicBool::new(false)),
         executable,
         Duration::from_secs(30),
+        Default::default(),
     )
     .unwrap();
     let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
@@ -36,6 +37,7 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
         Arc::new(AtomicBool::new(false)),
         executable,
         Duration::from_secs(30),
+        Default::default(),
     );
     assert!(matches!(result, Err(PreviewError::Read(_))));
     // The worker reports what kind of failure it was, so a damaged package
@@ -45,6 +47,7 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
         Arc::new(AtomicBool::new(false)),
         executable,
         Duration::from_secs(30),
+        Default::default(),
     );
     let error = result.err().unwrap();
     assert!(matches!(error, PreviewError::Package(_)), "{error}");
@@ -75,6 +78,7 @@ fn timeout_and_cancellation_kill_and_reap_worker() {
         Arc::new(AtomicBool::new(false)),
         &executable,
         Duration::from_secs(5),
+        Default::default(),
     );
     assert!(matches!(result, Err(PreviewError::Timeout)));
     // Whenever the worker got as far as its pid, it must be dead and reaped
@@ -108,7 +112,13 @@ fn timeout_and_cancellation_kill_and_reap_worker() {
             }
             cancel.store(true, Ordering::Relaxed);
         });
-        let result = render_with_executable(pid, cancelled, &executable, Duration::from_secs(10));
+        let result = render_with_executable(
+            pid,
+            cancelled,
+            &executable,
+            Duration::from_secs(10),
+            Default::default(),
+        );
         assert!(matches!(result, Err(PreviewError::Cancelled)));
     });
     assert_dead();
@@ -128,7 +138,8 @@ fn crash_and_false_success_are_failures() {
                 Path::new("unused"),
                 Arc::new(AtomicBool::new(false)),
                 &executable,
-                Duration::from_secs(5)
+                Duration::from_secs(5),
+                Default::default()
             ),
             Err(PreviewError::Render(_))
         ));
@@ -148,6 +159,7 @@ fn oversize_input_is_rejected_in_the_worker() {
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
+        Default::default(),
     );
     assert!(matches!(result, Err(PreviewError::InputTooLarge)));
 }
@@ -162,6 +174,7 @@ fn coverage_corpus_preserves_text_links_and_landscape() {
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
+        Default::default(),
     )
     .unwrap();
     let conversion = started.elapsed();
@@ -231,6 +244,7 @@ fn legal_opinion_justified_heading_preserves_word_spaces() {
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
+        Default::default(),
     )
     .unwrap();
     let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
@@ -272,9 +286,10 @@ fn worker_preserves_comments_and_source() {
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
+        Default::default(),
     )
     .unwrap();
-    assert_eq!(preview.comments.len(), 4);
+    assert_eq!(preview.comments.len(), 6);
     let c = &preview.comments[0];
     assert_eq!(c.author, "Reviewer");
     assert_eq!(c.date, "2026-09-19T10:00:00Z");
@@ -288,6 +303,8 @@ fn worker_preserves_comments_and_source() {
     assert_eq!(preview.comments[1].quote, "Second quoted paragraph.");
     assert_eq!(preview.comments[2].quote, "Point comment context.");
     assert_eq!(preview.comments[3].quote, "");
+    assert!(preview.comments[4].resolved);
+    assert_eq!(preview.comments[5].parent.as_deref(), Some("0"));
     assert!(
         !preview
             .warnings
@@ -299,6 +316,24 @@ fn worker_preserves_comments_and_source() {
     let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap().text();
     assert!(text.contains("First"));
     assert!(text.contains("Second"));
+    // Hidden text is counted, and drawn only when the pane shows it.
+    assert_eq!(preview.hidden_text, 1);
+    assert!(!text.contains("drafting note"), "{text}");
+    let shown = render_with_executable(
+        &path,
+        Arc::new(AtomicBool::new(false)),
+        Path::new(env!("CARGO_BIN_EXE_mdoc")),
+        Duration::from_secs(30),
+        mdoc_import::docx_preview::RenderOptions {
+            show_hidden_text: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(shown.hidden_text, 1);
+    assert!(shown.options.show_hidden_text);
+    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&shown.pdf_path).unwrap())).unwrap();
+    let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap().text();
+    assert!(text.contains("drafting note"), "{text}");
     assert_eq!(std::fs::read(path).unwrap(), original);
 }
 
@@ -320,6 +355,7 @@ fn uploaded_comments_preserved() {
             Arc::new(AtomicBool::new(false)),
             Path::new(env!("CARGO_BIN_EXE_mdoc")),
             Duration::from_secs(30),
+            Default::default(),
         )
         .unwrap();
         assert_eq!(preview.comments.len(), count);
@@ -368,6 +404,7 @@ fn render_parsed(
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
+        Default::default(),
     )
     .unwrap();
     let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();

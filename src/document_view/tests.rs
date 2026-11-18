@@ -1144,19 +1144,19 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let panel = cx.update(|_, cx| {
         let app = app.read(cx);
-        assert_eq!(app.preview.docx().unwrap().comments.len(), 4);
-        app.preview.comment_panel().cloned().unwrap()
+        assert_eq!(app.preview.docx().unwrap().comments.len(), 6);
+        app.preview.comment_rail().cloned().unwrap()
     });
     app.update_in(cx, |app, window, cx| {
         app.open_docx(base.join("missing.docx"), window, cx)
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(app.read(cx).preview.comment_panel(), Some(&panel)));
+    cx.update(|_, cx| assert_eq!(app.read(cx).preview.comment_rail(), Some(&panel)));
     app.update_in(cx, |app, window, cx| {
         app.open_pdf(base.join("tests/fixtures/reference.pdf"), window, cx)
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(app.read(cx).preview.comment_panel().is_none()));
+    cx.update(|_, cx| assert!(app.read(cx).preview.comment_rail().is_none()));
     app.update_in(cx, |app, window, cx| {
         app.open_docx(
             base.join("tests/fixtures/docx-preview/comments.docx"),
@@ -1170,7 +1170,7 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         let app = app.read(cx);
         assert!(!app.preview.visible());
-        assert!(app.preview.comment_panel().is_some());
+        assert!(app.preview.comment_rail().is_some());
         assert!(app.preview.docx().is_some());
         assert_eq!(app.editor.read(cx).text(), "Markdown stays unchanged");
     });
@@ -1193,7 +1193,7 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
             let preview = &app.read(cx).preview;
             (
                 preview.pdf().unwrap().downgrade(),
-                preview.comment_panel().unwrap().downgrade(),
+                preview.comment_rail().unwrap().downgrade(),
                 preview.docx().unwrap().pdf_path.clone(),
             )
         });

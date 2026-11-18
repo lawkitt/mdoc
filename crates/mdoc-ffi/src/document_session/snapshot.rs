@@ -172,8 +172,15 @@ pub struct LinkHint {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct ReviewSnapshot {
     pub title: String,
-    /// An import's partial-result warning.
+    /// An import's note as one line: the notice, then the counts. The apps
+    /// show it until they show `notice` and `left_out` apart (ROADMAP
+    /// Comments item 4).
     pub warning: Option<String>,
+    /// An import's notice: a partial import (pages OCR skipped).
+    pub notice: Option<String>,
+    /// The left-out line: what else the Markdown leaves out, counted
+    /// ("2 pictures not imported. 3 comments not shown.").
+    pub left_out: Option<String>,
     /// The Markdown source; mention ranges index it.
     pub text: String,
     pub mentions: Vec<Mention>,
@@ -207,7 +214,7 @@ pub struct ReviewSnapshot {
 /// The snapshot of `document`, whose ids are synced (`ReviewText::sync_ids`).
 pub(super) fn of(
     title: &str,
-    warning: Option<&str>,
+    note: &super::intake::ImportNote,
     document: &ReviewText,
     case_id: Option<&str>,
     scanned: bool,
@@ -396,7 +403,9 @@ pub(super) fn of(
         undo_step,
         redo_step,
         title: title.to_owned(),
-        warning: warning.map(str::to_owned),
+        warning: note.warning.clone(),
+        notice: note.notice.clone(),
+        left_out: note.left_out.clone(),
         text: document.text.clone(),
         link_hints: document
             .merge_hints()
