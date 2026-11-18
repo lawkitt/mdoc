@@ -70,6 +70,8 @@ pub(crate) struct ImportFlow {
     slot: Arc<AtomicBool>,
     /// Set when the tab closes; the running conversion stops.
     cancel: Arc<AtomicBool>,
+    /// Cancel was pressed: the running conversion is winding down (#950).
+    stopping: bool,
     /// The file being converted, kept for OCR consent and retries.
     source: Option<PathBuf>,
     /// An opened PDF or DOCX converts once the slot is free.
@@ -107,6 +109,7 @@ impl ImportFlow {
             permit: None,
             slot,
             cancel: Arc::new(AtomicBool::new(false)),
+            stopping: false,
             source: None,
             auto_pending: false,
             automatic: false,
@@ -145,6 +148,11 @@ impl ImportFlow {
 
     pub(crate) fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::Relaxed)
+    }
+
+    /// Cancel was pressed and the running conversion has not ended yet.
+    pub(crate) fn stopping(&self) -> bool {
+        self.stopping && self.job.busy()
     }
 
     pub(crate) fn auto_pending(&self) -> bool {
@@ -368,8 +376,16 @@ impl ImportFlow {
         shared: impl FnOnce(&Self) -> bool,
     ) -> Option<Vec<ImportEffect>> {
         let completion = self.job.take_ready(generation, prompting)?;
+        // A run that finishes after Cancel was accepted (the converter
+        // returned before checking the flag) still ends cancelled.
+        let stopped = std::mem::take(&mut self.stopping);
         let mut effects = Vec::new();
         if let ImportCompletion::Ready(result) = completion {
+            let result = if stopped {
+                Err(ImportError::Cancelled)
+            } else {
+                result
+            };
             match result {
                 Ok(imported) => effects.push(ImportEffect::Request(imported)),
                 Err(ImportError::OcrFailed(error)) => {
@@ -560,6 +576,18 @@ impl ImportFlow {
         effects
     }
 
+    /// Cancel on the card: the running conversion sees its flag and ends
+    /// `Cancelled`; the tab stays and can convert again, so later runs get
+    /// a fresh flag (#950).
+    pub(crate) fn stop(&mut self) {
+        if !self.job.busy() || self.stopping {
+            return;
+        }
+        self.stopping = true;
+        self.cancel.store(true, Ordering::Relaxed);
+        self.cancel = Arc::new(AtomicBool::new(false));
+    }
+
     /// The tab is closing: a running conversion stops and the slot goes.
     pub(crate) fn cancel(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
@@ -641,6 +669,72 @@ mod tests {
         assert_eq!(names(&effects), ["Error", "State"]);
         assert!(!flow.busy() && !slot.load(Ordering::Relaxed));
         assert_eq!(flow.source, Some(PathBuf::from("/in/a.pdf")));
+    }
+
+    /// A conversion that succeeds or fails after Cancel was accepted still
+    /// ends cancelled: the stop wins over a late result (#950 review).
+    #[test]
+    fn a_late_result_after_cancel_still_ends_cancelled() {
+        let late_results = [
+            Ok(crate::test_support::converted("/in/a.docx".into())),
+            Err(ImportError::OcrNoText),
+            Err(ImportError::Encrypted),
+        ];
+        for late in late_results {
+            let (mut flow, slot) = new_flow();
+            let Some(ImportEffect::Run { permit, .. }) =
+                flow.begin("/in/a.docx".into(), None, false)
+            else {
+                panic!("the conversion starts");
+            };
+            flow.stop();
+            assert!(
+                slot.load(Ordering::Relaxed),
+                "the slot stays held until the run exits"
+            );
+            drop(permit);
+            flow.complete(1, late);
+            let effects = flow.resume(1, false, |_| false).unwrap();
+            let [ImportEffect::Error(error), ImportEffect::State] = &effects[..] else {
+                panic!("{:?}", names(&effects));
+            };
+            assert_eq!(error, &ImportError::Cancelled.to_string());
+            assert!(!slot.load(Ordering::Relaxed));
+        }
+    }
+
+    /// Cancel on the card stops this run only: it ends `Cancelled` as an
+    /// error, and the next Convert runs with a flag that isn't set (#950).
+    #[test]
+    fn cancel_stops_the_run_and_the_tab_can_convert_again() {
+        let (mut flow, slot) = new_flow();
+        let Some(ImportEffect::Run { permit, cancel, .. }) =
+            flow.begin("/in/a.docx".into(), None, false)
+        else {
+            panic!("the conversion starts");
+        };
+        assert!(!flow.stopping());
+        flow.stop();
+        assert!(
+            cancel.load(Ordering::Relaxed),
+            "the running conversion sees the flag"
+        );
+        assert!(flow.stopping() && flow.busy());
+        assert!(!flow.cancelled(), "the tab itself is not closing");
+        drop(permit);
+        flow.complete(1, Err(ImportError::Cancelled));
+        let effects = flow.resume(1, false, |_| false).unwrap();
+        assert_eq!(names(&effects), ["Error", "State"]);
+        assert!(!flow.stopping() && !flow.busy() && !slot.load(Ordering::Relaxed));
+        let Some(ImportEffect::Run { cancel, .. }) = flow.begin("/in/a.docx".into(), None, false)
+        else {
+            panic!("Try again starts a new conversion");
+        };
+        assert!(!cancel.load(Ordering::Relaxed));
+        // Nothing to stop once a run has ended.
+        let (mut idle, _) = new_flow();
+        idle.stop();
+        assert!(!idle.stopping() && !idle.cancelled());
     }
 
     #[test]

@@ -57,6 +57,7 @@ confirm-quit-summary
 confirm-remove-model
 model-comparison
 conversion-failed
+conversion-cancelled
 ocr-consent
 import-comments-note
 import-hidden-note

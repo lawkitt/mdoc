@@ -107,15 +107,25 @@ pub struct LeftOut {
 
 impl LeftOut {
     /// What a PDF's pages hold that its Markdown leaves out, from its native
-    /// pass, which OCR doesn't change. Repeated header lines are not among
-    /// them: OCR finds its own, so they come from the result imported
-    /// ([`repeated_lines`]).
-    pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult) -> Self {
+    /// pass, which OCR doesn't change. Pictures on the `skipped` pages (left
+    /// for OCR that didn't run) don't count: the partial-import notice
+    /// already reports those pages whole (#949). Once OCR reads a page, its
+    /// pictures count again, as OCR keeps their text, not the pictures.
+    /// Repeated header lines are not among them: OCR finds its own, so they
+    /// come from the result imported ([`repeated_lines`]).
+    pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult, skipped: &[u32]) -> Self {
         fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
             pages.iter().map(|page| u64::from(count(page))).sum()
         }
+        let skipped: std::collections::HashSet<u32> = skipped.iter().copied().collect();
         Self {
-            pictures: sum(&native.images_by_page, |page| page.images),
+            pictures: sum(&native.images_by_page, |page| {
+                if skipped.contains(&page.page) {
+                    0
+                } else {
+                    page.images
+                }
+            }),
             hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches)
                 + sum(&native.hidden_text_by_page, |page| page.stretches),
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
@@ -199,6 +209,17 @@ pub enum ImportError {
     /// Any other conversion failure, in AnyDoc's words.
     #[error("Could not import document: {0}")]
     Convert(String),
+    /// The converter crashed, panicked or sent no usable result; the detail
+    /// is for diagnosis, not the message.
+    #[error(
+        "The converter stopped unexpectedly on this document. It may be damaged or too complex to convert; mdoc kept running and nothing was imported."
+    )]
+    ConverterFailed(String),
+    #[error(
+        "Converting this document took longer than {} minutes and was stopped. It may be too large or complex to convert.",
+        CONVERSION_TIMEOUT.as_secs() / 60
+    )]
+    ConverterTimeout,
     #[error("No usable native text was extracted. Run OCR or use a clearer source.")]
     NoNativeText,
     /// The OCR runtime or models failed; the shared OCR state needs repair.
@@ -259,18 +280,15 @@ pub fn prepare_cancellable(
     if header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
         return convert_pdf(source, installed, skip_ocr, cancel);
     }
-    let converted =
-        anydoc::to_markdown_with(&source, anydoc::Options::default()).map_err(convert_error)?;
+    let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
     let is_docx = source
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
-    // Comments never reach the Markdown (AnyDoc reads no Word comments part
-    // and skips ODT annotations); the left-out line says how many.
-    // AnyDoc picks the parser by content, so both counters look at the
-    // package whatever its extension; each counts nothing in the other's.
-    let comments = crate::hidden_content::docx_comments(&source)
-        .and(crate::hidden_content::odt_comments(&source));
+    let comments = crate::hidden_content::Comments {
+        count: converted.comments,
+        at_least: converted.comments_at_least,
+    };
     // Nor do Word's pictures: embedded ones render as their alt text at
     // most (ROADMAP Vision item 1).
     let format = anydoc::Format::from_path(&source);
@@ -299,6 +317,88 @@ pub fn prepare_cancellable(
     })
 }
 
+/// What converting a document other than a PDF gives the import: AnyDoc's
+/// Markdown and the counts the import note reads. The supervised worker
+/// sends it back as is (`conversion_worker`), so it holds data only.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Converted {
+    pub markdown: String,
+    pub images_left_out: u32,
+    pub hidden_text_left_out: u32,
+    /// Comments left out, Word's and OpenDocument's together.
+    pub comments: usize,
+    /// The comment scan stopped at its limit, so there may be more.
+    pub comments_at_least: bool,
+}
+
+/// How long a non-PDF conversion may run in the supervised worker before
+/// it is stopped. AnyDoc's own resource limits end most runaway documents
+/// long before this.
+pub const CONVERSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Converts `source`, which is not a PDF: in the supervised worker when the
+/// app installed one (desktop, `conversion_worker::supervise`), otherwise in
+/// this process with a converter panic contained (the phones, whose
+/// profile unwinds, and tests).
+fn convert_document(source: &Path, cancel: &AtomicBool) -> Result<Converted, ImportError> {
+    let bytes = std::fs::read(source).map_err(ImportError::Read)?;
+    let extension = source.extension().and_then(|extension| extension.to_str());
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Some(executable) = crate::conversion_worker::installed() {
+        return crate::conversion_worker::convert_with_executable(
+            bytes,
+            extension,
+            cancel,
+            executable,
+            CONVERSION_TIMEOUT,
+        );
+    }
+    check_cancel(cancel)?;
+    contained(|| convert_bytes(&bytes, extension))
+}
+
+/// Converts a document other than a PDF from its bytes, as the worker and
+/// the in-process path both do. The format comes from the content, then the
+/// file's `extension`, as `anydoc::to_markdown_with` picks it.
+pub fn convert_bytes(bytes: &[u8], extension: Option<&str>) -> Result<Converted, ImportError> {
+    let format = anydoc::Format::from_bytes(bytes)
+        .or_else(|| extension.and_then(anydoc::Format::from_extension))
+        .ok_or(ImportError::Unsupported)?;
+    let converted = anydoc::to_markdown_bytes_with(bytes, format, anydoc::Options::default())
+        .map_err(convert_error)?;
+    // Comments never reach the Markdown (AnyDoc reads no Word comments part
+    // and skips ODT annotations); the left-out line says how many.
+    // AnyDoc picks the parser by content, so both counters look at the
+    // package whatever its extension; each counts nothing in the other's.
+    let comments = crate::hidden_content::comments_in(bytes);
+    Ok(Converted {
+        markdown: converted.markdown,
+        images_left_out: converted.images_left_out,
+        hidden_text_left_out: converted.hidden_text_left_out,
+        comments: comments.count,
+        comments_at_least: comments.at_least,
+    })
+}
+
+/// `convert`'s result, or an import error if it panics. The phones' profile
+/// unwinds (`profile.mobile`), so this keeps a converter panic from reaching
+/// UniFFI as an internal error; the desktop release profile aborts, which is
+/// why the desktop app converts in the supervised worker instead.
+pub(crate) fn contained<T>(
+    convert: impl FnOnce() -> Result<T, ImportError> + std::panic::UnwindSafe,
+) -> Result<T, ImportError> {
+    std::panic::catch_unwind(convert).unwrap_or_else(|panic| {
+        let detail = panic
+            .downcast_ref::<&str>()
+            .map(|text| (*text).to_owned())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "a panic".into());
+        Err(ImportError::ConverterFailed(format!(
+            "the converter panicked: {detail}"
+        )))
+    })
+}
+
 pub(crate) fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
     if cancel.load(Ordering::Relaxed) {
         Err(ImportError::Cancelled)
@@ -317,7 +417,6 @@ fn convert_pdf(
     let bytes = read_pdf(&source)?;
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
-    let mut left_out = LeftOut::of_pdf(&native);
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(
@@ -327,6 +426,13 @@ fn convert_pdf(
             native.page_count,
         ));
     }
+    // Without OCR the pages it would read are skipped, and the notice
+    // reports them whole: their pictures don't count again (#949).
+    let mut left_out = if !skip_ocr && installed.is_some() {
+        LeftOut::of_pdf(&native, &[])
+    } else {
+        LeftOut::of_pdf(&native, &native.pages_recommended_for_ocr)
+    };
     let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
         let _permit = crate::model_work::Permit::acquire_for("text recognition")
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
@@ -589,9 +695,9 @@ mod tests {
             assert_eq!(imported.is_docx, name.ends_with("docx"));
             let expected_note = match name {
                 "text.docx" | "text.pdf" => Some("1 picture not imported."),
-                "handmade-partly-scanned.pdf" => Some(
-                    "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported.",
-                ),
+                "handmade-partly-scanned.pdf" => {
+                    Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
+                }
                 "handmade-hidden.docx" => Some("7 hidden passages not imported."),
                 "handmade-hidden.rtf" => Some("6 hidden passages not imported."),
                 "handmade-hidden.doc" => Some("3 hidden passages not imported."),
@@ -599,6 +705,68 @@ mod tests {
             };
             assert_eq!(imported.note().as_deref(), expected_note, "{name}");
         }
+    }
+
+    /// Every non-PDF import fixture: converting from bytes, as the worker
+    /// and the phones do, gives what the file path gave AnyDoc and the
+    /// comment counters before the worker, errors included.
+    #[test]
+    fn converting_bytes_matches_converting_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let csv = dir.path().join("values.CSV");
+        std::fs::write(&csv, "Name,Count\nApples,2\n").unwrap();
+        let unknown = dir.path().join("unknown.bin");
+        std::fs::write(&unknown, b"unknown format").unwrap();
+        let mut paths = vec![csv, unknown];
+        for entry in std::fs::read_dir(fixture("")).unwrap() {
+            let path = entry.unwrap().path();
+            let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !["md", "pdf", "py", "anydoc"].contains(&extension) {
+                paths.push(path);
+            }
+        }
+        assert!(paths.len() >= 15, "{paths:?}");
+        for path in paths {
+            let by_path = anydoc::to_markdown_with(&path, anydoc::Options::default())
+                .map_err(|error| convert_error(error).to_string())
+                .map(|converted| {
+                    let comments = crate::hidden_content::docx_comments(&path)
+                        .and(crate::hidden_content::odt_comments(&path));
+                    Converted {
+                        markdown: converted.markdown,
+                        images_left_out: converted.images_left_out,
+                        hidden_text_left_out: converted.hidden_text_left_out,
+                        comments: comments.count,
+                        comments_at_least: comments.at_least,
+                    }
+                });
+            let extension = path.extension().and_then(|e| e.to_str());
+            let by_bytes = convert_bytes(&std::fs::read(&path).unwrap(), extension)
+                .map_err(|error| error.to_string());
+            assert_eq!(by_bytes, by_path, "{}", path.display());
+        }
+    }
+
+    /// A converter panic is an import error where the profile unwinds (the
+    /// phones and tests), never a crash.
+    #[test]
+    fn a_converter_panic_is_an_import_error() {
+        let result = contained::<()>(|| panic!("parser bug"));
+        assert!(
+            matches!(&result, Err(ImportError::ConverterFailed(detail)) if detail.contains("parser bug")),
+            "{result:?}"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .starts_with("The converter stopped unexpectedly")
+        );
+        assert_eq!(contained(|| Ok(7)).unwrap(), 7);
+        assert!(matches!(
+            contained::<()>(|| Err(ImportError::Damaged)),
+            Err(ImportError::Damaged)
+        ));
     }
 
     /// AnyDoc is built without its PDF converter: every PDF goes to
@@ -687,6 +855,82 @@ mod tests {
             .as_bytes(),
         );
         pdf
+    }
+
+    /// Two pages: text with one picture, then a page that is only a picture
+    /// (a scan). Without OCR the scan page is skipped and its picture is in
+    /// the notice, not counted again; the other page's picture still is
+    /// (#949).
+    #[test]
+    fn pictures_on_skipped_pages_are_not_counted_twice() {
+        fn image(width: usize, height: usize) -> Vec<u8> {
+            let data: Vec<u8> = (0..width * height * 3)
+                .map(|i| (i * 7 % 251) as u8)
+                .collect();
+            let mut object = format!(
+                "<< /Type /XObject /Subtype /Image /Width {width} /Height {height} \
+                 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length {} >>\nstream\n",
+                data.len()
+            )
+            .into_bytes();
+            object.extend(data);
+            object.extend(b"\nendstream");
+            object
+        }
+        fn stream(content: &str) -> Vec<u8> {
+            format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            )
+            .into_bytes()
+        }
+        let text = "BT /F1 12 Tf 72 700 Td (The supplier delivers the goods within ten days.) Tj ET\n\
+             BT /F1 12 Tf 72 680 Td (The buyer pays within thirty days of delivery.) Tj ET\n\
+             q 120 0 0 90 72 500 cm /Im1 Do Q";
+        let objects: Vec<Vec<u8>> = vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> \
+              /XObject << /Im1 6 0 R >> >> /Contents 8 0 R >>"
+                .to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im2 7 0 R >> >> \
+              /Contents 9 0 R >>"
+                .to_vec(),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+            image(64, 48),
+            image(200, 260),
+            stream(text),
+            stream("q 612 0 0 792 0 0 cm /Im2 Do Q"),
+        ];
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend(format!("{} 0 obj\n", index + 1).as_bytes());
+            pdf.extend(object);
+            pdf.extend(b"\nendobj\n");
+        }
+        let xref = pdf.len();
+        pdf.extend(format!("xref\n0 {}\n0000000000 65535 f \n", offsets.len() + 1).as_bytes());
+        for offset in offsets {
+            pdf.extend(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scan-and-picture.pdf");
+        std::fs::write(&path, pdf).unwrap();
+        let imported = convert(&path).unwrap();
+        assert_eq!(
+            imported.warning.as_deref(),
+            Some("Partial import: pages 2 of 2 require OCR and were skipped.")
+        );
+        assert_eq!(imported.left_out.pictures, 1, "{:?}", imported.note());
     }
 
     /// Invisible PDF text and form field names never reach the Markdown;
@@ -816,9 +1060,7 @@ mod tests {
         assert_eq!(note("../ocr-upstream/en-doclaynet-law-4.native.pdf"), None);
         assert_eq!(
             note("handmade-partly-scanned.pdf").as_deref(),
-            Some(
-                "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported."
-            )
+            Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
         );
         // A picture the package holds but the document never shows is not
         // left out of anything.
@@ -839,10 +1081,9 @@ mod tests {
             partly.warning.as_deref(),
             Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
         );
-        assert_eq!(
-            partly.left_out.line(true).as_deref(),
-            Some("2 pictures not imported.")
-        );
+        // Its two pictures are on the skipped pages, which the notice
+        // reports whole (#949).
+        assert_eq!(partly.left_out.line(true), None);
         let comments = convert(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../tests/fixtures/docx-preview/comments.docx"),
@@ -958,17 +1199,13 @@ mod tests {
         let imported = convert(&fixture("handmade-partly-scanned.pdf")).unwrap();
         assert_eq!(
             imported.note().as_deref(),
-            Some(
-                "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported."
-            )
+            Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
         );
         assert!(!imported.markdown.contains("OCR"));
         let mixed = convert(&fixture("handmade-mixed.pdf")).unwrap();
         assert_eq!(
             mixed.note().as_deref(),
-            Some(
-                "Partial import: pages 2 of 2 require OCR and were skipped. 1 picture not imported."
-            )
+            Some("Partial import: pages 2 of 2 require OCR and were skipped.")
         );
     }
 

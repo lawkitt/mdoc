@@ -334,6 +334,10 @@ impl DocumentView {
                         .flex_shrink(2.)
                         .text_size(px(12.))
                         .text_color(p.header_muted)
+                        // Without a role the label never reaches the
+                        // accessibility tree, and the line truncates at the
+                        // minimum window width (#948).
+                        .role(gpui::Role::Label)
                         .aria_label(format!("Left out of the Markdown: {line}"))
                         .child(div().flex_shrink_0().child("ⓘ"))
                         .child(div().min_w_0().truncate().child(line.clone()))

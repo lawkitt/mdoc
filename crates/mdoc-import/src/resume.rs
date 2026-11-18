@@ -229,7 +229,7 @@ pub fn prepare_resumable(
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
-    let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native));
+    let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
     drop(native);
     check_cancel(cancel)?;
     let digest = digest(&bytes);
@@ -581,6 +581,10 @@ mod tests {
             let original = std::fs::read(&pdf).unwrap();
             let never = AtomicBool::new(false);
             let desktop = crate::import::prepare(&pdf, Some(&installed), false).unwrap();
+            if name.ends_with("handmade-partly-scanned.pdf") {
+                // OCR read the scanned pages, so their pictures count (#949).
+                assert_eq!(desktop.left_out.pictures, 2, "{name}");
+            }
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));
             let (whole, completed) =

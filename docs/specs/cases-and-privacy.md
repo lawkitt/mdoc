@@ -268,8 +268,8 @@ in [CONTEXT.md](../../CONTEXT.md).
 ## Crash reports
 
 - A panic hook writes `mdoc/crash-report.txt` in app data, in app mode only
-  (not the DOCX worker or self-test); only the latest report is kept, and the
-  default hook then runs.
+  (not the DOCX or conversion workers or self-test); only the latest report
+  is kept, and the default hook then runs.
 - mdoc keeps no log file.
 - A report holds version, OS and architecture, thread, panic location, the
   first mdoc frame, the backtrace, a warning if the binary changed after
