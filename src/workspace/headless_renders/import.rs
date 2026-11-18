@@ -78,7 +78,7 @@ fn comments_note(d: &mut Driver) -> Result<()> {
 }
 
 /// An RTF with hidden-formatted passages: the Markdown holds none of them
-/// and the note counts them (#925 decision 9). RTF has no preview, so the
+/// and the left-out line counts them (#925 decision 9). RTF has no preview, so the
 /// Original pane stays empty.
 fn hidden_text_note(d: &mut Driver) -> Result<()> {
     let fixture =

@@ -758,7 +758,7 @@ mod tests {
             .join("../../tests/fixtures/docx-preview/comments.docx");
         assert_eq!(
             convert(&comments).unwrap().note().as_deref(),
-            Some("6 comments not imported.")
+            Some("6 comments not imported. 1 hidden passage not imported.")
         );
     }
 
@@ -781,10 +781,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(comments.warning, None);
-        assert_eq!(comments.left_out.line(true), None);
+        assert_eq!(
+            comments.left_out.line(true).as_deref(),
+            Some("1 hidden passage not imported.")
+        );
         assert_eq!(
             comments.left_out.line(false).as_deref(),
-            Some("6 comments not shown.")
+            Some("1 hidden passage not imported. 6 comments not shown.")
         );
         let all = LeftOut {
             pictures: 1,
@@ -818,7 +821,8 @@ mod tests {
         assert_eq!(
             whole.note().as_deref(),
             Some(
-                "2 comments not imported. 1 picture not imported.                  2 hidden passages not imported. 3 form field names not imported."
+                "2 comments not imported. 1 picture not imported. \
+                 2 hidden passages not imported. 3 form field names not imported."
             )
         );
     }

@@ -365,8 +365,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     );
                 }
                 if *name == "import-hidden-note" {
+                    // Left out, not a partial import: the left-out line.
+                    assert!(record["state"]["import_note"].is_null(), "{theme}/{name}");
                     assert_eq!(
-                        record["state"]["import_note"], "6 hidden passages not imported.",
+                        record["state"]["left_out"], "6 hidden passages not imported.",
                         "{theme}/{name}"
                     );
                 }
