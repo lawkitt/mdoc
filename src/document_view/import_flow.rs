@@ -376,9 +376,16 @@ impl ImportFlow {
         shared: impl FnOnce(&Self) -> bool,
     ) -> Option<Vec<ImportEffect>> {
         let completion = self.job.take_ready(generation, prompting)?;
-        self.stopping = false;
+        // A run that finishes after Cancel was accepted (the converter
+        // returned before checking the flag) still ends cancelled.
+        let stopped = std::mem::take(&mut self.stopping);
         let mut effects = Vec::new();
         if let ImportCompletion::Ready(result) = completion {
+            let result = if stopped {
+                Err(ImportError::Cancelled)
+            } else {
+                result
+            };
             match result {
                 Ok(imported) => effects.push(ImportEffect::Request(imported)),
                 Err(ImportError::OcrFailed(error)) => {
@@ -662,6 +669,38 @@ mod tests {
         assert_eq!(names(&effects), ["Error", "State"]);
         assert!(!flow.busy() && !slot.load(Ordering::Relaxed));
         assert_eq!(flow.source, Some(PathBuf::from("/in/a.pdf")));
+    }
+
+    /// A conversion that succeeds or fails after Cancel was accepted still
+    /// ends cancelled: the stop wins over a late result (#950 review).
+    #[test]
+    fn a_late_result_after_cancel_still_ends_cancelled() {
+        let late_results = [
+            Ok(crate::test_support::converted("/in/a.docx".into())),
+            Err(ImportError::OcrNoText),
+            Err(ImportError::Encrypted),
+        ];
+        for late in late_results {
+            let (mut flow, slot) = new_flow();
+            let Some(ImportEffect::Run { permit, .. }) =
+                flow.begin("/in/a.docx".into(), None, false)
+            else {
+                panic!("the conversion starts");
+            };
+            flow.stop();
+            assert!(
+                slot.load(Ordering::Relaxed),
+                "the slot stays held until the run exits"
+            );
+            drop(permit);
+            flow.complete(1, late);
+            let effects = flow.resume(1, false, |_| false).unwrap();
+            let [ImportEffect::Error(error), ImportEffect::State] = &effects[..] else {
+                panic!("{:?}", names(&effects));
+            };
+            assert_eq!(error, &ImportError::Cancelled.to_string());
+            assert!(!slot.load(Ordering::Relaxed));
+        }
     }
 
     /// Cancel on the card stops this run only: it ends `Cancelled` as an

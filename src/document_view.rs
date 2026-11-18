@@ -1145,12 +1145,33 @@ impl DocumentView {
                 .into_any_element();
         }
         if self.import.recognizing() {
+            let stopping = self.import.stopping();
             return card
                 .child(ui::activity(
                     "recognition-activity",
-                    "Recognizing text…",
+                    if stopping {
+                        "Cancelling…"
+                    } else {
+                        "Recognizing text…"
+                    },
                     theme,
                 ))
+                // Recognition stops like a conversion; the card returns here
+                // with the language choice kept, so Run OCR retries (#950).
+                .when(!stopping, |v| {
+                    v.child(
+                        div().flex().child(
+                            ui::control("cancel-recognition", "Cancel", theme, true)
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "cancel-recognition".into())
+                                })
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.import.stop();
+                                    cx.notify();
+                                })),
+                        ),
+                    )
+                })
                 .into_any_element();
         }
         if installing {
@@ -1293,6 +1314,9 @@ impl DocumentView {
                 }),
             )
             .when_some(failed, |v, error| v.child(ui::card_error(error, theme)))
+            .when(self.conversion_cancelled(), |v| {
+                v.child(ui::card_text("Recognition cancelled.", theme))
+            })
             .child(
                 ui::card_actions()
                     .child(
@@ -2160,7 +2184,9 @@ impl Render for DocumentView {
         let error_notice = self
             .error
             .clone()
-            .filter(|_| !card_shows_error && !setup_says_error)
+            // A cancel is not an error: the card says so, and with the card
+            // hidden nothing needs attention (#950 review).
+            .filter(|_| !card_shows_error && !setup_says_error && !self.conversion_cancelled())
             .map(|detail| self.notice("error-notice", "Needs attention", detail, true, cx));
         let minimum = (280. / content_width.max(620.)).min(0.5);
         let split = self
