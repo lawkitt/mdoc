@@ -519,7 +519,10 @@ mod tests {
             .collect();
         strip_repeats(&mut changing, &MarkdownOptions::default()).unwrap();
         for page in &changing {
-            assert!(page.markdown.contains(&format!("Case No. 2-12{}/2026", page.page)));
+            assert!(
+                page.markdown
+                    .contains(&format!("Case No. 2-12{}/2026", page.page))
+            );
         }
         // The footer is still an exact repeat.
         let counts: Vec<u32> = changing.iter().map(|page| page.repeated_lines).collect();
@@ -589,13 +592,19 @@ mod tests {
         folder.open();
         let cancel = AtomicBool::new(false);
         let mut first = Vec::new();
-        let result = recognize_pages(5, &folder, &cancel, |_| true, |n| {
-            first.push(n);
-            if n == 2 {
-                cancel.store(true, Ordering::Relaxed);
-            }
-            Ok(page(n))
-        });
+        let result = recognize_pages(
+            5,
+            &folder,
+            &cancel,
+            |_| true,
+            |n| {
+                first.push(n);
+                if n == 2 {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+                Ok(page(n))
+            },
+        );
         assert!(matches!(result, Err(ImportError::Cancelled)));
         assert_eq!(first, [1, 2]);
         assert_eq!(folder.load(2), Some(page(2)));
@@ -603,10 +612,16 @@ mod tests {
 
         cancel.store(false, Ordering::Relaxed);
         let mut second = Vec::new();
-        let resumed = recognize_pages(5, &folder, &cancel, |_| true, |n| {
-            second.push(n);
-            Ok(page(n))
-        })
+        let resumed = recognize_pages(
+            5,
+            &folder,
+            &cancel,
+            |_| true,
+            |n| {
+                second.push(n);
+                Ok(page(n))
+            },
+        )
         .unwrap();
         assert_eq!(second, [3, 4, 5]);
         let uninterrupted: Vec<_> = (1..=5).map(page).collect();
@@ -633,10 +648,16 @@ mod tests {
         std::fs::write(folder.path(1), b"{\"page\":1,\"mark").unwrap();
         std::fs::copy(folder.path(2), folder.path(3)).unwrap();
         let mut ran = Vec::new();
-        recognize_pages(3, &folder, &AtomicBool::new(false), |_| true, |n| {
-            ran.push(n);
-            Ok(page(n))
-        })
+        recognize_pages(
+            3,
+            &folder,
+            &AtomicBool::new(false),
+            |_| true,
+            |n| {
+                ran.push(n);
+                Ok(page(n))
+            },
+        )
         .unwrap();
         assert_eq!(ran, [1, 3]);
     }
@@ -704,13 +725,19 @@ mod tests {
         let folder = kept.folder(&digest(b"%PDF-a"), &config());
         folder.open();
         let cancel = AtomicBool::new(false);
-        let result = recognize_pages(3, &folder, &cancel, |_| true, |n| {
-            if n == 2 {
-                cancel.store(true, Ordering::Relaxed);
-                kept.discard(&source).unwrap();
-            }
-            Ok(page(n))
-        });
+        let result = recognize_pages(
+            3,
+            &folder,
+            &cancel,
+            |_| true,
+            |n| {
+                if n == 2 {
+                    cancel.store(true, Ordering::Relaxed);
+                    kept.discard(&source).unwrap();
+                }
+                Ok(page(n))
+            },
+        );
         assert!(matches!(result, Err(ImportError::Cancelled)));
         assert!(!folder.0.exists());
     }
@@ -794,7 +821,10 @@ mod tests {
             (fixtures.join("ocr-qualification/english.pdf"), 1),
             (fixtures.join("ocr-qualification/russian.pdf"), 1),
             (fixtures.join("import/handmade-partly-scanned.pdf"), 2),
-            (fixtures.join("import/handmade-scanned-running-header.pdf"), 2),
+            (
+                fixtures.join("import/handmade-scanned-running-header.pdf"),
+                2,
+            ),
             (fixtures.join("import/handmade-running-header.pdf"), 1),
         ] {
             let name = pdf.display().to_string();
