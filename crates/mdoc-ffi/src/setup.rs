@@ -126,6 +126,32 @@ impl OcrPaths {
     }
 }
 
+/// One [`measure_ocr`] run.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct OcrMeasurement {
+    pub markdown: String,
+    /// Every recognized span's text, one per line.
+    pub recognition: String,
+    /// Wall time of the conversion, the engine's loading included.
+    pub seconds: f64,
+}
+
+/// Measurement only, never called by the app: the PDF at `pdf` recognized
+/// with `paths` as an import would, but rendered at `dpi` (the iOS
+/// resolution test, `OCRResolutionTests`).
+#[uniffi::export]
+pub fn measure_ocr(paths: OcrPaths, pdf: String, dpi: u16) -> Result<OcrMeasurement, CoreError> {
+    let mut installed = paths.installed()?;
+    installed.config.dpi = dpi;
+    let bytes = std::fs::read(&pdf).map_err(|e| CoreError::invalid(format!("{pdf}: {e}")))?;
+    let measured = installed.measure(&bytes, true)?;
+    Ok(OcrMeasurement {
+        markdown: measured.markdown,
+        recognition: measured.recognition,
+        seconds: measured.seconds,
+    })
+}
+
 #[derive(uniffi::Object)]
 pub struct Setup {
     root: PathBuf,
