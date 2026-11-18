@@ -113,6 +113,9 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   30% of the pages compared (rounded up), and at least 10 characters long;
   headings, list items and numbered clauses never are. A scan compares
   only the pages OCR reads whole.
+- On a sparse page (one or two rows), only rows at the learned position
+  go, measured from the page's own top or bottom edge; the same text
+  anywhere else on it is body text, kept and not counted.
 - Numbers count, because "Case No. 2-123" and "Case No. 2-124" are different
   cases. Only a page number may differ: at a row's start or end, rising
   with the page, equal to its page's position or up to 10 behind (an

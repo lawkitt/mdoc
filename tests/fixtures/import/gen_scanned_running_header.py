@@ -49,15 +49,21 @@ def pdf(objects):
     return bytes(out)
 
 
-def native_page(page):
-    shift = random.Random(page)
-    dx, dy = shift.uniform(-2, 2), shift.uniform(-2, 2)
-    ops = [f"{SCALE:.4f} 0 0 {SCALE:.4f} 0 0 cm 1 0 0 1 {dx:.2f} {dy:.2f} cm"]
-    ops.append(f"BT /F1 10 Tf 72 750 Td ({HEADER}) Tj ET")
+def page_text(page):
+    """The page's text operators in PDF points: header, body, footer."""
+    ops = [f"BT /F1 10 Tf 72 750 Td ({HEADER}) Tj ET"]
     for line in range(12):
         text = f"Item {page}.{line + 1}. {BODY[(line + page) % len(BODY)]}"
         ops.append(f"BT /F1 12 Tf 72 {700 - line * 26} Td ({text}) Tj ET")
     ops.append(f"BT /F1 10 Tf 72 40 Td ({FOOTER}) Tj ET")
+    return ops
+
+
+def native_page(page, text):
+    shift = random.Random(page)
+    dx, dy = shift.uniform(-2, 2), shift.uniform(-2, 2)
+    ops = [f"{SCALE:.4f} 0 0 {SCALE:.4f} 0 0 cm 1 0 0 1 {dx:.2f} {dy:.2f} cm"]
+    ops += text
     content = "\n".join(ops)
     return pdf([
         "<< /Type /Catalog /Pages 2 0 R >>",
@@ -91,10 +97,10 @@ def bilevel(bmp):
     return width, abs(height), bytes(out)
 
 
-def rasterize(page, work):
+def rasterize(page, text, work):
     source = work / f"page-{page}.pdf"
     bmp = work / f"page-{page}.bmp"
-    source.write_bytes(native_page(page))
+    source.write_bytes(native_page(page, text))
     subprocess.run(
         ["sips", "-s", "format", "bmp", str(source), "--out", str(bmp)],
         check=True, capture_output=True,
@@ -102,9 +108,13 @@ def rasterize(page, work):
     return bilevel(bmp.read_bytes())
 
 
-def main():
+def scan(pages):
+    """An image-only PDF of `pages`, each a list of text operators."""
     with tempfile.TemporaryDirectory() as work:
-        scans = [rasterize(page, Path(work)) for page in range(1, PAGES + 1)]
+        scans = [
+            rasterize(page, text, Path(work))
+            for page, text in enumerate(pages, start=1)
+        ]
     objects = ["<< /Type /Catalog /Pages 2 0 R >>", ""]
     kids = []
     for width, height, bits in scans:
@@ -125,8 +135,13 @@ def main():
         )
     refs = " ".join(f"{kid} 0 R" for kid in kids)
     objects[1] = f"<< /Type /Pages /Kids [{refs}] /Count {len(kids)} >>"
+    return pdf(objects)
+
+
+def main():
+    pages = [page_text(page) for page in range(1, PAGES + 1)]
     target = Path(__file__).with_name("handmade-scanned-running-header.pdf")
-    target.write_bytes(pdf(objects))
+    target.write_bytes(scan(pages))
 
 
 if __name__ == "__main__":
