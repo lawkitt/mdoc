@@ -12,8 +12,8 @@
 //! ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
-    ImportError, Imported, LeftOut, OcrFailure, check_cancel, pdf_error, pdf_warning, read_pdf,
-    repeated_lines,
+    ImportError, Imported, LeftOut, OcrFailure, SourceStamp, check_cancel, pdf_error, pdf_warning,
+    read_pdf, repeated_lines,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -219,6 +219,10 @@ pub fn prepare_resumable(
     check_cancel(cancel)?;
     let source = std::path::absolute(path).map_err(ImportError::Read)?;
     let mut file = std::fs::File::open(&source).map_err(ImportError::Read)?;
+    let stamp = file
+        .metadata()
+        .ok()
+        .map(|metadata| SourceStamp::from(&metadata));
     let mut header = [0; 1024];
     let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
     if !header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
@@ -270,6 +274,7 @@ pub fn prepare_resumable(
         Imported {
             ocr_configuration: Some(installed.config.clone()),
             source,
+            stamp,
             markdown,
             warning,
             left_out,

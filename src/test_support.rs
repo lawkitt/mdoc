@@ -12,6 +12,7 @@ pub fn converted(source: PathBuf) -> Imported {
     Imported {
         ocr_configuration: None,
         source,
+        stamp: None,
         markdown: "# Imported\n".into(),
         warning: Some("Partial import: pages 2 of 2 require OCR and were skipped.".into()),
         left_out: Default::default(),

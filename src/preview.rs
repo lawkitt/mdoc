@@ -13,6 +13,7 @@ use gpui_pdf::{HeaderToggle, PdfView};
 use mdoc_import::{
     comments::Comment,
     docx_preview::{self, PreviewError},
+    import::SourceStamp,
 };
 use mdoc_store::{session_store, settings};
 use std::{
@@ -69,6 +70,22 @@ pub(crate) fn attach_search_field(
     field
 }
 
+/// What an import read from a source's comments, and when.
+#[derive(Clone)]
+struct ImportedComments {
+    source: PathBuf,
+    stamp: SourceStamp,
+    comments: Arc<Vec<Comment>>,
+}
+
+impl ImportedComments {
+    /// The comments, while the file is still the one the import read; a
+    /// changed file's cards come from its own reading, as its anchors do.
+    fn current(self) -> Option<Arc<Vec<Comment>>> {
+        (SourceStamp::of(&self.source) == Some(self.stamp)).then_some(self.comments)
+    }
+}
+
 struct PendingPreview {
     pdf: Entity<PdfView>,
     docx: Option<docx_preview::DocxPreview>,
@@ -95,11 +112,15 @@ pub(super) struct PreviewState {
     docx: Option<docx_preview::DocxPreview>,
     /// The DOCX's comments beside its page, when it has any.
     comments: Option<Entity<CommentRail>>,
-    /// The comments this tab's import read from its source, so the cards
-    /// show what the left-out line counted; a Source shown without an
-    /// import here reads its own.
-    imported_comments: Option<(PathBuf, Arc<Vec<Comment>>)>,
+    /// The comments this tab's import read from its source, with the
+    /// source's stamp then, so the cards show what the left-out line
+    /// counted; a Source shown without an import here, or changed since,
+    /// reads its own.
+    imported_comments: Option<ImportedComments>,
     pending: Option<PendingPreview>,
+    /// The current request shows the source as a PDF, whatever its name
+    /// (an import found a PDF in a `.docx`): no rendering shows comments.
+    pdf_source: bool,
     message: Option<String>,
     loading: bool,
     retryable: bool,
@@ -167,6 +188,7 @@ impl PreviewState {
     /// has not failed.
     pub(super) fn renders_comments(&self) -> bool {
         !self.failed
+            && !self.pdf_source
             && self
                 .source
                 .as_ref()
@@ -174,17 +196,27 @@ impl PreviewState {
                 .is_some_and(|e| e.eq_ignore_ascii_case("docx"))
     }
 
-    /// An import of `source` read `comments`: its rendering's cards.
-    pub(super) fn imported(&mut self, source: PathBuf, comments: Vec<Comment>) {
-        self.imported_comments = Some((source, Arc::new(comments)));
+    /// An import of `source`, as `stamp` stood, read `comments`: its
+    /// rendering's cards while the file is unchanged.
+    pub(super) fn imported(
+        &mut self,
+        source: PathBuf,
+        stamp: Option<SourceStamp>,
+        comments: Vec<Comment>,
+    ) {
+        self.imported_comments = stamp.map(|stamp| ImportedComments {
+            source,
+            stamp,
+            comments: Arc::new(comments),
+        });
     }
 
     /// The comments an import here read from `source`, if any.
-    fn imported_comments(&self, source: &Path) -> Option<Arc<Vec<Comment>>> {
+    fn imported_comments(&self, source: &Path) -> Option<ImportedComments> {
         self.imported_comments
             .as_ref()
-            .filter(|(path, _)| path == source)
-            .map(|(_, comments)| comments.clone())
+            .filter(|known| known.source == source)
+            .cloned()
     }
 
     /// Passages of hidden text in the DOCX shown.
@@ -329,6 +361,7 @@ impl PreviewState {
         }
         self.invalidate();
         self.source = Some(path);
+        self.pdf_source = false;
         self.loading = true;
         self.visible = true;
         self.generation
@@ -716,6 +749,7 @@ impl DocumentView {
 
     pub(super) fn open_pdf(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.begin_preview(path.clone());
+        self.preview.pdf_source = true;
         self.load_preview(path, None, window, cx);
     }
 
@@ -749,8 +783,9 @@ impl DocumentView {
         let options = docx_preview::RenderOptions {
             show_hidden_text: self.source_display().hidden_text,
         };
-        let comments = self.preview.imported_comments(&path);
+        let known = self.preview.imported_comments(&path);
         let task = cx.background_executor().spawn(async move {
+            let comments = known.and_then(ImportedComments::current);
             // Headless UI tests cannot launch the test harness as a worker.
             if cfg!(test) {
                 docx_preview::render_in_process(
@@ -882,6 +917,64 @@ mod tests {
         assert!(!preview.renders_comments());
         preview.begin("a.pdf".into());
         assert!(!preview.renders_comments());
+    }
+
+    /// A PDF named `.docx` previews as a PDF, which shows no comments, so
+    /// the left-out line counts its annotations.
+    #[gpui::test]
+    fn a_pdf_named_docx_counts_its_annotations(cx: &mut gpui::TestAppContext) {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("contract.docx");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/import/text_annotations.pdf"),
+            &source,
+        )
+        .unwrap();
+        let imported = crate::test_support::convert(&source).unwrap();
+        assert!(imported.is_pdf);
+        let (app, cx) = crate::document_view::tests::boot(cx);
+        app.update_in(cx, |app, window, cx| {
+            app.proceed(
+                crate::document_view::Next::Import(Box::new(imported)),
+                window,
+                cx,
+            );
+        });
+        cx.update(|_, cx| {
+            assert!(!app.read(cx).preview.renders_comments());
+            assert_eq!(
+                app.read(cx).left_out().as_deref(),
+                Some("8 comments not shown.")
+            );
+        });
+    }
+
+    /// The import's comments are a DOCX's cards only while the file is the
+    /// one it read; a file saved over since is read again.
+    #[test]
+    fn imported_comments_hold_while_the_source_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("a.docx");
+        std::fs::write(&source, b"first").unwrap();
+        let mut preview = PreviewState::default();
+        let comment = Comment {
+            id: "0".into(),
+            ..Comment::default()
+        };
+        preview.imported(
+            source.clone(),
+            SourceStamp::of(&source),
+            vec![comment.clone()],
+        );
+        assert!(preview.imported_comments(Path::new("other.docx")).is_none());
+        let known = preview.imported_comments(&source).unwrap();
+        assert_eq!(known.clone().current().unwrap().as_slice(), [comment]);
+        std::fs::write(&source, b"saved over").unwrap();
+        assert!(known.current().is_none());
+        // An import whose file it could not stat offers nothing to reuse.
+        preview.imported(source.clone(), None, Vec::new());
+        assert!(preview.imported_comments(&source).is_none());
     }
 
     /// The left-out line in the document header: the counts, with the

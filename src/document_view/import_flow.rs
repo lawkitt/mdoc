@@ -384,7 +384,7 @@ impl ImportFlow {
             let result = if stopped {
                 Err(ImportError::Cancelled)
             } else {
-                result
+                *result
             };
             match result {
                 Ok(imported) => effects.push(ImportEffect::Request(imported)),

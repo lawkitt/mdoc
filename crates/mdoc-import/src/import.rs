@@ -76,6 +76,9 @@ pub fn supported_source(path: &Path) -> bool {
 pub struct Imported {
     pub ocr_configuration: Option<mdoc_store::settings::OcrConfig>,
     pub source: PathBuf,
+    /// The source's size and modification time as the import opened it:
+    /// its comments describe the file only while the file still has them.
+    pub stamp: Option<SourceStamp>,
     pub markdown: String,
     /// The notice: a partial import (pages OCR skipped, or may have read
     /// badly).
@@ -90,6 +93,32 @@ pub struct Imported {
     pub annotations: Vec<pdf_inspector::PdfAnnotation>,
     pub is_pdf: bool,
     pub is_docx: bool,
+}
+
+/// A file's size and modification time: a later reading of the same path
+/// is taken to be of the same bytes while its stamp matches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceStamp {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+}
+
+impl SourceStamp {
+    /// The stamp of the file at `path` now, if it can be read.
+    pub fn of(path: &Path) -> Option<Self> {
+        std::fs::metadata(path)
+            .ok()
+            .map(|metadata| Self::from(&metadata))
+    }
+}
+
+impl From<&std::fs::Metadata> for SourceStamp {
+    fn from(metadata: &std::fs::Metadata) -> Self {
+        Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+        }
+    }
 }
 
 /// What the Markdown of an import leaves out besides skipped pages.
@@ -325,12 +354,16 @@ pub fn prepare_cancellable(
     // Only PDF conversion reads the complete buffer here; AnyDoc retains its
     // format detection and resource limits for all other inputs.
     let mut file = std::fs::File::open(&source).map_err(ImportError::Read)?;
+    let stamp = file
+        .metadata()
+        .ok()
+        .map(|metadata| SourceStamp::from(&metadata));
     let mut header = [0; 1024];
     let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
     // Every PDF goes to pdf-inspector: AnyDoc, built without its `pdf`
     // feature, would refuse one, and detects a PDF by the same window.
     if header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
-        return convert_pdf(source, installed, skip_ocr, cancel);
+        return convert_pdf(source, stamp, installed, skip_ocr, cancel);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
@@ -354,6 +387,7 @@ pub fn prepare_cancellable(
     Ok(Imported {
         ocr_configuration: None,
         source,
+        stamp,
         markdown: converted.markdown,
         // Only a PDF's import can be partial.
         warning: None,
@@ -466,6 +500,7 @@ pub(crate) fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
 
 fn convert_pdf(
     source: PathBuf,
+    stamp: Option<SourceStamp>,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
@@ -533,6 +568,7 @@ fn convert_pdf(
             None
         },
         source,
+        stamp,
         markdown: result.markdown,
         warning,
         left_out,

@@ -35,7 +35,7 @@ pub struct ImportSession {
 
 pub enum ImportCompletion {
     Stale,
-    Ready(Result<import::Imported, import::ImportError>),
+    Ready(Box<Result<import::Imported, import::ImportError>>),
 }
 
 impl ImportSession {
@@ -103,7 +103,7 @@ impl ImportSession {
         let (pending_generation, result) = self.pending.take()?;
         self.finish();
         Some(if pending_generation == generation {
-            ImportCompletion::Ready(result)
+            ImportCompletion::Ready(Box::new(result))
         } else {
             ImportCompletion::Stale
         })
@@ -144,7 +144,7 @@ mod tests {
         assert!(session.pending.is_some());
         assert!(matches!(
             session.take_ready(7, false),
-            Some(ImportCompletion::Ready(Err(_)))
+            Some(ImportCompletion::Ready(result)) if result.is_err()
         ));
         assert!(!session.busy);
         assert!(!session.recognizing);
