@@ -168,35 +168,100 @@ pub fn source_and_license(model: OcrModel) -> (String, String) {
     )
 }
 
+/// A native runtime setup installs as `library`, from the first of `sources`
+/// that can be downloaded.
 struct Runtime {
     name: &'static str,
+    library: &'static str,
+    library_sha: &'static str,
+    /// Tried in order; a later source only when an earlier one could not be
+    /// downloaded (see [`source_unavailable`]), never after a failed check.
+    sources: &'static [Source],
+}
+
+/// One pinned archive that holds a runtime's library.
+struct Source {
     url: &'static str,
     size: u64,
     archive_sha: &'static str,
-    library: &'static str,
     archive_library: &'static str,
-    library_sha: &'static str,
+    /// The library's digest when this source's build differs from the
+    /// runtime's `library_sha`.
+    library_sha: Option<&'static str>,
+}
+
+impl Runtime {
+    /// Bytes of the first source's archive, which setup plans for.
+    fn size(&self) -> u64 {
+        self.sources[0].size
+    }
+    /// Every digest an installed library may have, one per distinct build.
+    fn library_shas(&self) -> impl Iterator<Item = &'static str> + '_ {
+        std::iter::once(self.library_sha).chain(self.sources.iter().filter_map(|s| s.library_sha))
+    }
+}
+
+impl Source {
+    fn library_sha(&self, runtime: &Runtime) -> &'static str {
+        self.library_sha.unwrap_or(runtime.library_sha)
+    }
+    fn is_zip(&self) -> bool {
+        self.url.ends_with(".zip") || self.url.ends_with(".nupkg")
+    }
+}
+
+/// NuGet's Microsoft.ML.OnnxRuntime 1.27.0, the ONNX Runtime source when
+/// GitHub's release cannot be downloaded (it returned 404 from 2026-11-17,
+/// #925). One package holds every platform's library: 135 MB, against the
+/// GitHub archives' 32 MB (macOS) and 77 MB (Windows).
+const fn onnx_runtime_nuget(
+    archive_library: &'static str,
+    library_sha: Option<&'static str>,
+) -> Source {
+    Source {
+        url: "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.27.0/microsoft.ml.onnxruntime.1.27.0.nupkg",
+        size: 134_994_248,
+        archive_sha: "c725e8cefdfe4de08befb9f79b3f218c162439cdcdb97cbbb5192888d58ea669",
+        archive_library,
+        library_sha,
+    }
 }
 
 #[cfg(any(test, not(all(target_os = "windows", target_arch = "x86_64"))))]
 const MAC_RUNTIMES: &[Runtime] = &[
     Runtime {
         name: "pdfium",
-        url: "https://github.com/firecrawl/pdfium-rs/releases/download/native-v7988/firecrawl-pdfium-mac-arm64.tgz",
-        size: 3_460_583,
-        archive_sha: "4168356c2e62ad5e79553e2e9162f5c99949759d90cb83876a50311f0c32b9b3",
         library: "libpdfium.dylib",
-        archive_library: "lib/libpdfium.dylib",
         library_sha: "fbdec47c3f2eaa80705ed25cf8bed5ac420998ba0f3e786d4d297b6238749064",
+        sources: &[Source {
+            url: "https://github.com/firecrawl/pdfium-rs/releases/download/native-v7988/firecrawl-pdfium-mac-arm64.tgz",
+            size: 3_460_583,
+            archive_sha: "4168356c2e62ad5e79553e2e9162f5c99949759d90cb83876a50311f0c32b9b3",
+            archive_library: "lib/libpdfium.dylib",
+            library_sha: None,
+        }],
     },
     Runtime {
         name: "onnx",
-        url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-osx-arm64-1.27.0.tgz",
-        size: 32_485_368,
-        archive_sha: "545e81c58152353acb0d1e8bd6ce4b62f830c0961f5b3acfedc790ffd76e477a",
         library: "libonnxruntime.1.27.0.dylib",
-        archive_library: "lib/libonnxruntime.1.27.0.dylib",
         library_sha: "299e5a2c6ea00531ecd6bf3217e23798c1fcba1698bb386d313c8e16d7317d60",
+        sources: &[
+            Source {
+                url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-osx-arm64-1.27.0.tgz",
+                size: 32_485_368,
+                archive_sha: "545e81c58152353acb0d1e8bd6ce4b62f830c0961f5b3acfedc790ffd76e477a",
+                archive_library: "lib/libonnxruntime.1.27.0.dylib",
+                library_sha: None,
+            },
+            // A separate link of the same 1.27.0, so its own library pin
+            // (approved by the maintainer, #925): the same size and sections,
+            // signed with Microsoft's Developer ID (team UBF8T346G9) like
+            // GitHub's, but with a different LC_UUID and signing identifier.
+            onnx_runtime_nuget(
+                "runtimes/osx-arm64/native/libonnxruntime.dylib",
+                Some("e96565bc1139fd136327c449b11d210da79acbe2aed53d959224815b4e448fac"),
+            ),
+        ],
     },
 ];
 
@@ -204,21 +269,31 @@ const MAC_RUNTIMES: &[Runtime] = &[
 const WINDOWS_RUNTIMES: &[Runtime] = &[
     Runtime {
         name: "pdfium",
-        url: "https://github.com/firecrawl/pdfium-rs/releases/download/native-v7988/firecrawl-pdfium-win-x64.tgz",
-        size: 3_764_191,
-        archive_sha: "6f398552d8021a89078f64466557251a204999177287b876be49877eb8750d50",
         library: "pdfium.dll",
-        archive_library: "bin/pdfium.dll",
         library_sha: "03cc8de22238ea9ffbbf41703f8ef8aae77faeab735583815481f5c2c70a63c7",
+        sources: &[Source {
+            url: "https://github.com/firecrawl/pdfium-rs/releases/download/native-v7988/firecrawl-pdfium-win-x64.tgz",
+            size: 3_764_191,
+            archive_sha: "6f398552d8021a89078f64466557251a204999177287b876be49877eb8750d50",
+            archive_library: "bin/pdfium.dll",
+            library_sha: None,
+        }],
     },
     Runtime {
         name: "onnx",
-        url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-win-x64-1.27.0.zip",
-        size: 77_086_915,
-        archive_sha: "c5c81710938e68079ff1a192b04897faabe4b43830d48f39f27ecd4e16138bfc",
         library: "onnxruntime.dll",
-        archive_library: "lib/onnxruntime.dll",
         library_sha: "fd6dd0a8b1f5562d642abdcbd36bc54251482d2ebaa3f4f88669bfdad92e7525",
+        sources: &[
+            Source {
+                url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-win-x64-1.27.0.zip",
+                size: 77_086_915,
+                archive_sha: "c5c81710938e68079ff1a192b04897faabe4b43830d48f39f27ecd4e16138bfc",
+                archive_library: "lib/onnxruntime.dll",
+                library_sha: None,
+            },
+            // The same onnxruntime.dll, byte for byte.
+            onnx_runtime_nuget("runtimes/win-x64/native/onnxruntime.dll", None),
+        ],
     },
 ];
 
@@ -247,18 +322,18 @@ pub fn pending(
         .collect();
     crate::model_download::Pending {
         full: artifacts.iter().map(|a| a.size).sum::<u64>()
-            + RUNTIMES.iter().map(|r| r.size).sum::<u64>(),
+            + RUNTIMES.iter().map(Runtime::size).sum::<u64>(),
         model: missing.iter().sum(),
         runtime: RUNTIMES
             .iter()
             .filter(|r| root.is_none_or(|root| !root.join(r.library).exists()))
-            .map(|r| r.size)
+            .map(Runtime::size)
             .sum(),
     }
 }
 /// Bytes of the shared ONNX Runtime archive.
 pub fn onnx_runtime_size() -> u64 {
-    RUNTIMES[1].size
+    RUNTIMES[1].size()
 }
 /// Bytes of the shared ONNX Runtime archive when it is not installed under
 /// `root` (the OCR root) yet.
@@ -266,7 +341,7 @@ pub fn onnx_runtime_pending(root: Option<&Path>) -> u64 {
     let runtime = &RUNTIMES[1];
     match root {
         Some(root) if root.join(runtime.library).exists() => 0,
-        _ => runtime.size,
+        _ => runtime.size(),
     }
 }
 
@@ -374,7 +449,7 @@ fn validate_config(
     config: &mdoc_store::settings::OcrConfig,
 ) -> Result<Installed, SetupError> {
     for runtime in RUNTIMES {
-        verify(&root.join(runtime.library), runtime.library_sha)?;
+        verify_library(root, runtime)?;
     }
     let (installed, models) = resolve_models(
         root,
@@ -544,11 +619,11 @@ pub fn onnx_runtime(install: bool) -> Result<PathBuf, SetupError> {
     let root = root()?;
     let runtime = &RUNTIMES[1];
     let path = root.join(runtime.library);
-    if verify(&path, runtime.library_sha).is_err() && install {
+    if verify_library(&root, runtime).is_err() && install {
         fs::create_dir_all(&root)?;
         install_runtime(&root, runtime)?;
     }
-    verify(&path, runtime.library_sha)?;
+    verify_library(&root, runtime)?;
     Ok(path)
 }
 
@@ -556,7 +631,7 @@ pub fn onnx_runtime(install: bool) -> Result<PathBuf, SetupError> {
 pub fn onnx_runtime_in(root: &Path) -> Result<PathBuf, SetupError> {
     let runtime = &RUNTIMES[1];
     let path = root.join(runtime.library);
-    verify(&path, runtime.library_sha)?;
+    verify_library(root, runtime)?;
     Ok(path)
 }
 
@@ -567,10 +642,10 @@ pub fn onnx_runtime_with_progress(
     fs::create_dir_all(&root)?;
     let runtime = &RUNTIMES[1];
     let path = root.join(runtime.library);
-    if verify(&path, runtime.library_sha).is_err() {
+    if verify_library(&root, runtime).is_err() {
         install_runtime_progress(&root, runtime, progress)?;
     }
-    verify(&path, runtime.library_sha)?;
+    verify_library(&root, runtime)?;
     Ok(path)
 }
 
@@ -628,7 +703,7 @@ fn install_checked_in(
     fs::create_dir_all(root)?;
     for runtime in RUNTIMES {
         progress.check()?;
-        if verify(&root.join(runtime.library), runtime.library_sha).is_ok() {
+        if verify_library(root, runtime).is_ok() {
             continue;
         }
         install_runtime_progress(root, runtime, progress)?;
@@ -685,6 +760,18 @@ fn remove_model_files(
 }
 
 fn verify(path: &Path, expected: &str) -> Result<(), SetupError> {
+    verify_any(path, std::iter::once(expected))
+}
+
+/// The installed library matches the build of any of its sources.
+fn verify_library(root: &Path, runtime: &Runtime) -> Result<(), SetupError> {
+    verify_any(&root.join(runtime.library), runtime.library_shas())
+}
+
+fn verify_any<'a>(
+    path: &Path,
+    expected: impl IntoIterator<Item = &'a str>,
+) -> Result<(), SetupError> {
     let mut file = File::open(path).map_err(|e| SetupError::Open {
         path: path.to_path_buf(),
         source: Arc::new(e),
@@ -698,13 +785,12 @@ fn verify(path: &Path, expected: &str) -> Result<(), SetupError> {
         }
         digest.update(&buffer[..count]);
     }
-    if digest
+    let actual = digest
         .finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
-        != expected
-    {
+        .collect::<String>();
+    if !expected.into_iter().any(|sha| sha == actual) {
         return Err(SetupError::Integrity(path.to_path_buf()));
     }
     Ok(())
@@ -718,25 +804,78 @@ fn install_runtime_progress(
     runtime: &Runtime,
     progress: &crate::model_download::Progress,
 ) -> Result<(), SetupError> {
-    let temporary = tempfile::tempdir_in(root)?;
-    let path = temporary.path().join("runtime.archive");
-    crate::model_download::fetch(
-        runtime.url,
-        runtime.size,
-        runtime.archive_sha,
-        &path,
-        progress,
-    )?;
-    let file = File::open(path)?;
-    progress.check()?;
-    extract_runtime(root, runtime, &file)?;
-    verify(&root.join(runtime.library), runtime.library_sha)
+    install_runtime_with(root, runtime, progress, crate::model_download::fetch)
 }
 
-fn extract_runtime(root: &Path, runtime: &Runtime, archive: &File) -> Result<(), SetupError> {
+/// Download, check and install `runtime` from the first source that can be
+/// downloaded. `fetch` is [`crate::model_download::fetch`] outside tests.
+fn install_runtime_with(
+    root: &Path,
+    runtime: &Runtime,
+    progress: &crate::model_download::Progress,
+    fetch: impl Fn(
+        &str,
+        u64,
+        &str,
+        &Path,
+        &crate::model_download::Progress,
+    ) -> Result<(), crate::model_download::DownloadError>,
+) -> Result<(), SetupError> {
+    let temporary = tempfile::tempdir_in(root)?;
+    let path = temporary.path().join("runtime.archive");
+    let mut sources = runtime.sources.iter().peekable();
+    while let Some(source) = sources.next() {
+        match fetch(source.url, source.size, source.archive_sha, &path, progress) {
+            Ok(()) => {
+                let file = File::open(&path)?;
+                progress.check()?;
+                extract_runtime(root, runtime, source, &file)?;
+                return verify(&root.join(runtime.library), source.library_sha(runtime));
+            }
+            Err(error) if source_unavailable(&error) => {
+                let Some(next) = sources.peek() else {
+                    return Err(error.into());
+                };
+                eprintln!(
+                    "OCR setup: {} runtime unavailable from {} ({error}); trying {}",
+                    runtime.name, source.url, next.url
+                );
+                // The bundle grows by the difference between the archives.
+                let mut state = progress.state.lock().unwrap();
+                if state.planned > 0 {
+                    state.planned = (state.planned + next.size).saturating_sub(source.size);
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    unreachable!("every runtime has a source")
+}
+
+/// The source could not deliver its archive, so the next one may. A wrong
+/// digest or size cap, a cancel or a local error stops setup instead.
+fn source_unavailable(error: &crate::model_download::DownloadError) -> bool {
+    use crate::model_download::DownloadError;
+    matches!(
+        error,
+        DownloadError::Unreachable { .. }
+            | DownloadError::Tls { .. }
+            | DownloadError::Status { .. }
+            | DownloadError::Other { .. }
+            // A transfer that ended early.
+            | DownloadError::SizeMismatch
+    )
+}
+
+fn extract_runtime(
+    root: &Path,
+    runtime: &Runtime,
+    source: &Source,
+    archive: &File,
+) -> Result<(), SetupError> {
     let notices = root.join("licenses").join(runtime.name);
     fs::create_dir_all(&notices)?;
-    if runtime.url.ends_with(".zip") {
+    if source.is_zip() {
         let mut zip = zip::ZipArchive::new(archive)?;
         for index in 0..zip.len() {
             let mut entry = zip.by_index(index)?;
@@ -746,7 +885,7 @@ fn extract_runtime(root: &Path, runtime: &Runtime, archive: &File) -> Result<(),
             let Some(path) = entry.enclosed_name() else {
                 continue;
             };
-            copy_runtime_entry(root, runtime, &path, entry.size(), &mut entry)?;
+            copy_runtime_entry(root, runtime, source, &path, entry.size(), &mut entry)?;
         }
         return Ok(());
     }
@@ -757,7 +896,7 @@ fn extract_runtime(root: &Path, runtime: &Runtime, archive: &File) -> Result<(),
             continue;
         }
         let path = entry.path()?.into_owned();
-        copy_runtime_entry(root, runtime, &path, entry.size(), &mut entry)?;
+        copy_runtime_entry(root, runtime, source, &path, entry.size(), &mut entry)?;
     }
     Ok(())
 }
@@ -765,6 +904,7 @@ fn extract_runtime(root: &Path, runtime: &Runtime, archive: &File) -> Result<(),
 fn copy_runtime_entry(
     root: &Path,
     runtime: &Runtime,
+    source: &Source,
     path: &Path,
     size: u64,
     entry: &mut impl Read,
@@ -773,7 +913,7 @@ fn copy_runtime_entry(
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return Ok(());
     };
-    let destination = if path.ends_with(runtime.archive_library) && size < 100_000_000 {
+    let destination = if path.ends_with(source.archive_library) && size < 100_000_000 {
         root.join(runtime.library)
     } else if (name == "LICENSE"
         || name == "ThirdPartyNotices.txt"
@@ -880,7 +1020,7 @@ mod tests {
         fs::write(dir.path().join(RUNTIMES[1].library), b"shared-runtime").unwrap();
         assert_eq!(
             pending(Some(dir.path()), model).runtime,
-            full.runtime - RUNTIMES[1].size
+            full.runtime - RUNTIMES[1].size()
         );
         // A runtime already here: the card says what is left, not "download".
         assert!(!full.resumed());
@@ -1013,7 +1153,13 @@ mod tests {
             tar.into_inner().unwrap().finish().unwrap();
         }
         archive.rewind().unwrap();
-        extract_runtime(dir.path(), &MAC_RUNTIMES[0], &archive).unwrap();
+        extract_runtime(
+            dir.path(),
+            &MAC_RUNTIMES[0],
+            &MAC_RUNTIMES[0].sources[0],
+            &archive,
+        )
+        .unwrap();
         assert_eq!(
             fs::read(dir.path().join("libpdfium.dylib")).unwrap(),
             b"runtime"
@@ -1048,7 +1194,13 @@ mod tests {
             zip.finish().unwrap();
         }
         archive.rewind().unwrap();
-        extract_runtime(dir.path(), &WINDOWS_RUNTIMES[1], &archive).unwrap();
+        extract_runtime(
+            dir.path(),
+            &WINDOWS_RUNTIMES[1],
+            &WINDOWS_RUNTIMES[1].sources[0],
+            &archive,
+        )
+        .unwrap();
         assert_eq!(
             fs::read(dir.path().join("onnxruntime.dll")).unwrap(),
             b"runtime"
@@ -1077,6 +1229,7 @@ mod tests {
             copy_runtime_entry(
                 dir.path(),
                 &WINDOWS_RUNTIMES[0],
+                &WINDOWS_RUNTIMES[0].sources[0],
                 Path::new(path),
                 bytes.len() as u64,
                 &mut bytes,
@@ -1085,6 +1238,297 @@ mod tests {
         }
         assert_eq!(fs::read(dir.path().join("pdfium.dll")).unwrap(), b"runtime");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    fn sha(bytes: &[u8]) -> &'static str {
+        let hex = Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        Box::leak(hex.into_boxed_str())
+    }
+
+    fn tgz(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::fast(),
+        ));
+        for (name, contents) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tar.append_data(&mut header, name, *contents).unwrap();
+        }
+        tar.into_inner().unwrap().finish().unwrap()
+    }
+
+    fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, contents) in entries {
+            zip.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(contents).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    const GITHUB: &str = "https://github.test/onnxruntime-osx-arm64-1.27.0.tgz";
+    const NUGET: &str = "https://nuget.test/microsoft.ml.onnxruntime.1.27.0.nupkg";
+
+    /// A runtime pinned like the real ONNX Runtime entry: a GitHub tarball
+    /// first, then a NuGet package whose library is a separate build.
+    fn two_source_runtime(github: &[u8], nuget: &[u8]) -> Runtime {
+        let sources = vec![
+            Source {
+                url: GITHUB,
+                size: github.len() as u64,
+                archive_sha: sha(github),
+                archive_library: "lib/libonnxruntime.1.27.0.dylib",
+                library_sha: None,
+            },
+            Source {
+                url: NUGET,
+                size: nuget.len() as u64,
+                archive_sha: sha(nuget),
+                archive_library: "runtimes/osx-arm64/native/libonnxruntime.dylib",
+                library_sha: Some(sha(b"nuget build")),
+            },
+        ];
+        Runtime {
+            name: "onnx",
+            library: "libonnxruntime.1.27.0.dylib",
+            library_sha: sha(b"github build"),
+            sources: Vec::leak(sources),
+        }
+    }
+
+    /// Serves `served` by URL like `model_download::fetch`: it writes the
+    /// bytes, then checks them against the pinned size and digest.
+    fn fake_fetch<'a>(
+        served: &'a [(
+            &'a str,
+            Result<Vec<u8>, crate::model_download::DownloadError>,
+        )],
+        calls: &'a std::cell::RefCell<Vec<String>>,
+    ) -> impl Fn(
+        &str,
+        u64,
+        &str,
+        &Path,
+        &crate::model_download::Progress,
+    ) -> Result<(), crate::model_download::DownloadError>
+    + 'a {
+        move |url, size, sha, path, _| {
+            calls.borrow_mut().push(url.into());
+            let (_, response) = served.iter().find(|(u, _)| *u == url).unwrap();
+            fs::write(path, response.clone()?)?;
+            crate::model_download::verify(path, size, sha)
+        }
+    }
+
+    fn github_archive() -> Vec<u8> {
+        tgz(&[
+            (
+                "onnxruntime/lib/libonnxruntime.1.27.0.dylib",
+                b"github build",
+            ),
+            ("onnxruntime/LICENSE", b"license"),
+        ])
+    }
+
+    fn nuget_package() -> Vec<u8> {
+        zip(&[
+            ("runtimes/win-x64/native/onnxruntime.dll", b"windows build"),
+            (
+                "runtimes/osx-arm64/native/libonnxruntime.dylib",
+                b"nuget build",
+            ),
+            (
+                "runtimes/linux-x64/native/libonnxruntime.so",
+                b"linux build",
+            ),
+            ("runtimes/android/native/onnxruntime.aar", b"android build"),
+            ("LICENSE", b"license\r\n"),
+            ("ThirdPartyNotices.txt", b"notices"),
+            ("Microsoft.ML.OnnxRuntime.nuspec", b"<package/>"),
+        ])
+    }
+
+    fn not_found() -> crate::model_download::DownloadError {
+        crate::model_download::DownloadError::Status {
+            host: "github.test".into(),
+            code: 404,
+        }
+    }
+
+    #[test]
+    fn runtime_installs_from_github_without_trying_nuget() {
+        let dir = tempfile::tempdir().unwrap();
+        let (github, nuget) = (github_archive(), nuget_package());
+        let runtime = two_source_runtime(&github, &nuget);
+        let served = [(GITHUB, Ok(github)), (NUGET, Ok(nuget))];
+        let calls = Default::default();
+        install_runtime_with(
+            dir.path(),
+            &runtime,
+            &Default::default(),
+            fake_fetch(&served, &calls),
+        )
+        .unwrap();
+        assert_eq!(calls.take(), [GITHUB]);
+        assert_eq!(
+            fs::read(dir.path().join(runtime.library)).unwrap(),
+            b"github build"
+        );
+        verify_library(dir.path(), &runtime).unwrap();
+    }
+
+    #[test]
+    fn unavailable_github_release_falls_back_to_the_nuget_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let (github, nuget) = (github_archive(), nuget_package());
+        let runtime = two_source_runtime(&github, &nuget);
+        let served = [(GITHUB, Err(not_found())), (NUGET, Ok(nuget.clone()))];
+        let calls = Default::default();
+        let progress = crate::model_download::Progress::default();
+        progress.state.lock().unwrap().planned = 1_000 + github.len() as u64;
+        install_runtime_with(dir.path(), &runtime, &progress, fake_fetch(&served, &calls)).unwrap();
+        assert_eq!(calls.take(), [GITHUB, NUGET]);
+        // Only the platform's library, under the same installed name.
+        assert_eq!(
+            fs::read(dir.path().join(runtime.library)).unwrap(),
+            b"nuget build"
+        );
+        assert_eq!(
+            fs::read(dir.path().join("licenses/onnx/LICENSE")).unwrap(),
+            b"license\r\n"
+        );
+        let mut files = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        files.sort();
+        assert_eq!(files, ["libonnxruntime.1.27.0.dylib", "licenses"]);
+        // Setup's checks accept the NuGet build from now on.
+        verify_library(dir.path(), &runtime).unwrap();
+        // The planned bundle now counts the larger package.
+        assert_eq!(
+            progress.state.lock().unwrap().planned,
+            1_000 + nuget.len() as u64
+        );
+    }
+
+    #[test]
+    fn a_damaged_nuget_package_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (github, nuget) = (github_archive(), nuget_package());
+        let runtime = two_source_runtime(&github, &nuget);
+        let mut damaged = nuget.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        let served = [(GITHUB, Err(not_found())), (NUGET, Ok(damaged))];
+        let calls = Default::default();
+        let error = install_runtime_with(
+            dir.path(),
+            &runtime,
+            &Default::default(),
+            fake_fetch(&served, &calls),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                SetupError::Download(crate::model_download::DownloadError::Integrity)
+            ),
+            "{error}"
+        );
+        assert!(!dir.path().join(runtime.library).exists());
+    }
+
+    #[test]
+    fn a_damaged_github_archive_never_falls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let (github, nuget) = (github_archive(), nuget_package());
+        let runtime = two_source_runtime(&github, &nuget);
+        let mut damaged = github.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        let served = [(GITHUB, Ok(damaged)), (NUGET, Ok(nuget))];
+        let calls = Default::default();
+        let error = install_runtime_with(
+            dir.path(),
+            &runtime,
+            &Default::default(),
+            fake_fetch(&served, &calls),
+        )
+        .unwrap_err();
+        assert!(matches!(error, SetupError::Download(_)), "{error}");
+        assert_eq!(calls.take(), [GITHUB]);
+        assert!(!dir.path().join(runtime.library).exists());
+    }
+
+    #[test]
+    fn a_package_library_is_checked_against_its_own_source_pin() {
+        let dir = tempfile::tempdir().unwrap();
+        let github = github_archive();
+        // A correctly pinned package that holds the GitHub build: the NuGet
+        // source's own library pin refuses it.
+        let nuget = zip(&[(
+            "runtimes/osx-arm64/native/libonnxruntime.dylib",
+            b"github build",
+        )]);
+        let runtime = two_source_runtime(&github, &nuget);
+        let served = [(GITHUB, Err(not_found())), (NUGET, Ok(nuget))];
+        let calls = Default::default();
+        let error = install_runtime_with(
+            dir.path(),
+            &runtime,
+            &Default::default(),
+            fake_fetch(&served, &calls),
+        )
+        .unwrap_err();
+        assert!(matches!(error, SetupError::Integrity(_)), "{error}");
+    }
+
+    #[test]
+    fn only_unreachable_sources_fall_back() {
+        use crate::model_download::DownloadError;
+        let host = || "github.com".to_string();
+        for error in [
+            DownloadError::Unreachable { host: host() },
+            DownloadError::Tls { host: host() },
+            not_found(),
+            DownloadError::Other {
+                host: host(),
+                message: "redirect loop".into(),
+            },
+            DownloadError::SizeMismatch,
+        ] {
+            assert!(source_unavailable(&error), "{error}");
+        }
+        for error in [
+            DownloadError::Integrity,
+            DownloadError::Oversize,
+            DownloadError::Cancelled,
+            DownloadError::NetworkDisabled,
+            DownloadError::InvalidPath,
+        ] {
+            assert!(!source_unavailable(&error), "{error}");
+        }
+    }
+
+    #[test]
+    fn every_runtime_source_is_pinned() {
+        for runtime in MAC_RUNTIMES.iter().chain(WINDOWS_RUNTIMES) {
+            assert!(!runtime.sources.is_empty(), "{}", runtime.name);
+            for source in runtime.sources {
+                assert!(source.url.starts_with("https://"), "{}", source.url);
+                assert!(source.size > 0, "{}", source.url);
+                for pin in [source.archive_sha, source.library_sha(runtime)] {
+                    assert_eq!(pin.len(), 64, "{}", source.url);
+                    assert!(pin.bytes().all(|b| b.is_ascii_hexdigit()), "{}", source.url);
+                }
+            }
+        }
     }
 
     /// Explicit qualification only: downloads pinned artifacts to throwaway storage.

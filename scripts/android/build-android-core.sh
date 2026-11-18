@@ -28,7 +28,11 @@ esac
 api=31
 ort_url=https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.27.0/onnxruntime-android-1.27.0.aar
 ort_sha=077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb
-ort_license_url=https://raw.githubusercontent.com/microsoft/onnxruntime/v1.27.0/LICENSE
+# The AAR has no LICENSE, and GitHub's copy is gone since 2026-11-17 (#925):
+# NuGet's 1 MB managed package of the same release holds it, with CRLF line
+# endings. The pin below is that LICENSE.txt with LF, as GitHub served it.
+ort_license_pkg_url=https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.managed/1.27.0/microsoft.ml.onnxruntime.managed.1.27.0.nupkg
+ort_license_pkg_sha=970be27b444dae817ed5eecd6304aa2bc2e898088fbd050a5d63cbca90ef778a
 ort_license_sha=2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c
 pdfium_base=https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7988
 # <rust target> <android abi> <pdfium archive> <pdfium sha256>
@@ -58,7 +62,10 @@ rm -rf "$out/jniLibs" "$out/kotlin" "$out/licenses" "$out/host"
 mkdir -p "$deps" "$out/kotlin" "$out/licenses/pdfium" "$out/host"
 
 fetch_sha256 "$ort_url" "$ort_sha" "$deps/onnxruntime-android.aar"
-fetch_sha256 "$ort_license_url" "$ort_license_sha" "$out/licenses/onnxruntime-LICENSE"
+fetch_sha256 "$ort_license_pkg_url" "$ort_license_pkg_sha" "$deps/onnxruntime-managed.nupkg"
+unzip -p "$deps/onnxruntime-managed.nupkg" LICENSE.txt | tr -d '\r' >"$out/licenses/onnxruntime-LICENSE"
+[ "$(sha 256 "$out/licenses/onnxruntime-LICENSE")" = "$ort_license_sha" ] ||
+  die "the ONNX Runtime LICENSE failed its checksum"
 rm -rf "$deps/onnxruntime" && mkdir "$deps/onnxruntime"
 unzip -q "$deps/onnxruntime-android.aar" 'jni/*/libonnxruntime.so' -d "$deps/onnxruntime"
 
