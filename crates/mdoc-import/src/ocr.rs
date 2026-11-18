@@ -214,7 +214,6 @@ impl Source {
 /// GitHub's release cannot be downloaded (it returned 404 from 2026-11-17,
 /// #925). One package holds every platform's library: 135 MB, against the
 /// GitHub archives' 32 MB (macOS) and 77 MB (Windows).
-#[cfg(any(test, all(target_os = "windows", target_arch = "x86_64")))]
 const fn onnx_runtime_nuget(
     archive_library: &'static str,
     library_sha: Option<&'static str>,
@@ -246,13 +245,23 @@ const MAC_RUNTIMES: &[Runtime] = &[
         name: "onnx",
         library: "libonnxruntime.1.27.0.dylib",
         library_sha: "299e5a2c6ea00531ecd6bf3217e23798c1fcba1698bb386d313c8e16d7317d60",
-        sources: &[Source {
-            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-osx-arm64-1.27.0.tgz",
-            size: 32_485_368,
-            archive_sha: "545e81c58152353acb0d1e8bd6ce4b62f830c0961f5b3acfedc790ffd76e477a",
-            archive_library: "lib/libonnxruntime.1.27.0.dylib",
-            library_sha: None,
-        }],
+        sources: &[
+            Source {
+                url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-osx-arm64-1.27.0.tgz",
+                size: 32_485_368,
+                archive_sha: "545e81c58152353acb0d1e8bd6ce4b62f830c0961f5b3acfedc790ffd76e477a",
+                archive_library: "lib/libonnxruntime.1.27.0.dylib",
+                library_sha: None,
+            },
+            // A separate link of the same 1.27.0, so its own library pin
+            // (approved by the maintainer, #925): the same size and sections,
+            // signed with Microsoft's Developer ID (team UBF8T346G9) like
+            // GitHub's, but with a different LC_UUID and signing identifier.
+            onnx_runtime_nuget(
+                "runtimes/osx-arm64/native/libonnxruntime.dylib",
+                Some("e96565bc1139fd136327c449b11d210da79acbe2aed53d959224815b4e448fac"),
+            ),
+        ],
     },
 ];
 
