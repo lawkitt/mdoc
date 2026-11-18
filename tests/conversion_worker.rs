@@ -78,6 +78,12 @@ fn the_worker_converts_as_the_app_did_in_process() {
         .map_err(|e| e.to_string());
         converted += usize::from(in_process.is_ok());
         assert_eq!(in_worker, in_process, "{}", path.display());
+        // Everything the left-out line reads arrives: the comments and the
+        // hidden passages of the comments fixture, for one.
+        if path.ends_with("comments.docx") {
+            let in_worker = in_worker.unwrap();
+            assert_eq!((in_worker.comments, in_worker.hidden_text_left_out), (6, 1));
+        }
     }
     assert!(converted >= 12, "{converted}");
 }
