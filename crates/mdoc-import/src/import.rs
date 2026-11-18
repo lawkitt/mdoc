@@ -102,13 +102,22 @@ pub struct LeftOut {
 
 impl LeftOut {
     /// What a PDF's pages hold that its Markdown leaves out, from its native
-    /// pass, which OCR doesn't change.
-    pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult) -> Self {
+    /// pass, which OCR doesn't change. Pictures on the `skipped` pages (left
+    /// for OCR that didn't run) don't count: the partial-import notice
+    /// already reports those pages whole (#949). Once OCR reads a page, its
+    /// pictures count again, as OCR keeps their text, not the pictures.
+    pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult, skipped: &[u32]) -> Self {
         fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
             pages.iter().map(|page| u64::from(count(page))).sum()
         }
         Self {
-            pictures: sum(&native.images_by_page, |page| page.images),
+            pictures: sum(&native.images_by_page, |page| {
+                if skipped.contains(&page.page) {
+                    0
+                } else {
+                    page.images
+                }
+            }),
             hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches),
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
             comments: Default::default(),
@@ -394,7 +403,8 @@ fn convert_pdf(
     let bytes = read_pdf(&source)?;
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
-    let left_out = LeftOut::of_pdf(&native);
+    let read_all = LeftOut::of_pdf(&native, &[]);
+    let skipped_some = LeftOut::of_pdf(&native, &native.pages_recommended_for_ocr);
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(
@@ -436,6 +446,7 @@ fn convert_pdf(
         );
     }
     let warning = pdf_warning(&result.markdown, warning_pages, result.page_count, used_ocr)?;
+    let left_out = if used_ocr { read_all } else { skipped_some };
     Ok(Imported {
         ocr_configuration: if used_ocr {
             installed.map(|i| i.config.clone())
@@ -645,9 +656,9 @@ mod tests {
             assert_eq!(imported.is_docx, name.ends_with("docx"));
             let expected_note = match name {
                 "text.docx" | "text.pdf" => Some("1 picture not imported."),
-                "handmade-partly-scanned.pdf" => Some(
-                    "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported.",
-                ),
+                "handmade-partly-scanned.pdf" => {
+                    Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
+                }
                 "handmade-hidden.docx" => Some("7 hidden passages not imported."),
                 "handmade-hidden.rtf" => Some("6 hidden passages not imported."),
                 "handmade-hidden.doc" => Some("3 hidden passages not imported."),
@@ -807,6 +818,82 @@ mod tests {
         pdf
     }
 
+    /// Two pages: text with one picture, then a page that is only a picture
+    /// (a scan). Without OCR the scan page is skipped and its picture is in
+    /// the notice, not counted again; the other page's picture still is
+    /// (#949).
+    #[test]
+    fn pictures_on_skipped_pages_are_not_counted_twice() {
+        fn image(width: usize, height: usize) -> Vec<u8> {
+            let data: Vec<u8> = (0..width * height * 3)
+                .map(|i| (i * 7 % 251) as u8)
+                .collect();
+            let mut object = format!(
+                "<< /Type /XObject /Subtype /Image /Width {width} /Height {height} \
+                 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length {} >>\nstream\n",
+                data.len()
+            )
+            .into_bytes();
+            object.extend(data);
+            object.extend(b"\nendstream");
+            object
+        }
+        fn stream(content: &str) -> Vec<u8> {
+            format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            )
+            .into_bytes()
+        }
+        let text = "BT /F1 12 Tf 72 700 Td (The supplier delivers the goods within ten days.) Tj ET\n\
+             BT /F1 12 Tf 72 680 Td (The buyer pays within thirty days of delivery.) Tj ET\n\
+             q 120 0 0 90 72 500 cm /Im1 Do Q";
+        let objects: Vec<Vec<u8>> = vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> \
+              /XObject << /Im1 6 0 R >> >> /Contents 8 0 R >>"
+                .to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im2 7 0 R >> >> \
+              /Contents 9 0 R >>"
+                .to_vec(),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+            image(64, 48),
+            image(200, 260),
+            stream(text),
+            stream("q 612 0 0 792 0 0 cm /Im2 Do Q"),
+        ];
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend(format!("{} 0 obj\n", index + 1).as_bytes());
+            pdf.extend(object);
+            pdf.extend(b"\nendobj\n");
+        }
+        let xref = pdf.len();
+        pdf.extend(format!("xref\n0 {}\n0000000000 65535 f \n", offsets.len() + 1).as_bytes());
+        for offset in offsets {
+            pdf.extend(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scan-and-picture.pdf");
+        std::fs::write(&path, pdf).unwrap();
+        let imported = convert(&path).unwrap();
+        assert_eq!(
+            imported.warning.as_deref(),
+            Some("Partial import: pages 2 of 2 require OCR and were skipped.")
+        );
+        assert_eq!(imported.left_out.pictures, 1, "{:?}", imported.note());
+    }
+
     /// Invisible PDF text and form field names never reach the Markdown;
     /// the note counts them after the pictures (#925 decision 9). The
     /// fields' values stay.
@@ -900,9 +987,7 @@ mod tests {
         assert_eq!(note("../ocr-upstream/en-doclaynet-law-4.native.pdf"), None);
         assert_eq!(
             note("handmade-partly-scanned.pdf").as_deref(),
-            Some(
-                "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported."
-            )
+            Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
         );
         // A picture the package holds but the document never shows is not
         // left out of anything.
@@ -923,10 +1008,9 @@ mod tests {
             partly.warning.as_deref(),
             Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
         );
-        assert_eq!(
-            partly.left_out.line(true).as_deref(),
-            Some("2 pictures not imported.")
-        );
+        // Its two pictures are on the skipped pages, which the notice
+        // reports whole (#949).
+        assert_eq!(partly.left_out.line(true), None);
         let comments = convert(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../tests/fixtures/docx-preview/comments.docx"),
@@ -1039,17 +1123,13 @@ mod tests {
         let imported = convert(&fixture("handmade-partly-scanned.pdf")).unwrap();
         assert_eq!(
             imported.note().as_deref(),
-            Some(
-                "Partial import: pages 2, 5 of 5 require OCR and were skipped. 2 pictures not imported."
-            )
+            Some("Partial import: pages 2, 5 of 5 require OCR and were skipped.")
         );
         assert!(!imported.markdown.contains("OCR"));
         let mixed = convert(&fixture("handmade-mixed.pdf")).unwrap();
         assert_eq!(
             mixed.note().as_deref(),
-            Some(
-                "Partial import: pages 2 of 2 require OCR and were skipped. 1 picture not imported."
-            )
+            Some("Partial import: pages 2 of 2 require OCR and were skipped.")
         );
     }
 

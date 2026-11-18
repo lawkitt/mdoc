@@ -216,7 +216,7 @@ pub fn prepare_resumable(
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
-    let (page_count, left_out) = (native.page_count, LeftOut::of_pdf(&native));
+    let (page_count, left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
     drop(native);
     check_cancel(cancel)?;
     let digest = digest(&bytes);
