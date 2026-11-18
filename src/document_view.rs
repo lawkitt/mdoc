@@ -1022,6 +1022,12 @@ impl DocumentView {
         self.carry_out_import(effect, window, cx);
     }
 
+    /// The last conversion ended because Cancel was pressed (#950): a state
+    /// the user chose, so the tab shows no error mark for it.
+    pub(crate) fn conversion_cancelled(&self) -> bool {
+        self.error.as_deref() == Some(&*mdoc_import::import::ImportError::Cancelled.to_string())
+    }
+
     /// The Markdown pane before conversion: one card that changes in place
     /// through conversion, OCR consent, setup and recognition (ADR 0026).
     fn conversion_card(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -1052,7 +1058,11 @@ impl DocumentView {
                     .child(self.display_name()),
             );
         let Some(pages) = self.import.ocr_required().map(<[u32]>::to_vec) else {
-            let (title, busy) = if self.import.busy() {
+            let cancelled = self.conversion_cancelled();
+            let running = self.import.busy();
+            let (title, busy) = if self.import.stopping() {
+                ("Cancelling…", true)
+            } else if running {
                 (
                     if self.import.recognizing() {
                         "Recognizing text…"
@@ -1063,6 +1073,9 @@ impl DocumentView {
                 )
             } else if self.import.auto_pending() {
                 ("Waiting to convert…", true)
+            } else if cancelled {
+                // "Try again" in the toolbar converts it afresh.
+                ("Conversion cancelled", false)
             } else if self.error.is_some() {
                 ("Conversion could not be completed", false)
             } else {
@@ -1076,8 +1089,25 @@ impl DocumentView {
                 } else {
                     ui::card_title(title).into_any_element()
                 })
-                .when_some(self.error.clone().filter(|_| !busy), |v, error| {
-                    v.child(ui::card_text(error, theme))
+                .when_some(
+                    self.error.clone().filter(|_| !busy && !cancelled),
+                    |v, error| v.child(ui::card_text(error, theme)),
+                )
+                // A running conversion can be stopped without closing the
+                // tab (#950); the supervised worker ends at once.
+                .when(running && !self.import.stopping(), |v| {
+                    v.child(
+                        div().flex().child(
+                            ui::control("cancel-conversion", "Cancel", theme, true)
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "cancel-conversion".into())
+                                })
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.import.stop();
+                                    cx.notify();
+                                })),
+                        ),
+                    )
                 })
                 .into_any_element();
         };

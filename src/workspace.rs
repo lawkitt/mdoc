@@ -2403,7 +2403,9 @@ impl Workspace {
                 });
                 let busy = running || view.is_some_and(|v| v.preview.queued());
                 let error = view.is_some_and(|v| {
-                    v.error.is_some() || v.preview.failed() || v.import.ocr_required().is_some()
+                    (v.error.is_some() && !v.conversion_cancelled())
+                        || v.preview.failed()
+                        || v.import.ocr_required().is_some()
                 });
                 let pseudonymized = view.is_some_and(|v| v.pseudonymized());
                 let recognized = view.is_some_and(|v| v.recognized());
