@@ -103,6 +103,14 @@ pub fn keep_out_of_windows_error_reporting() {
     }
 }
 
+/// This process's error mode, for the test that keeps the call above in place.
+#[cfg(all(windows, debug_assertions))]
+#[allow(unsafe_code)] // GetErrorMode (#897).
+pub fn error_mode() -> u32 {
+    // SAFETY: no pointers; it only reads this process's error-mode flags.
+    unsafe { windows_sys::Win32::System::Diagnostics::Debug::GetErrorMode() }
+}
+
 /// Lines that place a crash: the first frame in mdoc's own code, whether the
 /// program changed since launch, and what the window showed.
 fn context(backtrace: &str, rebuilt: bool, state: String) -> String {

@@ -59,6 +59,12 @@ fn main() {
     crash::keep_out_of_windows_error_reporting();
     set_inference_device();
     let args = std::env::args_os().collect::<Vec<_>>();
+    // Debug builds: the error mode set above, for tests/windows_error_reporting.rs.
+    #[cfg(all(windows, debug_assertions))]
+    if args.get(1).is_some_and(|arg| arg == "--mdoc-error-mode") {
+        println!("{:#x}", crash::error_mode());
+        return;
+    }
     if args.get(1).is_some_and(|arg| arg == "--headless-renders") {
         #[cfg(all(
             debug_assertions,
