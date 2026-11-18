@@ -58,14 +58,14 @@ python3 tests/fixtures/docx-fidelity/generate.py
 SHA-256 of the committed archives:
 
 ```text
-80bdbdfb8f401a46a71eda3bf2cdb03a9bda111e5502a6ca3f4a6d6bfcae6a50  en-letter-footnotes.docx
-624bbdba411cf92ec85150be0c7f952e946a41a878a7b70f08d203fc184f1c9c  en-memo-hidden-text.docx
-071ae7349af83e31f23b973cd9e308264431e645040320253fbea3961027ae97  en-nda-comments.docx
-4f77c03256348c4455e77cfe3718b805246bfe86b732dbfff62d78c9b9520a6a  en-services-agreement.docx
-39dd3b2e25756add2749df4babce0cc677e98dedff3bef0fb1cd2ebc40fa1e3a  ru-claim-comments.docx
-b8f3a41790ddcf1997e0adae9012334eb11349dfc42c70997fd57858479be615  ru-power-of-attorney.docx
-6ba4796c93a5f062ed6ce17df86db5a9a45baae0b1b9758686c45e5ca094e9b5  ru-supply-contract.docx
-fbec4b8ce07cdad0b5f41c8c81053f3e704a9b27342c939960cc6c3109eed993  ru-tariff-tables.docx
+cf14cb244c1742fdfd8a98ee8d0055f1e427322b4a725cdd5fee10ebdaf0dbff  en-letter-footnotes.docx
+6eafc047443c01d68541eed2ca6f13462e57f8dbafd3d6b5049c93b341d8b7cb  en-memo-hidden-text.docx
+3b1d55a4532c32dab6d371089bbcb39562700c826ce8bfa797fab333ee93701a  en-nda-comments.docx
+dc7172f5dfc9be78b6702d0df8d2bcbc5e0ccd0e089a1f900ba75abc3065826b  en-services-agreement.docx
+ca5d11bf440565461df000802562ed8a12254782047d727c68e817721cea1343  ru-claim-comments.docx
+7cd09209489b622dd10e5fb04ea3c6bbf60817b7b1b2dec34c175ca9eba500f9  ru-power-of-attorney.docx
+ef179aaae0c8f38d6121613e65b4f17613e4004089d162234c9d373c48211557  ru-supply-contract.docx
+5393991d977ee0bc6c7e3fc7c4dbf22e9f056916b3d82a47a629206e19d41ad8  ru-tariff-tables.docx
 ```
 
 These are this repository's archives; another Python's zlib may compress the
