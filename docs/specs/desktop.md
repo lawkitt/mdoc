@@ -22,6 +22,8 @@ the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
   needs OCR waits for the inline choice even when the runtime is ready.
 - One Markdown conversion runs at a time across the app; DOCX preview workers
   are serialized separately.
+- Non-PDF documents convert in a supervised worker; a crash, timeout or
+  cancel kills only it and shows an import error.
 - A conversion's result stays in its tab and never steals focus; closing the
   tab rejects it, and stale callbacks are rejected by tab identity and
   generation.

@@ -141,6 +141,13 @@ pub fn odt_comments(path: &Path) -> Comments {
         .map_or_else(Comments::default, odf_package_comments)
 }
 
+/// [`docx_comments`] and [`odt_comments`] together, for a document in
+/// memory.
+pub fn comments_in(bytes: &[u8]) -> Comments {
+    package_comments(std::io::Cursor::new(bytes))
+        .and(odf_package_comments(std::io::Cursor::new(bytes)))
+}
+
 /// ODF text, text template and master document.
 const ODT_MIMETYPE: &str = "application/vnd.oasis.opendocument.text";
 

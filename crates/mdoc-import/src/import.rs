@@ -187,6 +187,17 @@ pub enum ImportError {
     /// Any other conversion failure, in AnyDoc's words.
     #[error("Could not import document: {0}")]
     Convert(String),
+    /// The converter crashed, panicked or sent no usable result; the detail
+    /// is for diagnosis, not the message.
+    #[error(
+        "The converter stopped unexpectedly on this document. It may be damaged or too complex to convert; mdoc kept running and nothing was imported."
+    )]
+    ConverterFailed(String),
+    #[error(
+        "Converting this document took longer than {} minutes and was stopped. It may be too large or complex to convert.",
+        CONVERSION_TIMEOUT.as_secs() / 60
+    )]
+    ConverterTimeout,
     #[error("No usable native text was extracted. Run OCR or use a clearer source.")]
     NoNativeText,
     /// The OCR runtime or models failed; the shared OCR state needs repair.
@@ -247,18 +258,15 @@ pub fn prepare_cancellable(
     if header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
         return convert_pdf(source, installed, skip_ocr, cancel);
     }
-    let converted =
-        anydoc::to_markdown_with(&source, anydoc::Options::default()).map_err(convert_error)?;
+    let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
     let is_docx = source
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
-    // Comments never reach the Markdown (AnyDoc reads no Word comments part
-    // and skips ODT annotations); the left-out line says how many.
-    // AnyDoc picks the parser by content, so both counters look at the
-    // package whatever its extension; each counts nothing in the other's.
-    let comments = crate::hidden_content::docx_comments(&source)
-        .and(crate::hidden_content::odt_comments(&source));
+    let comments = crate::hidden_content::Comments {
+        count: converted.comments,
+        at_least: converted.comments_at_least,
+    };
     // Nor do Word's pictures: embedded ones render as their alt text at
     // most (ROADMAP Vision item 1).
     let format = anydoc::Format::from_path(&source);
@@ -283,6 +291,88 @@ pub fn prepare_cancellable(
         },
         is_pdf: false,
         is_docx,
+    })
+}
+
+/// What converting a document other than a PDF gives the import: AnyDoc's
+/// Markdown and the counts the import note reads. The supervised worker
+/// sends it back as is (`conversion_worker`), so it holds data only.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Converted {
+    pub markdown: String,
+    pub images_left_out: u32,
+    pub hidden_text_left_out: u32,
+    /// Comments left out, Word's and OpenDocument's together.
+    pub comments: usize,
+    /// The comment scan stopped at its limit, so there may be more.
+    pub comments_at_least: bool,
+}
+
+/// How long a non-PDF conversion may run in the supervised worker before
+/// it is stopped. AnyDoc's own resource limits end most runaway documents
+/// long before this.
+pub const CONVERSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Converts `source`, which is not a PDF: in the supervised worker when the
+/// app installed one (desktop, `conversion_worker::supervise`), otherwise in
+/// this process with a converter panic contained (the phones, whose
+/// profile unwinds, and tests).
+fn convert_document(source: &Path, cancel: &AtomicBool) -> Result<Converted, ImportError> {
+    let bytes = std::fs::read(source).map_err(ImportError::Read)?;
+    let extension = source.extension().and_then(|extension| extension.to_str());
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Some(executable) = crate::conversion_worker::installed() {
+        return crate::conversion_worker::convert_with_executable(
+            bytes,
+            extension,
+            cancel,
+            executable,
+            CONVERSION_TIMEOUT,
+        );
+    }
+    check_cancel(cancel)?;
+    contained(|| convert_bytes(&bytes, extension))
+}
+
+/// Converts a document other than a PDF from its bytes, as the worker and
+/// the in-process path both do. The format comes from the content, then the
+/// file's `extension`, as `anydoc::to_markdown_with` picks it.
+pub fn convert_bytes(bytes: &[u8], extension: Option<&str>) -> Result<Converted, ImportError> {
+    let format = anydoc::Format::from_bytes(bytes)
+        .or_else(|| extension.and_then(anydoc::Format::from_extension))
+        .ok_or(ImportError::Unsupported)?;
+    let converted = anydoc::to_markdown_bytes_with(bytes, format, anydoc::Options::default())
+        .map_err(convert_error)?;
+    // Comments never reach the Markdown (AnyDoc reads no Word comments part
+    // and skips ODT annotations); the left-out line says how many.
+    // AnyDoc picks the parser by content, so both counters look at the
+    // package whatever its extension; each counts nothing in the other's.
+    let comments = crate::hidden_content::comments_in(bytes);
+    Ok(Converted {
+        markdown: converted.markdown,
+        images_left_out: converted.images_left_out,
+        hidden_text_left_out: converted.hidden_text_left_out,
+        comments: comments.count,
+        comments_at_least: comments.at_least,
+    })
+}
+
+/// `convert`'s result, or an import error if it panics. The phones' profile
+/// unwinds (`profile.mobile`), so this keeps a converter panic from reaching
+/// UniFFI as an internal error; the desktop release profile aborts, which is
+/// why the desktop app converts in the supervised worker instead.
+pub(crate) fn contained<T>(
+    convert: impl FnOnce() -> Result<T, ImportError> + std::panic::UnwindSafe,
+) -> Result<T, ImportError> {
+    std::panic::catch_unwind(convert).unwrap_or_else(|panic| {
+        let detail = panic
+            .downcast_ref::<&str>()
+            .map(|text| (*text).to_owned())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "a panic".into());
+        Err(ImportError::ConverterFailed(format!(
+            "the converter panicked: {detail}"
+        )))
     })
 }
 
@@ -565,6 +655,68 @@ mod tests {
             };
             assert_eq!(imported.note().as_deref(), expected_note, "{name}");
         }
+    }
+
+    /// Every non-PDF import fixture: converting from bytes, as the worker
+    /// and the phones do, gives what the file path gave AnyDoc and the
+    /// comment counters before the worker, errors included.
+    #[test]
+    fn converting_bytes_matches_converting_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let csv = dir.path().join("values.CSV");
+        std::fs::write(&csv, "Name,Count\nApples,2\n").unwrap();
+        let unknown = dir.path().join("unknown.bin");
+        std::fs::write(&unknown, b"unknown format").unwrap();
+        let mut paths = vec![csv, unknown];
+        for entry in std::fs::read_dir(fixture("")).unwrap() {
+            let path = entry.unwrap().path();
+            let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !["md", "pdf", "py", "anydoc"].contains(&extension) {
+                paths.push(path);
+            }
+        }
+        assert!(paths.len() >= 15, "{paths:?}");
+        for path in paths {
+            let by_path = anydoc::to_markdown_with(&path, anydoc::Options::default())
+                .map_err(|error| convert_error(error).to_string())
+                .map(|converted| {
+                    let comments = crate::hidden_content::docx_comments(&path)
+                        .and(crate::hidden_content::odt_comments(&path));
+                    Converted {
+                        markdown: converted.markdown,
+                        images_left_out: converted.images_left_out,
+                        hidden_text_left_out: converted.hidden_text_left_out,
+                        comments: comments.count,
+                        comments_at_least: comments.at_least,
+                    }
+                });
+            let extension = path.extension().and_then(|e| e.to_str());
+            let by_bytes = convert_bytes(&std::fs::read(&path).unwrap(), extension)
+                .map_err(|error| error.to_string());
+            assert_eq!(by_bytes, by_path, "{}", path.display());
+        }
+    }
+
+    /// A converter panic is an import error where the profile unwinds (the
+    /// phones and tests), never a crash.
+    #[test]
+    fn a_converter_panic_is_an_import_error() {
+        let result = contained::<()>(|| panic!("parser bug"));
+        assert!(
+            matches!(&result, Err(ImportError::ConverterFailed(detail)) if detail.contains("parser bug")),
+            "{result:?}"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .starts_with("The converter stopped unexpectedly")
+        );
+        assert_eq!(contained(|| Ok(7)).unwrap(), 7);
+        assert!(matches!(
+            contained::<()>(|| Err(ImportError::Damaged)),
+            Err(ImportError::Damaged)
+        ));
     }
 
     /// AnyDoc is built without its PDF converter: every PDF goes to
