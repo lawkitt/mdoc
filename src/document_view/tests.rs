@@ -157,7 +157,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
         let generation = app.session.generation;
         app.proceed(
-            Next::Import(converted(dir.path().join("replacement.docx"))),
+            Next::Import(Box::new(converted(dir.path().join("replacement.docx")))),
             window,
             cx,
         );
@@ -843,7 +843,7 @@ fn accepted_pdf_import_opens_source_pane(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| {
         let mut imported = converted(source);
         imported.is_pdf = true;
-        app.proceed(Next::Import(imported), window, cx);
+        app.proceed(Next::Import(Box::new(imported)), window, cx);
         assert!(app.preview.loading());
         assert!(app.dirty(cx));
     });
@@ -864,7 +864,7 @@ fn accepted_docx_import_opens_source_pane(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| {
         let mut imported = converted(source);
         imported.is_docx = true;
-        app.proceed(Next::Import(imported), window, cx);
+        app.proceed(Next::Import(Box::new(imported)), window, cx);
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
@@ -971,7 +971,7 @@ fn accepted_import_failure_clears_old_preview_and_pdf_retry_works(cx: &mut TestA
     app.update_in(cx, |app, window, cx| {
         let mut imported = converted(source.clone());
         imported.is_pdf = true;
-        app.proceed(Next::Import(imported), window, cx);
+        app.proceed(Next::Import(Box::new(imported)), window, cx);
         assert!(app.preview.pdf().is_none());
         assert!(app.dirty(cx));
     });
