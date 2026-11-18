@@ -261,7 +261,10 @@ pub fn prepare_resumable(
     let (markdown, review) = assemble(&pages);
     let warning = pdf_warning(&markdown, review, page_count, true)?;
     let [pictures, hidden, field_names] = left_out.notes();
-    let repeated = pages.iter().map(|page| u64::from(page.repeated_lines)).sum();
+    let repeated = pages
+        .iter()
+        .map(|page| u64::from(page.repeated_lines))
+        .sum();
     let warning = join_notes([
         warning,
         pictures,

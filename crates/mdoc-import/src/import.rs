@@ -678,8 +678,16 @@ mod tests {
             "{}",
             imported.markdown
         );
-        assert!(!imported.markdown.contains("SECRET"), "{}", imported.markdown);
-        assert!(imported.markdown.contains("Clause 4.11"), "{}", imported.markdown);
+        assert!(
+            !imported.markdown.contains("SECRET"),
+            "{}",
+            imported.markdown
+        );
+        assert!(
+            imported.markdown.contains("Clause 4.11"),
+            "{}",
+            imported.markdown
+        );
         assert_eq!(
             imported.warning.as_deref(),
             Some("1 hidden passage not imported. 3 repeated header and footer lines removed.")
