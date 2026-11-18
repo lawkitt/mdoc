@@ -17,6 +17,7 @@ fn render(options: RenderOptions) -> Result<(PathBuf, docx_preview::DocxPreview)
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::preview::read_comment_marks,
         options,
+        None,
     )
     .map_err(|e| e.to_string())?;
     Ok((source, preview))

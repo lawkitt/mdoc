@@ -105,7 +105,7 @@ fn read_marks(pdf: &Path) -> Result<Vec<LinkMark>, String> {
 /// left-out line, so nothing is lost without a note.
 #[uniffi::export]
 pub fn docx_comments_not_shown(source: String) -> Option<String> {
-    mdoc_import::hidden_content::docx_comments(Path::new(&source)).not_shown()
+    mdoc_import::import::source_comments_not_shown(Path::new(&source))
 }
 
 #[uniffi::export]
@@ -153,7 +153,7 @@ impl DocxOriginal {
                 author: c.author.clone(),
                 date: c.date.clone(),
                 text: c.text.clone(),
-                quote: c.quote.clone(),
+                quote: c.anchor_text.clone(),
                 parent: c.parent.clone(),
                 resolved: c.resolved,
             })

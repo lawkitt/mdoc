@@ -126,8 +126,11 @@ pub(super) fn import_file(
             warning: imported.note(),
             notice: imported.warning.clone(),
             // A Word file's comments show on its rendered original, which
-            // iOS has (`crate::original`) and Android not yet.
-            left_out: imported.left_out.line(cfg!(not(target_os = "android"))),
+            // iOS has (`crate::original`) and Android not yet; every other
+            // format's comments (a PDF's annotations included) count here.
+            left_out: imported
+                .left_out
+                .line(cfg!(not(target_os = "android")) && imported.is_docx),
         },
         markdown: imported.markdown,
         kept: completed,
@@ -382,6 +385,35 @@ mod tests {
                 left_out: None,
             }
         );
+    }
+
+    /// Phones get the desktop's counts of the comments the forks report:
+    /// read ones (RTF, a PDF's annotations) and counted ones (PPTX), all
+    /// not shown, and none in the Markdown.
+    #[test]
+    fn the_left_out_line_counts_every_formats_comments() {
+        let fixtures =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/import");
+        for (name, count) in [
+            ("handmade-comments.rtf", 7),
+            ("text_annotations.pdf", 8),
+            ("handmade-comments.pptx", 4),
+        ] {
+            let imported = import_file(
+                &fixtures.join(name),
+                &ImportOptions::default(),
+                &AtomicBool::new(false),
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                imported.note.left_out,
+                Some(format!("{count} comments not shown.")),
+                "{name}"
+            );
+            assert!(!imported.markdown.contains("Alice"), "{name}");
+        }
     }
 
     #[test]

@@ -62,6 +62,8 @@ fn run(dir: &Path, update: bool) -> Result<bool, String> {
             Arc::new(AtomicBool::new(false)),
             |_| Ok(Vec::new()),
             Default::default(),
+            // The pages alone: no cards to read.
+            Some(Default::default()),
         )
         .map_err(|e| format!("{name}: {e}"))?;
         let ours = pages(&preview.pdf_path)?;

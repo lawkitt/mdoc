@@ -1,9 +1,12 @@
-//! Comment extraction runs in the conversion worker, before the renderer sees
+//! The render copy, made in the conversion worker before the renderer sees
 //! a temporary copy. The copy keeps the renderer's own comment pane off (it
 //! bakes comments into the page and shrinks the body) and marks where each
 //! comment sits: every commented run of the body is wrapped in a link to
 //! `mdoc-comment:<k>`, and those links' `/Link` rectangles in the rendered PDF
 //! become the comments' anchors (`anchors`). They are never clickable links.
+//! The worker reads no comment's content: it knows comments only by the ids
+//! their ranges carry, and the cards come from AnyDoc's reading of the same
+//! document (`crate::import::source_comments`), matched by id.
 //!
 //! The same copy carries Word's hidden text (`w:vanish`): it is counted
 //! always, and drawn in place with a dotted underline and muted ink only
@@ -11,7 +14,7 @@
 use super::{PreviewError, replace_parts, word, xml_text};
 use roxmltree::Node;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Cursor, Read},
 };
 use zip::ZipArchive;
@@ -24,27 +27,12 @@ pub const COMMENT_SCHEME: &str = "mdoc-comment:";
 const BODY: &str = "word/document.xml";
 const BODY_RELS: &str = "word/_rels/document.xml.rels";
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct DocxComment {
-    pub id: String,
-    pub author: String,
-    pub date: String,
-    pub text: String,
-    pub quote: String,
-    /// The `id` of the comment this one replies to, if any.
-    #[serde(default)]
-    pub parent: Option<String>,
-    /// The thread was marked done in Word.
-    #[serde(default)]
-    pub resolved: bool,
-}
-
 /// Where a comment sits on one page of the rendered preview. A comment whose
 /// range crosses a page break has one anchor per page; a comment with none (a
 /// footnote, a header, no range or reference) has no place on the page.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct CommentAnchor {
-    /// The comment's `DocxComment::id`.
+    /// The comment's id (DOCX `w:id`), as AnyDoc reports it too.
     pub id: String,
     /// 0-based page index.
     pub page: usize,
@@ -77,7 +65,7 @@ pub struct LinkMark {
 }
 
 /// What marker `k` stands for: the comments open over its runs (indexes into
-/// the comment list), and whether it marks a point comment.
+/// the ids the markup named), and whether it marks a point comment.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub(super) struct Marker {
     comments: Vec<usize>,
@@ -87,11 +75,35 @@ pub(super) struct Marker {
 pub(super) struct Prepared {
     /// The render copy, or `None` when it would equal the document.
     pub render: Option<Vec<u8>>,
-    pub comments: Vec<DocxComment>,
+    /// The comment ids the document's comment markup names, in the order
+    /// first met.
+    pub ids: Vec<String>,
     pub markers: Vec<Marker>,
     /// Passages of hidden text: runs of `w:vanish` text, adjacent ones in a
     /// paragraph counted once.
     pub hidden: usize,
+}
+
+/// The comment ids met in the markup, each with its index.
+#[derive(Default)]
+struct Ids {
+    list: Vec<String>,
+    index: HashMap<String, usize>,
+}
+
+impl Ids {
+    /// The index of comment `id`, or `None` for markup without an id.
+    fn of(&mut self, id: &str) -> Option<usize> {
+        if id.is_empty() {
+            return None;
+        }
+        if let Some(&i) = self.index.get(id) {
+            return Some(i);
+        }
+        self.list.push(id.to_owned());
+        self.index.insert(id.to_owned(), self.list.len() - 1);
+        Some(self.list.len() - 1)
+    }
 }
 
 fn attr<'a>(node: Node<'a, '_>, name: &str) -> &'a str {
@@ -99,38 +111,10 @@ fn attr<'a>(node: Node<'a, '_>, name: &str) -> &'a str {
         .unwrap_or_default()
 }
 
-fn text(node: Node<'_, '_>) -> String {
-    let mut out = String::new();
-    for n in node.descendants() {
-        if word(n, "p") && !out.is_empty() {
-            out.push('\n');
-        }
-        if word(n, "t") {
-            out.push_str(n.text().unwrap_or_default());
-        }
-        if word(n, "tab") {
-            out.push('\t');
-        }
-        if word(n, "br") || word(n, "cr") {
-            out.push('\n');
-        }
-    }
-    out.trim().to_owned()
-}
-
-/// Word 2012's comment extensions: replies and the done state.
-const W15: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
-/// Word 2010's paragraph IDs, which the extensions point at.
-const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
-
 pub(super) fn prepare(bytes: &[u8], show_hidden: bool) -> Result<Prepared, PreviewError> {
     let invalid = |e: zip::result::ZipError| PreviewError::Package(e.to_string());
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(invalid)?;
-    let mut comments = Vec::new();
-    let mut by_id = HashMap::new();
-    // The paragraph ID of each comment's last paragraph → its index.
-    let mut by_paragraph = HashMap::new();
-    let mut extended = None;
+    let mut replacements = HashMap::new();
     let mut xml_parts = Vec::new();
     let mut body_rels = None;
     // Input has already passed the package expansion/entry limits.
@@ -153,42 +137,23 @@ pub(super) fn prepare(bytes: &[u8], show_hidden: bool) -> Result<Prepared, Previ
         let doc = roxmltree::Document::parse(&source)
             .map_err(|e| PreviewError::Package(e.to_string()))?;
         let root = doc.root_element();
-        if root.tag_name().namespace() == Some(W15) && root.tag_name().name() == "commentsEx" {
-            extended = Some(source);
-            continue;
-        }
+        // A comments part goes empty, so the renderer draws no pane of its
+        // own; what it holds is AnyDoc's to read.
         if word(root, "comments") {
-            for node in root.children().filter(|n| word(*n, "comment")) {
-                let id = attr(node, "id").to_owned();
-                if id.is_empty() || by_id.insert(id.clone(), comments.len()).is_some() {
-                    return Err(PreviewError::Package(
-                        "missing or duplicate comment ID".into(),
-                    ));
-                }
-                if let Some(paragraph) = node
-                    .descendants()
-                    .rfind(|n| word(*n, "p"))
-                    .and_then(|p| p.attribute((W14, "paraId")))
-                {
-                    by_paragraph.insert(paragraph.to_ascii_uppercase(), comments.len());
-                }
-                comments.push(DocxComment {
-                    id,
-                    author: attr(node, "author").to_owned(),
-                    date: attr(node, "date").to_owned(),
-                    text: text(node),
-                    quote: String::new(),
-                    parent: None,
-                    resolved: false,
-                });
+            if root.children().any(|n| n.is_element()) {
+                replacements.insert(
+                    i,
+                    format!(
+                        "<w:comments xmlns:w=\"{}\"/>",
+                        root.tag_name().namespace().unwrap_or_default()
+                    ),
+                );
             }
+            continue;
         }
         xml_parts.push((i, name, source));
     }
-    if let Some(extended) = extended {
-        threads(&extended, &by_paragraph, &mut comments);
-    }
-    let mut replacements = HashMap::new();
+    let mut ids = Ids::default();
     let mut markers = Markers {
         prefix: body_rels
             .as_ref()
@@ -200,39 +165,23 @@ pub(super) fn prepare(bytes: &[u8], show_hidden: bool) -> Result<Prepared, Previ
     for (index, name, source) in xml_parts {
         let doc = roxmltree::Document::parse(&source)
             .map_err(|e| PreviewError::Package(e.to_string()))?;
-        if word(doc.root_element(), "comments") {
-            if !comments.is_empty() {
-                replacements.insert(
-                    index,
-                    format!(
-                        "<w:comments xmlns:w=\"{}\"/>",
-                        doc.root_element().tag_name().namespace().unwrap()
-                    ),
-                );
-            }
-            continue;
-        }
         let mut edits = Vec::new();
         hidden += hidden_text(&doc, show_hidden.then_some(&mut edits));
-        if !comments.is_empty() {
-            // Only the body's links reach the PDF as annotations the reader
-            // can place (docxide reads the body and its relationships by
-            // these names).
-            let marks = name == BODY && body_rels.is_some();
-            let links = if marks {
-                relationships(&body_rels.as_ref().unwrap().1)
-            } else {
-                HashMap::new()
-            };
-            quote_and_mark(
-                &doc,
-                &by_id,
-                &mut comments,
-                &links,
-                marks.then_some(&mut markers),
-                &mut edits,
-            );
-        }
+        // Only the body's links reach the PDF as annotations the reader can
+        // place (docxide reads the body and its relationships by these
+        // names).
+        let marks = name == BODY && body_rels.is_some();
+        let links = match &body_rels {
+            Some((_, rels)) if marks => relationships(rels),
+            _ => HashMap::new(),
+        };
+        mark(
+            &doc,
+            &mut ids,
+            &links,
+            marks.then_some(&mut markers),
+            &mut edits,
+        );
         if !edits.is_empty() {
             replacements.insert(index, apply(&source, edits));
         }
@@ -248,56 +197,10 @@ pub(super) fn prepare(bytes: &[u8], show_hidden: bool) -> Result<Prepared, Previ
         } else {
             Some(replace_parts(&mut archive, &replacements)?)
         },
-        comments,
+        ids: ids.list,
         markers: markers.list,
         hidden,
     })
-}
-
-/// Replies and resolved threads from `commentsExtended.xml`: each entry
-/// names a comment by its last paragraph's ID, the paragraph of the comment
-/// it replies to, and whether its thread is done. A reply shares its
-/// thread's state.
-// Replaced by the fork's extraction (ROADMAP Comments item 2), which reports
-// replies and resolved state with the comments.
-fn threads(extended: &str, by_paragraph: &HashMap<String, usize>, comments: &mut [DocxComment]) {
-    let Ok(doc) = roxmltree::Document::parse(extended) else {
-        return;
-    };
-    let index = |node: Node<'_, '_>, name: &str| {
-        node.attribute((W15, name))
-            .and_then(|id| by_paragraph.get(&id.to_ascii_uppercase()))
-            .copied()
-    };
-    let mut parents = Vec::new();
-    for entry in doc
-        .root_element()
-        .children()
-        .filter(|n| n.tag_name().namespace() == Some(W15) && n.tag_name().name() == "commentEx")
-    {
-        let Some(i) = index(entry, "paraId") else {
-            continue;
-        };
-        comments[i].resolved = matches!(entry.attribute((W15, "done")), Some("1" | "true" | "on"));
-        if let Some(parent) = index(entry, "paraIdParent").filter(|&p| p != i) {
-            parents.push((i, parent));
-        }
-    }
-    for &(i, parent) in &parents {
-        comments[i].parent = Some(comments[parent].id.clone());
-    }
-    // A reply's thread is its root's, whatever the reply itself says; a
-    // cycle stops at the comment that closes it.
-    for &(i, _) in &parents {
-        let mut root = i;
-        for _ in 0..parents.len() {
-            match parents.iter().find(|(c, _)| *c == root) {
-                Some(&(_, parent)) if parent != i => root = parent,
-                _ => break,
-            }
-        }
-        comments[i].resolved = comments[root].resolved;
-    }
 }
 
 /// A run property that is on: present, unless its value turns it off.
@@ -553,13 +456,12 @@ fn enclosing_link(run: Node<'_, '_>, links: &HashMap<String, String>) -> Option<
         })
 }
 
-/// Fills in each comment's quote and collects the edits of the render copy:
-/// comment markup goes, and with `markers` each commented run is wrapped in a
-/// marker link and each point comment gets a marker where it was inserted.
-fn quote_and_mark(
+/// Collects the edits of the render copy: comment markup goes, and with
+/// `markers` each commented run is wrapped in a marker link and each point
+/// comment gets a marker where it was inserted.
+fn mark(
     doc: &roxmltree::Document<'_>,
-    by_id: &HashMap<String, usize>,
-    comments: &mut [DocxComment],
+    ids: &mut Ids,
     links: &HashMap<String, String>,
     markers: Option<&mut Markers>,
     edits: &mut Vec<Edit>,
@@ -584,38 +486,26 @@ fn quote_and_mark(
     let close = "</mdocw:hyperlink>";
     let mut active: Vec<usize> = Vec::new();
     // Ranged comments that drew something; the rest are point comments.
-    let mut ranged = vec![false; comments.len()];
+    let mut ranged = HashSet::new();
     let mut pending_runs: Vec<(Node<'_, '_>, Vec<usize>)> = Vec::new();
     for node in doc.descendants() {
         if word(node, "commentRangeStart") {
-            if let Some(&i) = by_id.get(attr(node, "id"))
+            if let Some(i) = ids.of(attr(node, "id"))
                 && !active.contains(&i)
             {
                 active.push(i);
             }
-        } else if word(node, "commentRangeEnd") {
-            if let Some(&i) = by_id.get(attr(node, "id")) {
-                active.retain(|a| *a != i);
-            }
-        } else if word(node, "t") {
-            for &i in &active {
-                comments[i].quote.push_str(node.text().unwrap_or_default());
-            }
-        } else if word(node, "p") || word(node, "br") || word(node, "tab") {
-            for &i in &active {
-                if !comments[i].quote.is_empty() {
-                    comments[i].quote.push(' ');
-                }
-            }
+        } else if word(node, "commentRangeEnd")
+            && let Some(i) = ids.of(attr(node, "id"))
+        {
+            active.retain(|a| *a != i);
         }
         if word(node, "r")
             && !active.is_empty()
             && draws_text(node)
             && let Some(target) = wrap_target(node)
         {
-            for &i in &active {
-                ranged[i] = true;
-            }
+            ranged.extend(active.iter().copied());
             // A simple field's runs share one link: the comments over any of them.
             match pending_runs.last_mut() {
                 Some((last, open_comments)) if *last == target => {
@@ -636,17 +526,12 @@ fn quote_and_mark(
             });
         }
     }
-    // Point comments have no selected range: show their paragraph as context.
+    // Point comments have no selected range.
     let mut points = Vec::new();
     for node in doc.descendants().filter(|n| word(*n, "commentReference")) {
-        if let Some(&i) = by_id.get(attr(node, "id"))
-            && !ranged[i]
+        if let Some(i) = ids.of(attr(node, "id"))
+            && !ranged.contains(&i)
         {
-            if comments[i].quote.is_empty()
-                && let Some(paragraph) = node.ancestors().find(|n| word(*n, "p"))
-            {
-                comments[i].quote = text(paragraph);
-            }
             points.push((node, i));
         }
     }
@@ -711,12 +596,13 @@ fn quote_and_mark(
 /// The point marker's text: zero width, no break.
 const POINT: char = '\u{200B}';
 
-/// The anchors the marks read from the rendered PDF give each comment, in
-/// document order, with a range's rectangles on one line merged.
-pub fn anchors(
+/// The anchors the marks read from the rendered PDF give each comment id
+/// (`ids`, which the markers index), in document order, with a range's
+/// rectangles on one line merged.
+pub(super) fn anchors(
     marks: &[LinkMark],
     markers: &[Marker],
-    comments: &[DocxComment],
+    ids: &[String],
 ) -> Vec<CommentAnchor> {
     let mut out: Vec<CommentAnchor> = Vec::new();
     for mark in marks {
@@ -725,17 +611,14 @@ pub fn anchors(
             continue;
         };
         for &i in &marker.comments {
-            let Some(comment) = comments.get(i) else {
+            let Some(id) = ids.get(i) else {
                 continue;
             };
-            let anchor = match out
-                .iter_mut()
-                .find(|a| a.id == comment.id && a.page == mark.page)
-            {
+            let anchor = match out.iter_mut().find(|a| a.id == *id && a.page == mark.page) {
                 Some(anchor) => anchor,
                 None => {
                     out.push(CommentAnchor {
-                        id: comment.id.clone(),
+                        id: id.clone(),
                         page: mark.page,
                         rects: Vec::new(),
                         point: marker.point,
@@ -803,6 +686,26 @@ fn add_rect(rects: &mut Vec<AnchorRect>, rect: AnchorRect) {
 mod tests {
     use super::*;
 
+    /// A part's text: paragraphs on lines, tabs and breaks as written.
+    fn text(node: Node<'_, '_>) -> String {
+        let mut out = String::new();
+        for n in node.descendants() {
+            if word(n, "p") && !out.is_empty() {
+                out.push('\n');
+            }
+            if word(n, "t") {
+                out.push_str(n.text().unwrap_or_default());
+            }
+            if word(n, "tab") {
+                out.push('\t');
+            }
+            if word(n, "br") || word(n, "cr") {
+                out.push('\n');
+            }
+        }
+        out.trim().to_owned()
+    }
+
     fn body_of(copy: Vec<u8>) -> String {
         let mut zip = ZipArchive::new(Cursor::new(copy)).unwrap();
         let mut body = String::new();
@@ -817,7 +720,9 @@ mod tests {
     fn rendering_copy_removes_comment_markup_without_changing_source_text() {
         let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comments.docx");
         let prepared = prepare(bytes, false).unwrap();
-        assert_eq!(prepared.comments.len(), 6);
+        // The ids the body's markup names, as first met (comment 3 has no
+        // markup); no comment's content is read.
+        assert_eq!(prepared.ids, ["0", "5", "1", "4", "2"]);
         let copy = prepared.render.unwrap();
         let body = body_of(copy.clone());
         let doc = roxmltree::Document::parse(&body).unwrap();
@@ -847,7 +752,7 @@ mod tests {
         )
         .unwrap();
         assert!(prepared.render.is_none());
-        assert!(prepared.comments.is_empty());
+        assert!(prepared.ids.is_empty());
     }
 
     fn part(copy: &[u8], name: &str) -> String {
@@ -893,7 +798,7 @@ mod tests {
         prepared.markers[k]
             .comments
             .iter()
-            .map(|&i| prepared.comments[i].id.clone())
+            .map(|&i| prepared.ids[i].clone())
             .collect()
     }
 
@@ -951,19 +856,13 @@ mod tests {
             prepared
                 .markers
                 .iter()
-                .find(|m| m.comments.iter().any(|&i| prepared.comments[i].id == id))
+                .find(|m| m.comments.iter().any(|&i| prepared.ids[i] == id))
                 .unwrap()
                 .point
         };
         assert!(point("5") && point("6") && !point("0"));
-        // A comment with no range and no reference has no marker.
-        let nowhere = prepared.comments.iter().position(|c| c.id == "10").unwrap();
-        assert!(
-            !prepared
-                .markers
-                .iter()
-                .any(|m| m.comments.contains(&nowhere))
-        );
+        // A comment with no range and no reference is not named at all.
+        assert!(!prepared.ids.iter().any(|id| id == "10"));
         // No comment markup is left, and only the marker runs were added.
         let body = part(&copy, BODY);
         let doc = roxmltree::Document::parse(&body).unwrap();
@@ -1075,7 +974,7 @@ mod tests {
             prepared
                 .markers
                 .iter()
-                .find(|m| m.comments.iter().any(|&i| prepared.comments[i].id == id))
+                .find(|m| m.comments.iter().any(|&i| prepared.ids[i] == id))
                 .map(|m| m.point)
         };
         assert_eq!(point("3"), Some(true));
@@ -1097,16 +996,7 @@ mod tests {
 
     #[test]
     fn anchors_merge_a_line_and_follow_the_pages() {
-        let comment = |id: &str| DocxComment {
-            id: id.into(),
-            author: String::new(),
-            date: String::new(),
-            text: String::new(),
-            quote: String::new(),
-            parent: None,
-            resolved: false,
-        };
-        let comments = [comment("a"), comment("b"), comment("p")];
+        let ids = ["a", "b", "p"].map(String::from);
         let markers = [
             Marker {
                 comments: vec![0],
@@ -1132,7 +1022,7 @@ mod tests {
             mark(0, rect(0.1, 0.1, 0.1), "9"),
             mark(0, rect(0.1, 0.1, 0.1), "x"),
         ];
-        let anchors = anchors(&marks, &markers, &comments);
+        let anchors = anchors(&marks, &markers, &ids);
         let got: Vec<_> = anchors
             .iter()
             .map(|a| (a.id.as_str(), a.page, a.rects.len(), a.point))
@@ -1150,52 +1040,6 @@ mod tests {
         assert!((a[0].x - 0.1).abs() < 1e-6 && (a[0].w - 0.302).abs() < 1e-6);
         assert!((a[1].y - 0.52).abs() < 1e-6);
         assert_eq!(anchors[0].rects[0].w, 0.0);
-    }
-
-    #[test]
-    fn replies_and_resolved_threads_come_from_comments_extended() {
-        let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comments.docx");
-        let prepared = prepare(bytes, false).unwrap();
-        let comment = |id: &str| prepared.comments.iter().find(|c| c.id == id).unwrap();
-        assert_eq!(comment("5").parent.as_deref(), Some("0"));
-        assert!(comment("4").resolved);
-        for id in ["0", "1", "2", "3", "5"] {
-            assert!(!comment(id).resolved, "{id}");
-        }
-        assert!(
-            ["0", "1", "2", "3", "4"]
-                .iter()
-                .all(|id| comment(id).parent.is_none())
-        );
-    }
-
-    #[test]
-    fn a_reply_shares_its_threads_state_and_a_cycle_ends() {
-        let comment = |id: &str| DocxComment {
-            id: id.into(),
-            author: String::new(),
-            date: String::new(),
-            text: String::new(),
-            quote: String::new(),
-            parent: None,
-            resolved: false,
-        };
-        let mut comments = [comment("a"), comment("b"), comment("c"), comment("d")];
-        let by_paragraph = [("0A", 0), ("0B", 1), ("0C", 2), ("0D", 3)]
-            .into_iter()
-            .map(|(p, i)| (p.to_owned(), i))
-            .collect();
-        threads(
-            &format!(
-                r#"<w15:commentsEx xmlns:w15="{W15}"><w15:commentEx w15:paraId="0a" w15:done="1"/><w15:commentEx w15:paraId="0B" w15:paraIdParent="0A" w15:done="0"/><w15:commentEx w15:paraId="0C" w15:paraIdParent="0D"/><w15:commentEx w15:paraId="0D" w15:paraIdParent="0C"/><w15:commentEx w15:paraId="FF" w15:done="1"/></w15:commentsEx>"#
-            ),
-            &by_paragraph,
-            &mut comments,
-        );
-        assert!(comments[0].resolved && comments[1].resolved);
-        assert_eq!(comments[1].parent.as_deref(), Some("a"));
-        assert_eq!(comments[2].parent.as_deref(), Some("d"));
-        assert!(!comments[2].resolved && !comments[3].resolved);
     }
 
     #[test]

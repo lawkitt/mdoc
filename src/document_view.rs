@@ -68,7 +68,7 @@ actions!(
 
 #[derive(Clone)]
 pub(crate) enum Next {
-    Import(import::Imported),
+    Import(Box<import::Imported>),
     Close,
     /// Saved first so the new case lists the document (#75); `close` closes
     /// the tab once the case is written.
@@ -682,6 +682,7 @@ impl DocumentView {
                 return;
             }
             Next::Import(imported) => {
+                let imported = *imported;
                 let automatic = self.import.imported();
                 self.lifecycle.converted(automatic);
                 let retain_preview = self.preview.source() == Some(&imported.source)
@@ -689,7 +690,9 @@ impl DocumentView {
                 self.session
                     .import(imported.source.clone(), imported.warning);
                 self.session.left_out = imported.left_out.line(true);
-                self.session.comments_left_out = imported.left_out.comments.not_shown();
+                self.session.comments_left_out = imported.left_out.comments_not_shown();
+                self.preview
+                    .imported(imported.source.clone(), imported.stamp, imported.comments);
                 self.session.ocr_configuration = imported.ocr_configuration;
                 self.reset_pii(cx);
                 if !retain_preview {
@@ -880,7 +883,7 @@ impl DocumentView {
                 }
                 ImportEffect::SetUp => self.begin_ocr_setup(window, cx),
                 ImportEffect::Request(imported) => {
-                    self.request(Next::Import(imported), window, cx);
+                    self.request(Next::Import(Box::new(imported)), window, cx);
                 }
                 ImportEffect::SharedOcrReady(installed) => {
                     self.ocr_state = OcrState::Ready(installed);

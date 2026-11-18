@@ -71,6 +71,7 @@ fn comments_note(d: &mut Driver) -> Result<()> {
         Arc::new(AtomicBool::new(false)),
         crate::preview::read_comment_marks,
         Default::default(),
+        None,
     ) else {
         return Err("the preview renders tracked changes now; show it instead".into());
     };
@@ -80,7 +81,11 @@ fn comments_note(d: &mut Driver) -> Result<()> {
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
-            v.proceed(crate::document_view::Next::Import(imported), window, cx);
+            v.proceed(
+                crate::document_view::Next::Import(Box::new(imported)),
+                window,
+                cx,
+            );
             v.preview
                 .show_failure(source, crate::preview::docx_message(&failure).to_string());
             cx.notify();
@@ -102,7 +107,11 @@ fn hidden_text_note(d: &mut Driver) -> Result<()> {
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
-            v.proceed(crate::document_view::Next::Import(imported), window, cx);
+            v.proceed(
+                crate::document_view::Next::Import(Box::new(imported)),
+                window,
+                cx,
+            );
             cx.notify();
         });
     })?;

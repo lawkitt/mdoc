@@ -338,7 +338,7 @@ fn import_save_then_replace_preserves_original_edits(cx: &mut TestAppContext) {
     cx.simulate_input("save these edits");
     app.update_in(cx, |app, window, cx| {
         app.request(
-            Next::Import(converted(dir.path().join("source.docx"))),
+            Next::Import(Box::new(converted(dir.path().join("source.docx")))),
             window,
             cx,
         );
@@ -422,7 +422,7 @@ fn imported_warning_survives_save_and_stays_with_its_tab_until_dismissed(cx: &mu
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.proceed(
-            Next::Import(converted(dir.path().join("source.docx"))),
+            Next::Import(Box::new(converted(dir.path().join("source.docx")))),
             window,
             cx,
         );
@@ -461,7 +461,7 @@ fn empty_import_is_unsaved_and_source_cannot_be_overwritten(cx: &mut TestAppCont
     app.update_in(cx, |app, window, cx| {
         let mut result = converted(source.clone());
         result.markdown.clear();
-        app.proceed(Next::Import(result), window, cx);
+        app.proceed(Next::Import(Box::new(result)), window, cx);
         assert!(app.dirty(cx));
         // The window checks for another tab with the file, then saves.
         app.write(source.clone(), None, cx);
@@ -497,7 +497,7 @@ fn import_failure_and_stale_completion_keep_current_document(cx: &mut TestAppCon
         let generation = app.session.generation;
         let mut replacement = converted(path);
         replacement.markdown = "other".into();
-        app.proceed(Next::Import(replacement), window, cx);
+        app.proceed(Next::Import(Box::new(replacement)), window, cx);
         assert!(app.import.job_mut().begin(false));
         app.import
             .job_mut()
