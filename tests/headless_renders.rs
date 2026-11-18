@@ -364,6 +364,32 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                         "{theme}/{name}"
                     );
                 }
+                // A PDF's annotations: the same rail and markers, no
+                // hidden-text control; off, the plain page.
+                if let Some(rail) = match *name {
+                    "pdf-comments-rail" | "pdf-comments-resolved" | "pdf-comments-rotated" => {
+                        Some(true)
+                    }
+                    "pdf-comments-markers" => Some(false),
+                    _ => None,
+                } {
+                    let state = &record["state"]["comment_rail"];
+                    assert_eq!(state["shown"], true, "{theme}/{name}");
+                    assert_eq!(state["rail"], rail, "{theme}/{name}");
+                }
+                if name.starts_with("pdf-comments-") {
+                    assert_eq!(
+                        record["state"]["source_toggles"],
+                        serde_json::json!([{
+                            "label": "💬 8",
+                            "on": *name != "pdf-comments-hidden"
+                        }]),
+                        "{theme}/{name}"
+                    );
+                }
+                if *name == "pdf-comments-hidden" {
+                    assert_eq!(record["state"]["comment_rail"]["shown"], false);
+                }
                 if *name == "import-hidden-note" {
                     // Left out, not a partial import: the left-out line.
                     assert!(record["state"]["import_note"].is_null(), "{theme}/{name}");
@@ -490,8 +516,14 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 "narrow-sidebar-names" | "sidebar-wide" => [1000., 700.],
                 // Wide enough for the comment rail beside the page; and the
                 // 640×480 window the comments spec names for markers.
-                "comments-rail" | "comments-resolved" | "comments-hidden-text" => [1500., 900.],
-                "comments-markers" => [640., 480.],
+                "comments-rail"
+                | "comments-resolved"
+                | "comments-hidden-text"
+                | "pdf-comments-rail"
+                | "pdf-comments-resolved"
+                | "pdf-comments-rotated"
+                | "pdf-comments-hidden" => [1500., 900.],
+                "comments-markers" | "pdf-comments-markers" => [640., 480.],
                 _ => [1100., 760.],
             };
             assert_eq!(viewport, &serde_json::json!(expected), "{theme}/{name}");

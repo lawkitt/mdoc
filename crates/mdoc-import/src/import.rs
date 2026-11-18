@@ -153,7 +153,7 @@ impl LeftOut {
     /// pictures count again, as OCR keeps their text, not the pictures.
     /// Repeated header lines are not among them: OCR finds its own, so they
     /// come from the result imported ([`repeated_lines`]). Annotations count
-    /// as comments until the Source shows them (ROADMAP Comments item 5).
+    /// as comments, which the Source's rail shows.
     pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult, skipped: &[u32]) -> Self {
         fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
             pages.iter().map(|page| u64::from(count(page))).sum()
@@ -256,6 +256,18 @@ pub(crate) fn source_comments_cancellable(path: &Path, cancel: &AtomicBool) -> V
 /// render, whose import counted them there instead of in the line.
 pub fn source_comments_not_shown(path: &Path) -> Option<String> {
     not_shown_note(source_comments(path).len() as u64)
+}
+
+/// The annotations of the PDF at `path` that carry text, read by the same
+/// native pass its import makes: the Source's cards for a PDF this session
+/// did not import. None when the pass cannot read it.
+pub fn source_annotations(path: &Path) -> Vec<pdf_inspector::PdfAnnotation> {
+    use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
+    read_pdf(path)
+        .ok()
+        .and_then(|bytes| process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).ok())
+        .map(|native| native.annotations)
+        .unwrap_or_default()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1231,6 +1243,18 @@ mod tests {
         // A PDF has no office comments; one AnyDoc can't convert has none.
         assert!(source_comments(&fixture("text_annotations.pdf")).is_empty());
         assert!(source_comments(&fixture("missing.docx")).is_empty());
+    }
+
+    /// A Source shown without an import reads the annotations the import
+    /// would: the same native pass.
+    #[test]
+    fn source_annotations_match_the_import() {
+        let path = fixture("text_annotations.pdf");
+        let imported = convert(&path).unwrap();
+        assert_eq!(imported.annotations.len(), 8);
+        assert_eq!(source_annotations(&path), imported.annotations);
+        assert!(source_annotations(&fixture("missing.pdf")).is_empty());
+        assert!(source_annotations(&fixture("text.docx")).is_empty());
     }
 
     /// Pictures never reach the Markdown, so the note counts them, for PDF

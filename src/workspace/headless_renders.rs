@@ -56,6 +56,7 @@ mod folder_sheet;
 mod import;
 mod narrow;
 mod navigation;
+mod pdf_source;
 mod recents;
 mod restore;
 mod review;
@@ -398,6 +399,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     import::scenes(d)?;
     restore::restored_reply(d)?;
     comments::scenes(d)?;
+    pdf_source::scenes(d)?;
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
     review::long_counts(d)?;

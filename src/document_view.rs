@@ -691,8 +691,12 @@ impl DocumentView {
                     .import(imported.source.clone(), imported.warning);
                 self.session.left_out = imported.left_out.line(true);
                 self.session.comments_left_out = imported.left_out.comments_not_shown();
-                self.preview
-                    .imported(imported.source.clone(), imported.stamp, imported.comments);
+                self.preview.imported(
+                    imported.source.clone(),
+                    imported.stamp,
+                    imported.comments,
+                    imported.annotations,
+                );
                 self.session.ocr_configuration = imported.ocr_configuration;
                 self.reset_pii(cx);
                 if !retain_preview {
