@@ -85,6 +85,10 @@ imported".
 - Replies nest under their comment with author, date and text.
 - A resolved thread is a quiet "✓ resolved" chip at its anchor, with no
   tint; clicking it expands a dimmed card.
+- OCR reads a scanned page rendered without comment annotations (notes,
+  FreeText, popups, markup appearances), so their text never reaches the
+  Markdown; stamps, ink and form widgets stay drawn, because they are part
+  of the page.
 - PDF annotations use the same rail and markers at the annotation's
   rectangle; mdoc tints highlight and underline areas and hides the PDF's own
   note icons and popups so nothing draws twice.
