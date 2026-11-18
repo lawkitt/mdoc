@@ -90,3 +90,15 @@ draws `SECRET-WHITE` in white on the bare page. With the pdf-inspector fork
 after lawkitt/pdf-inspector PRs 7 and 8, the header stays on page 1 only and
 the import note reads "1 hidden passage not imported. 3 repeated header and
 footer lines removed."
+
+## Scanned running header, 2026-11-19
+
+`handmade-scanned-running-header.pdf` is a synthetic image-only scan from
+`gen_scanned_running_header.py` (Python 3, standard library and macOS
+`sips`; the page offsets are seeded). Four bilevel 150 dpi US Letter pages
+share the header "Annual Report of the Board 2026 Confidential" and the
+footer "Prepared for the shareholders of Acme Holdings Ltd.", each page
+shifted by up to 2 pt. With OCR, the desktop's whole-document import and the
+phones' page-at-a-time import (`resume.rs`, after lawkitt/pdf-inspector PR
+19) both keep them on page 1 only, and the note counts "6 repeated header
+and footer lines removed."

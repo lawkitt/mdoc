@@ -4,17 +4,19 @@
 //! configuration, so a cancelled or stopped import resumes with the pages
 //! still to do. Each page goes through pdf-inspector's own page selection
 //! with the desktop's OCR options, so a page reads as it does in a
-//! whole-document run, with one exception: a running header or footer that
-//! OCR reads on every page stays on every page, because pdf-inspector finds
-//! OCR repeats only across the pages one call recognizes (see
-//! `docs/specs/recognition.md`, "Repeated headers and footers"). The caller
-//! removes the file's kept pages once it has taken the result
+//! whole-document run. Each page also keeps what pdf-inspector's repeated
+//! header and footer pass needs from its OCR, and the pass runs across all
+//! the pages once the last is recognized, so a running header or footer
+//! that OCR reads on every page stays on the first only, as on the desktop
+//! (see `docs/specs/recognition.md`, "Repeated headers and footers"). The
+//! caller removes the file's kept pages once it has taken the result
 //! ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
     ImportError, Imported, LeftOut, OcrFailure, check_cancel, pdf_error, pdf_warning, read_pdf,
     repeated_lines,
 };
+use pdf_inspector::{MarkdownOptions, vision::OcrRepeatEvidence};
 use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
@@ -28,7 +30,10 @@ use std::{
 /// one-page OCR run used to drop as page furniture, leave out text drawn
 /// in its background's colour and comment annotations' text (OCR reads the
 /// page without them), and count repeated header and footer rows.
-const FORMAT: u32 = 3;
+/// 4: #925's phase 2 follow-up, whose pages keep their OCR's repeat
+/// evidence, so a running header or footer OCR reads on every page is
+/// found across pages; a page kept without it can't take part.
+const FORMAT: u32 = 4;
 
 /// The folder that keeps finished pages, one subfolder per file and OCR
 /// configuration.
@@ -47,10 +52,17 @@ struct Page {
     /// OCR found the page weak, or warned about it: the import's warning
     /// names it.
     review: bool,
-    /// Running header and footer rows the page left out as repeats of an
-    /// earlier page's: native text only, since a one-page OCR run finds no
-    /// repeats.
+    /// Running header and footer rows the page's own run left out as
+    /// repeats of an earlier page's: native text only, since a one-page OCR
+    /// run finds no repeats. The pass across pages replaces it on the pages
+    /// with repeat evidence.
     repeated_lines: u32,
+    /// What pdf-inspector's repeated header and footer pass needs from the
+    /// page's OCR (one entry, or none for a page whose content isn't
+    /// full-page OCR), kept as the run gave it. The page's `markdown` and
+    /// `repeated_lines` stay its own run's; the pass across pages gives the
+    /// final ones when the document is put together.
+    repeat_evidence: Vec<OcrRepeatEvidence>,
 }
 
 impl KeptPages {
@@ -235,8 +247,10 @@ pub fn prepare_resumable(
     let digest = digest(&bytes);
     let folder = kept.folder(&digest, &installed.config);
     folder.open();
+    let markdown_options = installed.options().markdown;
     let mut permit = None;
-    let pages = recognize_pages(page_count, &folder, cancel, |page| {
+    let reusable = |kept: &Page| reusable(kept, page_count, &markdown_options);
+    let mut pages = recognize_pages(page_count, &folder, cancel, reusable, |page| {
         if permit.is_none() {
             permit = Some(
                 crate::model_work::Permit::acquire_for("text recognition")
@@ -245,7 +259,11 @@ pub fn prepare_resumable(
             crate::ocr::load_onnx_runtime(&installed.onnx)
                 .map_err(|e| ImportError::OcrFailed(e.into()))?;
         }
-        let result = process_pdf_with_ocr_mem(&bytes, installed.options().page_numbers([page]))
+        let options = installed
+            .options()
+            .retain_repeat_evidence(true)
+            .page_numbers([page]);
+        let result = process_pdf_with_ocr_mem(&bytes, options)
             .map_err(|error| ImportError::OcrFailed(OcrFailure::Engine(error.to_string())))?;
         let review = result.pages.iter().any(|fused| {
             fused.provenance.hosted_recommended || !fused.provenance.warnings.is_empty()
@@ -256,9 +274,12 @@ pub fn prepare_resumable(
             repeated_lines: u32::try_from(repeated_lines(&result)).unwrap_or(u32::MAX),
             markdown: result.markdown,
             review,
+            repeat_evidence: result.repeat_evidence,
         })
     })?;
     drop(permit);
+    strip_repeats(&mut pages, &markdown_options)
+        .map_err(|error| ImportError::OcrFailed(OcrFailure::Engine(error.to_string())))?;
     let (markdown, review) = assemble(&pages);
     let warning = pdf_warning(&markdown, review, page_count, true)?;
     left_out.repeated_lines = pages
@@ -282,18 +303,19 @@ pub fn prepare_resumable(
     ))
 }
 
-/// Pages 1 to `page_count`: the ones `folder` kept, and the rest from
-/// `recognize`, each kept as it finishes. A cancel stops before the next
-/// page; the finished ones stay kept.
+/// Pages 1 to `page_count`: the ones `folder` kept that are `reusable`, and
+/// the rest from `recognize`, each kept as it finishes. A cancel stops
+/// before the next page; the finished ones stay kept.
 fn recognize_pages(
     page_count: u32,
     folder: &Folder,
     cancel: &AtomicBool,
+    reusable: impl Fn(&Page) -> bool,
     mut recognize: impl FnMut(u32) -> Result<Page, ImportError>,
 ) -> Result<Vec<Page>, ImportError> {
     let mut pages = Vec::with_capacity(page_count as usize);
     for page in 1..=page_count {
-        if let Some(kept) = folder.load(page) {
+        if let Some(kept) = folder.load(page).filter(&reusable) {
             pages.push(kept);
             continue;
         }
@@ -304,6 +326,48 @@ fn recognize_pages(
     }
     check_cancel(cancel)?;
     Ok(pages)
+}
+
+/// Whether a kept page's repeat evidence can take part in the pass across
+/// pages: it is the page's own, from a document of `page_count` pages, and
+/// pdf-inspector accepts it (its format and geometry). A page that fails is
+/// recognized again rather than failing the import at the end.
+fn reusable(kept: &Page, page_count: u32, markdown: &MarkdownOptions) -> bool {
+    kept.repeat_evidence.iter().all(|evidence| {
+        evidence.page_number() == kept.page && evidence.document_page_count() == page_count
+    }) && (kept.repeat_evidence.is_empty()
+        || pdf_inspector::vision::strip_repeats_across_pages(&kept.repeat_evidence, markdown)
+            .is_ok())
+}
+
+/// Runs pdf-inspector's repeated header and footer pass across the pages'
+/// repeat evidence, as a whole-document run does across the pages it
+/// recognizes: each page that took part gets the Markdown and repeated-line
+/// count a whole-document run gives it. `markdown` is the options the page
+/// runs used. Pages without evidence keep their own run's, as they would
+/// in a whole-document run.
+fn strip_repeats(
+    pages: &mut [Page],
+    markdown: &MarkdownOptions,
+) -> Result<(), pdf_inspector::vision::OcrFusionError> {
+    let evidence: Vec<OcrRepeatEvidence> = pages
+        .iter_mut()
+        .flat_map(|page| std::mem::take(&mut page.repeat_evidence))
+        .collect();
+    if evidence.is_empty() {
+        return Ok(());
+    }
+    let across = pdf_inspector::vision::strip_repeats_across_pages(&evidence, markdown)?;
+    for stripped in across.pages {
+        if let Some(page) = pages
+            .iter_mut()
+            .find(|page| page.page == stripped.page_number)
+        {
+            page.markdown = stripped.markdown;
+            page.repeated_lines = stripped.repeated_lines;
+        }
+    }
+    Ok(())
 }
 
 /// The document's Markdown from its pages, as pdf-inspector joins a
@@ -338,6 +402,7 @@ mod tests {
             markdown: format!("Page {page} text.\n"),
             review: page == 2,
             repeated_lines: 0,
+            repeat_evidence: Vec::new(),
         }
     }
 
@@ -347,12 +412,13 @@ mod tests {
 
     /// Pages kept before a format change (form field names in their text,
     /// before #925's phase 1; comment annotations' text read from the scan,
-    /// before its phase 2) are recognized again, not reused.
+    /// before its phase 2; no repeat evidence, before its follow-up) are
+    /// recognized again, not reused.
     #[test]
     fn pages_kept_in_an_older_format_are_not_reused() {
         let dir = tempfile::tempdir().unwrap();
         let kept = KeptPages::new(dir.path().into());
-        assert_eq!(FORMAT, 3);
+        assert_eq!(FORMAT, 4);
         for format in 1..FORMAT {
             let older = kept.folder_in_format(format, "abc", &config());
             older.open();
@@ -362,6 +428,154 @@ mod tests {
         let current = kept.folder("abc", &config());
         current.open();
         assert_eq!(current.load(1), None);
+        // A format 3 page, without repeat evidence, doesn't read as a
+        // current one even where a current page would be.
+        std::fs::write(
+            current.path(1),
+            br#"{"page":1,"markdown":"Page 1 text.\n","review":false,"repeated_lines":0}"#,
+        )
+        .unwrap();
+        assert_eq!(current.load(1), None);
+    }
+
+    /// Repeat evidence for page `page` of a `pages`-page scan, as a one-page
+    /// OCR run keeps it: `header`, two lines of text and a footer, read off
+    /// a 150 dpi US Letter page. Built from JSON, since pdf-inspector builds
+    /// it only from a run. If this stops parsing or is refused after a fork
+    /// bump, the evidence changed format, and `FORMAT` must change too.
+    fn evidence(page: u32, pages: u32, header: &str) -> OcrRepeatEvidence {
+        let span = |text: String, top: f32| {
+            serde_json::json!({
+                "text": text,
+                "polygon": [[150.0, top], [900.0, top], [900.0, top + 30.0], [150.0, top + 30.0]],
+                "orientation_degrees": null,
+            })
+        };
+        serde_json::from_value(serde_json::json!({
+            "format": 1,
+            "page_number": page,
+            "document_page_count": pages,
+            "page_width": 612.0,
+            "page_height": 792.0,
+            "pixel_width": 1275,
+            "pixel_height": 1650,
+            "transform": ["0.48", "0.0", "0.0", "-0.48", "0.0", "791.9999389648438"],
+            "spans": [
+                span(header.to_owned(), 64.0),
+                span(format!("Item {page}.1. The Board reviewed the audited accounts."), 167.0),
+                span(format!("Item {page}.2. Revenue increased by eleven percent."), 221.0),
+                span("Prepared for the shareholders of Acme Holdings Ltd.".into(), 1544.0),
+            ],
+            "native": null,
+        }))
+        .unwrap()
+    }
+
+    /// A page as a one-page OCR run keeps it, with its evidence.
+    fn scanned(page: u32, pages: u32, header: &str) -> Page {
+        Page {
+            page,
+            markdown: format!("{header}\n\nItem {page}.1.\n"),
+            review: false,
+            repeated_lines: 0,
+            repeat_evidence: vec![evidence(page, pages, header)],
+        }
+    }
+
+    /// The pass across pages leaves a running header and footer on the
+    /// first page only and counts the rest, as a whole-document run does; a
+    /// page without evidence (native text) keeps its own run's Markdown and
+    /// count.
+    #[test]
+    fn the_pass_across_pages_drops_a_scans_running_header_and_footer() {
+        let header = "Annual Report of the Board 2026 Confidential";
+        let native = Page {
+            repeated_lines: 1,
+            ..page(5)
+        };
+        let mut pages: Vec<Page> = (1..=4).map(|n| scanned(n, 5, header)).collect();
+        pages.push(native.clone());
+        strip_repeats(&mut pages, &MarkdownOptions::default()).unwrap();
+        let counts: Vec<u32> = pages.iter().map(|page| page.repeated_lines).collect();
+        assert_eq!(counts, [0, 2, 2, 2, 1]);
+        for page in &pages[..4] {
+            let first = page.page == 1;
+            assert_eq!(page.markdown.contains(header), first, "{}", page.markdown);
+            assert_eq!(page.markdown.contains("Acme Holdings"), first);
+            assert!(page.markdown.contains(&format!("Item {}.2.", page.page)));
+            assert!(page.repeat_evidence.is_empty());
+        }
+        assert_eq!(pages[4], native);
+        let (markdown, _) = assemble(&pages);
+        assert_eq!(markdown.matches(header).count(), 1, "{markdown}");
+    }
+
+    /// A header whose case number changes from page to page is no repeat,
+    /// and two pages are too few: nothing is left out.
+    #[test]
+    fn the_pass_across_pages_keeps_changing_and_rare_headers() {
+        let mut changing: Vec<Page> = (1..=4)
+            .map(|n| scanned(n, 4, &format!("Case No. 2-12{n}/2026 Annual Report")))
+            .collect();
+        strip_repeats(&mut changing, &MarkdownOptions::default()).unwrap();
+        for page in &changing {
+            assert!(page.markdown.contains(&format!("Case No. 2-12{}/2026", page.page)));
+        }
+        // The footer is still an exact repeat.
+        let counts: Vec<u32> = changing.iter().map(|page| page.repeated_lines).collect();
+        assert_eq!(counts, [0, 1, 1, 1]);
+
+        let header = "Annual Report of the Board 2026 Confidential";
+        let mut two: Vec<Page> = (1..=2).map(|n| scanned(n, 2, header)).collect();
+        strip_repeats(&mut two, &MarkdownOptions::default()).unwrap();
+        assert!(two.iter().all(|page| page.markdown.contains(header)));
+        assert!(two.iter().all(|page| page.repeated_lines == 0));
+    }
+
+    /// A kept page is reused only with evidence the pass can take: its own
+    /// page's, from a document of this length, in a format pdf-inspector
+    /// reads. Anything else is recognized again rather than failing the
+    /// import when the document is put together.
+    #[test]
+    fn a_page_with_unusable_evidence_is_recognized_again() {
+        let options = MarkdownOptions::default();
+        let header = "Annual Report of the Board 2026 Confidential";
+        assert!(reusable(&page(1), 4, &options));
+        assert!(reusable(&scanned(2, 4, header), 4, &options));
+        assert!(!reusable(&scanned(2, 5, header), 4, &options));
+        let moved = Page {
+            page: 3,
+            ..scanned(2, 4, header)
+        };
+        assert!(!reusable(&moved, 4, &options));
+        let newer = |pages| {
+            let mut json = serde_json::to_value(evidence(2, pages, header)).unwrap();
+            json["format"] = 99.into();
+            Page {
+                repeat_evidence: vec![serde_json::from_value(json).unwrap()],
+                ..scanned(2, pages, header)
+            }
+        };
+        assert!(!reusable(&newer(4), 4, &options));
+
+        let dir = tempfile::tempdir().unwrap();
+        let folder = KeptPages::new(dir.path().into()).folder("abc", &config());
+        folder.open();
+        folder.store(&scanned(1, 2, header));
+        folder.store(&newer(2));
+        let mut ran = Vec::new();
+        recognize_pages(
+            2,
+            &folder,
+            &AtomicBool::new(false),
+            |kept| reusable(kept, 2, &options),
+            |n| {
+                ran.push(n);
+                Ok(scanned(n, 2, header))
+            },
+        )
+        .unwrap();
+        assert_eq!(ran, [2]);
     }
 
     /// Cancelled after two of five pages, the run keeps them; the resumed
@@ -375,7 +589,7 @@ mod tests {
         folder.open();
         let cancel = AtomicBool::new(false);
         let mut first = Vec::new();
-        let result = recognize_pages(5, &folder, &cancel, |n| {
+        let result = recognize_pages(5, &folder, &cancel, |_| true, |n| {
             first.push(n);
             if n == 2 {
                 cancel.store(true, Ordering::Relaxed);
@@ -389,7 +603,7 @@ mod tests {
 
         cancel.store(false, Ordering::Relaxed);
         let mut second = Vec::new();
-        let resumed = recognize_pages(5, &folder, &cancel, |n| {
+        let resumed = recognize_pages(5, &folder, &cancel, |_| true, |n| {
             second.push(n);
             Ok(page(n))
         })
@@ -419,7 +633,7 @@ mod tests {
         std::fs::write(folder.path(1), b"{\"page\":1,\"mark").unwrap();
         std::fs::copy(folder.path(2), folder.path(3)).unwrap();
         let mut ran = Vec::new();
-        recognize_pages(3, &folder, &AtomicBool::new(false), |n| {
+        recognize_pages(3, &folder, &AtomicBool::new(false), |_| true, |n| {
             ran.push(n);
             Ok(page(n))
         })
@@ -490,7 +704,7 @@ mod tests {
         let folder = kept.folder(&digest(b"%PDF-a"), &config());
         folder.open();
         let cancel = AtomicBool::new(false);
-        let result = recognize_pages(3, &folder, &cancel, |n| {
+        let result = recognize_pages(3, &folder, &cancel, |_| true, |n| {
             if n == 2 {
                 cancel.store(true, Ordering::Relaxed);
                 kept.discard(&source).unwrap();
@@ -530,6 +744,7 @@ mod tests {
             markdown: "\n".into(),
             review: false,
             repeated_lines: 0,
+            repeat_evidence: Vec::new(),
         };
         assert_eq!(
             assemble(&[page(1), blank(2), page(3)]).0,
@@ -561,7 +776,10 @@ mod tests {
 
     /// On the OCR fixtures, an uninterrupted run gives the desktop's
     /// whole-document Markdown and warning, and a run cancelled after its
-    /// first pages resumes with the rest only and gives the same.
+    /// first pages resumes with the rest only and gives the same. The
+    /// scanned running header and footer go from the pages after the first
+    /// across pages recognized in separate runs, kept or not, as they do in
+    /// the desktop's single run, with the same count in the note.
     #[test]
     #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
     #[cfg(any(
@@ -576,6 +794,8 @@ mod tests {
             (fixtures.join("ocr-qualification/english.pdf"), 1),
             (fixtures.join("ocr-qualification/russian.pdf"), 1),
             (fixtures.join("import/handmade-partly-scanned.pdf"), 2),
+            (fixtures.join("import/handmade-scanned-running-header.pdf"), 2),
+            (fixtures.join("import/handmade-running-header.pdf"), 1),
         ] {
             let name = pdf.display().to_string();
             let original = std::fs::read(&pdf).unwrap();
@@ -584,6 +804,9 @@ mod tests {
             if name.ends_with("handmade-partly-scanned.pdf") {
                 // OCR read the scanned pages, so their pictures count (#949).
                 assert_eq!(desktop.left_out.pictures, 2, "{name}");
+            }
+            if name.contains("running-header") {
+                assert!(desktop.left_out.repeated_lines >= 3, "{name}");
             }
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));

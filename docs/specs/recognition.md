@@ -106,17 +106,23 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - A PDF's running header or footer, native or scanned, stays on the first
   page that shows it, and its exact repeats are dropped; the import note
   counts them ("3 repeated header and footer lines removed.").
+- The copy that stays is on a page whose text reaches the Markdown: a page
+  left for OCR that doesn't run neither keeps nor loses a row.
 - A repeat is the same text, case and digits included, spacing aside, in
   the page's top or bottom band at a steady height, on at least 3 pages and
-  30% of them, and at least 10 characters long; headings, list items and
-  numbered clauses never are.
+  30% of them (rounded up), and at least 10 characters long; headings, list
+  items and numbered clauses never are.
 - Numbers count, because "Case No. 2-123" and "Case No. 2-124" are different
-  cases; only a page number at a row's start or end that rises with the page
-  may differ.
+  cases. Only a page number may differ: at a row's start or end, rising
+  with the page, equal to its page's position or up to 10 behind (an
+  unnumbered cover or contents), and not after an identifier label such as
+  "No.", "№", "Invoice" or "дело". So "Invoice 4171" to "4174" stays on
+  every page.
 - A bare page number ("3", "Page 3 of 9") is removed from every page and not
-  counted.
-- On phones a scan keeps its repeats on every page, uncounted, because pages
-  are recognized one at a time to resume after a stop.
+  counted; a number after an identifier label never is.
+- Phones, which recognize a scan one page at a time to resume after a stop,
+  keep what each page's OCR found for this rule and run it across all the
+  pages at the end, so they remove and count the same rows as the desktop.
 
 ## Detector
 
