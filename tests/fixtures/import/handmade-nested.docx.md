@@ -13,6 +13,6 @@ Between
 
 |  |  |
 | --- | --- |
-| a / b | right |
+| a<br>b | right |
 
 After

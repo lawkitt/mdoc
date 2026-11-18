@@ -4,11 +4,16 @@
 //! configuration, so a cancelled or stopped import resumes with the pages
 //! still to do. Each page goes through pdf-inspector's own page selection
 //! with the desktop's OCR options, so a page reads as it does in a
-//! whole-document run. The caller removes the file's kept pages once it has
-//! taken the result ([`Completed`]). Desktop imports stay on
+//! whole-document run, with one exception: a running header or footer that
+//! OCR reads on every page stays on every page, because pdf-inspector finds
+//! OCR repeats only across the pages one call recognizes (see
+//! `docs/specs/recognition.md`, "Repeated headers and footers"). The caller
+//! removes the file's kept pages once it has taken the result
+//! ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
     ImportError, Imported, LeftOut, OcrFailure, check_cancel, pdf_error, pdf_warning, read_pdf,
+    repeated_lines,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -19,7 +24,11 @@ use std::{
 /// Bumped when a kept page's meaning changes, so older pages are not reused.
 /// 2: the pdf-inspector 1.26.1 sync (#925), whose pages leave out form
 /// field names that format 1's pages carry.
-const FORMAT: u32 = 2;
+/// 3: #925's phase 2 forks, whose pages keep a small edge line that a
+/// one-page OCR run used to drop as page furniture, leave out text drawn
+/// in its background's colour and comment annotations' text (OCR reads the
+/// page without them), and count repeated header and footer rows.
+const FORMAT: u32 = 3;
 
 /// The folder that keeps finished pages, one subfolder per file and OCR
 /// configuration.
@@ -38,6 +47,10 @@ struct Page {
     /// OCR found the page weak, or warned about it: the import's warning
     /// names it.
     review: bool,
+    /// Running header and footer rows the page left out as repeats of an
+    /// earlier page's: native text only, since a one-page OCR run finds no
+    /// repeats.
+    repeated_lines: u32,
 }
 
 impl KeptPages {
@@ -216,7 +229,7 @@ pub fn prepare_resumable(
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
-    let (page_count, left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
+    let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
     drop(native);
     check_cancel(cancel)?;
     let digest = digest(&bytes);
@@ -240,6 +253,7 @@ pub fn prepare_resumable(
         recognized(page, page_count);
         Ok(Page {
             page,
+            repeated_lines: u32::try_from(repeated_lines(&result)).unwrap_or(u32::MAX),
             markdown: result.markdown,
             review,
         })
@@ -247,6 +261,10 @@ pub fn prepare_resumable(
     drop(permit);
     let (markdown, review) = assemble(&pages);
     let warning = pdf_warning(&markdown, review, page_count, true)?;
+    left_out.repeated_lines = pages
+        .iter()
+        .map(|page| u64::from(page.repeated_lines))
+        .sum();
     Ok((
         Imported {
             ocr_configuration: Some(installed.config.clone()),
@@ -319,6 +337,7 @@ mod tests {
             page,
             markdown: format!("Page {page} text.\n"),
             review: page == 2,
+            repeated_lines: 0,
         }
     }
 
@@ -327,15 +346,19 @@ mod tests {
     }
 
     /// Pages kept before a format change (form field names in their text,
-    /// before #925) are recognized again, not reused.
+    /// before #925's phase 1; comment annotations' text read from the scan,
+    /// before its phase 2) are recognized again, not reused.
     #[test]
     fn pages_kept_in_an_older_format_are_not_reused() {
         let dir = tempfile::tempdir().unwrap();
         let kept = KeptPages::new(dir.path().into());
-        let older = kept.folder_in_format(FORMAT - 1, "abc", &config());
-        older.open();
-        older.store(&page(1));
-        assert_eq!(older.load(1), Some(page(1)));
+        assert_eq!(FORMAT, 3);
+        for format in 1..FORMAT {
+            let older = kept.folder_in_format(format, "abc", &config());
+            older.open();
+            older.store(&page(1));
+            assert_eq!(older.load(1), Some(page(1)));
+        }
         let current = kept.folder("abc", &config());
         current.open();
         assert_eq!(current.load(1), None);
@@ -506,6 +529,7 @@ mod tests {
             page: n,
             markdown: "\n".into(),
             review: false,
+            repeated_lines: 0,
         };
         assert_eq!(
             assemble(&[page(1), blank(2), page(3)]).0,

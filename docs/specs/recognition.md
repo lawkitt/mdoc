@@ -18,9 +18,10 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - The import note counts what the Markdown leaves out: Word and ODT
   comments; pictures in PDFs and Word documents ("3 pictures not imported"),
   a scanned page's image included even when OCR read its text; hidden Word
-  and invisible PDF text ("2 hidden passages not imported"); and PDF form
-  field names. Its planned split into a notice and the left-out line is in
-  [originals](originals.md).
+  text and PDF text no reader sees, invisible or drawn in its background's
+  colour or covered ("2 hidden passages not imported"); PDF form field
+  names; and repeated header and footer lines. Its planned split into a
+  notice and the left-out line is in [originals](originals.md).
 - Code that chooses, detects or reports a language takes a list of languages;
   each engine maps the list to what it can read and names what it cannot.
 - Never add an EN/RU boolean or two-way switch; convert an existing one when
@@ -100,11 +101,22 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 - Tests inject the input-source signal and never read the machine's
   keyboards.
 
-## Repeated headers and footers (planned)
+## Repeated headers and footers
 
-- On a scan, a repeated header or footer stays on its first page and its
-  exact repeats are dropped, only with a text match in the same position band
-  on at least 3 pages; the import note counts the dropped lines.
+- A PDF's running header or footer, native or scanned, stays on the first
+  page that shows it, and its exact repeats are dropped; the import note
+  counts them ("3 repeated header and footer lines removed.").
+- A repeat is the same text, case and digits included, spacing aside, in
+  the page's top or bottom band at a steady height, on at least 3 pages and
+  30% of them, and at least 10 characters long; headings, list items and
+  numbered clauses never are.
+- Numbers count, because "Case No. 2-123" and "Case No. 2-124" are different
+  cases; only a page number at a row's start or end that rises with the page
+  may differ.
+- A bare page number ("3", "Page 3 of 9") is removed from every page and not
+  counted.
+- On phones a scan keeps its repeats on every page, uncounted, because pages
+  are recognized one at a time to resume after a stop.
 
 ## Detector
 

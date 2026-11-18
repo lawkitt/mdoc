@@ -91,11 +91,16 @@ pub struct LeftOut {
     /// Pictures: the Markdown carries their alt text at most, and OCR reads
     /// the text drawn in a picture, not the picture.
     pub pictures: u64,
-    /// Passages of hidden-formatted Word text, or stretches of invisible PDF
-    /// text (render mode 3, a scan's hidden OCR layer included).
+    /// Passages of hidden-formatted Word text, or stretches of PDF text no
+    /// reader sees: invisible (render mode 3, a scan's hidden OCR layer
+    /// included), or drawn in its background's colour or covered by a
+    /// later fill or image.
     pub hidden_text: u64,
     /// AcroForm field names; the fields' values stay.
     pub field_names: u64,
+    /// A PDF's running header and footer rows left out as exact repeats of
+    /// a row kept on an earlier page.
+    pub repeated_lines: u64,
     /// A Word or ODT document's comments, which only a rendering shows.
     pub comments: crate::hidden_content::Comments,
 }
@@ -106,6 +111,8 @@ impl LeftOut {
     /// for OCR that didn't run) don't count: the partial-import notice
     /// already reports those pages whole (#949). Once OCR reads a page, its
     /// pictures count again, as OCR keeps their text, not the pictures.
+    /// Repeated header lines are not among them: OCR finds its own, so they
+    /// come from the result imported ([`repeated_lines`]).
     pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult, skipped: &[u32]) -> Self {
         fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
             pages.iter().map(|page| u64::from(count(page))).sum()
@@ -119,29 +126,33 @@ impl LeftOut {
                     page.images
                 }
             }),
-            hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches),
+            hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches)
+                + sum(&native.hidden_text_by_page, |page| page.stretches),
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
+            repeated_lines: 0,
             comments: Default::default(),
         }
     }
 
     /// The note's lines for the counts other than comments, in order.
-    fn counts(&self) -> [Option<String>; 3] {
+    fn counts(&self) -> [Option<String>; 4] {
         [
             pictures_note(self.pictures),
             hidden_text_note(self.hidden_text),
             left_out_note(self.field_names, "form field name", "form field names"),
+            repeated_lines_note(self.repeated_lines),
         ]
     }
 
     /// The left-out line, if anything is left out. Comments count only where
     /// no rendering of the document shows them (`comments_shown` false).
     pub fn line(&self, comments_shown: bool) -> Option<String> {
-        let [pictures, hidden, field_names] = self.counts();
+        let [pictures, hidden, field_names, repeated] = self.counts();
         join_notes([
             pictures,
             hidden,
             field_names,
+            repeated,
             (!comments_shown)
                 .then(|| self.comments.not_shown())
                 .flatten(),
@@ -154,13 +165,14 @@ impl Imported {
     /// they show the left-out line (ROADMAP Comments item 4): the order the
     /// note had before the split.
     pub fn note(&self) -> Option<String> {
-        let [pictures, hidden, field_names] = self.left_out.counts();
+        let [pictures, hidden, field_names, repeated] = self.left_out.counts();
         join_notes([
             self.warning.clone(),
             self.left_out.comments.note(),
             pictures,
             hidden,
             field_names,
+            repeated,
         ])
     }
 }
@@ -297,6 +309,7 @@ pub fn prepare_cancellable(
             // elsewhere).
             hidden_text: u64::from(converted.hidden_text_left_out),
             field_names: 0,
+            repeated_lines: 0,
             comments,
         },
         is_pdf: false,
@@ -415,7 +428,7 @@ fn convert_pdf(
     }
     // Without OCR the pages it would read are skipped, and the notice
     // reports them whole: their pictures don't count again (#949).
-    let left_out = if !skip_ocr && installed.is_some() {
+    let mut left_out = if !skip_ocr && installed.is_some() {
         LeftOut::of_pdf(&native, &[])
     } else {
         LeftOut::of_pdf(&native, &native.pages_recommended_for_ocr)
@@ -452,6 +465,7 @@ fn convert_pdf(
         );
     }
     let warning = pdf_warning(&result.markdown, warning_pages, result.page_count, used_ocr)?;
+    left_out.repeated_lines = repeated_lines(&result);
     Ok(Imported {
         ocr_configuration: if used_ocr {
             installed.map(|i| i.config.clone())
@@ -525,6 +539,26 @@ fn left_out_note(count: u64, one: &str, many: &str) -> Option<String> {
         0 => None,
         1 => Some(format!("1 {one} not imported.")),
         n => Some(format!("{n} {many} not imported.")),
+    }
+}
+
+/// The running header and footer rows `result`'s Markdown left out as exact
+/// repeats of a row kept on an earlier page.
+pub(crate) fn repeated_lines(result: &pdf_inspector::vision::OcrPdfResult) -> u64 {
+    result
+        .repeated_lines_by_page
+        .iter()
+        .map(|page| u64::from(page.lines))
+        .sum()
+}
+
+/// The import note's line for repeated header and footer rows removed, if
+/// any: "3 repeated header and footer lines removed."
+pub(crate) fn repeated_lines_note(count: u64) -> Option<String> {
+    match count {
+        0 => None,
+        1 => Some("1 repeated header or footer line removed.".to_owned()),
+        n => Some(format!("{n} repeated header and footer lines removed.")),
     }
 }
 
@@ -934,6 +968,40 @@ mod tests {
         assert_eq!(LeftOut::default().line(false), None);
     }
 
+    /// A running header stays on its first page and its exact repeats are
+    /// dropped and counted; text drawn in its background's colour is left
+    /// out and counted with the other hidden passages (#925 M4, M5).
+    #[test]
+    fn the_note_counts_repeated_header_lines_and_text_in_its_background_colour() {
+        let imported = convert(&fixture("handmade-running-header.pdf")).unwrap();
+        assert_eq!(
+            imported.markdown.matches("Case No. 2-123/2026").count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert!(
+            !imported.markdown.contains("SECRET"),
+            "{}",
+            imported.markdown
+        );
+        assert!(
+            imported.markdown.contains("Clause 4.11"),
+            "{}",
+            imported.markdown
+        );
+        assert_eq!(imported.warning, None);
+        assert_eq!(
+            imported.left_out.line(true).as_deref(),
+            Some("1 hidden passage not imported. 3 repeated header and footer lines removed.")
+        );
+        assert_eq!(repeated_lines_note(0), None);
+        assert_eq!(
+            repeated_lines_note(1).as_deref(),
+            Some("1 repeated header or footer line removed.")
+        );
+    }
+
     /// ODT comments are left out of the Markdown (AnyDoc skips
     /// `office:annotation`), so the note counts them as it does Word's.
     #[test]
@@ -1034,6 +1102,7 @@ mod tests {
             pictures: 1,
             hidden_text: 2,
             field_names: 3,
+            repeated_lines: 4,
             comments: crate::hidden_content::Comments {
                 count: 2,
                 at_least: false,
@@ -1043,7 +1112,8 @@ mod tests {
             all.line(false).as_deref(),
             Some(
                 "1 picture not imported. 2 hidden passages not imported. \
-                 3 form field names not imported. 2 comments not shown."
+                 3 form field names not imported. 4 repeated header and footer lines removed. \
+                 2 comments not shown."
             )
         );
         // Hidden text is left out of the Markdown whether or not the Source
@@ -1063,7 +1133,8 @@ mod tests {
             whole.note().as_deref(),
             Some(
                 "2 comments not imported. 1 picture not imported. \
-                 2 hidden passages not imported. 3 form field names not imported."
+                 2 hidden passages not imported. 3 form field names not imported. \
+                 4 repeated header and footer lines removed."
             )
         );
     }
