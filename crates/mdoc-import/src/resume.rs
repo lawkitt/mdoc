@@ -228,8 +228,9 @@ pub fn prepare_resumable(
     let bytes = read_pdf(&source)?;
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
-    let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let mut native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
+    let annotations = std::mem::take(&mut native.annotations);
     drop(native);
     check_cancel(cancel)?;
     let digest = digest(&bytes);
@@ -272,6 +273,8 @@ pub fn prepare_resumable(
             markdown,
             warning,
             left_out,
+            comments: Vec::new(),
+            annotations,
             is_pdf: true,
             is_docx: false,
         },

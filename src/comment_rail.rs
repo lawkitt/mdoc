@@ -10,7 +10,7 @@ use gpui::{
     actions, div, prelude::*, px,
 };
 use gpui_pdf::{NormRect, PageLayout, PageMark, PageOverlay, PdfEvent, PdfView};
-use mdoc_import::docx_preview::{CommentAnchor, DocxComment};
+use mdoc_import::{comments::Comment, docx_preview::CommentAnchor};
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
@@ -48,8 +48,8 @@ const MARKER_CARD: f32 = 340.;
 /// A comment with its replies.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Thread {
-    pub comment: DocxComment,
-    pub replies: Vec<DocxComment>,
+    pub comment: Comment,
+    pub replies: Vec<Comment>,
     /// Where the comment sits, in page order; empty when it has no place on
     /// the page.
     pub anchors: Vec<CommentAnchor>,
@@ -59,7 +59,7 @@ pub(crate) struct Thread {
 /// none ("Not on the page"). A reply joins its thread's root comment, in
 /// document order; its own range is the root's.
 pub(crate) fn threads(
-    comments: &[DocxComment],
+    comments: &[Comment],
     anchors: &[CommentAnchor],
 ) -> (Vec<Thread>, Vec<Thread>) {
     let index: HashMap<&str, usize> = comments
@@ -150,7 +150,7 @@ pub(crate) fn short_date(date: &str) -> Option<String> {
     Some(format!("{month} {day}, {year}"))
 }
 
-fn author(comment: &DocxComment) -> &str {
+fn author(comment: &Comment) -> &str {
     if comment.author.trim().is_empty() {
         "Unknown author"
     } else {
@@ -159,7 +159,7 @@ fn author(comment: &DocxComment) -> &str {
 }
 
 /// Up to two initials of the author's name.
-pub(crate) fn initials(comment: &DocxComment) -> String {
+pub(crate) fn initials(comment: &Comment) -> String {
     let words: Vec<&str> = comment.author.split_whitespace().collect();
     let letters: String = match words.as_slice() {
         [] => "?".into(),
@@ -185,7 +185,7 @@ pub(crate) fn card_label(thread: &Thread) -> String {
     if let Some(date) = short_date(&c.date) {
         label.push_str(&format!(", {date}"));
     }
-    let passage: String = c.quote.chars().take(120).collect();
+    let passage: String = c.anchor_text.chars().take(120).collect();
     if !passage.trim().is_empty() {
         label.push_str(&format!(", on '{}'", passage.trim()));
     }
@@ -248,7 +248,7 @@ pub struct CommentRail {
 
 impl CommentRail {
     pub fn new(
-        comments: &[DocxComment],
+        comments: &[Comment],
         anchors: &[CommentAnchor],
         pdf: &Entity<PdfView>,
         theme: Rc<Cell<Theme>>,
@@ -541,7 +541,7 @@ impl CommentRail {
         let c = &thread.comment;
         let resolved = c.resolved;
         let copy = card_text(thread);
-        let person = |comment: &DocxComment, size: f32| {
+        let person = |comment: &Comment, size: f32| {
             div()
                 .flex()
                 .items_center()
@@ -1030,13 +1030,13 @@ mod tests {
     use super::*;
     use mdoc_import::docx_preview::AnchorRect;
 
-    fn comment(id: &str, parent: Option<&str>) -> DocxComment {
-        DocxComment {
+    fn comment(id: &str, parent: Option<&str>) -> Comment {
+        Comment {
             id: id.into(),
             author: "Ann Lee".into(),
             date: "2026-09-19T10:00:00Z".into(),
             text: format!("Text {id}"),
-            quote: "the clause".into(),
+            anchor_text: "the clause".into(),
             parent: parent.map(Into::into),
             resolved: false,
         }

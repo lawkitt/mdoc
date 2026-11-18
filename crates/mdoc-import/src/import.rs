@@ -1,4 +1,5 @@
 //! Conversion boundary for AnyDoc and PDF extraction. Conversion performs no writes.
+use crate::comments::Comment;
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -81,6 +82,12 @@ pub struct Imported {
     pub warning: Option<String>,
     /// What else the Markdown leaves out, counted for the left-out line.
     pub left_out: LeftOut,
+    /// The comments AnyDoc read from a DOCX, ODT or RTF, in document order;
+    /// the Source rail's cards. Never in the Markdown.
+    pub comments: Vec<Comment>,
+    /// A PDF's annotations that carry text (notes, FreeText, text markup),
+    /// from its native pass whether or not OCR ran. Never in the Markdown.
+    pub annotations: Vec<pdf_inspector::PdfAnnotation>,
     pub is_pdf: bool,
     pub is_docx: bool,
 }
@@ -101,8 +108,12 @@ pub struct LeftOut {
     /// A PDF's running header and footer rows left out as exact repeats of
     /// a row kept on an earlier page.
     pub repeated_lines: u64,
-    /// A Word or ODT document's comments, which only a rendering shows.
-    pub comments: crate::hidden_content::Comments,
+    /// Comments read as data, which a Source rail can show: `Imported`'s
+    /// comments or annotations. Without a rail they count in the line.
+    pub comments: u64,
+    /// Comments only counted (DOC, PPTX, XLSX, ODS, ODP, and past AnyDoc's
+    /// per-document cap): no card shows them, so they always count.
+    pub comments_unread: u64,
 }
 
 impl LeftOut {
@@ -112,7 +123,8 @@ impl LeftOut {
     /// already reports those pages whole (#949). Once OCR reads a page, its
     /// pictures count again, as OCR keeps their text, not the pictures.
     /// Repeated header lines are not among them: OCR finds its own, so they
-    /// come from the result imported ([`repeated_lines`]).
+    /// come from the result imported ([`repeated_lines`]). Annotations count
+    /// as comments until the Source shows them (ROADMAP Comments item 5).
     pub(crate) fn of_pdf(native: &pdf_inspector::vision::OcrPdfResult, skipped: &[u32]) -> Self {
         fn sum<T>(pages: &[T], count: impl Fn(&T) -> u32) -> u64 {
             pages.iter().map(|page| u64::from(count(page))).sum()
@@ -130,7 +142,8 @@ impl LeftOut {
                 + sum(&native.hidden_text_by_page, |page| page.stretches),
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
             repeated_lines: 0,
-            comments: Default::default(),
+            comments: native.annotations.len() as u64,
+            comments_unread: 0,
         }
     }
 
@@ -144,19 +157,25 @@ impl LeftOut {
         ]
     }
 
-    /// The left-out line, if anything is left out. Comments count only where
-    /// no rendering of the document shows them (`comments_shown` false).
+    /// The left-out line, if anything is left out. Comments read as data
+    /// count only where no rendering of the document shows them
+    /// (`comments_shown` false); comments only counted always do.
     pub fn line(&self, comments_shown: bool) -> Option<String> {
         let [pictures, hidden, field_names, repeated] = self.counts();
+        let comments = self.comments_unread + if comments_shown { 0 } else { self.comments };
         join_notes([
             pictures,
             hidden,
             field_names,
             repeated,
-            (!comments_shown)
-                .then(|| self.comments.not_shown())
-                .flatten(),
+            not_shown_note(comments),
         ])
+    }
+
+    /// The left-out line's count of the comments read as data, for a
+    /// document whose Source shows none: "3 comments not shown."
+    pub fn comments_not_shown(&self) -> Option<String> {
+        not_shown_note(self.comments)
     }
 }
 
@@ -168,13 +187,46 @@ impl Imported {
         let [pictures, hidden, field_names, repeated] = self.left_out.counts();
         join_notes([
             self.warning.clone(),
-            self.left_out.comments.note(),
+            left_out_note(
+                self.left_out.comments + self.left_out.comments_unread,
+                "comment",
+                "comments",
+            ),
             pictures,
             hidden,
             field_names,
             repeated,
         ])
     }
+}
+
+/// The left-out line's phrase for `count` comments no rendering shows.
+fn not_shown_note(count: u64) -> Option<String> {
+    match count {
+        0 => None,
+        1 => Some("1 comment not shown.".into()),
+        n => Some(format!("{n} comments not shown.")),
+    }
+}
+
+/// The comments of the office document at `path`, read as its import reads
+/// them: the Source's cards for a document this session did not import.
+/// None when AnyDoc cannot convert it.
+pub fn source_comments(path: &Path) -> Vec<Comment> {
+    source_comments_cancellable(path, &AtomicBool::new(false))
+}
+
+pub(crate) fn source_comments_cancellable(path: &Path, cancel: &AtomicBool) -> Vec<Comment> {
+    convert_document(path, cancel)
+        .map(|converted| converted.comments)
+        .unwrap_or_default()
+}
+
+/// The left-out line's phrase for the comments of the office document at
+/// `path` that its rendering would show: for an original that could not
+/// render, whose import counted them there instead of in the line.
+pub fn source_comments_not_shown(path: &Path) -> Option<String> {
+    not_shown_note(source_comments(path).len() as u64)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -285,10 +337,12 @@ pub fn prepare_cancellable(
     let is_docx = source
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
-    let comments = crate::hidden_content::Comments {
-        count: converted.comments,
-        at_least: converted.comments_at_least,
-    };
+    // Comments never reach the Markdown: AnyDoc reports them beside it, read
+    // (DOCX, ODT, RTF) or only counted (DOC, PPTX, XLSX, ODS, ODP), and the
+    // left-out line says how many.
+    let comments = converted.comments;
+    let read = comments.len() as u64;
+    let comments_unread = u64::from(converted.comments_left_out).saturating_sub(read);
     // Nor do Word's pictures: embedded ones render as their alt text at
     // most (ROADMAP Vision item 1).
     let format = anydoc::Format::from_path(&source);
@@ -310,25 +364,39 @@ pub fn prepare_cancellable(
             hidden_text: u64::from(converted.hidden_text_left_out),
             field_names: 0,
             repeated_lines: 0,
-            comments,
+            comments: read,
+            comments_unread,
         },
+        comments,
+        annotations: Vec::new(),
         is_pdf: false,
         is_docx,
     })
 }
 
 /// What converting a document other than a PDF gives the import: AnyDoc's
-/// Markdown and the counts the import note reads. The supervised worker
-/// sends it back as is (`conversion_worker`), so it holds data only.
+/// Markdown, comments and the counts the import note reads. The supervised
+/// worker sends it back as is (`conversion_worker`), so it holds data only.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Converted {
     pub markdown: String,
     pub images_left_out: u32,
     pub hidden_text_left_out: u32,
-    /// Comments left out, Word's and OpenDocument's together.
-    pub comments: usize,
-    /// The comment scan stopped at its limit, so there may be more.
-    pub comments_at_least: bool,
+    pub comments: Vec<Comment>,
+    /// Total comments left out of the Markdown, including those read as data.
+    pub comments_left_out: u32,
+}
+
+impl From<anydoc::Conversion> for Converted {
+    fn from(converted: anydoc::Conversion) -> Self {
+        Self {
+            markdown: converted.markdown,
+            images_left_out: converted.images_left_out,
+            hidden_text_left_out: converted.hidden_text_left_out,
+            comments: converted.comments.into_iter().map(Comment::from).collect(),
+            comments_left_out: converted.comments_left_out,
+        }
+    }
 }
 
 /// How long a non-PDF conversion may run in the supervised worker before
@@ -364,20 +432,9 @@ pub fn convert_bytes(bytes: &[u8], extension: Option<&str>) -> Result<Converted,
     let format = anydoc::Format::from_bytes(bytes)
         .or_else(|| extension.and_then(anydoc::Format::from_extension))
         .ok_or(ImportError::Unsupported)?;
-    let converted = anydoc::to_markdown_bytes_with(bytes, format, anydoc::Options::default())
-        .map_err(convert_error)?;
-    // Comments never reach the Markdown (AnyDoc reads no Word comments part
-    // and skips ODT annotations); the left-out line says how many.
-    // AnyDoc picks the parser by content, so both counters look at the
-    // package whatever its extension; each counts nothing in the other's.
-    let comments = crate::hidden_content::comments_in(bytes);
-    Ok(Converted {
-        markdown: converted.markdown,
-        images_left_out: converted.images_left_out,
-        hidden_text_left_out: converted.hidden_text_left_out,
-        comments: comments.count,
-        comments_at_least: comments.at_least,
-    })
+    anydoc::to_markdown_bytes_with(bytes, format, anydoc::Options::default())
+        .map(Converted::from)
+        .map_err(convert_error)
 }
 
 /// `convert`'s result, or an import error if it panics. The phones' profile
@@ -415,7 +472,7 @@ fn convert_pdf(
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     let bytes = read_pdf(&source)?;
-    let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let mut native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
@@ -433,6 +490,9 @@ fn convert_pdf(
     } else {
         LeftOut::of_pdf(&native, &native.pages_recommended_for_ocr)
     };
+    // Annotations come from the native pass, and OCR renders the pages it
+    // reads without them, so their text never reaches the Markdown.
+    let annotations = std::mem::take(&mut native.annotations);
     let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
         let _permit = crate::model_work::Permit::acquire_for("text recognition")
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
@@ -476,6 +536,8 @@ fn convert_pdf(
         markdown: result.markdown,
         warning,
         left_out,
+        comments: Vec::new(),
+        annotations,
         is_pdf: true,
         is_docx: false,
     })
@@ -708,8 +770,8 @@ mod tests {
     }
 
     /// Every non-PDF import fixture: converting from bytes, as the worker
-    /// and the phones do, gives what the file path gave AnyDoc and the
-    /// comment counters before the worker, errors included.
+    /// and the phones do, gives what the file path gives AnyDoc,
+    /// including its comments, counts and errors.
     #[test]
     fn converting_bytes_matches_converting_the_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -728,18 +790,8 @@ mod tests {
         assert!(paths.len() >= 15, "{paths:?}");
         for path in paths {
             let by_path = anydoc::to_markdown_with(&path, anydoc::Options::default())
-                .map_err(|error| convert_error(error).to_string())
-                .map(|converted| {
-                    let comments = crate::hidden_content::docx_comments(&path)
-                        .and(crate::hidden_content::odt_comments(&path));
-                    Converted {
-                        markdown: converted.markdown,
-                        images_left_out: converted.images_left_out,
-                        hidden_text_left_out: converted.hidden_text_left_out,
-                        comments: comments.count,
-                        comments_at_least: comments.at_least,
-                    }
-                });
+                .map(Converted::from)
+                .map_err(|error| convert_error(error).to_string());
             let extension = path.extension().and_then(|e| e.to_str());
             let by_bytes = convert_bytes(&std::fs::read(&path).unwrap(), extension)
                 .map_err(|error| error.to_string());
@@ -1002,45 +1054,147 @@ mod tests {
         );
     }
 
-    /// ODT comments are left out of the Markdown (AnyDoc skips
-    /// `office:annotation`), so the note counts them as it does Word's.
+    /// Comments never reach the Markdown, whatever the format: the import
+    /// equals the fork's reviewed snapshot, and no comment's text or author
+    /// (an annotation's, for a PDF) is in it. The import carries them beside
+    /// it instead.
     #[test]
-    fn the_note_counts_odt_comments() {
-        use std::io::Write;
-        let content = r#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><office:body><office:text>
-<text:p>Lamb<office:annotation office:name="a"><dc:creator>Margaret Holloway</dc:creator><text:p>COMMENTTEXT</text:p></office:annotation>da<office:annotation-end office:name="a"/>word</text:p>
-<text:p>Second<office:annotation><text:p>Another</text:p></office:annotation> paragraph.</text:p>
-</office:text></office:body></office:document-content>"#;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("comments.odt");
-        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
-        let stored = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file("mimetype", stored).unwrap();
-        zip.write_all(b"application/vnd.oasis.opendocument.text")
-            .unwrap();
-        zip.start_file("content.xml", zip::write::SimpleFileOptions::default())
-            .unwrap();
-        zip.write_all(content.as_bytes()).unwrap();
-        zip.finish().unwrap();
-        let imported = convert(&path).unwrap();
-        assert_eq!(imported.markdown.trim(), "Lambdaword\n\nSecond paragraph.");
-        assert_eq!(imported.note().as_deref(), Some("2 comments not imported."));
-        // No rendering shows an ODT's comments.
-        assert_eq!(
-            imported.left_out.line(false).as_deref(),
-            Some("2 comments not shown.")
-        );
-        // AnyDoc reads the content, whatever the extension says; so does
-        // the count.
-        for name in ["renamed.bin", "renamed.docx", "renamed.rtf"] {
-            let renamed = dir.path().join(name);
-            std::fs::copy(&path, &renamed).unwrap();
-            let converted = convert(&renamed).unwrap();
-            assert_eq!(converted.markdown, imported.markdown, "{name}");
-            assert_eq!(converted.left_out, imported.left_out, "{name}");
+    fn comments_and_annotations_never_reach_the_markdown() {
+        for name in [
+            "handmade-comments.docx",
+            "handmade-comments.odt",
+            "handmade-comments.rtf",
+            "text_annotations.pdf",
+        ] {
+            let imported = convert(&fixture(name)).unwrap();
+            let expected = std::fs::read_to_string(fixture(&format!("{name}.md")))
+                .unwrap()
+                .replace("\r\n", "\n");
+            let markdown = imported.markdown.replace("\r\n", "\n");
+            assert_eq!(
+                markdown.trim_end_matches('\n'),
+                expected.trim_end_matches('\n'),
+                "{name}"
+            );
+            let said: Vec<(&str, &str)> = imported
+                .comments
+                .iter()
+                .map(|c| (c.text.as_str(), c.author.as_str()))
+                .chain(
+                    imported
+                        .annotations
+                        .iter()
+                        .map(|a| (a.text.as_str(), a.author.as_deref().unwrap_or_default())),
+                )
+                .collect();
+            assert!(said.len() >= 6, "{name}: {said:?}");
+            for (text, author) in said {
+                for words in [text.trim(), author] {
+                    assert!(
+                        words.is_empty() || !markdown.contains(words),
+                        "{name}: {words:?} reached the Markdown"
+                    );
+                }
+            }
         }
+    }
+
+    /// The left-out line counts what the forks report: comments read as
+    /// data (DOCX, ODT, RTF; a PDF's annotations) only without a rendering
+    /// to show them, comments only counted (PPTX, XLSX) always. A renamed
+    /// copy counts the same, as AnyDoc reads the content.
+    #[test]
+    fn the_left_out_line_counts_the_forks_comments() {
+        for (name, read, unread) in [
+            ("handmade-comments.docx", 7, 0),
+            ("handmade-comments.odt", 7, 0),
+            ("handmade-comments.rtf", 7, 0),
+            ("handmade-comments.pptx", 0, 4),
+            ("handmade-comments.xlsx", 0, 3),
+            ("text_annotations.pdf", 8, 0),
+        ] {
+            let imported = convert(&fixture(name)).unwrap();
+            let left_out = imported.left_out;
+            assert_eq!(
+                (left_out.comments, left_out.comments_unread),
+                (read, unread),
+                "{name}"
+            );
+            assert_eq!(
+                imported.comments.len() + imported.annotations.len(),
+                read as usize,
+                "{name}"
+            );
+            let all = format!("{} comments not shown.", read + unread);
+            assert_eq!(left_out.line(false), Some(all), "{name}");
+            let only_counted = (unread > 0).then(|| format!("{unread} comments not shown."));
+            assert_eq!(left_out.line(true), only_counted, "{name}");
+            let note = format!("{} comments not imported.", read + unread);
+            assert_eq!(imported.note(), Some(note), "{name}");
+            let dir = tempfile::tempdir().unwrap();
+            let renamed = dir.path().join("renamed.bin");
+            std::fs::copy(fixture(name), &renamed).unwrap();
+            let again = convert(&renamed).unwrap();
+            assert_eq!(again.left_out, left_out, "{name}");
+            assert_eq!(again.comments, imported.comments, "{name}");
+        }
+        assert_eq!(not_shown_note(1).as_deref(), Some("1 comment not shown."));
+        assert_eq!(not_shown_note(0), None);
+    }
+
+    /// The Source's cards and the note come from the same reading: AnyDoc's
+    /// comments, with author, date, text, passage, parent and resolved
+    /// state, as `source_comments` gives them for a Source opened without
+    /// an import.
+    #[test]
+    fn source_cards_read_what_the_import_counted() {
+        let path = fixture("handmade-comments.docx");
+        let imported = convert(&path).unwrap();
+        assert_eq!(source_comments(&path), imported.comments);
+        let row = |id: &str| {
+            let c = imported.comments.iter().find(|c| c.id == id).unwrap();
+            (
+                c.author.as_str(),
+                c.text.as_str(),
+                c.anchor_text.as_str(),
+                c.parent.as_deref(),
+                c.resolved,
+            )
+        };
+        assert_eq!(
+            row("0"),
+            (
+                "Alice Reviewer",
+                "Check this range.",
+                "commented words",
+                None,
+                false
+            )
+        );
+        assert_eq!(
+            row("3"),
+            (
+                "Bob Builder",
+                "Agreed.",
+                "commented words",
+                Some("0"),
+                false
+            )
+        );
+        assert_eq!(
+            row("4"),
+            (
+                "Bob Builder",
+                "Fixed, resolving.",
+                "resolved words",
+                None,
+                true
+            )
+        );
+        assert_eq!(imported.comments[0].date, "2026-11-18T09:30:00Z");
+        // A PDF has no office comments; one AnyDoc can't convert has none.
+        assert!(source_comments(&fixture("text_annotations.pdf")).is_empty());
+        assert!(source_comments(&fixture("missing.docx")).is_empty());
     }
 
     /// Pictures never reach the Markdown, so the note counts them, for PDF
@@ -1103,10 +1257,8 @@ mod tests {
             hidden_text: 2,
             field_names: 3,
             repeated_lines: 4,
-            comments: crate::hidden_content::Comments {
-                count: 2,
-                at_least: false,
-            },
+            comments: 2,
+            comments_unread: 0,
         };
         assert_eq!(
             all.line(false).as_deref(),
@@ -1184,7 +1336,7 @@ mod tests {
             "moved text appears once, where it now is"
         );
         assert_eq!(imported.note().as_deref(), Some("2 comments not imported."));
-        assert_eq!(imported.left_out.comments.count, 2);
+        assert_eq!(imported.left_out.comments, 2);
         // Content detection counts them too, for a renamed copy.
         let dir = tempfile::tempdir().unwrap();
         for name in ["renamed.bin", "renamed.odt"] {

@@ -15,6 +15,8 @@ pub fn converted(source: PathBuf) -> Imported {
         markdown: "# Imported\n".into(),
         warning: Some("Partial import: pages 2 of 2 require OCR and were skipped.".into()),
         left_out: Default::default(),
+        comments: Vec::new(),
+        annotations: Vec::new(),
         is_pdf: false,
         is_docx: false,
     }

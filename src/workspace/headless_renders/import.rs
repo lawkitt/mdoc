@@ -71,6 +71,7 @@ fn comments_note(d: &mut Driver) -> Result<()> {
         Arc::new(AtomicBool::new(false)),
         crate::preview::read_comment_marks,
         Default::default(),
+        None,
     ) else {
         return Err("the preview renders tracked changes now; show it instead".into());
     };

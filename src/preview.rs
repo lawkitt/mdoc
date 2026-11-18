@@ -10,7 +10,10 @@ use crate::{
 };
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
 use gpui_pdf::{HeaderToggle, PdfView};
-use mdoc_import::docx_preview::{self, PreviewError};
+use mdoc_import::{
+    comments::Comment,
+    docx_preview::{self, PreviewError},
+};
 use mdoc_store::{session_store, settings};
 use std::{
     cell::Cell,
@@ -92,6 +95,10 @@ pub(super) struct PreviewState {
     docx: Option<docx_preview::DocxPreview>,
     /// The DOCX's comments beside its page, when it has any.
     comments: Option<Entity<CommentRail>>,
+    /// The comments this tab's import read from its source, so the cards
+    /// show what the left-out line counted; a Source shown without an
+    /// import here reads its own.
+    imported_comments: Option<(PathBuf, Arc<Vec<Comment>>)>,
     pending: Option<PendingPreview>,
     message: Option<String>,
     loading: bool,
@@ -165,6 +172,19 @@ impl PreviewState {
                 .as_ref()
                 .and_then(|p| p.extension())
                 .is_some_and(|e| e.eq_ignore_ascii_case("docx"))
+    }
+
+    /// An import of `source` read `comments`: its rendering's cards.
+    pub(super) fn imported(&mut self, source: PathBuf, comments: Vec<Comment>) {
+        self.imported_comments = Some((source, Arc::new(comments)));
+    }
+
+    /// The comments an import here read from `source`, if any.
+    fn imported_comments(&self, source: &Path) -> Option<Arc<Vec<Comment>>> {
+        self.imported_comments
+            .as_ref()
+            .filter(|(path, _)| path == source)
+            .map(|(_, comments)| comments.clone())
     }
 
     /// Passages of hidden text in the DOCX shown.
@@ -729,12 +749,19 @@ impl DocumentView {
         let options = docx_preview::RenderOptions {
             show_hidden_text: self.source_display().hidden_text,
         };
+        let comments = self.preview.imported_comments(&path);
         let task = cx.background_executor().spawn(async move {
             // Headless UI tests cannot launch the test harness as a worker.
             if cfg!(test) {
-                docx_preview::render_in_process(&path, cancel, read_comment_marks, options)
+                docx_preview::render_in_process(
+                    &path,
+                    cancel,
+                    read_comment_marks,
+                    options,
+                    comments,
+                )
             } else {
-                docx_preview::render_with_cancel(&path, cancel, options)
+                docx_preview::render_with_cancel(&path, cancel, options, comments)
             }
         });
         let task = cx.spawn_in(window, async move |this, cx| {
