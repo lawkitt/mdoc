@@ -337,14 +337,6 @@ list, and the import note splits into a notice and a quiet left-out line
 items merge after v0.4.0-rc.3 is tagged, because they change snapshots and
 the note.
 
-2. **[Import] Comments and hidden content from the forks.** *From the
-   comments grill (#927).* AnyDoc reports comments (DOCX, ODT, RTF; DOC,
-   PPTX and XLSX counted if cheap) and hidden-text passages as structured
-   data with author, date, text, anchor text, replies and resolved state;
-   pdf-inspector reports annotations that carry text. mdoc's two DOCX
-   comment parsers go. Builds on #925's AnyDoc W1 and pdf-inspector M1.
-   *Done when:* the import result carries them, each format has a fixture,
-   and the note's counts and the Source cards come from the same data.
 5. **[Desktop] PDF annotations in the rail.** *From the comments grill
    (#927).* pdf-inspector's annotations on the same rail and markers, their
    highlight areas tinted by mdoc and the PDF's own note icons and popups
