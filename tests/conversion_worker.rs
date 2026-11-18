@@ -42,7 +42,7 @@ fn with_fault(
 }
 
 /// Every non-PDF import fixture, and a CSV and an unknown file: the worker
-/// gives byte-identical Markdown and counts, or the same error, as
+/// gives byte-identical Markdown, comments and counts, or the same error, as
 /// converting in this process.
 #[test]
 fn the_worker_converts_as_the_app_did_in_process() {
@@ -82,7 +82,14 @@ fn the_worker_converts_as_the_app_did_in_process() {
         // hidden passages of the comments fixture, for one.
         if path.ends_with("comments.docx") {
             let in_worker = in_worker.unwrap();
-            assert_eq!((in_worker.comments, in_worker.hidden_text_left_out), (6, 1));
+            assert_eq!(
+                (
+                    in_worker.comments.len(),
+                    in_worker.comments_left_out,
+                    in_worker.hidden_text_left_out,
+                ),
+                (6, 6, 1)
+            );
         }
     }
     assert!(converted >= 12, "{converted}");
