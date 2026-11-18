@@ -26,7 +26,8 @@ use std::{
 /// field names that format 1's pages carry.
 /// 3: #925's phase 2 forks, whose pages keep a small edge line that a
 /// one-page OCR run used to drop as page furniture, leave out text drawn
-/// in its background's colour, and count repeated header and footer rows.
+/// in its background's colour and comment annotations' text (OCR reads the
+/// page without them), and count repeated header and footer rows.
 const FORMAT: u32 = 3;
 
 /// The folder that keeps finished pages, one subfolder per file and OCR
@@ -345,15 +346,19 @@ mod tests {
     }
 
     /// Pages kept before a format change (form field names in their text,
-    /// before #925) are recognized again, not reused.
+    /// before #925's phase 1; comment annotations' text read from the scan,
+    /// before its phase 2) are recognized again, not reused.
     #[test]
     fn pages_kept_in_an_older_format_are_not_reused() {
         let dir = tempfile::tempdir().unwrap();
         let kept = KeptPages::new(dir.path().into());
-        let older = kept.folder_in_format(FORMAT - 1, "abc", &config());
-        older.open();
-        older.store(&page(1));
-        assert_eq!(older.load(1), Some(page(1)));
+        assert_eq!(FORMAT, 3);
+        for format in 1..FORMAT {
+            let older = kept.folder_in_format(format, "abc", &config());
+            older.open();
+            older.store(&page(1));
+            assert_eq!(older.load(1), Some(page(1)));
+        }
         let current = kept.folder("abc", &config());
         current.open();
         assert_eq!(current.load(1), None);
