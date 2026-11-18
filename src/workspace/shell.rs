@@ -122,6 +122,8 @@ enum Command {
     DecisionHistory,
     ExpandIdentities,
     CollapseIdentities,
+    /// Stop the active tab's running conversion (#950); no key of its own.
+    CancelConversion,
     ToggleSidebar,
     OpenCase,
     Home,
@@ -161,6 +163,7 @@ impl Command {
             | Command::DecisionHistory
             | Command::ExpandIdentities
             | Command::CollapseIdentities
+            | Command::CancelConversion
             | Command::Theme
             | Command::SettingsCategory(_)
             | Command::Heading(_)
@@ -1534,6 +1537,18 @@ impl Workspace {
                     },
                 ]);
             }
+            let converting = self.active_view().is_some_and(|view| {
+                let import = &view.read(cx).import;
+                import.busy() && !import.stopping()
+            });
+            if converting {
+                rows.push(Row {
+                    section: "Actions",
+                    label: "Cancel conversion".into(),
+                    detail: None,
+                    command: Command::CancelConversion,
+                });
+            }
             rows.extend([Row {
                 section: "Actions",
                 label: "Close tab".into(),
@@ -1733,6 +1748,14 @@ impl Workspace {
                     view.update(cx, |view, cx| view.open_decision_history(window, cx));
                 }
             }
+            Command::CancelConversion => {
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| {
+                        view.import.stop();
+                        cx.notify();
+                    });
+                }
+            }
             Command::ExpandIdentities | Command::CollapseIdentities => {
                 let expand = matches!(row.command, Command::ExpandIdentities);
                 if let Some(view) = self.active_view() {
@@ -1807,7 +1830,7 @@ impl Workspace {
                 Command::RestoreReply => ui::Icon::Reply,
                 Command::CopyForAi | Command::CopyMarkdown => ui::Icon::Copy,
                 Command::Save | Command::SaveAs => ui::Icon::Save,
-                Command::CloseTab => ui::Icon::Close,
+                Command::CloseTab | Command::CancelConversion => ui::Icon::Close,
                 Command::BeforeAfter => ui::Icon::PanelRight,
                 Command::DecisionHistory => ui::Icon::Clock,
                 Command::ExpandIdentities => ui::Icon::ExpandAll,
