@@ -77,7 +77,7 @@ tools/pseudonymization/target/release/mdoc-pseudonymization-qualification run \
   tools/pseudonymization/gline/target/release/mdoc-qualify-gline \
   multi-v2.1-q8 .qualification/models tests/fixtures/pseudonymization/corpus.json \
   .qualification/results/multi-t05.json \
-  "$HOME/Library/Application Support/mdoc/ocr/v1/libonnxruntime.1.27.0.dylib" \
+  "$HOME/Library/Application Support/mdoc/ocr/v1/libonnxruntime.1.32.0.dylib" \
   "describe CPU, RAM, OS and rustc" 0.5 600
 ```
 

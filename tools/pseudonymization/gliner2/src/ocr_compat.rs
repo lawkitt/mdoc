@@ -64,7 +64,7 @@ fn runtime_path(root: &Path) -> PathBuf {
     root.join(if cfg!(windows) {
         "onnxruntime.dll"
     } else {
-        "libonnxruntime.1.27.0.dylib"
+        "libonnxruntime.1.32.0.dylib"
     })
 }
 
