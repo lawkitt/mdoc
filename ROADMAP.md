@@ -345,15 +345,6 @@ the note.
    comment parsers go. Builds on #925's AnyDoc W1 and pdf-inspector M1.
    *Done when:* the import result carries them, each format has a fixture,
    and the note's counts and the Source cards come from the same data.
-4. **[iOS] DOCX Original on phones.** *From the comments grill (#927).*
-   The left-out line under the title. Then measure docxide in process on the
-   iPhone 12 Pro (time and peak memory on legal-opinion, coverage and a
-   100-page DOCX). Within budget: DOCX in the Original pane with comment
-   markers, the thread sheet, the iPad rail, VoiceOver and the Comments
-   rotor, and ADR 0085's runtimes line amended. Over budget: stop with the
-   numbers and add a Later line. *Done when:* the numbers are in #927, and
-   either the Original pane shows a DOCX with its comments or the Later line
-   is written.
 5. **[Desktop] PDF annotations in the rail.** *From the comments grill
    (#927).* pdf-inspector's annotations on the same rail and markers, their
    highlight areas tinted by mdoc and the PDF's own note icons and popups
