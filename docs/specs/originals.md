@@ -7,10 +7,6 @@ its comments and hidden text, and PDF annotations, on desktop and phones.
 Terms are in [CONTEXT.md](../../CONTEXT.md). Record: the 2026-11-18
 comments grill (#927).
 
-Status: planned, built by the ROADMAP's Comments section. Until it lands the
-Source pane keeps its comments list and the note says "N comments not
-imported".
-
 ## What comments are
 
 - Comments are context for the original, not part of the Markdown: they never

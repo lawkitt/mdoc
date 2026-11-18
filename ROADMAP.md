@@ -328,21 +328,6 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
-## Comments
-
-Comments and hidden text render with the original instead of a detached
-list, and the import note splits into a notice and a quiet left-out line
-([spec](docs/specs/originals.md), [grill](https://github.com/lawkitt/mdoc/issues/927),
-[milestone](https://github.com/lawkitt/mdoc/milestone/9)). One Mac hub;
-items merge after v0.4.0-rc.3 is tagged, because they change snapshots and
-the note.
-
-5. **[Desktop] PDF annotations in the rail.** *From the comments grill
-   (#927).* pdf-inspector's annotations on the same rail and markers, their
-   highlight areas tinted by mdoc and the PDF's own note icons and popups
-   hidden. *Done when:* headless renders of a PDF with notes, FreeText and
-   highlights, light and dark.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -362,6 +347,11 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Comments]** Opt-in comments in Copy for AI, scanned and pseudonymized
   with the same mapping, for asks like replying to the other side's
   comments. *From the comments grill (#927).*
+- **[Comments]** A PDF FreeText whose text is only its drawn appearance (no
+  `/Contents` or `/RC`): OCR hides it on a scanned page and pdf-inspector
+  doesn't report it, so nothing counts it. pdf-inspector reads its
+  appearance text or counts it, and the left-out line shows it.
+  *From the comments grill (#927).*
 - **[Perf]** Stress tier (2 MiB / 20,000 mentions) and numerical budgets.
 - **[Editor]** To grill: Fix the words on desktop. The core action that
   replaces a found name's wording everywhere, keeping its identity, given
