@@ -124,7 +124,7 @@ struct DocumentScreen: View {
                 } else if model.pane == .reply, let reply = model.snapshot.reply {
                     ReplyPane(reply: reply, onClear: model.clearReply)
                 } else {
-                    OriginalView(original: model.snapshot.original)
+                    OriginalView(original: model.snapshot.original, jobRuns: model.runningJob != nil)
                 }
             }
         } else {
@@ -139,7 +139,7 @@ struct DocumentScreen: View {
                 case .text:
                     EmptyView()
                 case .original:
-                    OriginalView(original: model.snapshot.original)
+                    OriginalView(original: model.snapshot.original, jobRuns: model.runningJob != nil)
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
@@ -189,8 +189,8 @@ struct DocumentScreen: View {
 
     private var textColumn: some View {
         VStack(spacing: 0) {
-            if let warning = model.snapshot.warning {
-                Label(warning, systemImage: "exclamationmark.triangle")
+            if let notice = model.snapshot.notice {
+                Label(notice, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
@@ -386,21 +386,35 @@ struct DocumentScreen: View {
             Menu {
                 titleMenu
             } label: {
-                HStack(spacing: Space.xxs) {
-                    Text(model.snapshot.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: titleWidth)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
+                VStack(spacing: 0) {
+                    HStack(spacing: Space.xxs) {
+                        Text(model.snapshot.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: titleWidth)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(.primary)
+                    // The left-out line: what the Markdown leaves out that
+                    // no view shows, as quiet counts (never orange).
+                    if let leftOut = model.snapshot.leftOut {
+                        Label(leftOut, systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: titleWidth)
+                            .accessibilityIdentifier("left-out-line")
+                    }
                 }
-                .foregroundStyle(.primary)
             }
             .accessibilityLabel(Text(model.snapshot.title))
+            .accessibilityValue(Text(model.snapshot.leftOut ?? ""))
             .accessibilityHint(Text("Find, show Markdown, share, rename, move or delete the document."))
             .accessibilityIdentifier("title-menu")
         }

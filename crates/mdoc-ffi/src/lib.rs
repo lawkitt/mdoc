@@ -6,7 +6,8 @@
 //! [`document_session`] (import and OCR, scan, review, Copy for AI and Share
 //! text, saving into a case) and [`setup`] (models that fit the device,
 //! verifying and installing downloads). [`editor`] exports the stateless
-//! editing rules edit mode calls (ADR 0109).
+//! editing rules edit mode calls (ADR 0109), and [`original`] renders a DOCX
+//! file for the Original pane.
 uniffi::setup_scaffolding!();
 
 pub mod document_session;
@@ -14,6 +15,8 @@ pub mod editor;
 mod error;
 pub mod library;
 pub mod markdown;
+#[cfg(not(target_os = "android"))]
+pub mod original;
 pub mod setup;
 
 pub use document_session::DocumentSession;

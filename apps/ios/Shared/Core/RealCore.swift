@@ -753,7 +753,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             caseName: library.caseName(caseID), kind: kind, phase: review.phase,
             markdown: review.text, styling: styling(review), textRevision: review.textRevision,
             candidates: candidates, identities: identities, original: original,
-            pagesDone: 0, pageCount: 0, reply: reply, warning: review.warning,
+            pagesDone: 0, pageCount: 0, reply: reply, notice: review.notice, leftOut: review.leftOut,
             mergeHints: review.linkHints, canUndo: review.canUndo, canRedo: review.canRedo,
             undoStep: review.undoStep, redoStep: review.redoStep,
             counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)),
@@ -1263,7 +1263,12 @@ final class OriginalsIndex: @unchecked Sendable {
             return PreparedSource(input: .text(text, .sample), kind: .text, original: .none)
         case .file(let url, let kind):
             let named = try rename(url, to: title)
-            let original: OriginalSource = kind == .pdf ? .pdf(named) : (kind == .image ? .images([named]) : .none)
+            let original: OriginalSource = switch kind {
+            case .pdf: .pdf(named)
+            case .docx: .docx(named)
+            case .image: .images([named])
+            default: .none
+            }
             return PreparedSource(
                 input: .file(named, needsOcr: kind == .image), kind: kind, original: original,
                 owned: owned(named))
@@ -1322,6 +1327,7 @@ final class OriginalsIndex: @unchecked Sendable {
         switch original {
         case .none: files = []; kind = "none"
         case .pdf(let url): files = [url]; kind = "pdf"
+        case .docx(let url): files = [url]; kind = "docx"
         case .images(let urls): files = urls; kind = "images"
         }
         guard !files.isEmpty || !owned.isEmpty else { return }
@@ -1369,8 +1375,17 @@ final class OriginalsIndex: @unchecked Sendable {
         let urls = entry.files.map { storage.root.appendingPathComponent($0) }
         switch entry.kind {
         case "pdf": return (urls.first.map(OriginalSource.pdf) ?? .none, .pdf)
+        case "docx": return (urls.first.map(OriginalSource.docx) ?? .none, .docx)
         case "images": return (.images(urls), .scan)
-        default: return (.none, .text)
+        default:
+            // A DOCX imported before the Original pane showed DOCX files was
+            // recorded by its folder only.
+            let docx = (entry.folders ?? []).lazy.compactMap { folder in
+                try? FileManager.default.contentsOfDirectory(
+                    at: self.storage.root.appendingPathComponent(folder), includingPropertiesForKeys: nil
+                ).first { $0.pathExtension.lowercased() == "docx" }
+            }.first
+            return docx.map { (.docx($0), .docx) } ?? (.none, .text)
         }
     }
 
@@ -1476,6 +1491,9 @@ final class PendingImports: @unchecked Sendable {
         case .pdf(let file):
             stored.originalKind = "pdf"
             stored.originalFiles = [relative(file)]
+        case .docx(let file):
+            stored.originalKind = "docx"
+            stored.originalFiles = [relative(file)]
         case .images(let files):
             stored.originalKind = "images"
             stored.originalFiles = files.map { relative($0) }
@@ -1508,6 +1526,7 @@ final class PendingImports: @unchecked Sendable {
             let files = stored.originalFiles.map { absolute($0) }
             let original: OriginalSource = switch stored.originalKind {
             case "pdf": files.first.map(OriginalSource.pdf) ?? .none
+            case "docx": files.first.map(OriginalSource.docx) ?? .none
             case "images": .images(files)
             default: .none
             }

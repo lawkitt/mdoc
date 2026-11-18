@@ -23,7 +23,9 @@ mobile target.
 - **Minimum iOS 26**, because the approved PDFium build requires it.
   Android's is [ADR 0089](0089-android-app.md)'s.
 - **Runtimes in the bundle.** ONNX Runtime and PDFium ship inside the app,
-  statically linked or as an embedded signed framework.
+  statically linked or as an embedded signed framework; docxide renders
+  DOCX originals in process
+  ([#927](https://github.com/lawkitt/mdoc/issues/927): 0.25 s, 78 MB).
 - **Detector budgets** per device class: peak memory ≤ 2 GiB, cold load
   ≤ 10 s ([report](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/evidence/mobile/2026-10-31/README.md)).
   The floor and scan time are [ADR 0120](0120-phone-detector-floor-and-scan-time.md)'s;
