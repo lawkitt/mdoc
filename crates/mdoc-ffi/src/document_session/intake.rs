@@ -125,8 +125,9 @@ pub(super) fn import_file(
         note: ImportNote {
             warning: imported.note(),
             notice: imported.warning.clone(),
-            // Phones show no rendering of a document's comments yet.
-            left_out: imported.left_out.line(false),
+            // A Word file's comments show on its rendered original, which
+            // iOS has (`crate::original`) and Android not yet.
+            left_out: imported.left_out.line(cfg!(not(target_os = "android"))),
         },
         markdown: imported.markdown,
         kept: completed,
@@ -359,8 +360,8 @@ mod tests {
     }
 
     /// The whole note stays as the apps show it today; the notice and the
-    /// left-out line come apart beside it, comments counted as not shown
-    /// because phones render no DOCX yet.
+    /// left-out line come apart beside it, comments counted on the rendered
+    /// original instead (only Android, with none, counts them as not shown).
     #[test]
     fn the_note_comes_whole_and_split() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -378,7 +379,7 @@ mod tests {
             ImportNote {
                 warning: Some("2 comments not imported.".into()),
                 notice: None,
-                left_out: Some("2 comments not shown.".into()),
+                left_out: None,
             }
         );
     }

@@ -109,6 +109,7 @@ final class AppModel {
         let storage = try CoreFactory.appStorage(launch)
         try storage.prepare()
         storage.clear(.handOff)
+        RenderedDocx.removeLeftovers()
         return (storage, try CoreFactory.appCore(storage: storage, launch))
     }
 

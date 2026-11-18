@@ -124,6 +124,61 @@ impl Installed {
             ..OcrPdfOptions::default()
         }
     }
+
+    /// Measurement only, never the app: `pdf` through [`Self::options`] at
+    /// this config's resolution (or without OCR when `ocr` is false), timed,
+    /// with the raw recognition kept. The outputs are the files
+    /// `tools/ocr-upstream/compare.py` scores.
+    pub fn measure(&self, pdf: &[u8], ocr: bool) -> Result<Measured, SetupError> {
+        let mut options = OcrPdfOptions {
+            retain_recognition: true,
+            ..self.options()
+        };
+        if !ocr {
+            options.ocr = options.ocr.mode(OcrMode::Off);
+        }
+        let start = std::time::Instant::now();
+        let result = pdf_inspector::vision::process_pdf_with_ocr_mem(pdf, options)
+            .map_err(|e| SetupError::Engine(e.to_string()))?;
+        let seconds = start.elapsed().as_secs_f64();
+        let page = result
+            .pages
+            .first()
+            .ok_or_else(|| SetupError::Engine("The PDF has no pages.".into()))?;
+        Ok(Measured {
+            recognition: result
+                .recognition
+                .iter()
+                .flat_map(|page| page.spans.iter())
+                .map(|span| span.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            metadata: format!(
+                "source={:?}\nrouted={:?}\nrecommended={:?}\nwarnings={:?}\nmodel={:?}\n",
+                page.provenance.source,
+                result.pages_routed_to_ocr,
+                result.pages_recommended_for_ocr,
+                page.provenance.warnings,
+                result.recognition.first().map(|page| &page.model),
+            ),
+            pages: result.page_count,
+            markdown: result.markdown,
+            seconds,
+        })
+    }
+}
+
+/// One [`Installed::measure`] run.
+#[derive(Clone, Debug)]
+pub struct Measured {
+    pub markdown: String,
+    /// Every recognized span's text, one per line.
+    pub recognition: String,
+    /// Routing, provenance and model, as the corpus captures record them.
+    pub metadata: String,
+    pub pages: u32,
+    /// Wall time of the conversion, the engine's loading included.
+    pub seconds: f64,
 }
 
 /// Plain-language row title for a bundle: the languages it reads,
@@ -210,20 +265,19 @@ impl Source {
     }
 }
 
-/// NuGet's Microsoft.ML.OnnxRuntime 1.27.0, the ONNX Runtime source when
-/// GitHub's release cannot be downloaded (it returned 404 from 2026-11-17,
-/// #925). One package holds every platform's library: 135 MB, against the
-/// GitHub archives' 32 MB (macOS) and 77 MB (Windows).
-const fn onnx_runtime_nuget(
-    archive_library: &'static str,
-    library_sha: Option<&'static str>,
-) -> Source {
+/// NuGet's Microsoft.ML.OnnxRuntime 1.32.0, the only source of ONNX Runtime
+/// 1.32.0 that can be pinned (#925). GitHub's release
+/// (github.com/microsoft/onnxruntime) has returned 404 since 2026-11-17, so
+/// its v1.32.0 assets could not be downloaded or hashed; once they can, they
+/// go first in each `sources` list with their own archive and library pins.
+/// One package holds every platform's library: 184 MB.
+const fn onnx_runtime_nuget(archive_library: &'static str) -> Source {
     Source {
-        url: "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.27.0/microsoft.ml.onnxruntime.1.27.0.nupkg",
-        size: 134_994_248,
-        archive_sha: "c725e8cefdfe4de08befb9f79b3f218c162439cdcdb97cbbb5192888d58ea669",
+        url: "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.32.0/microsoft.ml.onnxruntime.1.32.0.nupkg",
+        size: 184_391_411,
+        archive_sha: "a9150bc2992cbbb6722070da9910e1ffa989a8bfc67bdd5bb8e745ca755641db",
         archive_library,
-        library_sha,
+        library_sha: None,
     }
 }
 
@@ -243,25 +297,12 @@ const MAC_RUNTIMES: &[Runtime] = &[
     },
     Runtime {
         name: "onnx",
-        library: "libonnxruntime.1.27.0.dylib",
-        library_sha: "299e5a2c6ea00531ecd6bf3217e23798c1fcba1698bb386d313c8e16d7317d60",
-        sources: &[
-            Source {
-                url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-osx-arm64-1.27.0.tgz",
-                size: 32_485_368,
-                archive_sha: "545e81c58152353acb0d1e8bd6ce4b62f830c0961f5b3acfedc790ffd76e477a",
-                archive_library: "lib/libonnxruntime.1.27.0.dylib",
-                library_sha: None,
-            },
-            // A separate link of the same 1.27.0, so its own library pin
-            // (approved by the maintainer, #925): the same size and sections,
-            // signed with Microsoft's Developer ID (team UBF8T346G9) like
-            // GitHub's, but with a different LC_UUID and signing identifier.
-            onnx_runtime_nuget(
-                "runtimes/osx-arm64/native/libonnxruntime.dylib",
-                Some("e96565bc1139fd136327c449b11d210da79acbe2aed53d959224815b4e448fac"),
-            ),
-        ],
+        library: "libonnxruntime.1.32.0.dylib",
+        // Signed with Microsoft's Developer ID (team UBF8T346G9).
+        library_sha: "21ff304871400e846a30c8a1165d15173add56598afb45f98227e2dfc716a497",
+        sources: &[onnx_runtime_nuget(
+            "runtimes/osx-arm64/native/libonnxruntime.dylib",
+        )],
     },
 ];
 
@@ -281,19 +322,16 @@ const WINDOWS_RUNTIMES: &[Runtime] = &[
     },
     Runtime {
         name: "onnx",
-        library: "onnxruntime.dll",
-        library_sha: "fd6dd0a8b1f5562d642abdcbd36bc54251482d2ebaa3f4f88669bfdad92e7525",
-        sources: &[
-            Source {
-                url: "https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-win-x64-1.27.0.zip",
-                size: 77_086_915,
-                archive_sha: "c5c81710938e68079ff1a192b04897faabe4b43830d48f39f27ecd4e16138bfc",
-                archive_library: "lib/onnxruntime.dll",
-                library_sha: None,
-            },
-            // The same onnxruntime.dll, byte for byte.
-            onnx_runtime_nuget("runtimes/win-x64/native/onnxruntime.dll", None),
-        ],
+        // Named by version, like the macOS library, so the 1.27.0
+        // `onnxruntime.dll` an earlier setup left reads as a runtime still to
+        // download (OCR's and pseudonymization's setup cards count it), not
+        // as a damaged one. Nothing links to the DLL by name: it is loaded
+        // by full path.
+        library: "onnxruntime.1.32.0.dll",
+        library_sha: "348c3d29d6995eee37e3451825eaddb7ea7400be3afda6ca2286b12bc775f042",
+        sources: &[onnx_runtime_nuget(
+            "runtimes/win-x64/native/onnxruntime.dll",
+        )],
     },
 ];
 
@@ -366,6 +404,11 @@ pub fn model_files(root: &Path, model: mdoc_store::settings::OcrModel) -> Vec<Pa
 /// Shared runtime required by the detection model's check.
 pub fn onnx_runtime_path(root: &Path) -> PathBuf {
     root.join(RUNTIMES[1].library)
+}
+
+/// The PDFium library OCR setup installs under `root`.
+pub fn pdfium_path(root: &Path) -> PathBuf {
+    root.join(RUNTIMES[0].library)
 }
 
 /// No downloads, including when files are missing or invalid.
@@ -1178,19 +1221,41 @@ mod tests {
         {
             let mut zip = zip::ZipWriter::new(&mut archive);
             let options = zip::write::SimpleFileOptions::default();
+            // Laid out like NuGet's Microsoft.ML.OnnxRuntime package.
             for (name, contents) in [
-                ("package/lib/onnxruntime.dll", b"runtime".as_slice()),
-                ("package/lib/onnxruntime.pdb", b"debug".as_slice()),
+                (
+                    "runtimes/win-x64/native/onnxruntime.dll",
+                    b"runtime".as_slice(),
+                ),
+                (
+                    "runtimes/win-x64/native/onnxruntime.lib",
+                    b"import".as_slice(),
+                ),
+                (
+                    "runtimes/win-x64/native/onnxruntime_providers_shared.dll",
+                    b"provider".as_slice(),
+                ),
+                (
+                    "runtimes/win-arm64/native/onnxruntime.dll",
+                    b"arm".as_slice(),
+                ),
                 ("debug/onnxruntime.dll", b"wrong".as_slice()),
-                ("package/LICENSE", b"license".as_slice()),
-                ("package/ThirdPartyNotices.txt", b"notice".as_slice()),
-                ("../lib/onnxruntime.dll", b"traversal".as_slice()),
+                ("LICENSE", b"license".as_slice()),
+                ("ThirdPartyNotices.txt", b"notice".as_slice()),
+                (
+                    "../runtimes/win-x64/native/onnxruntime.dll",
+                    b"traversal".as_slice(),
+                ),
             ] {
                 zip.start_file(name, options).unwrap();
                 zip.write_all(contents).unwrap();
             }
-            zip.add_symlink("link/lib/onnxruntime.dll", "/outside", options)
-                .unwrap();
+            zip.add_symlink(
+                "link/runtimes/win-x64/native/onnxruntime.dll",
+                "/outside",
+                options,
+            )
+            .unwrap();
             zip.finish().unwrap();
         }
         archive.rewind().unwrap();
@@ -1202,7 +1267,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            fs::read(dir.path().join("onnxruntime.dll")).unwrap(),
+            fs::read(dir.path().join(WINDOWS_RUNTIMES[1].library)).unwrap(),
             b"runtime"
         );
         assert_eq!(
@@ -1273,8 +1338,8 @@ mod tests {
         zip.finish().unwrap().into_inner()
     }
 
-    const GITHUB: &str = "https://github.test/onnxruntime-osx-arm64-1.27.0.tgz";
-    const NUGET: &str = "https://nuget.test/microsoft.ml.onnxruntime.1.27.0.nupkg";
+    const GITHUB: &str = "https://github.test/onnxruntime-osx-arm64-1.32.0.tgz";
+    const NUGET: &str = "https://nuget.test/microsoft.ml.onnxruntime.1.32.0.nupkg";
 
     /// A runtime pinned like the real ONNX Runtime entry: a GitHub tarball
     /// first, then a NuGet package whose library is a separate build.
@@ -1284,7 +1349,7 @@ mod tests {
                 url: GITHUB,
                 size: github.len() as u64,
                 archive_sha: sha(github),
-                archive_library: "lib/libonnxruntime.1.27.0.dylib",
+                archive_library: "lib/libonnxruntime.1.32.0.dylib",
                 library_sha: None,
             },
             Source {
@@ -1297,7 +1362,7 @@ mod tests {
         ];
         Runtime {
             name: "onnx",
-            library: "libonnxruntime.1.27.0.dylib",
+            library: "libonnxruntime.1.32.0.dylib",
             library_sha: sha(b"github build"),
             sources: Vec::leak(sources),
         }
@@ -1330,7 +1395,7 @@ mod tests {
     fn github_archive() -> Vec<u8> {
         tgz(&[
             (
-                "onnxruntime/lib/libonnxruntime.1.27.0.dylib",
+                "onnxruntime/lib/libonnxruntime.1.32.0.dylib",
                 b"github build",
             ),
             ("onnxruntime/LICENSE", b"license"),
@@ -1409,7 +1474,7 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().into_string().unwrap())
             .collect::<Vec<_>>();
         files.sort();
-        assert_eq!(files, ["libonnxruntime.1.27.0.dylib", "licenses"]);
+        assert_eq!(files, ["libonnxruntime.1.32.0.dylib", "licenses"]);
         // Setup's checks accept the NuGet build from now on.
         verify_library(dir.path(), &runtime).unwrap();
         // The planned bundle now counts the larger package.
@@ -1527,6 +1592,49 @@ mod tests {
                     assert_eq!(pin.len(), 64, "{}", source.url);
                     assert!(pin.bytes().all(|b| b.is_ascii_hexdigit()), "{}", source.url);
                 }
+            }
+        }
+    }
+
+    /// 1.27.0's libraries, left by an earlier setup, are a runtime still to
+    /// download: setup cards count it and checks read "not set up".
+    #[test]
+    fn an_earlier_onnx_runtime_reads_as_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        for old in ["libonnxruntime.1.27.0.dylib", "onnxruntime.dll"] {
+            fs::write(dir.path().join(old), b"ONNX Runtime 1.27.0").unwrap();
+        }
+        assert_eq!(onnx_runtime_pending(Some(dir.path())), onnx_runtime_size());
+        assert_eq!(
+            pending(Some(dir.path()), OcrModel::Cyrillic).runtime,
+            RUNTIMES.iter().map(Runtime::size).sum::<u64>()
+        );
+        assert!(onnx_runtime_in(dir.path()).unwrap_err().is_missing());
+    }
+
+    /// A version bump changes every ONNX Runtime source and both installed
+    /// library names together, so an earlier version's library reads as
+    /// missing rather than damaged.
+    #[test]
+    fn onnx_runtime_sources_match_the_installed_version() {
+        let version = MAC_RUNTIMES[1]
+            .library
+            .strip_prefix("libonnxruntime.")
+            .and_then(|name| name.strip_suffix(".dylib"))
+            .unwrap();
+        assert_eq!(
+            WINDOWS_RUNTIMES[1].library,
+            format!("onnxruntime.{version}.dll")
+        );
+        for runtime in [&MAC_RUNTIMES[1], &WINDOWS_RUNTIMES[1]] {
+            assert_eq!(runtime.name, "onnx");
+            for source in runtime.sources {
+                assert!(
+                    source.url.contains(&format!("/{version}/"))
+                        || source.url.contains(&format!("/v{version}/")),
+                    "{} is not ONNX Runtime {version}",
+                    source.url
+                );
             }
         }
     }

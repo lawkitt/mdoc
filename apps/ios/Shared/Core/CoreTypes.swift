@@ -152,6 +152,8 @@ struct CaseMove: Hashable, Sendable {
 enum OriginalSource: Equatable, Sendable {
     case none
     case pdf(URL)
+    /// Rendered in process while the Original pane shows it.
+    case docx(URL)
     case images([URL])
 }
 
@@ -272,9 +274,12 @@ struct DocumentSnapshot: Equatable, Sendable {
     var pagesDone: Int
     var pageCount: Int
     var reply: ReplySnapshot?
-    /// The import's partial-result warning (pages OCR could not read, …),
-    /// shown with the text.
-    var warning: String? = nil
+    /// A partial import (pages OCR skipped or may have misread): the banner
+    /// over the text.
+    var notice: String? = nil
+    /// What the Markdown leaves out that no view shows, as counts: the
+    /// quiet line under the title, never orange.
+    var leftOut: String? = nil
     /// OCR stopped part-way (a cancel, or mdoc stopping): its finished pages
     /// are kept and recognition resumes with the rest.
     var resumesOCR = false

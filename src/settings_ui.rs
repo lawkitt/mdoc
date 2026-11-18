@@ -1404,8 +1404,8 @@ impl Panel {
                 }
                 details = details.child(format!("Revision: {revision}\nLicenses: {license}\nStorage: {}", path.map(|p| p.display().to_string()).unwrap_or_else(|e| e)))
                     .child(match model {
-                        Model::Ocr(_) => "CPU · ONNX Runtime 1.27.0 · PDFium native-v7988\nFixed upstream precision · converter-managed threads\nLimits: 256 MiB PDF · 4-page batches · 256 MiB bitmap/page",
-                        Model::Pii(_) => "CPU · ONNX Runtime 1.27.0 · 4 threads\nLimits: 2 MiB source · 512 tokens/window · 120 s cooperative deadline",
+                        Model::Ocr(_) => "CPU · ONNX Runtime 1.32.0 · PDFium native-v7988\nFixed upstream precision · converter-managed threads\nLimits: 256 MiB PDF · 4-page batches · 256 MiB bitmap/page",
+                        Model::Pii(_) => "CPU · ONNX Runtime 1.32.0 · 4 threads\nLimits: 2 MiB source · 512 tokens/window · 120 s cooperative deadline",
                     })
                     .child(div().flex().flex_wrap().gap_2()
                         .when(!missing, |v| v.child(self.scrolled_quiet(("repair-model", index), "Repair", theme, idle && ocr::SUPPORTED, cx)

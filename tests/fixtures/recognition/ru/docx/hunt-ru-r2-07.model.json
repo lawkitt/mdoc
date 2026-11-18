@@ -3,14 +3,14 @@
   "threshold": 0.5,
   "entities": [
     {"start":170,"end":208,"label":"person","score":0.9945094,"text":"Олеся Макаровна Шэнь"},
-    {"start":116,"end":136,"label":"person","score":0.9885361,"text":"Nguyễn Thị Lụa"},
-    {"start":1095,"end":1124,"label":"organization","score":0.7796575,"text":"Тканый горизонт"},
-    {"start":443,"end":474,"label":"passport_number","score":0.9993761,"text":"４６８２ ７３１６０４"},
-    {"start":488,"end":524,"label":"national_id_number","score":0.8420856,"text":"５０８６１４７２９０３１"},
+    {"start":116,"end":136,"label":"person","score":0.98858035,"text":"Nguyễn Thị Lụa"},
+    {"start":1095,"end":1124,"label":"organization","score":0.77948976,"text":"Тканый горизонт"},
+    {"start":443,"end":474,"label":"passport_number","score":0.9993737,"text":"４６８２ ７３１６０４"},
+    {"start":488,"end":524,"label":"national_id_number","score":0.8424747,"text":"５０８６１４７２９０３１"},
     {"start":564,"end":624,"label":"bank_account","score":0.89697564,"text":"４０８１７８１０９００００７３１６４２５"},
-    {"start":1290,"end":1308,"label":"person","score":0.5216387,"text":"заявитель"},
-    {"start":1326,"end":1342,"label":"person","score":0.5075563,"text":"Ответчик"},
+    {"start":1290,"end":1308,"label":"person","score":0.52151686,"text":"заявитель"},
+    {"start":1326,"end":1342,"label":"person","score":0.50761735,"text":"Ответчик"},
     {"start":1847,"end":1866,"label":"email","score":0.9967141,"text":"lua@obrazec.invalid"},
-    {"start":2676,"end":2702,"label":"person","score":0.80115914,"text":"представителя"}
+    {"start":2676,"end":2702,"label":"person","score":0.80084777,"text":"представителя"}
   ]
 }

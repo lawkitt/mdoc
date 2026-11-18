@@ -15,15 +15,18 @@ use std::path::{Path, PathBuf};
 const SENTINEL: &str = "Carlito-Regular.ttf";
 
 pub(super) fn options() -> docxide_pdf::ConvertOptions {
-    let options = docxide_pdf::ConvertOptions::new();
+    // iOS has no system font directories docxide reads, so the bundle's are
+    // all it scans, once per process: no index file to write.
+    let options = docxide_pdf::ConvertOptions::new().font_cache(!cfg!(target_os = "ios"));
     match bundled() {
         Some(dir) => options.font_dirs([dir]),
         None => options,
     }
 }
 
-/// The bundled fonts: beside the executable on Windows, in the bundle's
-/// Resources on macOS, and in the source tree for a development build.
+/// The bundled fonts: beside the executable on Windows and in the iOS app
+/// bundle, in the bundle's Resources on macOS, and in the source tree for a
+/// development build.
 pub(super) fn bundled() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;

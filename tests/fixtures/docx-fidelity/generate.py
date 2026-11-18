@@ -24,7 +24,7 @@ def run(text, rpr=''):
 
 def para(content, ppr=''):
     props = f'<w:pPr>{ppr}</w:pPr>' if ppr else ''
-    if isinstance(content, str):
+    if not content.startswith('<'):  # plain text; markup from run() and friends passes through
         content = run(content)
     return f'<w:p>{props}{content}</w:p>'
 
