@@ -110,8 +110,9 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   left for OCR that doesn't run neither keeps nor loses a row.
 - A repeat is the same text, case and digits included, spacing aside, in
   the page's top or bottom band at a steady height, on at least 3 pages and
-  30% of them (rounded up), and at least 10 characters long; headings, list
-  items and numbered clauses never are.
+  30% of the pages compared (rounded up), and at least 10 characters long;
+  headings, list items and numbered clauses never are. A scan compares
+  only the pages OCR reads whole.
 - Numbers count, because "Case No. 2-123" and "Case No. 2-124" are different
   cases. Only a page number may differ: at a row's start or end, rising
   with the page, equal to its page's position or up to 10 behind (an
@@ -120,9 +121,9 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   every page.
 - A bare page number ("3", "Page 3 of 9") is removed from every page and not
   counted; a number after an identifier label never is.
-- Phones, which recognize a scan one page at a time to resume after a stop,
-  keep what each page's OCR found for this rule and run it across all the
-  pages at the end, so they remove and count the same rows as the desktop.
+- Phones recognize a scan one page at a time to resume after a stop, keep
+  what each page's OCR found for this rule, and run it across all pages at
+  the end, removing and counting the desktop's rows.
 
 ## Detector
 

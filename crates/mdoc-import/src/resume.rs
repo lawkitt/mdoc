@@ -343,9 +343,10 @@ fn reusable(kept: &Page, page_count: u32, markdown: &MarkdownOptions) -> bool {
 /// Runs pdf-inspector's repeated header and footer pass across the pages'
 /// repeat evidence, as a whole-document run does across the pages it
 /// recognizes: each page that took part gets the Markdown and repeated-line
-/// count a whole-document run gives it. `markdown` is the options the page
-/// runs used. Pages without evidence keep their own run's, as they would
-/// in a whole-document run.
+/// count a whole-document run gives it, and is flagged for review if that
+/// leaves it empty. `markdown` is the options the page runs used. Pages
+/// without evidence keep their own run's, as they would in a
+/// whole-document run.
 fn strip_repeats(
     pages: &mut [Page],
     markdown: &MarkdownOptions,
@@ -363,6 +364,12 @@ fn strip_repeats(
             .iter_mut()
             .find(|page| page.page == stripped.page_number)
         {
+            // A page left with nothing but its repeats is flagged for
+            // review, as a whole-document run warns that OCR produced no
+            // usable text: a page with evidence shows OCR, or native text
+            // that never empties, so an empty page here is an empty OCR
+            // page.
+            page.review |= stripped.markdown.trim().is_empty();
             page.markdown = stripped.markdown;
             page.repeated_lines = stripped.repeated_lines;
         }
@@ -508,6 +515,52 @@ mod tests {
         assert_eq!(pages[4], native);
         let (markdown, _) = assemble(&pages);
         assert_eq!(markdown.matches(header).count(), 1, "{markdown}");
+    }
+
+    /// A scanned page holding only the running header and footer is empty
+    /// once they go, and is flagged for review as a whole-document run
+    /// flags it, whether its pages were kept by an earlier run or not.
+    #[test]
+    fn a_page_left_empty_by_the_pass_is_flagged_for_review() {
+        let header = "Annual Report of the Board 2026 Confidential";
+        let only_repeats = |n: u32| {
+            let mut page = scanned(n, 4, header);
+            if n == 4 {
+                let mut json = serde_json::to_value(&page.repeat_evidence[0]).unwrap();
+                let spans = json["spans"].as_array_mut().unwrap();
+                spans.retain(|span| !span["text"].as_str().unwrap().starts_with("Item"));
+                page.repeat_evidence = vec![serde_json::from_value(json).unwrap()];
+            }
+            page
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let folder = KeptPages::new(dir.path().into()).folder("abc", &config());
+        folder.open();
+        let never = AtomicBool::new(false);
+        let uninterrupted =
+            recognize_pages(4, &folder, &never, |_| true, |n| Ok(only_repeats(n))).unwrap();
+        std::fs::remove_file(folder.path(3)).unwrap();
+        std::fs::remove_file(folder.path(4)).unwrap();
+        let mut ran = Vec::new();
+        let resumed = recognize_pages(
+            4,
+            &folder,
+            &never,
+            |_| true,
+            |n| {
+                ran.push(n);
+                Ok(only_repeats(n))
+            },
+        )
+        .unwrap();
+        assert_eq!(ran, [3, 4]);
+        for mut pages in [uninterrupted, resumed] {
+            strip_repeats(&mut pages, &MarkdownOptions::default()).unwrap();
+            let counts: Vec<u32> = pages.iter().map(|page| page.repeated_lines).collect();
+            assert_eq!(counts, [0, 2, 2, 2]);
+            assert_eq!(pages[3].markdown.trim(), "");
+            assert_eq!(assemble(&pages).1, [4]);
+        }
     }
 
     /// A header whose case number changes from page to page is no repeat,
