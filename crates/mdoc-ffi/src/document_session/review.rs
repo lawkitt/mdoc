@@ -927,7 +927,7 @@ mod tests {
     /// What the review screen shows, without the history's ends.
     fn shown(document: &mut ReviewText) -> String {
         document.sync_ids();
-        let snapshot = super::super::snapshot::of("", None, document, None, true);
+        let snapshot = super::super::snapshot::of("", &Default::default(), document, None, true);
         let mut shown = format!("{}\n", snapshot.text);
         for m in &snapshot.mentions {
             shown += &format!(
@@ -974,7 +974,7 @@ mod tests {
 
     fn aliases(document: &mut ReviewText) -> Vec<String> {
         document.sync_ids();
-        super::super::snapshot::of("", None, document, None, true)
+        super::super::snapshot::of("", &Default::default(), document, None, true)
             .mentions
             .into_iter()
             .map(|m| m.alias.unwrap_or_default())

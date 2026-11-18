@@ -61,7 +61,10 @@ ocr-consent
 import-comments-note
 import-hidden-note
 restored-reply
-comments
+comments-rail
+comments-resolved
+comments-markers
+comments-hidden-text
 docx-source
 shelf
 shelf-demos

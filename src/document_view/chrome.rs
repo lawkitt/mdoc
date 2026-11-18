@@ -320,6 +320,25 @@ impl DocumentView {
                         .rounded_full()
                         .bg(p.header_muted),
                 )
+            })
+            .when_some(self.left_out(), |v, line| {
+                // The left-out line: quiet counts, never a warning.
+                v.child(
+                    div()
+                        .id("left-out")
+                        .when(cfg!(test), |v| v.debug_selector(|| "left-out".into()))
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .min_w(px(16.))
+                        .flex_shrink(2.)
+                        .text_size(px(12.))
+                        .text_color(p.header_muted)
+                        .aria_label(format!("Left out of the Markdown: {line}"))
+                        .child(div().flex_shrink_0().child("ⓘ"))
+                        .child(div().min_w_0().truncate().child(line.clone()))
+                        .tooltip(crate::style::tooltip(line, theme)),
+                )
             });
         let controls = div()
             .flex()

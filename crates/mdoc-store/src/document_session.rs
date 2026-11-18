@@ -8,7 +8,13 @@ pub struct DocumentSession {
     pub document: Document,
     pub generation: u64,
     pub source: Option<PathBuf>,
+    /// The import's notice: a partial import.
     pub warning: Option<String>,
+    /// The left-out line: what else the Markdown leaves out, counted.
+    pub left_out: Option<String>,
+    /// The comments the Markdown leaves out ("3 comments not shown."), which
+    /// join the left-out line while no rendering of the source shows them.
+    pub comments_left_out: Option<String>,
     pub ocr_configuration: Option<crate::settings::OcrConfig>,
     /// Fallback name before a file loads, or for an unsaved document without a source.
     pub name: Option<String>,
@@ -20,6 +26,8 @@ impl DocumentSession {
         self.document = document;
         self.source = None;
         self.warning = None;
+        self.left_out = None;
+        self.comments_left_out = None;
         self.ocr_configuration = None;
         self.name = None;
     }
@@ -167,12 +175,15 @@ mod tests {
     fn identity_changes_once_and_clears_import_provenance() {
         let mut session = DocumentSession::default();
         session.import("source.docx".into(), Some("conversion warning".into()));
+        session.left_out = Some("1 picture not imported.".into());
+        session.comments_left_out = Some("1 comment not shown.".into());
         assert_eq!(session.generation, 1);
         assert!(session.dirty(""), "even an empty import is unsaved");
         session.replace(Document::default());
         assert_eq!(session.generation, 2);
         assert!(session.source.is_none());
         assert!(session.warning.is_none());
+        assert!(session.left_out.is_none() && session.comments_left_out.is_none());
         assert!(!session.dirty(""));
     }
 

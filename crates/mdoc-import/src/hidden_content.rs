@@ -59,13 +59,23 @@ pub struct Comments {
 }
 
 impl Comments {
-    /// The import note's line for comments left out, if any.
+    /// The import note's line for comments left out, if any, as the apps
+    /// show it until they show the left-out line.
     pub fn note(self) -> Option<String> {
+        self.phrase("not imported")
+    }
+
+    /// The left-out line's count of comments that no rendering shows.
+    pub fn not_shown(self) -> Option<String> {
+        self.phrase("not shown")
+    }
+
+    fn phrase(self, what: &str) -> Option<String> {
         let at_least = if self.at_least { "At least " } else { "" };
         match self.count {
             0 => None,
-            1 => Some(format!("{at_least}1 comment not imported.")),
-            n => Some(format!("{at_least}{n} comments not imported.")),
+            1 => Some(format!("{at_least}1 comment {what}.")),
+            n => Some(format!("{at_least}{n} comments {what}.")),
         }
     }
 
@@ -632,7 +642,7 @@ mod tests {
     fn counts_the_public_comments_fixture() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/docx-preview/comments.docx");
-        assert_eq!(docx_comments(&fixture), found(4));
+        assert_eq!(docx_comments(&fixture), found(6));
         assert_eq!(docx_comments(Path::new("missing.docx")), found(0));
     }
 
@@ -646,5 +656,7 @@ mod tests {
             at_least: true,
         };
         assert_eq!(at_least.note().unwrap(), "At least 1 comment not imported.");
+        assert_eq!(found(3).not_shown().unwrap(), "3 comments not shown.");
+        assert_eq!(found(0).not_shown(), None);
     }
 }

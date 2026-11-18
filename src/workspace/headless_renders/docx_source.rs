@@ -10,6 +10,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         &source,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::preview::read_comment_marks,
+        Default::default(),
     )
     .map_err(|e| e.to_string())?;
     d.change(|w, window, cx| {

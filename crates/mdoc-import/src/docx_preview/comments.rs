@@ -4,6 +4,10 @@
 //! comment sits: every commented run of the body is wrapped in a link to
 //! `mdoc-comment:<k>`, and those links' `/Link` rectangles in the rendered PDF
 //! become the comments' anchors (`anchors`). They are never clickable links.
+//!
+//! The same copy carries Word's hidden text (`w:vanish`): it is counted
+//! always, and drawn in place with a dotted underline and muted ink only
+//! when the Source pane shows hidden text.
 use super::{PreviewError, replace_parts, word, xml_text};
 use roxmltree::Node;
 use std::{
@@ -27,6 +31,12 @@ pub struct DocxComment {
     pub date: String,
     pub text: String,
     pub quote: String,
+    /// The `id` of the comment this one replies to, if any.
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// The thread was marked done in Word.
+    #[serde(default)]
+    pub resolved: bool,
 }
 
 /// Where a comment sits on one page of the rendered preview. A comment whose
@@ -75,10 +85,13 @@ pub(super) struct Marker {
 }
 
 pub(super) struct Prepared {
-    /// The render copy, or `None` when the document has no comments.
+    /// The render copy, or `None` when it would equal the document.
     pub render: Option<Vec<u8>>,
     pub comments: Vec<DocxComment>,
     pub markers: Vec<Marker>,
+    /// Passages of hidden text: runs of `w:vanish` text, adjacent ones in a
+    /// paragraph counted once.
+    pub hidden: usize,
 }
 
 fn attr<'a>(node: Node<'a, '_>, name: &str) -> &'a str {
@@ -105,11 +118,19 @@ fn text(node: Node<'_, '_>) -> String {
     out.trim().to_owned()
 }
 
-pub(super) fn prepare(bytes: &[u8]) -> Result<Prepared, PreviewError> {
+/// Word 2012's comment extensions: replies and the done state.
+const W15: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
+/// Word 2010's paragraph IDs, which the extensions point at.
+const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
+
+pub(super) fn prepare(bytes: &[u8], show_hidden: bool) -> Result<Prepared, PreviewError> {
     let invalid = |e: zip::result::ZipError| PreviewError::Package(e.to_string());
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(invalid)?;
     let mut comments = Vec::new();
     let mut by_id = HashMap::new();
+    // The paragraph ID of each comment's last paragraph → its index.
+    let mut by_paragraph = HashMap::new();
+    let mut extended = None;
     let mut xml_parts = Vec::new();
     let mut body_rels = None;
     // Input has already passed the package expansion/entry limits.
@@ -131,17 +152,25 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<Prepared, PreviewError> {
         }
         let doc = roxmltree::Document::parse(&source)
             .map_err(|e| PreviewError::Package(e.to_string()))?;
-        if word(doc.root_element(), "comments") {
-            for node in doc
-                .root_element()
-                .children()
-                .filter(|n| word(*n, "comment"))
-            {
+        let root = doc.root_element();
+        if root.tag_name().namespace() == Some(W15) && root.tag_name().name() == "commentsEx" {
+            extended = Some(source);
+            continue;
+        }
+        if word(root, "comments") {
+            for node in root.children().filter(|n| word(*n, "comment")) {
                 let id = attr(node, "id").to_owned();
                 if id.is_empty() || by_id.insert(id.clone(), comments.len()).is_some() {
                     return Err(PreviewError::Package(
                         "missing or duplicate comment ID".into(),
                     ));
+                }
+                if let Some(paragraph) = node
+                    .descendants()
+                    .rfind(|n| word(*n, "p"))
+                    .and_then(|p| p.attribute((W14, "paraId")))
+                {
+                    by_paragraph.insert(paragraph.to_ascii_uppercase(), comments.len());
                 }
                 comments.push(DocxComment {
                     id,
@@ -149,17 +178,15 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<Prepared, PreviewError> {
                     date: attr(node, "date").to_owned(),
                     text: text(node),
                     quote: String::new(),
+                    parent: None,
+                    resolved: false,
                 });
             }
         }
         xml_parts.push((i, name, source));
     }
-    if comments.is_empty() {
-        return Ok(Prepared {
-            render: None,
-            comments,
-            markers: Vec::new(),
-        });
+    if let Some(extended) = extended {
+        threads(&extended, &by_paragraph, &mut comments);
     }
     let mut replacements = HashMap::new();
     let mut markers = Markers {
@@ -169,36 +196,43 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<Prepared, PreviewError> {
             .unwrap_or_default(),
         ..Markers::default()
     };
+    let mut hidden = 0;
     for (index, name, source) in xml_parts {
         let doc = roxmltree::Document::parse(&source)
             .map_err(|e| PreviewError::Package(e.to_string()))?;
         if word(doc.root_element(), "comments") {
-            replacements.insert(
-                index,
-                format!(
-                    "<w:comments xmlns:w=\"{}\"/>",
-                    doc.root_element().tag_name().namespace().unwrap()
-                ),
-            );
+            if !comments.is_empty() {
+                replacements.insert(
+                    index,
+                    format!(
+                        "<w:comments xmlns:w=\"{}\"/>",
+                        doc.root_element().tag_name().namespace().unwrap()
+                    ),
+                );
+            }
             continue;
         }
-        // Only the body's links reach the PDF as annotations the reader can
-        // place (docxide reads the body and its relationships by these names).
-        let marks = name == BODY && body_rels.is_some();
-        let links = if marks {
-            relationships(&body_rels.as_ref().unwrap().1)
-        } else {
-            HashMap::new()
-        };
         let mut edits = Vec::new();
-        quote_and_mark(
-            &doc,
-            &by_id,
-            &mut comments,
-            &links,
-            marks.then_some(&mut markers),
-            &mut edits,
-        );
+        hidden += hidden_text(&doc, show_hidden.then_some(&mut edits));
+        if !comments.is_empty() {
+            // Only the body's links reach the PDF as annotations the reader
+            // can place (docxide reads the body and its relationships by
+            // these names).
+            let marks = name == BODY && body_rels.is_some();
+            let links = if marks {
+                relationships(&body_rels.as_ref().unwrap().1)
+            } else {
+                HashMap::new()
+            };
+            quote_and_mark(
+                &doc,
+                &by_id,
+                &mut comments,
+                &links,
+                marks.then_some(&mut markers),
+                &mut edits,
+            );
+        }
         if !edits.is_empty() {
             replacements.insert(index, apply(&source, edits));
         }
@@ -209,11 +243,141 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<Prepared, PreviewError> {
         replacements.insert(index, markers.add_relationships(&rels)?);
     }
     Ok(Prepared {
-        render: Some(replace_parts(&mut archive, &replacements)?),
+        render: if replacements.is_empty() {
+            None
+        } else {
+            Some(replace_parts(&mut archive, &replacements)?)
+        },
         comments,
         markers: markers.list,
+        hidden,
     })
 }
+
+/// Replies and resolved threads from `commentsExtended.xml`: each entry
+/// names a comment by its last paragraph's ID, the paragraph of the comment
+/// it replies to, and whether its thread is done. A reply shares its
+/// thread's state.
+// Replaced by the fork's extraction (ROADMAP Comments item 2), which reports
+// replies and resolved state with the comments.
+fn threads(extended: &str, by_paragraph: &HashMap<String, usize>, comments: &mut [DocxComment]) {
+    let Ok(doc) = roxmltree::Document::parse(extended) else {
+        return;
+    };
+    let index = |node: Node<'_, '_>, name: &str| {
+        node.attribute((W15, name))
+            .and_then(|id| by_paragraph.get(&id.to_ascii_uppercase()))
+            .copied()
+    };
+    let mut parents = Vec::new();
+    for entry in doc
+        .root_element()
+        .children()
+        .filter(|n| n.tag_name().namespace() == Some(W15) && n.tag_name().name() == "commentEx")
+    {
+        let Some(i) = index(entry, "paraId") else {
+            continue;
+        };
+        comments[i].resolved = matches!(entry.attribute((W15, "done")), Some("1" | "true" | "on"));
+        if let Some(parent) = index(entry, "paraIdParent").filter(|&p| p != i) {
+            parents.push((i, parent));
+        }
+    }
+    for &(i, parent) in &parents {
+        comments[i].parent = Some(comments[parent].id.clone());
+    }
+    // A reply's thread is its root's, whatever the reply itself says; a
+    // cycle stops at the comment that closes it.
+    for &(i, _) in &parents {
+        let mut root = i;
+        for _ in 0..parents.len() {
+            match parents.iter().find(|(c, _)| *c == root) {
+                Some(&(_, parent)) if parent != i => root = parent,
+                _ => break,
+            }
+        }
+        comments[i].resolved = comments[root].resolved;
+    }
+}
+
+/// A run property that is on: present, unless its value turns it off.
+fn on(node: Node<'_, '_>) -> bool {
+    !matches!(attr(node, "val"), "0" | "false" | "off")
+}
+
+/// Counts the passages of hidden text in a part and, with `edits`, lifts
+/// it: a run's `w:vanish` becomes a dotted underline in muted ink (its own
+/// underline and colour give way) with an explicit `vanish` off, so a
+/// character style's `vanish` cannot hide it again, and a hidden paragraph
+/// mark shows.
+fn hidden_text(doc: &roxmltree::Document<'_>, mut edits: Option<&mut Vec<Edit>>) -> usize {
+    let w = doc
+        .root_element()
+        .tag_name()
+        .namespace()
+        .unwrap_or_default();
+    let mut count = 0;
+    let mut in_passage = false;
+    for node in doc.descendants() {
+        if word(node, "p") {
+            in_passage = false;
+        }
+        if word(node, "r") && draws_text(node) {
+            let hidden = node
+                .children()
+                .find(|c| word(*c, "rPr"))
+                .and_then(|p| p.children().find(|c| word(*c, "vanish")))
+                .is_some_and(on);
+            if hidden && !in_passage {
+                count += 1;
+            }
+            in_passage = hidden;
+        }
+        let Some(edits) = edits.as_deref_mut() else {
+            continue;
+        };
+        if !(word(node, "vanish") && on(node)) {
+            continue;
+        }
+        let Some(properties) = node.parent().filter(|p| word(*p, "rPr")) else {
+            continue;
+        };
+        let owner = properties.parent();
+        if owner.is_some_and(|o| word(o, "r")) {
+            for old in properties
+                .children()
+                .filter(|c| word(*c, "u") || word(*c, "color"))
+            {
+                edits.push(Edit {
+                    start: old.range().start,
+                    end: old.range().end,
+                    rank: 1,
+                    text: String::new(),
+                });
+            }
+            edits.push(Edit {
+                start: node.range().start,
+                end: node.range().end,
+                rank: 1,
+                text: format!(
+                    "<mdocw:u xmlns:mdocw=\"{w}\" mdocw:val=\"dotted\"/><mdocw:color xmlns:mdocw=\"{w}\" mdocw:val=\"{HIDDEN_INK}\"/><mdocw:vanish xmlns:mdocw=\"{w}\" mdocw:val=\"0\"/>"
+                ),
+            });
+        } else if owner.is_some_and(|o| word(o, "pPr")) {
+            edits.push(Edit {
+                start: node.range().start,
+                end: node.range().end,
+                rank: 1,
+                text: String::new(),
+            });
+        }
+    }
+    count
+}
+
+/// The muted ink of hidden text shown: a grey that still reads at 4.5:1 on
+/// white paper and stays muted under the themed page tone.
+const HIDDEN_INK: &str = "6F6F6F";
 
 /// An edit to a part's text: replace `start..end` with `text`. `rank` orders
 /// edits at one offset: closing a link before what follows it, opening one
@@ -652,8 +816,8 @@ mod tests {
     #[test]
     fn rendering_copy_removes_comment_markup_without_changing_source_text() {
         let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comments.docx");
-        let prepared = prepare(bytes).unwrap();
-        assert_eq!(prepared.comments.len(), 4);
+        let prepared = prepare(bytes, false).unwrap();
+        assert_eq!(prepared.comments.len(), 6);
         let copy = prepared.render.unwrap();
         let body = body_of(copy.clone());
         let doc = roxmltree::Document::parse(&body).unwrap();
@@ -663,7 +827,7 @@ mod tests {
         )));
         assert_eq!(
             text(doc.root_element()).replace('\u{200B}', ""),
-            "First quoted paragraph.\nSecond quoted paragraph.\nPoint comment context."
+            "First quoted paragraph.\nSecond quoted paragraph.\nPoint comment context.\nA settled clause. Visible text with a hidden drafting note."
         );
         let mut zip = ZipArchive::new(Cursor::new(copy)).unwrap();
         let mut xml = String::new();
@@ -677,9 +841,10 @@ mod tests {
 
     #[test]
     fn no_comments_keeps_original_render_input() {
-        let prepared = prepare(include_bytes!(
-            "../../../../tests/fixtures/docx-preview/coverage.docx"
-        ))
+        let prepared = prepare(
+            include_bytes!("../../../../tests/fixtures/docx-preview/coverage.docx"),
+            true,
+        )
         .unwrap();
         assert!(prepared.render.is_none());
         assert!(prepared.comments.is_empty());
@@ -735,7 +900,7 @@ mod tests {
     #[test]
     fn render_copy_marks_every_commented_run() {
         let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comment-anchors.docx");
-        let prepared = prepare(bytes).unwrap();
+        let prepared = prepare(bytes, false).unwrap();
         let copy = prepared.render.clone().unwrap();
         let runs = marked_runs(&copy);
         let marker = |text: &str| {
@@ -885,7 +1050,7 @@ mod tests {
         ]
         .map(|p| format!("<w:p>{p}</w:p>"))
         .concat();
-        let prepared = prepare(&package_with(&body)).unwrap();
+        let prepared = prepare(&package_with(&body), false).unwrap();
         let copy = prepared.render.clone().unwrap();
         let body = part(&copy, BODY);
         let doc = roxmltree::Document::parse(&body).unwrap();
@@ -938,6 +1103,8 @@ mod tests {
             date: String::new(),
             text: String::new(),
             quote: String::new(),
+            parent: None,
+            resolved: false,
         };
         let comments = [comment("a"), comment("b"), comment("p")];
         let markers = [
@@ -983,5 +1150,110 @@ mod tests {
         assert!((a[0].x - 0.1).abs() < 1e-6 && (a[0].w - 0.302).abs() < 1e-6);
         assert!((a[1].y - 0.52).abs() < 1e-6);
         assert_eq!(anchors[0].rects[0].w, 0.0);
+    }
+
+    #[test]
+    fn replies_and_resolved_threads_come_from_comments_extended() {
+        let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comments.docx");
+        let prepared = prepare(bytes, false).unwrap();
+        let comment = |id: &str| prepared.comments.iter().find(|c| c.id == id).unwrap();
+        assert_eq!(comment("5").parent.as_deref(), Some("0"));
+        assert!(comment("4").resolved);
+        for id in ["0", "1", "2", "3", "5"] {
+            assert!(!comment(id).resolved, "{id}");
+        }
+        assert!(
+            ["0", "1", "2", "3", "4"]
+                .iter()
+                .all(|id| comment(id).parent.is_none())
+        );
+    }
+
+    #[test]
+    fn a_reply_shares_its_threads_state_and_a_cycle_ends() {
+        let comment = |id: &str| DocxComment {
+            id: id.into(),
+            author: String::new(),
+            date: String::new(),
+            text: String::new(),
+            quote: String::new(),
+            parent: None,
+            resolved: false,
+        };
+        let mut comments = [comment("a"), comment("b"), comment("c"), comment("d")];
+        let by_paragraph = [("0A", 0), ("0B", 1), ("0C", 2), ("0D", 3)]
+            .into_iter()
+            .map(|(p, i)| (p.to_owned(), i))
+            .collect();
+        threads(
+            &format!(
+                r#"<w15:commentsEx xmlns:w15="{W15}"><w15:commentEx w15:paraId="0a" w15:done="1"/><w15:commentEx w15:paraId="0B" w15:paraIdParent="0A" w15:done="0"/><w15:commentEx w15:paraId="0C" w15:paraIdParent="0D"/><w15:commentEx w15:paraId="0D" w15:paraIdParent="0C"/><w15:commentEx w15:paraId="FF" w15:done="1"/></w15:commentsEx>"#
+            ),
+            &by_paragraph,
+            &mut comments,
+        );
+        assert!(comments[0].resolved && comments[1].resolved);
+        assert_eq!(comments[1].parent.as_deref(), Some("a"));
+        assert_eq!(comments[2].parent.as_deref(), Some("d"));
+        assert!(!comments[2].resolved && !comments[3].resolved);
+    }
+
+    #[test]
+    fn hidden_text_is_counted_always_and_drawn_only_when_shown() {
+        let bytes = include_bytes!("../../../../tests/fixtures/docx-preview/comments.docx");
+        let hidden_run = |body: &str| {
+            let doc = roxmltree::Document::parse(body).unwrap();
+            let run = doc
+                .descendants()
+                .find(|n| word(*n, "r") && text(*n).contains("hidden drafting note"))
+                .unwrap();
+            let properties = run.children().find(|c| word(*c, "rPr")).unwrap();
+            properties
+                .children()
+                .filter(|c| c.is_element())
+                .map(|c| format!("{}={}", c.tag_name().name(), attr(c, "val")))
+                .collect::<Vec<_>>()
+        };
+        let plain = prepare(bytes, false).unwrap();
+        assert_eq!(plain.hidden, 1);
+        assert_eq!(hidden_run(&body_of(plain.render.unwrap())), ["vanish="]);
+        let shown = prepare(bytes, true).unwrap();
+        assert_eq!(shown.hidden, 1);
+        assert_eq!(
+            hidden_run(&body_of(shown.render.unwrap())),
+            ["u=dotted", &format!("color={HIDDEN_INK}"), "vanish=0"]
+        );
+    }
+
+    #[test]
+    fn hidden_passages_merge_adjacent_runs_and_lift_their_marks() {
+        let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        let body = format!(
+            r#"<w:document xmlns:w="{w}"><w:body><w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:rPr><w:vanish/><w:color w:val="FF0000"/><w:u w:val="single"/></w:rPr><w:t>one</w:t></w:r><w:bookmarkStart w:id="1"/><w:r><w:rPr><w:vanish w:val="1"/></w:rPr><w:t>still one</w:t></w:r><w:r><w:t>shown</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:t>two</w:t></w:r></w:p><w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>three</w:t></w:r><w:r><w:rPr><w:vanish w:val="false"/></w:rPr><w:t>not hidden</w:t></w:r></w:p></w:body></w:document>"#
+        );
+        let package = super::super::tests::package(&[(BODY, body.as_bytes())]);
+        let plain = prepare(&package, false).unwrap();
+        assert_eq!(plain.hidden, 3);
+        assert!(plain.render.is_none(), "nothing to change");
+        let shown = body_of(prepare(&package, true).unwrap().render.unwrap());
+        let doc = roxmltree::Document::parse(&shown).unwrap();
+        // Each hidden run's vanish is now explicitly off; the run's own
+        // colour and underline gave way.
+        let vanish: Vec<_> = doc
+            .descendants()
+            .filter(|n| word(*n, "vanish"))
+            .map(|n| attr(n, "val"))
+            .collect();
+        assert_eq!(vanish, ["0", "0", "0", "0", "false"]);
+        assert!(!shown.contains("FF0000") && !shown.contains("single"));
+        assert_eq!(
+            doc.descendants().filter(|n| word(*n, "u")).count(),
+            4,
+            "each hidden run is underlined"
+        );
+        assert_eq!(
+            text(doc.root_element()),
+            "onestill oneshowntwo\nthreenot hidden"
+        );
     }
 }

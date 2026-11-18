@@ -685,6 +685,66 @@ pub struct ThemedPages {
     pub overlays: PageOverlays,
 }
 
+/// A passage the host marks on a page: a tint behind its lines, with an
+/// underline under them when `underline` is set; a zero-width rectangle
+/// marks a point. A click on it emits [`PdfEvent::MarkClicked`] with its
+/// `key`; links drawn over it keep their clicks.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageMark {
+    pub page: usize,
+    /// One rectangle per line, normalized to the page like search matches.
+    pub rects: Vec<NormRect>,
+    pub fill: Hsla,
+    pub underline: Option<Hsla>,
+    pub key: usize,
+}
+
+/// Supplies the host's [`PageMark`]s at paint time, for themed paper (`true`)
+/// or the original paper, so their tints follow the page tone.
+pub type MarksFn = Rc<dyn Fn(bool, &App) -> Vec<PageMark>>;
+
+/// What a host control does when clicked.
+pub type ActionFn = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// A host's on/off control in the source-name row, before the close button.
+#[derive(Clone)]
+pub struct HeaderToggle {
+    pub id: &'static str,
+    pub label: SharedString,
+    /// The accessible name and tooltip.
+    pub description: SharedString,
+    pub on: bool,
+    pub action: ActionFn,
+}
+
+/// A host view laid over the page column that scrolls with it, and the
+/// width it reserves to the right of the pages (a rail of cards). The view
+/// fills the pages' width plus that rail, from the first page's top to the
+/// last page's bottom, and reads where the pages are from
+/// [`PdfView::layout`]. Only its own controls take the mouse.
+#[derive(Clone)]
+pub struct PageOverlay {
+    pub view: AnyView,
+    /// The width reserved beside the pages in a viewport this wide; 0
+    /// reserves none, and the view draws over the pages alone.
+    pub rail_width: Rc<dyn Fn(f32) -> f32>,
+}
+
+/// Where the pages sit in a [`PageOverlay`]'s coordinates, whose origin is
+/// the first page's top-left corner.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PageLayout {
+    pub page_width: f32,
+    /// The width reserved beside the pages, right of `page_width`.
+    pub rail_width: f32,
+    /// Each page's top and height.
+    pub pages: Vec<(f32, f32)>,
+    /// The band the viewport shows: its top and height.
+    pub visible: (f32, f32),
+    /// The viewport's width, which decides the rail.
+    pub viewport_width: f32,
+}
+
 /// Supplies the current [`PdfStyle`] at paint time. Because [`PdfView`] is a
 /// persistent entity (not rebuilt by its parent each frame), it reads its colors
 /// through this closure — returning fresh colors each call lets the viewer follow
@@ -747,6 +807,8 @@ pub enum PdfEvent {
         field: FormField,
         bounds: Bounds<Pixels>,
     },
+    /// A [`PageMark`] was clicked: its key.
+    MarkClicked(usize),
 }
 
 /// The find bar's host-owned text input ([`PdfView::set_search_field`]).
@@ -855,6 +917,14 @@ pub struct PdfView {
     matches: Vec<SearchMatch>,
     /// Index into `matches` of the focused match (the one ↑/↓/Enter cycle through).
     current_match: Option<usize>,
+    /// The host's marks on the pages ([`PdfView::set_marks`]).
+    marks: Option<MarksFn>,
+    /// The host's toggles in the source-name row.
+    header_toggles: Vec<HeaderToggle>,
+    /// The host's view over the pages ([`PdfView::set_overlay`]).
+    overlay: Option<PageOverlay>,
+    /// The width the overlay reserved at the last render.
+    rail_width: f32,
 }
 
 impl PdfView {
@@ -967,6 +1037,91 @@ impl PdfView {
             search_field: None,
             matches: Vec::new(),
             current_match: None,
+            marks: None,
+            header_toggles: Vec::new(),
+            overlay: None,
+            rail_width: 0.0,
+        }
+    }
+
+    /// Mark passages on the pages with what `marks` supplies at each paint;
+    /// the host notifies this view when they change.
+    pub fn set_marks(&mut self, marks: Option<MarksFn>, cx: &mut Context<Self>) {
+        self.marks = marks;
+        cx.notify();
+    }
+
+    /// The host's toggles in the source-name row, replacing those before.
+    pub fn set_header_toggles(&mut self, toggles: Vec<HeaderToggle>, cx: &mut Context<Self>) {
+        self.header_toggles = toggles;
+        cx.notify();
+    }
+
+    /// The host's toggles, as the source-name row draws them.
+    pub fn header_toggles(&self) -> &[HeaderToggle] {
+        &self.header_toggles
+    }
+
+    /// Lay `overlay` over the page column, or take it away.
+    pub fn set_overlay(&mut self, overlay: Option<PageOverlay>, cx: &mut Context<Self>) {
+        self.overlay = overlay;
+        self.update_rail(cx);
+        cx.notify();
+    }
+
+    /// Where the pages are, in the overlay's coordinates.
+    pub fn layout(&self) -> PageLayout {
+        let page_width = self.page_width();
+        let mut top = 0.0;
+        let pages = self
+            .dims
+            .iter()
+            .map(|dim| {
+                let height = display_height(*dim, page_width);
+                let page = (top, height);
+                top += height + PAGE_GAP;
+                page
+            })
+            .collect();
+        let viewport = self.scroll.bounds().size;
+        PageLayout {
+            page_width,
+            rail_width: self.rail_width,
+            pages,
+            visible: (
+                f32::from(-self.scroll.offset().y) - PAGE_PAD_Y,
+                f32::from(viewport.height),
+            ),
+            viewport_width: f32::from(viewport.width),
+        }
+    }
+
+    /// Scroll so the band from `top` to `bottom` (overlay coordinates) is
+    /// in view, a quarter down the viewport when it was not. A jump, never
+    /// an animation, so it honours Reduce Motion.
+    pub fn reveal(&mut self, top: f32, bottom: f32, cx: &mut Context<Self>) {
+        let (shown, height) = self.layout().visible;
+        if height > 1.0 && top >= shown && bottom <= shown + height {
+            return;
+        }
+        let y = (top + PAGE_PAD_Y - height.max(0.0) / 4.0).max(0.0);
+        self.scroll
+            .set_offset(point(self.scroll.offset().x, px(-y)));
+        cx.notify();
+    }
+
+    /// Recompute the overlay's rail for the viewport; a change re-fits.
+    fn update_rail(&mut self, cx: &mut Context<Self>) {
+        let viewport = f32::from(self.scroll.bounds().size.width);
+        let rail = self
+            .overlay
+            .as_ref()
+            .map_or(0.0, |overlay| (overlay.rail_width)(viewport).max(0.0));
+        if (rail - self.rail_width).abs() > 0.5 {
+            self.rail_width = rail;
+            // Fit width now fits the page beside the rail.
+            self.fit_viewport = (0.0, 0.0);
+            self.apply_fit(cx);
         }
     }
 
@@ -1444,7 +1599,7 @@ impl PdfView {
         self.fit_viewport = (vw, vh);
         // Chrome around the page column: the overlay scrollbar plus the page
         // slots' 1px borders and a hair of breathing room.
-        let avail_w = (vw - SCROLLBAR_W - 6.0).max(50.0);
+        let avail_w = (vw - SCROLLBAR_W - 6.0 - self.rail_width).max(50.0);
         let zoom = match mode {
             FitMode::Width => avail_w / PAGE_WIDTH,
             FitMode::Page => {
@@ -2177,6 +2332,7 @@ impl EventEmitter<PdfEvent> for PdfView {}
 
 impl Render for PdfView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.update_rail(cx);
         // A sticky fit mode re-fits when the viewport size changes (window or
         // sidebar resize) — and computes the first real fit once layout exists.
         if self.fit.is_some() {
@@ -2222,6 +2378,11 @@ impl Render for PdfView {
         // Unrendered themed slots paint in the paper color, never a light box.
         let slot_bg = themed.map_or(style.placeholder_bg, |t| t.paper);
         let overlays = themed.map_or(style.overlays, |t| t.overlays);
+        let marks = self
+            .marks
+            .as_ref()
+            .map(|marks| marks(themed.is_some(), cx))
+            .unwrap_or_default();
 
         // Page slots are *direct* children of the scroll container (assembled below), so
         // `ScrollHandle::bounds_for_item(i)` yields page `i`'s real laid-out bounds —
@@ -2238,6 +2399,8 @@ impl Render for PdfView {
                 .flex_shrink_0()
                 .w(px(page_width))
                 .h(px(disp_h))
+                // Centred with the rail beside it.
+                .when(self.rail_width > 0.0, |slot| slot.mr(px(self.rail_width)))
                 .rounded(px(2.0))
                 .border_1()
                 .border_color(style.border)
@@ -2300,10 +2463,49 @@ impl Render for PdfView {
                 }
                 slot
             };
+            // The host's marks, under the links so a link keeps its click.
+            let mut slot = slot;
+            for (mi, mark) in marks.iter().enumerate() {
+                if mark.page != i {
+                    continue;
+                }
+                for (ri, r) in mark.rects.iter().enumerate() {
+                    let point = r.w <= 0.0;
+                    // A point is a short upright bar where the comment sits.
+                    let (x, w) = if point {
+                        (r.x * page_width - 1.5, 3.0)
+                    } else {
+                        (r.x * page_width, r.w * page_width)
+                    };
+                    let (y, h) = if point {
+                        (r.y * disp_h - 10.0, 12.0)
+                    } else {
+                        (r.y * disp_h, r.h * disp_h)
+                    };
+                    let key = mark.key;
+                    slot = slot.child(
+                        div()
+                            .id(SharedString::from(format!("pdf-mark-{i}-{mi}-{ri}")))
+                            .absolute()
+                            .left(px(x))
+                            .top(px(y))
+                            .w(px(w))
+                            .h(px(h))
+                            .rounded(px(1.0))
+                            .bg(mark.fill)
+                            .when_some(mark.underline.filter(|_| !point), |v, line| {
+                                v.border_b_2().border_color(line)
+                            })
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |_, _, _, cx| {
+                                cx.emit(PdfEvent::MarkClicked(key));
+                            })),
+                    );
+                }
+            }
             // Clickable link annotations: transparent overlays that navigate on click
             // (internal page jump or external URL), with a faint hover so they read as
             // links. Coordinates are normalized to the page, like search matches.
-            let mut slot = slot;
             if let Some(links) = self.links.get(i) {
                 for (li, link) in links.iter().enumerate() {
                     let target = link.target.clone();
@@ -2698,6 +2900,33 @@ impl Render for PdfView {
             root
         };
 
+        // The host's overlay: over the page column and its rail, from the
+        // first page's top to the last page's bottom, scrolling with them.
+        let fits = page_width + self.rail_width <= f32::from(self.scroll.bounds().size.width);
+        let overlay = self.overlay.as_ref().map(|overlay| {
+            let height = self
+                .layout()
+                .pages
+                .last()
+                .map_or(0.0, |(top, height)| top + height);
+            let width = page_width + self.rail_width;
+            div()
+                .absolute()
+                .top(px(PAGE_PAD_Y))
+                .left_0()
+                .right_0()
+                .min_w(px(width))
+                .flex()
+                .when(fits, |v| v.justify_center())
+                .child(
+                    div()
+                        .relative()
+                        .w(px(width))
+                        .min_h(px(height))
+                        .child(overlay.view.clone()),
+                )
+        });
+
         let scrollbar = scrollbar::overlay_scrollbar(
             "pdf-scrollbar-thumb",
             &self.scroll,
@@ -2829,6 +3058,20 @@ impl Render for PdfView {
                     )
                 })
                 .child(div().flex_1())
+                .children(self.header_toggles.iter().map(|toggle| {
+                    let action = toggle.action.clone();
+                    header_control(toggle.id, toggle.label.clone(), &style)
+                        .when(cfg!(test), |v| v.debug_selector(|| toggle.id.into()))
+                        .when(toggle.on, |v| v.bg(style.placeholder_bg))
+                        .aria_label(toggle.description.clone())
+                        .aria_toggled(if toggle.on {
+                            gpui::Toggled::True
+                        } else {
+                            gpui::Toggled::False
+                        })
+                        .tooltip(self.tip(toggle.description.clone()))
+                        .on_click(move |_, window, cx| action(window, cx))
+                }))
                 .when_some(on_close, |row, on_close| {
                     row.child(
                         close_control("pdf-close", &(self.style)())
@@ -2871,16 +3114,15 @@ impl Render for PdfView {
                                 .flex()
                                 .flex_col()
                                 .items_start()
-                                .when(
-                                    page_width <= f32::from(self.scroll.bounds().size.width),
-                                    |v| v.items_center(),
-                                )
+                                .when(fits, |v| v.items_center())
                                 .gap(px(PAGE_GAP))
                                 .py(px(PAGE_PAD_Y))
                                 // Scrolling doesn't re-run render on its own; notify so
                                 // the next frame re-runs `ensure_window` + page counter.
                                 .on_scroll(cx.listener(|_, _, _, cx| cx.notify()))
-                                .children(slots),
+                                .children(slots)
+                                // After the pages, so page `i` stays scroll item `i`.
+                                .children(overlay),
                         )
                         .child(scrollbar)
                         .child(horizontal_scrollbar)
@@ -3375,6 +3617,86 @@ mod scrolling_tests {
             assert!(bar.left() >= px(0.) && bar.right() <= px(200.), "{bar:?}");
             assert!(close.right() <= bar.right());
         }
+    }
+
+    /// A host's overlay reserves its rail beside the pages, Fit width fits
+    /// the page beside it, a narrow viewport reserves none, and a mark's
+    /// click comes back with its key.
+    #[gpui::test]
+    async fn an_overlay_rail_narrows_the_page_and_marks_report_clicks(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        struct Blank;
+        impl Render for Blank {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div()
+            }
+        }
+        let file = reference_pdf();
+        let path = file.path().to_path_buf();
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
+        });
+        wait_for_load(&view, cx).await;
+        cx.simulate_resize(gpui::size(px(1000.), px(700.)));
+        view.update(cx, |view, cx| view.fit_width(cx));
+        draw(cx);
+        let plain = cx.update(|_, cx| view.read(cx).page_width());
+        let blank = cx.update(|_, cx| cx.new(|_| Blank));
+        view.update(cx, |view, cx| {
+            view.set_overlay(
+                Some(PageOverlay {
+                    view: blank.into(),
+                    rail_width: Rc::new(|viewport| if viewport >= 700. { 250. } else { 0. }),
+                }),
+                cx,
+            );
+            view.set_marks(
+                Some(Rc::new(|_, _: &App| {
+                    vec![PageMark {
+                        page: 0,
+                        rects: vec![NormRect {
+                            x: 0.2,
+                            y: 0.2,
+                            w: 0.4,
+                            h: 0.05,
+                        }],
+                        fill: hsla(0.1, 0.9, 0.5, 0.3),
+                        underline: None,
+                        key: 7,
+                    }]
+                })),
+                cx,
+            );
+        });
+        draw(cx);
+        draw(cx);
+        let layout = cx.update(|_, cx| view.read(cx).layout());
+        assert_eq!(layout.rail_width, 250.);
+        assert!(
+            (plain - layout.page_width - 250.).abs() < 1.,
+            "{plain} {layout:?}"
+        );
+        assert_eq!(layout.pages[0].0, 0.);
+        let clicked = Rc::new(std::cell::Cell::new(None));
+        let seen = clicked.clone();
+        let _subscription = cx.update(|_, cx| {
+            cx.subscribe(&view, move |_, event: &PdfEvent, _| {
+                if let PdfEvent::MarkClicked(key) = event {
+                    seen.set(Some(*key));
+                }
+            })
+        });
+        let page = cx
+            .update(|_, cx| view.read(cx).scroll.bounds_for_item(0))
+            .unwrap();
+        let at = page.origin + gpui::point(page.size.width * 0.4, page.size.height * 0.225);
+        cx.simulate_click(at, Default::default());
+        assert_eq!(clicked.get(), Some(7));
+        cx.simulate_resize(gpui::size(px(600.), px(700.)));
+        draw(cx);
+        draw(cx);
+        cx.update(|_, cx| assert_eq!(view.read(cx).layout().rail_width, 0.));
     }
 
     #[gpui::test]

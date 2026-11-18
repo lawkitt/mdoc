@@ -256,6 +256,68 @@ impl Theme {
     }
 }
 
+/// The comment rail's colours (originals spec): the tints and underline
+/// drawn over a page, which follow its paper, and the cards and markers.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CommentColors {
+    /// A commented passage, over the page's paper.
+    pub tint: Hsla,
+    /// The open card's passage: a stronger tint, and underlined.
+    pub tint_active: Hsla,
+    pub underline: Hsla,
+    /// A card's ground and edge, on the viewer's background.
+    pub card: Hsla,
+    pub card_border: Hsla,
+    /// The open card's edge.
+    pub card_active: Hsla,
+    /// A marker in the page margin and the count on it.
+    pub marker: Hsla,
+    pub marker_fg: Hsla,
+}
+
+impl Theme {
+    /// The comment rail's colours over themed paper or the original paper.
+    pub fn comments(self, themed_paper: bool) -> CommentColors {
+        let (tint, tint_active, underline, marker_fg) = if themed_paper {
+            (
+                hsla(0.13, 0.85, 0.6, 0.16),
+                hsla(0.13, 0.85, 0.6, 0.28),
+                hsla(0.12, 0.9, 0.62, 1.),
+                rgb(0x1e1e22).into(),
+            )
+        } else {
+            (
+                hsla(0.13, 0.95, 0.55, 0.2),
+                hsla(0.13, 0.95, 0.55, 0.4),
+                hsla(0.1, 0.85, 0.33, 1.),
+                gpui::white(),
+            )
+        };
+        let (card, card_border, card_active) = match self {
+            Self::Dark => (
+                rgb(0x2a2a30).into(),
+                rgb(0x44444c).into(),
+                hsla(0.12, 0.9, 0.62, 1.),
+            ),
+            Self::Light => (
+                gpui::white(),
+                rgb(0xd2d2d8).into(),
+                hsla(0.1, 0.85, 0.33, 1.),
+            ),
+        };
+        CommentColors {
+            tint,
+            tint_active,
+            underline,
+            card,
+            card_border,
+            card_active,
+            marker: underline,
+            marker_fg,
+        }
+    }
+}
+
 impl Theme {
     /// Text on the notices bell's amber badge: dark on the dark theme's
     /// lighter amber, white on the light theme's deeper one (ADR 0067).
@@ -585,6 +647,71 @@ mod contrast_tests {
             "contrast below WCAG 2.2 AA:\n{}",
             failed.join("\n")
         );
+    }
+
+    /// Page text stays readable under a comment's tint on both page tones,
+    /// the active passage's underline and the markers show on the paper,
+    /// and the cards' text reads on their ground (originals spec,
+    /// Accessibility).
+    #[test]
+    fn comment_tints_cards_and_markers_meet_contrast() {
+        let mut failed = Vec::new();
+        for theme in [Theme::Dark, Theme::Light] {
+            let p = theme.pdf_style();
+            let mut papers = vec![(false, "original paper", gpui::white(), gpui::black())];
+            if let Some(themed) = p.themed_pages {
+                papers.push((true, "themed paper", themed.paper, themed.ink));
+            }
+            for (themed, paper_name, paper, ink) in papers {
+                let c = theme.comments(themed);
+                let tinted = over(c.tint, paper);
+                let active = over(c.tint_active, paper);
+                failed.extend(failures(
+                    theme,
+                    4.5,
+                    &[
+                        ("page ink", ink, &[("tinted passage", tinted)]),
+                        ("page ink", ink, &[("active passage", active)]),
+                        ("marker count", c.marker_fg, &[("marker", c.marker)]),
+                    ],
+                ));
+                failed.extend(failures(
+                    theme,
+                    3.,
+                    &[
+                        (
+                            "active underline",
+                            c.underline,
+                            &[(paper_name, paper), ("active passage", active)],
+                        ),
+                        ("marker", c.marker, &[(paper_name, paper)]),
+                    ],
+                ));
+            }
+            let c = theme.comments(false);
+            failed.extend(failures(
+                theme,
+                4.5,
+                &[
+                    ("card text", p.header_fg, &[("card", c.card)]),
+                    ("card date and replies", p.header_muted, &[("card", c.card)]),
+                    ("resolved chip", p.header_muted, &[("viewer", p.bg)]),
+                ],
+            ));
+            failed.extend(failures(
+                theme,
+                3.,
+                &[
+                    (
+                        "open card edge",
+                        c.card_active,
+                        &[("viewer", p.bg), ("card", c.card)],
+                    ),
+                    ("focus ring", p.focus_accent, &[("card", c.card)]),
+                ],
+            ));
+        }
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
     }
 
     #[test]

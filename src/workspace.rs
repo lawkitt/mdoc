@@ -115,6 +115,9 @@ pub(super) enum TabEvent {
     Save(SaveEvent),
     Case(CaseEvent),
     ToggleTheme,
+    /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
+    /// Source follows and Settings keeps it.
+    SourceDisplay(crate::preview::SourceDisplay),
 }
 
 /// Tabs to add (`TabSet`).
@@ -1540,6 +1543,25 @@ impl Workspace {
                 }
             }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
+            TabEvent::SourceDisplay(display) => {
+                let display = *display;
+                // Kept for this window when the save fails; the error is logged.
+                let _ = self.update_general(
+                    move |general| {
+                        general.show_comments = display.comments;
+                        general.show_hidden_text = display.hidden_text;
+                    },
+                    cx,
+                );
+                let views: Vec<_> = self
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| tab.view().cloned())
+                    .collect();
+                for view in views {
+                    view.update(cx, |view, cx| view.source_display_changed(window, cx));
+                }
+            }
             TabEvent::Close(CloseEvent::Resolved) => {
                 if let Some(effect) = self.quit_flow.resolved(id) {
                     self.carry_out_quit(effect, window, cx);

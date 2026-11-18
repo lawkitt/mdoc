@@ -259,6 +259,17 @@ impl Driver {
                     "merge_hints": w.active_view().map_or(0, |v| v.read(cx).pii.review().merge_hints().len()),
                     "scanning": w.active_view().is_some_and(|v| v.read(cx).pii.scanning()),
                     "import_note": w.active_view().and_then(|v| v.read(cx).session.warning.clone()),
+                    "left_out": w.active_view().and_then(|v| v.read(cx).left_out()),
+                    // The Source header's toggles, and the rail or markers.
+                    "source_toggles": w.active_view().and_then(|v| v.read(cx).preview.pdf().cloned()).map(|pdf| {
+                        pdf.read(cx).header_toggles().iter().map(|t| json!({"label": t.label.to_string(), "on": t.on})).collect::<Vec<_>>()
+                    }),
+                    "comment_rail": w.active_view().and_then(|v| {
+                        let v = v.read(cx);
+                        let shown = v.preview.comment_rail()?.read(cx).shown();
+                        let rail = v.preview.pdf()?.read(cx).layout().rail_width > 0.;
+                        Some(json!({"shown": shown, "rail": rail}))
+                    }),
                     "ocr_consent": w.active_view().is_some_and(|v| {
                         let v = v.read(cx);
                         v.lifecycle.source_only() && v.import.ocr_required().is_some()

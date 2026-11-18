@@ -345,13 +345,6 @@ the note.
    comment parsers go. Builds on #925's AnyDoc W1 and pdf-inspector M1.
    *Done when:* the import result carries them, each format has a fixture,
    and the note's counts and the Source cards come from the same data.
-3. **[Desktop] Comment rail, markers and hidden text in Source.** *From the
-   comments grill (#927).* The spec's Comments in Source, Hidden text in
-   Source, import note and accessibility rules on desktop; the bottom
-   comments list goes. *Done when:* headless renders of a wide pane with
-   the rail, a narrow pane with markers and an open card, a resolved chip,
-   hidden text shown and the left-out line, light and dark; keyboard-flow
-   and contrast tests pass.
 4. **[iOS] DOCX Original on phones.** *From the comments grill (#927).*
    The left-out line under the title. Then measure docxide in process on the
    iPhone 12 Pro (time and peak memory on legal-opinion, coverage and a

@@ -12,8 +12,8 @@
 //! ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
-    ImportError, Imported, OcrFailure, PdfLeftOut, check_cancel, join_notes, pdf_error,
-    pdf_warning, read_pdf, repeated_lines, repeated_lines_note,
+    ImportError, Imported, LeftOut, OcrFailure, check_cancel, pdf_error, pdf_warning, read_pdf,
+    repeated_lines,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -228,7 +228,7 @@ pub fn prepare_resumable(
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
-    let (page_count, left_out) = (native.page_count, PdfLeftOut::of(&native));
+    let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native));
     drop(native);
     check_cancel(cancel)?;
     let digest = digest(&bytes);
@@ -260,24 +260,17 @@ pub fn prepare_resumable(
     drop(permit);
     let (markdown, review) = assemble(&pages);
     let warning = pdf_warning(&markdown, review, page_count, true)?;
-    let [pictures, hidden, field_names] = left_out.notes();
-    let repeated = pages
+    left_out.repeated_lines = pages
         .iter()
         .map(|page| u64::from(page.repeated_lines))
         .sum();
-    let warning = join_notes([
-        warning,
-        pictures,
-        hidden,
-        field_names,
-        repeated_lines_note(repeated),
-    ]);
     Ok((
         Imported {
             ocr_configuration: Some(installed.config.clone()),
             source,
             markdown,
             warning,
+            left_out,
             is_pdf: true,
             is_docx: false,
         },
@@ -557,6 +550,7 @@ mod tests {
         let desktop = crate::import::prepare_cancellable(&pdf, None, true, &cancel).unwrap();
         assert_eq!(native.markdown, desktop.markdown);
         assert_eq!(native.warning, desktop.warning);
+        assert_eq!(native.left_out, desktop.left_out);
         assert!(!dir.path().join("imports").exists());
     }
 
@@ -592,6 +586,7 @@ mod tests {
             completed.unwrap().remove();
             assert_eq!(whole.markdown, desktop.markdown, "{name}");
             assert_eq!(whole.warning, desktop.warning, "{name}");
+            assert_eq!(whole.left_out, desktop.left_out, "{name}");
             assert_eq!(whole.ocr_configuration, desktop.ocr_configuration, "{name}");
             assert!(!dir.path().join("imports").read_dir().unwrap().any(|_| true));
 
@@ -625,6 +620,7 @@ mod tests {
             }
             assert_eq!(resumed.markdown, desktop.markdown, "{name}");
             assert_eq!(resumed.warning, desktop.warning, "{name}");
+            assert_eq!(resumed.left_out, desktop.left_out, "{name}");
             completed.unwrap().remove();
             assert!(!dir.path().join("imports").read_dir().unwrap().any(|_| true));
             assert_eq!(std::fs::read(&pdf).unwrap(), original, "{name}");

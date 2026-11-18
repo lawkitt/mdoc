@@ -688,6 +688,8 @@ impl DocumentView {
                     && (self.preview.pdf().is_some() || self.preview.loading());
                 self.session
                     .import(imported.source.clone(), imported.warning);
+                self.session.left_out = imported.left_out.line(true);
+                self.session.comments_left_out = imported.left_out.comments.not_shown();
                 self.session.ocr_configuration = imported.ocr_configuration;
                 self.reset_pii(cx);
                 if !retain_preview {
@@ -1766,7 +1768,7 @@ impl DocumentView {
         }
         if self.preview.visible() && original {
             regions.push((self.preview_region.clone(), false));
-            if self.preview.comment_panel().is_some() {
+            if self.preview.comments_shown(cx) {
                 regions.push((self.comments_region.clone(), false));
             }
         }
@@ -2212,9 +2214,8 @@ impl Render for DocumentView {
                 .when(show_original && self.preview.pdf().is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
                     .child(self.preview_status(theme))))
-                .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).on_action(cx.listener(Self::next_comment)).on_action(cx.listener(Self::previous_comment)).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
-                    .when_some(self.preview.comment_panel().cloned(), |pane, comments| pane.child(div().track_focus(&self.comments_region).child(comments)))
                     .children(preview_notice)))
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice)

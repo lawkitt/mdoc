@@ -301,7 +301,7 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
             assert!(!preview.retryable(), "preview must load, not silently fail");
             (
                 preview.pdf().unwrap().downgrade(),
-                preview.comment_panel().map(Entity::downgrade),
+                preview.comment_rail().map(Entity::downgrade),
                 preview.docx().map(|docx| docx.pdf_path.clone()),
             )
         });
