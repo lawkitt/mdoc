@@ -27,12 +27,14 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 /// stream. `Some(fixed)` only when something actually changed; `None` means
 /// nothing to do (no forms, already normalized, encrypted, or unparseable) —
 /// the caller keeps the original bytes either way.
+#[cfg(test)]
 pub(crate) fn normalize_form_appearances(bytes: &[u8]) -> Option<Vec<u8>> {
-    let mut doc = Document::load_mem(bytes).ok()?;
-    if doc.is_encrypted() {
-        return None;
-    }
+    crate::display_bytes(bytes, crate::ViewOptions::default())
+}
 
+/// Give every form widget of `doc` a directly-renderable appearance stream.
+/// True when something changed.
+pub(crate) fn normalize_forms(doc: &mut Document) -> bool {
     // Widget annotations, collected up front (mutating `doc` invalidates
     // iteration). Merged field+widget dicts — the common case — are found
     // here too, since the widget half carries `/Subtype /Widget`.
@@ -48,15 +50,10 @@ pub(crate) fn normalize_form_appearances(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut changed = false;
     let mut helv: Option<ObjectId> = None;
     for id in widgets {
-        changed |= resolve_state_dict(&mut doc, id);
-        changed |= synthesize_text_appearance(&mut doc, id, &mut helv);
+        changed |= resolve_state_dict(doc, id);
+        changed |= synthesize_text_appearance(doc, id, &mut helv);
     }
-    if !changed {
-        return None;
-    }
-    let mut out = Vec::with_capacity(bytes.len() + 4096);
-    doc.save_to(&mut out).ok()?;
-    Some(out)
+    changed
 }
 
 /// Gap 1: `/AP /N` is a dict of states — replace it with the `/AS`-selected
@@ -414,7 +411,7 @@ fn rect_of(doc: &Document, w: &Dictionary) -> Option<(f32, f32)> {
 
 /// A PDF text string to UTF-8: UTF-16BE with BOM, else PDFDocEncoding treated
 /// as Latin-1 (close enough for the synthesized display).
-fn decode_pdf_string(bytes: &[u8]) -> String {
+pub(crate) fn decode_pdf_string(bytes: &[u8]) -> String {
     if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
         let units: Vec<u16> = bytes[2..]
             .as_chunks::<2>()

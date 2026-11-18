@@ -685,14 +685,23 @@ impl DocumentView {
                 let imported = *imported;
                 let automatic = self.import.imported();
                 self.lifecycle.converted(automatic);
+                // A PDF shown before its file changed loads again, so its
+                // pages and rail are what the import read.
                 let retain_preview = self.preview.source() == Some(&imported.source)
-                    && (self.preview.pdf().is_some() || self.preview.loading());
+                    && (self.preview.pdf().is_some() || self.preview.loading())
+                    && !self
+                        .preview
+                        .shows_other_annotations(&imported.source, &imported.annotations);
                 self.session
                     .import(imported.source.clone(), imported.warning);
                 self.session.left_out = imported.left_out.line(true);
                 self.session.comments_left_out = imported.left_out.comments_not_shown();
-                self.preview
-                    .imported(imported.source.clone(), imported.stamp, imported.comments);
+                self.preview.imported(
+                    imported.source.clone(),
+                    imported.stamp,
+                    imported.comments,
+                    imported.annotations,
+                );
                 self.session.ocr_configuration = imported.ocr_configuration;
                 self.reset_pii(cx);
                 if !retain_preview {

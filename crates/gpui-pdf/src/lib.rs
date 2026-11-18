@@ -63,7 +63,10 @@ pub use outline::{LinkMark, LinkTarget, MARK_SCHEME, link_marks, page_links};
 pub(crate) use outline::{OutlineItem, PdfLink};
 
 mod forms;
-pub(crate) use forms::{FormField, form_fields, normalize_form_appearances};
+pub(crate) use forms::{FormField, form_fields};
+
+mod annotations;
+pub use annotations::PageFrame;
 
 // ─────────────────────────────── Low-level primitives ───────────────────────────────
 
@@ -119,20 +122,49 @@ pub fn close_control(id: impl Into<gpui::ElementId>, style: &PdfStyle) -> FocusR
 }
 
 pub fn parse(bytes: Arc<Vec<u8>>) -> Result<Arc<Document>, LoadError> {
-    parse_with_password(bytes, "")
+    parse_with_password(bytes, "", ViewOptions::default())
 }
 
-/// Like [`parse`], but supplies a decryption `password` for an encrypted PDF.
-/// Returns [`LoadError::Locked`] if the file is password-protected and `password`
-/// is missing or incorrect.
+/// How a [`PdfView`] draws its document.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewOptions {
+    /// Leave out the PDF's own drawing of comment annotations (notes,
+    /// popups, and FreeText and text markup that carry text), because the
+    /// host shows them itself; stamps, ink, form widgets and markup without
+    /// text stay drawn (see `annotations`).
+    pub hide_comment_annotations: bool,
+}
+
+/// The bytes hayro renders: every form widget given a directly-renderable
+/// appearance stream (see `forms`) and, under `options`, comment
+/// annotations hidden. `None` keeps the original bytes: nothing to change,
+/// or an encrypted or unparseable file.
+fn display_bytes(bytes: &[u8], options: ViewOptions) -> Option<Vec<u8>> {
+    let mut doc = lopdf::Document::load_mem(bytes).ok()?;
+    if doc.is_encrypted() {
+        return None;
+    }
+    let mut changed = forms::normalize_forms(&mut doc);
+    if options.hide_comment_annotations {
+        changed |= annotations::hide_comment_annotations(&mut doc);
+    }
+    if !changed {
+        return None;
+    }
+    let mut out = Vec::with_capacity(bytes.len() + 4096);
+    doc.save_to(&mut out).ok()?;
+    Some(out)
+}
+
+/// Like [`parse`], but supplies a decryption `password` for an encrypted PDF
+/// and draws it under `options`. Returns [`LoadError::Locked`] if the file is
+/// password-protected and `password` is missing or incorrect.
 pub(crate) fn parse_with_password(
     bytes: Arc<Vec<u8>>,
     password: &str,
+    options: ViewOptions,
 ) -> Result<Arc<Document>, LoadError> {
-    // Form display correctness: give every form widget a directly-renderable
-    // appearance stream before hayro sees the bytes (see `forms`). A no-op
-    // (or an encrypted/unparseable file) keeps the original bytes.
-    let bytes = normalize_form_appearances(&bytes)
+    let bytes = display_bytes(&bytes, options)
         .map(Arc::new)
         .unwrap_or(bytes);
     match Pdf::new_with_password(bytes, password) {
@@ -157,9 +189,13 @@ struct Prepared {
 /// Parse `bytes` with `password` and measure it — the off-thread half of a load,
 /// shared by the initial open, a password [`PdfView::unlock`], and
 /// [`PdfView::replace_bytes`].
-fn prepare(bytes: Arc<Vec<u8>>, password: &str) -> Result<Prepared, LoadError> {
+fn prepare(
+    bytes: Arc<Vec<u8>>,
+    password: &str,
+    options: ViewOptions,
+) -> Result<Prepared, LoadError> {
     let fields = form_fields(&bytes);
-    let doc = parse_with_password(bytes, password)?;
+    let doc = parse_with_password(bytes, password, options)?;
     let dims = page_dims(&doc);
     let toc = crate::outline::outline(&doc);
     let links = crate::outline::page_links(&doc);
@@ -176,6 +212,12 @@ fn prepare(bytes: Arc<Vec<u8>>, password: &str) -> Result<Prepared, LoadError> {
 /// viewer can lay out correctly-sized page slots before any page renders.
 pub fn page_dims(doc: &Document) -> Vec<(f32, f32)> {
     doc.pages().iter().map(|p| p.render_dimensions()).collect()
+}
+
+/// Each page's visible box before `/Rotate`, to place annotation geometry
+/// on the page as drawn ([`PageFrame::norm_rect`]).
+pub fn page_frames(doc: &Document) -> Vec<PageFrame> {
+    doc.pages().iter().map(PageFrame::of).collect()
 }
 
 /// How rasterized pages are painted: the original paper, or *themed* — paper and
@@ -925,6 +967,8 @@ pub struct PdfView {
     overlay: Option<PageOverlay>,
     /// The width the overlay reserved at the last render.
     rail_width: f32,
+    /// How the document is drawn ([`PdfView::with_options`]).
+    options: ViewOptions,
 }
 
 impl PdfView {
@@ -944,6 +988,17 @@ impl PdfView {
         quality: PdfQualityFn,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::with_options(path, style, quality, ViewOptions::default(), cx)
+    }
+
+    /// [`PdfView::new`], drawing the document under `options`.
+    pub fn with_options(
+        path: PathBuf,
+        style: PdfStyleFn,
+        quality: PdfQualityFn,
+        options: ViewOptions,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let load_path = path.clone();
         cx.spawn(async move |this, cx| {
             // Read the file off-thread, keep the bytes (so an encrypted PDF can be
@@ -952,7 +1007,7 @@ impl PdfView {
                 .background_executor()
                 .spawn(async move {
                     let bytes = Arc::new(std::fs::read(&load_path).map_err(|e| e.to_string())?);
-                    Ok::<_, String>((bytes.clone(), prepare(bytes, "")))
+                    Ok::<_, String>((bytes.clone(), prepare(bytes, "", options)))
                 })
                 .await;
             let (bytes, prepared) = match loaded {
@@ -1041,7 +1096,19 @@ impl PdfView {
             header_toggles: Vec::new(),
             overlay: None,
             rail_width: 0.0,
+            options,
         }
+    }
+
+    /// How this view draws its document.
+    pub fn options(&self) -> ViewOptions {
+        self.options
+    }
+
+    /// Each page's visible box before `/Rotate` ([`page_frames`]); empty
+    /// until the document loads.
+    pub fn page_frames(&self) -> Vec<PageFrame> {
+        self.pdf.as_deref().map(page_frames).unwrap_or_default()
     }
 
     /// Mark passages on the pages with what `marks` supplies at each paint;

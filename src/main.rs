@@ -14,6 +14,7 @@ mod markdown_search;
 mod menu_bar;
 mod menus;
 mod models;
+mod pdf_comments;
 #[cfg(test)]
 mod perf_tests;
 mod pii;

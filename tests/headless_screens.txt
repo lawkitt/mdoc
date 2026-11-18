@@ -66,6 +66,11 @@ comments-rail
 comments-resolved
 comments-markers
 comments-hidden-text
+pdf-comments-rail
+pdf-comments-resolved
+pdf-comments-rotated
+pdf-comments-markers
+pdf-comments-hidden
 docx-source
 shelf
 shelf-demos

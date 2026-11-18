@@ -245,7 +245,12 @@ fn fit_width_converges_without_render_storm(cx: &mut gpui::TestAppContext) {
 #[gpui::test]
 fn initial_fit_waits_for_measured_viewport(cx: &mut gpui::TestAppContext) {
     let file = blank_document(4);
-    let document = prepare(Arc::new(std::fs::read(file.path()).unwrap()), "").unwrap();
+    let document = prepare(
+        Arc::new(std::fs::read(file.path()).unwrap()),
+        "",
+        ViewOptions::default(),
+    )
+    .unwrap();
     let (view, cx) = cx.add_window_view(|window, cx| {
         let mut view = PdfView::new(
             file.path().to_owned(),

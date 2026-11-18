@@ -246,3 +246,49 @@ fn a_narrow_window_shows_markers_that_open_cards_under_their_line(cx: &mut TestA
     assert_eq!(focused_card(&rail, cx), Some(0));
     cx.update(|_, cx| assert_eq!(rail.read(cx).open(), Some(0)));
 }
+
+/// A PDF's annotations take the same rail, read for its Source whether or
+/// not its import ran here, and the left-out line stops counting them.
+#[gpui::test]
+fn a_pdf_shows_its_annotations_on_the_rail(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1600.), px(900.)));
+    let source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source/comments.pdf");
+    let view = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        let view = tabs.active_view().unwrap();
+        view.update(cx, |view, cx| {
+            view.preview.set_split(0.25);
+            view.session.comments_left_out = Some("10 comments not shown.".into());
+            view.open_pdf(source, window, cx);
+        });
+        view
+    });
+    for _ in 0..3 {
+        cx.run_until_parked();
+        draw(cx);
+    }
+    let rail = rail(&tabs, cx);
+    let pdf = pdf(&tabs, cx);
+    cx.update(|_, cx| {
+        // Ten annotations; two are replies.
+        assert_eq!(rail.read(cx).count(), 8);
+        assert!(rail.read(cx).shown());
+        assert_eq!(pdf.read(cx).header_toggles().len(), 1, "no hidden text");
+        assert_eq!(pdf.read(cx).header_toggles()[0].label.as_ref(), "💬 8");
+        assert_eq!(view.read(cx).left_out(), None);
+    });
+    // The highlight's tint lies on page 1's second line.
+    let marks = cx.update(|_, cx| rail.read(cx).marks_for_test());
+    let cap = marks.iter().find(|m| m.key == 1).unwrap();
+    assert_eq!(cap.page, 0);
+    assert!((cap.rects[0].y - 110. / 720.).abs() < 0.002);
+    // Comments off: no rail, no tints.
+    toggle(&pdf, 0, cx);
+    cx.update(|_, cx| {
+        assert!(!rail.read(cx).shown());
+        assert!(rail.read(cx).marks_for_test().is_empty());
+    });
+    toggle(&pdf, 0, cx);
+}
