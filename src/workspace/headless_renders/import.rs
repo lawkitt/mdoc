@@ -34,7 +34,8 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
             v.lifecycle.show_source();
-            v.preview.no_preview(PathBuf::from("Quarterly figures.xlsx"));
+            v.preview
+                .no_preview(PathBuf::from("Quarterly figures.xlsx"));
             v.error = Some(mdoc_import::import::ImportError::Cancelled.to_string());
             cx.notify();
         });

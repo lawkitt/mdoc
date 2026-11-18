@@ -676,7 +676,10 @@ mod tests {
         };
         assert!(!flow.stopping());
         flow.stop();
-        assert!(cancel.load(Ordering::Relaxed), "the running conversion sees the flag");
+        assert!(
+            cancel.load(Ordering::Relaxed),
+            "the running conversion sees the flag"
+        );
         assert!(flow.stopping() && flow.busy());
         assert!(!flow.cancelled(), "the tab itself is not closing");
         drop(permit);
