@@ -134,6 +134,9 @@ pub(super) struct PreviewState {
     annotations: Option<(PathBuf, Arc<Vec<PdfAnnotation>>)>,
     /// Reads `annotations` beside the page's own load.
     annotation_read: Option<gpui::Task<()>>,
+    /// A PDF whose annotations could not be read: its page keeps its own
+    /// drawing of them, since no rail shows them.
+    unread_annotations: Option<PathBuf>,
     pending: Option<PendingPreview>,
     /// The current request shows the source as a PDF, whatever its name
     /// (an import found a PDF in a `.docx`): its annotations' rail shows
@@ -226,12 +229,29 @@ impl PreviewState {
         comments: Vec<Comment>,
         annotations: Vec<PdfAnnotation>,
     ) {
+        if self.unread_annotations.as_ref() == Some(&source) {
+            self.unread_annotations = None;
+        }
         self.imported_comments = stamp.map(|stamp| ImportedComments {
             source,
             stamp,
             comments: Arc::new(comments),
             annotations: Arc::new(annotations),
         });
+    }
+
+    /// The PDF shown has other annotations than an import of `source`
+    /// read: the file changed since it loaded.
+    pub(super) fn shows_other_annotations(
+        &self,
+        source: &Path,
+        annotations: &[PdfAnnotation],
+    ) -> bool {
+        self.pdf_source
+            && self
+                .annotations
+                .as_ref()
+                .is_some_and(|(path, shown)| path == source && shown.as_slice() != annotations)
     }
 
     /// A PDF source's annotations are in: the rail beside its pages once
@@ -733,15 +753,16 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         let theme = self.theme.clone();
+        let hide = self.preview.unread_annotations.as_ref() != Some(&path);
         let pdf = cx.new(|cx| {
             PdfView::with_options(
                 path,
                 Rc::new(move || theme.get().pdf_style()),
                 Rc::new(|| 1.0),
                 // The rail shows a PDF's comment annotations; the page
-                // doesn't draw them again.
+                // doesn't draw them again, unless they couldn't be read.
                 ViewOptions {
-                    hide_comment_annotations: true,
+                    hide_comment_annotations: hide,
                 },
                 cx,
             )
@@ -820,13 +841,16 @@ impl DocumentView {
     /// import's while the file is unchanged, else read as the import
     /// would. Whichever of the two ends last brings the rail.
     fn read_annotations(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        if self.preview.unread_annotations.as_ref() == Some(&path) {
+            return;
+        }
         let known = self.preview.imported_comments(&path);
         let read = cx.background_executor().spawn({
             let path = path.clone();
             async move {
                 known
                     .and_then(ImportedComments::current_annotations)
-                    .unwrap_or_else(|| Arc::new(import::source_annotations(&path)))
+                    .or_else(|| import::source_annotations(&path).map(Arc::new))
             }
         });
         self.preview.annotation_read = Some(cx.spawn_in(window, async move |this, cx| {
@@ -835,6 +859,16 @@ impl DocumentView {
                 if this.preview.source.as_ref() != Some(&path) {
                     return;
                 }
+                let Some(annotations) = annotations else {
+                    // No rail can show them, so the page draws them
+                    // itself: load it again with its own drawing.
+                    if let Some(task) = this.preview.annotation_read.take() {
+                        task.detach();
+                    }
+                    this.preview.unread_annotations = Some(path.clone());
+                    this.open_pdf(path, window, cx);
+                    return;
+                };
                 this.preview.annotations = Some((path, annotations));
                 let (theme, region) = (this.theme.clone(), this.comments_region.clone());
                 if this.preview.attach_pdf_comments(theme, region, window, cx) {
@@ -1049,6 +1083,76 @@ mod tests {
             let rail = app.preview.comment_rail().expect("the annotations' rail");
             // Eight annotations, one a reply.
             assert_eq!(rail.read(cx).count(), 7);
+        });
+    }
+
+    /// A PDF shown with other annotations than its import read changed
+    /// since it loaded, so the import loads it again.
+    #[test]
+    fn a_changed_pdf_shows_other_annotations() {
+        let mut preview = PreviewState::default();
+        let source = PathBuf::from("a.pdf");
+        let note = |text: &str| PdfAnnotation {
+            page: 1,
+            kind: pdf_inspector::AnnotationKind::Text,
+            author: None,
+            date: None,
+            text: text.into(),
+            rect: pdf_inspector::AnnotationRect {
+                x: 0.,
+                y: 0.,
+                width: 1.,
+                height: 1.,
+            },
+            quads: Vec::new(),
+            in_reply_to: None,
+            resolved: false,
+            marked_text: None,
+        };
+        preview.annotations = Some((source.clone(), Arc::new(vec![note("old")])));
+        assert!(
+            !preview.shows_other_annotations(&source, &[note("new")]),
+            "not a PDF Source"
+        );
+        preview.pdf_source = true;
+        assert!(preview.shows_other_annotations(&source, &[note("new")]));
+        assert!(preview.shows_other_annotations(&source, &[]));
+        assert!(!preview.shows_other_annotations(&source, &[note("old")]));
+        assert!(!preview.shows_other_annotations(Path::new("b.pdf"), &[]));
+    }
+
+    /// A PDF whose annotations could not be read keeps its own drawing of
+    /// them, and no rail.
+    #[gpui::test]
+    fn an_unread_pdf_keeps_its_own_annotations(cx: &mut gpui::TestAppContext) {
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source/comments.pdf");
+        let (app, cx) = crate::document_view::tests::boot(cx);
+        app.update_in(cx, |app, window, cx| {
+            app.preview.unread_annotations = Some(source.clone());
+            app.open_pdf(source.clone(), window, cx);
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let app = app.read(cx);
+            let pdf = app.preview.pdf().expect("the page loads").read(cx);
+            assert!(!pdf.options().hide_comment_annotations);
+            assert!(app.preview.comment_rail().is_none());
+        });
+        // Read once its import has: the rail, and the page leaves them out.
+        app.update_in(cx, |app, window, cx| {
+            let annotations = mdoc_import::import::source_annotations(&source).unwrap();
+            let stamp = SourceStamp::of(&source);
+            app.preview
+                .imported(source.clone(), stamp, Vec::new(), annotations);
+            app.open_pdf(source, window, cx);
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let app = app.read(cx);
+            let pdf = app.preview.pdf().unwrap().read(cx);
+            assert!(pdf.options().hide_comment_annotations);
+            assert_eq!(app.preview.comment_rail().unwrap().read(cx).count(), 8);
         });
     }
 

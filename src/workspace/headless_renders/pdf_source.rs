@@ -12,7 +12,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.resize(1500., 900.)?;
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source/comments.pdf");
-    let annotations = mdoc_import::import::source_annotations(&source);
+    let annotations = mdoc_import::import::source_annotations(&source).unwrap_or_default();
     let view = d.change(|w, window, cx| {
         w.new_tab(window, cx);
         let view = w.active_view().unwrap();

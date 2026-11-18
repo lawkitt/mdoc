@@ -62,6 +62,14 @@ fn anchor(index: usize, annotation: &PdfAnnotation, frames: &[PageFrame]) -> Opt
             })
         })
         .collect();
+    // Lines top to bottom, whatever order the quads were written in: the
+    // first is where the card and marker sit.
+    let mut rects = rects;
+    rects.sort_by(|a, b| {
+        (a.y, a.x)
+            .partial_cmp(&(b.y, b.x))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     (!rects.is_empty()).then(|| CommentAnchor {
         id: index.to_string(),
         page,
@@ -92,7 +100,7 @@ mod tests {
     /// on page 1 through an offset CropBox, on page 2 through a quarter turn.
     #[test]
     fn the_fixture_anchors_where_its_pages_draw() {
-        let annotations = mdoc_import::import::source_annotations(&fixture());
+        let annotations = mdoc_import::import::source_annotations(&fixture()).unwrap();
         let doc = gpui_pdf::parse(Arc::new(std::fs::read(fixture()).unwrap())).unwrap();
         let frames = gpui_pdf::page_frames(&doc);
         assert_eq!(frames.len(), 2);
@@ -207,6 +215,31 @@ mod tests {
             resolved: false,
             marked_text: None,
         }
+    }
+
+    /// A highlight over two lines written bottom quad first anchors at its
+    /// top line.
+    #[test]
+    fn quads_anchor_at_their_top_line() {
+        let frames = [PageFrame {
+            width: 100.,
+            height: 100.,
+            quarter_turns: 0,
+        }];
+        let line = |y| AnnotationRect {
+            x: 10.,
+            y,
+            width: 50.,
+            height: 10.,
+        };
+        let mut highlight = annotation(1, line(10.));
+        highlight.quads = vec![line(10.), line(80.)];
+        let (_, anchors) = rail_input(&[highlight], &frames);
+        let ys: Vec<f32> = anchors[0].rects.iter().map(|r| r.y).collect();
+        assert!(
+            (ys[0] - 0.1).abs() < 1e-4 && (ys[1] - 0.8).abs() < 1e-4,
+            "{ys:?}"
+        );
     }
 
     #[test]

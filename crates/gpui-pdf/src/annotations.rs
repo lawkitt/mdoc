@@ -11,7 +11,7 @@
 //! widgets, links, markup without text and FreeText that is only an
 //! appearance.
 
-use lopdf::{Dictionary, Document, Object};
+use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::NormRect;
 
@@ -85,77 +85,110 @@ impl PageFrame {
 
 /// Set the hidden flag on every comment annotation of `doc` (see the module
 /// header): those in object streams or as objects, and those written inline
-/// in a page's `/Annots`. True when something changed.
+/// in a page's `/Annots`. Values are read through references, as
+/// pdf-inspector reads them. True when something changed.
 pub(crate) fn hide_comment_annotations(doc: &mut Document) -> bool {
-    let mut changed = false;
-    for object in doc.objects.values_mut() {
+    // Found first, while `doc` can be read through references; then set.
+    let mut found: Vec<(ObjectId, Option<usize>)> = Vec::new();
+    for (&id, object) in &doc.objects {
         match object {
             Object::Dictionary(dict) => {
-                changed |= hide(dict);
+                if to_hide(doc, dict) {
+                    found.push((id, None));
+                }
                 // A page whose `/Annots` array holds the dictionaries.
-                if let Ok(Object::Array(annots)) = dict.get_mut(b"Annots") {
-                    changed |= hide_inline(annots);
+                if let Ok(Object::Array(annots)) = dict.get(b"Annots") {
+                    found.extend(inline(doc, annots).map(|i| (id, Some(i))));
                 }
             }
             // An `/Annots` array written as its own object.
-            Object::Array(annots) => changed |= hide_inline(annots),
+            Object::Array(annots) => found.extend(inline(doc, annots).map(|i| (id, Some(i)))),
             _ => {}
         }
     }
-    changed
-}
-
-fn hide_inline(annots: &mut [Object]) -> bool {
-    let mut changed = false;
-    for annot in annots {
-        if let Object::Dictionary(dict) = annot {
-            changed |= hide(dict);
+    for &(id, index) in &found {
+        let dict = match (doc.objects.get_mut(&id), index) {
+            (Some(Object::Dictionary(dict)), None) => Some(dict),
+            (Some(Object::Dictionary(page)), Some(i)) => match page.get_mut(b"Annots") {
+                Ok(Object::Array(annots)) => annots.get_mut(i).and_then(|a| a.as_dict_mut().ok()),
+                _ => None,
+            },
+            (Some(Object::Array(annots)), Some(i)) => {
+                annots.get_mut(i).and_then(|a| a.as_dict_mut().ok())
+            }
+            _ => None,
+        };
+        if let Some(dict) = dict {
+            let flags = flags(dict);
+            dict.set("F", flags | HIDDEN);
         }
     }
-    changed
+    !found.is_empty()
 }
 
-/// Hide `dict` if it is a comment annotation not hidden yet.
-fn hide(dict: &mut Dictionary) -> bool {
-    let Ok(subtype) = dict.get(b"Subtype").and_then(Object::as_name) else {
+/// The indexes of the comment annotations written inline in `annots`.
+fn inline<'a>(doc: &'a Document, annots: &'a [Object]) -> impl Iterator<Item = usize> + 'a {
+    annots
+        .iter()
+        .enumerate()
+        .filter_map(move |(i, annot)| match annot {
+            Object::Dictionary(dict) if to_hide(doc, dict) => Some(i),
+            _ => None,
+        })
+}
+
+fn flags(dict: &Dictionary) -> i64 {
+    match dict.get(b"F") {
+        Ok(Object::Integer(flags)) => *flags,
+        Ok(Object::Real(flags)) => *flags as i64,
+        _ => 0,
+    }
+}
+
+/// `dict` is a comment annotation not hidden yet.
+fn to_hide(doc: &Document, dict: &Dictionary) -> bool {
+    let value = |key: &[u8]| dict.get(key).ok().and_then(|v| deref(doc, v));
+    let Some(Ok(subtype)) = value(b"Subtype").map(Object::as_name) else {
         return false;
     };
-    // Every annotation has a `/Rect`; nothing else with these subtypes does.
-    if !dict.has(b"Rect") {
+    // pdf-inspector reads an annotation only with a four-number `/Rect`;
+    // nothing else with these subtypes has one.
+    let rect = value(b"Rect").and_then(|r| r.as_array().ok());
+    if !rect.is_some_and(|r| {
+        r.len() >= 4
+            && r[..4]
+                .iter()
+                .all(|n| matches!(deref(doc, n), Some(Object::Integer(_) | Object::Real(_))))
+    }) {
         return false;
     }
     let comment = match subtype {
         b"Popup" => true,
-        b"Text" => carries_text(dict) || dict.has(b"State"),
+        b"Text" => carries_text(doc, dict) || dict.has(b"State"),
         b"FreeText" | b"Highlight" | b"Underline" | b"StrikeOut" | b"Squiggly" => {
-            carries_text(dict)
+            carries_text(doc, dict)
         }
         _ => false,
     };
-    let flags = match dict.get(b"F") {
-        Ok(Object::Integer(flags)) => *flags,
-        Ok(Object::Real(flags)) => *flags as i64,
-        _ => 0,
-    };
-    if !comment || flags & HIDDEN != 0 {
-        return false;
-    }
-    dict.set("F", flags | HIDDEN);
-    true
+    comment && flags(dict) & HIDDEN == 0
 }
 
-/// `/Contents` or `/RC` holds text: a string that is not blank, or an
-/// indirect value or stream, which pdf-inspector reads as text.
-fn carries_text(dict: &Dictionary) -> bool {
-    [b"Contents".as_slice(), b"RC"]
-        .iter()
-        .any(|key| match dict.get(key) {
-            Ok(Object::String(bytes, _)) => {
+/// `/Contents` or `/RC` holds text, as pdf-inspector reads it: a string
+/// that is not blank, or a rich-text stream.
+fn carries_text(doc: &Document, dict: &Dictionary) -> bool {
+    [b"Contents".as_slice(), b"RC"].iter().any(|key| {
+        match dict.get(key).ok().and_then(|v| deref(doc, v)) {
+            Some(Object::String(bytes, _)) => {
                 !crate::forms::decode_pdf_string(bytes).trim().is_empty()
             }
-            Ok(Object::Reference(_) | Object::Stream(_)) => true,
+            Some(Object::Stream(_)) => *key == b"RC",
             _ => false,
-        })
+        }
+    })
+}
+
+fn deref<'a>(doc: &'a Document, object: &'a Object) -> Option<&'a Object> {
+    doc.dereference(object).ok().map(|(_, object)| object)
 }
 
 #[cfg(test)]
@@ -246,7 +279,10 @@ mod tests {
                 "NM" => Object::string_literal(name),
                 "Rect" => rect(10, 10, 20, 20), "F" => 4,
             };
-            dict.extend(&extra);
+            // `extend` keeps existing keys; these replace them.
+            for (key, value) in extra {
+                dict.set(key, value);
+            }
             Object::Reference(doc.add_object(dict))
         };
         let text = |s: &str| Object::string_literal(s);
@@ -338,6 +374,31 @@ mod tests {
                 dictionary! { "Contents" => text("Gone"), "F" => 2 },
             ),
         ];
+        // Values through references, as pdf-inspector reads them: an
+        // indirect subtype and text count, an indirect blank text doesn't,
+        // and neither does a `/Rect` that is not four numbers.
+        let freetext = doc.add_object(Object::Name(b"FreeText".to_vec()));
+        let words = doc.add_object(text("Indirect"));
+        let blank = doc.add_object(text(""));
+        let mut annots = annots;
+        annots.push(annot(
+            &mut doc,
+            "indirect",
+            "Text",
+            dictionary! { "Subtype" => freetext, "Contents" => words },
+        ));
+        annots.push(annot(
+            &mut doc,
+            "indirect-blank",
+            "Highlight",
+            dictionary! { "Contents" => blank },
+        ));
+        annots.push(annot(
+            &mut doc,
+            "bad-rect",
+            "Text",
+            dictionary! { "Contents" => text("Lost"), "Rect" => vec![Object::from(1)] },
+        ));
         let bytes = one_page(&mut doc, annots, dictionary! {}, "");
         let hidden: Vec<String> = flags_after(&bytes)
             .into_iter()
@@ -355,7 +416,8 @@ mod tests {
                 "squiggly",
                 "state",
                 "inline",
-                "hidden"
+                "hidden",
+                "indirect"
             ]
         );
         // Other flags stay (Print, 4).

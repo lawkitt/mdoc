@@ -967,6 +967,8 @@ pub struct PdfView {
     overlay: Option<PageOverlay>,
     /// The width the overlay reserved at the last render.
     rail_width: f32,
+    /// How the document is drawn ([`PdfView::with_options`]).
+    options: ViewOptions,
 }
 
 impl PdfView {
@@ -1094,7 +1096,13 @@ impl PdfView {
             header_toggles: Vec::new(),
             overlay: None,
             rail_width: 0.0,
+            options,
         }
+    }
+
+    /// How this view draws its document.
+    pub fn options(&self) -> ViewOptions {
+        self.options
     }
 
     /// Each page's visible box before `/Rotate` ([`page_frames`]); empty
