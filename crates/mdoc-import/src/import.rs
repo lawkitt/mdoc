@@ -265,7 +265,8 @@ fn convert_pdf(
     }
     let warning = pdf_warning(&result.markdown, warning_pages, result.page_count, used_ocr)?;
     let [pictures, hidden, field_names] = left_out.notes();
-    let warning = join_notes([warning, pictures, hidden, field_names]);
+    let repeated = repeated_lines_note(repeated_lines(&result));
+    let warning = join_notes([warning, pictures, hidden, field_names, repeated]);
     Ok(Imported {
         ocr_configuration: if used_ocr {
             installed.map(|i| i.config.clone())
@@ -337,8 +338,9 @@ pub(crate) fn pdf_warning(
 pub(crate) struct PdfLeftOut {
     /// Pictures: OCR reads the text drawn in a picture, not the picture.
     pictures: u64,
-    /// Stretches of invisible text (render mode 3), a scan's hidden OCR
-    /// layer included.
+    /// Stretches of text a reader never sees: invisible text (render mode
+    /// 3), a scan's hidden OCR layer included, and text drawn in its
+    /// background's colour or covered by a later fill or image.
     hidden_text: u64,
     /// AcroForm field names; the fields' values stay.
     field_names: u64,
@@ -351,7 +353,8 @@ impl PdfLeftOut {
         }
         Self {
             pictures: sum(&native.images_by_page, |page| page.images),
-            hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches),
+            hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches)
+                + sum(&native.hidden_text_by_page, |page| page.stretches),
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
         }
     }
@@ -373,6 +376,27 @@ fn left_out_note(count: u64, one: &str, many: &str) -> Option<String> {
         0 => None,
         1 => Some(format!("1 {one} not imported.")),
         n => Some(format!("{n} {many} not imported.")),
+    }
+}
+
+/// The running header and footer rows `result`'s Markdown left out as exact
+/// repeats of a row kept on an earlier page. Unlike [`PdfLeftOut`] this
+/// comes from the result imported, because OCR finds its own repeats.
+pub(crate) fn repeated_lines(result: &pdf_inspector::vision::OcrPdfResult) -> u64 {
+    result
+        .repeated_lines_by_page
+        .iter()
+        .map(|page| u64::from(page.lines))
+        .sum()
+}
+
+/// The import note's line for repeated header and footer rows removed, if
+/// any: "3 repeated header and footer lines removed."
+pub(crate) fn repeated_lines_note(count: u64) -> Option<String> {
+    match count {
+        0 => None,
+        1 => Some("1 repeated header or footer line removed.".to_owned()),
+        n => Some(format!("{n} repeated header and footer lines removed.")),
     }
 }
 
@@ -640,6 +664,31 @@ mod tests {
             )
         );
         assert_eq!(PdfLeftOut::default().notes(), [None, None, None]);
+    }
+
+    /// A running header stays on its first page and its exact repeats are
+    /// dropped and counted; text drawn in its background's colour is left
+    /// out and counted with the other hidden passages (#925 M4, M5).
+    #[test]
+    fn the_note_counts_repeated_header_lines_and_text_in_its_background_colour() {
+        let imported = convert(&fixture("handmade-running-header.pdf")).unwrap();
+        assert_eq!(
+            imported.markdown.matches("Case No. 2-123/2026").count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert!(!imported.markdown.contains("SECRET"), "{}", imported.markdown);
+        assert!(imported.markdown.contains("Clause 4.11"), "{}", imported.markdown);
+        assert_eq!(
+            imported.warning.as_deref(),
+            Some("1 hidden passage not imported. 3 repeated header and footer lines removed.")
+        );
+        assert_eq!(repeated_lines_note(0), None);
+        assert_eq!(
+            repeated_lines_note(1).as_deref(),
+            Some("1 repeated header or footer line removed.")
+        );
     }
 
     /// ODT comments are left out of the Markdown (AnyDoc skips

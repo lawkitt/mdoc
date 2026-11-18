@@ -100,8 +100,9 @@ imported".
 - "Hidden text (N)" in the Source header shows it; the control appears only
   when the document has hidden text and is off by default, so the page
   matches what Word prints.
-- Invisible PDF text and form field names are counted only, because they
-  are mostly OCR layers and names like "Text1".
+- PDF text no reader sees (invisible, or drawn in its background's colour or
+  covered) and form field names are counted only, because they are mostly
+  OCR layers and names like "Text1".
 
 ## The import note
 

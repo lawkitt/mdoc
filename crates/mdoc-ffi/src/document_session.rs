@@ -1213,8 +1213,9 @@ mod tests {
             .to_string()
     }
 
-    /// The phones' import note counts hidden-formatted text left out, as
-    /// the desktop's does; the text itself never reaches the document.
+    /// The phones' import note counts hidden-formatted text and repeated
+    /// header lines left out, as the desktop's does; the hidden text itself
+    /// never reaches the document.
     #[test]
     fn the_import_note_counts_hidden_text() {
         for (name, note) in [
@@ -1225,6 +1226,10 @@ mod tests {
             (
                 "import/handmade-hidden.rtf",
                 "6 hidden passages not imported.",
+            ),
+            (
+                "import/handmade-running-header.pdf",
+                "1 hidden passage not imported. 3 repeated header and footer lines removed.",
             ),
         ] {
             let snapshot = DocumentSession::new()
