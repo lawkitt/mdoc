@@ -3,7 +3,7 @@
   "threshold": 0.5,
   "entities": [
     {"start":347,"end":363,"label":"person","score":0.9331877,"text":"Ms Edda Brannock"},
-    {"start":328,"end":345,"label":"person","score":0.7740714,"text":"p Ossian Draycott"},
-    {"start":189,"end":199,"label":"person","score":0.560403,"text":"Librarians"}
+    {"start":328,"end":345,"label":"person","score":0.77390057,"text":"p Ossian Draycott"},
+    {"start":189,"end":199,"label":"person","score":0.56001204,"text":"Librarians"}
   ]
 }

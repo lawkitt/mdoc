@@ -2,10 +2,10 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":469,"end":482,"label":"organization","score":0.77848095,"text":"КоАП РФ"},
-    {"start":592,"end":625,"label":"organization","score":0.8319638,"text":"Судебная коллегия"},
-    {"start":797,"end":808,"label":"organization","score":0.59455127,"text":"КАС РФ"},
-    {"start":557,"end":590,"label":"tax_id","score":0.5647587,"text":"УИД 99RS0001-01-2031-009999-99"},
-    {"start":541,"end":555,"label":"tax_id","score":0.5194299,"text":"33А-9999/2031"}
+    {"start":469,"end":482,"label":"organization","score":0.7779753,"text":"КоАП РФ"},
+    {"start":592,"end":625,"label":"organization","score":0.83223665,"text":"Судебная коллегия"},
+    {"start":797,"end":808,"label":"organization","score":0.59478664,"text":"КАС РФ"},
+    {"start":557,"end":590,"label":"tax_id","score":0.56457865,"text":"УИД 99RS0001-01-2031-009999-99"},
+    {"start":541,"end":555,"label":"tax_id","score":0.519567,"text":"33А-9999/2031"}
   ]
 }
