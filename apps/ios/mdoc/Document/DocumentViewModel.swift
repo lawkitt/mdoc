@@ -63,8 +63,9 @@ final class DocumentViewModel {
     /// title menu's Show comments and "Not on the page (N)" (originals.md,
     /// Phones).
     var originalComments: DocxComments?
-    /// "Not on the page (N)" is open.
-    var showsUnplacedComments = false
+    /// The comment sheet, at a thread of the original's comments; nil
+    /// while closed.
+    var commentSheet: CommentSheetState?
     /// Adjust Words in progress (ADR 0114, 0115); nil otherwise. Changed
     /// only by the `+Words` intents, and ended by any other change, which
     /// also puts the one-time demo away until next time.

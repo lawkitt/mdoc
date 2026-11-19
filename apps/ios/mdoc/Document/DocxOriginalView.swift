@@ -5,8 +5,9 @@ import SwiftUI
 /// A DOCX file's original page: docxide renders it in process into a
 /// temporary PDF each time the pane shows, and the PDF goes when it leaves
 /// (`DocxOriginal`). Its comments sit on the page as margin markers that
-/// open a sheet with their thread, or on an iPad's wide pane as the rail.
-/// The title menu's Show comments shows or hides them, an app-wide setting,
+/// open the comment sheet at their thread (`onOpenComment`; the document
+/// screen holds the sheet), or on an iPad's wide pane as the rail. The
+/// title menu's Show comments shows or hides them, an app-wide setting,
 /// and opens those not on the page (`onComments` tells it what there is).
 struct DocxOriginalView: View {
     let source: URL
@@ -17,10 +18,13 @@ struct DocxOriginalView: View {
     /// The rendered comments, for the title menu's Show comments and "Not
     /// on the page (N)".
     var onComments: (DocxComments) -> Void = { _ in }
+    /// The thread the comment sheet shows: its passage is strengthened and
+    /// the page keeps it above the sheet.
+    var activeComment: String?
+    /// A marker or passage opens the comment sheet at this thread.
+    var onOpenComment: (String) -> Void = { _ in }
     @Environment(\.preferences) private var preferences
     @State private var rendering = Rendering.working
-    /// The sheet: a marker's threads.
-    @State private var sheet: Sheet?
     /// The expanded rail card.
     @State private var expanded: String?
     @State private var width: CGFloat = 0
@@ -37,12 +41,6 @@ struct DocxOriginalView: View {
         let waits: Bool
     }
 
-    struct Sheet: Identifiable {
-        let id: String
-        let title: String
-        let threads: [DocxComments.Thread]
-    }
-
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,10 +54,7 @@ struct DocxOriginalView: View {
                 if case .ready(let rendered) = rendering { onComments(rendered.comments) }
             }
             // The PDF goes with the pane.
-            .onDisappear { rendering = .working; sheet = nil }
-            .sheet(item: $sheet) { sheet in
-                CommentThreadSheet(title: sheet.title, threads: sheet.threads)
-            }
+            .onDisappear { rendering = .working }
     }
 
     @ViewBuilder
@@ -85,15 +80,12 @@ struct DocxOriginalView: View {
                 comments: rendered.comments,
                 showsComments: preferences.showsComments,
                 rail: showsRail,
-                active: sheet?.threads.first?.id ?? expanded,
+                active: activeComment ?? expanded,
                 onMarker: { marker in
-                    sheet = Sheet(
-                        id: marker.id,
-                        title: marker.threads.count == 1
-                            ? String(localized: "Comment") : String(localized: "\(marker.threads.count) comments"),
-                        threads: marker.threads)
+                    if let first = marker.threads.first { onOpenComment(first.id) }
                 },
                 onCard: { id in expanded = expanded == id ? nil : id },
+                onPassage: onOpenComment,
                 viewport: viewport)
             .accessibilityLabel(Text("Original document"))
             .accessibilityIdentifier("docx-original")

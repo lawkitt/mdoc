@@ -3,7 +3,8 @@ import XCTest
 
 /// A Word file's comments on a phone (originals.md, Phones): no bar over
 /// the page; Show comments and "Not on the page (N)" in the title menu;
-/// markers that open their thread, and go with Show comments off.
+/// markers that open the sheet at their thread, which steps through them
+/// all at one height; markers go with Show comments off.
 final class CommentsOnPageUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -31,11 +32,26 @@ final class CommentsOnPageUITests: XCTestCase {
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertFalse(app.buttons["show-comments"].exists, "no comments bar over the page")
 
-        // A marker opens its thread.
+        // A marker opens the sheet at its thread; ‹ › step through every
+        // thread, and the sheet keeps its height.
         markers.firstMatch.tap()
         let sheet = app.descendants(matching: .any)["comment-sheet"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: MdocUITest.timeout))
-        app.buttons["Done"].firstMatch.tap()
+        let position = app.staticTexts["comment-position"]
+        XCTAssertTrue(position.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(position.label.hasPrefix("1 of "), position.label)
+        let total = position.label.replacingOccurrences(of: "1 of ", with: "")
+        XCTAssertFalse(app.buttons["comment-previous"].isEnabled, "nothing before the first")
+        let height = sheet.frame.height
+        app.buttons["comment-next"].tap()
+        XCTAssertTrue(position.wait(until: NSPredicate(format: "label == %@", "2 of \(total)"), timeout: MdocUITest.timeout))
+        XCTAssertEqual(sheet.frame.height, height, accuracy: 1, "stepping never resizes the sheet")
+        app.buttons["comment-previous"].tap()
+        XCTAssertTrue(position.wait(until: NSPredicate(format: "label == %@", "1 of \(total)"), timeout: MdocUITest.timeout))
+        // A sideways swipe on the card steps as well.
+        sheet.swipeLeft()
+        XCTAssertTrue(position.wait(until: NSPredicate(format: "label == %@", "2 of \(total)"), timeout: MdocUITest.timeout))
+        app.buttons["comment-sheet-close"].tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: MdocUITest.timeout))
 
         // The title menu: Show comments with the count, Not on the page.
@@ -51,7 +67,10 @@ final class CommentsOnPageUITests: XCTestCase {
         XCTAssertTrue(notOnPage.label.contains("Not on the page (1)"), notOnPage.label)
         notOnPage.tap()
         XCTAssertTrue(sheet.waitForExistence(timeout: MdocUITest.timeout))
-        app.buttons["Done"].firstMatch.tap()
+        // Those not on the page come last.
+        XCTAssertTrue(position.wait(until: NSPredicate(format: "label == %@", "\(total) of \(total)"), timeout: MdocUITest.timeout))
+        XCTAssertFalse(app.buttons["comment-next"].isEnabled, "nothing after the last")
+        app.buttons["comment-sheet-close"].tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: MdocUITest.timeout))
 
         // Show comments off: no markers, and no Not on the page.
@@ -64,5 +83,11 @@ final class CommentsOnPageUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["comments-not-on-page"].firstMatch.exists)
         show.tap()
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+
+        // Text closes the sheet: it steps through the Original's comments.
+        markers.firstMatch.tap()
+        XCTAssertTrue(sheet.waitForExistence(timeout: MdocUITest.timeout))
+        app.segmentedControls["pane-picker"].buttons["Text"].tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: MdocUITest.timeout))
     }
 }

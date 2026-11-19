@@ -12,6 +12,9 @@ struct OriginalView: View {
     var reachesBottom = false
     /// A rendered DOCX's comments, for the title menu.
     var onComments: (DocxComments) -> Void = { _ in }
+    /// The comment sheet's thread, and opening it (`DocxOriginalView`).
+    var activeComment: String?
+    var onOpenComment: (String) -> Void = { _ in }
     @State private var viewport = PageViewport()
     @State private var bottomInset: CGFloat = 0
 
@@ -38,7 +41,9 @@ struct OriginalView: View {
                 .accessibilityLabel(Text("Original PDF"))
                 .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
         case .docx(let url):
-            DocxOriginalView(source: url, waits: jobRuns, onComments: onComments)
+            DocxOriginalView(
+                source: url, waits: jobRuns, onComments: onComments, activeComment: activeComment,
+                onOpenComment: onOpenComment)
         case .images(let urls):
             TabView {
                 ForEach(Array(urls.enumerated()), id: \.offset) { index, url in

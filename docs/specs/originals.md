@@ -149,6 +149,8 @@ comments grill (#927).
   the iOS 26 ×, and "2 of 5" with ‹ › stepping through every comment in
   page order (then those not on the page), moving the page and the active
   tint; a sideways swipe on the card steps too.
+- The page stays live behind the sheet: another marker or passage shows
+  its thread in the same sheet. Text closes it.
 - A card shows the passage as a block with a tinted left rule, the comment
   text as its main line, an avatar in a stable soft color per author,
   replies joined by a thin thread line, and a resolved thread dimmed with a

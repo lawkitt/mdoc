@@ -141,8 +141,7 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
-        app.buttons["title-menu"].tap()
-        app.buttons["find-in-document"].tap()
+        openFind(app)
         typeInFindField(app, "Bennett")
         let mark = app.buttons["find-hide-name"]
         XCTAssertTrue(mark.waitForExistence(timeout: MdocUITest.timeout))
@@ -186,8 +185,7 @@ final class ReviewToolsUITests: XCTestCase {
         row.tap()
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 30))
-        app.buttons["title-menu"].tap()
-        app.buttons["find-in-document"].tap()
+        openFind(app)
         typeInFindField(app, "Депозит")
         let mark = app.buttons["find-hide-name"]
         XCTAssertTrue(mark.waitForExistence(timeout: MdocUITest.timeout))
@@ -241,8 +239,7 @@ final class ReviewToolsUITests: XCTestCase {
         document.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         // Repeats to step through: Find and Hide name on the surname.
-        app.buttons["title-menu"].tap()
-        app.buttons["find-in-document"].tap()
+        openFind(app)
         typeInFindField(app, "Bennett")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: MdocUITest.timeout))
@@ -271,6 +268,22 @@ final class ReviewToolsUITests: XCTestCase {
         app.typeKey(".", modifierFlags: .command)
         let gone = NSPredicate(format: "exists == false")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: app.descendants(matching: .any)["review-bar"].firstMatch)], timeout: 5), .completed)
+    }
+
+    /// Find in document from the title menu. A tap on the item while the
+    /// menu is still opening is lost on a slow runner, so it waits for the
+    /// item and taps again while the sheet hasn't come.
+    @MainActor
+    private func openFind(_ app: XCUIApplication) {
+        let field = app.searchFields.firstMatch
+        for _ in 0..<3 {
+            let find = app.buttons["find-in-document"]
+            if !find.exists { app.buttons["title-menu"].tap() }
+            guard find.waitForExistence(timeout: MdocUITest.timeout) else { continue }
+            _ = MdocUITest.wait(timeout: MdocUITest.probeTimeout) { find.isHittable }
+            find.tap()
+            if field.waitForExistence(timeout: MdocUITest.probeTimeout) { return }
+        }
     }
 
     /// Types into the Find sheet's search field once it has focus, which

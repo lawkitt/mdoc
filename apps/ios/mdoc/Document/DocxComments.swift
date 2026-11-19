@@ -75,6 +75,12 @@ struct DocxComments: Sendable {
         self.markers = markers
     }
 
+    /// Every thread in reading order: page order, then those not on the
+    /// page. The comment sheet steps through them.
+    var ordered: [Thread] {
+        markers.flatMap(\.threads) + unplaced
+    }
+
     /// The marker a thread sits at, if it has a place.
     func marker(of threadID: String) -> Marker? {
         markers.first { $0.threads.contains { $0.id == threadID } }
@@ -128,5 +134,33 @@ extension DocxComments.Marker {
     var spokenLabel: String {
         guard threads.count > 1 else { return threads.first?.spokenLabel ?? "" }
         return ([String(localized: "\(threads.count) comments.")] + threads.map(\.spokenLabel)).joined(separator: " ")
+    }
+}
+
+/// The comment sheet: every thread in reading order and the one it shows.
+/// Its id never changes, so stepping or opening another thread while the
+/// sheet is up changes what it shows without presenting it again, and the
+/// sheet keeps its height (originals.md, Phones).
+struct CommentSheetState: Identifiable, Equatable {
+    let threads: [DocxComments.Thread]
+    /// Threads with no place on the page, which the sheet says so for.
+    let unplaced: Set<String>
+    private(set) var index: Int
+    var id: String { "comments" }
+
+    /// At `threadID`, or the first thread when it isn't one of them.
+    init(_ comments: DocxComments, at threadID: String?) {
+        let ordered = comments.ordered
+        threads = ordered
+        unplaced = Set(comments.unplaced.map(\.id))
+        index = threadID.flatMap { id in ordered.firstIndex { $0.id == id } } ?? 0
+    }
+
+    var thread: DocxComments.Thread? { threads.indices.contains(index) ? threads[index] : nil }
+    var canGoBack: Bool { index > 0 }
+    var canGoOn: Bool { index < threads.count - 1 }
+
+    mutating func step(_ by: Int) {
+        index = min(max(index + by, 0), max(threads.count - 1, 0))
     }
 }

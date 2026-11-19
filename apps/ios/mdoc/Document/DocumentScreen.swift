@@ -62,9 +62,24 @@ struct DocumentScreen: View {
             .sheet(isPresented: $model.showsFind) {
                 FindSheet(model: model)
             }
-            .sheet(isPresented: $model.showsUnplacedComments) {
-                CommentThreadSheet(
-                    title: String(localized: "Not on the page"), threads: model.originalComments?.unplaced ?? [])
+            .sheet(item: $model.commentSheet) { shown in
+                // While the sheet closes the state is already nil: the
+                // sheet keeps showing what it showed, never unwrapping nil.
+                CommentSheet(state: Binding(
+                    get: { model.commentSheet ?? shown },
+                    set: { model.commentSheet = $0 }))
+            }
+            // The sheet steps through the Original's comments: Text, where
+            // one pane shows at a time, closes it.
+            .onChange(of: model.pane) { _, _ in
+                if !isRegular && model.pane != .original { model.commentSheet = nil }
+            }
+            // "Not on the page" opens over Text too: stepping to a thread on
+            // the page shows the Original, where its passage is.
+            .onChange(of: model.commentSheet?.thread?.id) { _, id in
+                guard let sheet = model.commentSheet, let id, !sheet.unplaced.contains(id),
+                    !isRegular, model.pane != .original else { return }
+                model.show(.original)
             }
             .sheet(item: $model.linkDraft) { draft in
                 LinkSheet(draft: draft)
@@ -108,6 +123,13 @@ struct DocumentScreen: View {
         IdentitiesPanel(model: model)
     }
 
+    /// A marker or passage on the Original: the comment sheet at its
+    /// thread, the sheet already up showing it in place.
+    private func openComment(_ threadID: String) {
+        guard let comments = model.originalComments else { return }
+        model.commentSheet = CommentSheetState(comments, at: threadID)
+    }
+
     /// The inspector stays closed while Identities show in the right column.
     /// On iPhone Identities is the right-hand drawer
     /// (`IdentitiesPanel.drawer`), so the inspector, a sheet there, stays
@@ -134,7 +156,9 @@ struct DocumentScreen: View {
                 } else {
                     OriginalView(
                         original: model.snapshot.original, jobRuns: model.runningJob != nil,
-                        onComments: { model.originalComments = $0 })
+                        onComments: { model.originalComments = $0 },
+                        activeComment: model.commentSheet?.thread?.id,
+                        onOpenComment: openComment)
                 }
             }
         } else {
@@ -154,7 +178,9 @@ struct DocumentScreen: View {
                     OriginalView(
                         original: model.snapshot.original, jobRuns: model.runningJob != nil,
                         reachesBottom: model.originalCoversText && model.runningJob == nil,
-                        onComments: { model.originalComments = $0 })
+                        onComments: { model.originalComments = $0 },
+                        activeComment: model.commentSheet?.thread?.id,
+                        onOpenComment: openComment)
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
@@ -393,7 +419,7 @@ struct DocumentScreen: View {
                 .accessibilityIdentifier("show-comments")
                 if preferences.showsComments, !comments.unplaced.isEmpty {
                     Button {
-                        model.showsUnplacedComments = true
+                        model.commentSheet = CommentSheetState(comments, at: comments.unplaced.first?.id)
                     } label: {
                         Label("Not on the page (\(comments.unplaced.count))", systemImage: "doc.text")
                     }
