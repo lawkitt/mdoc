@@ -90,6 +90,13 @@ final class DocxOriginalTests: XCTestCase {
         XCTAssertEqual(CommentedPDFContainer.markerGroups([at(0), at(10, page: 1)]), [[0], [1]])
         // A group is measured from its first marker, so a chain can't creep.
         XCTAssertEqual(CommentedPDFContainer.markerGroups([at(0), at(30), at(60)]), [[0, 1], [2]])
+        // A first marker scrolled out of view never hides one in it; two
+        // out of view, or two in it, still share.
+        let view = CGRect(x: 0, y: 20, width: 390, height: 700)
+        XCTAssertEqual(CommentedPDFContainer.markerGroups([at(-14), at(10)], visible: view), [[0], [1]])
+        XCTAssertEqual(CommentedPDFContainer.markerGroups([at(-60), at(-40)], visible: view), [[0, 1]])
+        XCTAssertEqual(CommentedPDFContainer.markerGroups([at(0), at(14)], visible: view), [[0, 1]])
+        XCTAssertEqual(CommentedPDFContainer.markerGroups([at(700), at(714)], visible: view), [[0, 1]])
     }
 
     /// A shared marker of resolved threads still shows how many (#962).
@@ -149,6 +156,33 @@ final class DocxOriginalTests: XCTestCase {
         view.layoutIfNeeded()
         XCTAssertGreaterThan(view.shownMarkerThreads.count, shown.count)
         XCTAssertEqual(walk(), view.shownMarkerThreads.count)
+
+        // Zoomed out again, a marker the rotor returned may have merged into
+        // the one above it: the rotor goes on from that group, both ways.
+        var spread: [CommentMarkerButton] = []
+        var current: Any? = nil
+        while spread.count < 50 {
+            let predicate = UIAccessibilityCustomRotorSearchPredicate()
+            predicate.searchDirection = .next
+            predicate.currentItem = UIAccessibilityCustomRotorItemResult(
+                targetElement: (current as? NSObjectProtocol) ?? NSObject(), targetRange: nil)
+            guard let next = rotor.itemSearchBlock(predicate)?.targetElement as? CommentMarkerButton else { break }
+            spread.append(next)
+            current = next
+        }
+        view.pdfView.scaleFactor /= 4
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        let groups = view.shownMarkerThreads
+        let merged = try XCTUnwrap(spread.first { $0.isHidden }, "a marker merges when zoomed out")
+        let group = try XCTUnwrap(groups.firstIndex { $0.contains(merged.marker.threads[0].id) })
+        for (direction, expected) in [(UIAccessibilityCustomRotor.Direction.next, group + 1), (.previous, group - 1)] {
+            let predicate = UIAccessibilityCustomRotorSearchPredicate()
+            predicate.searchDirection = direction
+            predicate.currentItem = UIAccessibilityCustomRotorItemResult(targetElement: merged, targetRange: nil)
+            let found = (rotor.itemSearchBlock(predicate)?.targetElement as? CommentMarkerButton)?.shown.threads.map(\.id)
+            XCTAssertEqual(found, groups.indices.contains(expected) ? groups[expected] : nil, "\(direction)")
+        }
     }
 
     private func comment(

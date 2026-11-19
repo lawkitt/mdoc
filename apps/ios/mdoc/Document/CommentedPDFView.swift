@@ -47,12 +47,17 @@ final class CommentedPDFContainer: UIView {
 
     /// Indexes of markers that share one, in order: a marker joins the
     /// group whose first marker's touch target its own would overlap, on
-    /// the same page (#962).
-    static func markerGroups(_ markers: [(page: Int, frame: CGRect)]) -> [[Int]] {
+    /// the same page (#962). A marker in `visible` never joins a first
+    /// marker scrolled out of it, which would hide it behind one nobody
+    /// sees; their targets overlap only in a strip at the edge, where the
+    /// later marker, on top, takes the tap.
+    static func markerGroups(_ markers: [(page: Int, frame: CGRect)], visible: CGRect? = nil) -> [[Int]] {
+        func out(_ index: Int) -> Bool { visible.map { !$0.intersects(markers[index].frame) } ?? false }
         var groups: [[Int]] = []
         for (index, marker) in markers.enumerated() {
             if let first = groups.last?.first, markers[first].page == marker.page,
-                marker.frame.minY - markerTouchSlop < markers[first].frame.maxY + markerTouchSlop
+                marker.frame.minY - markerTouchSlop < markers[first].frame.maxY + markerTouchSlop,
+                !out(first) || out(index)
             {
                 groups[groups.count - 1].append(index)
             } else {
@@ -295,7 +300,7 @@ final class CommentedPDFContainer: UIView {
             placed.append((button, button.marker.page, button.frame))
         }
         var regrouped = false
-        for group in Self.markerGroups(placed.map { ($0.page, $0.frame) }) {
+        for group in Self.markerGroups(placed.map { ($0.page, $0.frame) }, visible: overlay.bounds) {
             let leader = placed[group[0]].button
             let merged = DocxComments.Marker(
                 id: leader.marker.id, page: leader.marker.page, line: leader.marker.line,
@@ -410,7 +415,16 @@ final class CommentedPDFContainer: UIView {
                 // Read on every search: a zoom since may have merged markers.
                 guard let self else { return nil }
                 let items: [UIView] = self.rail ? self.cards.map { $0 as UIView } : self.visibleMarkers.map { $0 as UIView }
-                let current = items.firstIndex { $0 === predicate.currentItem.targetElement as AnyObject }
+                let target = predicate.currentItem.targetElement as AnyObject
+                // A marker merged since into the one above it: go on from
+                // that one.
+                let current =
+                    items.firstIndex { $0 === target }
+                    ?? (target as? CommentMarkerButton)?.marker.threads.first.flatMap { thread in
+                        items.firstIndex { item in
+                            (item as? CommentMarkerButton)?.shown.threads.contains { $0.id == thread.id } ?? false
+                        }
+                    }
                 let next: Int
                 switch (predicate.searchDirection, current) {
                 case (.next, let index?): next = index + 1
