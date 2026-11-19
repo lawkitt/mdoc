@@ -374,6 +374,9 @@
     "Clear the URL to remove the link and keep its text." : {
 
     },
+    "Close" : {
+      "comment" : "A notice card's × button."
+    },
     "Close Identities" : {
 
     },

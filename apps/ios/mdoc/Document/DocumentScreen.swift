@@ -17,6 +17,7 @@ struct DocumentScreen: View {
     @Environment(\.hideSidebar) private var hideSidebar
     @Environment(\.appModel) private var app
     @Environment(\.preferences) private var preferences
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isRegular: Bool { layout.isRegular }
     @State private var screenHeight: CGFloat = 800
@@ -164,10 +165,20 @@ struct DocumentScreen: View {
         model.isEditing || !model.snapshot.markdown.isEmpty || model.snapshot.phase != nil
     }
 
-    @ViewBuilder
+    /// The notice cards over the text, or over its placeholder while a
+    /// stopped job has left no text yet.
     private var textPane: some View {
+        VStack(spacing: 0) {
+            noticeCards
+            textPaneContent
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var textPaneContent: some View {
         if showsTextView {
-            textColumn
+            markdownTextView
         } else if model.importNotFinished {
             ContentUnavailableView(
                 "Import not finished",
@@ -188,18 +199,32 @@ struct DocumentScreen: View {
         }
     }
 
-    private var textColumn: some View {
-        VStack(spacing: 0) {
-            if let notice = model.snapshot.notice {
-                Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(Color.orange.opacity(0.15))
+    /// The document's notice cards over its text: the partial import, which
+    /// closes, and a job that stopped when mdoc left the screen, whose
+    /// button is the way on (originals.md, The import note). Not in edit
+    /// mode, where the text is being typed.
+    @ViewBuilder
+    private var noticeCards: some View {
+        let notice = model.isEditing || model.noticeClosed
+            ? nil : model.snapshot.notice ?? LaunchConfiguration.current.uiNotice
+        let interruption = model.isEditing ? nil : model.interruption
+        if notice != nil || interruption != nil {
+            VStack(spacing: Space.xs) {
+                if let notice {
+                    NoticeCard(message: Text(notice), onClose: {
+                        withAnimation(Motion.move(reduced: reduceMotion)) { model.noticeClosed = true }
+                    })
                     .accessibilityIdentifier("import-warning")
+                }
+                if let interruption {
+                    InterruptionCard(kind: interruption.kind, isImport: model.importNotFinished) {
+                        Task { await model.resume() }
+                    }
+                }
             }
-            markdownTextView
+            .padding(.horizontal, Space.m)
+            .padding(.top, Space.xs)
+            .transition(.opacity)
         }
     }
 
@@ -514,11 +539,6 @@ struct DocumentScreen: View {
                     await model.continueAfterSetup()
                 }
             } else {
-                if let interruption = model.interruption {
-                    InterruptionBanner(kind: interruption.kind, isImport: model.importNotFinished) {
-                        Task { await model.resume() }
-                    }
-                }
                 if model.showsBelowFloorNote {
                     BelowFloorNote(reason: setup.snapshot.belowFloor)
                 } else if let minutes = model.scanEstimate {

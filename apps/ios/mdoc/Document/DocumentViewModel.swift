@@ -55,6 +55,10 @@ final class DocumentViewModel {
     /// The screen the window's steps belong to (`attachSystemUndo`).
     var systemUndoScreen: UUID?
     var showsFind = false
+    /// The import's notice card was closed, for as long as this model
+    /// lives: the note itself is never kept on reopen (originals.md, The
+    /// import note).
+    var noticeClosed = false
     /// Adjust Words in progress (ADR 0114, 0115); nil otherwise. Changed
     /// only by the `+Words` intents, and ended by any other change, which
     /// also puts the one-time demo away until next time.

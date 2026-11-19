@@ -83,6 +83,10 @@ enum Palette {
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
     static let background = Color(uiColor: .systemGroupedBackground)
     static let chipFill = Color(uiColor: .tertiarySystemFill)
+    /// A notice card's quiet fill on the text's background.
+    static let noticeFill = Color(uiColor: .secondarySystemBackground)
+    /// A notice card's icon: the only orange a notice has.
+    static let warning = Color.orange
     static let separator = Color(uiColor: .separator)
     static let secondaryText = Color.secondary
 
