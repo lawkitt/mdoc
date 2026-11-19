@@ -338,9 +338,11 @@ struct MarkdownTextView: UIViewRepresentable {
                     restyleOnReturn(content, view)
                     return
                 }
-                if menuClosing, content.fixing != self.content?.fixing {
-                    // Adjust Words from a name's menu: its draft waits
-                    // for the menu to close (`textItemMenuWillEndFor`).
+                if menuClosing {
+                    // A choice in a name's menu (Keep instead, Adjust
+                    // Words…): its text waits for the menu to close
+                    // (`textItemMenuWillEndFor`), or the old name's picture
+                    // is drawn over the new text.
                     pending = content
                     return
                 }
@@ -723,7 +725,7 @@ struct MarkdownTextView: UIViewRepresentable {
         /// stays over the text until then: the text held back meanwhile
         /// shows now, in one frame, and Adjust Words' handles follow
         /// (ADR 0116).
-        private func menuClosed() {
+        func menuClosed() {
             menuClosing = false
             guard let view = shownView, let content = pending, content != self.content,
                   view.window?.windowScene?.activationState != .background else { return }
