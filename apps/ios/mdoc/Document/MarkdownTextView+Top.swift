@@ -28,7 +28,9 @@ extension MarkdownTextView.Coordinator {
         // Not while editing or reviewing: the keys and the review card
         // are the bottom's then, and the name under review is near it.
         let free = !parent.editing && parent.selected == nil && parent.shown
-        let past = free && view.bounds.height > 0 && scrolled > view.bounds.height
+        // One screen of what shows between the bars.
+        let screen = view.bounds.height - view.adjustedContentInset.top - view.adjustedContentInset.bottom
+        let past = free && screen > 0 && scrolled > screen
         parent.viewport?.report(past ? .top : nil)
     }
 }
