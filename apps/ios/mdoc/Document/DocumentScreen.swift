@@ -14,6 +14,7 @@ struct DocumentScreen: View {
     @Environment(\.documentLayout) private var layout
     @Environment(\.undoManager) private var undoManager
     @Environment(\.showSidebar) private var showSidebar
+    @Environment(\.hideSidebar) private var hideSidebar
     @Environment(\.appModel) private var app
     @Environment(\.preferences) private var preferences
 
@@ -377,6 +378,8 @@ struct DocumentScreen: View {
     private var toolbar: some ToolbarContent {
         if let showSidebar {
             SidebarButton(action: showSidebar)
+        } else if let hideSidebar {
+            HideSidebarButton(action: hideSidebar)
         }
         // Tapping the title: the document's menu, as in Claude. The title
         // truncates at its tail between ☰ and the trailing buttons, so they

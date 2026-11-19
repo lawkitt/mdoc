@@ -98,9 +98,28 @@ struct AddTile: View {
 }
 
 /// Where a screen shows the sidebar from: set where the sidebar slides
-/// over (iPhone, a narrow iPad); nil where it stands beside the screen.
+/// over (iPhone, a narrow iPad), and where a standing column is hidden; nil
+/// while the column stands beside the screen.
 extension EnvironmentValues {
     @Entry var showSidebar: (() -> Void)? = nil
+    /// Hides a standing sidebar column (a wide iPad) while it shows: the
+    /// split view's own toggle lives in the column's bar, which mdoc hides,
+    /// and the Original's rail needs the room (#963). nil elsewhere.
+    @Entry var hideSidebar: (() -> Void)? = nil
+}
+
+/// Hides the standing sidebar column; ☰ shows it again.
+struct HideSidebarButton: ToolbarContent {
+    let action: () -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button(action: action) {
+                Label("Hide sidebar", systemImage: "sidebar.left")
+            }
+            .accessibilityIdentifier("hide-sidebar")
+        }
+    }
 }
 
 /// ☰ at the top left of a page or document, where the sidebar slides over.
