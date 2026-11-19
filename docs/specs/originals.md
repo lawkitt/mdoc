@@ -119,7 +119,11 @@ comments grill (#927).
   coverage fixtures and a 100-page DOCX) stays within the budgets; if it
   doesn't, phones keep the counts and a Later line.
 - On a phone comments are margin markers; a tap opens a bottom sheet with
-  the thread; iPad in landscape shows the rail.
+  the thread. Markers whose touch targets would overlap share one, with the
+  count, and its sheet lists their threads in page order.
+- An iPad shows the rail once the Original pane is 560 pt wide; with the
+  standing sidebar and Text beside it the pane is narrower, so the document
+  offers Hide sidebar (☰ shows it again).
 - Android follows as it reaches the Original pane.
 
 ## Accessibility

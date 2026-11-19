@@ -42,6 +42,25 @@ struct CommentedPDFView: UIViewRepresentable {
 final class CommentedPDFContainer: UIView {
     static let railWidth: CGFloat = 260
     private static let markerSize: CGFloat = 30
+    /// The touch target around a marker on each side: 44 pt in all.
+    static let markerTouchSlop: CGFloat = 7
+
+    /// Indexes of markers that share one, in order: a marker joins the
+    /// group whose first marker's touch target its own would overlap, on
+    /// the same page (#962).
+    static func markerGroups(_ markers: [(page: Int, frame: CGRect)]) -> [[Int]] {
+        var groups: [[Int]] = []
+        for (index, marker) in markers.enumerated() {
+            if let first = groups.last?.first, markers[first].page == marker.page,
+                marker.frame.minY - markerTouchSlop < markers[first].frame.maxY + markerTouchSlop
+            {
+                groups[groups.count - 1].append(index)
+            } else {
+                groups.append([index])
+            }
+        }
+        return groups
+    }
 
     let pdfView = FittingPDFView()
     private let overlay = PassthroughView()
@@ -264,37 +283,31 @@ final class CommentedPDFContainer: UIView {
     /// Markers at the page's right edge on their line; cards at their
     /// passage's height, pushed down when they would overlap.
     @objc private func placeComments() {
-        // Lines closer than a marker share the first one's marker, with the
-        // count, so no marker covers another (#962); zoom changes which.
-        var leader: CommentMarkerButton?
-        var threads: [DocxComments.Thread] = []
-        var regrouped = false
-        func close() {
-            guard let leader else { return }
-            let merged = DocxComments.Marker(
-                id: leader.marker.id, page: leader.marker.page, line: leader.marker.line, threads: threads)
-            regrouped = leader.show(merged) || regrouped
-        }
+        // Markers whose touch targets would overlap share the first one's
+        // marker, with the count, so a tap never lands on a neighbour
+        // (#962); zoom changes which.
+        var placed: [(button: CommentMarkerButton, page: Int, frame: CGRect)] = []
         for button in markerButtons {
             guard let frames = lineFrame(button.marker) else { continue }
             let size = Self.markerSize
             let origin = CGPoint(x: frames.page.maxX - size - 4, y: frames.line.midY - size / 2)
             button.frame = convert(CGRect(origin: origin, size: CGSize(width: size, height: size)), to: overlay)
-            if let current = leader, current.marker.page == button.marker.page,
-                button.frame.minY < current.frame.maxY + 2
-            {
-                threads += button.marker.threads
-                regrouped = regrouped || !button.isHidden
-                button.isHidden = true
-            } else {
-                close()
-                leader = button
-                threads = button.marker.threads
-                regrouped = regrouped || button.isHidden
-                button.isHidden = false
+            placed.append((button, button.marker.page, button.frame))
+        }
+        var regrouped = false
+        for group in Self.markerGroups(placed.map { ($0.page, $0.frame) }) {
+            let leader = placed[group[0]].button
+            let merged = DocxComments.Marker(
+                id: leader.marker.id, page: leader.marker.page, line: leader.marker.line,
+                threads: group.flatMap { placed[$0].button.marker.threads })
+            regrouped = leader.show(merged) || regrouped
+            for (offset, index) in group.enumerated() {
+                let button = placed[index].button
+                let hidden = offset > 0
+                regrouped = regrouped || button.isHidden != hidden
+                button.isHidden = hidden
             }
         }
-        close()
         if regrouped { readingOrder = nil }
         var bottom = -CGFloat.infinity
         let width = railView.bounds.width - 2 * Space.xs
@@ -352,6 +365,11 @@ final class CommentedPDFContainer: UIView {
         markerButtons.filter { !$0.isHidden }
     }
 
+    /// The thread ids each shown marker opens, top to bottom: for tests.
+    var shownMarkerThreads: [[String]] {
+        visibleMarkers.map { $0.shown.threads.map(\.id) }
+    }
+
     /// While VoiceOver runs with comments on the page, the page's lines and
     /// the comments in reading order replace PDFKit's own elements.
     private var readsLines: Bool {
@@ -387,9 +405,11 @@ final class CommentedPDFContainer: UIView {
 
     override var accessibilityCustomRotors: [UIAccessibilityCustomRotor]? {
         get {
-            let items: [UIView] = rail ? cards : visibleMarkers
-            guard !items.isEmpty else { return [] }
-            return [UIAccessibilityCustomRotor(name: String(localized: "Comments")) { predicate in
+            guard rail ? !cards.isEmpty : !visibleMarkers.isEmpty else { return [] }
+            return [UIAccessibilityCustomRotor(name: String(localized: "Comments")) { [weak self] predicate in
+                // Read on every search: a zoom since may have merged markers.
+                guard let self else { return nil }
+                let items: [UIView] = self.rail ? self.cards.map { $0 as UIView } : self.visibleMarkers.map { $0 as UIView }
                 let current = items.firstIndex { $0 === predicate.currentItem.targetElement as AnyObject }
                 let next: Int
                 switch (predicate.searchDirection, current) {
@@ -513,20 +533,23 @@ final class CommentMarkerButton: UIButton {
         configuration.cornerStyle = .capsule
         configuration.contentInsets = .zero
         if shown.resolved {
-            // A resolved thread is quiet: a check, no fill.
+            // A resolved thread is quiet: a check, no fill; several show
+            // their count in the same quiet style.
             configuration = .gray()
             configuration.baseForegroundColor = .secondaryLabel
             configuration.cornerStyle = .capsule
             configuration.contentInsets = .zero
-            configuration.image = UIImage(systemName: "checkmark")?
-                .applyingSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
-        } else if shown.threads.count > 1 {
+        }
+        if shown.threads.count > 1 {
             configuration.title = String(shown.threads.count)
             configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
                 var attributes = $0
                 attributes.font = .systemFont(ofSize: 13, weight: .semibold)
                 return attributes
             }
+        } else if shown.resolved {
+            configuration.image = UIImage(systemName: "checkmark")?
+                .applyingSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
         } else {
             configuration.image = UIImage(systemName: "text.bubble.fill")?
                 .applyingSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
@@ -540,7 +563,7 @@ final class CommentMarkerButton: UIButton {
 
     /// A 44 pt target around the 30 pt marker.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        bounds.insetBy(dx: -7, dy: -7).contains(point)
+        bounds.insetBy(dx: -CommentedPDFContainer.markerTouchSlop, dy: -CommentedPDFContainer.markerTouchSlop).contains(point)
     }
 
     override func accessibilityElementDidBecomeFocused() {
