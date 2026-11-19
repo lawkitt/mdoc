@@ -10,6 +10,8 @@ struct OriginalView: View {
     var jobRuns = false
     /// Nothing sits under the pane: the page runs to the screen's bottom.
     var reachesBottom = false
+    /// A rendered DOCX's comments, for the title menu.
+    var onComments: (DocxComments) -> Void = { _ in }
     @State private var viewport = PageViewport()
     @State private var bottomInset: CGFloat = 0
 
@@ -36,7 +38,7 @@ struct OriginalView: View {
                 .accessibilityLabel(Text("Original PDF"))
                 .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
         case .docx(let url):
-            DocxOriginalView(source: url, waits: jobRuns)
+            DocxOriginalView(source: url, waits: jobRuns, onComments: onComments)
         case .images(let urls):
             TabView {
                 ForEach(Array(urls.enumerated()), id: \.offset) { index, url in

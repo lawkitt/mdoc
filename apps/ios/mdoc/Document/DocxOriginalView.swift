@@ -6,16 +6,20 @@ import SwiftUI
 /// temporary PDF each time the pane shows, and the PDF goes when it leaves
 /// (`DocxOriginal`). Its comments sit on the page as margin markers that
 /// open a sheet with their thread, or on an iPad's wide pane as the rail.
-/// "Comments N" shows or hides them, an app-wide setting.
+/// The title menu's Show comments shows or hides them, an app-wide setting,
+/// and opens those not on the page (`onComments` tells it what there is).
 struct DocxOriginalView: View {
     let source: URL
     /// A long job runs on the document: the render waits for it, because
     /// one long job runs at a time and docxide beside the detector is
     /// memory the budgets never measured.
     var waits = false
+    /// The rendered comments, for the title menu's Show comments and "Not
+    /// on the page (N)".
+    var onComments: (DocxComments) -> Void = { _ in }
     @Environment(\.preferences) private var preferences
     @State private var rendering = Rendering.working
-    /// The sheet: a marker's threads, or those with no place on the page.
+    /// The sheet: a marker's threads.
     @State private var sheet: Sheet?
     /// The expanded rail card.
     @State private var expanded: String?
@@ -49,6 +53,7 @@ struct DocxOriginalView: View {
                 if case .ready(let shown) = rendering, shown.source == source { return }
                 rendering = .working
                 rendering = await RenderedDocx.render(source)
+                if case .ready(let rendered) = rendering { onComments(rendered.comments) }
             }
             // The PDF goes with the pane.
             .onDisappear { rendering = .working; sheet = nil }
@@ -93,45 +98,12 @@ struct DocxOriginalView: View {
             .accessibilityLabel(Text("Original document"))
             .accessibilityIdentifier("docx-original")
             .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if !rendered.comments.all.isEmpty {
-                    commentsBar(rendered.comments)
-                }
-            }
         }
     }
 
     /// The rail needs an iPad's wide pane: landscape, beside the text.
     private var showsRail: Bool {
         UIDevice.current.userInterfaceIdiom == .pad && width >= 560
-    }
-
-    /// "Comments N" shows or hides them; "Not on the page (N)" opens those
-    /// with no place on the page.
-    private func commentsBar(_ comments: DocxComments) -> some View {
-        HStack(spacing: Space.xs) {
-            Toggle(isOn: Bindable(preferences).showsComments) {
-                Label(String(localized: "Comments \(comments.all.count)"), systemImage: "text.bubble")
-            }
-            .toggleStyle(.button)
-            .accessibilityLabel(Text("Show comments, \(comments.all.count)"))
-            .accessibilityIdentifier("show-comments")
-            if preferences.showsComments, !comments.unplaced.isEmpty {
-                Button {
-                    sheet = Sheet(
-                        id: "unplaced", title: String(localized: "Not on the page"), threads: comments.unplaced)
-                } label: {
-                    Text("Not on the page (\(comments.unplaced.count))")
-                }
-                .accessibilityIdentifier("comments-not-on-page")
-            }
-            Spacer(minLength: 0)
-        }
-        .font(.subheadline)
-        .buttonStyle(.bordered)
-        .padding(.horizontal, Space.m)
-        .padding(.vertical, Space.xxs)
-        .background(.bar)
     }
 }
 

@@ -151,6 +151,9 @@ final class FittingPDFView: PDFView {
 
     var scrollView: UIScrollView? { firstSubview(of: UIScrollView.self) }
 
+    /// The double-tap that zooms, for a single tap to wait on.
+    var doubleTapGesture: UITapGestureRecognizer { doubleTap }
+
     /// More than 2% off fit.
     var isZoomed: Bool {
         fit > 0 && abs(scaleFactor - fit) / fit > Self.fitTolerance

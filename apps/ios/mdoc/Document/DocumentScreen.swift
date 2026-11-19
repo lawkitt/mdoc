@@ -62,6 +62,10 @@ struct DocumentScreen: View {
             .sheet(isPresented: $model.showsFind) {
                 FindSheet(model: model)
             }
+            .sheet(isPresented: $model.showsUnplacedComments) {
+                CommentThreadSheet(
+                    title: String(localized: "Not on the page"), threads: model.originalComments?.unplaced ?? [])
+            }
             .sheet(item: $model.linkDraft) { draft in
                 LinkSheet(draft: draft)
             }
@@ -128,7 +132,9 @@ struct DocumentScreen: View {
                 } else if model.pane == .reply, let reply = model.snapshot.reply {
                     ReplyPane(reply: reply, onClear: model.clearReply)
                 } else {
-                    OriginalView(original: model.snapshot.original, jobRuns: model.runningJob != nil)
+                    OriginalView(
+                        original: model.snapshot.original, jobRuns: model.runningJob != nil,
+                        onComments: { model.originalComments = $0 })
                 }
             }
         } else {
@@ -147,7 +153,8 @@ struct DocumentScreen: View {
                     // bottom edge; its scroll keeps the home indicator clear.
                     OriginalView(
                         original: model.snapshot.original, jobRuns: model.runningJob != nil,
-                        reachesBottom: model.originalCoversText && model.runningJob == nil)
+                        reachesBottom: model.originalCoversText && model.runningJob == nil,
+                        onComments: { model.originalComments = $0 })
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
@@ -376,6 +383,24 @@ struct DocumentScreen: View {
                 Label("Show Markdown", systemImage: "number")
             }
             .accessibilityIdentifier("show-markdown")
+            // The original's comments, in place of a bar over the page
+            // (originals.md, Phones): app-wide, on by default.
+            if let comments = model.originalComments, !comments.all.isEmpty {
+                Toggle(isOn: Bindable(preferences).showsComments) {
+                    Label("Show comments", systemImage: "text.bubble")
+                    Text("\(comments.all.count) comments")
+                }
+                .accessibilityIdentifier("show-comments")
+                if preferences.showsComments, !comments.unplaced.isEmpty {
+                    Button {
+                        model.showsUnplacedComments = true
+                    } label: {
+                        Label("Not on the page (\(comments.unplaced.count))", systemImage: "doc.text")
+                    }
+                    .accessibilityHint(Text("Comments in a header, a footer or a passage the page doesn't mark."))
+                    .accessibilityIdentifier("comments-not-on-page")
+                }
+            }
         }
         // The review bar takes the action bar's place while reviewing, so
         // these are here too (ADR 0114).

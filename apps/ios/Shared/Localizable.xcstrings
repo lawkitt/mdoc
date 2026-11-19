@@ -59,6 +59,29 @@
     "%lld" : {
 
     },
+    "%lld comments" : {
+      "comment" : "How many comments: the comment sheet's title and Show comments' line.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comment"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comments"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld documents" : {
 
     },
@@ -397,6 +420,9 @@
     },
     "Column right" : {
 
+    },
+    "Comments in a header, a footer or a passage the page doesn't mark." : {
+      "comment" : "VoiceOver hint for Not on the page (N)."
     },
     "Continue" : {
 
@@ -947,6 +973,9 @@
     "Not now" : {
 
     },
+    "Not on the page (%lld)" : {
+      "comment" : "The title menu's item for comments in a header, a footer or a passage the page doesn't mark."
+    },
     "Not restored" : {
 
     },
@@ -1335,6 +1364,9 @@
     },
     "Share the AI's reply as text to restore it." : {
 
+    },
+    "Show comments" : {
+      "comment" : "The title menu's toggle for the original's comments."
     },
     "Show Markdown" : {
 

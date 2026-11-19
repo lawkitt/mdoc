@@ -59,6 +59,12 @@ final class DocumentViewModel {
     /// lives: the note itself is never kept on reopen (originals.md, The
     /// import note).
     var noticeClosed = false
+    /// The rendered original's comments once the Original has shown: the
+    /// title menu's Show comments and "Not on the page (N)" (originals.md,
+    /// Phones).
+    var originalComments: DocxComments?
+    /// "Not on the page (N)" is open.
+    var showsUnplacedComments = false
     /// Adjust Words in progress (ADR 0114, 0115); nil otherwise. Changed
     /// only by the `+Words` intents, and ended by any other change, which
     /// also puts the one-time demo away until next time.
