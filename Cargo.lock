@@ -5668,7 +5668,7 @@ dependencies = [
 [[package]]
 name = "pdf-inspector"
 version = "1.26.1"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=fa5cf1a53bebec0684e5c38b0b7bf23a30128acb#fa5cf1a53bebec0684e5c38b0b7bf23a30128acb"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=2c1b44d7fea1b6fac820c68029294b378ec898cc#2c1b44d7fea1b6fac820c68029294b378ec898cc"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
