@@ -361,9 +361,6 @@ sidebar's hover reveal gets quicker and smooth
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
 
-- **[Desktop]** Not a name in the replacement popup and the Replacements
-  panel, on iOS's core call (ROADMAP iOS 29). *From the 2026-11-19 review
-  polish grill.*
 - **[Mobile]** Save Keep and Not a name per mention with the document, so a
   reopened document keeps This one's scope and Find names again never brings
   them back; today only the case carries them, per wording. *From the Codex
