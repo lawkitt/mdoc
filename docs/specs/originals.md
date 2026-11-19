@@ -172,8 +172,11 @@ comments grill (#927).
   the spot read kept at the top; ↑ at fit once past page 1, back to the
   first page. Scans and photos get ⤡ only.
 - The Text pane shows the same ↑ above the bottom bar after one screen of
-  scrolling, never in edit mode; the status-bar tap scrolls whichever pane
-  shows to its top.
+  scrolling, never in edit mode or while a name is under review, where it
+  would sit by the name; the status-bar tap scrolls whichever pane shows
+  to its top.
+- With nothing under it, the Original runs to the screen's bottom edge, its
+  control kept above the home indicator.
 - An iPad shows the rail once the Original pane is 560 pt wide; with the
   standing sidebar and Text beside it the pane is narrower, so the document
   offers Hide sidebar (☰ shows it again). On a 13-inch iPad the Identities

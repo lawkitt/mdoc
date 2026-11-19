@@ -302,6 +302,9 @@
     "Back to reviewing names. Your changes are saved." : {
 
     },
+    "Back to top" : {
+      "comment" : "The control that scrolls back to the top of the text or the first page."
+    },
     "Bank details" : {
 
     },
@@ -599,6 +602,9 @@
     },
     "Finish import" : {
 
+    },
+    "Fit page" : {
+      "comment" : "The Original's control that zooms the page back to its width."
     },
     "Format" : {
 
