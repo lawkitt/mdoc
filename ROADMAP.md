@@ -364,6 +364,10 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Desktop]** Not a name in the replacement popup and the Replacements
   panel, on iOS's core call (ROADMAP iOS 29). *From the 2026-11-19 review
   polish grill.*
+- **[Mobile]** Save Keep and Not a name per mention with the document, so a
+  reopened document keeps This one's scope and Find names again never brings
+  them back; today only the case carries them, per wording. *From the Codex
+  review of #978.*
 - **[Recognition]** Real-text fixtures: commit public real documents as
   fixtures, each with a licence check, which loosens ADR 0093's CC0 rule.
   *From the 2026-11-02 grill (#471).*
