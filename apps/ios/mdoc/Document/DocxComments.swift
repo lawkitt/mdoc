@@ -35,6 +35,10 @@ struct DocxComments: Sendable {
     /// Each open thread's passage, a rectangle per line and page, for the
     /// tint; a resolved thread has none.
     let passages: [String: [(page: Int, rect: PageRect)]]
+    /// How far right any commented text reaches, 0..1 of the page width:
+    /// the text column's edge as far as the comments show it, so markers
+    /// sit in the margin beyond it.
+    let textRight: Double
 
     init(comments: [OriginalComment], anchors: [CommentAnchor]) {
         all = comments
@@ -57,6 +61,7 @@ struct DocxComments: Sendable {
             }
         }
         self.passages = passages
+        textRight = anchors.flatMap(\.rects).map { Double($0.x + $0.w) }.max() ?? 1
         unplaced = threads.filter { !placed.contains($0.id) }
         // Page order, then top to bottom; one marker per line.
         starts.sort { ($0.page, $0.rect.y, $0.rect.x) < ($1.page, $1.rect.y, $1.rect.x) }

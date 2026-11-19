@@ -45,9 +45,9 @@ struct CommentedPDFView: UIViewRepresentable {
 /// Comments rotor.
 final class CommentedPDFContainer: UIView {
     static let railWidth: CGFloat = 260
-    private static let markerSize: CGFloat = 30
+    private static let markerSize: CGFloat = 24
     /// The touch target around a marker on each side: 44 pt in all.
-    static let markerTouchSlop: CGFloat = 7
+    static let markerTouchSlop: CGFloat = 10
 
     /// Indexes of markers that share one, in order: a marker joins the
     /// group whose first marker's touch target its own would overlap, on
@@ -105,6 +105,8 @@ final class CommentedPDFContainer: UIView {
         let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
         tap.cancelsTouchesInView = false
         tap.delegate = self
+        // A double-tap zooms; only a single tap opens a passage's thread.
+        tap.require(toFail: pdfView.doubleTapGesture)
         pdfView.addGestureRecognizer(tap)
         NotificationCenter.default.addObserver(
             self, selector: #selector(placeComments), name: .PDFViewScaleChanged, object: pdfView)
@@ -218,6 +220,10 @@ final class CommentedPDFContainer: UIView {
         placeComments()
     }
 
+    /// The comments' yellow, as on a white page in light mode: the page is
+    /// white in both themes.
+    static let tint = UIColor.systemYellow.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+
     /// Every passage softly tinted; the active one stronger and underlined,
     /// so colour is never the only cue. The page is white in both themes.
     private func restyleTints() {
@@ -226,7 +232,7 @@ final class CommentedPDFContainer: UIView {
         for (id, list) in tints {
             let isActive = id == active
             for tint in list {
-                tint.color = UIColor.systemYellow.withAlphaComponent(isActive ? 0.55 : 0.25)
+                tint.color = Self.tint.withAlphaComponent(isActive ? 0.4 : 0.14)
                 guard isActive, let page = tint.page else { continue }
                 let underline = Self.annotation(.underline, over: tint.bounds)
                 underline.color = .black
@@ -289,7 +295,8 @@ final class CommentedPDFContainer: UIView {
         }
     }
 
-    /// Markers at the page's right edge on their line; cards at their
+    /// Markers in the page's right margin on their line, clear of the text,
+    /// or at the page's edge where the margin is too narrow; cards at their
     /// passage's height, pushed down when they would overlap.
     @objc private func placeComments() {
         // Markers whose touch targets would overlap share the first one's
@@ -299,7 +306,9 @@ final class CommentedPDFContainer: UIView {
         for button in markerButtons {
             guard let frames = lineFrame(button.marker) else { continue }
             let size = Self.markerSize
-            let origin = CGPoint(x: frames.page.maxX - size - 4, y: frames.line.midY - size / 2)
+            let margin = frames.page.width * (1 - CGFloat(comments.textRight))
+            let centre = margin >= size + 8 ? frames.page.maxX - margin / 2 : frames.page.maxX - size / 2 - 4
+            let origin = CGPoint(x: centre - size / 2, y: frames.line.midY - size / 2)
             button.frame = convert(CGRect(origin: origin, size: CGSize(width: size, height: size)), to: overlay)
             placed.append((button, button.marker.page, button.frame))
         }
@@ -529,10 +538,6 @@ final class CommentMarkerButton: UIButton {
         configure()
         accessibilityHint = String(localized: "Opens the comments.")
         accessibilityIdentifier = "comment-marker"
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.2
-        layer.shadowRadius = 2
-        layer.shadowOffset = CGSize(width: 0, height: 1)
     }
 
     /// Shows `marker`'s threads; true when that changed what it shows.
@@ -545,32 +550,24 @@ final class CommentMarkerButton: UIButton {
     }
 
     private func configure() {
+        // A soft yellow disc with an ink glyph on the white page, no
+        // shadow; a resolved thread a quiet grey check.
         var configuration = UIButton.Configuration.filled()
-        configuration.baseBackgroundColor = .ink
-        configuration.baseForegroundColor = .onAccent
+        configuration.baseBackgroundColor = shown.resolved
+            ? UIColor(white: 0.9, alpha: 1) : CommentedPDFContainer.tint.withAlphaComponent(0.55)
+        configuration.baseForegroundColor = shown.resolved ? UIColor(white: 0.35, alpha: 1) : UIColor(white: 0.1, alpha: 1)
         configuration.cornerStyle = .capsule
         configuration.contentInsets = .zero
-        if shown.resolved {
-            // A resolved thread is quiet: a check, no fill; several show
-            // their count in the same quiet style.
-            configuration = .gray()
-            configuration.baseForegroundColor = .secondaryLabel
-            configuration.cornerStyle = .capsule
-            configuration.contentInsets = .zero
-        }
         if shown.threads.count > 1 {
             configuration.title = String(shown.threads.count)
             configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
                 var attributes = $0
-                attributes.font = .systemFont(ofSize: 13, weight: .semibold)
+                attributes.font = .systemFont(ofSize: 12, weight: .semibold)
                 return attributes
             }
-        } else if shown.resolved {
-            configuration.image = UIImage(systemName: "checkmark")?
-                .applyingSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
         } else {
-            configuration.image = UIImage(systemName: "text.bubble.fill")?
-                .applyingSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
+            configuration.image = UIImage(systemName: shown.resolved ? "checkmark" : "text.bubble.fill")?
+                .applyingSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
         }
         self.configuration = configuration
         accessibilityLabel = shown.spokenLabel
