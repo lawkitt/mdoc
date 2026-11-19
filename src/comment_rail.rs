@@ -343,9 +343,19 @@ impl CommentRail {
         self.marks(false)
     }
 
-    /// The comment threads, one per "💬 N".
-    pub fn count(&self) -> usize {
+    /// The comment threads: one card or marker entry each.
+    #[cfg(test)]
+    pub(crate) fn count(&self) -> usize {
         self.threads.len()
+    }
+
+    /// Every comment, replies included: the "💬 N", as the phones' "Comments
+    /// N" and the left-out line count them (#964).
+    pub fn comment_count(&self) -> usize {
+        self.threads
+            .iter()
+            .map(|thread| 1 + thread.replies.len())
+            .sum()
     }
 
     pub fn shown(&self) -> bool {

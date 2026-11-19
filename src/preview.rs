@@ -583,7 +583,7 @@ impl DocumentView {
         if let Some(rail) = &comments {
             rail.update(cx, |rail, cx| rail.set_shown(display.comments, cx));
         }
-        let count = comments.map_or(0, |rail| rail.read(cx).count());
+        let count = comments.map_or(0, |rail| rail.read(cx).comment_count());
         let hidden = self.preview.hidden_text();
         let owner = cx.entity().downgrade();
         let toggle = move |change: SourceDisplay| {
