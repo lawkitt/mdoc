@@ -204,6 +204,19 @@ Features are frozen until items 13–19 land (Q4).
     stepping with swipe, the new cards. One TestFlight build after.
     *Done when:* all merged and checked on the iPhone 17 Pro and 12 Pro.
 
+29. **[Mobile] Not a name, and review bar polish.** *From the 2026-11-19
+    review polish grill; rules in [mobile.md](docs/specs/mobile.md)
+    (Review).* Slices, one PR each: (P) every decision from a long-press
+    menu (Keep instead, Replace instead, Same as, Change category) waits
+    for the menu to close, as Adjust Words does since slice J, with a test
+    that fails while the menu is closing; (Q) Not a name: a core call in
+    `mdoc-ffi` taking a range and scope, the case leaving its wording on
+    save unless another member still has the alias, the item in the card's
+    category menu, the long press, an Identities row's menu and Select's
+    ⋯ menu. Desktop
+    and Android follow (Later). One TestFlight build after. *Done when:*
+    both merged and checked on the iPhone 17 Pro.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
@@ -348,6 +361,13 @@ sidebar's hover reveal gets quicker and smooth
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
 
+- **[Desktop]** Not a name in the replacement popup and the Replacements
+  panel, on iOS's core call (ROADMAP iOS 29). *From the 2026-11-19 review
+  polish grill.*
+- **[Mobile]** Save Keep and Not a name per mention with the document, so a
+  reopened document keeps This one's scope and Find names again never brings
+  them back; today only the case carries them, per wording. *From the Codex
+  review of #978.*
 - **[Recognition]** Real-text fixtures: commit public real documents as
   fixtures, each with a licence check, which loosens ADR 0093's CC0 rule.
   *From the 2026-11-02 grill (#471).*
