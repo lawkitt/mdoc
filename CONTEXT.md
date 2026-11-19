@@ -185,7 +185,7 @@ No, Дело №); aliases `CASE_1`. Code: `Category::CaseNumber`.
 **Always and Never lists**: wordings always or never proposed, per case and
 user-wide. Code: `mdoc_store::lists::Lists`.
 
-**Not a name**: unmarking that leaves no trace.
+**Not a name**: unmarking with no trace.
 
 **Web address**: the category of an identifying URL (aliases `URL_1`…), such
 as a profile, a private site or a share link.
