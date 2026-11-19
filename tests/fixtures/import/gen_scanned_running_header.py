@@ -59,7 +59,7 @@ def page_text(page):
     return ops
 
 
-def native_page(page, text):
+def native_page(page, text, height=HEIGHT):
     shift = random.Random(page)
     dx, dy = shift.uniform(-2, 2), shift.uniform(-2, 2)
     ops = [f"{SCALE:.4f} 0 0 {SCALE:.4f} 0 0 cm 1 0 0 1 {dx:.2f} {dy:.2f} cm"]
@@ -69,7 +69,7 @@ def native_page(page, text):
         "<< /Type /Catalog /Pages 2 0 R >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         f"<< /Type /Page /Parent 2 0 R "
-        f"/MediaBox [0 0 {WIDTH * SCALE:.0f} {HEIGHT * SCALE:.0f}] "
+        f"/MediaBox [0 0 {WIDTH * SCALE:.0f} {height * SCALE:.0f}] "
         "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
         "<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>",
         f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
@@ -97,10 +97,10 @@ def bilevel(bmp):
     return width, abs(height), bytes(out)
 
 
-def rasterize(page, text, work):
+def rasterize(page, text, work, height=HEIGHT):
     source = work / f"page-{page}.pdf"
     bmp = work / f"page-{page}.bmp"
-    source.write_bytes(native_page(page, text))
+    source.write_bytes(native_page(page, text, height))
     subprocess.run(
         ["sips", "-s", "format", "bmp", str(source), "--out", str(bmp)],
         check=True, capture_output=True,
@@ -108,16 +108,18 @@ def rasterize(page, text, work):
     return bilevel(bmp.read_bytes())
 
 
-def scan(pages):
-    """An image-only PDF of `pages`, each a list of text operators."""
+def scan(pages, heights=None):
+    """An image-only PDF of `pages`, each a list of text operators, US Letter
+    unless `heights` gives each page's height in points."""
+    heights = heights or [HEIGHT] * len(pages)
     with tempfile.TemporaryDirectory() as work:
         scans = [
-            rasterize(page, text, Path(work))
-            for page, text in enumerate(pages, start=1)
+            rasterize(page, text, Path(work), height)
+            for page, (text, height) in enumerate(zip(pages, heights), start=1)
         ]
     objects = ["<< /Type /Catalog /Pages 2 0 R >>", ""]
     kids = []
-    for width, height, bits in scans:
+    for (width, height, bits), page_height in zip(scans, heights):
         data = zlib.compress(bits, 9)
         image = len(objects) + 1
         objects.append(
@@ -125,11 +127,11 @@ def scan(pages):
             f"/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /FlateDecode "
             f"/Length {len(data)} >>\nstream\n".encode() + data + b"\nendstream"
         )
-        content = f"q {WIDTH} 0 0 {HEIGHT} 0 0 cm /Im0 Do Q"
+        content = f"q {WIDTH} 0 0 {page_height} 0 0 cm /Im0 Do Q"
         objects.append(f"<< /Length {len(content)} >>\nstream\n{content}\nendstream")
         kids.append(len(objects) + 1)
         objects.append(
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {WIDTH} {HEIGHT}] "
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {WIDTH} {page_height}] "
             f"/Resources << /XObject << /Im0 {image} 0 R >> >> "
             f"/Contents {image + 1} 0 R >>"
         )

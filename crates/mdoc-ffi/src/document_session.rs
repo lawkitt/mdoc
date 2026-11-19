@@ -1237,14 +1237,20 @@ mod tests {
                 "import/handmade-sparse-page-header.pdf",
                 "4 repeated header and footer lines removed.",
             ),
+            // The same on a sparse page after Letter and Legal pages, the
+            // sentence where no full page has the header (#925 M17).
+            (
+                "import/handmade-mixed-size-header.pdf",
+                "6 repeated header and footer lines removed.",
+            ),
         ] {
             let snapshot = DocumentSession::new()
                 .import_file(fixture(name), ImportOptions::default(), None)
                 .unwrap();
             assert_eq!(snapshot.warning.as_deref(), Some(note), "{name}");
             assert!(!snapshot.text.contains("SECRET"), "{name}");
-            if name.contains("sparse-page") {
-                // Page 1's header and page 4's body line.
+            if name.contains("sparse-page") || name.contains("mixed-size") {
+                // Page 1's header and the sparse last page's body line.
                 let header = "Annual Report of the Board 2026 Confidential";
                 assert_eq!(snapshot.text.matches(header).count(), 2, "{name}");
             }
