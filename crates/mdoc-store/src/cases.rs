@@ -86,6 +86,10 @@ pub struct StoredIdentity {
     pub custom: bool,
     /// The primary wording first.
     pub originals: Vec<String>,
+    /// The member whose Not a name left this identity with no wording
+    /// (ADR 0122): only its undo may give the reserved alias wordings again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_a_name_by: Option<PathBuf>,
 }
 impl StoredIdentity {
     fn from_exported(e: &ExportedIdentity) -> Self {
@@ -95,6 +99,7 @@ impl StoredIdentity {
             category: e.category.token().into(),
             custom: e.custom,
             originals: e.originals.iter().map(|o| o.to_string()).collect(),
+            not_a_name_by: None,
         }
     }
     fn exported(&self) -> Option<ExportedIdentity> {
@@ -482,11 +487,17 @@ impl Case {
     /// the document no longer uses stay; a renamed alias is kept as an earlier
     /// alias, so old files and replies still restore (ADR 0041 #23).
     pub fn merge(&mut self, exported: &[ExportedIdentity]) {
+        self.merge_from(exported, None);
+    }
+    /// [`Self::merge`] from `member`, whose undo of a saved Not a name may
+    /// give the identity it emptied its wordings again (ADR 0122).
+    pub fn merge_from(&mut self, exported: &[ExportedIdentity], member: Option<&Path>) {
         for e in exported {
             // A forgotten identity retains only its aliases, reserving them and
             // preventing a stale member's autosave from restoring its originals.
             if self.identities.iter().any(|identity| {
                 identity.originals.is_empty()
+                    && (member.is_none() || identity.not_a_name_by.as_deref() != member)
                     && (identity.names(&e.alias)
                         || e.previous.iter().any(|alias| identity.names(alias)))
             }) {
@@ -585,6 +596,32 @@ impl Case {
     }
 
     /// Irreversibly discard originals, retaining alias reservations only.
+    /// Not a name (ADR 0122): `wordings` leave the case, except from an
+    /// identity whose alias, or an earlier one, `in_use` finds in another
+    /// member's saved text, so that member still restores. An identity left
+    /// with no wording keeps its aliases, reserved, and remembers `member`.
+    pub fn drop_wordings(
+        &mut self,
+        wordings: &[String],
+        member: &Path,
+        in_use: impl Fn(&str) -> bool,
+    ) {
+        for identity in &mut self.identities {
+            if !identity.originals.iter().any(|o| wordings.contains(o)) {
+                continue;
+            }
+            if std::iter::once(&identity.alias)
+                .chain(&identity.previous)
+                .any(|alias| in_use(alias))
+            {
+                continue;
+            }
+            identity.originals.retain(|o| !wordings.contains(o));
+            if identity.originals.is_empty() {
+                identity.not_a_name_by = Some(member.to_path_buf());
+            }
+        }
+    }
     pub fn forget_identity(&mut self, alias: &str) -> bool {
         let Some(identity) = self
             .identities

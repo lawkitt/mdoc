@@ -444,8 +444,34 @@ impl Review {
         self.tracking
             .exclusions
             .iter()
+            .filter(|e| !e.silent)
             .map(|e| (e.range.clone(), e.original.clone(), e.identity))
             .collect()
+    }
+    /// Wordings taken off as Not a name (ADR 0122) with no mention of them
+    /// still proposed, replaced or kept: what a save takes out of the case.
+    pub fn not_a_name_wordings(&self) -> Vec<Arc<str>> {
+        let shown = |wording: &str| {
+            self.candidates().iter().any(|c| {
+                self.variant(c.variant)
+                    .is_some_and(|v| v.original.as_ref() == wording)
+            }) || self
+                .applied()
+                .iter()
+                .any(|a| a.step.original_shared().as_ref() == wording)
+                || self
+                    .tracking
+                    .exclusions
+                    .iter()
+                    .any(|e| !e.silent && e.original.as_ref() == wording)
+        };
+        let mut wordings: Vec<Arc<str>> = Vec::new();
+        for exclusion in self.tracking.exclusions.iter().filter(|e| e.silent) {
+            if !wordings.contains(&exclusion.original) && !shown(&exclusion.original) {
+                wordings.push(exclusion.original.clone());
+            }
+        }
+        wordings
     }
     pub fn applied_occurrence(&self, id: u64) -> Option<&Applied> {
         self.tracking.get(id)
@@ -474,7 +500,13 @@ impl Review {
     /// Record restorations committed as history state `history`; each becomes Keep.
     pub fn commit_restore(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
         self.revision.advance();
-        self.tracking.commit_restore(history, restored, true);
+        self.tracking.commit_restore(history, restored, true, false);
+    }
+    /// Record restorations committed as `history` that are Not a name
+    /// (ADR 0122): excluded as Keep is, shown nowhere.
+    pub fn commit_not_a_name(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
+        self.revision.advance();
+        self.tracking.commit_restore(history, restored, true, true);
     }
     /// Record reversions committed as `history` that become proposals again.
     /// A mention separated from its variant's identity stays pinned to it.
@@ -491,7 +523,7 @@ impl Review {
                     .commit_assignment(history, range.clone(), old.step.identity);
             }
         }
-        self.tracking.commit_restore(history, restored, false);
+        self.tracking.commit_restore(history, restored, false, false);
     }
     /// Prepare provenance for plans before their text is committed.
     pub fn prepare_replacements(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
@@ -1162,6 +1194,29 @@ impl Review {
             })
             .collect();
         self.tracking.keep_many(mentions);
+        let source = self.source.clone();
+        self.refresh(&source);
+    }
+    /// Not a name (ADR 0122) for these pending mentions and these kept
+    /// ranges, as one metadata change, refreshing once.
+    pub fn not_a_name_mentions(
+        &mut self,
+        mentions: impl IntoIterator<Item = (u64, Range<usize>)>,
+        kept: &HashSet<(usize, usize)>,
+    ) {
+        self.revision.advance();
+        let mentions: Vec<_> = mentions
+            .into_iter()
+            .filter_map(|(id, range)| {
+                let group = self.variant(id)?;
+                group.mentions.contains(&range).then(|| {
+                    let identity = self.occurrence_identity(id, &range);
+                    (range, group.original.clone(), identity)
+                })
+            })
+            .collect();
+        self.tracking.silence(kept);
+        self.tracking.exclude_many(mentions, true);
         let source = self.source.clone();
         self.refresh(&source);
     }

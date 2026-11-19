@@ -81,6 +81,12 @@ extension IdentitiesView {
                 } label: {
                     Label("Same as…", systemImage: "link")
                 }
+                // Not a name (ADR 0122), for the whole identity.
+                Button {
+                    model.notAName(identities: [identity.id])
+                } label: {
+                    Label("Not a name", systemImage: "tag.slash")
+                }
             }
         }
     }

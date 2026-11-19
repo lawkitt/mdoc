@@ -71,6 +71,9 @@
     "%lld left" : {
 
     },
+    "%lld marked Not a name" : {
+
+    },
     "%lld matches" : {
 
     },
@@ -918,6 +921,12 @@
 
     },
     "Nobody" : {
+
+    },
+    "Not a name" : {
+
+    },
+    "Not a name: %@" : {
 
     },
     "Not checked" : {

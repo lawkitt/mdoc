@@ -54,6 +54,8 @@ pub(super) struct Exclusion {
     pub original: Arc<str>,
     pub identity: Option<u64>,
     pub id: u64,
+    /// Not a name (ADR 0122): excluded like a Keep, but shown nowhere.
+    pub silent: bool,
 }
 #[derive(Default)]
 struct Delta {
@@ -227,6 +229,14 @@ impl Tracking {
         &mut self,
         mentions: impl IntoIterator<Item = (Range<usize>, Arc<str>, Option<u64>)>,
     ) {
+        self.exclude_many(mentions, false);
+    }
+    /// Keep these mentions, or with `silent` take them off as Not a name.
+    pub(crate) fn exclude_many(
+        &mut self,
+        mentions: impl IntoIterator<Item = (Range<usize>, Arc<str>, Option<u64>)>,
+        silent: bool,
+    ) {
         let mut exclusions: Vec<_> = mentions
             .into_iter()
             .map(|(range, original, identity)| Exclusion {
@@ -234,6 +244,7 @@ impl Tracking {
                 range,
                 original,
                 identity,
+                silent,
             })
             .collect();
         exclusions.sort_by_key(|e| e.range.start);
@@ -256,6 +267,22 @@ impl Tracking {
         if let Some(delta) = self.current.and_then(|id| self.journal.get_mut(&id)) {
             delta.removed_keeps.extend(removed);
         }
+    }
+    /// Turn these Keep decisions into Not a name, as part of the current
+    /// step: each is lifted and excluded again, silently.
+    pub(crate) fn silence(&mut self, ranges: &HashSet<(usize, usize)>) {
+        let kept: Vec<_> = self
+            .exclusions
+            .iter()
+            .filter(|e| !e.silent && ranges.contains(&(e.range.start, e.range.end)))
+            .map(|e| (e.range.clone(), e.original.clone(), e.identity))
+            .collect();
+        if kept.is_empty() {
+            return;
+        }
+        let lifted = kept.iter().map(|(r, _, _)| (r.start, r.end)).collect();
+        self.unkeep(&lifted);
+        self.exclude_many(kept, true);
     }
     /// Lift exactly these Keep decisions and nothing else, as part of the
     /// current step: Fix the words keeps them again as the new words.
@@ -615,12 +642,14 @@ impl Tracking {
             })
             .collect()
     }
-    /// Record reverted occurrences; `keep` also excludes them from rediscovery.
+    /// Record reverted occurrences; `keep` also excludes them from
+    /// rediscovery, shown as kept or, with `silent`, nowhere (Not a name).
     pub fn commit_restore(
         &mut self,
         history: u64,
         restored: Vec<(Applied, Range<usize>)>,
         keep: bool,
+        silent: bool,
     ) {
         let mut added = Vec::new();
         let mut keeps = Vec::new();
@@ -632,6 +661,7 @@ impl Tracking {
                     range: range.clone(),
                     original: old.step.before.clone(),
                     identity: (old.step.identity != 0).then_some(old.step.identity),
+                    silent,
                 });
             }
             if let Some(step) = old.step.predecessor.clone() {

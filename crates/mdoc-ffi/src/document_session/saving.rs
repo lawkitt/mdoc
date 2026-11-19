@@ -121,6 +121,8 @@ struct Pending {
     wrote: bool,
     text: String,
     identities: Vec<ExportedIdentity>,
+    /// Not a name wordings the case drops on this save (ADR 0122).
+    not_names: Vec<String>,
     dismissed: Vec<(String, String)>,
     counts: super::Counts,
     scanned: bool,
@@ -154,6 +156,13 @@ impl Document {
             wrote: false,
             text: self.review.text.clone(),
             identities: self.review.review.export_identities(),
+            not_names: self
+                .review
+                .review
+                .not_a_name_wordings()
+                .iter()
+                .map(|w| w.to_string())
+                .collect(),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
             scanned: self.scanned,
@@ -254,9 +263,16 @@ impl Pending {
                 self.stored.save(path.clone(), &self.text)?;
                 self.wrote = true;
                 let before = case.clone();
-                case.merge(&self.identities);
+                case.merge_from(&self.identities, Some(&member));
                 if !case.members.contains(&member) {
                     case.members.push(member.clone());
+                }
+                if !self.not_names.is_empty() {
+                    let others: Vec<_> =
+                        case.members.iter().filter(|m| **m != member).cloned().collect();
+                    case.drop_wordings(&self.not_names, &member, |alias| {
+                        others.iter().any(|m| library.member_has_alias(m, alias))
+                    });
                 }
                 for (a, b) in &self.dismissed {
                     let pair = (a.clone(), b.clone());

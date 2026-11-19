@@ -390,3 +390,106 @@ fn nothing_read_is_nothing_to_save() {
     assert!(!session.has_unsaved_changes());
     assert_eq!(session.save_pending(library(&scratch)).unwrap(), None);
 }
+
+/// The mention of `wording` (its original, when replaced).
+fn mention_of(session: &DocumentSession, wording: &str) -> u64 {
+    session
+        .snapshot()
+        .unwrap()
+        .mentions
+        .into_iter()
+        .find(|m| m.original == wording)
+        .unwrap()
+        .id
+}
+
+fn not_a_name(session: &DocumentSession, wording: &str) -> ReviewSnapshot {
+    let mention = mention_of(session, wording);
+    session
+        .review(
+            ReviewAction::NotAName {
+                mention,
+                scope: Scope::All,
+            },
+            None,
+        )
+        .unwrap()
+}
+
+fn case_originals(library: &Library, case: &str, alias: &str) -> Vec<String> {
+    library
+        .load(case)
+        .unwrap()
+        .identities
+        .into_iter()
+        .find(|identity| identity.names(alias))
+        .unwrap()
+        .originals
+}
+
+/// Not a name on a saved, replaced name (ADR 0122): the save takes its
+/// wording out of the case, the alias staying reserved; Undo and the next
+/// save put it back under its old alias.
+#[test]
+fn not_a_name_leaves_the_case_and_undo_brings_it_back() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let session = saved_letter(&library);
+    replace_next(&session);
+    session.save_pending(library.clone()).unwrap().unwrap();
+    let case = saved_case(&session);
+    assert_eq!(case_originals(&library, &case, "PERSON_1"), ["Ann Lee"]);
+
+    let snapshot = not_a_name(&session, "Ann Lee");
+    assert_eq!(snapshot.text, LETTER);
+    assert!(snapshot.mentions.iter().all(|m| m.original != "Ann Lee"));
+    session.save_pending(library.clone()).unwrap().unwrap();
+    assert_eq!(on_disk(&session), LETTER);
+    assert!(case_originals(&library, &case, "PERSON_1").is_empty());
+    assert!(
+        library
+            .load(&case)
+            .unwrap()
+            .reserved_aliases()
+            .contains(&"PERSON_1".to_string())
+    );
+
+    session.review(ReviewAction::Undo, None).unwrap();
+    session.save_pending(library.clone()).unwrap().unwrap();
+    assert_eq!(on_disk(&session), "PERSON_1 met Bob Hart and Cy Moss.");
+    assert_eq!(case_originals(&library, &case, "PERSON_1"), ["Ann Lee"]);
+}
+
+/// Another member's saved text still has the alias: the case keeps the
+/// wording, so that member still restores.
+#[test]
+fn not_a_name_stays_in_the_case_while_another_member_uses_it() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let case = library.create_case("Case".into()).unwrap();
+    let sessions: Vec<_> = ["Ann Lee signed.", "Ann Lee paid."]
+        .into_iter()
+        .enumerate()
+        .map(|(n, text)| {
+            let session = DocumentSession::new();
+            session.import_text(text.into(), format!("Doc {n}")).unwrap();
+            session.join_case(library.clone(), case.id.clone()).unwrap();
+            let names = vec![ProposedName {
+                wording: "Ann Lee".into(),
+                category: Category::Person,
+            }];
+            session
+                .review(ReviewAction::ProposeNames { names }, None)
+                .unwrap();
+            session.review(ReviewAction::ReplaceAll, None).unwrap();
+            session.save(library.clone()).unwrap();
+            session
+        })
+        .collect();
+    assert_eq!(on_disk(&sessions[1]), "PERSON_1 paid.");
+
+    not_a_name(&sessions[0], "Ann Lee");
+    sessions[0].save_pending(library.clone()).unwrap().unwrap();
+    assert_eq!(on_disk(&sessions[0]), "Ann Lee signed.");
+    assert_eq!(case_originals(&library, &case.id, "PERSON_1"), ["Ann Lee"]);
+}

@@ -1116,6 +1116,20 @@ impl Library {
             .map_or_else(|_| path.clone(), Path::to_path_buf)
     }
 
+    /// Whether `member`'s saved text has `alias` as a whole token: a case
+    /// keeps a Not a name wording while another member still restores it
+    /// (ADR 0122). A file that can't be read counts as having it.
+    pub(crate) fn member_has_alias(&self, member: &Path, alias: &str) -> bool {
+        let Ok(text) = std::fs::read_to_string(self.root.join(member)) else {
+            return true;
+        };
+        let token = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+        text.match_indices(alias).any(|(at, _)| {
+            !text[..at].chars().next_back().is_some_and(token)
+                && !text[at + alias.len()..].chars().next().is_some_and(token)
+        })
+    }
+
     /// A new, empty file in the documents folder for a document titled
     /// `title`, created exclusively so two saves never share a path.
     pub(crate) fn reserve_document_path(&self, title: &str) -> Result<PathBuf, CoreError> {

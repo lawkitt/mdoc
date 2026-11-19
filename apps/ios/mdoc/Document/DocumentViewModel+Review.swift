@@ -141,6 +141,21 @@ extension DocumentViewModel {
         allReviewed(advanced)
     }
 
+    /// Not a name on the card under review, in the bar's scope (ADR 0122):
+    /// the name is gone, so the bar moves on to the next undecided one as
+    /// after a decision, with no toast.
+    func notAName() {
+        guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
+        let index = reviewOrder.index(of: candidate.id)
+        guard perform({ try session.notAName(candidate.id, scope: reviewScope) }) else { return }
+        Haptics.decision()
+        let advanced = updateReview { state -> ReviewState.Advance in
+            state.decided()
+            return state.advance(from: index)
+        }
+        allReviewed(advanced)
+    }
+
     /// A state pill in the full view: that one mention changes, and the bar
     /// stays where it is.
     func decideMention(_ id: CandidateID, _ decision: Decision) {

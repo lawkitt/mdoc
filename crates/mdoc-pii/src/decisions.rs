@@ -265,7 +265,7 @@ impl Review {
     /// mentions do.
     pub fn never_wordings(&self) -> Vec<Arc<str>> {
         let mut wordings: Vec<Arc<str>> = Vec::new();
-        for exclusion in &self.tracking.exclusions {
+        for exclusion in self.tracking.exclusions.iter().filter(|e| !e.silent) {
             let listed = match exclusion.identity {
                 Some(id) => self.identity_count(id) == 0,
                 None => {
