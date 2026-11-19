@@ -45,7 +45,9 @@ struct CommentSheet: View {
                 }
             }
         }
-        .reviewSheetDetents()
+        // Half height at every text size, the page live above it; the
+        // thread scrolls inside, and a drag takes the sheet to large.
+        .presentationDetents([.medium, .large])
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         .accessibilityIdentifier("comment-sheet")
     }

@@ -85,6 +85,7 @@ struct DocxOriginalView: View {
                     if let first = marker.threads.first { onOpenComment(first.id) }
                 },
                 onCard: { id in expanded = expanded == id ? nil : id },
+                onPassage: onOpenComment,
                 viewport: viewport)
             .accessibilityLabel(Text("Original document"))
             .accessibilityIdentifier("docx-original")

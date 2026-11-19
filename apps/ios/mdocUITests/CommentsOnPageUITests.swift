@@ -48,6 +48,9 @@ final class CommentsOnPageUITests: XCTestCase {
         XCTAssertEqual(sheet.frame.height, height, accuracy: 1, "stepping never resizes the sheet")
         app.buttons["comment-previous"].tap()
         XCTAssertTrue(position.wait(until: NSPredicate(format: "label == %@", "1 of \(total)"), timeout: MdocUITest.timeout))
+        // A sideways swipe on the card steps as well.
+        sheet.swipeLeft()
+        XCTAssertTrue(position.wait(until: NSPredicate(format: "label == %@", "2 of \(total)"), timeout: MdocUITest.timeout))
         app.buttons["comment-sheet-close"].tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: MdocUITest.timeout))
 
@@ -78,5 +81,11 @@ final class CommentsOnPageUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["comments-not-on-page"].firstMatch.exists)
         show.tap()
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+
+        // Text closes the sheet: it steps through the Original's comments.
+        markers.firstMatch.tap()
+        XCTAssertTrue(sheet.waitForExistence(timeout: MdocUITest.timeout))
+        app.segmentedControls["pane-picker"].buttons["Text"].tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: MdocUITest.timeout))
     }
 }

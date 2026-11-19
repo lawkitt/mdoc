@@ -18,6 +18,8 @@ struct CommentedPDFView: UIViewRepresentable {
     let active: String?
     let onMarker: (DocxComments.Marker) -> Void
     let onCard: (String) -> Void
+    /// A tap on a passage: its own thread, not its marker's first.
+    var onPassage: (String) -> Void = { _ in }
     /// The ⤡ / ↑ control's state and actions.
     let viewport: PageViewport
 
@@ -35,6 +37,7 @@ struct CommentedPDFView: UIViewRepresentable {
         }
         view.onMarker = onMarker
         view.onCard = onCard
+        view.onPassage = onPassage
         view.update(showsComments: showsComments, rail: rail, active: active)
     }
 }
@@ -92,6 +95,12 @@ final class CommentedPDFContainer: UIView {
     private var readingOrder: [Any]?
     var onMarker: (DocxComments.Marker) -> Void = { _ in }
     var onCard: (String) -> Void = { _ in }
+    var onPassage: (String) -> Void = { _ in }
+    /// The comment sheet's thread waits for the page's layout to be shown.
+    private var revealPending = false
+    /// Scroll room added under the last page while the sheet covers it, so
+    /// a passage on the last lines can rise above the sheet.
+    private var sheetRoom: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -151,7 +160,8 @@ final class CommentedPDFContainer: UIView {
             for card in cards { card.expanded = card.commentID == active }
             placeComments()
             // The comment sheet's thread: its line above the sheet.
-            if !rail, let active, let marker = comments.marker(of: active) { keepAboveSheet(marker) }
+            revealPending = !rail && active != nil
+            revealActive()
         }
     }
 
@@ -291,6 +301,7 @@ final class CommentedPDFContainer: UIView {
         overlay.frame = page
         observeScrolling()
         placeComments()
+        if revealPending { revealActive() }
     }
 
     private func observeScrolling() {
@@ -372,20 +383,40 @@ final class CommentedPDFContainer: UIView {
         return right
     }
 
-    /// Scrolls a marker's line into the room above the comment sheet when
-    /// it isn't there, two fifths of the way down that room.
-    private func keepAboveSheet(_ marker: DocxComments.Marker) {
-        guard let frames = lineFrame(marker), let scroll = pdfView.scrollView else { return }
+    /// The comment sheet's thread, once the page has laid out: its line in
+    /// the room above the sheet. With no thread open the added room goes.
+    private func revealActive() {
+        guard let scroll = pdfView.scrollView else { return }
+        guard !rail, let active else {
+            setSheetRoom(0, on: scroll)
+            revealPending = false
+            return
+        }
+        // A thread with no place on the page has no line to show.
+        guard let marker = comments.marker(of: active) else {
+            revealPending = false
+            return
+        }
+        guard revealPending, let frames = lineFrame(marker), bounds.height > 0 else { return }
+        revealPending = false
         let top = bounds.minY + safeAreaInsets.top + 24
         // The sheet's half-height detent covers the window's lower half.
         let windowHeight = window?.bounds.height ?? bounds.height
         let sheetTop = min(convert(CGPoint(x: 0, y: windowHeight * 0.47), from: nil).y, bounds.maxY) - 16
-        guard sheetTop > top, frames.line.minY < top || frames.line.maxY > sheetTop else { return }
+        guard sheetTop > top else { return }
+        setSheetRoom(bounds.maxY - sheetTop, on: scroll)
+        guard frames.line.minY < top || frames.line.maxY > sheetTop else { return }
         let shift = frames.line.midY - (top + (sheetTop - top) * 0.4)
         let lowest = -scroll.adjustedContentInset.top
         let highest = max(scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom, lowest)
         let target = min(max(scroll.contentOffset.y + shift, lowest), highest)
         scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
+    }
+
+    private func setSheetRoom(_ room: CGFloat, on scroll: UIScrollView) {
+        guard room != sheetRoom else { return }
+        scroll.contentInset.bottom += room - sheetRoom
+        sheetRoom = room
     }
 
     /// Scrolls a marker's line into view, when it isn't, without animation.
@@ -408,8 +439,8 @@ final class CommentedPDFContainer: UIView {
         guard let id = hit?.key else { return }
         if rail {
             onCard(id)
-        } else if let marker = comments.marker(of: id) {
-            onMarker(marker)
+        } else {
+            onPassage(id)
         }
     }
 

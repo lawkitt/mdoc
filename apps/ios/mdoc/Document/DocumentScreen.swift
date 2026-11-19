@@ -72,6 +72,13 @@ struct DocumentScreen: View {
             .onChange(of: model.pane) { _, _ in
                 if !isRegular && model.pane != .original { model.commentSheet = nil }
             }
+            // "Not on the page" opens over Text too: stepping to a thread on
+            // the page shows the Original, where its passage is.
+            .onChange(of: model.commentSheet?.thread?.id) { _, id in
+                guard let sheet = model.commentSheet, let id, !sheet.unplaced.contains(id),
+                    !isRegular, model.pane != .original else { return }
+                model.show(.original)
+            }
             .sheet(item: $model.linkDraft) { draft in
                 LinkSheet(draft: draft)
             }
