@@ -228,6 +228,10 @@ final class MarkdownTextViewTests: XCTestCase {
         show(harness, textView(kept, selected: alias.id))
         XCTAssertEqual(harness.coordinator.rebuilds, built, "nothing is built while the menu closes")
         XCTAssertFalse(cellText().contains("Maya Bennett"))
+        // A new width meanwhile (an iPad window resized) waits too.
+        harness.view.frame.size.width -= 60
+        harness.view.layoutIfNeeded()
+        XCTAssertEqual(harness.coordinator.rebuilds, built, "nor at a new width")
 
         harness.coordinator.menuClosed()
         harness.view.layoutIfNeeded()
