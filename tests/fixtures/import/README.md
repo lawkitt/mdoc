@@ -134,3 +134,19 @@ header and footer stay on page 1 only, and the note counts "6 repeated
 header and footer lines removed.", on the desktop and on the phones. Before
 PR 23, page 5 lost the sentence and the note counted 7. Regenerating leaves
 the earlier scanned and sparse-page fixtures byte-identical.
+
+## Sentence matching the header right under it on a sparse page, 2026-11-19
+
+`handmade-sparse-page-closest-header.pdf` (native text) is from
+`gen_sparse_page_closest_header.py` (Python 3, standard library; it reuses
+`gen_scanned_running_header.py` and `gen_sparse_page_header.py`). Pages 1-3
+carry that fixture's header and footer. Page 4 has only two lines: the
+header where the full pages have it (y=750), and the header's sentence again
+24 pt lower, inside the 5% position tolerance (35.5 pt). With the
+pdf-inspector fork after lawkitt/pdf-inspector PR 24, only the match closest
+to the header's place goes: the sentence stays on page 4, the header and
+footer stay on page 1 only, and the note counts "5 repeated header and
+footer lines removed.", on the desktop and on the phones. Before PR 24,
+page 4 lost both lines and the note counted 6. There is no scanned copy:
+the scan generator needs macOS `sips`; the phones' page-at-a-time OCR reads
+this native file in `resume.rs`'s test.

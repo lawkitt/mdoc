@@ -1243,6 +1243,12 @@ mod tests {
                 "import/handmade-mixed-size-header.pdf",
                 "6 repeated header and footer lines removed.",
             ),
+            // The same right under the header on a sparse page: only the
+            // match closest to the header's place goes (#925 M18).
+            (
+                "import/handmade-sparse-page-closest-header.pdf",
+                "5 repeated header and footer lines removed.",
+            ),
         ] {
             let snapshot = DocumentSession::new()
                 .import_file(fixture(name), ImportOptions::default(), None)

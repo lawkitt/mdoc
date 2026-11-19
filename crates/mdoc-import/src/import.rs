@@ -1168,6 +1168,38 @@ mod tests {
         );
     }
 
+    /// On a sparse last page with the header where the full pages have it
+    /// and its sentence again 24 pt lower, inside the position tolerance,
+    /// only the match closest to the header's place goes: the sentence
+    /// stays and isn't counted (#925 M18, lawkitt/pdf-inspector#24).
+    #[test]
+    fn a_sentence_right_under_a_sparse_pages_header_stays() {
+        let imported = convert(&fixture("handmade-sparse-page-closest-header.pdf")).unwrap();
+        let header = "Annual Report of the Board 2026 Confidential";
+        let (pages_1_to_3, page_4) = imported.markdown.split_once("Item 3.12.").unwrap();
+        assert_eq!(
+            pages_1_to_3.matches(header).count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert_eq!(page_4.matches(header).count(), 1, "{}", imported.markdown);
+        assert_eq!(
+            imported
+                .markdown
+                .matches("Prepared for the shareholders")
+                .count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert_eq!(imported.warning, None);
+        assert_eq!(
+            imported.left_out.line(true).as_deref(),
+            Some("5 repeated header and footer lines removed.")
+        );
+    }
+
     /// Comments never reach the Markdown, whatever the format: the import
     /// equals the fork's reviewed snapshot, and no comment's text or author
     /// (an annotation's, for a PDF) is in it. The import carries them beside
