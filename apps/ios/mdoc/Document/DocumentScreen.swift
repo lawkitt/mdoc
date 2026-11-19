@@ -202,7 +202,7 @@ struct DocumentScreen: View {
     /// mode, where the text is being typed.
     @ViewBuilder
     private var noticeCards: some View {
-        let notice = model.noticeClosed ? nil : model.snapshot.notice
+        let notice = model.noticeClosed ? nil : model.snapshot.notice ?? LaunchConfiguration.current.uiNotice
         let interruption = model.isEditing ? nil : model.interruption
         if notice != nil || interruption != nil {
             VStack(spacing: Space.xs) {

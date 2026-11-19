@@ -1,7 +1,9 @@
 import XCTest
 
 /// A partial import's notice card sits over the text and closes with ×
-/// (originals.md, The import note); light and dark kept as attachments.
+/// (originals.md, The import note); light and dark kept as attachments. A
+/// phone's import reads scanned pages rather than skip them, so the notice
+/// comes from `MDOC_UI_NOTICE`.
 final class NoticeCardUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -13,7 +15,8 @@ final class NoticeCardUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-mdoc-ui-testing"]
         app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo
-            .appendingPathComponent("tests/fixtures/import/handmade-partly-scanned.pdf").path
+            .appendingPathComponent(MdocUITest.markdownFixture).path
+        app.launchEnvironment["MDOC_UI_NOTICE"] = "Partial import: pages 2, 5 of 5 require OCR and were skipped."
         app.launch()
         let row = MdocUITest.anyDocumentRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
