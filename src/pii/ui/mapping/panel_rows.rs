@@ -710,6 +710,22 @@ impl DocumentView {
                     cx.notify();
                 }))
             }))
+            // Not a name for the whole identity (ADR 0122), last.
+            .child(
+                div()
+                    .h(px(1.))
+                    .my_1()
+                    .bg(self.theme.get().pdf_style().border),
+            )
+            .child(
+                self.menu_row("panel-not-a-name", "Not a name", "", None, enabled, cx)
+                    .aria_label("Not a name")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.pii.mapping.panel_menu = None;
+                        this.not_a_name_identity(id, cx);
+                    })),
+            )
             .into_any_element()
     }
 

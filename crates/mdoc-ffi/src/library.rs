@@ -1136,10 +1136,7 @@ impl Library {
         let Ok(text) = std::fs::read_to_string(self.root.join(member)) else {
             return identities.iter().map(|i| i.alias.clone()).collect();
         };
-        map.tokens(&text)
-            .into_iter()
-            .filter_map(|token| Some(identities[token.identity?].alias.clone()))
-            .collect()
+        map.restored_aliases(&text)
     }
 
     /// A new, empty file in the documents folder for a document titled

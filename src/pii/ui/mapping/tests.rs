@@ -324,6 +324,81 @@ fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
     });
 }
 
+/// Not a name (ADR 0122) on a proposed mention, for the whole identity:
+/// every mention leaves the review, nothing shows as kept, it closes the
+/// popup, records one decision and one undo step.
+#[gpui::test]
+fn not_a_name_takes_the_marks_off_and_undoes(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+        app.pii.mapping.set_scope(Scope::Entity);
+        app.not_a_name(window, cx);
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert_eq!(
+            app.pii.review.remaining(),
+            1,
+            "only the full name is proposed"
+        );
+        assert!(
+            app.pii.review.kept_mentions().is_empty(),
+            "nothing shows as kept"
+        );
+        assert!(app.pii.popup.is_none(), "the popup closes");
+        assert_eq!(
+            app.pii.review.not_a_name_wordings().len(),
+            1,
+            "one wording taken off"
+        );
+    });
+    cx.run_until_parked();
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, _| assert_eq!(app.pii.review.remaining(), 3));
+}
+
+/// Not a name on an applied mention: the text returns to its original, and
+/// nothing stays applied or kept.
+#[gpui::test]
+fn not_a_name_returns_applied_text(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let identity = {
+            let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+            app.pii
+                .review
+                .occurrence_identity(initials, &range)
+                .unwrap()
+        };
+        app.apply_aliases(cx);
+        assert_ne!(app.editor.read(cx).text(), source);
+        app.not_a_name_identity(identity, cx);
+        assert!(
+            app.pii
+                .review
+                .applied()
+                .iter()
+                .all(|a| a.step.identity != identity)
+        );
+        assert!(
+            app.editor
+                .read(cx)
+                .text()
+                .ends_with("Павлова М.С. · Павлова М.С.")
+        );
+        assert!(app.pii.review.kept_mentions().is_empty());
+        let _ = window;
+    });
+}
+
 #[gpui::test]
 fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
@@ -350,6 +425,41 @@ fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
                     .alias
             );
         }
+    });
+}
+
+/// Not a name ends the popup's category menu: a click on an applied
+/// email puts its original back and closes the popup.
+#[gpui::test]
+fn not_a_name_from_the_category_menu(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1500.), px(1000.)));
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid";
+    let email = app.update_in(cx, |app, window, cx| {
+        seed(app, source, cx);
+        app.apply_aliases(cx);
+        let email = app.pii.review.applied().last().unwrap().step.identity;
+        app.reveal_replacement(email, window, cx);
+        email
+    });
+    cx.run_until_parked();
+    click_tab(cx, "direct-category");
+    click_tab(cx, "direct-not-a-name");
+    app.update(cx, |app, cx| {
+        assert!(
+            app.pii
+                .review
+                .applied()
+                .iter()
+                .all(|a| a.step.identity != email)
+        );
+        assert!(
+            app.editor
+                .read(cx)
+                .text()
+                .ends_with("marina@example.invalid")
+        );
+        assert!(app.pii.popup.is_none());
     });
 }
 

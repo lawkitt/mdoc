@@ -321,21 +321,6 @@ impl ReviewText {
         self.review.refresh(&text);
     }
 
-    /// (identity, wording) pairs as (alias, wording), for the case; a
-    /// wording with no identity names nothing there.
-    pub(crate) fn alias_pairs(
-        &self,
-        pairs: impl IntoIterator<Item = (Option<u64>, std::sync::Arc<str>)>,
-    ) -> Vec<(String, String)> {
-        pairs
-            .into_iter()
-            .filter_map(|(identity, wording)| {
-                let alias = self.review.identity(identity?)?.alias.clone();
-                Some((alias, wording.to_string()))
-            })
-            .collect()
-    }
-
     /// Copy for AI's text: the note naming the first applied aliases,
     /// then the text, built by `mdoc_pii::handoff` as desktop builds it.
     pub fn copy_for_ai(&self) -> String {
@@ -811,36 +796,7 @@ impl ReviewText {
     ) {
         self.open_case(&case.exported(), &case.reserved_aliases());
         if let Some(member) = member {
-            self.leave_off(&case.not_names_of(member));
-        }
-    }
-
-    /// Not a name again, with no step, for the proposed mentions of these
-    /// (alias, wording) pairs.
-    fn leave_off(&mut self, pairs: &[(String, String)]) {
-        if pairs.is_empty() {
-            return;
-        }
-        let review = &self.review;
-        let pending: Vec<_> = review
-            .candidates()
-            .iter()
-            .filter(|c| {
-                let Some(variant) = review.variant(c.variant) else {
-                    return false;
-                };
-                let alias = review
-                    .occurrence_identity(c.variant, &c.range)
-                    .and_then(|id| review.identity(id))
-                    .map(|identity| identity.alias.as_str());
-                pairs
-                    .iter()
-                    .any(|(a, w)| w == variant.original.as_ref() && alias == Some(a.as_str()))
-            })
-            .map(|c| (c.variant, c.range.clone()))
-            .collect();
-        if !pending.is_empty() {
-            self.review.not_a_name_mentions(pending, &HashSet::new());
+            self.review.leave_off(&case.not_names_of(member));
         }
     }
 

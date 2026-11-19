@@ -568,13 +568,14 @@ impl DocumentView {
                                     .rounded_full()
                                     .bg(theme.category(category)),
                             )
-                            .child(match (&owner, identity.is_some()) {
+                            // A kept mention's menu holds only Not a name.
+                            .child(match (&owner, identity.is_some() || kept) {
                                 (Some(owner), _) => format!("{} · {owner} ▾", category.label()),
                                 (None, true) => format!("{} ▾", category.label()),
                                 (None, false) => category.label().to_string(),
                             })
                             .aria_label("Correct category for selected scope")
-                            .when(identity.is_some(), |v| {
+                            .when(identity.is_some() || kept, |v| {
                                 v.on_click(cx.listener(|this, _, window, cx| {
                                     this.pii.mapping.toggle_category_picker();
                                     // The menu takes focus (ADR 0062).
@@ -597,9 +598,8 @@ impl DocumentView {
                                 }
                                 _ => v.into_any_element(),
                             }),
-                            identity
-                                .filter(|_| mapping.pickers.category)
-                                .map(|identity| {
+                            (mapping.pickers.category && (identity.is_some() || kept))
+                                .then(|| {
                                     self.category_menu(
                                         identity,
                                         ownable.then(|| owner.clone()),
@@ -864,11 +864,15 @@ impl DocumentView {
     /// The open category menu's row for the current category, which takes
     /// focus when the menu opens.
     fn focus_category_menu(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let current = self
-            .selected_entity()
-            .and_then(|id| self.pii.review.identity(id))
-            .map_or(Category::ALL[0], |identity| identity.category);
-        let id = SharedString::from(format!("direct-category-{}", current.token()));
+        let id = if self.active_is_kept() {
+            SharedString::from("direct-not-a-name")
+        } else {
+            let current = self
+                .selected_entity()
+                .and_then(|id| self.pii.review.identity(id))
+                .map_or(Category::ALL[0], |identity| identity.category);
+            SharedString::from(format!("direct-category-{}", current.token()))
+        };
         window.focus(&self.pii.popup_control_focus(id, cx), cx);
     }
     /// A menu row: label left, a muted detail right. `checked` reserves a ✓
@@ -923,10 +927,11 @@ impl DocumentView {
             .child(text)
     }
     /// Category correction: each category with the alias choosing it gives,
-    /// or none where the alias stays (#179).
+    /// or none where the alias stays (#179); last, Not a name (ADR 0122),
+    /// alone for a kept mention.
     fn category_menu(
         &self,
-        identity: &mdoc_pii::Identity,
+        identity: Option<&mdoc_pii::Identity>,
         owner: Option<Option<String>>,
         enabled: bool,
         cx: &mut Context<Self>,
@@ -947,22 +952,31 @@ impl DocumentView {
             },
             cx,
         )
-        .children(Category::ALL.into_iter().map(|category| {
-            let current = identity.category == category;
-            self.menu_row(
-                SharedString::from(format!("direct-category-{}", category.token())),
-                category.label(),
-                self.category_choice_alias(category).unwrap_or_default(),
-                Some(current),
-                enabled,
-                cx,
-            )
-            // A choice hands focus back to the popup, where its keys work.
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.correct_category(category, cx);
-                window.focus(&this.pii.focus, cx);
-            }))
-        }))
+        .children(
+            identity
+                .into_iter()
+                .flat_map(|identity| {
+                    Category::ALL
+                        .into_iter()
+                        .map(move |category| (identity, category))
+                })
+                .map(|(identity, category)| {
+                    let current = identity.category == category;
+                    self.menu_row(
+                        SharedString::from(format!("direct-category-{}", category.token())),
+                        category.label(),
+                        self.category_choice_alias(category).unwrap_or_default(),
+                        Some(current),
+                        enabled,
+                        cx,
+                    )
+                    // A choice hands focus back to the popup, where its keys work.
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.correct_category(category, cx);
+                        window.focus(&this.pii.focus, cx);
+                    }))
+                }),
+        )
         // Ownership opens in the menu's place (ADR 0055).
         .when_some(owner, |v, owner| {
             v.child(div().h(px(1.)).my_1().bg(palette.border)).child(
@@ -984,6 +998,19 @@ impl DocumentView {
                 })),
             )
         })
+        // No category at all: ends the menu. Undo takes it back, so it
+        // isn't styled as destructive.
+        .when(identity.is_some(), |v| {
+            v.child(div().h(px(1.)).my_1().bg(palette.border))
+        })
+        .child(
+            self.menu_row("direct-not-a-name", "Not a name", "", None, enabled, cx)
+                .aria_label("Not a name")
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.pii.mapping.close_pickers();
+                    this.not_a_name(window, cx);
+                })),
+        )
         .into_any_element()
     }
     /// The alias in its mention's colour (the category's while proposed, the

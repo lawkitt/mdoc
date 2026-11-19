@@ -158,16 +158,8 @@ impl Document {
             wrote: false,
             text: self.review.text.clone(),
             identities: self.review.review.export_identities(),
-            not_names: self
-                .review
-                .alias_pairs(self.review.review.not_a_name_wordings()),
-            kept: self.review.alias_pairs(
-                self.review
-                    .review
-                    .kept_mentions()
-                    .into_iter()
-                    .map(|(_, wording, identity)| (identity, wording)),
-            ),
+            not_names: self.review.review.not_a_name_pairs(),
+            kept: self.review.review.kept_pairs(),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
             scanned: self.scanned,

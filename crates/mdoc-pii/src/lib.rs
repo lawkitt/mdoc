@@ -476,6 +476,60 @@ impl Review {
         }
         wordings
     }
+    /// [`Self::not_a_name_wordings`] as (alias, wording) pairs, what a
+    /// case save drops; a wording with no identity names nothing there.
+    pub fn not_a_name_pairs(&self) -> Vec<(String, String)> {
+        self.alias_pairs(self.not_a_name_wordings())
+    }
+    /// The kept mentions as (alias, wording) pairs: what a case save puts
+    /// back after an undone Not a name (ADR 0122).
+    pub fn kept_pairs(&self) -> Vec<(String, String)> {
+        self.alias_pairs(
+            self.kept_mentions()
+                .into_iter()
+                .map(|(_, wording, identity)| (identity, wording)),
+        )
+    }
+    fn alias_pairs(
+        &self,
+        pairs: impl IntoIterator<Item = (Option<u64>, Arc<str>)>,
+    ) -> Vec<(String, String)> {
+        pairs
+            .into_iter()
+            .filter_map(|(identity, wording)| {
+                let alias = self.identity(identity?)?.alias.clone();
+                Some((alias, wording.to_string()))
+            })
+            .collect()
+    }
+    /// Not a name again, with no undo step, for the proposed mentions of
+    /// these (alias, wording) pairs: a document opening in a case that
+    /// keeps them for another member (ADR 0122).
+    pub fn leave_off(&mut self, pairs: &[(String, String)]) {
+        if pairs.is_empty() {
+            return;
+        }
+        let pending: Vec<_> = self
+            .candidates()
+            .iter()
+            .filter(|c| {
+                let Some(variant) = self.variant(c.variant) else {
+                    return false;
+                };
+                let alias = self
+                    .occurrence_identity(c.variant, &c.range)
+                    .and_then(|id| self.identity(id))
+                    .map(|identity| identity.alias.as_str());
+                pairs
+                    .iter()
+                    .any(|(a, w)| w == variant.original.as_ref() && alias == Some(a.as_str()))
+            })
+            .map(|c| (c.variant, c.range.clone()))
+            .collect();
+        if !pending.is_empty() {
+            self.not_a_name_mentions(pending, &HashSet::new());
+        }
+    }
     /// Whether every mention of `variant` is taken off as Not a name: its
     /// wording names nothing any more (ADR 0122).
     pub(crate) fn silenced(&self, variant: &Variant) -> bool {
