@@ -30,26 +30,37 @@ final class NoticeCardUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertLessThanOrEqual(card.frame.maxY, text.frame.minY + 1)
-        keep("notice-card-light")
+        let light = keep("notice-card-light")
         XCUIDevice.shared.appearance = .dark
-        keep("notice-card-dark")
+        keep("notice-card-dark", unlike: light)
         XCUIDevice.shared.appearance = .light
+
+        // Edit mode hides it; Done brings it back.
+        app.buttons["edit-button"].tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: card)
+        waitForExpectations(timeout: MdocUITest.timeout)
+        app.buttons["done-editing"].tap()
+        XCTAssertTrue(card.waitForExistence(timeout: MdocUITest.timeout))
 
         let close = app.buttons["notice-close"]
         XCTAssertTrue(close.isHittable)
         XCTAssertGreaterThanOrEqual(close.frame.width, 44)
         XCTAssertGreaterThanOrEqual(close.frame.height, 44)
         close.tap()
-        let gone = NSPredicate(format: "exists == false")
         expectation(for: gone, evaluatedWith: card)
         waitForExpectations(timeout: MdocUITest.timeout)
     }
 
     @MainActor
-    private func keep(_ name: String) {
-        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    @discardableResult
+    private func keep(_ name: String, unlike previous: XCUIScreenshot? = nil) -> XCUIScreenshot {
+        let screen = MdocUITest.settledScreen(unlike: previous)
+        let shot = XCTAttachment(screenshot: screen)
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
+        return screen
     }
 }

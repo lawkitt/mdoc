@@ -1303,6 +1303,42 @@ mod tests {
             .unwrap();
     }
 
+    /// A partial import's notice belongs to the import: a saved document
+    /// reopens without it, so the phones' notice card closes for good
+    /// (originals.md, The import note).
+    #[test]
+    fn a_reopened_document_has_no_import_notice() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = DocumentSession::new();
+        let imported = session
+            .import_file_in(
+                library.clone(),
+                fixture("import/handmade-partly-scanned.pdf"),
+                ImportOptions {
+                    native_text_only: true,
+                    ..ImportOptions::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert!(
+            imported
+                .notice
+                .as_deref()
+                .is_some_and(|n| n.starts_with("Partial import")),
+            "{:?}",
+            imported.notice
+        );
+        let saved = session.save(library.clone()).unwrap();
+        let reopened = DocumentSession::new()
+            .open_document(library, saved.path)
+            .unwrap();
+        assert_eq!(reopened.notice, None);
+        assert_eq!(reopened.warning, None);
+        assert_eq!(reopened.left_out, None);
+    }
+
     /// With the OCR runtime: an import stopped after two pages resumes
     /// through the session with the pages left, and gives an uninterrupted
     /// import's document; a dropped import's pages are discarded.
