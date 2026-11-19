@@ -638,21 +638,17 @@ impl Case {
     /// document shows again goes back into the identity `member` took it
     /// out of.
     pub fn refill(&mut self, pairs: &[(String, String)], member: &Path) {
-        let mut refilled = Vec::new();
+        // The mark stays: another of its wordings may come back by a later
+        // undo step.
         for (alias, wording) in pairs {
-            if let Some(index) = self
+            if let Some(identity) = self
                 .identities
-                .iter()
-                .position(|i| i.names(alias) && i.not_a_name_by.as_deref() == Some(member))
-                && !self.identities[index].originals.contains(wording)
+                .iter_mut()
+                .find(|i| i.names(alias) && i.not_a_name_by.as_deref() == Some(member))
+                && !identity.originals.contains(wording)
             {
-                self.identities[index].originals.push(wording.clone());
-                refilled.push(index);
+                identity.originals.push(wording.clone());
             }
-        }
-        // Every wording first, then the mark: one identity may get several.
-        for index in refilled {
-            self.identities[index].not_a_name_by = None;
         }
     }
     /// The (alias, wording) pairs `member` took off as Not a name that the
@@ -2000,7 +1996,6 @@ mod tests {
         );
         case.refill(&pair, member);
         assert_eq!(case.identities[0].originals, ["Alex Kim"]);
-        assert_eq!(case.identities[0].not_a_name_by, None);
 
         // Two wordings of one identity come back together.
         case.identities[0].originals = vec!["Alex Kim".into(), "A. Kim".into()];

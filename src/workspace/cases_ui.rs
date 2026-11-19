@@ -676,6 +676,8 @@ impl Workspace {
         let listed = view
             .update(cx, |view, cx| view.take_list_changes(cx))
             .map(|changes| changes.sparing(&others));
+        // What this tab still lists (a homonym's Keep) stays too.
+        let own = view.read(cx).case.listed().clone();
         let Some(((renames, added, exported, lists), effect)) =
             self.case_coordinator.edit(&link.id, |case| {
                 let before = case.clone();
@@ -692,7 +694,7 @@ impl Workspace {
                         let used = if not_names.is_empty() {
                             std::collections::HashSet::new()
                         } else {
-                            restored_in_members(case)
+                            restored_in_members(case, member)
                         };
                         case.drop_wordings(&not_names, member, |identity| {
                             used.contains(&identity.alias)
@@ -705,12 +707,14 @@ impl Workspace {
                 let mut changes = listed.clone().unwrap_or_default();
                 for (_, wording) in &not_names {
                     if let Some(entry) = case.lists.always_for(wording).cloned()
+                        && own.always_for(wording).is_none()
                         && !others.iter().any(|o| o.always_for(wording).is_some())
                         && !changes.always_removed.contains(&entry)
                     {
                         changes.always_removed.push(entry);
                     }
                     if case.lists.never_has(wording)
+                        && !own.never_has(wording)
                         && !others.iter().any(|o| o.never_has(wording))
                         && !changes.never_removed.contains(wording)
                     {
@@ -2281,12 +2285,18 @@ const CLOSE_RESOLVED: TabEvent = TabEvent::Close(CloseEvent::Resolved);
 const CLOSE_CANCELLED: TabEvent = TabEvent::Close(CloseEvent::Cancelled);
 
 /// The aliases of `case`'s identities that its members' saved files
-/// restore, as Restore reads them (ADR 0122); a member that can't be read
-/// counts as needing them all.
-fn restored_in_members(case: &mdoc_store::cases::Case) -> std::collections::HashSet<String> {
+/// restore, as Restore reads them (ADR 0122), `member`'s own file included
+/// even before it joins (Save As); a member that can't be read counts as
+/// needing them all.
+fn restored_in_members(
+    case: &mdoc_store::cases::Case,
+    member: &std::path::Path,
+) -> std::collections::HashSet<String> {
     let map = mdoc_pii::restore::RestoreMap::new(case.exported());
     case.members
         .iter()
+        .map(std::path::PathBuf::as_path)
+        .chain((!case.members.iter().any(|m| m == member)).then_some(member))
         .flat_map(|other| match std::fs::read_to_string(other) {
             Ok(text) => map.restored_aliases(&text),
             Err(_) => map.identities().iter().map(|i| i.alias.clone()).collect(),

@@ -361,6 +361,9 @@ sidebar's hover reveal gets quicker and smooth
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
 
+- **[Cases]** A case remembers each Not a name drop per identity and
+  wording, so a stale open member's save can't add it back. *From the Codex
+  review of #980.*
 - **[Mobile]** Save Keep and Not a name per mention with the document, so a
   reopened document keeps This one's scope and Find names again never brings
   them back; today only the case carries them, per wording. *From the Codex
