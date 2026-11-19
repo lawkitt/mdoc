@@ -244,3 +244,81 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
     settle(cx);
     assert_eq!(store.load(&case).unwrap().lists.never, ["Riverside"]);
 }
+
+/// Not a name on a saved, replaced name (ADR 0122): its case save takes the
+/// wording out of the case, alias reserved, and puts it on no list.
+#[gpui::test]
+fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let tab = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met staff at Riverside.",
+        &[("Anna Petrova", Person)],
+    );
+    let view = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    settle(cx);
+    let id = cx.update(|_, cx| view.read(cx).case.link().unwrap().id.clone());
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let anna = |store: &mdoc_store::cases::Store| {
+        store
+            .load(&id)
+            .unwrap()
+            .identities
+            .into_iter()
+            .find(|i| i.alias == "PERSON_1")
+            .unwrap()
+            .originals
+    };
+    assert_eq!(anna(&store), ["Anna Petrova"]);
+    // Saved with its alias.
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(Save);
+    settle(cx);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+        "PERSON_1 met staff at Riverside."
+    );
+
+    view.update(cx, |view, cx| {
+        let identity = view.pii.review().applied()[0].step.identity;
+        view.not_a_name_identity(identity, cx);
+    });
+    settle(cx);
+    // The saved file still has PERSON_1: the case keeps it until the
+    // document saves, so a discarded edit still restores.
+    assert_eq!(anna(&store), ["Anna Petrova"]);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(Save);
+    settle(cx);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+        "Anna Petrova met staff at Riverside."
+    );
+    assert!(anna(&store).is_empty(), "the wording left the case");
+    let case = store.load(&id).unwrap();
+    assert!(case.reserved_aliases().contains(&"PERSON_1".to_string()));
+    assert!(case.lists.is_empty(), "no list entry");
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).editor.read(cx).text(),
+            "Anna Petrova met staff at Riverside."
+        )
+    });
+}

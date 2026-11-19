@@ -70,12 +70,22 @@ impl DocumentView {
     /// What this tab's decisions put on its case's lists now (ADR 0092):
     /// the wordings of identities it kept whole on Never, the wordings it
     /// marked by hand, in their categories, on Always. A wording both kept
-    /// and marked is kept.
+    /// and marked is kept; one taken off as Not a name is on neither (ADR
+    /// 0122).
     fn listed(&self, cx: &gpui::App) -> Lists {
         let mut listed = Lists::default();
         let path = self.editor.read(cx).history_path();
+        let not_names: HashSet<_> = self
+            .pii
+            .review
+            .not_a_name_wordings()
+            .into_iter()
+            .map(|(_, wording)| wording)
+            .collect();
         for (wording, category) in self.pii.decisions.marked(&path) {
-            listed.add_always(&wording, category);
+            if !not_names.contains(&*wording) {
+                listed.add_always(&wording, category);
+            }
         }
         for wording in self.pii.review.never_wordings() {
             listed.add_never(&wording);

@@ -686,6 +686,22 @@ impl DocumentView {
         keep: bool,
         cx: &mut Context<Self>,
     ) -> Option<Vec<(Range<usize>, String)>> {
+        self.revert_applied_as(
+            ids,
+            if keep {
+                Reverted::Kept
+            } else {
+                Reverted::Proposed
+            },
+            cx,
+        )
+    }
+    fn revert_applied_as(
+        &mut self,
+        ids: &std::collections::HashSet<u64>,
+        reverted: Reverted,
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<(Range<usize>, String)>> {
         let editor = self.editor.read(cx);
         let revision = editor.revision();
         if !self.pii.review.matches_history(editor.history_id()) {
@@ -693,7 +709,13 @@ impl DocumentView {
             cx.notify();
             return None;
         }
-        let edits = match self.pii.review.reversion_edits(editor.text(), ids) {
+        let edits = match if reverted == Reverted::NotAName {
+            self.pii
+                .review
+                .reversion_edits_to_originals(editor.text(), ids)
+        } else {
+            self.pii.review.reversion_edits(editor.text(), ids)
+        } {
             Ok(edits) => edits,
             Err(error) => {
                 self.pii.error = Some(error);
@@ -714,10 +736,10 @@ impl DocumentView {
         self.roll_replaced(&edits, &before, cx);
         let history = self.editor.read(cx).history_id();
         let review = &mut self.pii.review;
-        if keep {
-            review.commit_restore(history, restored);
-        } else {
-            review.commit_unapply(history, restored);
+        match reverted {
+            Reverted::Kept => review.commit_restore(history, restored),
+            Reverted::NotAName => review.commit_not_a_name(history, restored),
+            Reverted::Proposed => review.commit_unapply(history, restored),
         }
         review.refresh(self.editor.read(cx).text());
         self.pii.error = None;
@@ -862,6 +884,141 @@ impl DocumentView {
         cx.notify();
         true
     }
+    /// Not a name (ADR 0122) for the popup's mention in its scope: proposed,
+    /// applied and kept mentions all come off with no trace, applied ones
+    /// back to their first originals, as one undo step. The mark is gone,
+    /// so the popup closes.
+    pub(in crate::pii::ui) fn not_a_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.selected_entity() else {
+            return;
+        };
+        let scope = self.pii.mapping.scope;
+        // All and the wording reach the identity's other marks whichever
+        // state the popup opened on; This one on a kept mention, none.
+        let (candidates, applied) = self.scoped_mentions();
+        let original = self.active_original();
+        let kept: Vec<Range<usize>> = match scope {
+            Scope::Mention if self.active_is_kept() => {
+                self.active_replacement_range().into_iter().collect()
+            }
+            Scope::Mention => Vec::new(),
+            Scope::Wording => self
+                .kept_of(id)
+                .into_iter()
+                .filter(|(_, wording)| Some(wording.as_ref()) == original.as_deref())
+                .map(|(range, _)| range)
+                .collect(),
+            Scope::Entity => self
+                .kept_of(id)
+                .into_iter()
+                .map(|(range, _)| range)
+                .collect(),
+        };
+        if self.not_a_name_now(candidates, applied, kept, cx) {
+            self.close_pii_popup(&PiiClosePopup, window, cx);
+            window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        }
+    }
+    /// Not a name for every mention of identity `id` (ADR 0122): the
+    /// Replacements panel's row menu.
+    pub(crate) fn not_a_name_identity(&mut self, id: u64, cx: &mut Context<Self>) {
+        let review = &self.pii.review;
+        let candidates = review
+            .candidates()
+            .iter()
+            .filter(|c| review.occurrence_identity(c.variant, &c.range) == Some(id))
+            .map(|c| (c.variant, c.range.clone()))
+            .collect();
+        let applied = review
+            .applied()
+            .iter()
+            .filter(|a| a.step.identity == id)
+            .map(|a| a.id)
+            .collect();
+        let kept = self
+            .kept_of(id)
+            .into_iter()
+            .map(|(range, _)| range)
+            .collect();
+        if self.not_a_name_now(candidates, applied, kept, cx) && self.pii.popup.is_some() {
+            self.pii.close_popup();
+        }
+    }
+    /// Not a name for exactly these mentions (pending by variant and range,
+    /// applied by id, kept by range) as one undo step. Returns whether
+    /// anything came off.
+    pub(in crate::pii::ui) fn not_a_name_now(
+        &mut self,
+        candidates: Vec<(u64, Range<usize>)>,
+        applied: Vec<u64>,
+        kept: Vec<Range<usize>>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.pii.scanning() || !self.can_copy_markdown() {
+            return false;
+        }
+        if candidates.is_empty() && applied.is_empty() && kept.is_empty() {
+            return false;
+        }
+        let before = self.editor.read(cx).history_id();
+        let mentions = {
+            let review = &self.pii.review;
+            let proposed = candidates
+                .iter()
+                .filter_map(|(group, _)| review.variant(*group).map(|v| v.original.clone()));
+            let applied = self.applied_originals(&applied.iter().copied().collect());
+            let kept_wordings: Vec<_> = review
+                .kept_mentions()
+                .into_iter()
+                .filter(|(range, _, _)| kept.contains(range))
+                .map(|(_, original, _)| original)
+                .collect();
+            Mentions::of(
+                proposed
+                    .chain(applied)
+                    .chain(kept_wordings)
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let ranges = |kept: &[Range<usize>]| -> std::collections::HashSet<(usize, usize)> {
+            kept.iter().map(|r| (r.start, r.end)).collect()
+        };
+        if applied.is_empty() {
+            let kept = ranges(&kept);
+            if self
+                .checkpoint_review(cx, |review| review.not_a_name_mentions(candidates, &kept))
+                .is_none()
+            {
+                return false;
+            }
+        } else {
+            let Some(edits) =
+                self.revert_applied_as(&applied.into_iter().collect(), Reverted::NotAName, cx)
+            else {
+                return false;
+            };
+            let shift = |range: &Range<usize>| -> Range<usize> {
+                let shift: isize = edits
+                    .iter()
+                    .filter(|(r, _)| r.end <= range.start)
+                    .map(|(r, text)| text.len() as isize - r.len() as isize)
+                    .sum();
+                range.start.saturating_add_signed(shift)..range.end.saturating_add_signed(shift)
+            };
+            let shifted: Vec<_> = candidates
+                .into_iter()
+                .map(|(group, range)| (group, shift(&range)))
+                .collect();
+            let kept: Vec<_> = kept.iter().map(shift).collect();
+            self.pii.review.not_a_name_mentions(shifted, &ranges(&kept));
+        }
+        self.record_decision(before, Decision::NotAName(mentions), cx);
+        self.review_changed(cx);
+        self.editor
+            .update(cx, |e, cx| e.set_active_annotation(None, cx));
+        cx.notify();
+        true
+    }
     /// The popup's Replace checkbox and Space: untick keeps the originals in
     /// scope; ticking a kept mention proposes the kept ones in scope again.
     /// Either way one undo step, and the popup stays (ADR 0055).
@@ -952,4 +1109,15 @@ impl DocumentView {
         }
         cx.notify();
     }
+}
+
+/// What reverted replacements become.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reverted {
+    /// Proposals again.
+    Proposed,
+    /// Kept as their originals.
+    Kept,
+    /// Not a name (ADR 0122): excluded, shown nowhere.
+    NotAName,
 }

@@ -365,6 +365,15 @@ impl RestoreMap {
             })
             .collect()
     }
+    /// The aliases of this map's identities that `text` restores, as
+    /// [`Self::tokens`] reads them: a case keeps a Not a name wording
+    /// while another member's text still needs it (ADR 0122).
+    pub fn restored_aliases(&self, text: &str) -> Vec<String> {
+        self.tokens(text)
+            .into_iter()
+            .filter_map(|token| Some(self.identities[token.identity?].alias.clone()))
+            .collect()
+    }
     /// Alias-shaped tokens that name no identity of this map.
     pub fn unresolved(&self, text: &str) -> Vec<Range<usize>> {
         self.tokens(text)

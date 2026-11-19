@@ -25,14 +25,15 @@ Hide name mark can go, and only through Undo.
    and the next save returns it under its old alias; only the same
    document may refill a reserved alias.
 4. On desktop it adds nothing to the Never list and takes a manual mark's
-   wording off Always.
+   wording off Always. It ends the popup's category menu (alone there for
+   a kept name) and a Replacements row's menu, and closes the popup.
 5. iOS offers it last in the card's category menu, the long press and an
    Identities row's menu, unstyled since Undo takes it back. Select's bar
    becomes Replace, Keep and a round ⋯ holding Same as… and Not a name.
    Afterwards the bar moves to the next undecided name with no toast;
    elsewhere a toast reads "Not a name: <wording> · Undo".
-6. One core call in `mdoc-ffi` (a range and a scope) serves every platform.
-   Desktop and Android follow iOS.
+6. The rules live in the core (`mdoc-pii`, `mdoc-store`); iOS reaches them
+   through one `mdoc-ffi` call (a range and a scope). Android follows iOS.
 
 ## Consequences
 

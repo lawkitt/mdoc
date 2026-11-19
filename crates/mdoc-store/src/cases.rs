@@ -638,21 +638,17 @@ impl Case {
     /// document shows again goes back into the identity `member` took it
     /// out of.
     pub fn refill(&mut self, pairs: &[(String, String)], member: &Path) {
-        let mut refilled = Vec::new();
+        // The mark stays: another of its wordings may come back by a later
+        // undo step.
         for (alias, wording) in pairs {
-            if let Some(index) = self
+            if let Some(identity) = self
                 .identities
-                .iter()
-                .position(|i| i.names(alias) && i.not_a_name_by.as_deref() == Some(member))
-                && !self.identities[index].originals.contains(wording)
+                .iter_mut()
+                .find(|i| i.names(alias) && i.not_a_name_by.as_deref() == Some(member))
+                && !identity.originals.contains(wording)
             {
-                self.identities[index].originals.push(wording.clone());
-                refilled.push(index);
+                identity.originals.push(wording.clone());
             }
-        }
-        // Every wording first, then the mark: one identity may get several.
-        for index in refilled {
-            self.identities[index].not_a_name_by = None;
         }
     }
     /// The (alias, wording) pairs `member` took off as Not a name that the
@@ -661,8 +657,31 @@ impl Case {
         self.not_names
             .iter()
             .filter(|(m, _, _)| m == member)
-            .map(|(_, a, w)| (a.clone(), w.clone()))
+            .map(|(_, alias, wording)| {
+                // Under the identity's alias now: another member may have
+                // renamed it since.
+                let current = self
+                    .identities
+                    .iter()
+                    .find(|i| i.names(alias))
+                    .map_or(alias, |i| &i.alias);
+                (current.clone(), wording.clone())
+            })
             .collect()
+    }
+    /// A member saved under a new path (Save As, a rename): its Not a name
+    /// marks follow it (ADR 0122).
+    pub fn not_a_name_member_moved(&mut self, from: &Path, to: &Path) {
+        for (member, _, _) in &mut self.not_names {
+            if member == from {
+                *member = to.to_path_buf();
+            }
+        }
+        for identity in &mut self.identities {
+            if identity.not_a_name_by.as_deref() == Some(from) {
+                identity.not_a_name_by = Some(to.to_path_buf());
+            }
+        }
     }
     /// [`Self::reserved_aliases`] but those `member`'s own Not a name
     /// reserved, which its undo may give back (ADR 0122).
@@ -1977,7 +1996,6 @@ mod tests {
         );
         case.refill(&pair, member);
         assert_eq!(case.identities[0].originals, ["Alex Kim"]);
-        assert_eq!(case.identities[0].not_a_name_by, None);
 
         // Two wordings of one identity come back together.
         case.identities[0].originals = vec!["Alex Kim".into(), "A. Kim".into()];
@@ -2003,5 +2021,31 @@ mod tests {
             case.not_names.is_empty(),
             "an undone Not a name is no longer noted"
         );
+    }
+
+    /// A note kept for another member follows a rename of its identity and
+    /// a move of its member (ADR 0122).
+    #[test]
+    fn not_a_name_notes_follow_renames_and_moves() {
+        let mut case = Case::new("Case".into(), &[], None);
+        case.identities = vec![StoredIdentity::from_exported(&identity(
+            "PERSON_1",
+            Category::Person,
+            &["Alex Kim"],
+        ))];
+        let (a, b) = (Path::new("a.md"), Path::new("b.md"));
+        let pair = [("PERSON_1".to_string(), "Alex Kim".to_string())];
+        case.drop_wordings(&pair, a, |_| true);
+        case.identities[0].previous.push("PERSON_1".into());
+        case.identities[0].alias = "Seller".into();
+        assert_eq!(
+            case.not_names_of(a),
+            [("Seller".to_string(), "Alex Kim".to_string())]
+        );
+        case.drop_wordings(&pair, a, |_| false);
+        assert!(case.identities[0].originals.is_empty());
+        case.not_a_name_member_moved(a, b);
+        assert_eq!(case.identities[0].not_a_name_by.as_deref(), Some(b));
+        assert!(case.reserved_aliases_for(b).is_empty());
     }
 }

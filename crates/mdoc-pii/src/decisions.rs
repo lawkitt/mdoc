@@ -34,6 +34,8 @@ pub enum Decision {
     /// Kept mentions proposed for replacement again.
     Repropose(Mentions),
     UndoReplacement(Mentions),
+    /// Marks taken off with no trace (ADR 0122).
+    NotAName(Mentions),
     Rename {
         original: Arc<str>,
         alias: String,
@@ -85,6 +87,10 @@ impl Decision {
             }
             Self::UndoReplacement(Many(n)) => {
                 format!("Undid {}", count(*n, "replacement", "replacements"))
+            }
+            Self::NotAName(One(original)) => format!("“{original}” is not a name"),
+            Self::NotAName(Many(n)) => {
+                format!("Took off {}", count(*n, "mark", "marks"))
             }
             Self::Rename { original, alias } => format!("Renamed “{original}” to {alias}"),
             Self::Category { original, category } => {

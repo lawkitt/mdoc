@@ -443,12 +443,20 @@ impl Workspace {
                 let skip = case.skipped();
                 let lists = case.lists.clone();
                 let dismissed = case.dismissed_hints.clone();
+                // What it took off as Not a name that the case keeps for
+                // another member stays off (ADR 0122).
+                let not_names = identity
+                    .as_ref()
+                    .map(|member| case.not_names_of(member))
+                    .unwrap_or_default();
                 let case_id = link.id.clone();
                 view.update(cx, |view, cx| {
                     view.case.set_skip(skip);
                     view.case.set_lists(lists);
                     view.dismiss_case_hints(&dismissed, cx);
-                    view.open_case_mapping(link, &identities, &reserved, cx)
+                    let linked = view.open_case_mapping(link, &identities, &reserved, cx);
+                    view.pii.review_mut().leave_off(&not_names);
+                    linked
                 });
                 // A saved document is a member from the moment it joins.
                 let path = view
@@ -599,13 +607,24 @@ impl Workspace {
         // Undo of a join can restore an alias the case has irreversibly
         // retired. Reconcile it before saving, rather than silently dropping
         // the member's new mapping at the tombstone boundary.
+        let member = view
+            .read(cx)
+            .session
+            .document
+            .path
+            .as_deref()
+            .map(session_store::identity);
         if let Some(case) = view
             .read(cx)
             .case
             .link()
             .and_then(|link| self.case_coordinator.case(&link.id))
         {
-            let reserved = case.reserved_aliases();
+            // Its own Not a name's reservation is its undo's (ADR 0122).
+            let reserved = match &member {
+                Some(member) => case.reserved_aliases_for(member),
+                None => case.reserved_aliases(),
+            };
             if view
                 .read(cx)
                 .pii
@@ -630,15 +649,18 @@ impl Workspace {
                 }
             }
         }
-        let (link, identities, path) = {
+        let (link, identities, path, not_names, kept) = {
             let v = view.read(cx);
             let Some(link) = v.case.link().cloned() else {
                 return;
             };
+            let review = v.pii.review();
             (
                 link,
-                v.pii.review().export_identities(),
+                review.export_identities(),
                 v.session.document.path.clone(),
+                review.not_a_name_pairs(),
+                review.kept_pairs(),
             )
         };
         // Its Keeps and manual marks since the last save, for the case's
@@ -654,14 +676,53 @@ impl Workspace {
         let listed = view
             .update(cx, |view, cx| view.take_list_changes(cx))
             .map(|changes| changes.sparing(&others));
+        // What this tab still lists (a homonym's Keep) stays too.
+        let own = view.read(cx).case.listed().clone();
         let Some(((renames, added, exported, lists), effect)) =
             self.case_coordinator.edit(&link.id, |case| {
                 let before = case.clone();
-                case.merge(&identities);
-                let lists = listed
-                    .as_ref()
-                    .is_some_and(|changes| case.lists.apply(changes))
-                    .then(|| case.lists.clone());
+                match &member {
+                    Some(member) => {
+                        // Not a name (ADR 0122): an undone one comes back,
+                        // and a wording leaves the case unless another
+                        // member's saved text still restores its identity.
+                        case.merge_from(&identities, Some(member));
+                        case.refill(&kept, member);
+                        // Its own saved file counts too: a member whose
+                        // unsaved edit took the name off still restores
+                        // it until it saves, which saves the case again.
+                        let used = if not_names.is_empty() {
+                            std::collections::HashSet::new()
+                        } else {
+                            restored_in_members(case, member)
+                        };
+                        case.drop_wordings(&not_names, member, |identity| {
+                            used.contains(&identity.alias)
+                        });
+                    }
+                    None => case.merge(&identities),
+                }
+                // A wording taken off leaves both lists, whatever session
+                // put it there, unless another open member lists it.
+                let mut changes = listed.clone().unwrap_or_default();
+                for (_, wording) in &not_names {
+                    if let Some(entry) = case.lists.always_for(wording).cloned()
+                        && own.always_for(wording).is_none()
+                        && !others.iter().any(|o| o.always_for(wording).is_some())
+                        && !changes.always_removed.contains(&entry)
+                    {
+                        changes.always_removed.push(entry);
+                    }
+                    if case.lists.never_has(wording)
+                        && !own.never_has(wording)
+                        && !others.iter().any(|o| o.never_has(wording))
+                        && !changes.never_removed.contains(wording)
+                    {
+                        changes.never_removed.push(wording.clone());
+                    }
+                }
+                let lists =
+                    (!changes.is_empty() && case.lists.apply(&changes)).then(|| case.lists.clone());
                 if let Some(path) = path.as_deref().map(session_store::identity)
                     && !case.members.contains(&path)
                 {
@@ -914,6 +975,9 @@ impl Workspace {
         }
         if let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
             let kept = case.set_reply(&previous, None);
+            if let Some(current) = &current {
+                case.not_a_name_member_moved(&previous, current);
+            }
             (case.remove_member(&previous) || kept).then_some(())
         }) {
             self.carry_out_cases(effect.into_iter().collect(), cx);
@@ -2219,3 +2283,23 @@ impl Workspace {
 
 const CLOSE_RESOLVED: TabEvent = TabEvent::Close(CloseEvent::Resolved);
 const CLOSE_CANCELLED: TabEvent = TabEvent::Close(CloseEvent::Cancelled);
+
+/// The aliases of `case`'s identities that its members' saved files
+/// restore, as Restore reads them (ADR 0122), `member`'s own file included
+/// even before it joins (Save As); a member that can't be read counts as
+/// needing them all.
+fn restored_in_members(
+    case: &mdoc_store::cases::Case,
+    member: &std::path::Path,
+) -> std::collections::HashSet<String> {
+    let map = mdoc_pii::restore::RestoreMap::new(case.exported());
+    case.members
+        .iter()
+        .map(std::path::PathBuf::as_path)
+        .chain((!case.members.iter().any(|m| m == member)).then_some(member))
+        .flat_map(|other| match std::fs::read_to_string(other) {
+            Ok(text) => map.restored_aliases(&text),
+            Err(_) => map.identities().iter().map(|i| i.alias.clone()).collect(),
+        })
+        .collect()
+}
