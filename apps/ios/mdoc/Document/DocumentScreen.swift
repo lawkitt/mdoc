@@ -404,6 +404,9 @@ struct DocumentScreen: View {
                     // no view shows, as quiet counts (never orange).
                     if let leftOut = model.snapshot.leftOut {
                         Label(leftOut, systemImage: "info.circle")
+                            // A toolbar draws a Label as its icon alone; the
+                            // line is the text (#960 phone check).
+                            .labelStyle(.titleAndIcon)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
