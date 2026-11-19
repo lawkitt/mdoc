@@ -209,6 +209,36 @@ final class MarkdownTextViewTests: XCTestCase {
         XCTAssertEqual(harness.coordinator.rebuilds, built + 1)
     }
 
+    /// Keep instead from a replaced name's menu, in a table cell: UIKit draws
+    /// the pressed alias over the text until the menu is gone, so the
+    /// original waits and shows in one frame once it is (iOS 29 P).
+    func testADecisionFromANamesMenuWaitsForTheMenuToClose() throws {
+        let harness = try harness()
+        let proposed = harness.session.snapshot()
+        let cellMention = try XCTUnwrap(proposed.candidates.sorted { $0.range.start < $1.range.start }.dropFirst().first)
+        let replaced = try harness.session.decide(cellMention.id, .replace, scope: .all)
+        show(harness, textView(replaced))
+        let built = harness.coordinator.rebuilds
+        let cellText = { harness.view.tableViews.flatMap { $0.cells.joined() }.map(\.attributedText.string).joined(separator: "|") }
+        XCTAssertFalse(cellText().contains("Maya Bennett"), "the cell shows the alias")
+
+        let alias = try XCTUnwrap(replaced.candidates.sorted { $0.range.start < $1.range.start }.dropFirst().first)
+        harness.coordinator.menuClosing = true
+        let kept = try harness.session.decide(alias.id, .keep, scope: .this)
+        show(harness, textView(kept, selected: alias.id))
+        XCTAssertEqual(harness.coordinator.rebuilds, built, "nothing is built while the menu closes")
+        XCTAssertFalse(cellText().contains("Maya Bennett"))
+        // A new width meanwhile (an iPad window resized) waits too.
+        harness.view.frame.size.width -= 60
+        harness.view.layoutIfNeeded()
+        XCTAssertEqual(harness.coordinator.rebuilds, built, "nor at a new width")
+
+        harness.coordinator.menuClosed()
+        harness.view.layoutIfNeeded()
+        XCTAssertEqual(harness.coordinator.rebuilds, built + 1)
+        XCTAssertTrue(cellText().contains("Maya Bennett"), "the original shows once the menu is gone")
+    }
+
     /// The bar on the last mention, kept; the reader scrolls to the top;
     /// Undo puts the bar back on the same name and asks for a reveal. The
     /// snapshot changed and the selection didn't: the text still scrolls.

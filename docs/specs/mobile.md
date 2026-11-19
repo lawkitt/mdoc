@@ -223,9 +223,8 @@ iOS: `apps/ios/mdoc/Design/`.
   it; the active row is tinted.
 - A row's state mark replaces that mention only, then switches it between
   replaced and kept; the bar stays where it is.
-- The text doesn't move when the name under review is wholly visible
-  between the bars; otherwise it scrolls just far enough, because a fixed
-  target position read as random scrolling.
+- The text scrolls only as far as it takes to show the name between the
+  bars, because a fixed target position read as random scrolling.
 - A decision that changes the text keeps a visible name under review at the
   same place on screen.
 - Candidate ids are source ranges that move, so the bar keeps its place by
@@ -244,10 +243,9 @@ iOS: `apps/ios/mdoc/Design/`.
 - Decisions and identity changes go through the same core calls as desktop.
 - Snippets come from the current Markdown at core offsets, with only the
   name swapped for its original wording.
-- mdoc draws each hint itself, one at a time, never as a popover, because
-  popovers hid the bar's controls.
-- A hint covers no control, leaves every button live and is gone once its
-  action is done.
+- mdoc draws one hint at a time itself, covering no control and gone once
+  its action is done, never as a popover, because popovers hid the bar's
+  controls.
 - The card nudges once to show it swipes.
 - Hide name: a selection outside any name is tinted, never grey; the core
   snaps it to whole words and trims punctuation (`hide_target`).
@@ -260,6 +258,8 @@ iOS: `apps/ios/mdoc/Design/`.
   or cell, up to Markdown formatting or another alias.
 - A tap away from the adjusted words cancels Adjust Words, in a table cell
   too.
+- Not a name ([ADR 0122](../adr/0122-not-a-name.md)) ends the card's
+  category menu, the long press, Identities' menus and Select's ⋯.
 
 ## Identities
 
@@ -267,9 +267,8 @@ iOS: `apps/ios/mdoc/Design/`.
   mention.
 - A row's state mark replaces a proposed identity, then switches it between
   replaced and kept.
-- Replace N is clear glass, not primary, because it is a bulk shortcut.
-- Replace N floats as a capsule at the panel's bottom; in Select, Select's
-  bar takes its place.
+- Replace N is a clear glass capsule at the panel's bottom, not primary,
+  because it is a bulk shortcut; in Select, Select's bar takes its place.
 - A row swipes left only, showing Replace, Same as… and Keep.
 - No full swipe on a row, because Keep sends the original to the AI and
   one swipe back ran Replace.

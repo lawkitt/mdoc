@@ -303,7 +303,10 @@ struct MarkdownTextView: UIViewRepresentable {
                 if let self, let view { self.fixHolderResigned(view) }
             }
             view.onWidth = { [weak self, weak view] width in
-                guard let self, let view else { return }
+                // Held-back text is built at the new width once it shows;
+                // rendering now would draw it under the menu's picture
+                // with the old text's offsets.
+                guard let self, let view, self.pending == nil else { return }
                 self.render(view, width: width)
             }
             view.onLayout = { [weak self, weak view] in
@@ -344,9 +347,12 @@ struct MarkdownTextView: UIViewRepresentable {
                     restyleOnReturn(content, view)
                     return
                 }
-                if menuClosing, content.fixing != self.content?.fixing {
-                    // Adjust Words from a name's menu: its draft waits
-                    // for the menu to close (`textItemMenuWillEndFor`).
+                if menuClosing, content.editing == self.content?.editing {
+                    // A choice in a name's menu (Keep instead, Adjust
+                    // Words…): its text waits for the menu to close
+                    // (`textItemMenuWillEndFor`), or the old name's picture
+                    // is drawn over the new text. Edit mode never waits:
+                    // `followResponder` below makes the text editable.
                     pending = content
                     return
                 }
@@ -729,7 +735,7 @@ struct MarkdownTextView: UIViewRepresentable {
         /// stays over the text until then: the text held back meanwhile
         /// shows now, in one frame, and Adjust Words' handles follow
         /// (ADR 0116).
-        private func menuClosed() {
+        func menuClosed() {
             menuClosing = false
             guard let view = shownView, let content = pending, content != self.content,
                   view.window?.windowScene?.activationState != .background else { return }
