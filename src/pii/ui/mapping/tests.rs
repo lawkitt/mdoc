@@ -414,7 +414,11 @@ fn not_a_name_this_one_on_a_kept_mention(cx: &mut gpui::TestAppContext) {
         app.pii.mapping.set_scope(Scope::Mention);
         app.not_a_name(window, cx);
         assert!(app.pii.review.kept_mentions().is_empty());
-        assert_eq!(app.pii.review.remaining(), 2, "the other mentions stay proposed");
+        assert_eq!(
+            app.pii.review.remaining(),
+            2,
+            "the other mentions stay proposed"
+        );
     });
 }
 
