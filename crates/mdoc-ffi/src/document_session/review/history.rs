@@ -41,6 +41,9 @@ pub enum StepKind {
     /// Fix the words (ADR 0114): a name's span moved, its new wording in
     /// the old one's place everywhere it fits.
     FixWords,
+    /// Not a name (ADR 0122): marks taken off, of one mention or of an
+    /// identity's.
+    NotAName,
 }
 
 impl StepKind {
@@ -59,6 +62,7 @@ impl StepKind {
             Self::Typing => "Typing",
             Self::Formatting => "Formatting",
             Self::FixWords => "Fix the words",
+            Self::NotAName => "Not a name",
         }
     }
 }

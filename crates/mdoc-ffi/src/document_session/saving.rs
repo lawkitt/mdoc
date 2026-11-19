@@ -121,6 +121,10 @@ struct Pending {
     wrote: bool,
     text: String,
     identities: Vec<ExportedIdentity>,
+    /// Not a name (alias, wording) pairs the case drops on this save, and
+    /// the kept ones it may take back from an undone one (ADR 0122).
+    not_names: Vec<(String, String)>,
+    kept: Vec<(String, String)>,
     dismissed: Vec<(String, String)>,
     counts: super::Counts,
     scanned: bool,
@@ -154,6 +158,16 @@ impl Document {
             wrote: false,
             text: self.review.text.clone(),
             identities: self.review.review.export_identities(),
+            not_names: self
+                .review
+                .alias_pairs(self.review.review.not_a_name_wordings()),
+            kept: self.review.alias_pairs(
+                self.review
+                    .review
+                    .kept_mentions()
+                    .into_iter()
+                    .map(|(_, wording, identity)| (identity, wording)),
+            ),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
             scanned: self.scanned,
@@ -188,8 +202,13 @@ impl Document {
             return Ok(());
         };
         let case = library.load(id)?;
-        self.review
-            .join(&case.exported(), &case.reserved_aliases())?;
+        // This live document's own Not a name reserved an alias its undo
+        // may still give back; its own decisions stand (ADR 0122).
+        let reserved = match self.path.as_deref() {
+            Some(path) => case.reserved_aliases_for(&library.member(path)),
+            None => case.reserved_aliases(),
+        };
+        self.review.join(&case.exported(), &reserved)?;
         self.review.dismiss_pairs(&case.dismissed_hints);
         self.synced = Some(case.identities);
         Ok(())
@@ -254,10 +273,24 @@ impl Pending {
                 self.stored.save(path.clone(), &self.text)?;
                 self.wrote = true;
                 let before = case.clone();
-                case.merge(&self.identities);
+                case.merge_from(&self.identities, Some(&member));
                 if !case.members.contains(&member) {
                     case.members.push(member.clone());
                 }
+                case.refill(&self.kept, &member);
+                let used: std::collections::HashSet<String> = if self.not_names.is_empty() {
+                    Default::default()
+                } else {
+                    let map = mdoc_pii::restore::RestoreMap::new(case.exported());
+                    case.members
+                        .iter()
+                        .filter(|m| **m != member)
+                        .flat_map(|m| library.restored_aliases(m, &map))
+                        .collect()
+                };
+                case.drop_wordings(&self.not_names, &member, |identity| {
+                    used.contains(&identity.alias)
+                });
                 for (a, b) in &self.dismissed {
                     let pair = (a.clone(), b.clone());
                     let flipped = (b.clone(), a.clone());
@@ -276,7 +309,7 @@ impl Pending {
                 let mut case = mdoc_store::cases::Case::new(
                     self.title.clone(),
                     &self.identities,
-                    Some(member),
+                    Some(member.clone()),
                 );
                 // Hints dismissed before the case existed stay dismissed.
                 case.dismissed_hints = self.dismissed.clone();
@@ -295,7 +328,7 @@ impl Pending {
         // reopen counts them (a kept name the case knows is proposed again).
         let mut counts = self.counts;
         if counts.kept > 0 {
-            counts = reopened_counts(self.text.clone(), Some(&stored)).0;
+            counts = reopened_counts(self.text.clone(), Some(&stored), Some(&member)).0;
         }
         let summary = Recorded::of(
             counts,

@@ -203,6 +203,15 @@ struct ReviewCard: View {
                     Label(ownerTitle, systemImage: "person.crop.circle.badge.questionmark")
                 }
             }
+            // Not a name (ADR 0122): no category at all, so it ends this
+            // menu. Undo takes it back, so it isn't destructive.
+            Divider()
+            Button {
+                model.notAName()
+            } label: {
+                Label("Not a name", systemImage: "tag.slash")
+            }
+            .accessibilityIdentifier(id("review-not-a-name"))
         } label: {
             Chip(candidate.category.label, systemImage: candidate.category.symbol, tint: candidate.category.color, opensMenu: true)
         }

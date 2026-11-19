@@ -44,6 +44,9 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot {
         try base.decide(candidate, decision, scope: scope)
     }
+    func notAName(_ candidate: CandidateID, scope: Scope) throws -> DocumentSnapshot {
+        try base.notAName(candidate, scope: scope)
+    }
     func replaceAllPending() throws -> DocumentSnapshot { try base.replaceAllPending() }
     func copyForAI() throws -> HandOff { try base.copyForAI() }
     func saveChanges() throws { try base.saveChanges() }

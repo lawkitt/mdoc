@@ -873,6 +873,7 @@ fn forgetting_the_highest_alias_reserves_it_in_new_members_and_survives_reopen(
                     category: "PERSON".into(),
                     custom: false,
                     originals: vec!["Bob".into()],
+                    not_a_name_by: None,
                 });
                 case.members.push(second.clone());
                 Some(())
@@ -1098,6 +1099,7 @@ fn forgetting_a_case_alias_preserves_a_joined_identity_renumbered_from_it(cx: &m
                     category: "PERSON".into(),
                     custom: false,
                     originals: vec!["Other Anna".into()],
+                    not_a_name_by: None,
                 });
                 Some(())
             })

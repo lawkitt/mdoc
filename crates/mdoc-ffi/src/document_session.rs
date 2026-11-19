@@ -303,6 +303,7 @@ impl DocumentSession {
             path: stored.path.clone(),
             stored,
             case,
+            member: Some(member),
             scanned: read.as_ref().map(|s| s.scanned),
             origin: read.as_ref().map(|s| s.origin).unwrap_or_default(),
             reopened: true,
@@ -725,10 +726,11 @@ pub(crate) fn realias(
 pub(crate) fn reopened_counts(
     text: String,
     case: Option<&mdoc_store::cases::Case>,
+    member: Option<&Path>,
 ) -> (Counts, bool) {
     let mut review = ReviewText::new(text);
     if let Some(case) = case {
-        review.open_case(&case.exported(), &case.reserved_aliases());
+        review.open_in_case(case, member);
     }
     (review.counts(), review.has_mentions())
 }
@@ -739,6 +741,8 @@ struct Opened {
     path: Option<PathBuf>,
     stored: mdoc_store::document::Document,
     case: Option<mdoc_store::cases::Case>,
+    /// Its path as a case member.
+    member: Option<PathBuf>,
     /// What its last save recorded; `None` for a document saved before
     /// the library kept it.
     scanned: Option<bool>,
@@ -754,6 +758,7 @@ impl Opened {
             path: None,
             stored: Default::default(),
             case: None,
+            member: None,
             scanned: None,
             origin,
             reopened: false,
@@ -842,7 +847,7 @@ impl DocumentSession {
             if let Some(case) = opened.case {
                 document
                     .review
-                    .open_case(&case.exported(), &case.reserved_aliases());
+                    .open_in_case(&case, opened.member.as_deref());
                 document.review.dismiss_pairs(&case.dismissed_hints);
                 document.skip = case.skipped();
                 document.synced = Some(case.identities.clone());

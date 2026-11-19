@@ -86,6 +86,10 @@ pub struct StoredIdentity {
     pub custom: bool,
     /// The primary wording first.
     pub originals: Vec<String>,
+    /// The member whose Not a name took wordings out of this identity (ADR
+    /// 0122): only its undo gives them back, a reserved alias included.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_a_name_by: Option<PathBuf>,
 }
 impl StoredIdentity {
     fn from_exported(e: &ExportedIdentity) -> Self {
@@ -95,9 +99,10 @@ impl StoredIdentity {
             category: e.category.token().into(),
             custom: e.custom,
             originals: e.originals.iter().map(|o| o.to_string()).collect(),
+            not_a_name_by: None,
         }
     }
-    fn exported(&self) -> Option<ExportedIdentity> {
+    pub fn exported(&self) -> Option<ExportedIdentity> {
         let category = *Category::ALL.iter().find(|c| c.token() == self.category)?;
         (!self.originals.is_empty()).then(|| ExportedIdentity {
             alias: self.alias.clone(),
@@ -263,6 +268,12 @@ pub struct Case {
     /// and Keeps (ADR 0092).
     #[serde(default)]
     pub lists: Lists,
+    /// Wordings a member took off as Not a name that the case keeps for
+    /// another member's sake (ADR 0122): that member's document leaves
+    /// them off when it opens.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Each is (member, alias, wording).
+    pub not_names: Vec<(PathBuf, String, String)>,
 }
 
 /// The user-wide Always and Never lists as stored (ADR 0092).
@@ -308,6 +319,7 @@ impl Case {
             dismissed_hints: Vec::new(),
             reviewed: Vec::new(),
             lists: Lists::default(),
+            not_names: Vec::new(),
         };
         case.merge(identities);
         case
@@ -482,11 +494,17 @@ impl Case {
     /// the document no longer uses stay; a renamed alias is kept as an earlier
     /// alias, so old files and replies still restore (ADR 0041 #23).
     pub fn merge(&mut self, exported: &[ExportedIdentity]) {
+        self.merge_from(exported, None);
+    }
+    /// [`Self::merge`] from `member`, whose undo of a saved Not a name may
+    /// give the identity it emptied its wordings again (ADR 0122).
+    pub fn merge_from(&mut self, exported: &[ExportedIdentity], member: Option<&Path>) {
         for e in exported {
             // A forgotten identity retains only its aliases, reserving them and
             // preventing a stale member's autosave from restoring its originals.
             if self.identities.iter().any(|identity| {
                 identity.originals.is_empty()
+                    && (member.is_none() || identity.not_a_name_by.as_deref() != member)
                     && (identity.names(&e.alias)
                         || e.previous.iter().any(|alias| identity.names(alias)))
             }) {
@@ -585,6 +603,80 @@ impl Case {
     }
 
     /// Irreversibly discard originals, retaining alias reservations only.
+    /// Not a name (ADR 0122): each (alias, wording) leaves the identity
+    /// the alias names, except where `in_use` finds that identity restored
+    /// in another member's saved text. An identity left with no wording
+    /// keeps its aliases, reserved. Each identity changed remembers
+    /// `member`; the wordings kept for another member's sake are noted for
+    /// `member` (`not_names`), replacing what it noted before.
+    pub fn drop_wordings(
+        &mut self,
+        pairs: &[(String, String)],
+        member: &Path,
+        in_use: impl Fn(&StoredIdentity) -> bool,
+    ) {
+        let mut kept = Vec::new();
+        for (alias, wording) in pairs {
+            let Some(identity) = self.identities.iter_mut().find(|i| i.names(alias)) else {
+                continue;
+            };
+            if !identity.originals.contains(wording) {
+                continue;
+            }
+            if in_use(identity) {
+                kept.push((identity.alias.clone(), wording.clone()));
+                continue;
+            }
+            identity.originals.retain(|o| o != wording);
+            identity.not_a_name_by = Some(member.to_path_buf());
+        }
+        self.not_names.retain(|(m, _, _)| m != member);
+        self.not_names
+            .extend(kept.into_iter().map(|(a, w)| (member.to_path_buf(), a, w)));
+    }
+    /// Undo of a saved Not a name (ADR 0122): each (alias, wording) the
+    /// document shows again goes back into the identity `member` took it
+    /// out of.
+    pub fn refill(&mut self, pairs: &[(String, String)], member: &Path) {
+        let mut refilled = Vec::new();
+        for (alias, wording) in pairs {
+            if let Some(index) = self
+                .identities
+                .iter()
+                .position(|i| i.names(alias) && i.not_a_name_by.as_deref() == Some(member))
+                && !self.identities[index].originals.contains(wording)
+            {
+                self.identities[index].originals.push(wording.clone());
+                refilled.push(index);
+            }
+        }
+        // Every wording first, then the mark: one identity may get several.
+        for index in refilled {
+            self.identities[index].not_a_name_by = None;
+        }
+    }
+    /// The (alias, wording) pairs `member` took off as Not a name that the
+    /// case keeps.
+    pub fn not_names_of(&self, member: &Path) -> Vec<(String, String)> {
+        self.not_names
+            .iter()
+            .filter(|(m, _, _)| m == member)
+            .map(|(_, a, w)| (a.clone(), w.clone()))
+            .collect()
+    }
+    /// [`Self::reserved_aliases`] but those `member`'s own Not a name
+    /// reserved, which its undo may give back (ADR 0122).
+    pub fn reserved_aliases_for(&self, member: &Path) -> Vec<String> {
+        self.identities
+            .iter()
+            .filter(|identity| {
+                identity.originals.is_empty() && identity.not_a_name_by.as_deref() != Some(member)
+            })
+            .flat_map(|identity| {
+                std::iter::once(identity.alias.clone()).chain(identity.previous.iter().cloned())
+            })
+            .collect()
+    }
     pub fn forget_identity(&mut self, alias: &str) -> bool {
         let Some(identity) = self
             .identities
@@ -1856,5 +1948,60 @@ mod tests {
         store.save(&b).unwrap();
         assert!(store.load(&a.id).unwrap().lists.never_has("maya bennett"));
         assert!(store.load(&b.id).unwrap().lists.is_empty());
+    }
+
+    /// Not a name drops a wording from the identity its alias names only,
+    /// never a homonym's; the member's undo refills it, and its own
+    /// reservation is not reserved for it (ADR 0122).
+    #[test]
+    fn not_a_name_drops_one_identitys_wording_and_its_undo_refills_it() {
+        let mut case = Case::new("Case".into(), &[], None);
+        case.identities = ["PERSON_1", "PERSON_2"]
+            .map(|alias| {
+                StoredIdentity::from_exported(&identity(alias, Category::Person, &["Alex Kim"]))
+            })
+            .to_vec();
+        let member = Path::new("a.md");
+        let pair = [("PERSON_1".to_string(), "Alex Kim".to_string())];
+        case.drop_wordings(&pair, member, |_| false);
+        assert!(case.identities[0].originals.is_empty());
+        assert_eq!(case.identities[1].originals, ["Alex Kim"]);
+        assert!(case.reserved_aliases().contains(&"PERSON_1".to_string()));
+        assert!(case.reserved_aliases_for(member).is_empty());
+        assert!(case.not_names.is_empty());
+
+        case.refill(&pair, Path::new("b.md"));
+        assert!(
+            case.identities[0].originals.is_empty(),
+            "another member can't refill it"
+        );
+        case.refill(&pair, member);
+        assert_eq!(case.identities[0].originals, ["Alex Kim"]);
+        assert_eq!(case.identities[0].not_a_name_by, None);
+
+        // Two wordings of one identity come back together.
+        case.identities[0].originals = vec!["Alex Kim".into(), "A. Kim".into()];
+        let both = [
+            ("PERSON_1".to_string(), "Alex Kim".to_string()),
+            ("PERSON_1".to_string(), "A. Kim".to_string()),
+        ];
+        case.drop_wordings(&both, member, |_| false);
+        assert!(case.identities[0].originals.is_empty());
+        case.refill(&both, member);
+        assert_eq!(case.identities[0].originals, ["Alex Kim", "A. Kim"]);
+        case.identities[0].originals = vec!["Alex Kim".into()];
+
+        // Kept for another member's sake: noted for this member instead.
+        case.drop_wordings(&pair, member, |_| true);
+        assert_eq!(case.identities[0].originals, ["Alex Kim"]);
+        assert_eq!(
+            case.not_names_of(member),
+            [("PERSON_1".to_string(), "Alex Kim".to_string())]
+        );
+        case.drop_wordings(&[], member, |_| true);
+        assert!(
+            case.not_names.is_empty(),
+            "an undone Not a name is no longer noted"
+        );
     }
 }

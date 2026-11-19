@@ -3,7 +3,7 @@
 //! the old one's place everywhere it fits, keeping the identity and its
 //! alias, as one undo step. `mdoc_pii::fix_words` decides; this drives the
 //! text as desktop's document view would (put back, mark, replace again).
-use super::{At, Focus, ReviewText, Step, StepKind, history::moved};
+use super::{At, Focus, Reverted, ReviewText, Step, StepKind, history::moved};
 use crate::CoreError;
 use mdoc_history::SourceEdit;
 use mdoc_pii::{
@@ -163,7 +163,7 @@ impl ReviewText {
                     .map(|a| ((a.range.start, a.range.end), a.step.identity))
                     .collect();
                 let ids = reach.applied.iter().copied().collect();
-                let edits = document.revert_applied(&ids, false)?;
+                let edits = document.revert_applied(&ids, Reverted::Proposed)?;
                 let mut shift = 0isize;
                 for (r, text) in &edits {
                     let start = r.start.saturating_add_signed(shift);

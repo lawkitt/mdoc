@@ -162,11 +162,12 @@ final class NameWordsTests: XCTestCase {
     /// name for Fix the words).
     func testFixTheWordsIsInEveryNamesMenu() throws {
         let model = try model()
+        // Adjust Words, then Not a name last (ADR 0122).
         for candidate in model.snapshot.candidates {
-            XCTAssertEqual(model.actions(for: candidate).last, .fixWords, candidate.original)
+            XCTAssertEqual(model.actions(for: candidate).suffix(2), [.fixWords, .notAName], candidate.original)
         }
         let menu = try XCTUnwrap(CandidateMenu.make(for: model.snapshot.candidates[0].id, model: model) { _ in })
-        XCTAssertEqual(menu.children.last?.title, "Adjust Words")
+        XCTAssertEqual(menu.children.suffix(2).map(\.title), ["Adjust Words", "Not a name"])
     }
 
     /// The menu's quoted words are cut at a word's end past 24 characters.
