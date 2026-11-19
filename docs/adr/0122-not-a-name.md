@@ -18,11 +18,12 @@ Hide name mark can go, and only through Undo.
    decoration, the bar and Identities.
 2. The document remembers the wording, shown nowhere, so Find names again
    doesn't propose it.
-3. On the next save a wording the case holds leaves the case, its alias
-   reserved, unless another member's saved text still has that alias, so
-   that member still restores. Undo brings the name back, and the next save
-   returns it under its old alias; only the same document may refill a
-   reserved alias.
+3. On the next save a wording the case holds leaves the identity it was
+   taken from, its alias reserved, unless another member's saved text
+   still restores that identity; then the case notes the wording for this
+   document, which leaves it off when it opens. Undo brings the name back,
+   and the next save returns it under its old alias; only the same
+   document may refill a reserved alias.
 4. On desktop it adds nothing to the Never list and takes a manual mark's
    wording off Always.
 5. iOS offers it last in the card's category menu, the long press and an
