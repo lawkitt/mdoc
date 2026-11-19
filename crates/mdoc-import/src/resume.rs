@@ -33,7 +33,10 @@ use std::{
 /// 4: #925's phase 2 follow-up, whose pages keep their OCR's repeat
 /// evidence, so a running header or footer OCR reads on every page is
 /// found across pages; a page kept without it can't take part.
-const FORMAT: u32 = 4;
+/// 5: #925's M18, whose native text keeps a sparse page's sentence right
+/// under the header: a page kept before it carries native text without that
+/// sentence, which the pass across pages can't bring back.
+const FORMAT: u32 = 5;
 
 /// The folder that keeps finished pages, one subfolder per file and OCR
 /// configuration.
@@ -427,13 +430,14 @@ mod tests {
 
     /// Pages kept before a format change (form field names in their text,
     /// before #925's phase 1; comment annotations' text read from the scan,
-    /// before its phase 2; no repeat evidence, before its follow-up) are
-    /// recognized again, not reused.
+    /// before its phase 2; no repeat evidence, before its follow-up; native
+    /// text without a sparse page's sentence under the header, before M18)
+    /// are recognized again, not reused.
     #[test]
     fn pages_kept_in_an_older_format_are_not_reused() {
         let dir = tempfile::tempdir().unwrap();
         let kept = KeptPages::new(dir.path().into());
-        assert_eq!(FORMAT, 4);
+        assert_eq!(FORMAT, 5);
         for format in 1..FORMAT {
             let older = kept.folder_in_format(format, "abc", &config());
             older.open();
