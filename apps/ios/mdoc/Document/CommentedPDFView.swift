@@ -150,6 +150,8 @@ final class CommentedPDFContainer: UIView {
             restyleTints()
             for card in cards { card.expanded = card.commentID == active }
             placeComments()
+            // The comment sheet's thread: its line above the sheet.
+            if !rail, let active, let marker = comments.marker(of: active) { keepAboveSheet(marker) }
         }
     }
 
@@ -368,6 +370,22 @@ final class CommentedPDFContainer: UIView {
         }
         textRights[index] = right
         return right
+    }
+
+    /// Scrolls a marker's line into the room above the comment sheet when
+    /// it isn't there, two fifths of the way down that room.
+    private func keepAboveSheet(_ marker: DocxComments.Marker) {
+        guard let frames = lineFrame(marker), let scroll = pdfView.scrollView else { return }
+        let top = bounds.minY + safeAreaInsets.top + 24
+        // The sheet's half-height detent covers the window's lower half.
+        let windowHeight = window?.bounds.height ?? bounds.height
+        let sheetTop = min(convert(CGPoint(x: 0, y: windowHeight * 0.47), from: nil).y, bounds.maxY) - 16
+        guard sheetTop > top, frames.line.minY < top || frames.line.maxY > sheetTop else { return }
+        let shift = frames.line.midY - (top + (sheetTop - top) * 0.4)
+        let lowest = -scroll.adjustedContentInset.top
+        let highest = max(scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom, lowest)
+        let target = min(max(scroll.contentOffset.y + shift, lowest), highest)
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     /// Scrolls a marker's line into view, when it isn't, without animation.
