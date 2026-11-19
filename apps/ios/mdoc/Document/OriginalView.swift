@@ -64,14 +64,24 @@ final class FittingPDFView: PDFView {
         super.layoutSubviews()
         guard bounds.width > 0, bounds.width != fittedWidth, document != nil else { return }
         fittedWidth = bounds.width
-        // The page the reader was on, from its top: PDFKit's destinations
-        // land mid-page after a new scale.
+        // The page the reader was on, and the point of it at the view's top:
+        // PDFKit's destinations land mid-page after a new scale, so the
+        // scroll offset puts that point back at the top (hiding the iPad's
+        // sidebar refits the page; #963).
         let page = currentPage
+        let anchor = page.map { convert(CGPoint(x: bounds.midX, y: bounds.minY), to: $0) }
         // The fit is only right once PDFKit has laid out its own views.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.scaleFactor = self.scaleFactorForSizeToFit
-            if let page { self.go(to: page) }
+            guard let page else { return }
+            self.go(to: page)
+            guard let anchor, let scroll = self.firstSubview(of: UIScrollView.self) else { return }
+            let shift = self.convert(anchor, from: page).y - self.bounds.minY
+            let top = -scroll.adjustedContentInset.top
+            let bottom = max(
+                scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom, top)
+            scroll.contentOffset.y = min(max(scroll.contentOffset.y + shift, top), bottom)
         }
     }
 }

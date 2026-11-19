@@ -76,6 +76,15 @@ struct RootView: View {
                 .toolbar(.hidden, for: .navigationBar)
         } detail: {
             main
+                // mdoc hides the column's own bar, so its toggle with it: ☰
+                // shows a hidden column and the document's Hide sidebar
+                // hides it, for the Original's rail (#963).
+                .environment(\.showSidebar, app.navigator.showsSidebar ? nil : {
+                    withAnimation(Motion.move(reduced: reduceMotion)) { app.navigator.showsSidebar = true }
+                })
+                .environment(\.hideSidebar, app.navigator.showsSidebar ? {
+                    withAnimation(Motion.move(reduced: reduceMotion)) { app.navigator.showsSidebar = false }
+                } : nil)
         }
     }
 
