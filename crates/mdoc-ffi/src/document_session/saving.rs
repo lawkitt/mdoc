@@ -121,8 +121,10 @@ struct Pending {
     wrote: bool,
     text: String,
     identities: Vec<ExportedIdentity>,
-    /// Not a name wordings the case drops on this save (ADR 0122).
-    not_names: Vec<String>,
+    /// Not a name (alias, wording) pairs the case drops on this save, and
+    /// the kept ones it may take back from an undone one (ADR 0122).
+    not_names: Vec<(String, String)>,
+    kept: Vec<(String, String)>,
     dismissed: Vec<(String, String)>,
     counts: super::Counts,
     scanned: bool,
@@ -158,11 +160,14 @@ impl Document {
             identities: self.review.review.export_identities(),
             not_names: self
                 .review
-                .review
-                .not_a_name_wordings()
-                .iter()
-                .map(|w| w.to_string())
-                .collect(),
+                .alias_pairs(self.review.review.not_a_name_wordings()),
+            kept: self.review.alias_pairs(
+                self.review
+                    .review
+                    .kept_mentions()
+                    .into_iter()
+                    .map(|(_, wording, identity)| (identity, wording)),
+            ),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
             scanned: self.scanned,
@@ -197,8 +202,19 @@ impl Document {
             return Ok(());
         };
         let case = library.load(id)?;
-        self.review
-            .join(&case.exported(), &case.reserved_aliases())?;
+        // This document's own Not a name reserved an alias its undo may
+        // still give back (ADR 0122).
+        let member = self.path.as_deref().map(|path| library.member(path));
+        let reserved = match &member {
+            Some(member) => case.reserved_aliases_for(member),
+            None => case.reserved_aliases(),
+        };
+        self.review.join(&case.exported(), &reserved)?;
+        if let Some(member) = &member {
+            self.review
+                .review
+                .silence_wordings(&case.not_names_of(member));
+        }
         self.review.dismiss_pairs(&case.dismissed_hints);
         self.synced = Some(case.identities);
         Ok(())
@@ -267,13 +283,19 @@ impl Pending {
                 if !case.members.contains(&member) {
                     case.members.push(member.clone());
                 }
-                if !self.not_names.is_empty() {
-                    let others: Vec<_> =
-                        case.members.iter().filter(|m| **m != member).cloned().collect();
-                    case.drop_wordings(&self.not_names, &member, |alias| {
-                        others.iter().any(|m| library.member_has_alias(m, alias))
-                    });
-                }
+                case.refill(&self.kept, &member);
+                let others: Vec<_> = case
+                    .members
+                    .iter()
+                    .filter(|m| **m != member)
+                    .cloned()
+                    .collect();
+                case.drop_wordings(&self.not_names, &member, |identity| {
+                    identity.exported().is_some_and(|identity| {
+                        let map = mdoc_pii::restore::RestoreMap::new(vec![identity]);
+                        others.iter().any(|m| library.member_restores(m, &map))
+                    })
+                });
                 for (a, b) in &self.dismissed {
                     let pair = (a.clone(), b.clone());
                     let flipped = (b.clone(), a.clone());

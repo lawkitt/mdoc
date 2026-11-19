@@ -3,7 +3,7 @@
 //! the old one's place everywhere it fits, keeping the identity and its
 //! alias, as one undo step. `mdoc_pii::fix_words` decides; this drives the
 //! text as desktop's document view would (put back, mark, replace again).
-use super::{At, Focus, ReviewText, Reverted, Step, StepKind, history::moved};
+use super::{At, Focus, Reverted, ReviewText, Step, StepKind, history::moved};
 use crate::CoreError;
 use mdoc_history::SourceEdit;
 use mdoc_pii::{

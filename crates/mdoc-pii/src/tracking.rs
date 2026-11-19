@@ -608,6 +608,17 @@ impl Tracking {
         source: &str,
         ids: &HashSet<u64>,
     ) -> Result<Vec<(Range<usize>, String)>, String> {
+        self.reversion_plan_to(source, ids, false)
+    }
+    /// Text edits returning these applied occurrences to their prior values,
+    /// or with `to_original` past every rename to the first original
+    /// (Not a name, ADR 0122).
+    pub(crate) fn reversion_plan_to(
+        &self,
+        source: &str,
+        ids: &HashSet<u64>,
+        to_original: bool,
+    ) -> Result<Vec<(Range<usize>, String)>, String> {
         let targets: Vec<_> = self
             .applied
             .iter()
@@ -624,7 +635,14 @@ impl Tracking {
         }
         Ok(targets
             .into_iter()
-            .map(|o| (o.range.clone(), o.step.before.to_string()))
+            .map(|o| {
+                let value = if to_original {
+                    o.step.original()
+                } else {
+                    o.step.before.as_ref()
+                };
+                (o.range.clone(), value.to_string())
+            })
             .collect())
     }
     pub fn prepare_restore(
@@ -659,10 +677,18 @@ impl Tracking {
                 keeps.push(Exclusion {
                     id,
                     range: range.clone(),
-                    original: old.step.before.clone(),
+                    // Not a name went back past every rename.
+                    original: if silent {
+                        old.step.original_shared().clone()
+                    } else {
+                        old.step.before.clone()
+                    },
                     identity: (old.step.identity != 0).then_some(old.step.identity),
                     silent,
                 });
+            }
+            if silent {
+                continue;
             }
             if let Some(step) = old.step.predecessor.clone() {
                 added.push(Applied {

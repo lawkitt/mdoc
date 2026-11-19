@@ -448,30 +448,70 @@ impl Review {
             .map(|e| (e.range.clone(), e.original.clone(), e.identity))
             .collect()
     }
-    /// Wordings taken off as Not a name (ADR 0122) with no mention of them
-    /// still proposed, replaced or kept: what a save takes out of the case.
-    pub fn not_a_name_wordings(&self) -> Vec<Arc<str>> {
-        let shown = |wording: &str| {
+    /// Wordings taken off as Not a name (ADR 0122), each with the identity
+    /// it was taken from, where no mention of that identity shows the
+    /// wording any more (proposed, replaced or kept): what a save takes
+    /// out of the case. A homonym's other identity is not this one.
+    pub fn not_a_name_wordings(&self) -> Vec<(Option<u64>, Arc<str>)> {
+        let shown = |identity: Option<u64>, wording: &str| {
             self.candidates().iter().any(|c| {
                 self.variant(c.variant)
                     .is_some_and(|v| v.original.as_ref() == wording)
+                    && self.occurrence_identity(c.variant, &c.range) == identity
+            }) || self.applied().iter().any(|a| {
+                a.step.original_shared().as_ref() == wording
+                    && Some(a.step.identity).filter(|id| *id != 0) == identity
             }) || self
-                .applied()
+                .tracking
+                .exclusions
                 .iter()
-                .any(|a| a.step.original_shared().as_ref() == wording)
-                || self
-                    .tracking
-                    .exclusions
-                    .iter()
-                    .any(|e| !e.silent && e.original.as_ref() == wording)
+                .any(|e| !e.silent && e.original.as_ref() == wording && e.identity == identity)
         };
-        let mut wordings: Vec<Arc<str>> = Vec::new();
+        let mut wordings: Vec<(Option<u64>, Arc<str>)> = Vec::new();
         for exclusion in self.tracking.exclusions.iter().filter(|e| e.silent) {
-            if !wordings.contains(&exclusion.original) && !shown(&exclusion.original) {
-                wordings.push(exclusion.original.clone());
+            let pair = (exclusion.identity, exclusion.original.clone());
+            if !wordings.contains(&pair) && !shown(pair.0, &pair.1) {
+                wordings.push(pair);
             }
         }
         wordings
+    }
+    /// Whether every mention of `variant` is taken off as Not a name: its
+    /// wording names nothing any more (ADR 0122).
+    pub(crate) fn silenced(&self, variant: &Variant) -> bool {
+        let wording = variant.original.as_ref();
+        let excluded = |silent: bool| {
+            self.tracking
+                .exclusions
+                .iter()
+                .any(|e| e.silent == silent && e.original.as_ref() == wording)
+        };
+        excluded(true)
+            && !excluded(false)
+            && !self.candidates().iter().any(|c| c.variant == variant.id)
+            && !self
+                .applied()
+                .iter()
+                .any(|a| a.step.original_shared().as_ref() == wording)
+    }
+    /// Not a name, again, for every proposed mention of these wordings: a
+    /// reopened document whose case still holds them (ADR 0122). No step.
+    pub fn silence_wordings(&mut self, wordings: &[String]) {
+        if wordings.is_empty() {
+            return;
+        }
+        let pending: Vec<_> = self
+            .candidates()
+            .iter()
+            .filter(|c| {
+                self.variant(c.variant)
+                    .is_some_and(|v| wordings.iter().any(|w| w == v.original.as_ref()))
+            })
+            .map(|c| (c.variant, c.range.clone()))
+            .collect();
+        if !pending.is_empty() {
+            self.not_a_name_mentions(pending, &HashSet::new());
+        }
     }
     pub fn applied_occurrence(&self, id: u64) -> Option<&Applied> {
         self.tracking.get(id)
@@ -496,6 +536,15 @@ impl Review {
         ids: &HashSet<u64>,
     ) -> Result<Vec<(Range<usize>, String)>, String> {
         self.tracking.reversion_plan(source, ids)
+    }
+    /// Text edits returning these applied occurrences to their first
+    /// originals, past every rename (Not a name, ADR 0122).
+    pub fn reversion_edits_to_originals(
+        &self,
+        source: &str,
+        ids: &HashSet<u64>,
+    ) -> Result<Vec<(Range<usize>, String)>, String> {
+        self.tracking.reversion_plan_to(source, ids, true)
     }
     /// Record restorations committed as history state `history`; each becomes Keep.
     pub fn commit_restore(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
@@ -523,7 +572,8 @@ impl Review {
                     .commit_assignment(history, range.clone(), old.step.identity);
             }
         }
-        self.tracking.commit_restore(history, restored, false, false);
+        self.tracking
+            .commit_restore(history, restored, false, false);
     }
     /// Prepare provenance for plans before their text is committed.
     pub fn prepare_replacements(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {

@@ -303,6 +303,7 @@ impl DocumentSession {
             path: stored.path.clone(),
             stored,
             case,
+            member: Some(member),
             scanned: read.as_ref().map(|s| s.scanned),
             origin: read.as_ref().map(|s| s.origin).unwrap_or_default(),
             reopened: true,
@@ -739,6 +740,8 @@ struct Opened {
     path: Option<PathBuf>,
     stored: mdoc_store::document::Document,
     case: Option<mdoc_store::cases::Case>,
+    /// Its path as a case member.
+    member: Option<PathBuf>,
     /// What its last save recorded; `None` for a document saved before
     /// the library kept it.
     scanned: Option<bool>,
@@ -754,6 +757,7 @@ impl Opened {
             path: None,
             stored: Default::default(),
             case: None,
+            member: None,
             scanned: None,
             origin,
             reopened: false,
@@ -840,9 +844,19 @@ impl DocumentSession {
             document.path = opened.path;
             document.stored = opened.stored;
             if let Some(case) = opened.case {
-                document
-                    .review
-                    .open_case(&case.exported(), &case.reserved_aliases());
+                // Its own Not a name reserved an alias its undo may give
+                // back, and left off wordings the case keeps (ADR 0122).
+                let reserved = match &opened.member {
+                    Some(member) => case.reserved_aliases_for(member),
+                    None => case.reserved_aliases(),
+                };
+                document.review.open_case(&case.exported(), &reserved);
+                if let Some(member) = &opened.member {
+                    document
+                        .review
+                        .review
+                        .silence_wordings(&case.not_names_of(member));
+                }
                 document.review.dismiss_pairs(&case.dismissed_hints);
                 document.skip = case.skipped();
                 document.synced = Some(case.identities.clone());

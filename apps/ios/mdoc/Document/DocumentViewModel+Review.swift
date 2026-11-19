@@ -142,18 +142,30 @@ extension DocumentViewModel {
     }
 
     /// Not a name on the card under review, in the bar's scope (ADR 0122):
-    /// the name is gone, so the bar moves on to the next undecided one as
-    /// after a decision, with no toast.
+    /// its mentions leave the order, so the bar moves on to the next
+    /// undecided name after where it stood, with no toast, not even "All
+    /// reviewed".
     func notAName() {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
-        let index = reviewOrder.index(of: candidate.id)
+        let order = reviewOrder
+        let index = order.index(of: candidate.id)
+        // The mentions before it that go too: All takes the identity's.
+        let gone = index.map { index in
+            reviewScope == .all
+                ? (0..<index).filter { order.candidate(at: $0)?.identityID == candidate.identityID }.count
+                : 0
+        }
         guard perform({ try session.notAName(candidate.id, scope: reviewScope) }) else { return }
         Haptics.decision()
-        let advanced = updateReview { state -> ReviewState.Advance in
+        updateReview { state -> ReviewState.Advance in
             state.decided()
-            return state.advance(from: index)
+            // The name after it now stands at its place, less those gone.
+            let before = index.flatMap { index in
+                let place = index - (gone ?? 0) - 1
+                return place >= 0 ? place : nil
+            }
+            return state.advance(from: before)
         }
-        allReviewed(advanced)
     }
 
     /// A state pill in the full view: that one mention changes, and the bar

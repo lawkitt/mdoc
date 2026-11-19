@@ -299,10 +299,12 @@ impl ReviewText {
                 "Document changed. Review the replacement again.",
             ));
         }
-        let edits = self
-            .review
-            .reversion_edits(&self.text, ids)
-            .map_err(CoreError::review)?;
+        let edits = if reverted == Reverted::NotAName {
+            self.review.reversion_edits_to_originals(&self.text, ids)
+        } else {
+            self.review.reversion_edits(&self.text, ids)
+        }
+        .map_err(CoreError::review)?;
         let restored = self.review.prepare_restore(&edits);
         self.commit_edits(&edits)?;
         match reverted {
@@ -317,6 +319,21 @@ impl ReviewText {
     fn refresh(&mut self) {
         let text = self.text.clone();
         self.review.refresh(&text);
+    }
+
+    /// (identity, wording) pairs as (alias, wording), for the case; a
+    /// wording with no identity names nothing there.
+    pub(crate) fn alias_pairs(
+        &self,
+        pairs: impl IntoIterator<Item = (Option<u64>, std::sync::Arc<str>)>,
+    ) -> Vec<(String, String)> {
+        pairs
+            .into_iter()
+            .filter_map(|(identity, wording)| {
+                let alias = self.review.identity(identity?)?.alias.clone();
+                Some((alias, wording.to_string()))
+            })
+            .collect()
     }
 
     /// Copy for AI's text: the note naming the first applied aliases,
@@ -640,7 +657,9 @@ impl ReviewText {
                 Vec::new(),
                 HashSet::from([(range.start, range.end)]),
             ),
-            (At::Proposed { variant, .. }, _) => (vec![(variant, range)], Vec::new(), HashSet::new()),
+            (At::Proposed { variant, .. }, _) => {
+                (vec![(variant, range)], Vec::new(), HashSet::new())
+            }
             (At::Replaced { id, .. }, Scope::This) => (Vec::new(), vec![id], HashSet::new()),
         };
         if pending.is_empty() && applied.is_empty() && kept.is_empty() {
@@ -921,7 +940,10 @@ mod tests {
         document.not_a_name(proposed, Scope::All).unwrap();
         assert_eq!(document.text, text, "the replaced mention returns");
         assert!(document.review.applied().is_empty());
-        assert!(document.review.kept_mentions().is_empty(), "nothing shows as kept");
+        assert!(
+            document.review.kept_mentions().is_empty(),
+            "nothing shows as kept"
+        );
         assert_eq!(document.review.remaining(), 1, "only Bob Hart is proposed");
         assert_eq!(document.review.active_identities().len(), 1);
         assert_eq!(document.counts().kept, 0);
@@ -929,10 +951,13 @@ mod tests {
             .review
             .not_a_name_wordings()
             .iter()
-            .map(|w| w.to_string())
+            .map(|(_, w)| w.to_string())
             .collect();
         assert_eq!(wordings, ["Ann Lee"]);
-        assert!(document.review.never_wordings().is_empty(), "no Never entry");
+        assert!(
+            document.review.never_wordings().is_empty(),
+            "no Never entry"
+        );
         assert_eq!(
             document.undo_step().map(|(step, _)| step.kind),
             Some(StepKind::NotAName)
@@ -954,6 +979,66 @@ mod tests {
         assert!(document.review.not_a_name_wordings().is_empty());
     }
 
+    /// A replaced name renamed since goes back past every rename to its
+    /// first original, with nothing left replaced.
+    #[test]
+    fn not_a_name_on_a_renamed_replacement_returns_the_original() {
+        let text = "Ann Lee signed.";
+        let mut document = document(text, &[("Ann Lee", Category::Person)]);
+        document
+            .replace(range(text, "Ann Lee", 0), Scope::All)
+            .unwrap();
+        let replaced = document.text.clone();
+        document
+            .rename(range(&replaced, "PERSON_1", 0), Scope::All, "Seller")
+            .unwrap();
+        assert_eq!(document.text, "Seller signed.");
+        document
+            .not_a_name(range(&document.text.clone(), "Seller", 0), Scope::All)
+            .unwrap();
+        assert_eq!(document.text, text);
+        assert!(document.review.applied().is_empty());
+        assert_eq!(document.review.remaining(), 0);
+        assert!(document.undo());
+        assert_eq!(document.text, "Seller signed.");
+    }
+
+    /// Not a name on the one mention of a wording linked into another
+    /// identity's: the identity stays, without that wording.
+    #[test]
+    fn not_a_name_leaves_a_linked_wording_out_of_its_identity() {
+        let text = "Ann Lee met Bo Lee.";
+        let mut document = document(
+            text,
+            &[("Ann Lee", Category::Person), ("Bo Lee", Category::Person)],
+        );
+        let identity = |document: &ReviewText, wording: &str| {
+            let range = range(&document.text, wording, 0);
+            document
+                .at(&range)
+                .and_then(|at| document.entity(&at))
+                .unwrap()
+        };
+        let (ann, bo) = (
+            identity(&document, "Ann Lee"),
+            identity(&document, "Bo Lee"),
+        );
+        document.link(ann, bo).unwrap();
+        let wordings = |document: &ReviewText| -> Vec<String> {
+            document
+                .review
+                .export_identities()
+                .into_iter()
+                .flat_map(|e| e.originals.into_iter().map(|o| o.to_string()))
+                .collect()
+        };
+        assert!(wordings(&document).contains(&"Ann Lee".to_string()));
+        document
+            .not_a_name(range(text, "Ann Lee", 0), Scope::This)
+            .unwrap();
+        assert_eq!(wordings(&document), ["Bo Lee"]);
+    }
+
     /// This one takes off only that mark; a mark from a selection goes the
     /// same way.
     #[test]
@@ -964,7 +1049,10 @@ mod tests {
             .not_a_name(range(text, "Ann Lee", 0), Scope::This)
             .unwrap();
         assert_eq!(document.review.remaining(), 1);
-        assert!(document.review.not_a_name_wordings().is_empty(), "Ann Lee still shows once");
+        assert!(
+            document.review.not_a_name_wordings().is_empty(),
+            "Ann Lee still shows once"
+        );
 
         document
             .add_selection(range(text, "issue", 0), Some(Category::Other))

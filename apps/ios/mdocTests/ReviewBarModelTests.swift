@@ -378,14 +378,39 @@ final class ReviewBarModelTests: XCTestCase {
         let repeated = try XCTUnwrap(model.snapshot.identities.first { $0.mentionCount > 1 })
         let mentions = model.sortedMentions(of: repeated.id)
         let count = model.snapshot.candidates.count
+        // The next undecided name after the first mention, in document
+        // order, that isn't one of the mentions going.
+        model.select(mentions[0].id)
+        let order = model.reviewOrder
+        let start = try XCTUnwrap(order.index(of: mentions[0].id))
+        let expected = try XCTUnwrap((start + 1..<count).lazy
+            .compactMap { order.candidate(at: $0) }
+            .first { $0.state == .proposed && $0.identityID != repeated.id })
         model.perform(.notAName, fromMenuOn: mentions[0].id)
         XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.snapshot.identities.contains { $0.id == repeated.id }, "no Identities row")
         XCTAssertEqual(model.snapshot.candidates.count, count - mentions.count, "no mention shows")
-        XCTAssertNotEqual(model.reviewedCandidate?.identityID, repeated.id, "the bar moved on")
+        XCTAssertTrue(model.isReviewing)
+        XCTAssertEqual(model.reviewedCandidate?.original, expected.original, "on to the next name, none skipped")
+        XCTAssertEqual(model.reviewedCandidate?.identityID, expected.identityID)
         XCTAssertNil(model.toast)
         model.undo()
         XCTAssertEqual(model.snapshot.candidates.count, count)
+    }
+
+    /// Not a name on the last undecided name ends review without "All
+    /// reviewed", even after a decision in this visit.
+    func testNotANameOnTheLastNameShowsNoAllReviewed() throws {
+        let model = try model()
+        model.beginReview()
+        while model.isReviewing, model.snapshot.candidates.filter({ $0.state == .proposed }).count > 1 {
+            model.decideCurrent(.replace)
+            model.toast = nil
+        }
+        XCTAssertTrue(model.isReviewing)
+        model.notAName()
+        XCTAssertFalse(model.isReviewing)
+        XCTAssertNil(model.toast)
     }
 
     /// From Identities: Not a name for the whole identity, with an Undo toast.

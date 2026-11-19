@@ -883,6 +883,12 @@ impl Library {
                 case.members.iter_mut().for_each(follow);
                 case.replies.iter_mut().for_each(|r| follow(&mut r.member));
                 case.reviewed.iter_mut().for_each(|r| follow(&mut r.member));
+                case.not_names.iter_mut().for_each(|(m, _)| follow(m));
+                for identity in &mut case.identities {
+                    if let Some(m) = &mut identity.not_a_name_by {
+                        follow(m);
+                    }
+                }
                 if rename_case {
                     case.name = title.clone();
                 }
@@ -1116,18 +1122,21 @@ impl Library {
             .map_or_else(|_| path.clone(), Path::to_path_buf)
     }
 
-    /// Whether `member`'s saved text has `alias` as a whole token: a case
-    /// keeps a Not a name wording while another member still restores it
-    /// (ADR 0122). A file that can't be read counts as having it.
-    pub(crate) fn member_has_alias(&self, member: &Path, alias: &str) -> bool {
+    /// Whether `member`'s saved text restores through `map`, as Restore
+    /// reads its aliases: a case keeps a Not a name wording while another
+    /// member still needs it (ADR 0122). A file that can't be read counts
+    /// as needing it.
+    pub(crate) fn member_restores(
+        &self,
+        member: &Path,
+        map: &mdoc_pii::restore::RestoreMap,
+    ) -> bool {
         let Ok(text) = std::fs::read_to_string(self.root.join(member)) else {
             return true;
         };
-        let token = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
-        text.match_indices(alias).any(|(at, _)| {
-            !text[..at].chars().next_back().is_some_and(token)
-                && !text[at + alias.len()..].chars().next().is_some_and(token)
-        })
+        map.tokens(&text)
+            .iter()
+            .any(|token| token.identity.is_some())
     }
 
     /// A new, empty file in the documents folder for a document titled
