@@ -202,19 +202,13 @@ impl Document {
             return Ok(());
         };
         let case = library.load(id)?;
-        // This document's own Not a name reserved an alias its undo may
-        // still give back (ADR 0122).
-        let member = self.path.as_deref().map(|path| library.member(path));
-        let reserved = match &member {
-            Some(member) => case.reserved_aliases_for(member),
+        // This live document's own Not a name reserved an alias its undo
+        // may still give back; its own decisions stand (ADR 0122).
+        let reserved = match self.path.as_deref() {
+            Some(path) => case.reserved_aliases_for(&library.member(path)),
             None => case.reserved_aliases(),
         };
         self.review.join(&case.exported(), &reserved)?;
-        if let Some(member) = &member {
-            self.review
-                .review
-                .silence_wordings(&case.not_names_of(member));
-        }
         self.review.dismiss_pairs(&case.dismissed_hints);
         self.synced = Some(case.identities);
         Ok(())
@@ -284,17 +278,18 @@ impl Pending {
                     case.members.push(member.clone());
                 }
                 case.refill(&self.kept, &member);
-                let others: Vec<_> = case
-                    .members
-                    .iter()
-                    .filter(|m| **m != member)
-                    .cloned()
-                    .collect();
+                let used: std::collections::HashSet<String> = if self.not_names.is_empty() {
+                    Default::default()
+                } else {
+                    let map = mdoc_pii::restore::RestoreMap::new(case.exported());
+                    case.members
+                        .iter()
+                        .filter(|m| **m != member)
+                        .flat_map(|m| library.restored_aliases(m, &map))
+                        .collect()
+                };
                 case.drop_wordings(&self.not_names, &member, |identity| {
-                    identity.exported().is_some_and(|identity| {
-                        let map = mdoc_pii::restore::RestoreMap::new(vec![identity]);
-                        others.iter().any(|m| library.member_restores(m, &map))
-                    })
+                    used.contains(&identity.alias)
                 });
                 for (a, b) in &self.dismissed {
                     let pair = (a.clone(), b.clone());
@@ -314,7 +309,7 @@ impl Pending {
                 let mut case = mdoc_store::cases::Case::new(
                     self.title.clone(),
                     &self.identities,
-                    Some(member),
+                    Some(member.clone()),
                 );
                 // Hints dismissed before the case existed stay dismissed.
                 case.dismissed_hints = self.dismissed.clone();
@@ -333,7 +328,7 @@ impl Pending {
         // reopen counts them (a kept name the case knows is proposed again).
         let mut counts = self.counts;
         if counts.kept > 0 {
-            counts = reopened_counts(self.text.clone(), Some(&stored)).0;
+            counts = reopened_counts(self.text.clone(), Some(&stored), Some(&member)).0;
         }
         let summary = Recorded::of(
             counts,

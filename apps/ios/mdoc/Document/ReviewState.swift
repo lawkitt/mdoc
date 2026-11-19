@@ -336,6 +336,20 @@ struct ReviewState: Equatable {
     /// Whether this visit of the bar decided or changed something.
     var changedThisVisit: Bool { changesThisVisit > 0 }
 
+    /// After Not a name (ADR 0122): its mentions left the order. A focus
+    /// they emptied ends, and the bar goes on to the document's first
+    /// undecided name; otherwise as after a decision.
+    mutating func advanceAfterRemoval(from index: Int?) -> Advance {
+        guard focus != nil, order.count == 0 else { return advance(from: index) }
+        setFocus(nil)
+        if let next = order.nextUndecided(after: nil) {
+            select(next.id)
+            return .moved
+        }
+        end()
+        return .stayed
+    }
+
     /// After a decision: the next undecided candidate, or All reviewed.
     /// `index` is where the decided card stood before the change.
     mutating func advance(from index: Int?) -> Advance {

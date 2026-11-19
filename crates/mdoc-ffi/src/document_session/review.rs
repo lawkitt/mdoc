@@ -801,6 +801,49 @@ impl ReviewText {
     /// A saved member reopened (`open_case_mapping`): the case's names are
     /// proposed, and alias tokens already in the text become their applied
     /// replacements, so Copy for AI and restore know them.
+    /// Open in `case` as its member `member` (ADR 0122): the case's names
+    /// proposed with every retired alias reserved, and the Not a name
+    /// pairs the case keeps for this document left off again. No step.
+    pub fn open_in_case(
+        &mut self,
+        case: &mdoc_store::cases::Case,
+        member: Option<&std::path::Path>,
+    ) {
+        self.open_case(&case.exported(), &case.reserved_aliases());
+        if let Some(member) = member {
+            self.leave_off(&case.not_names_of(member));
+        }
+    }
+
+    /// Not a name again, with no step, for the proposed mentions of these
+    /// (alias, wording) pairs.
+    fn leave_off(&mut self, pairs: &[(String, String)]) {
+        if pairs.is_empty() {
+            return;
+        }
+        let review = &self.review;
+        let pending: Vec<_> = review
+            .candidates()
+            .iter()
+            .filter(|c| {
+                let Some(variant) = review.variant(c.variant) else {
+                    return false;
+                };
+                let alias = review
+                    .occurrence_identity(c.variant, &c.range)
+                    .and_then(|id| review.identity(id))
+                    .map(|identity| identity.alias.as_str());
+                pairs
+                    .iter()
+                    .any(|(a, w)| w == variant.original.as_ref() && alias == Some(a.as_str()))
+            })
+            .map(|c| (c.variant, c.range.clone()))
+            .collect();
+        if !pending.is_empty() {
+            self.review.not_a_name_mentions(pending, &HashSet::new());
+        }
+    }
+
     pub fn open_case(&mut self, case: &[ExportedIdentity], reserved: &[String]) {
         let text = self.text.clone();
         self.review.reserve_aliases(reserved);

@@ -398,6 +398,20 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertEqual(model.snapshot.candidates.count, count)
     }
 
+    /// Review this identity, then Not a name for All: the emptied focus
+    /// ends and the bar goes on to the document's next undecided name.
+    func testNotANameEmptyingAFocusGoesOnInTheDocument() throws {
+        let model = try model()
+        let identity = try XCTUnwrap(model.snapshot.identities.first)
+        model.beginReview(focus: .identity(identity.id))
+        XCTAssertEqual(model.reviewedCandidate?.identityID, identity.id)
+        model.notAName()
+        XCTAssertTrue(model.isReviewing, "other names are still undecided")
+        XCTAssertNil(model.focus)
+        XCTAssertEqual(model.reviewedCandidate?.state, .proposed)
+        XCTAssertNil(model.toast)
+    }
+
     /// Not a name on the last undecided name ends review without "All
     /// reviewed", even after a decision in this visit.
     func testNotANameOnTheLastNameShowsNoAllReviewed() throws {

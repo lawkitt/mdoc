@@ -338,7 +338,8 @@ impl Library {
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                         Err(error) => return Err(error.into()),
                     };
-                    let (counts, mentions) = crate::document_session::reopened_counts(text, case);
+                    let (counts, mentions) =
+                        crate::document_session::reopened_counts(text, case, Some(&member));
                     // As `open_document` tells it.
                     let scanned = state.map_or(mentions, |s| s.scanned);
                     let recounted = DocumentState {
@@ -883,7 +884,7 @@ impl Library {
                 case.members.iter_mut().for_each(follow);
                 case.replies.iter_mut().for_each(|r| follow(&mut r.member));
                 case.reviewed.iter_mut().for_each(|r| follow(&mut r.member));
-                case.not_names.iter_mut().for_each(|(m, _)| follow(m));
+                case.not_names.iter_mut().for_each(|(m, _, _)| follow(m));
                 for identity in &mut case.identities {
                     if let Some(m) = &mut identity.not_a_name_by {
                         follow(m);
@@ -1122,21 +1123,23 @@ impl Library {
             .map_or_else(|_| path.clone(), Path::to_path_buf)
     }
 
-    /// Whether `member`'s saved text restores through `map`, as Restore
-    /// reads its aliases: a case keeps a Not a name wording while another
-    /// member still needs it (ADR 0122). A file that can't be read counts
-    /// as needing it.
-    pub(crate) fn member_restores(
+    /// The aliases of `map`'s identities that `member`'s saved text
+    /// restores, as Restore reads them with the whole case's map: a case
+    /// keeps a Not a name wording while another member still needs it (ADR
+    /// 0122). A file that can't be read counts as needing them all.
+    pub(crate) fn restored_aliases(
         &self,
         member: &Path,
         map: &mdoc_pii::restore::RestoreMap,
-    ) -> bool {
+    ) -> Vec<String> {
+        let identities = map.identities();
         let Ok(text) = std::fs::read_to_string(self.root.join(member)) else {
-            return true;
+            return identities.iter().map(|i| i.alias.clone()).collect();
         };
         map.tokens(&text)
-            .iter()
-            .any(|token| token.identity.is_some())
+            .into_iter()
+            .filter_map(|token| Some(identities[token.identity?].alias.clone()))
+            .collect()
     }
 
     /// A new, empty file in the documents folder for a document titled

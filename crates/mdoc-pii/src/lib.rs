@@ -494,25 +494,6 @@ impl Review {
                 .iter()
                 .any(|a| a.step.original_shared().as_ref() == wording)
     }
-    /// Not a name, again, for every proposed mention of these wordings: a
-    /// reopened document whose case still holds them (ADR 0122). No step.
-    pub fn silence_wordings(&mut self, wordings: &[String]) {
-        if wordings.is_empty() {
-            return;
-        }
-        let pending: Vec<_> = self
-            .candidates()
-            .iter()
-            .filter(|c| {
-                self.variant(c.variant)
-                    .is_some_and(|v| wordings.iter().any(|w| w == v.original.as_ref()))
-            })
-            .map(|c| (c.variant, c.range.clone()))
-            .collect();
-        if !pending.is_empty() {
-            self.not_a_name_mentions(pending, &HashSet::new());
-        }
-    }
     pub fn applied_occurrence(&self, id: u64) -> Option<&Applied> {
         self.tracking.get(id)
     }

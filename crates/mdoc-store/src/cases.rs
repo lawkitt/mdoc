@@ -272,7 +272,8 @@ pub struct Case {
     /// another member's sake (ADR 0122): that member's document leaves
     /// them off when it opens.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub not_names: Vec<(PathBuf, String)>,
+    /// Each is (member, alias, wording).
+    pub not_names: Vec<(PathBuf, String, String)>,
 }
 
 /// The user-wide Always and Never lists as stored (ADR 0092).
@@ -623,38 +624,44 @@ impl Case {
                 continue;
             }
             if in_use(identity) {
-                kept.push(wording.clone());
+                kept.push((identity.alias.clone(), wording.clone()));
                 continue;
             }
             identity.originals.retain(|o| o != wording);
             identity.not_a_name_by = Some(member.to_path_buf());
         }
-        self.not_names.retain(|(m, _)| m != member);
+        self.not_names.retain(|(m, _, _)| m != member);
         self.not_names
-            .extend(kept.into_iter().map(|w| (member.to_path_buf(), w)));
+            .extend(kept.into_iter().map(|(a, w)| (member.to_path_buf(), a, w)));
     }
     /// Undo of a saved Not a name (ADR 0122): each (alias, wording) the
     /// document shows again goes back into the identity `member` took it
     /// out of.
     pub fn refill(&mut self, pairs: &[(String, String)], member: &Path) {
+        let mut refilled = Vec::new();
         for (alias, wording) in pairs {
-            if let Some(identity) = self
+            if let Some(index) = self
                 .identities
-                .iter_mut()
-                .find(|i| i.names(alias) && i.not_a_name_by.as_deref() == Some(member))
-                && !identity.originals.contains(wording)
+                .iter()
+                .position(|i| i.names(alias) && i.not_a_name_by.as_deref() == Some(member))
+                && !self.identities[index].originals.contains(wording)
             {
-                identity.originals.push(wording.clone());
-                identity.not_a_name_by = None;
+                self.identities[index].originals.push(wording.clone());
+                refilled.push(index);
             }
         }
+        // Every wording first, then the mark: one identity may get several.
+        for index in refilled {
+            self.identities[index].not_a_name_by = None;
+        }
     }
-    /// The wordings `member` took off as Not a name that the case keeps.
-    pub fn not_names_of(&self, member: &Path) -> Vec<String> {
+    /// The (alias, wording) pairs `member` took off as Not a name that the
+    /// case keeps.
+    pub fn not_names_of(&self, member: &Path) -> Vec<(String, String)> {
         self.not_names
             .iter()
-            .filter(|(m, _)| m == member)
-            .map(|(_, w)| w.clone())
+            .filter(|(m, _, _)| m == member)
+            .map(|(_, a, w)| (a.clone(), w.clone()))
             .collect()
     }
     /// [`Self::reserved_aliases`] but those `member`'s own Not a name
@@ -1972,10 +1979,25 @@ mod tests {
         assert_eq!(case.identities[0].originals, ["Alex Kim"]);
         assert_eq!(case.identities[0].not_a_name_by, None);
 
+        // Two wordings of one identity come back together.
+        case.identities[0].originals = vec!["Alex Kim".into(), "A. Kim".into()];
+        let both = [
+            ("PERSON_1".to_string(), "Alex Kim".to_string()),
+            ("PERSON_1".to_string(), "A. Kim".to_string()),
+        ];
+        case.drop_wordings(&both, member, |_| false);
+        assert!(case.identities[0].originals.is_empty());
+        case.refill(&both, member);
+        assert_eq!(case.identities[0].originals, ["Alex Kim", "A. Kim"]);
+        case.identities[0].originals = vec!["Alex Kim".into()];
+
         // Kept for another member's sake: noted for this member instead.
         case.drop_wordings(&pair, member, |_| true);
         assert_eq!(case.identities[0].originals, ["Alex Kim"]);
-        assert_eq!(case.not_names_of(member), ["Alex Kim"]);
+        assert_eq!(
+            case.not_names_of(member),
+            [("PERSON_1".to_string(), "Alex Kim".to_string())]
+        );
         case.drop_wordings(&[], member, |_| true);
         assert!(
             case.not_names.is_empty(),

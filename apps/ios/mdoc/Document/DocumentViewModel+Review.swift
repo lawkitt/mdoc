@@ -164,7 +164,7 @@ extension DocumentViewModel {
                 let place = index - (gone ?? 0) - 1
                 return place >= 0 ? place : nil
             }
-            return state.advance(from: before)
+            return state.advanceAfterRemoval(from: before)
         }
     }
 

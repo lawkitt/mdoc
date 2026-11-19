@@ -726,10 +726,11 @@ pub(crate) fn realias(
 pub(crate) fn reopened_counts(
     text: String,
     case: Option<&mdoc_store::cases::Case>,
+    member: Option<&Path>,
 ) -> (Counts, bool) {
     let mut review = ReviewText::new(text);
     if let Some(case) = case {
-        review.open_case(&case.exported(), &case.reserved_aliases());
+        review.open_in_case(case, member);
     }
     (review.counts(), review.has_mentions())
 }
@@ -844,19 +845,9 @@ impl DocumentSession {
             document.path = opened.path;
             document.stored = opened.stored;
             if let Some(case) = opened.case {
-                // Its own Not a name reserved an alias its undo may give
-                // back, and left off wordings the case keeps (ADR 0122).
-                let reserved = match &opened.member {
-                    Some(member) => case.reserved_aliases_for(member),
-                    None => case.reserved_aliases(),
-                };
-                document.review.open_case(&case.exported(), &reserved);
-                if let Some(member) = &opened.member {
-                    document
-                        .review
-                        .review
-                        .silence_wordings(&case.not_names_of(member));
-                }
+                document
+                    .review
+                    .open_in_case(&case, opened.member.as_deref());
                 document.review.dismiss_pairs(&case.dismissed_hints);
                 document.skip = case.skipped();
                 document.synced = Some(case.identities.clone());
