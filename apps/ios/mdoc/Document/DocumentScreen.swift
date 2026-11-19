@@ -62,10 +62,12 @@ struct DocumentScreen: View {
             .sheet(isPresented: $model.showsFind) {
                 FindSheet(model: model)
             }
-            .sheet(item: $model.commentSheet) { _ in
-                if let state = Binding($model.commentSheet) {
-                    CommentSheet(state: state)
-                }
+            .sheet(item: $model.commentSheet) { shown in
+                // While the sheet closes the state is already nil: the
+                // sheet keeps showing what it showed, never unwrapping nil.
+                CommentSheet(state: Binding(
+                    get: { model.commentSheet ?? shown },
+                    set: { model.commentSheet = $0 }))
             }
             // The sheet steps through the Original's comments: Text, where
             // one pane shows at a time, closes it.
