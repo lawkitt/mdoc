@@ -661,8 +661,31 @@ impl Case {
         self.not_names
             .iter()
             .filter(|(m, _, _)| m == member)
-            .map(|(_, a, w)| (a.clone(), w.clone()))
+            .map(|(_, alias, wording)| {
+                // Under the identity's alias now: another member may have
+                // renamed it since.
+                let current = self
+                    .identities
+                    .iter()
+                    .find(|i| i.names(alias))
+                    .map_or(alias, |i| &i.alias);
+                (current.clone(), wording.clone())
+            })
             .collect()
+    }
+    /// A member saved under a new path (Save As, a rename): its Not a name
+    /// marks follow it (ADR 0122).
+    pub fn not_a_name_member_moved(&mut self, from: &Path, to: &Path) {
+        for (member, _, _) in &mut self.not_names {
+            if member == from {
+                *member = to.to_path_buf();
+            }
+        }
+        for identity in &mut self.identities {
+            if identity.not_a_name_by.as_deref() == Some(from) {
+                identity.not_a_name_by = Some(to.to_path_buf());
+            }
+        }
     }
     /// [`Self::reserved_aliases`] but those `member`'s own Not a name
     /// reserved, which its undo may give back (ADR 0122).
@@ -2003,5 +2026,31 @@ mod tests {
             case.not_names.is_empty(),
             "an undone Not a name is no longer noted"
         );
+    }
+
+    /// A note kept for another member follows a rename of its identity and
+    /// a move of its member (ADR 0122).
+    #[test]
+    fn not_a_name_notes_follow_renames_and_moves() {
+        let mut case = Case::new("Case".into(), &[], None);
+        case.identities = vec![StoredIdentity::from_exported(&identity(
+            "PERSON_1",
+            Category::Person,
+            &["Alex Kim"],
+        ))];
+        let (a, b) = (Path::new("a.md"), Path::new("b.md"));
+        let pair = [("PERSON_1".to_string(), "Alex Kim".to_string())];
+        case.drop_wordings(&pair, a, |_| true);
+        case.identities[0].previous.push("PERSON_1".into());
+        case.identities[0].alias = "Seller".into();
+        assert_eq!(
+            case.not_names_of(a),
+            [("Seller".to_string(), "Alex Kim".to_string())]
+        );
+        case.drop_wordings(&pair, a, |_| false);
+        assert!(case.identities[0].originals.is_empty());
+        case.not_a_name_member_moved(a, b);
+        assert_eq!(case.identities[0].not_a_name_by.as_deref(), Some(b));
+        assert!(case.reserved_aliases_for(b).is_empty());
     }
 }

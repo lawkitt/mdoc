@@ -362,6 +362,41 @@ fn not_a_name_takes_the_marks_off_and_undoes(cx: &mut gpui::TestAppContext) {
     app.update(cx, |app, _| assert_eq!(app.pii.review.remaining(), 3));
 }
 
+/// Opened on a kept mention, All reaches the identity's proposed mentions
+/// too, in the same undo step.
+#[gpui::test]
+fn not_a_name_from_a_kept_mention_takes_all(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+        app.keep_originals(window, cx);
+        assert_eq!(app.pii.review.kept_mentions().len(), 1);
+        app.activate_annotation(KEPT_ID | range.start as u64, window, cx);
+        assert!(app.active_is_kept());
+        app.pii.mapping.set_scope(Scope::Entity);
+        app.not_a_name(window, cx);
+        assert!(app.pii.review.kept_mentions().is_empty());
+        assert_eq!(
+            app.pii.review.remaining(),
+            1,
+            "only the full name is proposed"
+        );
+    });
+    cx.run_until_parked();
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        assert_eq!(app.pii.review.kept_mentions().len(), 1);
+        assert_eq!(app.pii.review.remaining(), 2);
+    });
+}
+
 /// Not a name on an applied mention: the text returns to its original, and
 /// nothing stays applied or kept.
 #[gpui::test]

@@ -893,11 +893,9 @@ impl DocumentView {
             return;
         };
         let scope = self.pii.mapping.scope;
-        let (candidates, applied) = if self.active_is_kept() {
-            (Vec::new(), Vec::new())
-        } else {
-            self.scoped_mentions()
-        };
+        // All and the wording reach the identity's other marks whichever
+        // state the popup opened on; This one on a kept mention, none.
+        let (candidates, applied) = self.scoped_mentions();
         let original = self.active_original();
         let kept: Vec<Range<usize>> = match scope {
             Scope::Mention if self.active_is_kept() => {

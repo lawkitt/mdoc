@@ -283,12 +283,34 @@ fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {
             .originals
     };
     assert_eq!(anna(&store), ["Anna Petrova"]);
+    // Saved with its alias.
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(Save);
+    settle(cx);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+        "PERSON_1 met staff at Riverside."
+    );
 
     view.update(cx, |view, cx| {
         let identity = view.pii.review().applied()[0].step.identity;
         view.not_a_name_identity(identity, cx);
     });
     settle(cx);
+    // The saved file still has PERSON_1: the case keeps it until the
+    // document saves, so a discarded edit still restores.
+    assert_eq!(anna(&store), ["Anna Petrova"]);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(Save);
+    settle(cx);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+        "Anna Petrova met staff at Riverside."
+    );
     assert!(anna(&store).is_empty(), "the wording left the case");
     let case = store.load(&id).unwrap();
     assert!(case.reserved_aliases().contains(&"PERSON_1".to_string()));

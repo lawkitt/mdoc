@@ -686,10 +686,13 @@ impl Workspace {
                         // member's saved text still restores its identity.
                         case.merge_from(&identities, Some(member));
                         case.refill(&kept, member);
+                        // Its own saved file counts too: a member whose
+                        // unsaved edit took the name off still restores
+                        // it until it saves, which saves the case again.
                         let used = if not_names.is_empty() {
                             std::collections::HashSet::new()
                         } else {
-                            restored_elsewhere(case, member)
+                            restored_in_members(case)
                         };
                         case.drop_wordings(&not_names, member, |identity| {
                             used.contains(&identity.alias)
@@ -697,10 +700,25 @@ impl Workspace {
                     }
                     None => case.merge(&identities),
                 }
-                let lists = listed
-                    .as_ref()
-                    .is_some_and(|changes| case.lists.apply(changes))
-                    .then(|| case.lists.clone());
+                // A wording taken off leaves both lists, whatever session
+                // put it there, unless another open member lists it.
+                let mut changes = listed.clone().unwrap_or_default();
+                for (_, wording) in &not_names {
+                    if let Some(entry) = case.lists.always_for(wording).cloned()
+                        && !others.iter().any(|o| o.always_for(wording).is_some())
+                        && !changes.always_removed.contains(&entry)
+                    {
+                        changes.always_removed.push(entry);
+                    }
+                    if case.lists.never_has(wording)
+                        && !others.iter().any(|o| o.never_has(wording))
+                        && !changes.never_removed.contains(wording)
+                    {
+                        changes.never_removed.push(wording.clone());
+                    }
+                }
+                let lists =
+                    (!changes.is_empty() && case.lists.apply(&changes)).then(|| case.lists.clone());
                 if let Some(path) = path.as_deref().map(session_store::identity)
                     && !case.members.contains(&path)
                 {
@@ -953,6 +971,9 @@ impl Workspace {
         }
         if let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
             let kept = case.set_reply(&previous, None);
+            if let Some(current) = &current {
+                case.not_a_name_member_moved(&previous, current);
+            }
             (case.remove_member(&previous) || kept).then_some(())
         }) {
             self.carry_out_cases(effect.into_iter().collect(), cx);
@@ -2259,17 +2280,13 @@ impl Workspace {
 const CLOSE_RESOLVED: TabEvent = TabEvent::Close(CloseEvent::Resolved);
 const CLOSE_CANCELLED: TabEvent = TabEvent::Close(CloseEvent::Cancelled);
 
-/// The aliases of `case`'s identities that its other members' saved text
-/// restores, as Restore reads them (ADR 0122); a member that can't be read
+/// The aliases of `case`'s identities that its members' saved files
+/// restore, as Restore reads them (ADR 0122); a member that can't be read
 /// counts as needing them all.
-fn restored_elsewhere(
-    case: &mdoc_store::cases::Case,
-    member: &std::path::Path,
-) -> std::collections::HashSet<String> {
+fn restored_in_members(case: &mdoc_store::cases::Case) -> std::collections::HashSet<String> {
     let map = mdoc_pii::restore::RestoreMap::new(case.exported());
     case.members
         .iter()
-        .filter(|other| other.as_path() != member)
         .flat_map(|other| match std::fs::read_to_string(other) {
             Ok(text) => map.restored_aliases(&text),
             Err(_) => map.identities().iter().map(|i| i.alias.clone()).collect(),
