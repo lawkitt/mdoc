@@ -167,7 +167,8 @@ fn the_source_toggles_are_app_wide_settings(cx: &mut TestAppContext) {
     };
     assert_eq!(
         toggles(cx),
-        [("💬 5".into(), true), ("Hidden text (1)".into(), false)]
+        // Five threads, one with a reply: every comment counts (#964).
+        [("💬 6".into(), true), ("Hidden text (1)".into(), false)]
     );
     // Hidden: the plain page, no tint, no region.
     toggle(&pdf, 0, cx);
@@ -186,7 +187,7 @@ fn the_source_toggles_are_app_wide_settings(cx: &mut TestAppContext) {
                 .any(|(r, _)| *r == region)
         );
     });
-    assert_eq!(toggles(cx)[0], ("💬 5".into(), false));
+    assert_eq!(toggles(cx)[0], ("💬 6".into(), false));
     toggle(&pdf, 0, cx);
     assert!(general(&tabs, cx).show_comments);
     cx.update(|_, cx| assert!(rail.read(cx).shown()));
@@ -276,7 +277,8 @@ fn a_pdf_shows_its_annotations_on_the_rail(cx: &mut TestAppContext) {
         assert_eq!(rail.read(cx).count(), 8);
         assert!(rail.read(cx).shown());
         assert_eq!(pdf.read(cx).header_toggles().len(), 1, "no hidden text");
-        assert_eq!(pdf.read(cx).header_toggles()[0].label.as_ref(), "💬 8");
+        // The label counts the replies too (#964).
+        assert_eq!(pdf.read(cx).header_toggles()[0].label.as_ref(), "💬 10");
         assert_eq!(view.read(cx).left_out(), None);
     });
     // The highlight's tint lies on page 1's second line.

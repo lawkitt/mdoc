@@ -75,7 +75,8 @@ comments grill (#927).
   line show a count.
 - Rail or markers follows the pane's width; there is no setting.
 - "💬 N" in the Source header shows or hides comments; hidden means the plain
-  page with no tint.
+  page with no tint. N counts every comment, replies included, as the
+  phones' "Comments N" and the left-out line do.
 - A comment with no place on the page (a header, a footer, an unmatched
   range) sits in "Not on the page (N)" at the top of the rail.
 - Replies nest under their comment with author, date and text.

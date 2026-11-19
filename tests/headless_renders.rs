@@ -354,7 +354,8 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     assert_eq!(state["shown"], true, "{theme}/{name}");
                     assert_eq!(state["rail"], rail, "{theme}/{name}");
                     let toggles = record["state"]["source_toggles"].as_array().unwrap();
-                    assert_eq!(toggles[0]["label"], "💬 5", "{theme}/{name}");
+                    // Five threads, one with a reply: every comment counts (#964).
+                    assert_eq!(toggles[0]["label"], "💬 6", "{theme}/{name}");
                     assert_eq!(
                         toggles[1],
                         serde_json::json!({
@@ -381,7 +382,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     assert_eq!(
                         record["state"]["source_toggles"],
                         serde_json::json!([{
-                            "label": "💬 8",
+                            "label": "💬 10",
                             "on": *name != "pdf-comments-hidden"
                         }]),
                         "{theme}/{name}"
