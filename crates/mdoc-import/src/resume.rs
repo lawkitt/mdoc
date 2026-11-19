@@ -901,6 +901,12 @@ mod tests {
                 4,
             ),
             (fixtures.join("import/handmade-mixed-size-header.pdf"), 1),
+            // The header and its sentence right under it on sparse page 4
+            // (#925 M18).
+            (
+                fixtures.join("import/handmade-sparse-page-closest-header.pdf"),
+                1,
+            ),
         ] {
             let name = pdf.display().to_string();
             let original = std::fs::read(&pdf).unwrap();
@@ -924,6 +930,12 @@ mod tests {
                 let header = "Annual Report of the Board 2026 Confidential";
                 assert_eq!(desktop.markdown.matches(header).count(), 2, "{name}");
                 assert_eq!(desktop.left_out.repeated_lines, 6, "{name}");
+            }
+            if name.contains("closest-header") {
+                // Page 4's header goes, its sentence stays, uncounted.
+                let header = "Annual Report of the Board 2026 Confidential";
+                assert_eq!(desktop.markdown.matches(header).count(), 2, "{name}");
+                assert_eq!(desktop.left_out.repeated_lines, 5, "{name}");
             }
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));
