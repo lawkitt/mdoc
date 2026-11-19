@@ -105,14 +105,16 @@ comments grill (#927).
 
 - A partial import (OCR pages skipped) stays a notice on desktop and a
   **notice card** on phones.
-- On phones one `NoticeCard` carries every message about the document: the
-  partial import, the interruption (Resume), the below-floor note, the scan
-  estimate and "No original page". It is a card inset at the top of the
-  text, 12 pt corners on a quiet fill, with an orange ⚠ only as the icon,
-  never an orange fill.
-- An informational card closes with ×, until the document is left (the
-  note is never kept on reopen); a card whose button is the only way on
-  (Resume) has no ×.
+- On phones a `NoticeCard` carries each message about the document: the
+  partial import, and a job that stopped when mdoc left the screen (its
+  Resume moves up from the bottom bar). It is a card inset at the top of
+  the text, 12 pt corners on a quiet fill, with the orange only in the
+  icon, never an orange fill; not in edit mode.
+- Messages about Find names (the below-floor note, the scan estimate) stay
+  quiet captions beside it, and "No original page" stays the empty pane,
+  because they belong where they are.
+- The partial import closes with ×, for good, since the note is never kept
+  on reopen; the interruption, whose button is the way on, has no ×.
 - Everything else the Markdown leaves out is the **left-out line**: an ⓘ in
   the document header (desktop) or under the title (phones) listing counts,
   never orange.
