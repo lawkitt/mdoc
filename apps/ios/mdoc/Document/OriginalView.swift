@@ -8,8 +8,23 @@ struct OriginalView: View {
     let original: OriginalSource
     /// A long job runs on the document (`DocxOriginalView.waits`).
     var jobRuns = false
+    /// Nothing sits under the pane: the page runs to the screen's bottom.
+    var reachesBottom = false
+    @State private var viewport = PageViewport()
+    @State private var bottomInset: CGFloat = 0
 
     var body: some View {
+        page
+            // The page goes under the home indicator; its control stays
+            // above it.
+            .environment(\.pageControlInset, reachesBottom ? bottomInset : 0)
+            .ignoresSafeArea(.container, edges: reachesBottom ? .bottom : [])
+            // Read outside the page, where the home indicator is still unsafe.
+            .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { bottomInset = $0 }
+    }
+
+    @ViewBuilder
+    private var page: some View {
         switch original {
         case .none:
             ContentUnavailableView(
@@ -17,14 +32,15 @@ struct OriginalView: View {
                 systemImage: "doc.plaintext",
                 description: Text("Pasted text shows its text only."))
         case .pdf(let url):
-            PDFKitView(url: url)
+            PDFKitView(url: url, viewport: viewport)
                 .accessibilityLabel(Text("Original PDF"))
+                .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
         case .docx(let url):
             DocxOriginalView(source: url, waits: jobRuns)
         case .images(let urls):
             TabView {
                 ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
-                    ZoomableImageView(url: url)
+                    ZoomablePage(url: url)
                         .accessibilityLabel(Text("Original page \(index + 1) of \(urls.count)"))
                 }
             }
@@ -37,58 +53,42 @@ struct OriginalView: View {
 
 struct PDFKitView: UIViewRepresentable {
     let url: URL
+    let viewport: PageViewport
 
-    func makeUIView(context: Context) -> PDFView {
+    func makeUIView(context: Context) -> FittingPDFView {
         let view = FittingPDFView()
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.backgroundColor = .secondarySystemBackground
         view.document = PDFDocument(url: url)
+        view.onControl = { [weak viewport] in viewport?.report($0) }
+        viewport.attach { [weak view] in view?.perform($0) }
         return view
     }
 
-    func updateUIView(_ view: PDFView, context: Context) {
+    func updateUIView(_ view: FittingPDFView, context: Context) {
         if view.document?.documentURL != url {
             view.document = PDFDocument(url: url)
         }
     }
 }
 
-/// A PDF view that fits the page to its width again whenever that width
-/// changes (rotation, iPad's columns); `autoScales` alone keeps the scale it
-/// first computed.
-final class FittingPDFView: PDFView {
-    private var fittedWidth: CGFloat = 0
+/// A scan page and its ⤡ control, shown while zoomed past fit; a page
+/// turned sideways has no "top" to go back to.
+private struct ZoomablePage: View {
+    let url: URL
+    @State private var viewport = PageViewport()
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        guard bounds.width > 0, bounds.width != fittedWidth, document != nil else { return }
-        fittedWidth = bounds.width
-        // The page the reader was on, and the point of it at the view's top:
-        // PDFKit's destinations land mid-page after a new scale, so the
-        // scroll offset puts that point back at the top (hiding the iPad's
-        // sidebar refits the page; #963).
-        let page = currentPage
-        let anchor = page.map { convert(CGPoint(x: bounds.midX, y: bounds.minY), to: $0) }
-        // The fit is only right once PDFKit has laid out its own views.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.scaleFactor = self.scaleFactorForSizeToFit
-            guard let page else { return }
-            self.go(to: page)
-            guard let anchor, let scroll = self.firstSubview(of: UIScrollView.self) else { return }
-            let shift = self.convert(anchor, from: page).y - self.bounds.minY
-            let top = -scroll.adjustedContentInset.top
-            let bottom = max(
-                scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom, top)
-            scroll.contentOffset.y = min(max(scroll.contentOffset.y + shift, top), bottom)
-        }
+    var body: some View {
+        ZoomableImageView(url: url, viewport: viewport)
+            .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
     }
 }
 
 /// One page image that pinches to zoom and double-taps between fit and 2×.
 struct ZoomableImageView: UIViewRepresentable {
     let url: URL
+    let viewport: PageViewport
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -115,6 +115,8 @@ struct ZoomableImageView: UIViewRepresentable {
             image.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
         ])
         context.coordinator.imageView = image
+        context.coordinator.viewport = viewport
+        viewport.attach { [weak scroll] _ in scroll?.setZoomScale(1, animated: true) }
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.toggleZoom(_:)))
         doubleTap.numberOfTapsRequired = 2
         scroll.addGestureRecognizer(doubleTap)
@@ -131,9 +133,16 @@ struct ZoomableImageView: UIViewRepresentable {
     final class Coordinator: NSObject, UIScrollViewDelegate {
         var imageView: UIImageView?
         var url: URL?
+        weak var viewport: PageViewport?
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             imageView
+        }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            MainActor.assumeIsolated {
+                viewport?.report(scrollView.zoomScale > 1 + FittingPDFView.fitTolerance ? .fit : nil)
+            }
         }
 
         @objc func toggleZoom(_ gesture: UITapGestureRecognizer) {

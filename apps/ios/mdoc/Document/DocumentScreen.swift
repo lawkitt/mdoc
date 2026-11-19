@@ -29,6 +29,8 @@ struct DocumentScreen: View {
     /// This screen, for the window's undo: a size-class change builds a new
     /// one for the same document (#672).
     @State private var screenID = UUID()
+    /// The text's ↑ control (originals.md, Original page controls).
+    @State private var textViewport = PageViewport()
 
     private var hasRightPane: Bool { model.hasRightPane }
 
@@ -141,7 +143,11 @@ struct DocumentScreen: View {
                 case .text:
                     EmptyView()
                 case .original:
-                    OriginalView(original: model.snapshot.original, jobRuns: model.runningJob != nil)
+                    // With no bar under it, the page runs to the screen's
+                    // bottom edge; its scroll keeps the home indicator clear.
+                    OriginalView(
+                        original: model.snapshot.original, jobRuns: model.runningJob != nil,
+                        reachesBottom: model.originalCoversText && model.runningJob == nil)
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
@@ -172,6 +178,7 @@ struct DocumentScreen: View {
             noticeCards
             textPaneContent
                 .frame(maxHeight: .infinity)
+                .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: textViewport) }
         }
     }
 
@@ -247,7 +254,8 @@ struct DocumentScreen: View {
             menu: { id in CandidateMenu.configuration(for: id, model: model) { sameAsCandidate = $0 } },
             edit: model.isEditing ? EditActions(model) : nil,
             findBar: model.findBarRequest,
-            shown: textShows)
+            shown: textShows,
+            viewport: textViewport)
     }
 
     /// Edit is offered while the text shows, in live preview or with Show
@@ -456,16 +464,19 @@ struct DocumentScreen: View {
                 doneButton
             }
         } else {
-            // One capsule: the pencil and Identities (ADR 0114).
+            // One capsule: the pencil and Identities (ADR 0114). Over the
+            // Original neither: nothing there acts on names.
             ToolbarItemGroup(placement: .topBarTrailing) {
                 editButton
-                Button {
-                    model.showIdentities(!model.identitiesShowing)
-                } label: {
-                    Label("Identities", systemImage: "person.text.rectangle")
+                if !model.originalCoversText {
+                    Button {
+                        model.showIdentities(!model.identitiesShowing)
+                    } label: {
+                        Label("Identities", systemImage: "person.text.rectangle")
+                    }
+                    .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
+                    .accessibilityIdentifier("identities-button")
                 }
-                .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
-                .accessibilityIdentifier("identities-button")
             }
         }
     }
@@ -481,7 +492,8 @@ struct DocumentScreen: View {
         let cap: CGFloat = isRegular ? 420 : 300
         guard screenWidth > 0 else { return isRegular ? 420 : 140 }
         let leading: CGFloat = 60
-        let trailing: CGFloat = model.isEditing ? 76 : 16 + 14 + 48 * (offersEdit ? 2 : 1)
+        let buttons: CGFloat = (offersEdit ? 1 : 0) + (model.originalCoversText ? 0 : 1)
+        let trailing: CGFloat = model.isEditing ? 76 : buttons == 0 ? 16 : 16 + 14 + 48 * buttons
         return min(cap, max(60, screenWidth - leading - trailing - 2 * Space.xs - 22))
     }
 
@@ -493,16 +505,26 @@ struct DocumentScreen: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        if model.wordsFix != nil && !model.isEditing {
-            // Fix the words (ADR 0114): its bar in the review bar's place.
-            FixWordsBar(model: model)
-        } else if model.isEditing {
+        if model.isEditing {
             // Edit mode: no review bar and no Find names (ADR 0109); a
             // notice (the alias hint, what Undo undid) shows above the keys.
             if let notice = model.notice {
                 noticeLabel(notice)
                     .padding(.vertical, 6)
             }
+        } else if model.originalCoversText {
+            // Over the Original nothing acts on names: only a running job's
+            // progress stays, and Text brings the bar back as it was
+            // (originals.md, Phones).
+            if model.runningJob != nil {
+                ActionBar(model: model)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+            }
+        } else if model.wordsFix != nil {
+            // Fix the words (ADR 0114): its bar in the review bar's place.
+            FixWordsBar(model: model)
         } else if model.isReviewing && model.runningJob == nil && !model.replyCoversText {
             // Not under a reply that covers the text: its bar acts on the
             // reply there (ADR 0111).

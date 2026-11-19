@@ -30,6 +30,9 @@ extension DocumentViewModel {
             return
         }
         if isReviewing { endReview() }
+        // Its progress, setup card and review are the text's: from the
+        // Original, the text comes back first.
+        if originalCoversText { show(.text) }
         await findNames()
     }
 

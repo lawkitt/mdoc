@@ -1113,6 +1113,9 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
         showsVerticalScrollIndicator = false
         alwaysBounceVertical = false
         isDirectionalLockEnabled = true
+        // The status bar's tap scrolls the text: UIKit scrolls nothing
+        // when a table claims it too.
+        scrollsToTop = false
         delegate = self
         addSubview(grid)
         for (rowIndex, row) in table.rows.enumerated() {
