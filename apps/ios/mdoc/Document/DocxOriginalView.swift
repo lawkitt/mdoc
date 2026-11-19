@@ -20,6 +20,7 @@ struct DocxOriginalView: View {
     /// The expanded rail card.
     @State private var expanded: String?
     @State private var width: CGFloat = 0
+    @State private var viewport = PageViewport()
 
     enum Rendering: Sendable {
         case working
@@ -87,9 +88,11 @@ struct DocxOriginalView: View {
                             ? String(localized: "Comment") : String(localized: "\(marker.threads.count) comments"),
                         threads: marker.threads)
                 },
-                onCard: { id in expanded = expanded == id ? nil : id })
+                onCard: { id in expanded = expanded == id ? nil : id },
+                viewport: viewport)
             .accessibilityLabel(Text("Original document"))
             .accessibilityIdentifier("docx-original")
+            .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if !rendered.comments.all.isEmpty {
                     commentsBar(rendered.comments)

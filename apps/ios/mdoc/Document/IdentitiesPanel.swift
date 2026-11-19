@@ -52,10 +52,11 @@ extension IdentitiesPanel {
         return DrawerPanel(
             isOpen: Binding(get: { model.identitiesDrawerOpen }, set: { model.showIdentities($0) }),
             closeLabel: "Close Identities",
-            // Hidden while editing: no swipe until Done (ADR 0110). Fixing a
+            // Hidden while editing: no swipe until Done (ADR 0110), nor over
+            // the Original, which hides the Identities button. Fixing a
             // name's words, only the edge: a swipe over the table or the text
             // is the fix's (ADR 0115).
-            opens: model.isEditing ? .never : model.wordsFix != nil ? .edge : .anywhere
+            opens: model.isEditing || model.originalCoversText ? .never : model.wordsFix != nil ? .edge : .anywhere
         ) {
             IdentitiesPanel(model: model)
         }
