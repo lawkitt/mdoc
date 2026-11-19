@@ -192,9 +192,9 @@ Features are frozen until items 13–19 land (Q4).
 28. **[Mobile] The Original pane and comments, polished.** *From the
     2026-11-19 comments polish grill; rules in
     [originals.md](docs/specs/originals.md) (The import note, Phones,
-    Original page controls).* Slices, one PR each: (L) `NoticeCard` for
-    the partial import, interruption, below-floor, scan-estimate and
-    no-original messages, × on the informational ones; (M) the Original's
+    Original page controls).* Slices, one PR each: (L) `NoticeCard` atop
+    the text for the partial import (× closes it) and the interruption
+    (Resume); (M) the Original's
     chrome: no bottom bar or Identities while it covers the text, zoom
     held to fit…5×, double-tap fit/2×, the ⤡ / ↑ button, ↑ on Text and a
     working status-bar tap; (N) comments on the page: Show comments and

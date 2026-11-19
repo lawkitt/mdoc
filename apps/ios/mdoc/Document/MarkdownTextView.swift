@@ -51,6 +51,9 @@ struct MarkdownTextView: UIViewRepresentable {
     /// view is kept, and the keyboard goes until the text shows again
     /// (ADR 0110).
     var shown = true
+    /// The ↑ control past one screen of text, never in edit mode
+    /// (originals.md, Original page controls).
+    var viewport: PageViewport?
 
     /// The text is edited now.
     var editing: Bool { edit != nil }
@@ -288,6 +291,8 @@ struct MarkdownTextView: UIViewRepresentable {
             shownView = view
             view.configureCell = { [weak self] cell in
                 cell.delegate = self
+                // The status bar's tap scrolls the text, never a table.
+                cell.scrollsToTop = false
                 cell.allowsCopy = false
                 cell.tintColor = Self.selectionTint
                 cell.onResign = { [weak self, weak cell] in
@@ -319,6 +324,7 @@ struct MarkdownTextView: UIViewRepresentable {
         ) {
             self.parent = parent
             view.onReviewNext = parent.onReviewNext
+            connectTop(view)
             connectEditing(view)
             let content = ContentKey(parent, dynamicTypeSize: dynamicTypeSize, colorScheme: colorScheme)
             let decoration = DecorationKey(selected: parent.selected, scoped: parent.scoped)

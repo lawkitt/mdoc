@@ -30,6 +30,9 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// `MDOC_SHOW_TIPS=1`: a UI test of a hint sees every tip
     /// (`Tips.showAllTipsForTesting()`); the others see none.
     var showsTips = false
+    /// `MDOC_UI_NOTICE`: the notice card's UI test gives the open document
+    /// this import notice, since a phone's import seldom skips pages.
+    var uiNotice: String?
 
     init() {}
 
@@ -42,6 +45,7 @@ struct LaunchConfiguration: Sendable, Equatable {
         detectorTier = environment["MDOC_UI_DETECTOR_TIER"] == "1"
         keepsLibrary = environment["MDOC_KEEP_LIBRARY"] == "1"
         showsTips = environment["MDOC_SHOW_TIPS"] == "1"
+        uiNotice = environment["MDOC_UI_NOTICE"]
     }
 
     /// This process's launch, parsed on first use.

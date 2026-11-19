@@ -18,10 +18,14 @@ struct CommentedPDFView: UIViewRepresentable {
     let active: String?
     let onMarker: (DocxComments.Marker) -> Void
     let onCard: (String) -> Void
+    /// The ⤡ / ↑ control's state and actions.
+    let viewport: PageViewport
 
     func makeUIView(context: Context) -> CommentedPDFContainer {
         let view = CommentedPDFContainer()
         view.load(url: url, comments: comments)
+        view.pdfView.onControl = { [weak viewport] in viewport?.report($0) }
+        viewport.attach { [weak view] in view?.pdfView.perform($0) }
         return view
     }
 

@@ -17,6 +17,7 @@ struct DocumentScreen: View {
     @Environment(\.hideSidebar) private var hideSidebar
     @Environment(\.appModel) private var app
     @Environment(\.preferences) private var preferences
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isRegular: Bool { layout.isRegular }
     @State private var screenHeight: CGFloat = 800
@@ -28,6 +29,8 @@ struct DocumentScreen: View {
     /// This screen, for the window's undo: a size-class change builds a new
     /// one for the same document (#672).
     @State private var screenID = UUID()
+    /// The text's ↑ control (originals.md, Original page controls).
+    @State private var textViewport = PageViewport()
 
     private var hasRightPane: Bool { model.hasRightPane }
 
@@ -140,7 +143,11 @@ struct DocumentScreen: View {
                 case .text:
                     EmptyView()
                 case .original:
-                    OriginalView(original: model.snapshot.original, jobRuns: model.runningJob != nil)
+                    // With no bar under it, the page runs to the screen's
+                    // bottom edge; its scroll keeps the home indicator clear.
+                    OriginalView(
+                        original: model.snapshot.original, jobRuns: model.runningJob != nil,
+                        reachesBottom: model.originalCoversText && model.runningJob == nil)
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
@@ -164,10 +171,21 @@ struct DocumentScreen: View {
         model.isEditing || !model.snapshot.markdown.isEmpty || model.snapshot.phase != nil
     }
 
-    @ViewBuilder
+    /// The notice cards over the text, or over its placeholder while a
+    /// stopped job has left no text yet.
     private var textPane: some View {
+        VStack(spacing: 0) {
+            noticeCards
+            textPaneContent
+                .frame(maxHeight: .infinity)
+                .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: textViewport) }
+        }
+    }
+
+    @ViewBuilder
+    private var textPaneContent: some View {
         if showsTextView {
-            textColumn
+            markdownTextView
         } else if model.importNotFinished {
             ContentUnavailableView(
                 "Import not finished",
@@ -188,18 +206,32 @@ struct DocumentScreen: View {
         }
     }
 
-    private var textColumn: some View {
-        VStack(spacing: 0) {
-            if let notice = model.snapshot.notice {
-                Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(Color.orange.opacity(0.15))
+    /// The document's notice cards over its text: the partial import, which
+    /// closes, and a job that stopped when mdoc left the screen, whose
+    /// button is the way on (originals.md, The import note). Not in edit
+    /// mode, where the text is being typed.
+    @ViewBuilder
+    private var noticeCards: some View {
+        let notice = model.isEditing || model.noticeClosed
+            ? nil : model.snapshot.notice ?? LaunchConfiguration.current.uiNotice
+        let interruption = model.isEditing ? nil : model.interruption
+        if notice != nil || interruption != nil {
+            VStack(spacing: Space.xs) {
+                if let notice {
+                    NoticeCard(message: Text(notice), onClose: {
+                        withAnimation(Motion.move(reduced: reduceMotion)) { model.noticeClosed = true }
+                    })
                     .accessibilityIdentifier("import-warning")
+                }
+                if let interruption {
+                    InterruptionCard(kind: interruption.kind, isImport: model.importNotFinished) {
+                        Task { await model.resume() }
+                    }
+                }
             }
-            markdownTextView
+            .padding(.horizontal, Space.m)
+            .padding(.top, Space.xs)
+            .transition(.opacity)
         }
     }
 
@@ -222,7 +254,8 @@ struct DocumentScreen: View {
             menu: { id in CandidateMenu.configuration(for: id, model: model) { sameAsCandidate = $0 } },
             edit: model.isEditing ? EditActions(model) : nil,
             findBar: model.findBarRequest,
-            shown: textShows)
+            shown: textShows,
+            viewport: textViewport)
     }
 
     /// Edit is offered while the text shows, in live preview or with Show
@@ -431,16 +464,19 @@ struct DocumentScreen: View {
                 doneButton
             }
         } else {
-            // One capsule: the pencil and Identities (ADR 0114).
+            // One capsule: the pencil and Identities (ADR 0114). Over the
+            // Original neither: nothing there acts on names.
             ToolbarItemGroup(placement: .topBarTrailing) {
                 editButton
-                Button {
-                    model.showIdentities(!model.identitiesShowing)
-                } label: {
-                    Label("Identities", systemImage: "person.text.rectangle")
+                if !model.originalCoversText {
+                    Button {
+                        model.showIdentities(!model.identitiesShowing)
+                    } label: {
+                        Label("Identities", systemImage: "person.text.rectangle")
+                    }
+                    .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
+                    .accessibilityIdentifier("identities-button")
                 }
-                .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
-                .accessibilityIdentifier("identities-button")
             }
         }
     }
@@ -456,7 +492,8 @@ struct DocumentScreen: View {
         let cap: CGFloat = isRegular ? 420 : 300
         guard screenWidth > 0 else { return isRegular ? 420 : 140 }
         let leading: CGFloat = 60
-        let trailing: CGFloat = model.isEditing ? 76 : 16 + 14 + 48 * (offersEdit ? 2 : 1)
+        let buttons: CGFloat = (offersEdit ? 1 : 0) + (model.originalCoversText ? 0 : 1)
+        let trailing: CGFloat = model.isEditing ? 76 : buttons == 0 ? 16 : 16 + 14 + 48 * buttons
         return min(cap, max(60, screenWidth - leading - trailing - 2 * Space.xs - 22))
     }
 
@@ -468,16 +505,26 @@ struct DocumentScreen: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        if model.wordsFix != nil && !model.isEditing {
-            // Fix the words (ADR 0114): its bar in the review bar's place.
-            FixWordsBar(model: model)
-        } else if model.isEditing {
+        if model.isEditing {
             // Edit mode: no review bar and no Find names (ADR 0109); a
             // notice (the alias hint, what Undo undid) shows above the keys.
             if let notice = model.notice {
                 noticeLabel(notice)
                     .padding(.vertical, 6)
             }
+        } else if model.originalCoversText {
+            // Over the Original nothing acts on names: only a running job's
+            // progress stays, and Text brings the bar back as it was
+            // (originals.md, Phones).
+            if model.runningJob != nil {
+                ActionBar(model: model)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+            }
+        } else if model.wordsFix != nil {
+            // Fix the words (ADR 0114): its bar in the review bar's place.
+            FixWordsBar(model: model)
         } else if model.isReviewing && model.runningJob == nil && !model.replyCoversText {
             // Not under a reply that covers the text: its bar acts on the
             // reply there (ADR 0111).
@@ -514,11 +561,6 @@ struct DocumentScreen: View {
                     await model.continueAfterSetup()
                 }
             } else {
-                if let interruption = model.interruption {
-                    InterruptionBanner(kind: interruption.kind, isImport: model.importNotFinished) {
-                        Task { await model.resume() }
-                    }
-                }
                 if model.showsBelowFloorNote {
                     BelowFloorNote(reason: setup.snapshot.belowFloor)
                 } else if let minutes = model.scanEstimate {

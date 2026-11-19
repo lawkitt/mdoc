@@ -53,6 +53,13 @@ extension DocumentViewModel {
         pane == .reply && snapshot.reply != nil && !layout.isRegular
     }
 
+    /// The Original covers the text: its pane in a compact window. Nothing
+    /// there acts on names, so the bottom bar and Identities go, and come
+    /// back as they were on Text (originals.md, Phones).
+    var originalCoversText: Bool {
+        pane == .original && !layout.isRegular
+    }
+
     /// The bottom bar acts on the reply, with Share, Copy and Paste: on
     /// the Reply pane once every name is decided (ADR 0087), and in place
     /// of Review and Replace N where the reply covers the text they act on.
