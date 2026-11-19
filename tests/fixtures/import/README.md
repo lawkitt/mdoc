@@ -116,3 +116,21 @@ lawkitt/pdf-inspector PR 22, the sentence stays on page 4, the header and
 footer stay on page 1 only, and the note counts "4 repeated header and
 footer lines removed.", on the desktop and on the phones. Before PR 22,
 page 4 lost the sentence and the note counted 5.
+
+## Sentence matching the header on a mixed-size sparse page, 2026-11-19
+
+`handmade-mixed-size-header.pdf` (native text) and
+`handmade-scanned-mixed-size-header.pdf` (an image-only scan of the same
+pages) are from `gen_mixed_size_header.py` (Python 3, standard library;
+the scan also needs macOS `sips` and reuses `gen_scanned_running_header.py`,
+whose `scan` now takes each page's height). Pages 1-3 (US Letter) and page 4
+(US Legal) carry that fixture's header and footer at the same heights, so
+the header is 42 pt below Letter's top but 258 pt below Legal's: a steady
+distance from the bottom edge only. Page 5 is a sparse Letter page whose
+second line is the header's sentence 96 pt below the top, the full pages'
+average distance from the top, which no page uses. With the pdf-inspector
+fork after lawkitt/pdf-inspector PR 23, the sentence stays on page 5, the
+header and footer stay on page 1 only, and the note counts "6 repeated
+header and footer lines removed.", on the desktop and on the phones. Before
+PR 23, page 5 lost the sentence and the note counted 7. Regenerating leaves
+the earlier scanned and sparse-page fixtures byte-identical.

@@ -1133,6 +1133,41 @@ mod tests {
         );
     }
 
+    /// Letter pages and a Legal page keep the header at one height, a steady
+    /// distance from the bottom edge only. On the sparse last page the
+    /// header's sentence 96 pt below the top, the full pages' average
+    /// distance from the top, is body text: it stays and isn't counted
+    /// (#925 M17, lawkitt/pdf-inspector#23).
+    #[test]
+    fn a_header_sentence_on_a_mixed_size_sparse_page_stays() {
+        let imported = convert(&fixture("handmade-mixed-size-header.pdf")).unwrap();
+        let header = "Annual Report of the Board 2026 Confidential";
+        // Page 5's sentence is above its body line, so page 5 starts after
+        // page 4's last item.
+        let (pages_1_to_4, page_5) = imported.markdown.split_once("Item 4.12.").unwrap();
+        assert_eq!(
+            pages_1_to_4.matches(header).count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert_eq!(page_5.matches(header).count(), 1, "{}", imported.markdown);
+        assert_eq!(
+            imported
+                .markdown
+                .matches("Prepared for the shareholders")
+                .count(),
+            1,
+            "{}",
+            imported.markdown
+        );
+        assert_eq!(imported.warning, None);
+        assert_eq!(
+            imported.left_out.line(true).as_deref(),
+            Some("6 repeated header and footer lines removed.")
+        );
+    }
+
     /// Comments never reach the Markdown, whatever the format: the import
     /// equals the fork's reviewed snapshot, and no comment's text or author
     /// (an annotation's, for a PDF) is in it. The import carries them beside

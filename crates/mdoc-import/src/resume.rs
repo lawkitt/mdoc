@@ -894,6 +894,13 @@ mod tests {
                 3,
             ),
             (fixtures.join("import/handmade-sparse-page-header.pdf"), 1),
+            // Letter and Legal pages; the sparse page 5 is recognized in a
+            // run of its own (#925 M17).
+            (
+                fixtures.join("import/handmade-scanned-mixed-size-header.pdf"),
+                4,
+            ),
+            (fixtures.join("import/handmade-mixed-size-header.pdf"), 1),
         ] {
             let name = pdf.display().to_string();
             let original = std::fs::read(&pdf).unwrap();
@@ -911,6 +918,12 @@ mod tests {
                 let header = "Annual Report of the Board 2026 Confidential";
                 assert_eq!(desktop.markdown.matches(header).count(), 2, "{name}");
                 assert_eq!(desktop.left_out.repeated_lines, 4, "{name}");
+            }
+            if name.contains("mixed-size-header") {
+                // The header's sentence stays in page 5's body, uncounted.
+                let header = "Annual Report of the Board 2026 Confidential";
+                assert_eq!(desktop.markdown.matches(header).count(), 2, "{name}");
+                assert_eq!(desktop.left_out.repeated_lines, 6, "{name}");
             }
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));

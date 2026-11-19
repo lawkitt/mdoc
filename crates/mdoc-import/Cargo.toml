@@ -10,7 +10,7 @@ repository = "https://github.com/lawkitt/mdoc"
 [dependencies]
 mdoc-store = { path = "../mdoc-store" }
 anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "5e22f0a22c648cea4d46a6dad5fe5af7057af8c3", default-features = false }
-pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "d27c129df9f279d3e6066090484ff7f8f2a86295", features = ["ocr"] }
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "4278088ff6770ec8ff7a74c358054630d5b10b95", features = ["ocr"] }
 sha2 = "0.11"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 tar = "0.4"
