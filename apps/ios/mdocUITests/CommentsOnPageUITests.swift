@@ -43,8 +43,10 @@ final class CommentsOnPageUITests: XCTestCase {
         title.tap()
         let show = app.descendants(matching: .any)["show-comments"].firstMatch
         XCTAssertTrue(show.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(app.staticTexts["13 comments"].firstMatch.exists, "every comment counts, replies too")
         let notOnPage = app.descendants(matching: .any)["comments-not-on-page"].firstMatch
         XCTAssertTrue(notOnPage.exists)
+        XCTAssertTrue(notOnPage.label.contains("Not on the page (1)"), notOnPage.label)
         notOnPage.tap()
         XCTAssertTrue(sheet.waitForExistence(timeout: MdocUITest.timeout))
         app.buttons["Done"].firstMatch.tap()

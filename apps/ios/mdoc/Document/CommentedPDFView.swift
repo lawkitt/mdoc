@@ -82,6 +82,8 @@ final class CommentedPDFContainer: UIView {
     private var markerButtons: [CommentMarkerButton] = []
     private var cards: [CommentRailCard] = []
     private var tints: [String: [PDFAnnotation]] = [:]
+    /// Each page's text right edge, 0..1 of its width, read once.
+    private var textRights: [Int: CGFloat] = [:]
     private var underlines: [PDFAnnotation] = []
     private var scrollObservation: NSKeyValueObservation?
     private var lineElements: [PageLineElement]?
@@ -124,6 +126,7 @@ final class CommentedPDFContainer: UIView {
         self.comments = comments
         tints = [:]
         underlines = []
+        textRights = [:]
         lineElements = nil
         readingOrder = nil
         let document = PDFDocument(url: url)
@@ -306,7 +309,7 @@ final class CommentedPDFContainer: UIView {
         for button in markerButtons {
             guard let frames = lineFrame(button.marker) else { continue }
             let size = Self.markerSize
-            let margin = frames.page.width * (1 - CGFloat(comments.textRight))
+            let margin = frames.page.width * (1 - textRight(ofPage: button.marker.page))
             let centre = margin >= size + 8 ? frames.page.maxX - margin / 2 : frames.page.maxX - size / 2 - 4
             let origin = CGPoint(x: centre - size / 2, y: frames.line.midY - size / 2)
             button.frame = convert(CGRect(origin: origin, size: CGSize(width: size, height: size)), to: overlay)
@@ -349,6 +352,22 @@ final class CommentedPDFContainer: UIView {
             card.frame.origin.y = max(limit - card.frame.height, 0)
             limit = card.frame.minY - Space.xs
         }
+    }
+
+    /// How far right the page's own text reaches, 0..1 of its width: the
+    /// margin beyond it is where a marker sits clear of the text. A page
+    /// with no text reaches its edge.
+    private func textRight(ofPage index: Int) -> CGFloat {
+        if let known = textRights[index] { return known }
+        var right: CGFloat = 1
+        if let page = pdfView.document?.page(at: index) {
+            let box = page.bounds(for: pdfView.displayBox)
+            if box.width > 0, let text = page.selection(for: box), !(text.string ?? "").isEmpty {
+                right = min(max((text.bounds(for: page).maxX - box.minX) / box.width, 0), 1)
+            }
+        }
+        textRights[index] = right
+        return right
     }
 
     /// Scrolls a marker's line into view, when it isn't, without animation.
@@ -401,7 +420,9 @@ final class CommentedPDFContainer: UIView {
 
     override var accessibilityElements: [Any]? {
         get {
-            guard readsLines else { return [pdfView] }
+            // Without VoiceOver the markers and cards follow the page, for
+            // Voice Control, Switch Control and UI tests.
+            guard readsLines else { return [pdfView] + visibleMarkers + cards }
             if let readingOrder { return readingOrder }
             let lines = lineElements ?? buildLines()
             lineElements = lines
