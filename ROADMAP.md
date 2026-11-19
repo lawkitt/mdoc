@@ -189,6 +189,21 @@ Features are frozen until items 13–19 land (Q4).
     document closes the bar without a toast. TestFlight rc.12 after.
     *Done when:* both merged and checked on the iPhone 17 Pro from rc.12.
 
+28. **[Mobile] The Original pane and comments, polished.** *From the
+    2026-11-19 comments polish grill; rules in
+    [originals.md](docs/specs/originals.md) (The import note, Phones,
+    Original page controls).* Slices, one PR each: (L) `NoticeCard` for
+    the partial import, interruption, below-floor, scan-estimate and
+    no-original messages, × on the informational ones; (M) the Original's
+    chrome: no bottom bar or Identities while it covers the text, zoom
+    held to fit…5×, double-tap fit/2×, the ⤡ / ↑ button, ↑ on Text and a
+    working status-bar tap; (N) comments on the page: Show comments and
+    "Not on the page (N)" in the title menu in place of the comments bar,
+    markers in the page margin, a softer tint, a tap on a passage opens
+    its thread; (O) the sheet: half-screen fixed height, × and "2 of 5"
+    stepping with swipe, the new cards. One TestFlight build after.
+    *Done when:* all merged and checked on the iPhone 17 Pro and 12 Pro.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS

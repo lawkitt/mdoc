@@ -103,8 +103,16 @@ comments grill (#927).
 
 ## The import note
 
-- A partial import (OCR pages skipped) stays a notice on desktop and a banner
-  on phones.
+- A partial import (OCR pages skipped) stays a notice on desktop and a
+  **notice card** on phones.
+- On phones one `NoticeCard` carries every message about the document: the
+  partial import, the interruption (Resume), the below-floor note, the scan
+  estimate and "No original page". It is a card inset at the top of the
+  text, 12 pt corners on a quiet fill, with an orange ⚠ only as the icon,
+  never an orange fill.
+- An informational card closes with ×, until the document is left (the
+  note is never kept on reopen); a card whose button is the only way on
+  (Resume) has no ×.
 - Everything else the Markdown leaves out is the **left-out line**: an ⓘ in
   the document header (desktop) or under the title (phones) listing counts,
   never orange.
@@ -119,10 +127,51 @@ comments grill (#927).
   on the iPhone 12 Pro (time and peak memory on the legal-opinion and
   coverage fixtures and a 100-page DOCX) stays within the budgets; if it
   doesn't, phones keep the counts and a Later line.
-- On a phone comments are margin markers; a tap opens a bottom sheet with
-  the thread. Markers whose touch targets would overlap share one, with the
-  count, and its sheet lists their threads in page order; a marker on screen
-  never shares one scrolled out of view.
+- On a phone comments are margin markers; a tap on a marker or its tinted
+  passage opens a bottom sheet with the thread. Markers whose touch targets
+  would overlap share one, with the count, and its sheet lists their threads
+  in page order; a marker on screen never shares one scrolled out of view.
+- There is no comments bar over the page: **Show comments** sits in the
+  title menu beside Show Markdown, "N comments" under it, listed only when
+  the original has comments; on by default and app-wide. "Not on the page
+  (N)" is the next item, listed only while comments show.
+- A marker sits in the page's own right margin, clear of the text: 24 pt
+  seen, a 44 pt target, a soft yellow disc with an ink glyph and no shadow;
+  where the margin is too narrow it sits at the page's edge in the same
+  style.
+- A passage's tint is a soft yellow (about 12%); the active passage is
+  stronger and underlined.
+- The sheet opens at half the screen and keeps that height while it is
+  open, so stepping never resizes it; a drag can take it to large. The page
+  scrolls so the passage sits just above it. Its header has
+  the iOS 26 ×, and "2 of 5" with ‹ › stepping through every comment in
+  page order (then those not on the page), moving the page and the active
+  tint; a sideways swipe on the card steps too.
+- A card shows the passage as a block with a tinted left rule, the comment
+  text as its main line, an avatar in a stable soft color per author,
+  replies joined by a thin thread line, and a resolved thread dimmed with a
+  "✓ Resolved" chip.
+- Whenever the Original covers the text (iPhone, a narrow iPad, Slide
+  Over) the bottom bar goes: the review card, Review / Replace N, Find
+  names, the setup card and the scan note; a running job's progress stays.
+  Back on Text the review comes back as it was: the same card, scope and
+  place. The Reply pane's bar is unchanged.
+- The Identities button goes there too, since nothing on the Original acts
+  on names; it stays wherever Text stands beside the Original.
+
+## Original page controls (phones)
+
+- A PDF or DOCX page zooms out no further than its width (fit) and in to 5×
+  fit, because below fit a continuous column is a thin strip; scans and
+  photos already stop at fit.
+- A double-tap toggles fit and 2× at the tapped point, as scan images do.
+- One glass button, 44 pt, sits at the pane's bottom trailing corner: ⤡
+  while the zoom is more than about 2% off fit, animating back to fit with
+  the spot read kept at the top; ↑ at fit once past page 1, back to the
+  first page. Scans and photos get ⤡ only.
+- The Text pane shows the same ↑ above the bottom bar after one screen of
+  scrolling, never in edit mode; the status-bar tap scrolls whichever pane
+  shows to its top.
 - An iPad shows the rail once the Original pane is 560 pt wide; with the
   standing sidebar and Text beside it the pane is narrower, so the document
   offers Hide sidebar (☰ shows it again). On a 13-inch iPad the Identities
