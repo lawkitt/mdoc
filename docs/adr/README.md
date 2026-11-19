@@ -128,3 +128,4 @@ full text is in git history.
 | 0119 | [GPUI as the UI framework](0119-gpui-as-the-ui-framework.md) | Kept |
 | 0120 | [Phone detector floor and scan time](0120-phone-detector-floor-and-scan-time.md) | Kept |
 | 0121 | [Mirage on candle as the vision engine](0121-mirage-on-candle-as-the-vision-engine.md) | Kept |
+| 0122 | [Not a name](0122-not-a-name.md) | Kept |

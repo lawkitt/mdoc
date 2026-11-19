@@ -43,6 +43,9 @@ in [CONTEXT.md](../../CONTEXT.md).
 - A stale revision or offset never replaces text; the operation is refused.
 - Rescan needs no confirmation: it keeps every decision and manual addition
   and only adds new wordings.
+- Not a name takes a wording out of the case on save, alias reserved,
+  unless another member still has the alias
+  ([ADR 0122](../adr/0122-not-a-name.md)).
 - Cancelling a scan rejects late results and never reverts applied edits.
 - Pending proposals never block copy or save, and copying never applies
   them.
