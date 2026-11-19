@@ -762,6 +762,7 @@ impl Workspace {
                 category: category.token().into(),
                 custom: false,
                 originals: vec![term.to_string()],
+                not_a_name_by: None,
             });
             Some(case.exported())
         }) else {

@@ -25,6 +25,12 @@ pub enum ReviewAction {
         mention: u64,
         scope: Scope,
     },
+    /// Not a name (ADR 0122): the mark, or every mark of its identity,
+    /// comes off with no trace; replaced text returns first.
+    NotAName {
+        mention: u64,
+        scope: Scope,
+    },
     /// Every proposal, and applied aliases corrected.
     ReplaceAll,
     /// Selected text as a proposal of every exact repeat, in `category`
@@ -293,6 +299,10 @@ impl Document {
             A::Keep { mention, scope } => {
                 let range = self.mention(mention)?;
                 self.review.keep(range, scope)?;
+            }
+            A::NotAName { mention, scope } => {
+                let range = self.mention(mention)?;
+                self.review.not_a_name(range, scope)?;
             }
             A::ReplaceAll => self.review.replace_all()?,
             A::Mark { range, category } => {

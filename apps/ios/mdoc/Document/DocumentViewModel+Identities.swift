@@ -69,6 +69,27 @@ extension DocumentViewModel {
         toast = undoToast(text, steps: steps)
     }
 
+    /// Not a name for every mention of each identity (ADR 0122), one undo
+    /// step each; the toast's Undo takes them all back.
+    func notAName(identities ids: [IdentityID]) {
+        guard !reviewWaitsForJob(), !ids.isEmpty else { return }
+        let names = ids.compactMap { id in snapshot.identities.first { $0.id == id }?.primaryWording }
+        var steps = 0
+        for id in ids {
+            guard let first = snapshot.mentions(of: id).first else { continue }
+            let before = snapshot.undoStep
+            perform { try session.notAName(first.id, scope: .all) }
+            if errorMessage != nil { break }
+            if snapshot.undoStep != before { steps += 1 }
+        }
+        guard steps > 0 else { return }
+        Haptics.decision()
+        let text = names.count == 1
+            ? String(localized: "Not a name: \(names[0])")
+            : String(localized: "\(steps) marked Not a name")
+        toast = undoToast(text, steps: steps)
+    }
+
     /// Select › Same as: every selected identity joins the one mentioned
     /// most, which keeps its alias and restore wording.
     func merge(_ ids: [IdentityID]) {

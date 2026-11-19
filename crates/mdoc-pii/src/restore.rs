@@ -754,7 +754,7 @@ impl Review {
             push(&mut entry.originals, applied.step.original_shared().clone());
         }
         for variant in self.variants() {
-            if variant.kept {
+            if variant.kept || self.silenced(variant) {
                 continue;
             }
             if let Some(id) = self

@@ -879,6 +879,10 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             : .keep(mention: mention, scope: scope))
     }
 
+    func notAName(_ candidate: CandidateID, scope: Scope) throws -> DocumentSnapshot {
+        try review(.notAName(mention: try Self.mention(candidate), scope: scope))
+    }
+
     func replaceAllPending() throws -> DocumentSnapshot {
         try review(.replaceAll)
     }

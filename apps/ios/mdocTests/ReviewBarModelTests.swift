@@ -348,7 +348,7 @@ final class ReviewBarModelTests: XCTestCase {
     func testActionsForEachState() throws {
         let model = try model()
         let proposed = try XCTUnwrap(model.snapshot.candidates.first { $0.state == .proposed })
-        XCTAssertEqual(model.actions(for: proposed), [.replace, .keep, .replaceThisOne, .sameAs, .changeCategory, .fixWords])
+        XCTAssertEqual(model.actions(for: proposed), [.replace, .keep, .replaceThisOne, .sameAs, .changeCategory, .fixWords, .notAName])
         XCTAssertTrue(model.cardActions(for: proposed) == (.keep, .replace))
         XCTAssertEqual(model.keyAction(.return, for: proposed), .replace)
         XCTAssertEqual(model.keyAction(.keep, for: proposed), .keep)
@@ -356,7 +356,7 @@ final class ReviewBarModelTests: XCTestCase {
         var replaced = proposed
         replaced.state = .replaced
         XCTAssertEqual(
-            model.actions(for: replaced), [.keepInstead, .sameAs, .changeCategory, .fixWords],
+            model.actions(for: replaced), [.keepInstead, .sameAs, .changeCategory, .fixWords, .notAName],
             "no Show original: the menu's header says the wording")
         XCTAssertTrue(model.cardActions(for: replaced) == (.keepInstead, .next))
         XCTAssertEqual(model.keyAction(.return, for: replaced), .next, "Return is the filled Next")
@@ -364,10 +364,78 @@ final class ReviewBarModelTests: XCTestCase {
 
         var kept = proposed
         kept.state = .kept
-        XCTAssertEqual(model.actions(for: kept), [.replaceInstead, .changeCategory, .fixWords])
+        XCTAssertEqual(model.actions(for: kept), [.replaceInstead, .changeCategory, .fixWords, .notAName])
         XCTAssertTrue(model.cardActions(for: kept) == (.replaceInstead, .next))
         XCTAssertEqual(model.keyAction(.return, for: kept), .replaceInstead)
         XCTAssertNil(model.keyAction(.keep, for: kept), "K on a kept name does nothing")
+    }
+
+    /// Not a name from the menu (ADR 0122): every mention of the identity
+    /// leaves the snapshot, the bar moves to the next undecided name with
+    /// no toast, and Undo brings them back.
+    func testNotANameTakesTheNameOffAndMovesOn() throws {
+        let model = try model()
+        let repeated = try XCTUnwrap(model.snapshot.identities.first { $0.mentionCount > 1 })
+        let mentions = model.sortedMentions(of: repeated.id)
+        let count = model.snapshot.candidates.count
+        // The next undecided name after the first mention, in document
+        // order, that isn't one of the mentions going.
+        model.select(mentions[0].id)
+        let order = model.reviewOrder
+        let start = try XCTUnwrap(order.index(of: mentions[0].id))
+        let expected = try XCTUnwrap((start + 1..<count).lazy
+            .compactMap { order.candidate(at: $0) }
+            .first { $0.state == .proposed && $0.identityID != repeated.id })
+        model.perform(.notAName, fromMenuOn: mentions[0].id)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.snapshot.identities.contains { $0.id == repeated.id }, "no Identities row")
+        XCTAssertEqual(model.snapshot.candidates.count, count - mentions.count, "no mention shows")
+        XCTAssertTrue(model.isReviewing)
+        XCTAssertEqual(model.reviewedCandidate?.original, expected.original, "on to the next name, none skipped")
+        XCTAssertEqual(model.reviewedCandidate?.identityID, expected.identityID)
+        XCTAssertNil(model.toast)
+        model.undo()
+        XCTAssertEqual(model.snapshot.candidates.count, count)
+    }
+
+    /// Review this identity, then Not a name for All: the emptied focus
+    /// ends and the bar goes on to the document's next undecided name.
+    func testNotANameEmptyingAFocusGoesOnInTheDocument() throws {
+        let model = try model()
+        let identity = try XCTUnwrap(model.snapshot.identities.first)
+        model.beginReview(focus: .identity(identity.id))
+        XCTAssertEqual(model.reviewedCandidate?.identityID, identity.id)
+        model.notAName()
+        XCTAssertTrue(model.isReviewing, "other names are still undecided")
+        XCTAssertNil(model.focus)
+        XCTAssertEqual(model.reviewedCandidate?.state, .proposed)
+        XCTAssertNil(model.toast)
+    }
+
+    /// Not a name on the last undecided name ends review without "All
+    /// reviewed", even after a decision in this visit.
+    func testNotANameOnTheLastNameShowsNoAllReviewed() throws {
+        let model = try model()
+        model.beginReview()
+        while model.isReviewing, model.snapshot.candidates.filter({ $0.state == .proposed }).count > 1 {
+            model.decideCurrent(.replace)
+            model.toast = nil
+        }
+        XCTAssertTrue(model.isReviewing)
+        model.notAName()
+        XCTAssertFalse(model.isReviewing)
+        XCTAssertNil(model.toast)
+    }
+
+    /// From Identities: Not a name for the whole identity, with an Undo toast.
+    func testNotANameFromIdentitiesShowsAnUndoToast() throws {
+        let model = try model()
+        let identity = try XCTUnwrap(model.snapshot.identities.first)
+        model.notAName(identities: [identity.id])
+        XCTAssertFalse(model.snapshot.identities.contains { $0.id == identity.id })
+        XCTAssertEqual(model.toast?.text, "Not a name: \(identity.primaryWording)")
+        model.toast?.action?()
+        XCTAssertTrue(model.snapshot.identities.contains { $0.id == identity.id })
     }
 
     /// With no other identity there is no Same as… to offer.
@@ -378,7 +446,7 @@ final class ReviewBarModelTests: XCTestCase {
         _ = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
         let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
         let only = try XCTUnwrap(model.snapshot.candidates.first)
-        XCTAssertEqual(model.actions(for: only), [.replace, .keep, .replaceThisOne, .changeCategory, .fixWords])
+        XCTAssertEqual(model.actions(for: only), [.replace, .keep, .replaceThisOne, .changeCategory, .fixWords, .notAName])
     }
 
     /// A menu choice puts the bar on the name, in scope All, or This one for

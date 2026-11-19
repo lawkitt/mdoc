@@ -20,6 +20,8 @@ struct IdentitiesView: View {
     var onPickSameAs: (IdentityID) -> Void = { _ in }
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Select's ⋯ circle, growing with the text as the big buttons do.
+    @ScaledMetric private var moreWidth = BigButton.circleLabelWidth
     @State var query = ""
     @FocusState private var searchFocused: Bool
     /// The filter's category; nil is All.
@@ -420,7 +422,8 @@ struct IdentitiesView: View {
 
     // MARK: Select
 
-    /// Replace, Keep and Same as for the ticked names.
+    /// Replace, Keep and a round ⋯ holding Same as and Not a name for the
+    /// ticked names (ADR 0122): four capsules don't fit at large sizes.
     private var selectionBar: some View {
         let ids = identities.map(\.id).filter { selection.contains($0) }
         return HStack(spacing: Space.s) {
@@ -438,15 +441,34 @@ struct IdentitiesView: View {
                 Text("Keep").frame(maxWidth: .infinity)
             }
             .secondaryAction()
-            Button {
-                model.merge(ids)
-                selection = []
+            Menu {
+                Button {
+                    model.merge(ids)
+                    selection = []
+                } label: {
+                    Label("Same as", systemImage: "link")
+                }
+                .disabled(ids.count < 2)
+                .accessibilityHint(Text("Makes the selected names one name."))
+                Button {
+                    model.notAName(identities: ids)
+                    selection = []
+                } label: {
+                    Label("Not a name", systemImage: "tag.slash")
+                }
             } label: {
-                Text("Same as").frame(maxWidth: .infinity)
+                // As `secondaryAction(circle:)` draws a circle, which a
+                // Menu's label can't take.
+                Image(systemName: "ellipsis")
+                    .frame(
+                        width: moreWidth,
+                        height: moreWidth + 2 * (BigButton.systemCirclePadding - BigButton.systemPadding))
+                    .bigButtonLabel(prominent: false)
             }
-            .secondaryAction()
-            .disabled(ids.count < 2)
-            .accessibilityHint(Text("Makes the selected names one name."))
+            .secondaryGlass()
+            .buttonBorderShape(.circle)
+            .accessibilityLabel(Text("More"))
+            .accessibilityIdentifier("identities-selection-more")
         }
         .disabled(ids.isEmpty)
         .lineLimit(1)

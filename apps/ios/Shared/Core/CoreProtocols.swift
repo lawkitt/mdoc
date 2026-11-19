@@ -97,6 +97,9 @@ protocol DocumentSession: AnyObject, Sendable {
     /// than about a minute (ADR 0120); nil otherwise.
     func scanEstimate() -> Int?
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot
+    /// Not a name (ADR 0122): the mark, or every mark of its identity,
+    /// comes off with no trace; replaced text returns to its original.
+    func notAName(_ candidate: CandidateID, scope: Scope) throws -> DocumentSnapshot
     /// Replaces every proposed mention with its proposed alias.
     func replaceAllPending() throws -> DocumentSnapshot
     /// Copy for AI's text, through the same export path as desktop. The core
