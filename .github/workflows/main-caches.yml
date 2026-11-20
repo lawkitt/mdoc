@@ -19,6 +19,7 @@ on:
       - "build/appicon.svg"
       - "docs/**"
       - ".github/workflows/actionlint.yml"
+      - ".github/actionlint.yaml"
       - ".github/dependabot.yml"
   workflow_dispatch:
 

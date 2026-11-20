@@ -66,7 +66,9 @@ jobs:
   # ADR 0112's 20; each builds the app itself.
   ios:
     name: ci/ios (${{ matrix.part }})
-    runs-on: macos-26
+    # The only hosted image with Xcode 27 (ITMS-90725: App Store uploads need
+    # the iOS 27 SDK from April 2027), a preview (actions/runner-images#14404).
+    runs-on: xcode-27
     # Job limits (ADR 0095, ADR 0112): the one job took 29 to 46 minutes
     # with every test (2026-11-11); the unit part took 10 minutes and the
     # one UI part 26 on #829, so a UI shard should take about 17. A change

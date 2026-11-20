@@ -1,0 +1,5 @@
+# GitHub-hosted labels newer than the pinned actionlint knows.
+self-hosted-runner:
+  labels:
+    # The preview image with Xcode 27 (actions/runner-images#14404).
+    - xcode-27
