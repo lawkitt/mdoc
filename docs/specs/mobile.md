@@ -23,12 +23,8 @@ A grill is only for a pattern this page lacks, which this page then gains.
 ## The core and the app
 
 - Every rule about documents, review, cases, aliases, file names and restore
-  lives in `crates/mdoc-ffi` or below; the app formats and lays out what a
-  snapshot says.
-- No Swift or Kotlin copy of a core rule: a rule found in the app moves into
-  the core.
-- The app never derives a review fact from other facts; a fact the app needs
-  is added to the core's snapshot.
+  lives in `crates/mdoc-ffi` or below: the app lays out what a snapshot says,
+  never derives a review fact itself, and moves a rule it finds into the core.
 - View-model and snapshot tests run the real core over temporary storage
   with a fixed case key; there is no fake library or document session.
 - Test fakes and the fixed case key are never compiled into the app or the
@@ -47,7 +43,7 @@ A grill is only for a pattern this page lacks, which this page then gains.
   document.
 - A review tap returns its snapshot at once and saves off the main thread
   once taps pause (300 ms), because a save on the tap took longer than a
-  frame.
+  frame; a crash before then loses those taps.
 - A pending save runs at once on leaving the foreground, before Copy for AI,
   Share, an import, Move to case or leaving the document.
 - No fixed delay in app code except for a named platform bug, a missing
@@ -65,11 +61,12 @@ A grill is only for a pattern this page lacks, which this page then gains.
 - Below the floor the app imports, recognizes text and marks names by
   selection; where Find names would be, and in Settings, it says why and
   that selecting marks a name.
-- The floor is 4 GB of RAM (`DETECTOR_FLOOR_BYTES`), or a timed run past
-  10 minutes per 10,000 characters; it guards memory, not speed, because
-  owners of older phones would rather wait.
+- The floor is 4 GB of RAM (`DETECTOR_FLOOR_BYTES`) or a timed run past
+  10 minutes per 10,000 characters, set low because owners of older phones
+  would rather wait.
 - An offered model peaks under 2 GiB and cold-loads within 10 s on each
-  device class.
+  device class; an INT8 export also matches FP16 on the qualification
+  fixtures.
 - A scan needs about 1.3 GB free to start (`DETECTOR_FREE_BYTES`), because
   the system would end the app partway.
 - A download on cellular asks first on any cellular interface, whatever the
@@ -81,7 +78,7 @@ A grill is only for a pattern this page lacks, which this page then gains.
   job once installed.
 - A phone scan has no deadline; it shows time left and stops after 60 s
   without progress.
-- Heat pauses a scan but never withdraws the detector.
+- A scan pauses while the phone is critically hot.
 - One long job runs at a time, off the main thread, with progress and
   cooperative cancellation.
 - Nothing starts in the background on its own; only a job the user started

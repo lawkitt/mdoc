@@ -7,8 +7,8 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 - Detection assists the user's review; it never establishes that text is
   anonymous, and no UI or doc says it does.
-- Keep means "send the original"; Not a name means "never found" and leaves
-  no trace.
+- Keep means "send the original"; Not a name, "never found", though a case
+  keeps a wording another member uses.
 - The qualified envelope is English and Russian legal text, native or
   OCR-derived, on Apple Silicon macOS and Windows x64; Linux builds, and its
   automatic scanning is stated separately.
@@ -145,7 +145,7 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   rejected, never truncated.
 - A window repeated word for word runs once.
 - Limits: 2 MiB of source, 512 tokens per window, a two-minute cooperative
-  deadline on desktop (phones: [mobile](mobile.md)).
+  deadline on desktop.
 - One scan runs at a time, and each scan loads and drops its engine.
 - Model load and a native inference call cannot be interrupted mid-call; a
   cancelled scan's late results are rejected.

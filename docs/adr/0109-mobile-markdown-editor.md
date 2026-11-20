@@ -6,8 +6,9 @@ Status: Accepted, 2026-11-09.
 
 The phone could review a document but not change it: no fixing OCR damage,
 no cutting boilerplate, no new document. The desktop editor is GPUI, which
-has no phone backend. So the phones edit in a native TextKit 2 view over a
-GUI-free Rust editor core that desktop's `mdoc-editor` also calls: each
+has no phone backend. So iOS edits in a native TextKit 2 view, and Android
+in its own later design, over a GUI-free Rust editor core that desktop's
+`mdoc-editor` also calls: each
 editing rule (Enter, joins, formatting, lists, tables, paste, undo
 coalescing) exists once, over one Markdown parser, and review keeps working
 over the edits. The text view's string is the source, saved bytes are the

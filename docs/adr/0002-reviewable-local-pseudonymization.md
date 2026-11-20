@@ -7,8 +7,9 @@ Status: Accepted, 2026-10-01.
 Lawyers need to send documents to AI assistants without sending client
 names, and no detector is reliable enough to promise anonymity. So mdoc
 replaces identifying information on the device with consistent placeholders
-(`PERSON_1`, `ORG_1`) that the user reviews before anything leaves.
-Detection assists the review; it never establishes that text is anonymous.
+(`PERSON_1`, `ORG_1`) and leaves the review to the user: pending proposals
+never block a copy, which can still hold originals. Detection assists the
+review; it never establishes that text is anonymous.
 Detection reuses open-source models rather than growing an engine: GLiNER2
 through gliner2-rs with a pinned PII export, on the CPU through the app's
 ONNX Runtime, installed only by explicit, verified setup. Opening and
