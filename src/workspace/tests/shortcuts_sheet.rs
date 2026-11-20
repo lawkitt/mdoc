@@ -1,4 +1,4 @@
-//! The keyboard shortcuts sheet (ADR 0073): opened by `?` outside text
+//! The keyboard shortcuts sheet: opened by `?` outside text
 //! fields, ⌘/ (Ctrl+/) everywhere and the palette; every table row drawn.
 use super::*;
 use crate::{shortcuts, workspace::shortcuts_ui};
@@ -65,7 +65,7 @@ fn question_mark_on_home_opens_every_shortcut(cx: &mut TestAppContext) {
             .iter()
             .any(|(_, rows)| rows.iter().any(|row| row.label == "New tab"))
     );
-    // F6 stays inside, like the palette (ADR 0062).
+    // F6 stays inside, like the palette.
     cx.simulate_keystrokes("f6");
     assert!(sheet_open(&tabs, cx));
     // Esc closes it and focus goes back.

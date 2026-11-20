@@ -216,7 +216,7 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
                     cx,
                 );
                 app.pii.mapping.open = false;
-                // Inspector (ADR 0048, C): the Review tab.
+                // Inspector: the Review tab.
                 app.inspector_share = false;
                 app.toggle_replacements_panel(window, cx);
             });
@@ -324,7 +324,7 @@ fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
     });
 }
 
-/// Not a name (ADR 0122) on a proposed mention, for the whole identity:
+/// Not a name on a proposed mention, for the whole identity:
 /// every mention leaves the review, nothing shows as kept, it closes the
 /// popup, records one decision and one undo step.
 #[gpui::test]
@@ -543,7 +543,7 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
         });
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
-        // Ownership lives in the category menu (ADR 0055).
+        // Ownership lives in the category menu.
         let category = cx.debug_bounds("direct-category").unwrap().center();
         cx.simulate_click(category, Default::default());
         cx.run_until_parked();
@@ -731,7 +731,7 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
             });
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
-            // The header expands its group; the mention row selects (ADR 0033).
+            // The header expands its group; the mention row selects.
             // Its original is clicked: in a narrow panel the row's middle is
             // the alias, which edits in place.
             let row = cx
@@ -748,8 +748,7 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
                 .unwrap();
             cx.simulate_click(mention.center(), Default::default());
             cx.run_until_parked();
-            // A mention row opens the popup on that word, beside the panel
-            // (ADR 0048).
+            // A mention row opens the popup on that word, beside the panel.
             app.update_in(cx, |app, _, _| {
                 assert!(app.pii.popup.is_some());
                 assert_eq!(app.active_annotation(), Some(first));
@@ -1166,7 +1165,7 @@ fn popup_apply_undo_and_keep_follow_scope_and_stay_on_the_mention(cx: &mut gpui:
             "Павлова М.С. · Павлова М.С. · marina@example.invalid"
         );
         assert_eq!(app.pii.review.remaining(), 1);
-        // The popup stays on the mention, now kept (ADR 0055).
+        // The popup stays on the mention, now kept.
         assert!(app.pii.popup.is_some() && app.active_is_kept());
         assert_eq!(
             app.active_replacement_range(),
@@ -1320,7 +1319,7 @@ fn unticking_an_applied_mention_restores_only_its_original(cx: &mut gpui::TestAp
             app.apply_scope(cx);
             assert_eq!(app.editor.read(cx).text(), "ORG_1 · ORG_1");
         });
-        // The mention row's checkbox keeps this original (ADR 0048).
+        // The mention row's checkbox keeps this original.
         let (annotation, identity) = app.update(cx, |app, cx| {
             let annotation = app.active_annotation().unwrap();
             app.panel_select_mention(annotation, cx);
@@ -1369,7 +1368,7 @@ fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpu
         draw(cx);
     };
     // An entity row click opens its group and the popup on its first
-    // mention (ADR 0048).
+    // mention.
     click(cx, format!("identity-{identity}"));
     let first = app.read_with(cx, |app, _| app.identity_occurrences(identity)[0].0);
     app.read_with(cx, |app, _| {
@@ -1746,7 +1745,7 @@ fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
 fn the_category_and_filter_menus_take_keyboard_focus(cx: &mut gpui::TestAppContext) {
     // #167: each menu takes focus when it opens, Tab and the arrows stay in
     // it (the popup does not step mentions), and Esc gives focus back to its
-    // button (ADR 0062).
+    // button.
     let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова Марина Сергеевна";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
@@ -1931,7 +1930,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::Te
         cx.simulate_click(at, Default::default());
         cx.run_until_parked();
     };
-    // Groups open independently from their chevrons (ADR 0048).
+    // Groups open independently from their chevrons.
     click(cx, format!("entity-expand-{full}"));
     click(cx, format!("entity-expand-{initials}"));
     app.read_with(cx, |app, _| {
@@ -1951,7 +1950,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::Te
     app.read_with(cx, |app, cx| {
         assert_eq!(app.pii.mapping.expanded.len(), 3);
         let entries = app.replacement_entries(cx);
-        // A category label above each group (ADR 0046): three categories,
+        // A category label above each group: three categories,
         // three entities, four mentions.
         assert_eq!(entries.len(), 3 + 3 + 4);
         let labels: Vec<_> = entries
@@ -2000,7 +1999,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::Te
         assert_eq!(app.pii.review.identity(initials).unwrap().alias, "CLIENT");
         assert_eq!(app.pii.mapping.header_edit, None);
     });
-    // Right-clicking an entity row offers its category (ADR 0048).
+    // Right-clicking an entity row offers its category.
     cx.update(|window, cx| window.draw(cx).clear(cx));
     let row = cx
         .debug_bounds(Box::leak(format!("identity-{initials}").into_boxed_str()))
@@ -2039,7 +2038,7 @@ fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext)
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
     };
-    // ↓ from search enters the list on the first entity (ADR 0048).
+    // ↓ from search enters the list on the first entity.
     app.update_in(cx, |app, window, cx| {
         window.focus(&app.pii.mapping.search.read(cx).focus_handle(cx), cx);
     });
@@ -2089,7 +2088,7 @@ fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext)
     app.read_with(cx, |app, _| {
         assert_eq!(app.pii.review.remaining(), 0);
         assert_eq!(app.pii.review.identity_count(initials), 2);
-        // Inspector (ADR 0048, C): applying everything turns to Share.
+        // Inspector: applying everything turns to Share.
         assert!(app.inspector_share);
     });
     click_tab(cx, "inspector-review");
@@ -2246,7 +2245,7 @@ fn applying_under_the_proposed_filter_keeps_the_cursor_on_a_shown_row(
     });
 }
 
-/// Click an Inspector tab (ADR 0048 variant C).
+/// Click an Inspector tab.
 fn click_tab(cx: &mut gpui::VisualTestContext, id: &'static str) {
     cx.update(|window, cx| window.draw(cx).clear(cx));
     let at = cx.debug_bounds(id).unwrap().center();
@@ -2544,7 +2543,7 @@ fn popup_untick_stays_open_and_arrows_and_retick_follow_the_scope(cx: &mut gpui:
     app.update_in(cx, |app, window, cx| {
         let ids = seed_anna(app, source, cx);
         app.activate_annotation(ids[0], window, cx);
-        // All, the whole entity, is the default scope (ADR 0055).
+        // All, the whole entity, is the default scope.
         assert!(app.pii.mapping.scope() == Scope::Entity);
         app.toggle_replace(window, cx);
         assert_eq!(app.pii.review.remaining(), 0);
@@ -3159,7 +3158,7 @@ fn popup_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContext) {
     });
 }
 
-/// Add `word` by hand as the user would: select it, then Add (ADR 0024).
+/// Add `word` by hand as the user would: select it, then Add.
 fn add_by_hand(app: &Entity<DocumentView>, word: &str, cx: &mut gpui::VisualTestContext) {
     app.update_in(cx, |app, window, cx| {
         let at = app.editor.read(cx).text().find(word).unwrap();

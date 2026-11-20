@@ -1,4 +1,4 @@
-//! Settings presentation and category navigation (ADR 0076).
+//! Settings presentation and category navigation.
 use super::{
     CloseSettings, CommitNumber, Event, NextCategory, NextSettingsField, Panel, PreviousCategory,
     PreviousSettingsField, block_document_commands, quiet_control,
@@ -131,7 +131,7 @@ impl Panel {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         // On is the accent; off is neutral grey, so an off switch never
-        // reads as a tinted on one (ADR 0076).
+        // reads as a tinted on one.
         let accent = theme.search_accent();
         let p = theme.pdf_style();
         let off = p.header_muted;
@@ -171,7 +171,7 @@ impl Panel {
     }
     /// One choice of a segmented control (Appearance, Resolution). The
     /// selected choice is filled with the accent, so it never reads as the
-    /// focused one, which only gains the outside ring (ADR 0076). The caller
+    /// focused one, which only gains the outside ring. The caller
     /// adds the label.
     pub(super) fn segment(
         &self,
@@ -277,7 +277,7 @@ impl Panel {
             .into_any_element()
     }
     /// Tick or untick a category to detect and save; a failed save restores
-    /// the previous list (ADR 0076).
+    /// the previous list.
     pub(crate) fn set_detects(
         &mut self,
         category: mdoc_pii::Category,
@@ -287,7 +287,7 @@ impl Panel {
         self.draft.categories.set(category, on);
         self.persist(cx);
     }
-    /// Categories to detect (ADR 0076): one chip per category scans can
+    /// Categories to detect: one chip per category scans can
     /// return, all on by default. Saves on change.
     fn categories_row(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
         let p = theme.pdf_style();
@@ -457,7 +457,7 @@ impl Panel {
     fn category_body(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
         let body = match self.category() {
             Category::General => div().child(self.appearance_section(theme, cx))
-                // ADR 0084: macOS only; Windows has no tray yet.
+                // MacOS only; Windows has no tray yet.
                 .when(cfg!(target_os = "macos"), |v| v.child(self.setting_row("Show mdoc in the menu bar", "mdoc keeps running after you close its windows.", self.switch("general-menu-bar", "Show mdoc in the menu bar", self.draft.general.menu_bar, true, |p| p.general.menu_bar = !p.general.menu_bar, theme, cx), theme)))
                 .child(self.updates_section(theme, cx))
                 .child(self.setting_row("Recent files", "Names and folders of recently opened files, never their contents.", self.scrolled_quiet("recents-clear", "Clear", theme, true, cx).when(cfg!(test), |v| v.debug_selector(|| "recents-clear".into())).on_click(cx.listener(|_, _, _, cx| cx.emit(Event::ClearRecents))), theme))
@@ -484,7 +484,7 @@ impl Panel {
             Category::Cases => div().child(self.setting_row("Ask before closing", "Confirm before closing an unsaved mapping. A saved case keeps its mapping encrypted on this computer.", self.switch("cases-ask", "Ask before closing an unsaved mapping", self.draft.cases.ask_before_closing, true, |p| p.cases.ask_before_closing = !p.cases.ask_before_closing, theme, cx), theme)),
             Category::About => div().child(self.about_section(theme, cx)),
         };
-        // About has no preferences, so it has nothing to reset (ADR 0076).
+        // About has no preferences, so it has nothing to reset.
         body.when(self.category != Category::About, |v| {
             v.child(
                 self.setting_row(
@@ -614,7 +614,7 @@ impl Panel {
             })
             .when(self.dictionary.is_none(), |v| {
                 // A page taller than the overlay shows a scroll thumb, and
-                // fades at an edge where rows continue (ADR 0076).
+                // fades at an edge where rows continue.
                 let (above, below) = self.scroll_cues();
                 let fade = |top: bool| {
                     let clear = gpui::Hsla { a: 0., ..p.bg };

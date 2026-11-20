@@ -1,4 +1,4 @@
-//! What you did: the decision history and travelling back (ADR 0079).
+//! What you did: the decision history and travelling back.
 use super::{Driver, Result};
 use crate::{
     document_view::DocumentView,

@@ -1,5 +1,4 @@
-//! Panel keyboard, panel selection and shared decision keys (ADR 0033,
-//! ADR 0044).
+//! Panel keyboard, panel selection and shared decision keys.
 use super::{DropTarget, PanelCursor, PanelDrag, panel::PanelItem, popup::Scope};
 use crate::{
     document_view::DocumentView,
@@ -132,14 +131,14 @@ impl DocumentView {
             self.apply_scope(cx);
         }
         // The key names its own scope; the segment keeps showing the chosen
-        // one (ADR 0055).
+        // one.
         self.pii.mapping.set_scope(previous);
         true
     }
 
     /// A decision on the panel's keyboard row. The selection stays on the
     /// mention acted on; a kept mention leaves the list, so its group header
-    /// takes the cursor (ADR 0044).
+    /// takes the cursor.
     /// Escape closes an open row or filter menu before anything else (#92).
     /// Focus left on one of its items returns to the list; the search field
     /// and the mention popup keep theirs.
@@ -227,7 +226,7 @@ impl DocumentView {
     }
 
     /// Space (or ⌫ to only untick) on the keyboard row: an entity's or a
-    /// mention's checkbox (ADR 0048). The cursor stays on the row.
+    /// mention's checkbox. The cursor stays on the row.
     fn panel_toggle(&mut self, keep_only: bool, window: &mut Window, cx: &mut Context<Self>) {
         match self.pii.mapping.cursor {
             Some(PanelCursor::Header(id)) => {
@@ -372,7 +371,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         popup
-            // Enter applies in the shown scope and moves on (ADR 0055).
+            // Enter applies in the shown scope and moves on.
             .on_action(
                 cx.listener(|this, _: &crate::pii::ui::ApplyThis, window, cx| {
                     this.apply_and_advance(window, cx);
@@ -463,7 +462,7 @@ impl DocumentView {
 
     /// ⌥↑/↓: start a keyboard move on the current row, or step its target
     /// through the groups, then "New alias" for a mention of a multi-mention
-    /// entity. The ends stop rather than wrap (ADR 0033).
+    /// entity. The ends stop rather than wrap.
     fn step_key_move(&mut self, down: bool, cx: &mut Context<Self>) {
         if !self.pii.mapping.key_moving {
             let Some(drag) = self.cursor_drag(cx) else {
@@ -550,7 +549,7 @@ impl DocumentView {
     }
 
     /// Over the list, a mouse wheel (line deltas) steps the keyboard row one
-    /// notch at a time; trackpads (pixel deltas) scroll as usual (ADR 0033).
+    /// notch at a time; trackpads (pixel deltas) scroll as usual.
     pub(super) fn wheel_steps(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let weak = cx.entity().downgrade();
         gpui::canvas(

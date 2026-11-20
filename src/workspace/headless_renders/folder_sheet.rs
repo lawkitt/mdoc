@@ -1,4 +1,4 @@
-//! The folder sheet (ADR 0075).
+//! The folder sheet.
 use super::{Driver, Result};
 use crate::workspace::folder_sheet::{DroppedFolder, Pending};
 use std::path::Path;

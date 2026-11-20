@@ -1,4 +1,4 @@
-//! What you did (ADR 0079): each pseudonymization decision is listed on the
+//! What you did: each pseudonymization decision is listed on the
 //! undo point it created, and travelling to an entry presses ⌘Z or ⇧⌘Z that
 //! many times. The log is memory only and never reaches the session or case.
 use super::{ReviewUi, mapping::MappingAction};

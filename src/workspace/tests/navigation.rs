@@ -1,4 +1,4 @@
-//! Actual destination, keyboard and pointer dispatch (ADR 0081).
+//! Actual destination, keyboard and pointer dispatch.
 use super::*;
 use crate::workspace::navigation::{Arrival, Stop};
 
@@ -279,7 +279,7 @@ fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut Te
 
 #[gpui::test]
 fn f6_lands_on_the_active_tab_after_back_across_sidebar_layouts(cx: &mut TestAppContext) {
-    // ADR 0062: F6 into the sidebar lands on the active tab, not on Back.
+    // F6 into the sidebar lands on the active tab, not on Back.
     let (tabs, cx) = boot(cx, Session::default());
     let (focus, active) = tabs.read_with(cx, |w, _| (w.back_focus.clone(), w.tabs.active()));
     cx.update(|window, cx| window.focus(&focus, cx));

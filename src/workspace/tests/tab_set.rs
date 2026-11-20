@@ -428,7 +428,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     });
     cx.run_until_parked();
     let fallback = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    // From Home, New turns the placeholder into the tab (ADR 0048); a second
+    // From Home, New turns the placeholder into the tab; a second
     // New adds another.
     tabs.update_in(cx, |tabs, window, cx| {
         assert_eq!(tabs.new_tab(window, cx), fallback);
@@ -497,7 +497,7 @@ fn home_opens_several_files_and_new_tab_is_a_plain_editor(cx: &mut TestAppContex
     std::fs::write(&b, "b").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
-    // Launch with nothing to restore shows Home (ADR 0048).
+    // Launch with nothing to restore shows Home.
     assert!(cx.debug_bounds("home").is_some());
     assert!(
         cx.debug_bounds("empty-page-local").is_some(),

@@ -1,4 +1,4 @@
-//! Fetching a release's disk image and checksum (ADR 0040). Redirects are
+//! Fetching a release's disk image and checksum. Redirects are
 //! followed by hand so every hop stays on GitHub; the checksum is compared
 //! while the file streams in.
 
@@ -14,7 +14,7 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-/// The macOS release asset for `version` (ADR 0037 naming).
+/// The macOS release asset for `version`.
 pub fn dmg_name(version: &str) -> String {
     format!("mdoc_{version}_arm64.dmg")
 }

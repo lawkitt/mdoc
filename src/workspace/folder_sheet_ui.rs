@@ -1,4 +1,4 @@
-//! The folder sheet in the window (ADR 0075): a modal dialog listing a
+//! The folder sheet in the window: a modal dialog listing a
 //! dropped folder's files as checkboxes, with Open as case (or Add to “X”),
 //! Open files and Cancel. Open files never touches the case key; the case
 //! actions read it only after the click.
@@ -216,7 +216,7 @@ impl Workspace {
     }
 
     /// Open as case / Add to “X”: read the key now, after the Keychain
-    /// explainer when reading might ask (ADR 0043). Not now returns to the
+    /// explainer when reading might ask. Not now returns to the
     /// sheet.
     pub(super) fn folder_primary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.folder_sheets.waiting()

@@ -58,7 +58,7 @@ mod user_lists;
 mod window_shell;
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather
-/// than Home (ADR 0048), as most tests type into it. See [`boot_home`].
+/// than Home, as most tests type into it. See [`boot_home`].
 fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Workspace>, &mut VisualTestContext) {
     let untitled = session.tabs.is_empty();
     let (tabs, cx) = boot_home(cx, session);
@@ -109,7 +109,7 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
     cx.run_until_parked();
 }
 
-/// Choose `item` from the document header's ⋯ menu (ADR 0048).
+/// Choose `item` from the document header's ⋯ menu.
 fn more(cx: &mut VisualTestContext, item: &'static str) {
     click_toolbar(cx, "header-more");
     click_toolbar(cx, item);
@@ -123,7 +123,7 @@ fn draw(cx: &mut VisualTestContext) {
 }
 
 /// Expand the sidebar as the user would, in a window too narrow for it to
-/// stay expanded by itself (ADR 0027).
+/// stay expanded by itself.
 fn expand_sidebar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     draw(cx);
     if !cx.update(|_, cx| tabs.read(cx).sidebar.visible()) {
@@ -262,7 +262,7 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
     cx.run_until_parked();
     if matches!(model, settings::Model::Pii(_)) {
         // The setup tab has typed text too: two to ask about, so the quit's
-        // summary comes first (ADR 0071).
+        // summary comes first.
         cx.simulate_prompt_answer("Review…");
         cx.run_until_parked();
     }
@@ -487,7 +487,7 @@ fn case_quit_fixture<'a>(
     (tabs, cx, id)
 }
 
-// Keyboard reach (ADR 0062).
+// Keyboard reach.
 
 fn key(cx: &mut VisualTestContext, keys: &str) {
     cx.simulate_keystrokes(keys);

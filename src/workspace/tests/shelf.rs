@@ -1,4 +1,4 @@
-//! The menu bar shelf's list and handoff (ADR 0084): what it lists from the
+//! The menu bar shelf's list and handoff: what it lists from the
 //! window's tabs and cases, and that nothing leaves it unless ready.
 use super::*;
 use crate::shelf::{Readiness, ShelfExports, ShelfKey};
@@ -29,7 +29,7 @@ fn join_and_apply(tabs: &Entity<Workspace>, id: u64, case: &str, cx: &mut Visual
     cx.run_until_parked();
 }
 
-/// Done when (ADR 0084): ready, not-ready and changed-since-review
+/// Done when: ready, not-ready and changed-since-review
 /// documents are copied and dragged from the shelf, and no export holds an
 /// original.
 #[gpui::test]
@@ -394,7 +394,7 @@ fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui:
     shelf
 }
 
-/// The shelf's own controls (ADR 0084): Copy for AI and a drag carry the
+/// The shelf's own controls: Copy for AI and a drag carry the
 /// editor's bytes for a ready row and nothing for one that is not; Restore
 /// Clipboard uses the current case; a click brings the tab forward.
 #[gpui::test]
@@ -680,7 +680,7 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
     );
 }
 
-/// Polish (ADR 0084): ⌘1–⌘8 copy that row for AI, ✓ "Copied" shows and
+/// Polish: ⌘1–⌘8 copy that row for AI, ✓ "Copied" shows and
 /// the shelf closes after about 0.8 s; a clipboard result shows on the
 /// source line for a few seconds; the first drag retires the drag hint for
 /// good, recorded in settings.

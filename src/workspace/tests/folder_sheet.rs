@@ -1,4 +1,4 @@
-//! The folder sheet (ADR 0075): a dropped folder shows its files before
+//! The folder sheet: a dropped folder shows its files before
 //! anything opens; Open files never reads the case key; one folder opens at
 //! most 20 new tabs.
 use super::*;

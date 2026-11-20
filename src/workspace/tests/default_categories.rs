@@ -1,4 +1,4 @@
-//! Settings › Detection › Categories to detect (ADR 0076): the default for
+//! Settings › Detection › Categories to detect: the default for
 //! documents without a case and the list each new case starts from.
 use super::*;
 use mdoc_pii::Category;

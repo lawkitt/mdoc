@@ -30,7 +30,7 @@ pub(super) enum Selection {
         range: Range<usize>,
     },
     Applied(u64),
-    /// A kept mention: its entity, range and wording (ADR 0055).
+    /// A kept mention: its entity, range and wording.
     Kept {
         identity: u64,
         range: Range<usize>,
@@ -101,14 +101,14 @@ impl gpui::Render for DragGhost {
     }
 }
 /// Where a panel drag would drop.
-/// Which panel rows the filter shows (ADR 0033); the editor always shows all.
+/// Which panel rows the filter shows; the editor always shows all.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub(super) enum PanelFilter {
     #[default]
     All,
     Proposed,
     Applied,
-    /// Entities unticked in this session: their originals stay (ADR 0048).
+    /// Entities unticked in this session: their originals stay.
     Kept,
 }
 impl PanelFilter {
@@ -131,8 +131,8 @@ impl PanelFilter {
     }
 }
 
-/// The entity a kept wording belonged to, recorded when it was unticked
-/// (ADR 0048), for when the review no longer links the two.
+/// The entity a kept wording belonged to, recorded when it was unticked,
+/// for when the review no longer links the two.
 #[derive(Clone, Debug)]
 pub(super) struct KeptName {
     pub identity: u64,
@@ -183,7 +183,7 @@ pub(super) struct MappingUi {
     kept: Option<(usize, u64)>,
     /// The panel mention row under the pointer.
     pub(super) hovered: Option<u64>,
-    /// The latest manual addition, for Cancel addition (ADR 0025).
+    /// The latest manual addition, for Cancel addition.
     added: Option<Added>,
     /// A popup scope chip under the pointer previews its outline.
     pub(super) scope_hover: Option<Scope>,
@@ -203,9 +203,9 @@ pub(super) struct MappingUi {
     target: Entity<markdown_search::SearchInput>,
     /// Mentions applied by the last Apply replacements and the state it created.
     applied: Option<(usize, u64)>,
-    /// Groups expanded in the panel, independent of selection (ADR 0033).
+    /// Groups expanded in the panel, independent of selection.
     pub(super) expanded: std::collections::HashSet<u64>,
-    /// Kept wordings and their entity, recorded at untick (ADR 0048).
+    /// Kept wordings and their entity, recorded at untick.
     pub(super) kept_names: std::collections::HashMap<Arc<str>, KeptName>,
     pub(super) filter: PanelFilter,
     pub(super) cursor: Option<PanelCursor>,
@@ -217,7 +217,7 @@ pub(super) struct MappingUi {
     /// The group whose alias is being renamed in place, and its draft.
     pub(super) header_edit: Option<u64>,
     pub(super) header_alias: Entity<markdown_search::SearchInput>,
-    /// Hides the footer's after-action notice once it times out (ADR 0033).
+    /// Hides the footer's after-action notice once it times out.
     notice: Option<gpui::Task<()>>,
     previous_focus: Option<FocusHandle>,
     scroll: gpui::ScrollHandle,
@@ -226,13 +226,13 @@ pub(super) struct MappingUi {
     /// The header's expand/collapse-all toggle.
     pub(super) expand_all_focus: FocusHandle,
     /// The popup's open category or owner menu, which holds focus while
-    /// open (ADR 0062).
+    /// open.
     pub(super) popup_menu_focus: FocusHandle,
     /// The panel's filter button and its menu, likewise.
     pub(super) filter_focus: FocusHandle,
     pub(super) filter_menu_focus: FocusHandle,
     /// Merge hints dismissed in this tab or its case, by the wordings that
-    /// matched (ADR 0080). Forgetting removes affected pairs and clears caches.
+    /// matched. Forgetting removes affected pairs and clears caches.
     dismissed_hints: std::collections::HashSet<(Arc<str>, Arc<str>)>,
     /// The fuller wording of the last hint Merge and the state it created.
     merged: Option<(Arc<str>, u64)>,
@@ -289,7 +289,7 @@ impl MappingUi {
     pub(super) fn set_scope(&mut self, scope: Scope) {
         self.scope = scope;
     }
-    // Pickers float over the popup, so only one is open at a time (ADR 0032).
+    // Pickers float over the popup, so only one is open at a time.
     pub(super) fn toggle_category_picker(&mut self) {
         let open = !self.pickers.category;
         self.pickers = Pickers::default();
@@ -671,7 +671,7 @@ impl DocumentView {
         let previous = self.selected_entity();
         self.pii.mapping.select(selected);
         // A newly selected entity's group opens and the scope returns to the
-        // whole entity; within an entity the chosen scope stays (ADR 0055).
+        // whole entity; within an entity the chosen scope stays.
         if let Some(id) = self.selected_entity().filter(|id| previous != Some(*id)) {
             self.pii.mapping.expanded.insert(id);
             self.pii.mapping.set_scope(Scope::Entity);
@@ -729,7 +729,7 @@ impl DocumentView {
     }
     pub(super) fn sync_identity_selection_after_history(&mut self, cx: &mut Context<Self>) {
         // An undo or redo can turn the popup's mention kept or live again:
-        // follow it by its place among the entity's mentions (ADR 0055).
+        // follow it by its place among the entity's mentions.
         if let (Some((id, index)), Some(_)) = (self.pii.mapping.active_place, &self.pii.popup) {
             let mentions = self.popup_occurrences(id);
             let current = self
@@ -837,7 +837,7 @@ impl DocumentView {
             plans.sort_by_key(|p| p.range.start);
         }
         // Re-choosing what is already so (the current category) changes
-        // nothing: no undo step and no entry in What you did (ADR 0079). An
+        // nothing: no undo step and no entry in What you did. An
         // applied mention always gets a plan, so a plan that rewrites it to
         // its own alias, category and identity counts as nothing too.
         let unchanged = |p: &ReplacementPlan| {
@@ -867,7 +867,7 @@ impl DocumentView {
             return;
         };
         // One undo point, one entry: an alias confirmed with Apply lists
-        // both ("Renamed … · applied 4 replacements", ADR 0079).
+        // both ("Renamed … · applied 4 replacements").
         if let Some(decision) = decision {
             self.record_decision(history, decision, cx);
         }
@@ -1183,7 +1183,7 @@ impl DocumentView {
         let low = view.top();
         let high = view.bottom();
         // Valid shifts for placing the bar below / above, including the
-        // clear neighbouring line (ADR 0055). Zero wins when already visible.
+        // clear neighbouring line. Zero wins when already visible.
         let shift = [
             (low - top, high - px(4.) - gap - bar - bottom),
             (low + px(4.) + gap + bar - top, high - bottom),
@@ -1204,7 +1204,7 @@ impl DocumentView {
 }
 
 impl DocumentView {
-    /// Show the footer's "… · Undo" notice for a few seconds (ADR 0033).
+    /// Show the footer's "… · Undo" notice for a few seconds.
     pub(super) fn flash_notice(&mut self, cx: &mut Context<Self>) {
         self.pii.mapping.notice = Some(cx.spawn(async move |this, cx| {
             cx.background_executor()

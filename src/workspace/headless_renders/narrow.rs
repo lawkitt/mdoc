@@ -1,4 +1,4 @@
-//! Narrow windows (ADR 0027): long names sharing their start, truncated in
+//! Narrow windows: long names sharing their start, truncated in
 //! the middle; a sidebar dragged wide; and the minimum window, where the
 //! sidebar collapses by itself until the user expands it.
 use super::{Driver, HEIGHT, Result, WIDTH};

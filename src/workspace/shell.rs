@@ -1,4 +1,4 @@
-//! The window shell (ADR 0048): theme choice, the sidebar's top and foot,
+//! The window shell: theme choice, the sidebar's top and foot,
 //! Home with its drop zone, and the ⌘K command palette.
 use super::{Tab, Workspace};
 use crate::{
@@ -40,9 +40,9 @@ actions!(
 pub(crate) const PALETTE: &str = "CommandPalette";
 
 /// The palette, Home, Notices and the shortcuts sheet from the shortcuts
-/// table (ADR 0073); moving inside the palette's list stays here. Esc in
+/// table; moving inside the palette's list stays here. Esc in
 /// `Workspace` is the window's own, below every deeper one: Notices opens
-/// without focus (ADR 0062), so Esc closes it from a source-only tab or Home.
+/// without focus, so Esc closes it from a source-only tab or Home.
 pub(crate) fn bind_keys(cx: &mut App) {
     let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Shell, cx);
     cx.bind_keys(bindings);
@@ -56,7 +56,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
 pub(super) struct ShellState {
     pub recents: Recents,
     pub palette: Option<Palette>,
-    /// The keyboard shortcuts sheet, while open (ADR 0073).
+    /// The keyboard shortcuts sheet, while open.
     pub shortcuts: Option<super::shortcuts_ui::ShortcutsSheet>,
     /// Files dragged over the window while Home shows: how many are droppable.
     pub drop: Option<usize>,
@@ -118,7 +118,7 @@ enum Command {
     SaveAs,
     CloseTab,
     BeforeAfter,
-    /// The active document's What you did (ADR 0079); no key of its own.
+    /// The active document's What you did; no key of its own.
     DecisionHistory,
     ExpandIdentities,
     CollapseIdentities,
@@ -140,7 +140,7 @@ enum Command {
 
 impl Command {
     /// The action this command runs, when it is one: the palette shows its
-    /// key from the shortcuts table (ADR 0073).
+    /// key from the shortcuts table.
     fn action(&self) -> Option<Box<dyn gpui::Action>> {
         Some(match self {
             Command::NewTab => Box::new(New),
@@ -219,7 +219,7 @@ impl Workspace {
     }
 
     /// macOS: the Save panel, its alerts and the menus follow the choice
-    /// too (ADR 0076). Called when the choice changes, not from the
+    /// too. Called when the choice changes, not from the
     /// appearance observer: setting the appearance notifies it.
     pub(super) fn sync_app_appearance(&self, cx: &App) {
         #[cfg(target_os = "macos")]
@@ -507,7 +507,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// The notices popover under the title row's right end (ADR 0048):
+    /// The notices popover under the title row's right end:
     /// locked cases, a crash report and session messages, with their actions.
     pub(super) fn notices_view(
         &self,
@@ -610,7 +610,7 @@ impl Workspace {
     }
 
     /// Close the notices popover; focus returns to the document, or to the
-    /// window on Home (ADR 0062).
+    /// window on Home.
     pub(super) fn close_notices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.title.notices_open.set(false);
         if self.showing_overview(cx) {
@@ -622,7 +622,7 @@ impl Workspace {
     }
 
     /// The collapsed rail's foot: Settings only, an update shown as a dot on
-    /// it (ADR 0048). Theme and Help live in the open sidebar.
+    /// it. Theme and Help live in the open sidebar.
     pub(super) fn rail_foot(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let update = crate::updater::state(cx).marks_settings();
@@ -671,7 +671,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// A quiet card while an update is on its way (ADR 0048 decision 9).
+    /// A quiet card while an update is on its way.
     fn update_card(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use crate::updater::BannerKind;
         let state = crate::updater::state(cx);
@@ -868,7 +868,7 @@ impl Workspace {
                     ),
             );
         // Collapsed sidebar: the header sits in the title row and Home in its
-        // own card below (ADR 0048). The header comes after the body in
+        // own card below. The header comes after the body in
         // element order, shown on top by the reversed column, so Home's
         // first Tab stop is Open files…, not the header's bell (U25).
         div()
@@ -889,7 +889,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// One-time "What's new" after an update (ADR 0048 decision 9).
+    /// One-time "What's new" after an update.
     fn whats_new(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use crate::updater::BannerKind;
         let banner = crate::updater::state(cx).banner()?;
@@ -1321,7 +1321,7 @@ impl Workspace {
         )
     }
 
-    /// A file drag anywhere over the window while Home shows (ADR 0048).
+    /// A file drag anywhere over the window while Home shows.
     pub(super) fn home_drag(
         &mut self,
         event: &gpui::DragMoveEvent<gpui::ExternalPaths>,
@@ -2013,7 +2013,7 @@ fn home_label(label: &'static str, theme: Theme) -> gpui::Div {
 }
 
 /// A Home list row: a Tab stop that Enter or Space opens, read by screen
-/// readers as a button named `label` (ADR 0062).
+/// readers as a button named `label`.
 fn home_row(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,

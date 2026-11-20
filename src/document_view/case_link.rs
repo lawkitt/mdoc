@@ -1,4 +1,4 @@
-//! A tab's link to its saved case (ADR 0041): which case the tab belongs
+//! A tab's link to its saved case: which case the tab belongs
 //! to, the case's identities for the panel's "in case" section, the
 //! categories the case skips in scans, its Always and Never lists and what
 //! this tab put on them, and whether a mapping change waits to be saved
@@ -31,7 +31,7 @@ pub(crate) struct CaseLink {
     names: Vec<ExportedIdentity>,
     /// Categories this tab's case does not detect.
     skip: HashSet<Category>,
-    /// The case's Always and Never lists, for scans (ADR 0092).
+    /// The case's Always and Never lists, for scans.
     lists: Lists,
     /// What this tab's Keeps and manual marks have put on the case's
     /// lists, as last saved into the case.
@@ -134,7 +134,7 @@ impl CaseLink {
         self.link.is_some().then_some(CaseLinkEffect::SaveSoon)
     }
 
-    /// The tab leaves its case, keeping its live mapping (ADR 0041 #25).
+    /// The tab leaves its case, keeping its live mapping.
     /// Returns the case it left.
     pub(crate) fn leave(&mut self) -> (Option<cases::CaseLink>, CaseLinkEffect) {
         self.skip.clear();

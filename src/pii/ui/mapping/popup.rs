@@ -194,7 +194,7 @@ impl DocumentView {
         matches!(self.pii.mapping.selected, Some(Selection::Kept { .. }))
     }
     /// What the popup steps through and counts: the entity's live mentions
-    /// and its kept ones, in document order (ADR 0055).
+    /// and its kept ones, in document order.
     pub(super) fn popup_occurrences(&self, id: u64) -> Vec<(u64, Range<usize>)> {
         let mut result = self.identity_occurrences(id);
         result.extend(
@@ -458,10 +458,10 @@ impl DocumentView {
     }
     /// Pending candidates and applied occurrence ids inside the selected scope.
     /// Outline what the popup's scope (or a hovered chip) covers, or the
-    /// selected panel group's mentions (ADR 0025). Display only.
+    /// selected panel group's mentions. Display only.
     pub(crate) fn sync_scope_outlines(&mut self, cx: &mut Context<Self>) {
         // Proposals ring in their category's colour, as the popup's alias
-        // shows it; applied ones in the applied blue (ADR 0055).
+        // shows it; applied ones in the applied blue.
         let proposed = self
             .selected_name()
             .map_or(self.theme.get().proposed(), |(_, category)| {
@@ -551,7 +551,7 @@ impl DocumentView {
         }
         if self.alias_draft_changed(cx) {
             // The alias and the apply are one step, which Cancel addition
-            // undoes like a plain apply (ADR 0025).
+            // undoes like a plain apply.
             let before = self.editor.read(cx).history_id();
             self.confirm_alias(false, Applying::Ranges(ranges), cx);
             let after = self.editor.read(cx).history_id();
@@ -593,10 +593,10 @@ impl DocumentView {
         self.restore_active_replacement(active, &edits, cx);
         cx.notify();
     }
-    /// Popup Enter (ADR 0055): apply the proposals in the shown scope, then
+    /// Popup Enter: apply the proposals in the shown scope, then
     /// open the next proposal (this entity's next one under This one, else the
     /// next entity's first in panel order), or close when none is left. A
-    /// fresh manual addition stays put so its Cancel is still offered (ADR 0025).
+    /// fresh manual addition stays put so its Cancel is still offered.
     pub(in crate::pii::ui) fn apply_and_advance(
         &mut self,
         window: &mut Window,
@@ -660,7 +660,7 @@ impl DocumentView {
         }
     }
     /// Undo a mistaken manual addition (and an Apply right after it) while
-    /// those are the latest history steps (ADR 0025).
+    /// those are the latest history steps.
     pub(in crate::pii::ui) fn cancel_addition(
         &mut self,
         window: &mut Window,
@@ -874,7 +874,7 @@ impl DocumentView {
         self.flash_notice(cx);
         self.review_changed(cx);
         self.fade_out_kept(faded, cx);
-        // The popup stays on its mention, now kept (ADR 0055).
+        // The popup stays on its mention, now kept.
         if self.pii.popup.is_some() {
             self.restore_active_replacement(active, &moved, cx);
         } else {
@@ -884,7 +884,7 @@ impl DocumentView {
         cx.notify();
         true
     }
-    /// Not a name (ADR 0122) for the popup's mention in its scope: proposed,
+    /// Not a name for the popup's mention in its scope: proposed,
     /// applied and kept mentions all come off with no trace, applied ones
     /// back to their first originals, as one undo step. The mark is gone,
     /// so the popup closes.
@@ -919,7 +919,7 @@ impl DocumentView {
             window.focus(&self.editor.read(cx).focus_handle(cx), cx);
         }
     }
-    /// Not a name for every mention of identity `id` (ADR 0122): the
+    /// Not a name for every mention of identity `id`: the
     /// Replacements panel's row menu.
     pub(crate) fn not_a_name_identity(&mut self, id: u64, cx: &mut Context<Self>) {
         let review = &self.pii.review;
@@ -1021,7 +1021,7 @@ impl DocumentView {
     }
     /// The popup's Replace checkbox and Space: untick keeps the originals in
     /// scope; ticking a kept mention proposes the kept ones in scope again.
-    /// Either way one undo step, and the popup stays (ADR 0055).
+    /// Either way one undo step, and the popup stays.
     pub(in crate::pii::ui) fn toggle_replace(
         &mut self,
         window: &mut Window,
@@ -1118,6 +1118,6 @@ enum Reverted {
     Proposed,
     /// Kept as their originals.
     Kept,
-    /// Not a name (ADR 0122): excluded, shown nowhere.
+    /// Not a name: excluded, shown nowhere.
     NotAName,
 }

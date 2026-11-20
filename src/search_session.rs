@@ -2,7 +2,7 @@
 //!
 //! Replace, Replace all, Whole word and their keys follow the buffer search
 //! bar of Zed's `search` crate (https://github.com/zed-industries/zed),
-//! GPL-3.0-or-later; see THIRD-PARTY-LICENSES.html (ADR 0063).
+//! GPL-3.0-or-later; see THIRD-PARTY-LICENSES.html.
 use crate::document_view::DocumentView;
 use gpui::{Context, Focusable, SharedString, Window, actions, px};
 use mdoc_editor::{SearchIndex, SearchMatch, SearchOptions};
@@ -32,7 +32,7 @@ pub(super) enum SearchRefresh {
 #[derive(Default)]
 pub(super) struct SearchSession {
     open: bool,
-    /// The Replace row is shown (⌘⌥F / Ctrl+H, ADR 0063).
+    /// The Replace row is shown (⌘⌥F / Ctrl+H).
     replace_open: bool,
     match_case: bool,
     whole_word: bool,
@@ -151,7 +151,7 @@ impl SearchSession {
     }
 }
 
-/// Why Replace leaves a match alone (ADR 0063).
+/// Why Replace leaves a match alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReplaceSkip {
     /// Hidden Markdown syntax lies inside it.
@@ -209,7 +209,7 @@ impl DocumentView {
     ) {
         if self.lifecycle.source_only() {
             // Nothing to replace in a source-only tab: the chord opens the
-            // preview's find, as ⌘F does there (ADR 0063).
+            // preview's find, as ⌘F does there.
             if !self.preview.visible() {
                 self.toggle_preview(window, cx);
             }
@@ -237,7 +237,7 @@ impl DocumentView {
         if self.lifecycle.source_only() {
             return;
         }
-        // Search works in the editor (ADR 0042).
+        // Search works in the editor.
         if self.compare.is_some() {
             self.close_compare(window, cx);
         }
@@ -258,7 +258,7 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // The counter, not the last replace result, says where you are (ADR 0064).
+        // The counter, not the last replace result, says where you are.
         self.search.status = None;
         self.step_markdown_search(false, window, cx);
     }
@@ -269,7 +269,7 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // The counter, not the last replace result, says where you are (ADR 0064).
+        // The counter, not the last replace result, says where you are.
         self.search.status = None;
         self.step_markdown_search(true, window, cx);
     }
@@ -335,7 +335,7 @@ impl DocumentView {
     /// Make the published matches describe the current text. A refresh
     /// still pending (large documents search in the background) is done now,
     /// from where the last Replace left off, so Replace never acts on stale
-    /// positions or the same occurrence twice (ADR 0063).
+    /// positions or the same occurrence twice.
     fn settle_markdown_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.editor.read(cx).text();
         if self.search.pending.is_none()
@@ -429,7 +429,7 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// Replace every replaceable match as one undo step (ADR 0063).
+    /// Replace every replaceable match as one undo step.
     pub(super) fn replace_all_markdown(
         &mut self,
         _: &ReplaceAllMarkdown,

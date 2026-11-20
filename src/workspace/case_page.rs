@@ -1,4 +1,4 @@
-//! Transient case overview (ADR 0077). Opening uses the coordinator's cache only.
+//! Transient case overview. Opening uses the coordinator's cache only.
 use super::{
     Workspace,
     cases_ui::{AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName},
@@ -999,7 +999,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// The case's Always and Never lists (ADR 0092): what its members'
+    /// The case's Always and Never lists: what its members'
     /// manual marks and Keeps put there, each with Remove. Entries are
     /// added only by marking and keeping in a member.
     fn case_lists(&self, case: &mdoc_store::cases::Case, cx: &mut Context<Self>) -> gpui::Div {

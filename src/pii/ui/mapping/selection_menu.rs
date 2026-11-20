@@ -1,5 +1,5 @@
 //! The selection pill's category menu: "Replace · Person ▾" adds the
-//! selection in a picked category (ADR 0024).
+//! selection in a picked category.
 use crate::{document_view::DocumentView, pii::ui::PiiAddCandidateAs};
 use gpui::{
     AnyElement, Context, Focusable, SharedString, Window, anchored, deferred, point, prelude::*, px,
@@ -57,7 +57,7 @@ impl DocumentView {
     }
     /// The open menu under (or, with room, over) the pill's "Person ▾" part:
     /// each category with the alias it would give, the guess ticked. It holds
-    /// focus like the mention bar's category menu (ADR 0062).
+    /// focus like the mention bar's category menu.
     pub(in crate::pii::ui) fn selection_menu(
         &self,
         window: &Window,

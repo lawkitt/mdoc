@@ -1,4 +1,4 @@
-//! Keyboard shortcuts: the one table of user-facing bindings (ADR 0073).
+//! Keyboard shortcuts: the one table of user-facing bindings.
 //!
 //! Each row is what the shortcuts sheet shows: a label, its context group and
 //! the keys for each platform. The palette's shortcut labels come from here
@@ -70,7 +70,7 @@ pub enum Owner {
     Menus,
     /// The confirm dialog (`confirm_dialog::bind_keys`).
     Dialog,
-    /// The menu bar shelf (`shelf_ui::bind_keys`, ADR 0084).
+    /// The menu bar shelf (`shelf_ui::bind_keys`).
     Shelf,
 }
 
@@ -444,7 +444,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
         "Toggle sidebar",
         &[on!(App, None, &[], workspace::ToggleSidebar).mac(&["ctrl-cmd-s"])],
     ),
-    // Keyboard reach (ADR 0062).
+    // Keyboard reach.
     row(
         Everywhere,
         "Next region",
@@ -491,7 +491,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
         )],
     ),
     // One document history: the editor, the review popup and panel, the find
-    // bar and the chrome all undo the document (ADR 0033).
+    // bar and the chrome all undo the document.
     row(
         Everywhere,
         "Undo",
@@ -732,7 +732,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
             .also(&["cmd-v", "ctrl-v"]),
         ],
     ),
-    // Caret moves (ADR 0061): macOS keeps ⌥ for words and ⌘ for line and
+    // Caret moves: macOS keeps ⌥ for words and ⌘ for line and
     // document ends; Windows and Linux use Ctrl and Home / End.
     row(
         Editor,
@@ -839,7 +839,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
         "Delete to line start",
         &[on!(Editor, EDITOR, &[], mdoc_editor::DeleteToLineStart).mac(&["cmd-backspace"])],
     ),
-    // Find and Replace keys follow Zed's defaults (ADR 0063).
+    // Find and Replace keys follow Zed's defaults.
     row(
         Editor,
         "Find",
@@ -1010,7 +1010,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
         ],
     ),
     // ---- Panels and sidebar -------------------------------------------------
-    // The sidebar's tab list is one Tab stop; arrows move inside it (ADR 0062).
+    // The sidebar's tab list is one Tab stop; arrows move inside it.
     row(
         Panel,
         "Sidebar: previous tab",
@@ -1046,7 +1046,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
         Panel,
         "Sidebar: the tab's menu",
         // ⌃↩ needs no fn on MacBook keyboards, where F10 is the mute key;
-        // Windows adds the Menu key (ADR 0062).
+        // Windows adds the Menu key.
         &[on!(
             Ui,
             Some("SidebarTab"),
@@ -1055,7 +1055,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
         )
         .other(&["ctrl-enter", "shift-f10", "menu"])],
     ),
-    // The Replacements checklist (ADR 0033, 0048).
+    // The Replacements checklist.
     row(
         Panel,
         "Replacements: previous row",
@@ -1180,7 +1180,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
             .other(&["ctrl-alt-g"])],
     ),
     // ---- Popups, menus and dialogs ------------------------------------------
-    // The mention popup (ADR 0055).
+    // The mention popup.
     row(
         Popup,
         "Apply and go to the next proposal",
@@ -1237,7 +1237,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
         "Last mention",
         &[on!(Pii, Some(pii::STEP), &["mod-down"], pii::PopupLastMention).also(&["mod-right"])],
     ),
-    // In the alias field Enter confirms the draft (ADR 0033).
+    // In the alias field Enter confirms the draft.
     row(
         Popup,
         "Confirm the alias",
@@ -1378,7 +1378,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
             comparison_ui::CloseComparison
         )],
     ),
-    // The menu bar shelf: macOS only (ADR 0084), ⌘C as a drag's counterpart.
+    // The menu bar shelf: macOS only, ⌘C as a drag's counterpart.
     row(
         Popup,
         "Copy a shelf document for AI",

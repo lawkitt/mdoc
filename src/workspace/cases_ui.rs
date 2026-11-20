@@ -1,4 +1,4 @@
-//! Saved cases in the window (ADR 0041, phase 2): create a case from a tab's
+//! Saved cases in the window (phase 2): create a case from a tab's
 //! mapping, save changes in the background, give reopened members their
 //! mapping back, rename, remove, delete, and the Open Case list.
 use super::{
@@ -41,19 +41,19 @@ pub(super) struct CaseState {
     pub(super) home_link: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     /// Cases whose member rows are folded under their header.
     pub(super) collapsed: HashSet<String>,
-    /// The Keychain explainer is shown (ADR 0043).
+    /// The Keychain explainer is shown.
     pub(super) explainer: bool,
     /// What runs once the explainer's Continue opened the key.
     then: Option<AfterUnlock>,
     /// The tab whose Save as Case, answered while quitting, waits for its
-    /// document to save; the quit goes on once its case is queued (ADR 0071).
+    /// document to save; the quit goes on once its case is queued.
     quit_case: Option<u64>,
     /// Tabs whose mapping this quit already asked about; a cancelled quit
     /// asks again.
     quit_asked: Vec<u64>,
     /// The quit waits on the Keychain explainer to save this tab's case.
     quit_key_wait: Option<u64>,
-    /// The user-wide lists' last saved revision (ADR 0092).
+    /// The user-wide lists' last saved revision.
     pub(super) user_lists_revision: u64,
     /// A close or quit question about a mapping is up; a quit waits for it.
     mapping_prompt: bool,
@@ -127,7 +127,7 @@ impl Workspace {
     }
     /// Whether reading the key now would show the macOS password dialog.
     /// The key is read with dialogs off first, so a read that needs no
-    /// dialog just opens the store (ADR 0043).
+    /// dialog just opens the store.
     fn key_may_ask(&mut self) -> bool {
         if self.case_coordinator.store().is_some() {
             return false;
@@ -152,15 +152,15 @@ impl Workspace {
             }
             Ok(None) => true,
             // macOS, unsure: explain first. Continue's own attempt reports the
-            // error, and launch leaves cases locked rather than read loudly
-            // (ADR 0045). Elsewhere the quiet read is the real one, so its
+            // error, and launch leaves cases locked rather than read loudly.
+            // Elsewhere the quiet read is the real one, so its
             // error is reported by the action's own attempt, without a
             // Keychain explainer.
             Err(_) => cfg!(target_os = "macos"),
         }
     }
     /// True when a case action can use the key now. Otherwise the Keychain
-    /// explainer opens and `then` runs after its Continue (ADR 0043).
+    /// explainer opens and `then` runs after its Continue.
     pub(super) fn case_key_ready(
         &mut self,
         then: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
@@ -215,7 +215,7 @@ impl Workspace {
                     self.cases.then = then;
                 }
                 // A folder sheet waiting on the key opens its files
-                // without a case, and its notice says why (ADR 0075).
+                // without a case, and its notice says why.
                 let folder = self.folder_key_failed(&error, window, cx);
                 if !folder || matches!(error, CaseError::KeyDenied) {
                     self.key_failed(error);
@@ -313,7 +313,7 @@ impl Workspace {
     }
     /// Whether the locked-cases notice should open by itself: the key was
     /// declined after an action, or an open tab belongs to a case whose
-    /// mapping is locked. Otherwise it waits behind the bell (ADR 0043).
+    /// mapping is locked. Otherwise it waits behind the bell.
     pub(super) fn case_key_needed(&self) -> bool {
         self.case_key_banner().is_some()
             && (self.case_coordinator.denied()
@@ -322,7 +322,7 @@ impl Workspace {
     /// Read every case in the background, then attach loaded member tabs.
     /// Nothing touches the key until a cases folder exists, and launch never
     /// shows the Mac password dialog: it reads the key with dialogs off and
-    /// otherwise leaves members locked (ADR 0043, ADR 0045).
+    /// otherwise leaves members locked.
     pub(super) fn load_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.case_coordinator.may_load() {
             return;
@@ -349,7 +349,7 @@ impl Workspace {
                     return;
                 }
                 // On macOS the quiet read has opened the store by now, so this
-                // never reads loudly at launch (ADR 0045); elsewhere it reports
+                // never reads loudly at launch; elsewhere it reports
                 // the key store's own error.
                 match self.case_store() {
                     Ok(store) => store,
@@ -444,7 +444,7 @@ impl Workspace {
                 let lists = case.lists.clone();
                 let dismissed = case.dismissed_hints.clone();
                 // What it took off as Not a name that the case keeps for
-                // another member stays off (ADR 0122).
+                // another member stays off.
                 let not_names = identity
                     .as_ref()
                     .map(|member| case.not_names_of(member))
@@ -466,7 +466,7 @@ impl Workspace {
                     .path
                     .as_deref()
                     .map(session_store::identity);
-                // Its AI reply comes back with it (ADR 0078).
+                // Its AI reply comes back with it.
                 let reply = path.as_deref().and_then(|path| {
                     self.case_coordinator
                         .case(&case_id)
@@ -509,8 +509,8 @@ impl Workspace {
                     || !view.pii.review().variants().is_empty())
         })
     }
-    /// A new case whose Categories to detect start from Settings › Detection
-    /// (ADR 0076). Existing cases keep their own lists.
+    /// A new case whose Categories to detect start from Settings › Detection.
+    /// Existing cases keep their own lists.
     pub(super) fn new_case(
         &self,
         name: String,
@@ -579,7 +579,7 @@ impl Workspace {
             &identities,
             path.as_deref().map(session_store::identity),
         );
-        // Hints dismissed before the case existed stay dismissed (ADR 0080).
+        // Hints dismissed before the case existed stay dismissed.
         case.dismissed_hints = dismissed;
         let link = CaseLink::of(&case);
         let case_id = case.id.clone();
@@ -620,7 +620,7 @@ impl Workspace {
             .link()
             .and_then(|link| self.case_coordinator.case(&link.id))
         {
-            // Its own Not a name's reservation is its undo's (ADR 0122).
+            // Its own Not a name's reservation is its undo's.
             let reserved = match &member {
                 Some(member) => case.reserved_aliases_for(member),
                 None => case.reserved_aliases(),
@@ -664,7 +664,7 @@ impl Workspace {
             )
         };
         // Its Keeps and manual marks since the last save, for the case's
-        // lists (ADR 0092); what other open members still list stays.
+        // lists; what other open members still list stays.
         let others: Vec<_> = self
             .tabs
             .iter()
@@ -683,7 +683,7 @@ impl Workspace {
                 let before = case.clone();
                 match &member {
                     Some(member) => {
-                        // Not a name (ADR 0122): an undone one comes back,
+                        // Not a name: an undone one comes back,
                         // and a wording leaves the case unless another
                         // member's saved text still restores its identity.
                         case.merge_from(&identities, Some(member));
@@ -773,7 +773,7 @@ impl Workspace {
     }
 
     /// A member dismissed a merge hint: the case keeps it and its other open
-    /// members hide it too (ADR 0080).
+    /// members hide it too.
     pub(super) fn dismiss_case_hint(
         &mut self,
         id: u64,
@@ -839,7 +839,7 @@ impl Workspace {
         }
         cx.notify();
     }
-    /// Add a tab to a case (ADR 0041 #10): its names take the case's aliases or
+    /// Add a tab to a case: its names take the case's aliases or
     /// fresh numbers in one undo step, and the case's other names are proposed.
     pub(super) fn join_case(
         &mut self,
@@ -986,7 +986,7 @@ impl Workspace {
         self.case_reply_changed(id, cx);
     }
     /// Keep the tab's AI reply in its case under the member's path, or drop
-    /// it when cleared (ADR 0078). A member without a path keeps its reply
+    /// it when cleared. A member without a path keeps its reply
     /// only in the tab.
     pub(super) fn case_reply_changed(&mut self, id: u64, cx: &mut Context<Self>) {
         let Some(view) = self.tab_view(id) else {
@@ -1105,7 +1105,7 @@ impl Workspace {
             Flush::Prompting => return false,
             Flush::Collect => {}
             Flush::Ask(error) => {
-                // A hidden window (ADR 0084) shows before it asks.
+                // A hidden window shows before it asks.
                 crate::menu_bar::reveal_if_hidden(window, cx);
                 let answer = window.prompt(
                 PromptLevel::Warning,
@@ -1147,7 +1147,7 @@ impl Workspace {
         self.case_coordinator.flushed()
     }
     /// Leave the case: the tab keeps its live mapping, the case keeps its
-    /// identities (ADR 0041 #25).
+    /// identities.
     pub(super) fn remove_from_case(
         &mut self,
         id: u64,
@@ -1224,7 +1224,7 @@ impl Workspace {
             .as_ref()
             .is_some_and(|page| page.id() == case_id)
         {
-            // Home takes the deleted case page's stop (ADR 0081).
+            // Home takes the deleted case page's stop.
             self.show_home_as(super::navigation::Arrival::Replace, window, cx);
         }
         self.navigation
@@ -1401,7 +1401,7 @@ impl Workspace {
                 let id = link.id.clone();
                 move |this, drag: &TabDrag, window, cx| this.join_case(drag.id, &id, window, cx)
             }))
-            // A folder dropped here offers Add to this case (ADR 0075).
+            // A folder dropped here offers Add to this case.
             .drag_over::<gpui::ExternalPaths>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
             .can_drop(super::can_drop_files)
             .on_drop(cx.listener({
@@ -1741,7 +1741,7 @@ impl Workspace {
                             theme,
                         )
                         .when(cfg!(test), |v| v.debug_selector(|| "open-case-row".into()))
-                        // Enter or Space opens it, as a click does (ADR 0062).
+                        // Enter or Space opens it, as a click does.
                         .key_context("UiControl")
                         .tab_index(0)
                         .tab_stop(true)
@@ -1927,7 +1927,7 @@ impl Workspace {
     }
 
     /// Save the tab as a case and close it once the case is safely written;
-    /// after the Keychain explainer when that comes first (ADR 0043).
+    /// after the Keychain explainer when that comes first.
     pub(super) fn save_case_and_close(
         &mut self,
         id: u64,
@@ -1975,7 +1975,7 @@ impl Workspace {
         if view.read(cx).session.document.path.is_some() {
             return false;
         }
-        // Answering a close or quit prompt is not a stop (ADR 0081).
+        // Answering a close or quit prompt is not a stop.
         let arrival = if close {
             super::navigation::Arrival::Unrecorded
         } else {
@@ -1991,7 +1991,7 @@ impl Workspace {
     /// Whether closing tab `id` would lose an unsaved mapping, and Settings
     /// asks first: applied aliases and no case, or, closing one tab, a case
     /// whose save failed; a quit retries those in its final case saves
-    /// (ADR 0071's at-risk tab, without the unsaved changes).
+    /// (an at-risk tab, without the unsaved changes).
     pub(super) fn mapping_at_risk(&self, id: u64, quitting: bool, cx: &App) -> bool {
         let ask = self
             .preferences
@@ -2012,7 +2012,7 @@ impl Workspace {
     }
 
     /// Before closing a tab whose mapping would be lost, offer to keep it:
-    /// with its unsaved changes in one prompt (ADR 0071). Returns true when
+    /// with its unsaved changes in one prompt. Returns true when
     /// the close continues now.
     pub(super) fn confirm_mapping_close(
         &mut self,
@@ -2060,7 +2060,7 @@ impl Workspace {
             self.cases.quit_asked.push(id);
         }
         self.cases.mapping_prompt = true;
-        // The prompt's tab comes to the front; it isn't a stop (ADR 0081).
+        // The prompt's tab comes to the front; it isn't a stop.
         self.activate_as(id, super::navigation::Arrival::Unrecorded, window, cx);
         if dirty {
             self.ask_changes_and_mapping(id, quitting, window, cx);
@@ -2285,7 +2285,7 @@ const CLOSE_RESOLVED: TabEvent = TabEvent::Close(CloseEvent::Resolved);
 const CLOSE_CANCELLED: TabEvent = TabEvent::Close(CloseEvent::Cancelled);
 
 /// The aliases of `case`'s identities that its members' saved files
-/// restore, as Restore reads them (ADR 0122), `member`'s own file included
+/// restore, as Restore reads them, `member`'s own file included
 /// even before it joins (Save As); a member that can't be read counts as
 /// needing them all.
 fn restored_in_members(

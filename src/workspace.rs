@@ -105,7 +105,7 @@ actions!(
 pub(crate) struct OpenRecent(pub PathBuf);
 
 /// How a document reaches the window: one channel, grouped by the owner
-/// that handles it (ADR 0069). The window commands a document through its
+/// that handles it. The window commands a document through its
 /// methods; a document holds no handle to its window.
 pub(super) enum TabEvent {
     Tabs(TabsEvent),
@@ -124,7 +124,7 @@ pub(super) enum TabEvent {
 pub(super) enum TabsEvent {
     New,
     Open(Vec<PathBuf>),
-    /// Open a copied AI reply in a new tab and restore its aliases (ADR 0041).
+    /// Open a copied AI reply in a new tab and restore its aliases.
     Restored(Arc<pii::ui::RestoredReply>),
 }
 
@@ -168,23 +168,22 @@ pub(super) enum SaveEvent {
 
 /// The tab's case (`CaseCoordinator`).
 pub(super) enum CaseEvent {
-    /// Show this tab's case page (ADR 0077).
+    /// Show this tab's case page.
     OpenPage,
     /// The tab's mapping changed; save it into the tab's case.
     Changed,
-    /// The tab's AI reply changed or was cleared; keep it in the tab's case
-    /// (ADR 0078).
+    /// The tab's AI reply changed or was cleared; keep it in the tab's case.
     Reply,
-    /// Add a name to the tab's case before it appears (ADR 0041 #11).
+    /// Add a name to the tab's case before it appears.
     AddTerm(String),
     /// Keep a dismissed merge hint, as its (shorter, fuller) primary wordings, in the
-    /// tab's case (ADR 0080).
+    /// tab's case.
     DismissHint(String, String),
-    /// Save the tab's mapping as a case, from the Inspector (ADR 0048, C),
+    /// Save the tab's mapping as a case, from the Inspector,
     /// or once the document is saved; `close` closes the tab after.
     Create { close: bool },
     /// Restoring or pseudonymizing found no mapping in the tab; a locked
-    /// case may hold it (ADR 0043).
+    /// case may hold it.
     MappingMissing,
 }
 impl EventEmitter<TabEvent> for DocumentView {}
@@ -246,10 +245,10 @@ impl Render for SidebarResize {
 pub(super) struct Workspace {
     focus: gpui::FocusHandle,
     /// F6 regions the workspace owns, and the control last focused in each
-    /// region when F6 left it (ADR 0062).
+    /// region when F6 left it.
     focus_regions: focus_regions::FocusRegions<gpui::FocusHandle>,
     /// The Open Case list holds focus while open, and gives it back on
-    /// close; the notices popover takes Esc (ADR 0062).
+    /// close; the notices popover takes Esc.
     pub(super) case_list_focus: gpui::FocusHandle,
     pub(super) case_list_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
@@ -266,11 +265,11 @@ pub(super) struct Workspace {
     panel_toggle_focus: gpui::FocusHandle,
     panel_new_focus: gpui::FocusHandle,
     /// Home's row in the collapsed rail and the expanded list: where F6
-    /// enters the sidebar on Home (ADR 0062).
+    /// enters the sidebar on Home.
     rail_home_focus: gpui::FocusHandle,
     panel_home_focus: gpui::FocusHandle,
     menu_focus: gpui::FocusHandle,
-    /// The Keychain explainer's Continue, focused when it opens (ADR 0043).
+    /// The Keychain explainer's Continue, focused when it opens.
     explainer_focus: gpui::FocusHandle,
     explainer_focus_pending: bool,
     /// The explainer's focus group, and where focus returns when it closes.
@@ -291,7 +290,7 @@ pub(super) struct Workspace {
     /// inject their own so they never read this computer's keyboards.
     pub(super) input_languages: fn() -> Vec<mdoc_import::recognition::Language>,
     /// Opens that wait for launch, or for a dialog to be answered, whole:
-    /// their paths, sidebar position and case header (ADR 0075).
+    /// their paths, sidebar position and case header.
     pending_open: Vec<(Vec<PathBuf>, Option<usize>, Option<String>)>,
     /// Opens wait in `pending_open` for a dialog to be answered.
     awaiting_prompt: bool,
@@ -302,15 +301,15 @@ pub(super) struct Workspace {
     import_busy: Arc<AtomicBool>,
     docx_queue: docx_queue::DocxQueue,
     quit_flow: quit_flow::QuitFlow,
-    /// The quit's summary question is up (ADR 0071).
+    /// The quit's summary question is up.
     quit_summary: bool,
     session_writer: session_writer::SessionWriter<Session>,
     cases: cases_ui::CaseState,
-    /// Dropped folders' sheets, one at a time (ADR 0075).
+    /// Dropped folders' sheets, one at a time.
     folder_sheets: folder_sheet::FolderSheets,
     folder_sheet_focus: Option<folder_sheet_ui::SheetFocus>,
     case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
-    /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
+    /// The sidebar's theme pick; `theme` holds what it resolves to.
     theme_choice: ThemeChoice,
     /// The theme button's tooltip reads the choice live.
     theme_tip: Rc<Cell<ThemeChoice>>,
@@ -320,19 +319,19 @@ pub(super) struct Workspace {
     /// Shared with document headers: title-bar inset and drag state.
     title: style::TitleBar,
     shell: shell::ShellState,
-    /// The sidebar's Settings row; Settings returns focus here (ADR 0048).
+    /// The sidebar's Settings row; Settings returns focus here.
     settings_focus: gpui::FocusHandle,
     _appearance: Option<Subscription>,
     _checkpoint: Option<gpui::Task<()>>,
 }
 
 impl Workspace {
-    /// The theme, shared with the shelf's window (ADR 0084).
+    /// The theme, shared with the shelf's window.
     pub(crate) fn theme_cell(&self) -> Rc<std::cell::Cell<style::Theme>> {
         self.theme.clone()
     }
 
-    /// Settings › General › "Show mdoc in the menu bar" (ADR 0084).
+    /// Settings › General › "Show mdoc in the menu bar".
     pub(crate) fn menu_bar_setting(&self) -> bool {
         self.preferences
             .borrow()
@@ -341,7 +340,7 @@ impl Workspace {
             .is_some_and(|preferences| preferences.general.menu_bar)
     }
 
-    /// Every prompt in the app is mdoc's own confirm dialog (ADR 0064).
+    /// Every prompt in the app is mdoc's own confirm dialog.
     pub(crate) fn install_prompts(&self, cx: &mut App) {
         crate::confirm_dialog::install(self.theme.clone(), cx);
     }
@@ -554,7 +553,7 @@ impl Workspace {
                             this.set_ocr(state, cx);
                         } else if matches!(this.ocr_state, OcrState::Installing) {
                             // A tab's setup of a model Settings no longer
-                            // selects ended; the tab may be gone (ADR 0066).
+                            // selects ended; the tab may be gone.
                             let state = known_ocr_state(&this.preferences, this.settings.read(cx));
                             this.set_ocr(state, cx);
                         }
@@ -666,7 +665,7 @@ impl Workspace {
         })
         .detach();
     }
-    /// The launch-time update check, unless the user turned it off (ADR 0038).
+    /// The launch-time update check, unless the user turned it off.
     pub(super) fn check_for_updates_at_launch(&self, cx: &mut Context<Self>) {
         let updates = self
             .preferences
@@ -679,7 +678,7 @@ impl Workspace {
         }
     }
     /// "mdoc had a problem last time it ran", with the exact report before
-    /// anything leaves the Mac (ADR 0047). Send and Copy also discard it.
+    /// anything leaves the Mac. Send and Copy also discard it.
     fn crash_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (report, open) = self
             .notices
@@ -783,7 +782,7 @@ impl Workspace {
         )
     }
 
-    /// Restart now (ADR 0040): the ordinary quit — unsaved-change prompts,
+    /// Restart now: the ordinary quit — unsaved-change prompts,
     /// session save — swaps the staged update in, then mdoc relaunches.
     pub(super) fn restart_to_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         crate::updater::request_restart(cx);
@@ -951,7 +950,7 @@ impl Workspace {
         }
         self.ready = true;
         // Nothing to restore: Home shows over a hidden placeholder tab until
-        // it gets content (ADR 0048).
+        // it gets content.
         if self.tabs.is_empty() {
             self.push(TabRecord {
                 blank: true,
@@ -1181,7 +1180,7 @@ impl Workspace {
             });
         }
         // Home covers a placeholder's editor; keys go to the workspace, or
-        // they would reach nothing (ADR 0048).
+        // they would reach nothing.
         if self.showing_overview(cx) {
             window.focus(&self.focus, cx);
         }
@@ -1190,7 +1189,7 @@ impl Workspace {
     }
 
     pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> u64 {
-        // From Home, the hidden placeholder becomes the new tab (ADR 0048).
+        // From Home, the hidden placeholder becomes the new tab.
         if let Some(id) = self
             .tabs
             .iter()
@@ -1280,7 +1279,7 @@ impl Workspace {
         window.has_active_prompt() || self.cases.explainer || self.folder_sheets.open()
     }
 
-    /// Open paths as new tabs before the tab now at `at` (ADR 0028), or after
+    /// Open paths as new tabs before the tab now at `at`, or after
     /// the last tab. Already-open paths keep their position.
     pub fn open_paths_at(
         &mut self,
@@ -1294,7 +1293,7 @@ impl Workspace {
 
     /// Open paths. Plain files open at once; each folder among them shows
     /// its sheet in turn, offering to add to `case` when it was dropped on
-    /// that case's header (ADR 0075).
+    /// that case's header.
     fn open_paths_into(
         &mut self,
         paths: Vec<PathBuf>,
@@ -1308,7 +1307,7 @@ impl Workspace {
             return;
         }
         // Opening activates a tab and takes focus; a confirm dialog keeps it
-        // until answered, and the paths open after (ADR 0064). Checked before
+        // until answered, and the paths open after. Checked before
         // quitting, so a cancelled quit still opens them.
         if self.dialog_up(window) {
             self.pending_open.push((paths, at, case));
@@ -1741,7 +1740,7 @@ impl Workspace {
         self.tab_subscriptions.remove(&id);
         self.docx_queue.forget(id);
         // The tab that takes a closed tab's page takes its stop too; it is
-        // no new stop when the closed tab wasn't the current one (ADR 0081).
+        // no new stop when the closed tab wasn't the current one.
         let gone = navigation::Stop::Tab(id);
         let arrival = if self.navigation.current() == Some(&gone) {
             Arrival::Replace
@@ -1767,7 +1766,7 @@ impl Workspace {
     }
 
     /// Files opened from Finder or another app: a window hidden by the
-    /// menu bar item (ADR 0084) shows them.
+    /// menu bar item shows them.
     pub(crate) fn open_paths_from_os(
         &mut self,
         paths: Vec<PathBuf>,
@@ -1779,7 +1778,7 @@ impl Workspace {
     }
 
     /// The window's close button: quit, or with the menu bar item on, hide
-    /// the window with every tab kept in memory (ADR 0084). A quit already
+    /// the window with every tab kept in memory. A quit already
     /// asking goes on.
     pub(super) fn close_requested(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if crate::menu_bar::keeps_running(cx) && self.quit_flow.may_quit() && !self.quit_summary {
@@ -1805,7 +1804,7 @@ impl Workspace {
             return;
         }
         let at_risk = self.at_risk_tabs(cx);
-        // A hidden window (ADR 0084) shows before it asks anything.
+        // A hidden window shows before it asks anything.
         if !at_risk.is_empty() {
             crate::menu_bar::reveal_if_hidden(window, cx);
         }
@@ -1813,7 +1812,7 @@ impl Workspace {
             self.start_quit(at_risk, window, cx);
             return;
         }
-        // Two or more to lose: one question first (ADR 0071).
+        // Two or more to lose: one question first.
         self.quit_summary = true;
         let names: Vec<String> = at_risk
             .iter()
@@ -1874,7 +1873,7 @@ impl Workspace {
     }
 
     /// Tabs a quit would lose something from, in sidebar order: unsaved
-    /// changes, an unsaved mapping, or both (ADR 0071).
+    /// changes, an unsaved mapping, or both.
     fn at_risk_tabs(&mut self, cx: &mut Context<Self>) -> VecDeque<u64> {
         self.mapping_quit_started();
         self.tabs
@@ -2083,7 +2082,7 @@ impl Workspace {
                         let was_quitting = this.quit_flow.abandon();
                         this.cancel_case_quit();
                         if was_quitting {
-                            // A window hidden in the menu bar (ADR 0084) shows to ask.
+                            // A window hidden in the menu bar shows to ask.
                             crate::menu_bar::reveal_if_hidden(window, cx);
                             let answer = window.prompt(PromptLevel::Warning,
                                 "Could not save the tab list",
@@ -2138,7 +2137,7 @@ impl Workspace {
         window.focus(&focus, cx);
     }
 
-    /// Track the pointer over the collapsed rail or its reveal (ADR 0027).
+    /// Track the pointer over the collapsed rail or its reveal.
     fn hover_sidebar(
         &mut self,
         panel: bool,
@@ -2230,7 +2229,7 @@ impl Workspace {
     }
 
     /// A reveal slide that started ends after `REVEAL_SLIDE` with a repaint,
-    /// so the document beside it is drawn afresh, uncached (ADR 0117).
+    /// so the document beside it is drawn afresh, uncached.
     fn end_reveal_slide_later(&mut self, cx: &mut Context<Self>) {
         let Some(generation) = self.sidebar.reveal_slide_to_schedule() else {
             return;
@@ -2299,7 +2298,7 @@ impl Workspace {
         }
     }
 
-    /// Where files dropped on the document list would open (ADR 0028).
+    /// Where files dropped on the document list would open.
     fn file_drop_index(&self) -> Option<usize> {
         self.sidebar.drop_index(self.tabs.len())
     }
@@ -2330,7 +2329,7 @@ impl Workspace {
     }
 
     /// OS files dropped on a case header: a folder among them offers Add to
-    /// that case (ADR 0075); plain files open as on the list.
+    /// that case; plain files open as on the list.
     fn drop_on_case(
         &mut self,
         paths: &gpui::ExternalPaths,
@@ -2386,7 +2385,7 @@ impl Workspace {
             .enumerate()
             .map(|(index, tab)| {
                 let id = tab.id();
-                // Home's blank placeholder is never listed (ADR 0048).
+                // Home's blank placeholder is never listed.
                 if self.is_placeholder(tab, cx) {
                     return None;
                 }
@@ -2646,7 +2645,7 @@ impl Workspace {
                             ui::control(("close-tab", id), "×", theme, true)
                                 // ⌫ on the row closes it; the button is for the pointer.
                                 .tab_stop(false)
-                                // Named for its tab, as the tab is (ADR 0064).
+                                // Named for its tab, as the tab is.
                                 .aria_label(format!("Close {row_label}"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
@@ -2773,7 +2772,7 @@ impl Workspace {
             .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx));
         // The full list, either pinned open or revealed over the editor. Its
         // width is fixed so animations clip it rather than reflow it.
-        // A collapse slides the full list away over the content (ADR 0048).
+        // A collapse slides the full list away over the content.
         let sliding = self.sidebar.sliding(std::time::Instant::now()) && !cx.reduce_motion();
         let collapsing = sliding && !expanded && !revealed;
         let mut panel = (expanded || revealed || collapsing).then(|| {
@@ -2869,7 +2868,7 @@ impl Workspace {
                 .flex()
                 .flex_col()
                 // The rail starts below the title row, which holds the traffic
-                // lights, the expand toggle and the document header (ADR 0048).
+                // lights, the expand toggle and the document header.
                 .child(ui::title_drag(
                     div()
                         .flex_shrink_0()
@@ -2929,7 +2928,7 @@ impl Workspace {
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        // Tabs share the icons' centre line (ADR 0048).
+                        // Tabs share the icons' centre line.
                         .flex()
                         .flex_col()
                         .items_center()
@@ -2992,7 +2991,7 @@ impl Workspace {
                 ))
             })
             .child(div().size_full().overflow_hidden().child(content))
-            // The expanded sidebar's edge drags its width (ADR 0027); the
+            // The expanded sidebar's edge drags its width; the
             // grip straddles the gap beside the content card.
             .when(expanded && !sliding, |v| {
                 v.child(
@@ -3111,7 +3110,7 @@ impl Workspace {
 }
 
 /// The collapsed rail. Narrow: the traffic lights and the expand toggle sit
-/// in the title row beside the document header, above it (ADR 0048).
+/// in the title row beside the document header, above it.
 const RAIL_WIDTH: f32 = 44.;
 /// The expanded sidebar's width until it is dragged.
 #[cfg(test)]
@@ -3122,7 +3121,7 @@ const REVEAL_DELAY: Duration = Duration::from_millis(100);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
 
 /// A tab name that fits by losing its middle, never its extension, so
-/// names with a shared start still differ (ADR 0027). Drawn whole, so the
+/// names with a shared start still differ. Drawn whole, so the
 /// slack a cut leaves falls after the extension rather than before it.
 fn middle_truncated(name: &str) -> gpui::Div {
     let name = gpui::SharedString::from(name.to_string());
@@ -3229,7 +3228,7 @@ fn sidebar_toggle(focus: &gpui::FocusHandle, expanded: bool, theme: Theme) -> ui
     } else {
         "Expand sidebar"
     };
-    // Quiet, like every other rail and title-bar icon (ADR 0048).
+    // Quiet, like every other rail and title-bar icon.
     ui::header_icon_untipped("sidebar-toggle", label, ui::Icon::Sidebar, theme, false)
         .tooltip(style::tooltip(
             crate::shortcuts::tip(label, &ToggleSidebar),
@@ -3360,7 +3359,7 @@ impl Render for Workspace {
             window.focus(&self.rail_toggle_focus, cx);
             self.sidebar.escape_to(self.rail_toggle_focus.clone());
         }
-        // A finished edge drag saves the width it left (ADR 0027).
+        // A finished edge drag saves the width it left.
         if !cx.has_active_drag() && self.sidebar.resizing() {
             self.end_sidebar_resize(cx);
         }
@@ -3386,9 +3385,9 @@ impl Render for Workspace {
         if !cx.has_active_drag() && self.shell.drop.is_some() {
             self.shell.drop = None;
         }
-        // Notices wait behind the header's bell; a new one opens it (ADR 0048),
+        // Notices wait behind the header's bell; a new one opens it,
         // except locked cases, which open it only when a locked case is
-        // needed (ADR 0043).
+        // needed.
         let (notices, effect) = self
             .notices
             .count(self.case_key_banner().is_some(), self.case_key_needed());
@@ -3420,7 +3419,7 @@ impl Render for Workspace {
             },
         ));
         // Collapsed, headers join the title row: they leave room for the
-        // traffic lights and the expand toggle that sit in it (ADR 0048).
+        // traffic lights and the expand toggle that sit in it.
         self.title.detached.set(!self.sidebar.visible());
         self.title.inset.set(if self.sidebar.visible() {
             0.
@@ -3554,7 +3553,7 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle(1, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousTab, window, cx| this.cycle(-1, window, cx)))
             // Esc closes Notices first, wherever focus is: a drop's notice
-            // opens while the document keeps focus (ADR 0062).
+            // opens while the document keeps focus.
             .capture_action(cx.listener(|this, _: &mdoc_editor::Dismiss, window, cx| {
                 if this.title.notices_open.get() {
                     this.close_notices(window, cx);
@@ -3642,7 +3641,7 @@ impl Render for Workspace {
 }
 
 impl Workspace {
-    /// The inset content card on the window ground (ADR 0048): workspace bars,
+    /// The inset content card on the window ground: workspace bars,
     /// then Home or the active document.
     fn card(&mut self, home: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
@@ -3653,7 +3652,7 @@ impl Workspace {
         } else {
             match self.active_view() {
                 // While the sidebar slides, the document beside it reuses its
-                // last frame unless it changed itself (ADR 0117): only a view
+                // last frame unless it changed itself: only a view
                 // notified on its own redraws, so this holds only for the
                 // slide, never as the document's steady state.
                 Some(active)
@@ -3672,7 +3671,7 @@ impl Workspace {
             .min_w_0()
             .h_full()
             // Expanded: one margin all round. Collapsed: the view's header
-            // fills the title row and it draws its own card below (ADR 0048).
+            // fills the title row and it draws its own card below.
             .when(self.sidebar.visible(), |v| v.p(px(style::CARD_MARGIN)))
             .when(!self.sidebar.visible(), |v| {
                 v.pr(px(style::CARD_MARGIN)).pb(px(style::CARD_MARGIN))
@@ -3758,7 +3757,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests;
 
-/// Keyboard reach (ADR 0062): F6 regions, Tab from the window, and the
+/// Keyboard reach: F6 regions, Tab from the window, and the
 /// sidebar's tab list.
 impl Workspace {
     /// Ctrl+Enter or Shift+F10 (and the Menu key on Windows) opens the
@@ -3865,7 +3864,7 @@ impl Workspace {
         }
     }
 
-    /// Where F6 enters the sidebar (ADR 0062): the active tab's row, or
+    /// Where F6 enters the sidebar: the active tab's row, or
     /// Home's row on Home, in the layout drawn now. That is the expanded
     /// list (or the rail's open reveal), or the collapsed rail, whose row
     /// opens the reveal. None when no such row is shown (a case page): the
@@ -3975,7 +3974,7 @@ impl Workspace {
         }
     }
 
-    /// Tab / Shift+Tab outside the editor, menus and dialogs (ADR 0062).
+    /// Tab / Shift+Tab outside the editor, menus and dialogs.
     /// With no control focused on Home it enters Home's controls. Otherwise
     /// focus follows window order, except that the editor, which is no Tab
     /// stop, is entered rather than skipped: Tab past the toolbar's last

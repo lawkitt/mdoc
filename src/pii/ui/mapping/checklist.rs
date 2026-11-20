@@ -1,4 +1,4 @@
-//! The replacements checklist (ADR 0048): a tick per entity and per mention.
+//! The replacements checklist: a tick per entity and per mention.
 //! Ticked means "will be replaced"; unticking keeps the originals as one undo
 //! step. Kept mentions come from the review's Keep decisions, so an entity
 //! stays listed, unticked, and undo brings its tick back.
@@ -144,7 +144,7 @@ impl DocumentView {
         let added = added.unwrap_or(0);
         let proposed = added > 0;
         if proposed {
-            // Listed like the Keep it reverses (ADR 0079). A kept mention is
+            // Listed like the Keep it reverses. A kept mention is
             // still its original in the text.
             let mentions = if added == ranges.len() {
                 Mentions::of(

@@ -142,7 +142,7 @@ fn leave_sidebar_from(
 
 #[gpui::test]
 fn f6_into_the_sidebar_lands_on_the_active_tab(cx: &mut TestAppContext) {
-    // ADR 0062: not Settings or another control last focused there.
+    // Not Settings or another control last focused there.
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
@@ -703,7 +703,7 @@ fn f6_skips_the_hidden_pane_in_a_narrow_window(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn ctrl_enter_opens_a_tabs_menu_in_both_sidebar_layouts(cx: &mut TestAppContext) {
-    // ADR 0062: ⌃↩ needs no fn on MacBook keyboards, unlike ⇧F10.
+    // ⌃↩ needs no fn on MacBook keyboards, unlike ⇧F10.
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
@@ -795,7 +795,7 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
 
 /// Tab past the toolbar (and the view switcher, part of its region) enters
 /// the editor, and from the Replacements panel's last control moves on to the
-/// next region; Shift+Tab from a region's first control goes back (ADR 0062).
+/// next region; Shift+Tab from a region's first control goes back.
 /// Both sidebar layouts.
 #[gpui::test]
 fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
@@ -897,7 +897,7 @@ fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
 
 /// The find bar and the view switcher belong to the toolbar's region: Tab
 /// from the header reaches them before the editor, Esc returns to the editor
-/// from them, and F6 comes back to the control last focused there (ADR 0062).
+/// from them, and F6 comes back to the control last focused there.
 #[gpui::test]
 fn toolbar_members_take_part_in_tab_esc_and_f6(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
@@ -958,7 +958,7 @@ fn toolbar_members_take_part_in_tab_esc_and_f6(cx: &mut TestAppContext) {
 }
 
 /// Each Home Recents row is a Tab stop named for screen readers, and Enter
-/// opens it (ADR 0062, dry-run H18 / A4).
+/// opens it (dry-run H18 / A4).
 #[gpui::test]
 fn home_recents_rows_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

@@ -1,4 +1,4 @@
-//! The first-close note (ADR 0084): the first time the last window closes
+//! The first-close note: the first time the last window closes
 //! with the menu bar item on, a note under the icon says mdoc is still
 //! there. **Got it** closes it; **Quit when windows close** turns the
 //! switch off and quits as mdoc now would. It never shows again.

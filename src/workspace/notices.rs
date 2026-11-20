@@ -1,6 +1,6 @@
-//! The workspace's notices (ADR 0048): one session message and the last run's
-//! crash report (ADR 0047). They wait behind the header's bell with the
-//! locked-cases banner, which the case state owns (ADR 0043).
+//! The workspace's notices: one session message and the last run's
+//! crash report. They wait behind the header's bell with the
+//! locked-cases banner, which the case state owns.
 
 /// What the workspace view carries out for a notices transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,7 +47,7 @@ impl Notices {
     }
 
     /// Open the bell for the locked-cases banner, which the case state
-    /// holds: a locked case is needed now (ADR 0043).
+    /// holds: a locked case is needed now.
     pub(super) fn show_locked_cases(&self) -> NoticesEffect {
         NoticesEffect::OpenBell
     }
@@ -75,7 +75,7 @@ impl Notices {
 
     /// The bell's count with the locked-cases banner. A new notice opens the
     /// popover, except locked cases, which open it only when a locked case is
-    /// needed (ADR 0043); no notices close it.
+    /// needed; no notices close it.
     pub(super) fn count(
         &mut self,
         case_banner: bool,

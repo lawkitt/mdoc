@@ -1,4 +1,4 @@
-//! A document view's lifecycle (ADR 0049 document lifecycle): loading its
+//! A document view's lifecycle: loading its
 //! Markdown and whether that failed, whether it shows only a source still to
 //! convert, whether its text has unsaved changes, whether it is a generated
 //! conversion nobody edited yet or a blank Home placeholder, and whether a
@@ -10,7 +10,7 @@
 pub(crate) enum LifecycleEffect {
     /// Nothing is unsaved: go on with what was asked.
     Proceed,
-    /// Ask whether to save the unsaved changes first (ADR 0064).
+    /// Ask whether to save the unsaved changes first.
     AskToSave,
     /// Ask for files to open.
     AskForFiles,
@@ -36,12 +36,12 @@ pub(crate) struct DocumentLifecycle {
     /// An automatic conversion nobody has edited: the session keeps its
     /// source instead of a Markdown file.
     generated_unedited: bool,
-    /// A blank placeholder Home may replace (ADR 0048).
+    /// A blank placeholder Home may replace.
     blank_disposable: bool,
     /// One of this document's dialogs is open.
     prompting: bool,
     /// When the user last edited the text in this session (the shelf's
-    /// order, ADR 0084).
+    /// order).
     edited_at: Option<std::time::SystemTime>,
 }
 

@@ -1,7 +1,7 @@
-//! Converting this tab's source into Markdown (ADR 0026): the one import
+//! Converting this tab's source into Markdown: the one import
 //! job and its slot in the app-wide import permit, automatic conversion of
 //! opened PDFs and DOCX files, and OCR consent, recognition languages and
-//! setup on the conversion card (ADR 0065). The document view reads
+//! setup on the conversion card. The document view reads
 //! Settings, starts the background work and the model setup, and carries
 //! out the returned effects.
 
@@ -86,7 +86,7 @@ pub(crate) struct ImportFlow {
     /// Setup or a run of this document's OCR model failed, when that is not
     /// the Settings model (whose state the tabs share).
     ocr_failure: Option<String>,
-    /// What detection saw when the card appeared (ADR 0065).
+    /// What detection saw when the card appeared.
     signals: Option<recognition::Signals>,
     /// Recognition languages picked on the card, for this document only.
     pick: Option<recognition::Choice>,
@@ -191,7 +191,7 @@ impl ImportFlow {
         self.setup_error_dismissed = true;
     }
 
-    // ---- Recognition languages (ADR 0065) ----------------------------------
+    // ---- Recognition languages ----------------------------------
 
     /// This document's recognition languages: the card's pick, else the
     /// detected default; `fallback` is the Settings model.

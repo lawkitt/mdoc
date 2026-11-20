@@ -1,4 +1,4 @@
-//! Case coordination (ADR 0049, ADR 0041): the saved cases and the key
+//! Case coordination: the saved cases and the key
 //! that opens them, one background write at a time with the latest
 //! revision of each case waiting, and a quit that waits for those writes.
 //! Generic over the window handle, so its rules run without a window; the
@@ -37,7 +37,7 @@ pub(super) enum CaseLoad {
     List,
 }
 
-/// Why case members wait for the key (ADR 0043).
+/// Why case members wait for the key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum KeyWait {
     /// The macOS Keychain dialog was declined.
@@ -46,7 +46,7 @@ pub(super) enum KeyWait {
     Locked,
 }
 
-/// The quit's final case saves (ADR 0049).
+/// The quit's final case saves.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Flush {
     /// A failure prompt is open; wait for its answer.
@@ -447,7 +447,7 @@ impl<W: Clone> CaseCoordinator<W> {
         self.quit_window = None;
     }
 
-    /// Every path that abandons a quit clears all case-quit state (ADR 0049).
+    /// Every path that abandons a quit clears all case-quit state.
     pub(super) fn cancel_quit(&mut self) {
         self.quit_window = None;
         self.quit_error = None;

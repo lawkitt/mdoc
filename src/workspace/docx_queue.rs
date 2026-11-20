@@ -1,4 +1,4 @@
-//! DOCX conversions waiting for the one supervised worker (ADR 0005): tabs
+//! DOCX conversions waiting for the one supervised worker: tabs
 //! queue their jobs, one runs at a time, and cancelled jobs or jobs of
 //! closed tabs are skipped. The workspace view hands the next job to its
 //! document, which runs it and reports back.

@@ -1,4 +1,4 @@
-//! Keeping a tab in step with its case (ADR 0041, phase 3): joining aligns its
+//! Keeping a tab in step with its case (phase 3): joining aligns its
 //! aliases with the case in one undo step, and alias or category changes made
 //! in another member tab arrive as an edit in this tab's own history.
 use crate::{document_view::DocumentView, markdown_search, ui};
@@ -85,7 +85,7 @@ impl DocumentView {
         if !plan.unmatched.is_empty() {
             let text = self.editor.read(cx).text().to_owned();
             // A join that only proposes still makes its own undo point, so
-            // What you did lists it (ADR 0079).
+            // What you did lists it.
             if plan.changes.is_empty() {
                 self.checkpoint_review(cx, |_| ());
             }
@@ -112,7 +112,7 @@ impl DocumentView {
         cx.notify();
         Ok(summary)
     }
-    /// Join case `name` (ADR 0041) as one decision in What you did (ADR 0079).
+    /// Join case `name` as one decision in What you did.
     pub(crate) fn join_case(
         &mut self,
         name: &str,
@@ -164,7 +164,7 @@ impl DocumentView {
 
 impl DocumentView {
     /// Case names this document doesn't mention, folded under the panel
-    /// footer, with a field to add a name to the case (ADR 0041 #11, #24).
+    /// footer, with a field to add a name to the case.
     pub(crate) fn case_names_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let link = self.case.link()?;
         let theme = self.theme.get();
@@ -208,7 +208,7 @@ impl DocumentView {
                     ui::control(
                         "case-names-toggle",
                         if absent.is_empty() {
-                            // Nothing to list: keep only the way to add a name (ADR 0046).
+                            // Nothing to list: keep only the way to add a name.
                             format!(
                                 "{} Add a name to “{}”",
                                 if open { "▾" } else { "▸" },

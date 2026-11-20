@@ -1,4 +1,4 @@
-//! The sidebar's state (ADR 0048, 0027, 0028): expanded or collapsed to the
+//! The sidebar's state: expanded or collapsed to the
 //! rail, collapsed by itself in a narrow window, its dragged width, the
 //! collapsed rail's reveal of the full list, OS files dragged over it, and
 //! the list's roving Tab stop. Generic over the focus handle, so its
@@ -9,17 +9,17 @@ use std::time::{Duration, Instant};
 
 /// How long a collapse or expand slides.
 pub(super) const SLIDE: Duration = Duration::from_millis(150);
-/// How long the rail's hover reveal slides out or back (ADR 0117).
+/// How long the rail's hover reveal slides out or back.
 pub(super) const REVEAL_SLIDE: Duration = Duration::from_millis(120);
 
-/// The expanded sidebar's width range and default, in points (ADR 0027).
+/// The expanded sidebar's width range and default, in points.
 pub(super) const MIN_WIDTH: f32 = 160.;
 pub(super) const MAX_WIDTH: f32 = 320.;
 pub(super) const DEFAULT_WIDTH: f32 = 240.;
-/// Below this window width the sidebar collapses by itself (ADR 0027).
+/// Below this window width the sidebar collapses by itself.
 pub(super) const NARROW_WINDOW: f32 = 900.;
 
-/// The collapsed rail's hover reveal of the full document list (ADR 0027).
+/// The collapsed rail's hover reveal of the full document list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Reveal {
     Hidden,
@@ -58,7 +58,7 @@ pub(super) struct Sidebar<H> {
     resize: Option<(f32, bool)>,
     /// Bumped by explicit toggles so only they animate the sidebar width.
     generation: u64,
-    /// When the current toggle's slide ends (ADR 0048).
+    /// When the current toggle's slide ends.
     slide: Option<Instant>,
     reveal: Reveal,
     reveal_generation: u64,
@@ -76,7 +76,7 @@ pub(super) struct Sidebar<H> {
     opener: Option<H>,
     /// A rail control focused by Escape that must not reveal again.
     escaped: Option<H>,
-    /// An OS file drag over the sidebar (ADR 0028): the row under the pointer
+    /// An OS file drag over the sidebar: the row under the pointer
     /// with the insertion index its half selects, the list under the pointer,
     /// and the collapsed rail under the pointer.
     drop_row: Option<(u64, usize)>,
@@ -257,7 +257,7 @@ impl<H: Clone + PartialEq> Sidebar<H> {
 
     /// Whether a toggle's slide or the reveal's slide is running at `now`:
     /// the content beside the sidebar does not change meanwhile, so the
-    /// workspace reuses its last frame (ADR 0117). The reveal's slide runs
+    /// workspace reuses its last frame. The reveal's slide runs
     /// until `end_reveal_slide`, which the workspace calls with a repaint.
     pub(super) fn animating(&self, now: Instant) -> bool {
         self.sliding(now) || self.reveal_slide.is_some()
@@ -299,7 +299,7 @@ impl<H: Clone + PartialEq> Sidebar<H> {
     }
 
     /// Open or close the reveal for the pointer, or for OS files dragged over
-    /// the rail, which GPUI does not report as hover (ADR 0028).
+    /// the rail, which GPUI does not report as hover.
     pub(super) fn update_reveal(&mut self) -> Option<SidebarEffect> {
         if self.visible {
             return None;

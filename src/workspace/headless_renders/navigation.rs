@@ -1,4 +1,4 @@
-//! Home, the document's first open, Back/Forward (ADR 0081) and the tab menu.
+//! Home, the document's first open, Back/Forward and the tab menu.
 use super::{Driver, Result};
 use crate::document_view::DocumentView;
 use gpui::{Entity, px};

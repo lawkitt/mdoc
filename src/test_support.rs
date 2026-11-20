@@ -1,4 +1,4 @@
-//! Fixtures shared by the app's tests (ADR 0069).
+//! Fixtures shared by the app's tests.
 use mdoc_import::import::{self, Imported};
 use std::{
     path::{Path, PathBuf},

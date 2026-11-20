@@ -174,7 +174,7 @@ fn plus_keys_zoom_in_like_the_zoom_button(cx: &mut TestAppContext) {
 fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    // The sidebar's theme control cycles System → Light → Dark (ADR 0048).
+    // The sidebar's theme control cycles System → Light → Dark.
     cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, ThemeChoice::System));
     click_toolbar(cx, "theme-toggle");
     cx.update(|_, cx| {
@@ -386,7 +386,7 @@ fn preview_find_types_through_text_input(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.update(|_, cx| pdf.read(cx).is_search_open()));
     // Composed and non-ASCII text arrives through the input handler, not key
-    // codes, so IME and other layouts reach the query (ADR 0057, K7).
+    // codes, so IME and other layouts reach the query (K7).
     cx.simulate_input("Договор 契約");
     cx.run_until_parked();
     assert_eq!(
@@ -756,7 +756,7 @@ fn menu_routes_save_save_as_and_open_to_the_active_document(cx: &mut TestAppCont
             Some(&dunce::canonicalize(&copy_path).unwrap())
         )
     });
-    // Open has no header button: ⌘O, Home and the palette (ADR 0048).
+    // Open has no header button: ⌘O, Home and the palette.
     cx.dispatch_action(Open);
     cx.run_until_parked();
     cx.simulate_path_prompt_response(|_| Some(vec![other_path]));
@@ -793,7 +793,7 @@ fn document_header_keeps_its_actions_in_a_narrow_window_in_both_themes(cx: &mut 
                     draw(cx);
                     cx.run_until_parked();
                 }
-                // One header row (ADR 0048): ⋯ and the primary action inside it.
+                // One header row: ⋯ and the primary action inside it.
                 // Collapsed, it is the title row, level with the traffic lights.
                 let header = cx.debug_bounds("document-toolbar").unwrap();
                 let row = if expanded {
@@ -1086,7 +1086,7 @@ fn spelling_menu_item_switches_the_document(cx: &mut TestAppContext) {
     draw(cx);
     cx.update(|_, cx| assert!(!view.read(cx).editor.read(cx).diagnostics().is_empty()));
 
-    // Spelling lives in the header's ⋯ menu (ADR 0048).
+    // Spelling lives in the header's ⋯ menu.
     more(cx, "more-spelling");
     cx.update(|_, cx| {
         assert!(view.read(cx).spelling.off_here());
@@ -1210,7 +1210,7 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     });
     cx.run_until_parked();
 
-    // Inspector (ADR 0048, C): Share in the header, Copy for AI in the tab.
+    // Inspector: Share in the header, Copy for AI in the tab.
     click_toolbar(cx, "primary-share");
     click_toolbar(cx, "share-copy-for-ai");
     cx.update(|_, cx| {
@@ -1509,7 +1509,7 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     draw(cx);
-    // ⌘K opens it from the document (ADR 0048).
+    // ⌘K opens it from the document.
     cx.simulate_keystrokes("secondary-k");
     draw(cx);
     assert!(cx.debug_bounds("command-palette").is_some());
@@ -1604,7 +1604,7 @@ fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
 }
 
 /// Public synthetic input through the real editor/review/case host. Timings are
-/// observations until release/native budgets are qualified (ADR 0049).
+/// observations until release/native budgets are qualified.
 #[gpui::test]
 #[ignore = "review/diagnostics/compare/case CPU matrix; run serially on an idle machine"]
 fn review_host_performance(cx: &mut TestAppContext) {

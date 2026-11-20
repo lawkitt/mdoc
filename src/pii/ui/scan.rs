@@ -45,7 +45,7 @@ impl ScanCount {
 
 impl DocumentView {
     /// Categories this tab's scans skip: its case's list once it joined one,
-    /// otherwise the Settings default (ADR 0041, ADR 0076).
+    /// otherwise the Settings default.
     pub(crate) fn scan_skip(&self) -> HashSet<Category> {
         if self.case.link().is_some() {
             return self.case.skip().clone();
@@ -57,7 +57,7 @@ impl DocumentView {
             .map(|p| p.categories.skipped())
             .unwrap_or_default()
     }
-    /// The lists this tab's scans use (ADR 0092): its case's over the
+    /// The lists this tab's scans use: its case's over the
     /// user-wide ones of Settings › Detection, or those alone outside a
     /// case.
     pub(crate) fn scan_lists(&self, cx: &gpui::App) -> Lists {
@@ -67,11 +67,10 @@ impl DocumentView {
             panel.user_lists(),
         )
     }
-    /// What this tab's decisions put on its case's lists now (ADR 0092):
+    /// What this tab's decisions put on its case's lists now:
     /// the wordings of identities it kept whole on Never, the wordings it
     /// marked by hand, in their categories, on Always. A wording both kept
-    /// and marked is kept; one taken off as Not a name is on neither (ADR
-    /// 0122).
+    /// and marked is kept; one taken off as Not a name is on neither.
     fn listed(&self, cx: &gpui::App) -> Lists {
         let mut listed = Lists::default();
         let path = self.editor.read(cx).history_path();
@@ -100,7 +99,7 @@ impl DocumentView {
         let listed = self.listed(cx);
         self.case.contribute(listed)
     }
-    /// Settings › Detection stopped detecting `categories` (ADR 0076). A tab
+    /// Settings › Detection stopped detecting `categories`. A tab
     /// without a case drops their unapplied scan proposals; applied
     /// replacements and manual additions stay. Members follow their case.
     pub(crate) fn default_categories_unticked(
@@ -140,7 +139,7 @@ impl DocumentView {
                 return;
             }
         };
-        // Never start a scan that cannot load its model: ask first (ADR 0026).
+        // Never start a scan that cannot load its model: ask first.
         if mdoc_detect::SUPPORTED
             && self
                 .model_panel
@@ -204,8 +203,8 @@ impl DocumentView {
         self.pii.job = None;
         self.pii.mapping.show();
         let source = self.editor.read(cx).text().to_owned();
-        // A case can switch categories off (ADR 0041 #31); scans skip them.
-        // Without a case, Settings › Detection decides (ADR 0076).
+        // A case can switch categories off; scans skip them.
+        // Without a case, Settings › Detection decides.
         let skip = self.scan_skip();
         let result = result.map(|mut detections| {
             detections.retain(|d| !skip.contains(&d.category));

@@ -1,11 +1,11 @@
-//! The shared confirm component (ADR 0064): the close questions for
+//! The shared confirm component: the close questions for
 //! unsaved changes and a mapping, only a mapping, only changes; the Quit
 //! summary over several documents; removing a model. Each is cancelled.
 use super::{Driver, Result};
 use gpui::{Focusable, PromptLevel};
 use mdoc_store::settings;
 
-/// Don't Save in a save prompt (ADR 0073).
+/// Don't Save in a save prompt.
 const DONT_SAVE: &str = if cfg!(target_os = "macos") {
     "cmd-d"
 } else {
@@ -25,7 +25,7 @@ fn type_in_active(d: &mut Driver, key: &str) -> Result<()> {
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // The edited, pseudonymized tab is already in a case, so its mapping
-    // questions are asked directly (ADR 0071).
+    // questions are asked directly.
     d.change(|w, window, cx| {
         w.ask_changes_and_mapping(w.tabs.active(), false, window, cx);
     })?;

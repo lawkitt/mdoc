@@ -1,11 +1,11 @@
-//! Staying in the menu bar (ADR 0084, macOS): Settings › General › "Show
+//! Staying in the menu bar (macOS): Settings › General › "Show
 //! mdoc in the menu bar" shows the item; its click opens the shelf in a
 //! borderless popup under it, closed by a click outside. With the item on,
 //! closing the workspace window hides it (tabs, undo, mappings and unsaved
 //! text stay in memory) and mdoc leaves the Dock until the window shows
 //! again. The first time that happens, a note under the icon says mdoc
 //! is still there, once. Quit and Restart to update still go through the
-//! quit flow (ADR 0071). Off, mdoc quits with its last window as before.
+//! quit flow. Off, mdoc quits with its last window as before.
 //! The setting is on by default.
 //!
 //! `MenuBarState` holds the rules, GPUI-free; this module carries out its
@@ -22,7 +22,7 @@ use gpui::{
 };
 use std::time::{Duration, Instant};
 
-/// The shelf's width (ADR 0084).
+/// The shelf's width.
 pub(crate) const SHELF_WIDTH: f32 = 360.;
 /// Space between the menu bar and the shelf, and around it on screen.
 const MARGIN: f32 = 6.;
@@ -485,7 +485,7 @@ fn item_anchor(cx: &App) -> Option<(DisplayId, Bounds<Pixels>)> {
 }
 
 /// A borderless popup under the item with the native blurred background
-/// (vibrancy, ADR 0084); the system draws its corners and shadow.
+/// (vibrancy); the system draws its corners and shadow.
 fn popup_options(bounds: Bounds<Pixels>, display_id: DisplayId) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),

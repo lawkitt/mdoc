@@ -1,10 +1,10 @@
-//! The in-app confirm dialog every `window.prompt` uses (ADR 0064). The
+//! The in-app confirm dialog every `window.prompt` uses. The
 //! platform prompt titles itself from its level on Windows ("Warning",
 //! "Information"); this one is a dialog named by its question on every
 //! platform, keeps Tab inside, and gives focus back where it was.
 //!
 //! Callers list the default button first; the dialog lays the buttons out in
-//! the platform's order and fills the default (ADR 0064).
+//! the platform's order and fills the default.
 use crate::{style::Theme, ui};
 use gpui::{
     App, Context, EventEmitter, FocusHandle, Focusable, KeyDownEvent, PromptButton, PromptResponse,
@@ -17,7 +17,7 @@ actions!(confirm_dialog, [Discard]);
 /// The dialog's key context.
 pub(crate) const DIALOG: &str = "ConfirmDialog";
 
-/// ⌘D / Alt+D answers Don't Save, from the shortcuts table (ADR 0073).
+/// ⌘D / Alt+D answers Don't Save, from the shortcuts table.
 pub fn bind_keys(cx: &mut App) {
     let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Dialog, cx);
     cx.bind_keys(bindings);
@@ -237,7 +237,7 @@ fn drops_work(label: &str) -> bool {
     matches!(label, "Don't Save" | "Discard All" | "Close") || label.starts_with("Quit without")
 }
 
-/// The platform's button order (ADR 0064), as indices into `labels`, whose
+/// The platform's button order, as indices into `labels`, whose
 /// first entry is the default: the buttons before the gap, then after it.
 ///
 /// macOS: buttons that drop work at the left; then Cancel, the other

@@ -1,4 +1,4 @@
-//! macOS install steps (ADR 0040): who may update, staging a release's
+//! macOS install steps: who may update, staging a release's
 //! `.app` out of its disk image, the Developer ID gates, and the quit-time
 //! swap. Stage-and-rename with rollback follows gpui-updater; the gates follow
 //! OxiMux. Everything here is blocking and runs off the UI thread, except the
@@ -293,7 +293,7 @@ mod tests {
         assert!(!root.path().join(".mdoc.app.old").exists());
     }
 
-    /// The real gates on a published release (ADR 0040): stage the app out of
+    /// The real gates on a published release: stage the app out of
     /// `MDOC_UPDATE_DMG` (e.g. `gh release download v0.1.0-beta.3 -p '*.dmg'`),
     /// verify it as version `MDOC_UPDATE_VERSION`, check that an installed
     /// copy is eligible, and swap the staged copy over it — Gatekeeper included.
@@ -331,7 +331,7 @@ mod tests {
         assert!(!applications.join(".mdoc.app.old").exists());
     }
 
-    /// End to end with real signatures (ADR 0040): needs a Developer ID
+    /// End to end with real signatures: needs a Developer ID
     /// Application identity for team F33DLM8K53 in the keychain, named by
     /// `APPLE_SIGNING_IDENTITY`. Gatekeeper is skipped: fixtures aren't notarized.
     #[test]

@@ -1,5 +1,5 @@
-//! Settings categories, categories to detect, the user-wide lists (ADR
-//! 0092) and the Spelling dictionary (ADR 0076).
+//! Settings categories, categories to detect, the user-wide lists and the
+//! Spelling dictionary.
 use super::{Driver, Result};
 use crate::settings_ui::{Category, Status};
 
@@ -21,7 +21,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         // Each baseline precedes its Tab walk, including Appearance in General.
         d.capture(name)?;
     }
-    // ADR 0076: switches share one column and an off switch is grey. General
+    // Switches share one column and an off switch is grey. General
     // with the switches off, unsaved; Include pre-releases stays on in a
     // pre-release build.
     d.change(|w, window, cx| {
@@ -73,7 +73,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.change(|w, _, cx| w.settings.update(cx, |p, cx| p.render_scroll_to_end(cx)))?;
     d.capture("settings-detection-end")?;
     // Categories to detect with Address and Email off; focus on a chip
-    // scrolls the row into view and shows its ring (ADR 0076).
+    // scrolls the row into view and shows its ring.
     d.change(|w, window, cx| {
         w.settings.update(cx, |p, cx| {
             p.show_category(Category::Detection, window, cx);
@@ -92,7 +92,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
             .update(cx, |p, cx| p.render_categories(&[], "", window, cx))
     })?;
     // The user-wide Always and Never lists, a wording typed to add, then
-    // the same section while cases are locked (ADR 0092).
+    // the same section while cases are locked.
     d.change(|w, window, cx| {
         w.settings.update(cx, |p, cx| {
             p.show_category(Category::Detection, window, cx);

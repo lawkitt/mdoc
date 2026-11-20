@@ -1,4 +1,4 @@
-//! The user dictionary view inside Settings (ADR 0036): search as you type,
+//! The user dictionary view inside Settings: search as you type,
 //! add the typed word, remove words with a short Undo. The list is
 //! virtualized, so only visible rows are drawn and focusable.
 use super::{Event, Panel, quiet_control};

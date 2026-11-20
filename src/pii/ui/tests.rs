@@ -328,7 +328,7 @@ fn header_pseudonymize_scans_once_and_the_panel_toggle_hides_the_review(
 ) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(720.), px(480.)));
-    // An empty document has nothing to pseudonymize (ADR 0048).
+    // An empty document has nothing to pseudonymize.
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("Pseudonymize").is_none());
     app.update(cx, |app, cx| {
@@ -452,7 +452,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
             "**Анна** ORG_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
         );
         assert_eq!(app.pii.review.remaining(), 0);
-        // Nothing is left to review, so Apply closes the popup (ADR 0055).
+        // Nothing is left to review, so Apply closes the popup.
         assert!(app.pii.popup.is_none());
         assert!(app.dirty(cx));
         assert!(app.pii.error.is_none());
@@ -524,7 +524,7 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
     let last = cx
         .debug_bounds("target-30")
         .expect("keyboard-selected target must be painted");
-    // Alias targets float in their own menu over the popup (ADR 0032).
+    // Alias targets float in their own menu over the popup.
     let menu = cx.debug_bounds("direct-alias-menu").unwrap();
     assert!(
         last.top() >= menu.top() && last.bottom() <= menu.bottom(),
@@ -912,7 +912,7 @@ fn long_original_enter_applies_this_one_and_alias_enter_only_confirms(
             app.activate_annotation(app.pii.review.candidates()[0].id, window, cx);
         });
         cx.run_until_parked();
-        // Enter applies this mention (ADR 0033), as one undo step.
+        // Enter applies this mention, as one undo step.
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
         assert_eq!(
@@ -1167,8 +1167,8 @@ fn selection_replace_supersedes_partial_proposals_and_enter_applies(cx: &mut gpu
     cx.dispatch_action(PiiConfirm);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        // Marking the full name linked the scan's lone "Иван" to it (ADR
-        // 0092), so Apply replaces both with its alias.
+        // Marking the full name linked the scan's lone "Иван" to it, so Apply
+        // replaces both with its alias.
         let text = app.editor.read(cx).text().to_owned();
         assert_eq!(text, "Contact PERSON_2 today. PERSON_2 agreed.");
         assert_eq!(app.pii.review.remaining(), 0);
@@ -1277,7 +1277,7 @@ fn decision_card_fits_the_mention_and_apply_settles_in(cx: &mut gpui::TestAppCon
     app.update(cx, |app, cx| {
         install_scan(app, cx);
     });
-    // The toolbar stage label shows only while the scan runs (ADR 0032).
+    // The toolbar stage label shows only while the scan runs.
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("scan-status").is_some());
     app.update(cx, |app, cx| {
@@ -1606,7 +1606,7 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     cx.update(|window, cx| window.draw(cx).clear(cx));
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
-        // Inspector (ADR 0048, C): back to Review for the notice.
+        // Inspector: back to Review for the notice.
         app.inspector_share = false;
         cx.notify();
     });
@@ -1911,7 +1911,7 @@ fn caseless_scans_follow_the_default_and_a_joined_tab_its_case(cx: &mut gpui::Te
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text(source, cx));
-        // Settings › Detection: Address is off (ADR 0076).
+        // Settings › Detection: Address is off.
         let mut prefs = app.preferences.borrow().current.clone().unwrap();
         prefs.categories.set(Category::Address, false);
         app.preferences.borrow_mut().current = Some(prefs);
@@ -2035,8 +2035,7 @@ fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
     draw(cx);
-    // The pill always offers zoom; the views join once aliases are applied
-    // (ADR 0048).
+    // The pill always offers zoom; the views join once aliases are applied.
     assert!(cx.debug_bounds("zoom-reset").is_some());
     assert!(
         cx.debug_bounds("view-edit").is_none(),
@@ -2250,8 +2249,7 @@ fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) 
         cx.run_until_parked();
         draw(cx);
     };
-    // Applied: the header offers Share, which opens the Inspector's Share tab
-    // (ADR 0048 variant C).
+    // Applied: the header offers Share, which opens the Inspector's Share tab.
     click(cx, "primary-share");
     app.read_with(cx, |app, _| {
         assert!(app.inspector_share);
@@ -2392,7 +2390,7 @@ fn merge_hint_live_panel_merge_undo_and_dismiss(cx: &mut gpui::TestAppContext) {
             identity,
             revision,
             // A slip the hint offers to merge; a short form of the name
-            // would join it by propagation (ADR 0092).
+            // would join it by propagation.
             Ok([0..12, 21..32]
                 .map(|range| mdoc_pii::Detection {
                     range,
@@ -2805,7 +2803,7 @@ fn mod_alt_p_still_adds_with_the_guess(cx: &mut gpui::TestAppContext) {
 #[gpui::test]
 fn a_proposed_wording_offers_no_category_menu(cx: &mut gpui::TestAppContext) {
     // The whole proposal is selected: Replace keeps its category, and the
-    // popup's category control corrects it after (ADR 0024).
+    // popup's category control corrects it after.
     let source = "Acme signed. Acme paid.";
     let (app, cx) = split_pill_fixture(cx, source, "Acme", "Acme");
     let action = app.read_with(cx, |app, cx| {

@@ -135,7 +135,7 @@ fn main() {
         }
         return;
     }
-    // `just smoke-update` (ADR 0040): update this copy in place, headless.
+    // `just smoke-update`: update this copy in place, headless.
     if args.get(1).is_some_and(|arg| arg == "--mdoc-self-update") {
         match updater::self_update() {
             Ok(message) => println!("{message}"),
@@ -151,7 +151,7 @@ fn main() {
     let single_instance::Launch::Primary(later_launches) = single_instance::claim(&initial) else {
         return;
     };
-    // The app itself, not its worker modes, records panics (ADR 0047).
+    // The app itself, not its worker modes, records panics.
     crash::install();
     // Documents other than PDFs convert in a supervised worker, so a
     // converter crash ends an import, not the app (#925 decision 10).
@@ -178,7 +178,7 @@ fn main() {
             }
         }
     });
-    // Launching mdoc again while its window is hidden (ADR 0084) shows it.
+    // Launching mdoc again while its window is hidden shows it.
     application.on_reopen(|cx| menu_bar::reveal(cx, |_, _, _| {}));
     // macOS: a quit from the Dock, an Apple Event or logout asks first.
     #[cfg(target_os = "macos")]
@@ -190,7 +190,7 @@ fn main() {
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
             mdoc_import::model_work::shutdown();
-            // Shelf drags' temporary exports live until quit (ADR 0084).
+            // Shelf drags' temporary exports live until quit.
             shelf_ui::clear_exports(cx);
             // Blocking on purpose: GPUI waits only briefly for async quit
             // work, and a staged update must be swapped in before exit.
@@ -219,7 +219,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     // One unified row for traffic lights, sidebar toggle and the
-                    // document header (ADR 0048). Linux asks for client-side
+                    // document header. Linux asks for client-side
                     // decorations and falls back to the compositor's title bar.
                     titlebar: Some(gpui::TitlebarOptions {
                         title: Some("mdoc".into()),
@@ -294,7 +294,7 @@ fn main() {
                 if quit_gate.last_window_closed() {
                     return;
                 }
-                // Restart now (ADR 0040): relaunch after the swap at quit.
+                // Restart now: relaunch after the swap at quit.
                 if updater::restart_requested(cx) {
                     cx.restart();
                 } else {
@@ -326,7 +326,7 @@ fn open_paths_from_os(
 }
 
 /// Window-wide shortcuts: files, tabs, zoom and spelling, from the
-/// shortcuts table (ADR 0073).
+/// shortcuts table.
 pub(crate) fn bind_app_keys(cx: &mut App) {
     let bindings = shortcuts::bindings(shortcuts::Owner::App, cx);
     cx.bind_keys(bindings);

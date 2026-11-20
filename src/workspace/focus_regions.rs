@@ -1,4 +1,4 @@
-//! The window's F6 regions (ADR 0062): the sidebar, then Home or the active
+//! The window's F6 regions: the sidebar, then Home or the active
 //! document's regions, and the control last focused in each when focus left
 //! it. Generic over the focus handle, so the order rules run without a
 //! window; the workspace view says which region holds focus and carries out

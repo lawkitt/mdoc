@@ -1,4 +1,4 @@
-//! Per-window, in-memory destination history (ADR 0081).
+//! Per-window, in-memory destination history.
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Stop {

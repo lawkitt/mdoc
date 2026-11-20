@@ -1,4 +1,4 @@
-//! Replacements panel rows: group headers and mention rows (ADR 0033).
+//! Replacements panel rows: group headers and mention rows.
 use super::{
     DragGhost, DropTarget, MappingAction, PanelCursor, PanelDrag, PanelMenu,
     checklist::Tick,
@@ -39,7 +39,7 @@ fn start_drag(
 
 /// Panel row surfaces: a band for open groups, a stronger fill for the
 /// selected mention, and a guide line tying mentions to their header. The
-/// guide is blue only for applied mentions, dimmed unless selected (ADR 0044).
+/// guide is blue only for applied mentions, dimmed unless selected.
 struct RowColors {
     hover: Hsla,
     selected: Hsla,
@@ -80,7 +80,7 @@ impl RowColors {
 }
 
 /// The header text's left edge; the guide sits on it and mention content
-/// starts [`MENTION_INSET`] after (one indent level, ADR 0044).
+/// starts [`MENTION_INSET`] after (one indent level).
 const ROW_INSET: f32 = 12.;
 pub(super) const MENTION_INSET: f32 = ROW_INSET + 22.;
 /// An entity row's mention count fits four digits; a longer one widens the
@@ -156,7 +156,7 @@ impl DocumentView {
     }
 
     /// A category label over its entities, "● Person 3 (7)": entities, then
-    /// mentions. Inert: no hover, focus or drop (ADR 0046, ADR 0048).
+    /// mentions. Inert: no hover, focus or drop.
     fn category_row(
         &self,
         index: usize,
@@ -206,7 +206,7 @@ impl DocumentView {
     }
 
     /// A checkbox: ticked will be replaced, unticked keeps the original,
-    /// dashed means some mentions are kept (ADR 0048). `name` says what it
+    /// dashed means some mentions are kept. `name` says what it
     /// replaces, so a screen reader tells the boxes apart.
     fn tick_box(
         &self,
@@ -483,7 +483,7 @@ impl DocumentView {
             }),
         )
         // A click toggles the group: opening shows its mentions and the popup
-        // on the first one; closing folds it away (ADR 0048).
+        // on the first one; closing folds it away.
         .on_click(cx.listener(move |this, _, window, cx| {
             this.pii.mapping.cursor = Some(PanelCursor::Header(id));
             if this.pii.mapping.expanded.remove(&id) {
@@ -513,7 +513,7 @@ impl DocumentView {
         .into_any_element()
     }
 
-    /// Reveal a mention from the panel and open its popup there (ADR 0048):
+    /// Reveal a mention from the panel and open its popup there:
     /// the panel's own scroll lands it in view, then the popup anchors to it.
     fn open_from_panel(&mut self, annotation: u64, window: &mut Window, cx: &mut Context<Self>) {
         // A narrow window showing the source switches back to the Markdown.
@@ -523,7 +523,7 @@ impl DocumentView {
     }
 
     /// A kept mention under its entity: unticked, muted; ticking proposes it
-    /// again, a click shows it in the text (ADR 0048).
+    /// again, a click shows it in the text.
     fn kept_row(
         &self,
         base: gpui::Stateful<gpui::Div>,
@@ -657,11 +657,11 @@ impl DocumentView {
                 },
             )]),
         ))
-        // A mention row opens the popup on that mention (ADR 0048).
+        // A mention row opens the popup on that mention.
         .on_click(cx.listener(move |this, _, window, cx| {
             this.open_from_panel(annotation, window, cx);
         }))
-        // Middle click keeps this original; ⌘ same text, ⇧⌘ all (ADR 0033).
+        // Middle click keeps this original; ⌘ same text, ⇧⌘ all.
         .on_mouse_down(
             gpui::MouseButton::Middle,
             cx.listener(move |this, e: &gpui::MouseDownEvent, window, cx| {
@@ -710,7 +710,7 @@ impl DocumentView {
                     cx.notify();
                 }))
             }))
-            // Not a name for the whole identity (ADR 0122), last.
+            // Not a name for the whole identity, last.
             .child(
                 div()
                     .h(px(1.))
@@ -773,7 +773,7 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// Expand or collapse one group; nothing is selected (ADR 0033).
+    /// Expand or collapse one group; nothing is selected.
     pub(super) fn toggle_group(&mut self, id: u64, cx: &mut Context<Self>) {
         let expanded = &mut self.pii.mapping.expanded;
         if !expanded.remove(&id) {

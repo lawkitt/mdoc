@@ -17,7 +17,7 @@ pub(crate) fn bind(cx: &mut App) {
             panel.show_category(crate::settings_ui::Category::About, window, cx)
         });
     });
-    // Settings at About, where the result shows, and a check now (ADR 0038).
+    // Settings at About, where the result shows, and a check now.
     app_action::<CheckForUpdates>(cx, |this, window, cx| {
         window.activate_window();
         this.settings.update(cx, |panel, cx| {
@@ -79,7 +79,7 @@ fn app_action<A: gpui::Action>(
             cx.defer(move |cx| {
                 let _ = workspace.update(cx, |workspace, window, cx| {
                     // Confirmations have their own dispatch root. App routing
-                    // must not move focus out of that modal surface (ADR 0062).
+                    // must not move focus out of that modal surface.
                     if !window.has_active_prompt() {
                         handle(workspace, window, cx);
                     }

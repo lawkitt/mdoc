@@ -1,4 +1,4 @@
-//! Staying in the menu bar (ADR 0084): with the item on, closing the window
+//! Staying in the menu bar: with the item on, closing the window
 //! hides it with every tab kept; Quit still asks; off, closing quits.
 use super::*;
 use crate::menu_bar;
@@ -56,7 +56,7 @@ fn with_the_item_off_closing_the_window_quits_as_before(cx: &mut TestAppContext)
     assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
 }
 
-/// Windows has no tray yet (ADR 0084): the setting changes nothing there.
+/// Windows has no tray yet: the setting changes nothing there.
 #[cfg(not(target_os = "macos"))]
 #[gpui::test]
 fn the_setting_does_nothing_outside_macos(cx: &mut TestAppContext) {
@@ -178,7 +178,7 @@ fn opening_a_file_from_the_os_shows_the_hidden_window(cx: &mut TestAppContext) {
     );
 }
 
-/// The first-close note (ADR 0084): the first close with the item on shows
+/// The first-close note: the first close with the item on shows
 /// it under the icon and records it, so it never shows again; Got it
 /// closes it and leaves mdoc in the menu bar.
 #[cfg(target_os = "macos")]

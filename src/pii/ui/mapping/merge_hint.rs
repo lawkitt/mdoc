@@ -1,4 +1,4 @@
-//! Merge hints in the Replacements panel (ADR 0080): one line under the
+//! Merge hints in the Replacements panel: one line under the
 //! shorter (or later) identity's header, "Looks like … · Merge ×". Nothing
 //! links without the click; Merge is one undo step.
 use super::{MappingAction, PanelCursor, panel_rows::MENTION_INSET};
@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 impl DocumentView {
     /// Link the hinted identity into the fuller one, which keeps its alias
-    /// and primary wording; the other alias retires (ADR 0041).
+    /// and primary wording; the other alias retires.
     pub(super) fn merge_from_hint(
         &mut self,
         hint: &MergeHint,
@@ -73,7 +73,7 @@ impl DocumentView {
     }
 
     /// The hint line: muted text, then Merge and × as Tab stops with the one
-    /// focus ring (ADR 0074).
+    /// focus ring.
     pub(super) fn hint_row(
         &self,
         index: usize,

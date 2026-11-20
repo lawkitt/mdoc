@@ -39,7 +39,7 @@ pub(crate) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut Visua
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = workspace::Workspace::empty(window, cx);
         tabs.restore(session_store::Session::default(), window, cx);
-        // Start from an Untitled tab rather than Home (ADR 0048).
+        // Start from an Untitled tab rather than Home.
         tabs.new_tab(window, cx);
         tabs
     });
@@ -1626,7 +1626,7 @@ fn replace_moves_past_the_replacement_and_skips_formatting(cx: &mut TestAppConte
 
 #[gpui::test]
 fn stepping_after_a_skip_brings_the_counter_back(cx: &mut TestAppContext) {
-    // ADR 0064: the live counter, not a stale replace result, follows Next.
+    // The live counter, not a stale replace result, follows Next.
     let (app, cx) = boot(cx);
     open_replace(&app, "**c**at cat cat", "cat", "cats", cx);
     cx.simulate_keystrokes("enter");
@@ -1747,7 +1747,7 @@ fn find_shows_the_markdown_pane_in_a_narrow_window(cx: &mut TestAppContext) {
 
 #[test]
 fn find_counter_speaks_its_position() {
-    // ADR 0064: the counter shows "14 / 16" and screen readers read words.
+    // The counter shows "14 / 16" and screen readers read words.
     let spoken = |empty, searching, active, matches| {
         let (shown, spoken) = find_counter(empty, searching, active, matches);
         (shown, spoken.to_string())

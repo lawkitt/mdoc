@@ -167,7 +167,7 @@ fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
     cx.simulate_resize(size(px(1100.), px(760.)));
     draw(cx);
     assert!(cx.debug_bounds("header-notices").is_none());
-    // A new notice opens the popover once (ADR 0048).
+    // A new notice opens the popover once.
     tabs.update(cx, |tabs, cx| {
         tabs.notices.post("Could not restore one tab.");
         cx.notify();
@@ -221,7 +221,7 @@ fn locked_cases_notice_opens_only_when_a_locked_case_is_needed(cx: &mut TestAppC
     cx.run_until_parked();
     draw(cx);
     draw(cx);
-    // A plain document: the notice waits behind the bell (ADR 0043).
+    // A plain document: the notice waits behind the bell.
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.case_coordinator.locked());

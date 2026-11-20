@@ -1,4 +1,4 @@
-//! What you did (ADR 0079): every decision kind is listed on its undo point,
+//! What you did: every decision kind is listed on its undo point,
 //! travel equals ⌘Z / ⇧⌘Z presses, and text edits are not listed.
 use super::*;
 use crate::document_view::DocumentView;

@@ -1,4 +1,4 @@
-//! The one-table invariant (ADR 0073): every bound user-facing action is in
+//! The one-table invariant: every bound user-facing action is in
 //! the table, and the table is what the app binds.
 use super::*;
 use gpui::{Keystroke, OperatingSystem, TestAppContext};
@@ -42,7 +42,7 @@ fn workspace_navigation_is_everywhere_with_platform_keys_and_text_context_guards
 }
 
 /// Back/Forward keys as each platform's whole keymap resolves them, checked
-/// on any OS (ADR 0061, 0081): on Windows and Linux Alt+← / Alt+→ stay word
+/// on any OS: on Windows and Linux Alt+← / Alt+→ stay word
 /// moves in the editor, do nothing in a text field and navigate elsewhere;
 /// on macOS ⌘[ / ⌘] navigate from the editor too and ⌥←/→ never navigate.
 #[gpui::test]
@@ -95,7 +95,7 @@ fn navigation_keys_resolve_by_focus_on_both_platforms_keymaps(cx: &mut TestAppCo
 
 /// A focused sidebar tab opens its menu with ⌃↩ (no fn on MacBook keyboards)
 /// or ⇧F10 on both platforms, and the Menu key on Windows, ahead of the
-/// window-wide Ctrl+Enter (Apply all) there (ADR 0062).
+/// window-wide Ctrl+Enter (Apply all) there.
 #[gpui::test]
 fn ctrl_enter_opens_a_sidebar_tabs_menu_on_both_platforms(cx: &mut TestAppContext) {
     cx.update(|cx| {

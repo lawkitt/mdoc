@@ -1,4 +1,4 @@
-//! Decision history at the window boundary (ADR 0079).
+//! Decision history at the window boundary.
 use super::*;
 use mdoc_pii::decisions::EntryState;
 

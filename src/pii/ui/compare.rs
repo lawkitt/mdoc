@@ -1,4 +1,4 @@
-//! Before/after view (ADR 0041 #31, ADR 0042): the original wording beside the
+//! Before/after view: the original wording beside the
 //! pseudonymized text, both formatted like the editor and read-only, scrolling
 //! together. Live: it follows every change to the applied replacements, with
 //! the editor's replacement motion.
@@ -20,14 +20,14 @@ const FLOAT_TOP: f32 = 12.;
 /// A column label's height: 11 pt text and its border.
 const LABEL_HEIGHT: f32 = 22.;
 
-/// Which columns an open before/after view shows (ADR 0046's view switcher).
+/// Which columns an open before/after view shows, from the view switcher.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CompareMode {
     /// Both columns (one at a time in a narrow window).
     Side,
     Original,
     Pseudonymized,
-    /// The restored AI reply, read-only (ADR 0078).
+    /// The restored AI reply, read-only.
     Reply,
 }
 
@@ -35,7 +35,7 @@ pub(crate) enum CompareMode {
 pub(crate) struct CompareState {
     original: Entity<mdoc_editor::EditorState>,
     current: Entity<mdoc_editor::EditorState>,
-    /// The Reply view's editor (ADR 0078).
+    /// The Reply view's editor.
     reply: Entity<mdoc_editor::EditorState>,
     pub(super) left: gpui::ScrollHandle,
     pub(super) right: gpui::ScrollHandle,
@@ -274,7 +274,7 @@ impl DocumentView {
         self.refresh_compare(window, cx);
         cx.notify();
     }
-    /// The view switcher's choice: `None` is Edit (ADR 0046).
+    /// The view switcher's choice: `None` is Edit.
     pub(crate) fn set_view_mode(
         &mut self,
         mode: Option<CompareMode>,
@@ -330,9 +330,9 @@ impl DocumentView {
             self.wake_switcher(cx);
         }
     }
-    /// The floating pill at the bottom of the document (ADR 0048): zoom
+    /// The floating pill at the bottom of the document: zoom
     /// always; Edit · Original · Pseudonymized · Side by side once aliases are
-    /// applied (ADR 0046), and Reply while a reply exists (ADR 0078).
+    /// applied, and Reply while a reply exists.
     pub(crate) fn view_switcher(
         &self,
         window: &mut Window,
@@ -387,7 +387,7 @@ impl DocumentView {
         if progress < 1. {
             window.request_animation_frame();
         }
-        // Keyboard reach must never land on a faded control (ADR 0062),
+        // Keyboard reach must never land on a faded control,
         // including during the idle/fade timer.
         let opacity = if self.switcher_region.contains_focused(window, cx) {
             1.
@@ -661,7 +661,7 @@ impl DocumentView {
         state.before = before;
         state.marks = spans;
     }
-    /// The Reply view follows the reply and the mapping (ADR 0078); cheap
+    /// The Reply view follows the reply and the mapping; cheap
     /// when neither changed.
     fn refresh_reply_view(&mut self, cx: &mut Context<Self>) {
         self.refresh_reply();
@@ -957,7 +957,7 @@ impl DocumentView {
                     )
                     .when(!show_right, |v| v.absolute().inset_0().invisible()),
                 )
-                // The restored reply over both, read-only (ADR 0078).
+                // The restored reply over both, read-only.
                 .when(reply, |v| {
                     v.child(
                         div()

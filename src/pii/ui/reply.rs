@@ -1,5 +1,5 @@
-//! Restore in place (ADR 0078): the Share panel's "AI reply" box restores a
-//! pasted reply at once, with Restore's matching rules (ADR 0041), and the
+//! Restore in place: the Share panel's "AI reply" box restores a
+//! pasted reply at once, with Restore's matching rules, and the
 //! view switcher's read-only Reply segment shows the result, following the
 //! mapping live. One reply per document: kept in the case file when the tab
 //! has a case, otherwise only while the tab is open.
@@ -35,7 +35,7 @@ pub(crate) struct ReplyBox {
     restorable: bool,
     /// The mapping the reply's alias tokens were last read against, by
     /// identity id, and its review revision: when an identity's alias
-    /// changes, the reply's tokens for it follow (ADR 0078).
+    /// changes, the reply's tokens for it follow.
     bound: Vec<(u64, ExportedIdentity)>,
     bound_at: Option<u64>,
 }
@@ -183,7 +183,7 @@ impl ReplyBox {
     }
 
     /// "N values restored · M unrecognized": distinct identities restored
-    /// and distinct unknown tokens, as Anoni counts (ADR 0078). Next
+    /// and distinct unknown tokens, as Anoni counts. Next
     /// unrecognised still visits every occurrence.
     pub(crate) fn summary(&self) -> String {
         let restored = self.restored.values;
@@ -284,7 +284,7 @@ impl DocumentView {
         self.compare.as_ref().map(|c| c.mode) == Some(CompareMode::Reply)
     }
 
-    /// The case gave this reopened member its reply (ADR 0078).
+    /// The case gave this reopened member its reply.
     pub(crate) fn load_reply(&mut self, text: String, cx: &mut Context<Self>) {
         self.reply.loaded(text);
         self.bind_reply();
