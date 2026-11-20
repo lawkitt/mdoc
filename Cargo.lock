@@ -3637,7 +3637,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.57.0",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -5668,7 +5668,7 @@ dependencies = [
 [[package]]
 name = "pdf-inspector"
 version = "1.26.1"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=84079ec9f4ba814023575ff832464fdb3bd510a5#84079ec9f4ba814023575ff832464fdb3bd510a5"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=7e35e4daaafee464727a5bab952e9d3859f3cc7f#7e35e4daaafee464727a5bab952e9d3859f3cc7f"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
@@ -8920,7 +8920,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

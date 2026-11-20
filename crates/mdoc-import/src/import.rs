@@ -225,6 +225,10 @@ pub struct LeftOut {
     pub hidden_text: u64,
     /// AcroForm field names; the fields' values stay.
     pub field_names: u64,
+    /// Files attached to a PDF (its embedded files, a portfolio's files,
+    /// file attachment annotations), each once. Only the count: their names
+    /// are personal data too, and their content is never read.
+    pub attached_files: u64,
     /// A PDF's running header and footer rows left out as exact repeats of
     /// a row kept on an earlier page.
     pub repeated_lines: u64,
@@ -261,6 +265,7 @@ impl LeftOut {
             hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches)
                 + sum(&native.hidden_text_by_page, |page| page.stretches),
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
+            attached_files: native.attached_files.len() as u64,
             repeated_lines: 0,
             comments: native.annotations.len() as u64,
             comments_unread: 0,
@@ -268,11 +273,12 @@ impl LeftOut {
     }
 
     /// The note's lines for the counts other than comments, in order.
-    fn counts(&self) -> [Option<String>; 4] {
+    fn counts(&self) -> [Option<String>; 5] {
         [
             pictures_note(self.pictures),
             hidden_text_note(self.hidden_text),
             left_out_note(self.field_names, "form field name", "form field names"),
+            left_out_note(self.attached_files, "attached file", "attached files"),
             repeated_lines_note(self.repeated_lines),
         ]
     }
@@ -281,12 +287,13 @@ impl LeftOut {
     /// count only where no rendering of the document shows them
     /// (`comments_shown` false); comments only counted always do.
     pub fn line(&self, comments_shown: bool) -> Option<String> {
-        let [pictures, hidden, field_names, repeated] = self.counts();
+        let [pictures, hidden, field_names, attached, repeated] = self.counts();
         let comments = self.comments_unread + if comments_shown { 0 } else { self.comments };
         join_notes([
             pictures,
             hidden,
             field_names,
+            attached,
             repeated,
             not_shown_note(comments),
         ])
@@ -304,7 +311,7 @@ impl Imported {
     /// they show the left-out line (ROADMAP Comments item 4): the order the
     /// note had before the split.
     pub fn note(&self) -> Option<String> {
-        let [pictures, hidden, field_names, repeated] = self.left_out.counts();
+        let [pictures, hidden, field_names, attached, repeated] = self.left_out.counts();
         join_notes([
             self.warning.clone(),
             left_out_note(
@@ -315,6 +322,7 @@ impl Imported {
             pictures,
             hidden,
             field_names,
+            attached,
             repeated,
         ])
     }
@@ -501,6 +509,7 @@ pub(crate) fn import_source(
             // elsewhere).
             hidden_text: u64::from(converted.hidden_text_left_out),
             field_names: 0,
+            attached_files: 0,
             repeated_lines: 0,
             comments: read,
             comments_unread,
@@ -1256,6 +1265,132 @@ EMC\n";
         assert_eq!(LeftOut::default().line(false), None);
     }
 
+    /// A PDF from `objects`, object 1 its catalog, with a cross-reference
+    /// table.
+    fn write_pdf(objects: &[String]) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", index + 1).as_bytes());
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", offsets.len() + 1).as_bytes(),
+        );
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn stream_object(dict: &str, content: &str) -> String {
+        format!(
+            "<< {dict} /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        )
+    }
+
+    /// Files attached to a PDF are counted in the note, each once, and
+    /// neither their names nor their content reach the Markdown, the note or
+    /// the left-out line (#1005): #1004's PDF with `client-notes.txt` in its
+    /// embedded files, a file attachment annotation, and a portfolio.
+    #[test]
+    fn the_note_counts_attached_files_and_never_names_them() {
+        const NOTE: &str = "Client notes: Ivan Petrov phoned on Monday.";
+        let font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned();
+        let page_text = "BT /F1 14 Tf 72 720 Td (Visible paragraph on the page.) Tj ET";
+        // A paperclip on the page carrying its own file, and a second one
+        // pointing at the same file specification, which adds nothing.
+        let annotated = write_pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> /Annots [6 0 R 9 0 R] >>"
+                .to_owned(),
+            stream_object("", page_text),
+            font.clone(),
+            "<< /Type /Annot /Subtype /FileAttachment /Rect [72 600 90 618] /FS 7 0 R \
+             /Contents (witness-statement.txt) >>"
+                .to_owned(),
+            "<< /Type /Filespec /F (witness-statement.txt) /EF << /F 8 0 R >> >>".to_owned(),
+            stream_object("/Type /EmbeddedFile", NOTE),
+            "<< /Type /Annot /Subtype /FileAttachment /Rect [100 600 118 618] /FS 7 0 R >>"
+                .to_owned(),
+        ]);
+        // A portfolio keeps its files in the name tree, here across kids.
+        let portfolio = write_pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /Collection << /Type /Collection /View /D >> \
+             /Names << /EmbeddedFiles 6 0 R >> >>"
+                .to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>"
+                .to_owned(),
+            stream_object("", page_text),
+            font,
+            "<< /Kids [7 0 R 8 0 R] >>".to_owned(),
+            "<< /Limits [(a) (a)] /Names [(exhibit-a.pdf) 9 0 R] >>".to_owned(),
+            "<< /Limits [(b) (c)] /Names [(exhibit-b.xlsx) 10 0 R (exhibit-c.docx) 11 0 R] >>"
+                .to_owned(),
+            "<< /Type /Filespec /UF (exhibit-a.pdf) /EF << /F 12 0 R >> >>".to_owned(),
+            "<< /Type /Filespec /UF (exhibit-b.xlsx) /EF << /F 13 0 R >> >>".to_owned(),
+            "<< /Type /Filespec /UF (exhibit-c.docx) /EF << /F 14 0 R >> >>".to_owned(),
+            stream_object("/Type /EmbeddedFile", NOTE),
+            stream_object("/Type /EmbeddedFile", NOTE),
+            stream_object("/Type /EmbeddedFile", NOTE),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        // #1004's PDF also has a line in an off layer: one hidden passage.
+        let embedded_note = "1 hidden passage not imported. 1 attached file not imported.";
+        for (name, pdf, files, expected) in [
+            ("embedded.pdf", pdf_with_an_off_layer(), 1, embedded_note),
+            (
+                "annotated.pdf",
+                annotated,
+                1,
+                "1 attached file not imported.",
+            ),
+            (
+                "portfolio.pdf",
+                portfolio,
+                3,
+                "3 attached files not imported.",
+            ),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, pdf).unwrap();
+            let imported = convert(&path).unwrap();
+            assert_eq!(imported.left_out.attached_files, files, "{name}");
+            assert!(
+                imported.markdown.contains("Visible paragraph on the page."),
+                "{name}: {}",
+                imported.markdown
+            );
+            let note = imported.note().unwrap();
+            let line = imported.left_out.line(false).unwrap();
+            assert_eq!(note, expected, "{name}");
+            assert_eq!(line, expected, "{name}");
+            for text in [&imported.markdown, &note, &line] {
+                for leaked in [
+                    "client-notes",
+                    "witness-statement",
+                    "exhibit-",
+                    "phoned on Monday",
+                ] {
+                    assert!(!text.contains(leaked), "{name}: {leaked} in {text}");
+                }
+            }
+        }
+    }
+
     /// A running header stays on its first page and its exact repeats are
     /// dropped and counted; text drawn in its background's colour is left
     /// out and counted with the other hidden passages (#925 M4, M5).
@@ -1611,6 +1746,7 @@ EMC\n";
             pictures: 1,
             hidden_text: 2,
             field_names: 3,
+            attached_files: 5,
             repeated_lines: 4,
             comments: 2,
             comments_unread: 0,
@@ -1619,8 +1755,8 @@ EMC\n";
             all.line(false).as_deref(),
             Some(
                 "1 picture not imported. 2 hidden passages not imported. \
-                 3 form field names not imported. 4 repeated header and footer lines removed. \
-                 2 comments not shown."
+                 3 form field names not imported. 5 attached files not imported. \
+                 4 repeated header and footer lines removed. 2 comments not shown."
             )
         );
         // Hidden text is left out of the Markdown whether or not the Source
@@ -1641,7 +1777,7 @@ EMC\n";
             Some(
                 "2 comments not imported. 1 picture not imported. \
                  2 hidden passages not imported. 3 form field names not imported. \
-                 4 repeated header and footer lines removed."
+                 5 attached files not imported. 4 repeated header and footer lines removed."
             )
         );
     }
