@@ -2032,3 +2032,20 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
         tip("Find names to replace", &crate::pii::ui::Pseudonymize),
     );
 }
+
+/// With automatic checks off, launch makes no update request: only a check
+/// the user starts goes online.
+#[gpui::test]
+fn turning_automatic_checks_off_stops_the_launch_check(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    for automatic in [false, true] {
+        tabs.update(cx, |tabs, cx| {
+            let mut preferences = tabs.preferences.borrow().snapshot().unwrap_or_default();
+            preferences.updates.check_automatically = automatic;
+            tabs.preferences.borrow_mut().current = Some(preferences);
+            tabs.check_for_updates_at_launch(cx);
+            assert_eq!(crate::updater::state(cx).checking, automatic);
+        });
+        cx.run_until_parked();
+    }
+}

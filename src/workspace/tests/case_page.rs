@@ -173,6 +173,8 @@ fn case_page_actions_persist_and_delete_returns_home_with_members_open(cx: &mut 
         tabs.create_case(tab, window, cx).unwrap()
     });
     cx.run_until_parked();
+    // Forgetting a name and deleting the case never touch the member's file.
+    let markdown = std::fs::read(&path).unwrap();
     tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
     draw(cx);
     let color = cx.debug_bounds("case-page-color").unwrap();
@@ -288,6 +290,7 @@ fn case_page_actions_persist_and_delete_returns_home_with_members_open(cx: &mut 
         );
     });
     assert!(store.load(&id).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), markdown);
 }
 
 #[gpui::test]
