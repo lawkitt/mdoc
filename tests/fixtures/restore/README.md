@@ -1,7 +1,7 @@
 # Captured AI replies
 
 Real ChatGPT and Claude answers to the fictional settlement demos, the gate for
-Restore in a stable release ([restore fixtures](../../../docs/specs/cases-and-privacy.md#restore-fixtures)).
+Restore in a stable release.
 `captured_replies_restore_completely` in `crates/mdoc-pii/src/restore_tests.rs`
 checks every directory here. The synthetic replies in
 `crates/mdoc-pii/fixtures/restore/` stay as unit tests for edge shapes.

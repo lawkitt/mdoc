@@ -2032,3 +2032,61 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
         tip("Find names to replace", &crate::pii::ui::Pseudonymize),
     );
 }
+
+/// With automatic checks off, launch makes no update request: only a check
+/// the user starts goes online.
+#[gpui::test]
+fn turning_automatic_checks_off_stops_the_launch_check(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let fetches = || crate::updater::TEST_FETCHES.load(std::sync::atomic::Ordering::SeqCst);
+    for (automatic, sent) in [(false, 0), (true, 1)] {
+        tabs.update(cx, |tabs, cx| {
+            let mut preferences = tabs.preferences.borrow().snapshot().unwrap_or_default();
+            preferences.updates.check_automatically = automatic;
+            tabs.preferences.borrow_mut().current = Some(preferences);
+            tabs.check_for_updates_at_launch(cx);
+        });
+        cx.run_until_parked();
+        assert_eq!(fetches(), sent);
+    }
+}
+
+/// Pending proposals never block a save, and saving never applies them: the
+/// file gets the text as it stands and the proposals stay pending.
+#[gpui::test]
+fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending.md");
+    let source = "Anna Petrova met Northwind Traders Ltd.";
+    std::fs::write(&path, source).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let pending = view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        view.pii
+            .review_mut()
+            .add_manual(source, 0..12, mdoc_pii::Category::Person)
+            .unwrap();
+        let pending = view.pii.review().remaining();
+        assert!(pending > 0);
+        view.editor.update(cx, |editor, cx| {
+            editor.replace_range(source.len()..source.len(), "\n\nA note.", cx)
+        });
+        view.save(false, None, window, cx);
+        pending
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        format!("{source}\n\nA note.")
+    );
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.pii.review().remaining(), pending);
+        assert!(view.pii.review().applied().is_empty());
+    });
+}

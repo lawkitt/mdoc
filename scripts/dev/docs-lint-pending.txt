@@ -2,7 +2,6 @@
 # its #981 PR trims it to the new one, then leaves the list (docs-lint fails
 # on a listed file that already fits). Format: <path> <ceiling>.
 docs/specs/ci.md 800
-docs/specs/cases-and-privacy.md 3000
 docs/specs/desktop.md 3000
 docs/specs/mobile.md 3000
 docs/specs/recognition.md 3000

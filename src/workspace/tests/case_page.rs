@@ -173,6 +173,17 @@ fn case_page_actions_persist_and_delete_returns_home_with_members_open(cx: &mut 
         tabs.create_case(tab, window, cx).unwrap()
     });
     cx.run_until_parked();
+    // Forgetting names and deleting the case never touch the member's file,
+    // saved pseudonymized.
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| view.save(false, None, window, cx));
+    cx.run_until_parked();
+    let markdown = std::fs::read(&path).unwrap();
+    let text = String::from_utf8_lossy(&markdown).into_owned();
+    assert!(
+        text.contains("PERSON_1") && !text.contains("Anna Petrova"),
+        "{text}"
+    );
     tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
     draw(cx);
     let color = cx.debug_bounds("case-page-color").unwrap();
@@ -249,6 +260,24 @@ fn case_page_actions_persist_and_delete_returns_home_with_members_open(cx: &mut 
     });
     cx.simulate_prompt_answer("Forget Identity");
     cx.run_until_parked();
+    let person = cx.update(|_, cx| {
+        tabs.read(cx)
+            .case_coordinator
+            .case(&id)
+            .unwrap()
+            .identities
+            .iter()
+            .find(|i| i.originals == ["Anna Petrova"])
+            .unwrap()
+            .alias
+            .clone()
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.confirm_forget_case_identity(&id, &person, window, cx)
+    });
+    cx.simulate_prompt_answer("Forget Identity");
+    cx.run_until_parked();
+    assert_eq!(std::fs::read(&path).unwrap(), markdown);
     let add = cx.update(|_, cx| tabs.read(cx).cases.page.as_ref().unwrap().test_inputs().1);
     assert!(
         cx.update(|window, cx| add.read(cx).focus_handle(cx).is_focused(window)),
@@ -288,6 +317,7 @@ fn case_page_actions_persist_and_delete_returns_home_with_members_open(cx: &mut 
         );
     });
     assert!(store.load(&id).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), markdown);
 }
 
 #[gpui::test]

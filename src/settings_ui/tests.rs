@@ -520,6 +520,7 @@ fn update_choices_save_immediately_and_an_update_offers_its_release(cx: &mut Tes
     };
     assert!(cx.debug_bounds("updates-view").is_none());
 
+    let fetches = || updater::TEST_FETCHES.load(std::sync::atomic::Ordering::SeqCst);
     click(cx, "updates-automatic");
     let saved = shared.borrow().snapshot().unwrap().updates;
     assert!(!saved.check_automatically);
@@ -527,8 +528,11 @@ fn update_choices_save_immediately_and_an_update_offers_its_release(cx: &mut Tes
     let saved = shared.borrow().snapshot().unwrap().updates;
     // A pre-release build always includes pre-releases; the switch is inert.
     assert_eq!(saved.include_prereleases, !updater::is_prerelease_build());
+    // With automatic checks off, saving update choices sends no request.
+    assert_eq!(fetches(), 0);
     // Turning the check back on starts one; tests never reach the network.
     click(cx, "updates-automatic");
+    assert_eq!(fetches(), 1);
     assert!(
         shared
             .borrow()

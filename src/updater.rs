@@ -689,6 +689,11 @@ fn newest(
     })
 }
 
+/// The requests `fetch` would have sent, counted in tests in place of the
+/// network (nextest runs each test in its own process).
+#[cfg(test)]
+pub static TEST_FETCHES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Blocking; call from a background task. `/releases/latest` already excludes
 /// drafts and pre-releases; the list endpoint is needed when they count.
 fn fetch(include_prereleases: bool) -> Result<Vec<Release>, String> {
@@ -696,6 +701,8 @@ fn fetch(include_prereleases: bool) -> Result<Vec<Release>, String> {
         return Err("network is disabled in headless renders".into());
     }
     if cfg!(test) {
+        #[cfg(test)]
+        TEST_FETCHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         return Err("no network in tests".into());
     }
     let url = if include_prereleases {

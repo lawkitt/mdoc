@@ -1,7 +1,6 @@
-// Every mdoc process keeps itself out of Windows Error Reporting
-// (docs/specs/cases-and-privacy.md, Crash reports): `main` sets
-// SEM_NOGPFAULTERRORBOX before any mode runs. The probe flag exists in debug
-// builds only, so this test does too.
+// Every mdoc process keeps itself out of Windows Error Reporting: `main`
+// sets SEM_NOGPFAULTERRORBOX before any mode runs. The probe flag exists in
+// debug builds only, so this test does too.
 #![cfg(all(windows, debug_assertions))]
 use std::os::windows::process::CommandExt;
 use std::path::Path;
