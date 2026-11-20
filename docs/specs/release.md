@@ -118,8 +118,9 @@ the certificate into the login keychain, run
 - The entitlements' library-validation exception is for the downloaded
   PDFium and ONNX Runtime.
 - The `release` environment admits only `main` and `v*` tags.
-- The certificate expires on 2027-02-01: replace its secrets before then. A
-  lapse blocks new builds, never published ones.
+- The certificate expires on 2027-02-01 and the membership renews yearly:
+  replace the secrets before expiry. A lapse blocks new builds, never
+  published ones.
 - Windows builds stay unsigned until `1.0`, because Microsoft's Trusted
   Signing limits individual eligibility and SmartScreen's "Run anyway" is
   one click.

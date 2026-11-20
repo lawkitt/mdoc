@@ -12,8 +12,9 @@ editing rule (Enter, joins, formatting, lists, tables, paste, undo
 coalescing) exists once, over one Markdown parser, and review keeps working
 over the edits. The text view's string is the source, saved bytes are the
 text as typed, and candidate offsets are the core's UTF-8 offsets. Editing
-autosaves with no Save button, and typing joins the review decisions in one
-undo history. Plain text leaves only through Copy for AI and Share; Cut and
+autosaves with no Save button or version history, and typing joins the
+review decisions in one undo history; replies and Restore with mdoc stay
+read-only. Plain text leaves only through Copy for AI and Share; Cut and
 Copy use a pasteboard only mdoc reads.
 
 ## Rejected
@@ -22,6 +23,7 @@ Copy use a pasteboard only mdoc reads.
   core.
 - **Rules written in Swift**: they break ADR 0085's rule that the core
   decides.
+- **Tags, wikilinks or a vault**: mdoc edits documents, not notes.
 
 ## Revisit when
 

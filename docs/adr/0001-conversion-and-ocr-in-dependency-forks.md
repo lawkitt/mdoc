@@ -11,22 +11,24 @@ repositories, pinned by exact tested revision, let mdoc add what it needs
 before fusion) without a second extractor in the app. Algorithm and
 output-quality changes go into the forks; the app owns scheduling, consent,
 warnings, the document lifecycle and the Markdown handoff. Every PDF goes to
-pdf-inspector, so AnyDoc is built without its `pdf` feature. pdf-inspector
-takes upstream as whole merges, keeping its history; AnyDoc is a squashed
-snapshot that takes upstream by cherry-pick. A passing build never validates
-an extraction change: a fork update needs a before-and-after comparison on
-the EN/RU fixtures and the public corpus, every changed output explained.
+pdf-inspector, so AnyDoc is built without its `pdf` feature. Upstream is
+checked at each desktop milestone's start: pdf-inspector takes it as whole
+merges, keeping its history; AnyDoc, a squashed snapshot, takes
+cherry-picks with only the mechanical changes they need. Either fork may
+port an unmerged community PR, with its author's attribution; fork changes
+are not offered upstream. A passing build never validates an extraction
+change: an update needs the fork's checks with OCR on and a before-and-after
+comparison on the EN/RU fixtures and the public corpus, every changed output
+explained, and a structural change gets its own review.
 
 ## Rejected
 
 - **A subtree, a merged crate or a crates.io release**: each upstream update
   would become a hand port into mdoc's tree.
 - **Fixing extraction in the app**: two implementations that drift apart.
-- **Zorite's journal, property, template and import/export features**: from
-  the editor's origin only correctness and rendering fixes are ported, with
-  attribution.
+- **Zorite's journal, property, template and import/export features**: only
+  its correctness and rendering fixes are ported, with attribution.
 
 ## Revisit when
 
-Upstream takes mdoc's OCR extensions, or keeping a fork current costs more
-than the fixes it carries.
+Upstream takes mdoc's OCR extensions.

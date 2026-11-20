@@ -13,9 +13,8 @@ own actions. A state machine is a plain struct whose synchronous, GPUI-free
 transitions return the owner's effect enum, and its GPUI view carries the
 effects out. New state goes into an owner, not onto `Workspace` or
 `DocumentView`. A document reaches its window only through `TabEvent`s and
-holds no handle to it. A refactor changes no user-observable behaviour,
-adapts tests and never removes them, and compares `just perf` and the
-headless renders before and after.
+holds no handle to it. A refactor changes no user-observable behaviour and
+compares `just perf` and the headless renders before and after.
 
 ## Rejected
 

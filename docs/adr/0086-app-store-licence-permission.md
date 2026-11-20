@@ -11,15 +11,15 @@ be distributed through app stores whose terms add usage restrictions,
 provided the corresponding source stays available under the GPL. The text
 is `LICENSE-APP-STORES.md`, beside the unchanged `LICENSE`, so GitHub still
 detects GPL-3.0. Outside contributions need a DCO sign-off that agrees to
-the permission, and `cargo deny` keeps third-party GPL and LGPL code out of
-the crates the mobile apps link, so the permission never has to cover
-someone else's code. Earlier releases keep their licence.
+the permission, and the crates the mobile apps link take no third-party GPL
+or LGPL code, so the permission never has to cover someone else's code.
+Earlier releases keep their licence.
 
 ## Rejected
 
 - **Staying off the app stores**: phones are where lawyers use AI apps.
-- **A GPL or LGPL dependency in a mobile-linked crate** without its holder
-  granting the same permission.
+- **A GPL or LGPL dependency in a mobile-linked crate**, unless its holder
+  grants the same permission.
 
 ## Revisit when
 
