@@ -33,7 +33,7 @@ base() {
   mkdir -p "$tmp/repo/scripts/dev" "$tmp/repo/docs/adr" "$tmp/repo/docs/specs" "$tmp/repo/docs/evidence/baseline"
   cp scripts/lib.sh "$tmp/repo/scripts/"
   cp scripts/dev/docs-lint.sh "$tmp/repo/scripts/dev/"
-  printf '# Pending.\n' >"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+  printf '# Pending.\n' >"$tmp/repo/scripts/dev/docs-lint-pending.md"
   git -C "$tmp/repo" init -q
   printf '# Kept choice\n\nStatus: Accepted, 2026-01-01.\n\n%s\n' "$(words 200)" >"$tmp/repo/docs/adr/0001-kept.md"
   printf '# Architecture decisions\n\nLast number: 0001.\n' >"$tmp/repo/docs/adr/README.md"
@@ -89,7 +89,7 @@ expect 0 "docs-lint: ok" "an ADR's Status or the fleet profile counts"
 # The pending list: the older ceiling holds, and a file that fits the new
 # one must leave the list.
 base
-printf 'docs/specs/desktop.md 3000\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+printf 'docs/specs/desktop.md 3000\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.md"
 printf '%s\n' "$(words 2900)" >"$tmp/repo/docs/specs/desktop.md"
 run
 expect 0 "docs-lint: ok" "a pending spec under its older ceiling fails"
@@ -102,7 +102,7 @@ expect 1 "docs/specs/desktop.md fits its ceiling of 1500 now" "a trimmed spec ca
 
 # A pending ADR is held to its older count, which left out References.
 base
-printf 'docs/adr/0001-kept.md 400\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+printf 'docs/adr/0001-kept.md 400\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.md"
 printf '# Kept choice\n\nStatus: Accepted.\n\n%s\n\nReferences: %s\n' "$(words 390)" "$(words 20)" >"$tmp/repo/docs/adr/0001-kept.md"
 run
 expect 0 "docs-lint: ok" "a pending ADR under its older count fails"
@@ -112,7 +112,7 @@ expect 1 "docs/adr/0001-kept.md: 408 words, over its pending ceiling of 400" "a 
 
 # A pending row names an existing file and a number.
 base
-printf 'docs/specs/gone.md 3000\ndocs/specs/ci.md 300O\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+printf 'docs/specs/gone.md 3000\ndocs/specs/ci.md 300O\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.md"
 run
 expect 1 "docs/specs/gone.md is not a file" "a pending row for a missing file passes"
 expect 1 "docs/specs/ci.md needs a number, not '300O'" "a pending row with a bad number passes"
