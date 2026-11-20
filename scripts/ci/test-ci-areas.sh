@@ -120,7 +120,7 @@ routes desktop tests/fixtures/pseudonymization/README.md
 routes "desktop recognition" crates/mdoc-pii/fixtures/restore/en-summary.reply.md
 routes "core desktop recognition ios android ci" crates/mdoc-markdown/fixtures/from_html/chatgpt-ios.md
 routes "" README.md docs/adr/0095-ci-on-a-merge-queue.md LICENSE
-routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md
+routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md changes/mobile/x.md
 routes "ios" apps/ios/README.md apps/ios/a.swift
 check "no files runs every area" [ "$(changed_areas "$table" </dev/null)" = "core desktop recognition ios android ci" ]
 check "a table with CRLF line endings routes the same" \
