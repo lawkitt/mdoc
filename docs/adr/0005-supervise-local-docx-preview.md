@@ -1,34 +1,29 @@
 # Supervise DOCX preview in a bounded local worker
 
-Status: Accepted, 2026-10-01. Amended 2026-11-18 (comments grill, #927).
+Status: Accepted, 2026-10-01.
 
-Render DOCX locally to a temporary PDF using the same executable's
-`--mdoc-docx-worker` mode. A supervised process bounds conversion time and can
-be killed/reaped on cancellation; validation and rendering use one bounded
-snapshot so archive inflation is inside the timeout. The read-only preview is
-approximate and independent from Markdown extraction.
+## Why
 
-Reject encryption, macros, tracked changes, excessive archive entries/expanded
-sizes, and oversized input. Current limits live in crates/mdoc-import/src/docx_preview.rs. Keep the
-previous loaded preview on failure; discard stale results. Release the PDF view
-before disposing its temporary file and cancel queued/running work on tab close.
-[Synthetic fixtures](../../tests/fixtures/docx-preview/README.md)
-provide reproducible worker/comment coverage without user documents.
+A Word document needs a faithful read-only preview beside its Markdown, but
+a crafted DOCX can hang or exhaust a renderer. Rendering runs in the same
+executable's `--mdoc-docx-worker` mode, a supervised process that bounds the
+time and is killed on cancel; validation and rendering share one bounded
+snapshot, so archive inflation counts against the timeout. Encrypted, macro,
+tracked-change and oversized documents are refused. The preview is
+approximate and independent of extraction. The renderer is docxide-pdf: pure
+Rust, so phones run it in process, and closest to Word's own export on its
+published comparison. It is a fast-moving single-maintainer crate, so it is
+pinned exactly and bumped at each desktop milestone against the preview
+corpus. Metric-compatible fonts (Carlito, Caladea, Liberation) ship with the
+app; an installed Calibri or Cambria still wins.
 
-**Renderer.** docxide-pdf, chosen over LibreOffice, platform renderers and
-other Rust crates on Word fidelity (its published comparison against Word's
-own export), speed and portability: pure Rust, so phones can run it in
-process. It is a single-maintainer, fast-moving crate: exact pin, bumped at
-each desktop milestone's start against the preview corpus and mdoc's
-Word-reference fidelity check; forked only if a patch is unavoidable.
+## Rejected
 
-**Fonts.** Metric-compatible fallbacks (Carlito, Caladea, Liberation) ship
-with the app and reach docxide as its `font_dirs` option; an installed
-Calibri or Cambria still wins, because docxide looks up the requested
-family first.
+- **LibreOffice, platform renderers and other Rust crates**: behind docxide
+  on Word fidelity, speed or portability.
+- **Rendering inside the app process on desktop**: a hung conversion could
+  be neither bounded nor killed.
 
-**Comments and hidden text** never enter the Markdown. The render copy marks
-each commented run as a `mdoc-comment:<k>` link, whose rectangles anchor
-mdoc's own comment rail, and lifts hidden text with a dotted underline when
-shown; docxide's built-in comment pane stays off. Rules:
-[originals](../specs/originals.md).
+## Revisit when
+
+docxide stalls or needs a patch mdoc can't wait for: then fork it.

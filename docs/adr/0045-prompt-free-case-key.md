@@ -2,47 +2,26 @@
 
 Status: Accepted, 2026-10-14.
 
-## Problem
+## Why
 
-A login-keychain item trusts only the code signature that created it, so a key
-made by one build prompts every build signed differently, and the prompts
-look suspicious in a privacy app.
+A login-keychain item trusts only the code signature that created it, so a
+key one build made prompts every build signed differently, and the prompts
+look suspicious in a privacy app. Builds signed with a Developer ID
+provisioning profile granting `keychain-access-groups` keep the key in the
+data protection keychain, where access is by group, so it never asks and
+survives updates. Each build decides its identity once at runtime; a dev
+build keeps its own key and cases, so it can never create a key that later
+prompts the release. Launch reads the key with dialogs off, and a protected
+build migrates the login-keychain key on the next Unlock without losing a
+case. CI can't see system dialogs, so a release that touches the key is
+checked by hand on a clean user account.
 
-## Decision
+## Rejected
 
-- **Data protection keychain** (`kSecUseDataProtectionKeychain`) for builds
-  signed with a Developer ID provisioning profile that grants
-  `keychain-access-groups` (`F33DLM8K53.io.github.lawkitt.mdoc`). Access is by
-  access group, not a per-item list, so it never asks and survives updates.
-- **Build identity, decided once at runtime** (`key::keychain()`): signed by
-  team F33DLM8K53 with `Contents/embedded.provisionprofile` is Protected;
-  signed by the team without a profile is Release (login keychain, service
-  `io.github.lawkitt.mdoc`); anything else is Dev (login keychain under
-  `io.github.lawkitt.mdoc.dev`, cases in `mdoc/cases-dev/`). A Protected
-  build whose profile lacks the entitlement behaves as Release.
-- **Quiet means quiet.** The key is read with dialogs off
-  (`SecKeychainSetUserInteractionAllowed(false)`); -25308, -25293 and -128
-  mean "may ask", never "denied". The per-query UI flag does not prevent the
-  dialog.
-- **Migration on Unlock.** A Protected build with no protected key copies the
-  login-keychain key, read quietly or, only if that would ask, after the
-  explainer and one dialog; it then deletes the login item with
-  dialogs off, or leaves it unread if deleting would ask.
-- **Signing** embeds the profile only when `APPLE_PROVISIONING_PROFILE` is set,
-  adding the application-identifier, team-identifier and access-group
-  entitlements; it refuses a profile that doesn't allow the access group.
+- **A plaintext key file**, even for dev builds or as an opt-in default.
+- **The per-query `kSecUseAuthenticationUIFail` flag**: it doesn't prevent
+  the dialog; only the process-wide switch does.
 
-## Invariants
+## Revisit when
 
-- Launch never reads the key with dialogs allowed.
-- A dev build can never create a key that later prompts the release.
-- No plaintext key file, not even for dev or as an opt-in default.
-- No case data is lost by migration.
-
-## Verification
-
-`scripts/desktop/keychain-launch-check.sh` runs on a clean macOS user account with the
-signed release before every release that touches the case key. CI cannot see
-system dialogs.
-
-References: [owner checklist for the data protection keychain](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/anoni-comparison.md#owner-checklist-data-protection-keychain).
+Apple changes how Developer ID apps get the data protection keychain.

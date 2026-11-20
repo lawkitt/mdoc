@@ -23,12 +23,8 @@ A grill is only for a pattern this page lacks, which this page then gains.
 ## The core and the app
 
 - Every rule about documents, review, cases, aliases, file names and restore
-  lives in `crates/mdoc-ffi` or below; the app formats and lays out what a
-  snapshot says.
-- No Swift or Kotlin copy of a core rule: a rule found in the app moves into
-  the core.
-- The app never derives a review fact from other facts; a fact the app needs
-  is added to the core's snapshot.
+  lives in `crates/mdoc-ffi` or below: the app lays out what a snapshot says,
+  never derives a review fact itself, and moves a rule it finds into the core.
 - View-model and snapshot tests run the real core over temporary storage
   with a fixed case key; there is no fake library or document session.
 - Test fakes and the fixed case key are never compiled into the app or the
@@ -47,7 +43,7 @@ A grill is only for a pattern this page lacks, which this page then gains.
   document.
 - A review tap returns its snapshot at once and saves off the main thread
   once taps pause (300 ms), because a save on the tap took longer than a
-  frame.
+  frame; a crash before then loses those taps.
 - A pending save runs at once on leaving the foreground, before Copy for AI,
   Share, an import, Move to case or leaving the document.
 - No fixed delay in app code except for a named platform bug, a missing
@@ -65,8 +61,12 @@ A grill is only for a pattern this page lacks, which this page then gains.
 - Below the floor the app imports, recognizes text and marks names by
   selection; where Find names would be, and in Settings, it says why and
   that selecting marks a name.
-- The floor is 4 GB of RAM (`DETECTOR_FLOOR_BYTES`), or a timed run past
-  10 minutes per 10,000 characters.
+- The floor is 4 GB of RAM (`DETECTOR_FLOOR_BYTES`) or a timed run past
+  10 minutes per 10,000 characters, set low because owners of older phones
+  would rather wait.
+- An offered model peaks under 2 GiB and cold-loads within 10 s on each
+  device class; an INT8 export also matches FP16 on the qualification
+  fixtures.
 - A scan needs about 1.3 GB free to start (`DETECTOR_FREE_BYTES`), because
   the system would end the app partway.
 - A download on cellular asks first on any cellular interface, whatever the
@@ -76,8 +76,6 @@ A grill is only for a pattern this page lacks, which this page then gains.
   still downloads its models together.
 - A document's setup card offers the model its job needs and resumes the
   job once installed.
-- The detector is timed once installed; a scan expected past a minute shows
-  its estimate first, Settings the time per 10 pages.
 - A phone scan has no deadline; it shows time left and stops after 60 s
   without progress.
 - A scan pauses while the phone is critically hot.
@@ -256,8 +254,8 @@ iOS: `apps/ios/mdoc/Design/`.
   or cell, up to Markdown formatting or another alias.
 - A tap away from the adjusted words cancels Adjust Words, in a table cell
   too.
-- Not a name ([ADR 0122](../adr/0122-not-a-name.md)) ends the card's
-  category menu, the long press, Identities' menus and Select's ⋯.
+- Not a name ends the card's category menu, the long press, Identities'
+  menus and Select's ⋯, unstyled, because Undo takes it back.
 
 ## Identities
 

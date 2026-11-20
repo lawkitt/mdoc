@@ -2,36 +2,30 @@
 
 Status: Accepted, 2026-10-01.
 
-## Decision
+## Why
 
-- OCR runs only after an explicit inline choice, even when a runtime is
-  installed. Native-text conversion may run automatically on opening.
-- Only explicit setup downloads pinned, checksum-verified components into
-  app-local storage. Recognition is offline and document contents stay local.
-- The English default is PP-OCRv6 Small. The Cyrillic bundle pairs the
-  PP-OCRv6 Small detector with PP-OCRv5 Cyrillic recognition and its
-  dictionary through one manifest, because PP-OCRv6 Small fails Russian text
-  despite high confidence.
-- Manifest identity and digests are part of the fork's cache key; explicit
-  runtime paths avoid process-wide environment changes.
-- Runtime support is enabled only on targets that passed scanned-PDF
-  qualification: Apple Silicon macOS and Windows x64. Other targets keep
-  native extraction.
-- Windows ONNX Runtime needs the x64 Visual C++ Redistributable; loader
-  failures keep verified downloads and show install and retry instructions.
+OCR is slow, can be wrong and needs downloaded models, and a privacy app
+must not fetch or run them behind the user's back. So OCR runs only after an
+explicit inline choice, even with a runtime installed, while native-text
+conversion may run on opening. Only explicit setup downloads pinned,
+checksum-verified components into app-local storage, and recognition runs
+offline. A language is accepted only on actual recognition, never on
+confidence or dictionary coverage: PP-OCRv6 Small reads Russian with high
+confidence and wrong text, so the Cyrillic bundle pairs its detector with
+PP-OCRv5 Cyrillic recognition through one manifest. The runtime is enabled
+only on targets that passed scanned-PDF qualification (Apple Silicon macOS,
+Windows x64); the rest keep native extraction. OCR failure never silently
+falls back to native-only text.
 
-## Invariants
+## Rejected
 
-- Language acceptance requires actual recognition, never confidence or
-  dictionary coverage alone.
-- OCR failure never silently falls back to native-only extraction, and no
-  usable output keeps the current document.
-- Page-specific warnings of partial output stay outside the Markdown.
-- Setup finishes globally; continuing a document stays generation-scoped.
-- Percentage progress and immediate cancellation are not promised by the
-  synchronous converter calls. Image-only DOCX OCR is not implemented.
+- **OCR whenever a runtime is installed**: the user decides when to spend
+  the time and accept recognized text.
+- **PP-OCRv6 Small alone for Russian**: confident and wrong.
+- **Accepting a target or language on a build or a confidence score**: only
+  recognized fixture pages count.
 
-The exact pins and digests live in `Cargo.toml`, `Cargo.lock`,
-`crates/mdoc-import/src/ocr.rs` and the fork manifest.
-[Fixture qualification](../../tests/fixtures/ocr-qualification/README.md) keeps
-the reproduction instructions.
+## Revisit when
+
+Another target or language passes the
+[scanned-PDF qualification](../../tests/fixtures/ocr-qualification/README.md).
