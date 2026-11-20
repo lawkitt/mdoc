@@ -27,8 +27,8 @@ Markdown edits; DOCX rendering is approximate. UI label: **Source**.
 **Copy for AI**: copying the full current Markdown with an alias-only note
 asking the AI to keep placeholders exactly.
 
-**Restore**: replacing aliases in a pasted AI reply with the source's primary
-wordings, from a case. UI label: **Paste AI Reply** (Title Case in menus).
+**Restore**: replacing aliases in a pasted AI reply with the primary
+wordings of the source's mapping, saved in a case or not. UI label: **Paste AI Reply** (Title Case in menus).
 
 **Reply box**: the Share panel's "AI reply" field that restores a pasted
 reply in place.
@@ -102,10 +102,10 @@ unsaved changes, an unsaved mapping, or both.
 **Case**: a named, saved mapping shared by a group of tabs, made with **Save
 as Case**. Avoid "matter" and "project".
 
-**Case key**: the 256-bit key encrypting saved cases, held by the OS
-keychain. The **quiet probe** is its launch read, which never shows a system
-dialog; the **dev key** is the one unsigned and debug builds use, under its
-own Keychain service.
+**Case key**: the 256-bit key encrypting saved cases, protected by the OS.
+The **quiet probe** is its launch read, which never shows a system dialog;
+the **dev key** is the one unsigned and debug macOS builds use, under its own
+Keychain service.
 
 **Keychain explainer**: the dialog shown before the first case-key access and
 after a denial.
@@ -115,9 +115,6 @@ known identity.
 
 **Propagation**: proposing an applied or marked name's forms elsewhere in the
 document.
-
-**Rule pack**: the TOML data in `crates/mdoc-detect/rules/` that corrects the
-model.
 
 **Case number**: the category of a claim or case number after a label (Claim
 No, Дело №). Not a **Case**.
@@ -136,10 +133,9 @@ user-wide.
 [annotation guide](tests/fixtures/recognition/GUIDE.md). A **flaw class** is
 the flaws one fix cures.
 
-**Recognition fixture**: one synthetic document with `⟦CATEGORY|text⟧` gold,
-a status and a **snapshot**, its raw model output on the **reference
-platform** (hosted Windows). The **detection gate** runs the model over every
-fixture.
+**Reference platform**: the one platform, hosted Windows, whose raw model
+output the recognition fixtures' snapshots record. The **detection gate**
+runs the model over every fixture.
 
 **Hunter, curator, fixer**: the flaw hunt's roles: one writes documents and
 reports flaws, one audits gold and lands fixtures, one fixes a flaw class.
@@ -161,8 +157,9 @@ manifest with a role: tune, held-out or regression
 **Decision history**: the document's list of pseudonymization decisions with
 times. UI label: **What you did**.
 
-**Pseudonymize Clipboard** and **Restore Clipboard**: swapping the clipboard
-text's known case names for their aliases, without detection, and back.
+**Pseudonymize Clipboard**: replacing the clipboard text's known case names
+with their aliases, without detection. **Restore Clipboard**: replacing
+aliases in it with each identity's primary wording.
 
 **Shelf**: the macOS menu bar item's panel of pseudonymized documents and
 clipboard actions. Avoid "tray".
