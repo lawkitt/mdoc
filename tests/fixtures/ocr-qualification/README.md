@@ -12,9 +12,7 @@ the `.txt` files and checks that PDF bytes remain unchanged.
 
 No models or native runtimes are checked into the repository. The current model
 manifest lives in the pinned pdf-inspector fork, and runtime URLs/digests live in
-`crates/mdoc-import/src/ocr.rs`; Cargo.toml/Cargo.lock hold the dependency revisions. See the
-[OCR ADR](../../../docs/adr/0004-explicit-offline-ocr-with-qualified-models.md)
-for the integration decision.
+`crates/mdoc-import/src/ocr.rs`; Cargo.toml/Cargo.lock hold the dependency revisions.
 
 ## Fixture generation
 

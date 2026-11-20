@@ -1,166 +1,95 @@
-# Pseudonymization qualification — 2026-10-01
+# Pseudonymization qualification
 
-The Rust qualification harness and initial Apple Silicon measurements are
-implemented. **No evaluated model passed qualified adoption.**
-GLiNER2 has the strongest baseline and passes same-process OCR compatibility,
-but Russian category/boundary errors, hidden-source misses and resource growth
-prevent adoption on this evidence. This records an unsuccessful qualification
-outcome, not a reason to silently relax the accepted review contract.
+**No evaluated model passed qualified adoption.** GLiNER2 had the strongest
+baseline and passed same-process OCR compatibility, but Russian category and
+boundary errors, hidden-source misses and resource growth blocked it. This
+is a failed qualification, not a reason to relax the accepted review
+contract.
 
-The user subsequently authorized the pinned GLiNER2 checkpoint **experimentally**
-despite these blockers. [Inline review verification](inline-review.md) records
-that implementation and its safeguards; this does not change the failed quality
-qualification or accept the proposed numerical targets.
+The user then authorized the pinned GLiNER2 checkpoint **experimentally**
+despite these blockers. [Inline review verification](inline-review.md)
+records that implementation and its safeguards; it neither makes the
+qualification a pass nor accepts the proposed targets below.
 
-The [tool instructions](../../../tools/pseudonymization/README.md) reproduce setup,
-offline inference, scoring and compatibility. The
-[generated measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-01/measurements.md) provide per-language,
-per-category counts and each fixture's latency. Adjacent JSON files retain all
-predictions, misses, false positives, settings, hashes and process exit evidence.
-These are dated measurements, not output snapshots for normal tests.
+The [tool instructions](../../../tools/pseudonymization/README.md) reproduce
+setup, offline inference, scoring and compatibility. The retained
+[measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-01/measurements.md)
+give per-language and per-category counts and each fixture's latency; the
+JSON beside them keeps every prediction, miss and setting. They are one
+run's measurements, not test snapshots.
 
-## Corpus and scoring
+## Corpus
 
-Frozen: the headless renders read `corpus.json`, and its cases are imported,
-re-marked by the annotation guide, as [recognition fixtures](../recognition/README.md)
-(ADR 0093), which the detection gate checks.
+Frozen: the headless renders and `mdoc-detect`'s window tests read
+`corpus.json`, and its cases are imported, re-marked by the annotation
+guide, as [recognition fixtures](../recognition/README.md), which the
+detection gate checks. Change those, not this corpus.
 
-`corpus.json` is original synthetic evaluation material, dedicated to CC0-1.0.
-It contains no user documents. The pre-existing untracked DOCX/scanned-PDF files
-in this checkout were not used. Fictional names, organizations, identifiers,
-reserved `.invalid` email/URL destinations and illustrative addresses are
-chosen to cover the review contract, not to represent real clients.
+`corpus.json` is original synthetic evaluation material, dedicated to
+CC0-1.0, with no user documents. Names, organizations, identifiers,
+reserved `.invalid` email and URL destinations and addresses are fictional,
+chosen to cover the review contract.
 
-Seventeen fixtures cover EN/RU legal text, repeated/inflected names, initials,
-email/telephone/address/identity/tax/bank details, tables, link destinations,
-image paths, inline/fenced code, HTML, Cyrillic/Ё, emoji and decomposed accents.
-OCR fixtures are hand-authored damaged transcripts (digit/letter substitutions,
-split words and mixed alphabets), not a measured sample of real OCR errors.
-Ordinary dates, amounts, article/section/case references and category words are
-negative examples. Two long fixtures repeat legal clauses 64 times; two stress
-fixtures contain long compound words that produce many subwords.
+OCR fixtures are hand-authored damaged transcripts, not a measured sample
+of real OCR errors. Ordinary dates, amounts, legal references and category
+words are negative examples. The long fixtures repeat legal clauses; the
+stress fixtures hold long compound words that produce many subwords.
 
-`en-settlement-long`, added after these measurements
-([#302](https://github.com/lawkitt/mdoc/issues/302)), repeats the English demo
-settlement 40 times under section headings (about 80 KB). The claim number and
-"Employment Tribunal" are not gold. The app's windows must give each repeat
-the proposals of one section alone: `mdoc-detect`'s ignored test
-`a_long_document_proposes_what_its_sections_do` checks it against the pinned
-model in `.qualification/models` (set `MDOC_ONNX_RUNTIME` to a verified ONNX
-Runtime library to keep the installed profile out of it).
+`en-settlement-long` is not in the measured comparison. It repeats the
+English demo settlement 40 times under section headings (about 80 KB); the
+claim number and "Employment Tribunal" are not gold. The app's windows must
+give each repeat only its own section's proposals: `mdoc-detect`'s ignored
+test `a_long_document_proposes_what_its_sections_do` checks it against the
+pinned model in `.qualification/models` (set `MDOC_ONNX_RUNTIME` to a
+verified ONNX Runtime library to keep the installed profile out of it).
 
-`⟦CATEGORY|source text⟧` annotations are removed before inference. The harness
-derives half-open UTF-8 byte ranges from the resulting immutable source, including
-all exact repeats. An exact boundary **and** category match earns one true
-positive. Partial names/addresses, omitted organization affixes, included
-punctuation and wrong labels count as both a miss and a false positive. These
-are distinct from an invalid offset: every prediction must round-trip to the
-reported text at valid UTF-8 boundaries. Duplicate predictions earn no extra
-credit. Raw reports distinguish complete misses from partial/category errors.
+## Reading scores
 
-Short-text scores contain 31 EN, 32 RU and 5 mixed-language gold mentions.
-Long/stress results are separate so repeated easy names do not inflate the
-baseline. Each category has very few examples: these results can reveal
-blockers, but cannot establish general legal-corpus accuracy or anonymity.
+`⟦CATEGORY|source text⟧` annotations are removed before inference; the
+harness derives half-open UTF-8 byte ranges from the resulting source,
+including every exact repeat. An exact boundary **and** category match earns
+one true positive. A partial name or address, an omitted organization
+affix, included punctuation or a wrong label counts as both a miss and a
+false positive. An invalid offset is separate: every prediction must
+round-trip to its text at valid UTF-8 boundaries. Duplicates earn nothing.
+Raw reports tell complete misses from partial or category errors.
 
-## Measured comparison
+Short-text scores hold 31 EN, 32 RU and 5 mixed-language gold mentions.
+Long and stress results are separate, so repeated easy names do not inflate
+the baseline. Each category has very few examples: the results can reveal
+blockers, not establish general legal-corpus accuracy or anonymity.
 
-Apple M4, 24 GiB RAM, macOS 15.7.7, Rust 1.98.1; release builds, CPU only,
-four inference threads, network denied with the macOS sandbox. Models were
-downloaded and verified beforehand. Candidate runs were sequential, with no
-concurrent builds. Load time excludes artifact hashing; warm latency is the
-median of the second/third calls across the thirteen short fixtures.
+## What blocked adoption
 
-| Engine / export | Threshold | EN precision / recall | RU precision / recall | Setup MB | Load ms | Warm median ms | Peak RSS MiB |
-| --- | ---: | --- | --- | ---: | ---: | ---: | ---: |
-| gline-rs / multi v2.1 Q8 | 0.5 | 72.7% / 51.6% | 78.6% / 34.4% | 365.45 | 718 | 31.7 | 1913 |
-| gline-rs / multi v2.1 Q8 | 0.3 | 48.6% / 54.8% | 58.1% / 56.2% | 365.45 | 672 | 32.5 | 1898 |
-| gline-rs / Knowledgator PII Q8 | 0.5 | 95.2% / 64.5% | 66.7% / 37.5% | 205.43 | 332 | 22.5 | 2826 |
-| gline-rs / Knowledgator PII Q8 | 0.3 | 80.6% / 80.6% | 48.5% / 50.0% | 205.43 | 329 | 25.8 | 3452 |
-| gliner2-rs / privacy PII FP16 | 0.5 | 81.2% / 83.9% | 73.3% / 68.8% | 631.52 | 947 | 132.4 | 2266 |
-| gliner2-rs / privacy PII FP16 | 0.3 | 77.1% / 87.1% | 68.8% / 68.8% | 631.52 | 860 | 139.8 | 2315 |
+- GLiNER2's PII card declares seven languages, not RU, and no organization
+  category; a lower threshold did not raise its RU recall.
+- `gline-rs` 1.1.0 pins `ort` rc.9 exactly, which cannot share a Cargo graph
+  with the OCR's rc.13; adopting it needs a wrapper migration or a
+  separately approved worker design.
+- Peak memory grew with the subword stress fixtures. Windows x64 and Linux
+  remain unmeasured.
+- The tool does not qualify the app's review behaviour (tabs, stale
+  results, edits, highlights, IME).
 
-Setup sizes include selected export files, tokenizer, configuration/card files;
-they exclude runtime/tool binaries. Peak RSS includes the pathological subword
-stress fixtures and all previous calls. It does not show idle retention or
-prove an arbitrary long document fits a fixed memory budget.
+## Pins and licences
 
-The 24,512-byte English / 48,960-byte Russian long fixtures took approximately
-2.8–3.8 s for multilingual Q8, 1.8–3.4 s for Knowledgator Q8, and 7.7–8.9 s
-for GLiNER2. Original document offsets remained valid across windows, including
-the tail; valid offsets do not establish detection coverage. All six processes
-exited cleanly, with no invalid byte ranges or repeated-call nondeterminism.
+[models.json](../../../tools/pseudonymization/models.json) pins every
+evaluated export, tokenizer and card file to a revision, size and SHA-256;
+[provenance.json](../../../tools/pseudonymization/provenance.json) records
+the crates' source commits, licence and notice digests and the model-card
+pins. Everything evaluated is Apache-2.0 or MIT, except that the
+onnx-community multilingual export declares no licence: its inherited terms
+need confirming before shipping. A production package keeps the applicable
+licences, copyright and NOTICE files (ONNX Runtime's included). These are
+practical licence checks, not a training-data audit. No weights are
+committed or shipped.
 
-At threshold 0.5, GLiNER2 missed 5/31 EN and 10/32 RU gold mentions, with
-6 EN and 8 RU false positives. Examples include underscore-separated names
-inside Markdown destinations/image paths; Russian INN misclassified as identity
-or telephone; missed SNILS/address values; stripped ООО/quotes; a trailing full
-stop included in an organization; case numbers classified as bank accounts;
-and bare words such as `person`, `organization` and `адрес` highlighted as PII.
-Lowering its threshold did not improve RU recall. Its PII card declares seven
-languages excluding RU and does not include an organization category; both were
-explicitly evaluated rather than assumed to work from the multilingual name.
-[Pinned export card](https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/blob/e594898629d452e8311796f5f329c7edbeda907c/README.md).
+## Next gates
 
-## Runtime, setup and lifecycle evidence
-
-All candidates loaded and inferred offline using the **installed OCR ONNX
-Runtime 1.27.0** library, with its expected SHA-256. GLiNER2 additionally passed
-[same-process coexistence](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-01/ocr-coexistence.json): the pinned
-pdf-inspector OCR engine produced matching EN/RU scanned-PDF transcripts before
-PII load, while both were loaded, and after PII drop, with unchanged PDF bytes.
-
-`gline-rs` 1.1.0's exact `ort` rc.9 dependency cannot resolve in the same Cargo
-graph as pdf-inspector's exact rc.13; the
-[resolution failure](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-01/gline-ocr-resolution.log) is retained.
-Standalone inference with the newer native library does not remove this blocker.
-Adopting it would require an upstream/fork wrapper migration or a separately
-approved worker design. GLiNER2 0.9.6 resolves with OCR's rc.13; its Hub feature
-is disabled for qualification.
-
-The Rust setup command was exercised against a fresh Knowledgator cache and
-then repeated under a network block. It verified and reused all files. Unit
-tests reject missing/partial/same-size-corrupted artifacts, malformed corpus
-annotations, invalid Unicode offsets and invalid window geometry. Process tests
-verify killing/reaping an uncooperative child and refusing to reuse a prior
-report. A three-second actual GLiNER2 scan was terminated and reaped with no
-inference report accepted; the cancellation process/log evidence is retained.
-
-The tool never writes document text or replacements. App tab switching,
-revision/stale-result checks, review edits/undo, mappings, native highlights,
-keyboard/IME and popup layout belong to the subsequent inline milestone; this
-tooling does not qualify those unimplemented behaviors. Windows x64 and Linux
-inference/native operation remain unmeasured. No production dependency or
-platform support policy has changed.
-
-## Exact pins and licenses
-
-[models.json](../../../tools/pseudonymization/models.json) pins every evaluated
-export, tokenizer and card file to a revision, size and SHA-256;
-[provenance.json](../../../tools/pseudonymization/provenance.json) records the
-crates' source commits, licence and notice digests and the model-card pins.
-Everything evaluated is Apache-2.0 or MIT, except that the onnx-community
-multilingual export declares no licence: its inherited terms need confirming
-before shipping. A production package keeps the applicable licences, copyright
-and NOTICE files (ONNX Runtime's included). These are practical licence
-checks, not an audit of training data. No weights are committed or shipped.
-
-## Adoption decision and next gates
-
-The initial qualification recommended keeping inline pseudonymization pending.
-The later experimental exception is recorded above. GLiNER2 is the best runtime integration
-candidate, but this particular PII checkpoint is not qualified for the accepted
-EN/RU and whole-source scope. A next model/export comparison should preserve
-this corpus and add a larger independently reviewed legal/OCR holdout with at
-least 30 examples per required category/language. Label, boundary and subword
-policy changes need fresh evidence; tuning these fixtures is not holdout accuracy.
-
-Based on this baseline, propose the following adoption targets for review:
-zero integrity/Unicode/source/offline failures; at least 90% precision and recall
-per EN/RU native category and at least 80% on OCR categories on that holdout;
-on the reference M4, short-text warm p95 below 250 ms, 50 KB legal-source scan
-below 10 s, load below 2 s, and process peak below 2 GiB including stress input.
-These are proposed evaluation targets, not accepted product guarantees. Resource
-limits must use actual tokenizer lengths and remain cancellable. Windows x64
-needs equivalent offline/runtime and language checks before adoption; native
-review UI still needs its own acceptance after implementation.
+A next comparison keeps this corpus and adds a larger, independently
+reviewed legal and OCR holdout with at least 30 examples per category and
+language; tuning these fixtures is not holdout accuracy. Proposed targets,
+not guarantees: no integrity, Unicode or offline failures; 90% precision
+and recall per EN/RU category, 80% on OCR, on that holdout; on an M4,
+short-text warm p95 under 250 ms, a 50 KB scan under 10 s, load under 2 s,
+peak under 2 GiB. Windows x64 needs the same checks.

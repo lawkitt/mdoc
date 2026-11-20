@@ -12,5 +12,5 @@ is the standard documentation example.
 
 `large-table.md` is a contract whose two-column table runs for screens,
 with paragraphs after it: edit mode keeps the place in it, and a word
-selected in a cell, without stopping mdoc (ADR 0114). Its text is invented;
+selected in a cell, without stopping mdoc. Its text is invented;
 its one email, the only name to review, uses the reserved example.com domain.
