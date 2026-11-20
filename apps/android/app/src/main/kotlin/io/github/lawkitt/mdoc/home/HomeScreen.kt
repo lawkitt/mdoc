@@ -81,12 +81,12 @@ import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentSummary
 import io.github.lawkitt.mdoc.ui.Palette
 
-/** The four ways in, in menu order: the camera last, furthest from the button (ADR 0088). */
+/** The four ways in, in menu order: the camera last, furthest from the button. */
 enum class AddOption { Paste, Files, Photos, Scan }
 
 /**
  * Home: a flat list of documents, newest first, each with its case's dot and
- * a status line (ADR 0087), or how to add the first one. A library that could
+ * a status line, or how to add the first one. A library that could
  * not be opened says so rather than looking empty.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -165,7 +165,7 @@ fun HomeScreen(
     }
 }
 
-/** iOS's symbols for the same four (ADR 0087), as Material Symbols. */
+/** iOS's symbols for the same four, as Material Symbols. */
 private val AddOption.icon: Int
     get() = when (this) {
         AddOption.Paste -> R.drawable.ic_content_paste
@@ -203,7 +203,7 @@ private fun DocumentRow(
         StatusLine.ReadyToShare -> stringResource(R.string.status_ready_to_share)
         StatusLine.NothingFound -> stringResource(R.string.status_nothing_found)
     }
-    // The status as a symbol and words (ADR 0087), never a colour of its own:
+    // The status as a symbol and words, never a colour of its own:
     // the case's dot is the row's one colour. Something to review reads strongest.
     val toReview = line is StatusLine.ToReview
     val tone = if (toReview) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
@@ -289,8 +289,8 @@ private fun EmptyHome(canFindNames: Boolean, modifier: Modifier = Modifier) {
 }
 
 /**
- * Adding a document: pasted text, a title and a case in one sheet (ADR 0087);
- * a new case unless an existing one is chosen (ADR 0085).
+ * Adding a document: pasted text, a title and a case in one sheet;
+ * a new case unless an existing one is chosen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

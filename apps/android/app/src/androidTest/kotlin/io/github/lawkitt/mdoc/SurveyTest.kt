@@ -39,7 +39,7 @@ import uniffi.mdoc_ffi.Category
 import uniffi.mdoc_ffi.TextRange
 
 /**
- * The UI survey (ADR 0087, 0089): every screen, light and dark, and the
+ * The UI survey: every screen, light and dark, and the
  * review text and Settings at the largest font, saved as PNGs under the
  * app's external files (`survey/`), which `scripts/android/android-survey.sh` pulls.
  * The phone is told it has 16 GB, so name finding and its setup card show.
@@ -76,7 +76,7 @@ class SurveyTest {
             launch(dark = false) {
                 open(settlement)
                 shot("30-review-largest-font-light")
-                // The sheet's buttons and the hand-off bar stack rather than wrap (ADR 0087).
+                // The sheet's buttons and the hand-off bar stack rather than wrap.
                 tapFirstCandidate()
                 waitFor("Alias", substring = true)
                 shot("32-candidate-sheet-largest-font-light")

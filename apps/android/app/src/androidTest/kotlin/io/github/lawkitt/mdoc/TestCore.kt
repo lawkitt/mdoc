@@ -14,7 +14,7 @@ import java.util.UUID
 class TestCore(
     /**
      * The phone's RAM as the core sees it: below the floor by default, since
-     * the CI emulator's own 4 GB now meets it (ADR 0120).
+     * the CI emulator's own 4 GB now meets it.
      */
     private val physicalMemory: Long = BELOW_FLOOR,
 ) : ExternalResource() {

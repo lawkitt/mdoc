@@ -21,7 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * A job Android ends is offered again (ADR 0089): an import not yet read,
+ * A job Android ends is offered again: an import not yet read,
  * whose recognition stopped off screen, says so when its document opens.
  */
 @RunWith(AndroidJUnit4::class)

@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.JobStage
 
 /**
- * The review flow on the core, through the screens (ADR 0085, 0089): open a
+ * The review flow on the core, through the screens: open a
  * document, see its replacement, Copy for AI carries the alias and not the
  * original, and a pasted AI reply comes back restored. The twin of the iOS
  * `ReviewFlowUITests`; the emulator is below the detector floor, so the

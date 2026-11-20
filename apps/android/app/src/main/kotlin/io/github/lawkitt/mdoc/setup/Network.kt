@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class Route { WiFi, Cellular, None }
 
 /**
- * The Wi-Fi and cellular networks, watched separately (ADR 0088, 0089):
+ * The Wi-Fi and cellular networks, watched separately:
  * "Wi-Fi" is a Wi-Fi or Ethernet transport, never the unmetered flag, which
  * Android 11+ also sets on some unlimited 5G plans. Downloads open their
  * connections on the network object itself, so a Wi-Fi download cannot

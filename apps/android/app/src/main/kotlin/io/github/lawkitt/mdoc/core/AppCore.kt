@@ -13,7 +13,7 @@ import uniffi.mdoc_ffi.Setup
 import uniffi.mdoc_ffi.linkedRuntimes
 
 /**
- * The core objects one process uses (ADR 0085): the `Library` of cases and
+ * The core objects one process uses: the `Library` of cases and
  * stored documents and the `Setup` of models, from `mdoc-ffi`'s Kotlin
  * bindings. Rust owns document, review, case and restore state; the app
  * holds view state built from the snapshots these return.

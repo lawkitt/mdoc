@@ -52,7 +52,7 @@ android {
         // Release as R8 would ship it, signed with the debug key so CI can
         // install it beside the debug app: scripts/android/android-check.sh opens
         // its library on the emulator, so a keep rule R8 needs for the
-        // core's UniFFI bindings and JNA fails the Android job (ADR 0091).
+        // core's UniFFI bindings and JNA fails the Android job.
         create("minified") {
             initWith(getByName("release"))
             isMinifyEnabled = true
@@ -128,7 +128,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.core)
 }
 
-// Release ships arm64-v8a only (ADR 0089); x86_64 is for the emulator.
+// Release ships arm64-v8a only; x86_64 is for the emulator.
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
         variant.packaging.jniLibs.excludes.add("lib/x86_64/**")

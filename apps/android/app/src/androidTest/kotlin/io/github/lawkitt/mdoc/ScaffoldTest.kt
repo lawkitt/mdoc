@@ -14,9 +14,9 @@ import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.DocumentSession
 
 /**
- * The app on the core, on an Android image: the scaffold's checks (ADR 0089).
+ * The app on the core, on an Android image: the scaffold's checks.
  * Home listing the library is HomeDeleteTest's first half, and a core that
- * fails to open is SetupFixesTest's (ADR 0112's sweep).
+ * fails to open is SetupFixesTest's.
  */
 @RunWith(AndroidJUnit4::class)
 class ScaffoldTest {

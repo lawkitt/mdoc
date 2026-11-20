@@ -6,7 +6,7 @@ import io.github.lawkitt.mdoc.R
 import kotlin.math.roundToInt
 import uniffi.mdoc_ffi.FloorReason
 
-/** How long a scan takes, in words (ADR 0120): the twin of the iOS `ScanTime`. */
+/** How long a scan takes, in words: the twin of the iOS `ScanTime`. */
 object ScanTime {
     /** While a scan runs: "About 3 min left", or under a minute. */
     @Composable

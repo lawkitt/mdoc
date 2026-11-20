@@ -33,7 +33,7 @@ data class RunningJob(
     val documentId: DocumentId?,
     val title: String,
     val stage: JobStage? = null,
-    /** A scan's estimate of the seconds it has left (ADR 0120). */
+    /** A scan's estimate of the seconds it has left. */
     val secondsLeft: Long? = null,
 )
 
@@ -47,14 +47,14 @@ sealed interface JobOutcome<out T> {
 
     data class Failed(val error: Throwable) : JobOutcome<Nothing>
 
-    /** Another job holds the one slot (ADR 0006). */
+    /** Another job holds the one slot. */
     data object Busy : JobOutcome<Nothing>
 }
 
 /**
- * One model job at a time (ADR 0006), off the main thread, with progress and
+ * One model job at a time, off the main thread, with progress and
  * cooperative cancellation, kept alive by a `dataSync` foreground service
- * with a notification while it runs (ADR 0089). A job starts only from a
+ * with a notification while it runs. A job starts only from a
  * visible screen, as Android requires of a foreground service; one the
  * system ends, or that dies with the process, is offered again on return.
  */
@@ -87,8 +87,8 @@ class Jobs(private val context: Context) {
         if (stopped.value?.documentId == documentId) clearInterrupted()
         return scope.async {
             try {
-                // A foreground service starts only while mdoc is on screen
-                // (ADR 0089); refused, the job does not run.
+                // A foreground service starts only while mdoc is on screen;
+                // refused, the job does not run.
                 LongJobService.wanted = true
                 ContextCompat.startForegroundService(context, LongJobService.start(context, title))
                 // Written first: a process Android ends mid-job leaves it behind.

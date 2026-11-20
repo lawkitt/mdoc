@@ -9,7 +9,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Downloads one pinned model file on a given network (ADR 0089): the
+ * Downloads one pinned model file on a given network: the
  * connection is opened through that `Network`, so a Wi-Fi download never
  * uses cellular. An interrupted transfer resumes with a Range request; Rust
  * then verifies the file and installs it.

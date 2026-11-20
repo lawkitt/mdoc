@@ -1,4 +1,4 @@
-// The long-job device test (ADR 0089): UiAutomator drives the debug app as
+// The long-job device test: UiAutomator drives the debug app as
 // a person would, presses Home and kills mdoc's process mid-job. It is
 // self-instrumenting, so it runs in its own process and outlives the kill.
 plugins {

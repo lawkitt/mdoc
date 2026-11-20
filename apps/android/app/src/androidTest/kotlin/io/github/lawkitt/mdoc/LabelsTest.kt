@@ -18,7 +18,7 @@ import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.JobStage
 
 /**
- * Every control has a name TalkBack can read (ADR 0085: VoiceOver and
+ * Every control has a name TalkBack can read (VoiceOver and
  * TalkBack on every control): no "unlabeled button" on Home or a document.
  */
 @RunWith(AndroidJUnit4::class)

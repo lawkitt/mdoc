@@ -43,7 +43,7 @@ sealed interface PendingAdd {
 data class HomeState(
     val documents: List<DocumentSummary> = emptyList(),
     val cases: List<CaseSummary> = emptyList(),
-    /** Above the detector floor: Find names is offered (ADR 0088, 0089). */
+    /** Above the detector floor: Find names is offered. */
     val canFindNames: Boolean = true,
     /** The library has been read at least once. */
     val loaded: Boolean = false,
@@ -185,7 +185,7 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
                 if (document.kind.needsRecognition) StatusLine.NotRecognized else StatusLine.ImportNotFinished
             DocumentPhase.Unscanned -> if (canFindNames) StatusLine.ReadyToFind else StatusLine.ReadyToMark
             DocumentPhase.Reviewing -> StatusLine.ToReview(document.pendingCount)
-            // Find names ran and found nothing (ADR 0087).
+            // Find names ran and found nothing.
             DocumentPhase.Ready -> if (document.candidateCount == 0) StatusLine.NothingFound else StatusLine.ReadyToShare
         }
     }

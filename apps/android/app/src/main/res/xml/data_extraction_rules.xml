@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Documents, cases, the wrapped case key and models stay on this phone (ADR 0089). -->
+<!-- Documents, cases, the wrapped case key and models stay on this phone. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />

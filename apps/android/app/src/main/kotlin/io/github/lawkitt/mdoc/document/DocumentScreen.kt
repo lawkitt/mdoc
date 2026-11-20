@@ -117,8 +117,7 @@ import uniffi.mdoc_ffi.JobStage
 
 /**
  * One document: its text with candidates, the primary action that follows
- * its state, and the hand-off bar once nothing is left to decide (ADR 0085,
- * 0087). The twin of the iOS `DocumentScreen`.
+ * its state, and the hand-off bar once nothing is left to decide. The twin of the iOS `DocumentScreen`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,7 +167,7 @@ fun DocumentScreen(
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        // The hand-off's second way out (ADR 0087's long press on iOS).
+                        // The hand-off's second way out (a long press on iOS).
                         if (model.primaryAction(state, job) == PrimaryAction.HandOff && !state.showsReply) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.share_as_file)) },
@@ -252,7 +251,7 @@ fun DocumentScreen(
                 val reason = setup?.state?.collectAsStateWithLifecycle()?.value?.snapshot?.belowFloor
                 Notice(ScanTime.belowFloor(reason))
             } else if (snapshot.phase == DocumentPhase.Unscanned && job == null) {
-                // Before a scan expected to take more than about a minute (ADR 0120).
+                // Before a scan expected to take more than about a minute.
                 val minutes = remember(snapshot.markdown) { model.scanEstimate() }
                 minutes?.let { Notice(stringResource(R.string.scan_estimate, it)) }
             }
@@ -260,7 +259,7 @@ fun DocumentScreen(
             val needs = state.needsSetup
             if (needs != null && setup != null) {
                 val setupState by setup.state.collectAsStateWithLifecycle()
-                // Download & continue: the job that asked for setup runs again (ADR 0085).
+                // Download & continue: the job that asked for setup runs again.
                 SetupCard(
                     state = setupState,
                     continues = true,
@@ -284,7 +283,7 @@ fun DocumentScreen(
             }
             }
             // Text, Original and Reply: one at a time on a phone; on a wide
-            // screen the original sits beside the text (ADR 0085).
+            // screen the original sits beside the text.
             val wide = LocalConfiguration.current.screenWidthDp >= 840
             val hasOriginal = snapshot.original != OriginalSource.None
             val panes = buildList {
@@ -479,7 +478,7 @@ private fun ActionBar(
                 }
                 PrimaryAction.Waiting -> Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodyMedium)
                 is PrimaryAction.ReplaceAll -> Primary(stringResource(R.string.replace_count, action.count), onReplaceAll)
-                // On the Reply tab the bar acts on the reply (ADR 0087); TalkBack
+                // On the Reply tab the bar acts on the reply; TalkBack
                 // hears the full names, the buttons show the short ones.
                 PrimaryAction.HandOff -> if (showsReply) {
                     HandOffRow(
@@ -501,7 +500,7 @@ private fun ActionBar(
 
 /**
  * Share, Copy, Paste: one row, or stacked when a label would not fit on one
- * line, as at the largest text sizes (ADR 0087). Each is (action, label,
+ * line, as at the largest text sizes. Each is (action, label,
  * what TalkBack reads).
  */
 @Composable
@@ -593,7 +592,7 @@ private fun CandidateSheet(
                 Choice(stringResource(R.string.all_occurrences, mentionCount), scope == Scope.AllOccurrences) { scope = Scope.AllOccurrences }
                 Choice(stringResource(R.string.just_this_one), scope == Scope.JustThisOne) { scope = Scope.JustThisOne }
             }
-            // Side by side, or stacked when the labels would not fit (ADR 0087).
+            // Side by side, or stacked when the labels would not fit.
             val buttons: @Composable (Modifier) -> Unit = { modifier ->
                 Button({ onDecide(decision, scope, false) }, modifier) { Text(stringResource(R.string.done), maxLines = 1) }
                 if (hasNext) {
@@ -728,7 +727,7 @@ private fun IdentitiesSheet(
     }
 }
 
-/** Paste AI reply: restored with this document's case and kept as its reply (ADR 0078). */
+/** Paste AI reply: restored with this document's case and kept as its reply. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReplySheet(caseName: String?, onRestore: (String) -> Unit, onDismiss: () -> Unit) {
@@ -758,7 +757,7 @@ private fun ReplySheet(caseName: String?, onRestore: (String) -> Unit, onDismiss
     }
 }
 
-/** The restored reply, its restored values highlighted (ADR 0087). */
+/** The restored reply, its restored values highlighted. */
 @Composable
 private fun ReplyPane(reply: ReplySnapshot, onRemove: () -> Unit) {
     val restored = reply.restored

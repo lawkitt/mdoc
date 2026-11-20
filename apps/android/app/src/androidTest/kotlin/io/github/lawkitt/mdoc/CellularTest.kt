@@ -18,7 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * "On cellular, mdoc asks first" (ADR 0088, 0089), on the emulator's own
+ * "On cellular, mdoc asks first", on the emulator's own
  * Wi-Fi and cellular: with Wi-Fi off, Download asks; "Wait for Wi-Fi" holds
  * the download and says so; when Wi-Fi returns it finishes, never having
  * used cellular.

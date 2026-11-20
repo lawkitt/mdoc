@@ -9,7 +9,7 @@ import androidx.compose.ui.platform.LocalContext
 
 /**
  * Material 3 with the phone's own colours (Android 12+, the app's minimum),
- * light or dark with the system (ADR 0089).
+ * light or dark with the system.
  */
 @Composable
 fun MdocTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {

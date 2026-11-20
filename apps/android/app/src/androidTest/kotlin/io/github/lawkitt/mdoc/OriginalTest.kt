@@ -20,7 +20,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** The Original page (ADR 0085): a PDF's pages beside, or instead of, its text. */
+/** The Original page: a PDF's pages beside, or instead of, its text. */
 @RunWith(AndroidJUnit4::class)
 class OriginalTest {
     @get:Rule(order = 0)

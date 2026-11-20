@@ -1,6 +1,6 @@
 # mdoc for Android
 
-The review-first Android app ([ADR 0089](../../docs/adr/0089-android-app.md)):
+The review-first Android app:
 Jetpack Compose over the Rust core's Kotlin bindings (`crates/mdoc-ffi`),
 the twin of [`apps/ios`](../ios/README.md). Android 12 (API 31) and later,
 compiled against API 37, targeting API 36.
@@ -21,7 +21,7 @@ just android                # the Android job (MDOC_ANDROID_JOB=always runs it w
 `~/Library/Android` on the Mac and `~/Android` on Linux; the SDK is in
 `Sdk` there on Windows and in `mdoc-sdk` on the Mac and Linux, apart from
 Android Studio's. The Mac's emulator runs the arm64-v8a image, the others
-x86_64 (ADR 0091). To build and install by hand (Windows paths shown):
+x86_64. To build and install by hand (Windows paths shown):
 
 ```sh
 cd apps/android
@@ -63,7 +63,7 @@ Or open `apps/android` in Android Studio and press Run, after step 3.
 `./gradlew assembleMinified` builds the app as R8 would ship it
 (`proguard-rules.pro`), debug-signed as `io.github.lawkitt.mdoc.minified` so
 it installs beside the debug app. `just android` opens its library on the
-emulator: a keep rule R8 needs and the rules lack fails the job (ADR 0091).
+emulator: a keep rule R8 needs and the rules lack fails the job.
 
 ## Tests
 

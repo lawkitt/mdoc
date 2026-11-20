@@ -4,7 +4,7 @@ import io.github.lawkitt.mdoc.core.CaseColour
 import io.github.lawkitt.mdoc.core.Category
 
 /**
- * The category and case colours, light and dark (ADR 0087): the iOS system
+ * The category and case colours, light and dark: the iOS system
  * colours' Android twins. Dark variants are lighter, so an underline or a
  * fill still stands out on a dark background.
  */
@@ -37,7 +37,7 @@ object Palette {
 
     data class Fill(val proposed: Float, val replaced: Float, val selected: Float)
 
-    /** Candidate fills: stronger on dark, where a light tint all but disappears (ADR 0087). */
+    /** Candidate fills: stronger on dark, where a light tint all but disappears. */
     fun fill(dark: Boolean) = if (dark) Fill(0.26f, 0.42f, 0.6f) else Fill(0.12f, 0.24f, 0.4f)
 
     /** `==highlight==`. */

@@ -1,6 +1,5 @@
-# R8 rules for the app's minified builds (the `minified` build type, ADR
-# 0091). The core is Rust behind UniFFI's Kotlin bindings, which call it
-# through JNA; R8 cannot see what either reaches by name at run time.
+# R8 rules for the app's minified builds (the `minified` build type). The
+# core is Rust behind UniFFI's Kotlin bindings, which call it through JNA; R8 cannot see what either reaches by name at run time.
 # scripts/android/android-check.sh opens the core in the minified app on the
 # emulator, so a rule missing here fails the Android job.
 

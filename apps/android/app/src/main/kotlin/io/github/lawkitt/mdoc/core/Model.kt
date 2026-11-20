@@ -4,7 +4,7 @@ import androidx.annotation.StringRes
 import io.github.lawkitt.mdoc.R
 import uniffi.mdoc_ffi.MarkdownStyling
 
-// View types built from the core's snapshots (ADR 0085): the app keeps only
+// View types built from the core's snapshots: the app keeps only
 // these and its own view state; Rust owns documents, review, cases and
 // restore. The twins of the iOS app's CoreTypes.
 
@@ -31,7 +31,7 @@ enum class Category(@StringRes val label: Int, val token: String) {
     Other(R.string.category_other, "REDACTED"),
 }
 
-/** A case's colour: it marks the case, never a state (ADR 0077). */
+/** A case's colour: it marks the case, never a state. */
 enum class CaseColour { Red, Orange, Amber, Green, Teal, Blue, Violet, Pink }
 
 data class CaseSummary(val id: CaseId, val name: String, val colour: CaseColour)
@@ -144,7 +144,7 @@ data class RestoreResult(
         }
 }
 
-/** The page a document came from, for the Original view (ADR 0085): a PDF or a photo; DOCX and text have none. */
+/** The page a document came from, for the Original view: a PDF or a photo; DOCX and text have none. */
 sealed interface OriginalSource {
     data object None : OriginalSource
 

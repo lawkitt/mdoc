@@ -28,7 +28,7 @@ import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 
 /**
- * Long jobs on a phone (ADR 0089, roadmap Android 0.1 item 5): the model
+ * Long jobs on a phone (roadmap Android 0.1 item 5): the model
  * download, text recognition of a 120-page scan and Find names each go on
  * while mdoc is off screen, and each resumes after Android kills mdoc's
  * process mid-job. At the end no crash or ANR is in mdoc's
@@ -87,7 +87,7 @@ class LongJobsTest {
         device.pressHome()
         kill()
         openDocument(title)
-        // The scan is a PDF, so mdoc calls it an import (ADR 0087's wording).
+        // The scan is a PDF, so mdoc calls it an import.
         need(By.textStartsWith("The import stopped when mdoc left the screen"), 30_000)
         need(By.text(Pattern.compile("Resume recognition|Finish import")), 10_000).click()
         recognized()
@@ -243,7 +243,7 @@ class LongJobsTest {
     /** A job's progress line, as the document shows it while the job runs. */
     private val running = By.text(Pattern.compile(RUNNING))
 
-    /** Find names running: the stage, then with its time left (ADR 0120). */
+    /** Find names running: the stage, then with its time left. */
     private val finding get() = By.text(Pattern.compile("Finding names( · .*)?"))
 
     private fun need(selector: BySelector, timeout: Long): UiObject2 =

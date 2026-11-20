@@ -5,7 +5,7 @@ import android.content.Context
 import android.os.PowerManager
 import uniffi.mdoc_ffi.Thermal
 
-/** What a scan asks about the phone (ADR 0120): the twin of the iOS `DeviceConditions`. */
+/** What a scan asks about the phone: the twin of the iOS `DeviceConditions`. */
 interface DeviceConditions {
     fun thermal(): Thermal
 

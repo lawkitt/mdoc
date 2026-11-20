@@ -2,7 +2,7 @@ package io.github.lawkitt.mdoc.core
 
 /**
  * Converts the core's UTF-8 source offsets to the UTF-16 indices Kotlin
- * strings and Android text use, and back (ADR 0089). Built once per
+ * strings and Android text use, and back. Built once per
  * Markdown text; the Markdown itself is never re-rendered.
  */
 class TextOffsets(text: String) {

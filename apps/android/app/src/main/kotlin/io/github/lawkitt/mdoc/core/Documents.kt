@@ -33,7 +33,7 @@ interface JobObserver {
 }
 
 /**
- * Cases and stored documents over the core's `MdocLibrary` (ADR 0085): the
+ * Cases and stored documents over the core's `MdocLibrary`: the
  * twin of the iOS app's `RealLibrary`. It converts the core's records into
  * the view types and keeps which source file a document came from.
  */
@@ -124,7 +124,7 @@ class Documents(
     /** Restores a reply with one case's mapping; needs no model. */
     fun restore(reply: String, case: CaseId): RestoreResult = restoreResult(core { ffi.restore(case.raw, reply) })
 
-    /** Keeps `reply`, in alias form, as the document's reply (ADR 0078). */
+    /** Keeps `reply`, in alias form, as the document's reply. */
     fun saveReply(reply: String, document: DocumentId) {
         val session = session(document)
         val path = session.path ?: throw AppError.NoCase()
@@ -259,13 +259,13 @@ class Documents(
             return snapshot()
         }
 
-        /** Minutes a scan takes on this phone, when more than about one (ADR 0120). */
+        /** Minutes a scan takes on this phone, when more than about one. */
         fun scanEstimate(): Int? = models?.detectorPaths()?.let { ffi.scanEstimate(it)?.toInt() }
 
         /** Finds candidates with the detector; a cancelled scan reruns from the start. */
         fun scan(observer: JobObserver): DocumentSnapshot {
             // A detector installed before mdoc timed it is timed first, in this
-            // job, so the scan has its estimate (ADR 0120); too slow, it never
+            // job, so the scan has its estimate; too slow, it never
             // scans.
             if (models?.snapshot()?.needsTiming == true) {
                 observer.stage(JobStage.SCANNING)
@@ -281,7 +281,7 @@ class Documents(
                 this.scanned = true
             }
             save()
-            // Kept, so an empty scan still reads "Nothing found" after mdoc restarts (ADR 0087).
+            // Kept, so an empty scan still reads "Nothing found" after mdoc restarts.
             path?.let(originals::markScanned)
             return snapshot()
         }
@@ -431,7 +431,7 @@ class Documents(
             Category.Other -> FfiCategory.OTHER
         }
 
-        /** The swatch nearest a case's stored hue (ADR 0077). */
+        /** The swatch nearest a case's stored hue. */
         fun caseColour(hue: UInt): CaseColour {
             val hues = listOf(
                 CaseColour.Red to 0.0, CaseColour.Orange to 30.0, CaseColour.Amber to 45.0, CaseColour.Green to 130.0,
