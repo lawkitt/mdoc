@@ -2,27 +2,25 @@
 
 Status: Accepted, 2026-11-15.
 
-## Decision
+## Why
 
-- The desktop app is built on GPUI, Zed's GPU-rendered Rust UI framework, from
-  the published `gpui-pre` packages (0.3.12), because mdoc's editor, PDF
-  viewer and offscreen render harness came from Zorite on GPUI. Leaving it is
-  a frontend migration that needs equivalents for editor layout and input,
-  the preview, accessibility, window lifecycle and the harness.
-- The editor (`mdoc-editor`), PDF viewer (`gpui-pdf`) and BiDi adapter
-  (`gpui-bidi`) are forks of Zorite's GPUI crates, owned by mdoc.
-- The macOS, Windows and WGPU platform crates are vendored in `vendor/` and
-  patched through `[patch.crates-io]`; each patch is listed in that crate's
-  `MDOC-PATCH.md` (or `ZORITE-PATCH.md`) and re-ported on every upgrade.
-- The macOS minimum is 12.0, the target of GPUI 0.3.12's Metal shader build.
-- GPUI Fast, GPUI Kit, GPUI CE, a Zed Git pin and other frontends (Iced,
-  Slint, Tauri) are not adopted.
+mdoc's editor, PDF viewer and offscreen render harness came from Zorite,
+which is built on GPUI, Zed's GPU-rendered Rust UI framework. Leaving it is
+a frontend migration that needs equivalents for editor layout and input,
+the preview, accessibility, window lifecycle and the harness. mdoc uses the
+published `gpui-pre` packages, owns forks of Zorite's editor, PDF viewer and
+BiDi crates, and vendors the macOS, Windows and WGPU platform crates in
+`vendor/`, each patch listed in that crate's `MDOC-PATCH.md` and re-ported
+on every upgrade. One GPUI type family runs across every desktop crate. The
+macOS minimum, 12.0, is the target of GPUI's Metal shader build.
 
-## Invariants
+## Rejected
 
-- One GPUI type family across every desktop crate.
-- An upgrade keeps behaviour on macOS and Windows and the windowless
-  headless renders and the offscreen harness's temporary profile working on
-  both.
+- **Iced, Slint or Tauri**: the migration above.
+- **GPUI Fast, GPUI Kit, GPUI CE or a Zed Git pin**: a second GPUI type
+  family beside the published packages.
 
-References: [GPUI grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/gpui-grill-2026-11-14.md).
+## Revisit when
+
+An upgrade can't keep behaviour on macOS and Windows, the headless renders
+and the harness working, or GPUI stops publishing packages.

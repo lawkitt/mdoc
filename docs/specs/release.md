@@ -109,8 +109,20 @@ the certificate into the login keychain, run
 `xcrun notarytool store-credentials mdoc-notary` once, then
 `APPLE_SIGNING_IDENTITY="Developer ID Application: Tebriz Tagiev (F33DLM8K53)" APPLE_KEYCHAIN_PROFILE=mdoc-notary just package`.
 
-Windows builds stay unsigned until `1.0`; SmartScreen's "Run anyway" is one
-click.
+- Signing exists because from macOS 15 right-click → Open no longer
+  bypasses Gatekeeper, and lawyers give up at Open Anyway.
+- `scripts/desktop/macos-sign.sh` notarizes and staples the `.app` before the
+  `.dmg`, so a copy dragged out of the image opens offline.
+- `hdiutil` builds the `.dmg`, because cargo-packager's image re-signs the
+  app ad hoc.
+- The entitlements' library-validation exception is for the downloaded
+  PDFium and ONNX Runtime.
+- The `release` environment admits only `main` and `v*` tags.
+- The certificate expires on 2027-02-01: replace its secrets before then. A
+  lapse blocks new builds, never published ones.
+- Windows builds stay unsigned until `1.0`, because Microsoft's Trusted
+  Signing limits individual eligibility and SmartScreen's "Run anyway" is
+  one click.
 
 ## Case key
 
@@ -277,6 +289,9 @@ Results go in the release's issue.
   local release path.
 - Run `just android-device-test` before every Android release after the
   first.
+- Play's Data safety form says no data is collected.
+- Firebase Test Lab phones get public fixtures only. Test Lab closes on
+  2027-09-30.
 - Closed testing follows iOS: `android-v<x.y.z>-rc.N` tags, one invite-only
   "Lawyers" track, the same "never client files" line.
 

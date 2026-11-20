@@ -2,30 +2,27 @@
 
 Status: Accepted, 2026-10-08.
 
-## Decision
+## Why
 
-Pin MIT-licensed `presidio-analyzer` 0.1.11 with default features off.
-Configure only email and contextual checksum-valid INN/SNILS in
-`mdoc-detect`'s structured rules, beside mdoc's own labelled checksum-valid
-ОГРН/ОГРНИП, which are identifiers, not bank numbers; GLiNER2 and the shared
-ONNX Runtime stay.
+Structured identifiers need patterns and checksums, and the MIT-licensed
+`presidio-analyzer` has tested ones. mdoc pins it with default features off
+and reuses only its pattern and validator configuration and its SNILS
+checksum, for email and contextual checksum-valid INN and SNILS, beside
+mdoc's own labelled ОГРН/ОГРНИП. Upstream defaults would regress mdoc: its
+email pattern is ASCII only, its SNILS defaults are permissive, and it has no
+INN recognizer. So mdoc keeps its Unicode patterns, strict same-line
+context, digit boundaries and INN checksum. Matches are exact UTF-8 byte
+spans of the Markdown; review, syntax protection and provenance stay
+app-owned.
 
-Reuse the library's pattern/validator configuration and SNILS checksum. Keep
-mdoc's Unicode email and identifier patterns, strict same-line context and digit
-boundaries, zero rejection, local INN checksum and heuristic scores. Matches are
-exact UTF-8 byte spans of the immutable Markdown; ingestion, syntax protection,
-freshness, review decisions, editor commits and provenance stay app-owned.
+## Rejected
 
-Do not call the full analyzer, anonymizer or `PatternRecognizer::analyze` (the
-latter removes containment quadratically; mdoc already resolves overlaps). No
-gazetteers, optional ONNX/POS features, extra categories or rules-only fallback.
+- **The full analyzer, the anonymizer or `PatternRecognizer::analyze`**: the
+  last removes overlaps quadratically, and mdoc already resolves them.
+- **Gazetteers, the optional ONNX or POS features, extra categories or a
+  rules-only fallback**: GLiNER2 on the shared ONNX Runtime stays the
+  detector.
 
-## Consequences
+## Revisit when
 
-The upstream ASCII email pattern and permissive SNILS defaults would regress
-behavior, so app policy stays explicit; INN has no upstream recognizer. The
-package's phone-library dependency is retained and attributed, though unused.
-Frozen corpus predictions and Unicode/context/dense-source checks gate changes.
-
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0017-selected-rust-presidio-reuse.md),
-[source research](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/rust-presidio-reuse.md).
+Upstream gains Unicode email, strict SNILS rules or an INN recognizer.

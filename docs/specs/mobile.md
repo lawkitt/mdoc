@@ -66,7 +66,10 @@ A grill is only for a pattern this page lacks, which this page then gains.
   selection; where Find names would be, and in Settings, it says why and
   that selecting marks a name.
 - The floor is 4 GB of RAM (`DETECTOR_FLOOR_BYTES`), or a timed run past
-  10 minutes per 10,000 characters.
+  10 minutes per 10,000 characters; it guards memory, not speed, because
+  owners of older phones would rather wait.
+- An offered model peaks under 2 GiB and cold-loads within 10 s on each
+  device class.
 - A scan needs about 1.3 GB free to start (`DETECTOR_FREE_BYTES`), because
   the system would end the app partway.
 - A download on cellular asks first on any cellular interface, whatever the
@@ -76,11 +79,9 @@ A grill is only for a pattern this page lacks, which this page then gains.
   still downloads its models together.
 - A document's setup card offers the model its job needs and resumes the
   job once installed.
-- The detector is timed once installed; a scan expected past a minute shows
-  its estimate first, Settings the time per 10 pages.
 - A phone scan has no deadline; it shows time left and stops after 60 s
   without progress.
-- A scan pauses while the phone is critically hot.
+- Heat pauses a scan but never withdraws the detector.
 - One long job runs at a time, off the main thread, with progress and
   cooperative cancellation.
 - Nothing starts in the background on its own; only a job the user started
@@ -256,8 +257,8 @@ iOS: `apps/ios/mdoc/Design/`.
   or cell, up to Markdown formatting or another alias.
 - A tap away from the adjusted words cancels Adjust Words, in a table cell
   too.
-- Not a name ([ADR 0122](../adr/0122-not-a-name.md)) ends the card's
-  category menu, the long press, Identities' menus and Select's ⋯.
+- Not a name ends the card's category menu, the long press, Identities'
+  menus and Select's ⋯, unstyled, because Undo takes it back.
 
 ## Identities
 

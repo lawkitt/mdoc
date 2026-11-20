@@ -3,47 +3,26 @@
 Status: Paused, 2026-11-17: no class passed #911's evaluation; resumes only
 on a follow-up run that passes.
 
-## Problem
+## Why
 
 OCR reads seals, signatures, QR codes and repeated headers as junk text, and
-pictures and the PII in them never reach the review. PP-OCR has no region
-classes. Mirage (Cactus Compute; Apache-2.0 weights; 51M parameters) detects
+pictures and the PII in them never reach the review; PP-OCR has no region
+classes. Mirage (Cactus Compute, Apache-2.0 weights, 51M parameters) detects
 open-vocabulary objects with masks, but its only runtime, libcactus, is a
-closed-source static library, and no reference implementation is public.
+closed-source static library. So a vision layer beside OCR finds page
+artifacts while PP-OCR keeps reading all text, and Mirage runs from mdoc's
+own Rust port on candle (`lawkitt/mirage-rs`), pinned by revision like the
+forks. It is the one exception to inference through the app's ONNX Runtime,
+at the cost of a second engine to pin, time on each platform and re-port for
+each Mirage release. The port is accepted only when it matches libcactus
+4.1.1 on at least 90% of objects at box IoU 0.9, and 85% with the same name.
 
-## Decision
+## Rejected
 
-- A vision layer beside OCR finds page artifacts; PP-OCR keeps reading all
-  text, and Mirage never does mdoc's text OCR.
-- Mirage runs from a Rust port on candle in its own repository,
-  `lawkitt/mirage-rs` (Apache-2.0, attributed to Cactus), pinned by revision
-  like the forks and loading the pinned upstream safetensors or our own
-  quantization of them.
-- Mirage is the one exception to inference through the app's one ONNX
-  Runtime; the Paddle layout and seal models stay on it.
-- libcactus is only the evaluation's reference and the port's parity
-  oracle; it never ships.
-- pdf-inspector gets a `RegionDetector` contract beside `OcrEngine`, which
-  each engine implements; Mirage's boxes (0–1000 per image axis) become
-  pixel quads at that boundary.
-- The port comes in two stages: the `objects` and `text` sections first,
-  then relations, reasoning, forms and keywords.
+- **Shipping libcactus**: closed source; it stays the parity oracle.
+- **Mirage for text OCR**: PP-OCR stays the reader.
 
-## Invariants
+## Revisit when
 
-- The port is accepted only when it does at least as well as libcactus on
-  the evaluation's bars, and against libcactus 4.1.1 on a fixed image set
-  matches at least 90% of objects at box IoU 0.9 or more, at least 85% with
-  the same name.
-- The shipped precision is chosen per CPU platform from measurements.
-- Which artifact classes ship, and from which engine, follows the
-  evaluation's verdict.
-
-## Consequences
-
-- A second inference engine to build, pin, time on each platform and
-  upgrade.
-- The port is rebuilt from the weights, config and Cactus's published
-  equations; a new Mirage release needs re-porting and a new parity run.
-
-References: [grill record](https://github.com/lawkitt/mdoc/issues/911).
+A follow-up evaluation passes for an artifact class, or Cactus publishes a
+reference implementation.
