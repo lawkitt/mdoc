@@ -117,8 +117,7 @@ import uniffi.mdoc_ffi.JobStage
 
 /**
  * One document: its text with candidates, the primary action that follows
- * its state, and the hand-off bar once nothing is left to decide (
- * 0087). The twin of the iOS `DocumentScreen`.
+ * its state, and the hand-off bar once nothing is left to decide. The twin of the iOS `DocumentScreen`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
