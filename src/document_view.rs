@@ -126,7 +126,7 @@ pub(crate) struct DocumentView {
     /// The More button's bounds, so a press on it is left to its toggle.
     more_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
     /// Whether the last frame drew the Markdown and the original panes: a
-    /// narrow window shows one of them (Tab skips the hidden one).
+    /// narrow window shows one of them (F6 skips the hidden one).
     panes_drawn: std::cell::Cell<(bool, bool)>,
     /// Whether the window is resolving a close or quit (read-only).
     closing: workspace::CloseWatch,

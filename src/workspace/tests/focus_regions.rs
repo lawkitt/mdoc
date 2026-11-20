@@ -958,7 +958,7 @@ fn toolbar_members_take_part_in_tab_esc_and_f6(cx: &mut TestAppContext) {
 }
 
 /// Each Home Recents row is a Tab stop named for screen readers, and Enter
-/// opens it (dry-run H18 / A4).
+/// opens it.
 #[gpui::test]
 fn home_recents_rows_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

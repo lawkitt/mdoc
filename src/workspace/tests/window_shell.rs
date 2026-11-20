@@ -386,7 +386,7 @@ fn preview_find_types_through_text_input(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.update(|_, cx| pdf.read(cx).is_search_open()));
     // Composed and non-ASCII text arrives through the input handler, not key
-    // codes, so IME and other layouts reach the query (K7).
+    // codes, so IME and other layouts reach the query.
     cx.simulate_input("Договор 契約");
     cx.run_until_parked();
     assert_eq!(
