@@ -223,7 +223,10 @@ struct DocumentScreen: View {
             ContentUnavailableView(
                 "Import not finished",
                 systemImage: "doc.badge.clock",
-                description: Text("The import stopped before mdoc read the text. Finish import reads it now."))
+                // The password card below is the way on, not Finish import.
+                description: model.passwordPrompt == nil
+                    ? Text("The import stopped before mdoc read the text. Finish import reads it now.")
+                    : Text("The import stopped before mdoc read the text."))
         } else if !model.snapshot.kind.needsRecognition {
             ContentUnavailableView(
                 "No text yet",
@@ -606,7 +609,7 @@ struct DocumentScreen: View {
             }
             if let prompt = model.passwordPrompt, model.runningJob == nil {
                 // Unlock is the view's one primary button while it asks.
-                PasswordCard(prompt: prompt) { password in
+                PasswordCard(prompt: prompt, maxWordsHeight: screenHeight * 0.18) { password in
                     await model.unlock(password: password)
                 }
             } else if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {

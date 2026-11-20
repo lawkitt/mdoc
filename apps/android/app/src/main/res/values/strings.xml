@@ -70,6 +70,7 @@
     <string name="recognition_runs_body">mdoc reads the text when recognition runs.</string>
     <string name="recognition_resumes_body">Recognition stopped. Finished pages are kept, and resuming reads the rest.</string>
     <string name="import_not_finished_body">The import stopped before mdoc read the text. Finish import reads it now.</string>
+    <string name="import_not_finished_locked_body">The import stopped before mdoc read the text.</string>
     <string name="recognition_stopped_background">Recognition stopped when mdoc left the screen. Finished pages are kept.</string>
     <string name="finding_stopped_background">Finding names stopped when mdoc left the screen.</string>
     <string name="resume">Resume</string>
