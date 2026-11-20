@@ -1,10 +1,9 @@
-//! A PDF's annotations on the comment rail (originals spec, Comments in
-//! Source): pdf-inspector's annotations that carry text become the rail's
-//! comments, anchored at their rectangles. Text markup anchors at its quads,
-//! one rectangle per line; a note or FreeText box at its rectangle. Replies
-//! nest by `in_reply_to`. The PDF's own drawing of them is hidden by the
-//! Source's page view ([`gpui_pdf::ViewOptions`]), so mdoc's tint is the
-//! only one.
+//! A PDF's annotations on the comment rail: pdf-inspector's annotations that
+//! carry text become the rail's comments, anchored at their rectangles. Text
+//! markup anchors at its quads, one rectangle per line; a note or FreeText box
+//! at its rectangle. Replies nest by `in_reply_to`. The PDF's own drawing of
+//! them is hidden by the Source's page view ([`gpui_pdf::ViewOptions`]), so
+//! mdoc's tint is the only one.
 use gpui_pdf::PageFrame;
 use mdoc_import::{
     comments::Comment,

@@ -1,4 +1,4 @@
-//! The comment rail (originals spec, Comments in Source): a DOCX's comments
+//! The comment rail: a DOCX's comments
 //! beside its Source page at their passages, pushed down where they would
 //! overlap, or markers in the page margin when the pane is narrow. Cards are
 //! read-only and their text never enters the Markdown. The rail is the page

@@ -1,7 +1,7 @@
 import UIKit
 
 /// Back to the top: the ↑ control after one screen of text, and the status
-/// bar's tap while the text shows (originals.md, Original page controls).
+/// bar's tap while the text shows.
 extension MarkdownTextView.Coordinator {
     /// Wires the control to this view, and gives the status bar's tap to
     /// the text only while it shows: UIKit scrolls nothing when two views

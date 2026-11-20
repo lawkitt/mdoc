@@ -51,8 +51,7 @@ struct MarkdownTextView: UIViewRepresentable {
     /// view is kept, and the keyboard goes until the text shows again
     /// (ADR 0110).
     var shown = true
-    /// The ↑ control past one screen of text, never in edit mode
-    /// (originals.md, Original page controls).
+    /// The ↑ control past one screen of text, never in edit mode.
     var viewport: PageViewport?
 
     /// The text is edited now.

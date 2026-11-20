@@ -1,7 +1,7 @@
 import UIKit
 import XCTest
 
-/// A Word file's comments on a phone (originals.md, Phones): no bar over
+/// A Word file's comments on a phone: no bar over
 /// the page; Show comments and "Not on the page (N)" in the title menu;
 /// markers that open the sheet at their thread, which steps through them
 /// all at one height; markers go with Show comments off.

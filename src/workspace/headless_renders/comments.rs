@@ -1,4 +1,4 @@
-//! The comment rail beside the DOCX Source page (originals spec): the rail
+//! The comment rail beside the DOCX Source page: the rail
 //! in a wide pane with one card expanded, a resolved thread and "Not on the
 //! page", markers in a 640×480 window with a card open, and hidden text
 //! shown with its header toggle.

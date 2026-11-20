@@ -256,7 +256,7 @@ impl Theme {
     }
 }
 
-/// The comment rail's colours (originals spec): the tints and underline
+/// The comment rail's colours: the tints and underline
 /// drawn over a page, which follow its paper, and the cards and markers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CommentColors {
@@ -651,8 +651,7 @@ mod contrast_tests {
 
     /// Page text stays readable under a comment's tint on both page tones,
     /// the active passage's underline and the markers show on the paper,
-    /// and the cards' text reads on their ground (originals spec,
-    /// Accessibility).
+    /// and the cards' text reads on their ground.
     #[test]
     fn comment_tints_cards_and_markers_meet_contrast() {
         let mut failed = Vec::new();

@@ -1,5 +1,5 @@
 """Write comments.pdf: a synthetic two-page agreement with comment
-annotations, for the Source rail (originals spec, Comments in Source).
+annotations, for the Source rail.
 
 Standard library only, and no compression, so every platform writes the same
 bytes. Run from anywhere: python -I tests/fixtures/pdf-source/generate.py

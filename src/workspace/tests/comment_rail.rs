@@ -1,6 +1,5 @@
-//! The comment rail in the real tab shell (originals spec, Comments in
-//! Source and Accessibility): the keyboard flow, the "comments" F6 region,
-//! the app-wide Source toggles and markers in a narrow window.
+//! The comment rail in the real tab shell: the keyboard flow, the "comments"
+//! F6 region, the app-wide Source toggles and markers in a narrow window.
 use super::*;
 use crate::comment_rail::{CommentRail, NextComment, PreviousComment};
 

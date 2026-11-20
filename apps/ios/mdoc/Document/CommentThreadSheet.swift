@@ -1,7 +1,7 @@
 import MdocFFI
 import SwiftUI
 
-/// The comment sheet (originals.md, Phones): one thread at a time, "2 of
+/// The comment sheet: one thread at a time, "2 of
 /// 5" with ‹ › and a sideways swipe stepping through every thread in page
 /// order, then those not on the page. It keeps one height while open, so
 /// stepping never resizes it, and the page behind follows it. Read-only,

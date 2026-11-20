@@ -1,9 +1,8 @@
 import XCTest
 
-/// A partial import's notice card sits over the text and closes with ×
-/// (originals.md, The import note); light and dark kept as attachments. A
-/// phone's import reads scanned pages rather than skip them, so the notice
-/// comes from `MDOC_UI_NOTICE`.
+/// A partial import's notice card sits over the text and closes with ×; light
+/// and dark kept as attachments. A phone's import reads scanned pages rather
+/// than skip them, so the notice comes from `MDOC_UI_NOTICE`.
 final class NoticeCardUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

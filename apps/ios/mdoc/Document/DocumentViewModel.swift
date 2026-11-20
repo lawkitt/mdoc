@@ -56,12 +56,10 @@ final class DocumentViewModel {
     var systemUndoScreen: UUID?
     var showsFind = false
     /// The import's notice card was closed, for as long as this model
-    /// lives: the note itself is never kept on reopen (originals.md, The
-    /// import note).
+    /// lives: the note itself is never kept on reopen.
     var noticeClosed = false
     /// The rendered original's comments once the Original has shown: the
-    /// title menu's Show comments and "Not on the page (N)" (originals.md,
-    /// Phones).
+    /// title menu's Show comments and "Not on the page (N)".
     var originalComments: DocxComments?
     /// The comment sheet, at a thread of the original's comments; nil
     /// while closed.

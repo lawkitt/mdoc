@@ -1,10 +1,10 @@
 import UIKit
 import XCTest
 
-/// The Original's chrome on iPhone (originals.md, Phones and Original page
-/// controls): over the Original no bottom bar and no Identities, a
-/// double-tap zooms and ⤡ fits again, and Text brings the review back as
-/// it was; on Text, ↑ goes back to the top after a screen of scrolling.
+/// The Original's chrome on iPhone: over the Original no bottom bar and no
+/// Identities, a double-tap zooms and ⤡ fits again, and Text brings the review
+/// back as it was; on Text, ↑ goes back to the top after a screen of
+/// scrolling.
 final class OriginalChromeUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

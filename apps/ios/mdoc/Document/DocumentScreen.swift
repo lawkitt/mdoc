@@ -29,7 +29,7 @@ struct DocumentScreen: View {
     /// This screen, for the window's undo: a size-class change builds a new
     /// one for the same document (#672).
     @State private var screenID = UUID()
-    /// The text's ↑ control (originals.md, Original page controls).
+    /// The text's ↑ control.
     @State private var textViewport = PageViewport()
 
     private var hasRightPane: Bool { model.hasRightPane }
@@ -241,7 +241,7 @@ struct DocumentScreen: View {
 
     /// The document's notice cards over its text: the partial import, which
     /// closes, and a job that stopped when mdoc left the screen, whose
-    /// button is the way on (originals.md, The import note). Not in edit
+    /// button is the way on. Not in edit
     /// mode, where the text is being typed.
     @ViewBuilder
     private var noticeCards: some View {
@@ -409,8 +409,8 @@ struct DocumentScreen: View {
                 Label("Show Markdown", systemImage: "number")
             }
             .accessibilityIdentifier("show-markdown")
-            // The original's comments, in place of a bar over the page
-            // (originals.md, Phones): app-wide, on by default.
+            // The original's comments, in place of a bar over the page:
+            // app-wide, on by default.
             if let comments = model.originalComments, !comments.all.isEmpty {
                 Toggle(isOn: Bindable(preferences).showsComments) {
                     Label("Show comments", systemImage: "text.bubble")
@@ -565,8 +565,7 @@ struct DocumentScreen: View {
             }
         } else if model.originalCoversText {
             // Over the Original nothing acts on names: only a running job's
-            // progress stays, and Text brings the bar back as it was
-            // (originals.md, Phones).
+            // progress stays, and Text brings the bar back as it was.
             if model.runningJob != nil {
                 ActionBar(model: model)
                     .padding(.horizontal)

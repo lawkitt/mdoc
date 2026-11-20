@@ -1,9 +1,8 @@
-//! Comments a source document carries, as the forks extract them
-//! (originals spec, Extraction): AnyDoc reads them from DOCX, ODT and RTF,
-//! and pdf-inspector reports a PDF's annotations that carry text. mdoc
-//! keeps no comment parser of its own. Comments never enter the Markdown;
-//! the left-out line counts them and the Source rail's cards show them,
-//! both from the same extraction.
+//! Comments a source document carries, as the forks extract them: AnyDoc reads
+//! them from DOCX, ODT and RTF, and pdf-inspector reports a PDF's annotations
+//! that carry text. mdoc keeps no comment parser of its own. Comments never
+//! enter the Markdown; the left-out line counts them and the Source rail's
+//! cards show them, both from the same extraction.
 
 /// One comment, as AnyDoc reads it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
