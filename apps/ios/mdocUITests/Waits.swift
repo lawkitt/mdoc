@@ -174,12 +174,21 @@ extension MdocUITest {
 }
 
 extension MdocUITest {
+    /// An item of an open menu by the start of its words ("Not on the page"
+    /// for "Not on the page (1)"). iOS 27 drops a SwiftUI menu item's
+    /// accessibility identifier, which iOS 26 kept, so the identifiers the
+    /// app sets on them name them in code only.
+    @MainActor
+    static func menuItem(_ words: String, _ app: XCUIApplication) -> XCUIElement {
+        app.collectionViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", words)).firstMatch
+    }
+
     /// Find in document, then Hide name on its first match; the review bar
     /// that opens on it is ended.
     @MainActor
     static func hideFromFind(_ word: String, _ app: XCUIApplication) {
         app.buttons["title-menu"].tap()
-        let find = app.buttons["find-in-document"]
+        let find = MdocUITest.menuItem("Find in document", app)
         XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
         find.tap()
         let field = app.searchFields.firstMatch

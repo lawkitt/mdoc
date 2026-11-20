@@ -253,7 +253,7 @@ final class SurveyUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         app.buttons["title-menu"].tap()
-        let showMarkdown = app.descendants(matching: .any)["show-markdown"].firstMatch
+        let showMarkdown = MdocUITest.menuItem("Show Markdown", app)
         XCTAssertTrue(showMarkdown.waitForExistence(timeout: MdocUITest.timeout))
         showMarkdown.tap()
         let edit = app.buttons["edit-button"]

@@ -290,7 +290,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         // The agreement's email, and its surname marked from Find: two names.
         let app = try openDocument(slowToasts: true, phoneOnly: false)
         app.buttons["title-menu"].tap()
-        app.buttons["find-in-document"].tap()
+        MdocUITest.menuItem("Find in document", app).tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(field.wait(until: NSPredicate(format: "hasKeyboardFocus == true"), timeout: 10))

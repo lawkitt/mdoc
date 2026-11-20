@@ -98,8 +98,8 @@ final class IdentitiesHeaderUITests: XCTestCase {
 
         app.buttons["title-menu"].tap()
         // The menu's items; once ready the action bar has a Copy for AI too.
-        let copy = app.collectionViews.buttons["copy-for-ai"]
-        let share = app.collectionViews.buttons["share-document"]
+        let copy = MdocUITest.menuItem("Copy for AI", app)
+        let share = MdocUITest.menuItem("Share", app)
         XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout), "Copy for AI is listed while names are left")
         XCTAssertTrue(share.exists, "so is Share")
         XCTAssertFalse(copy.isEnabled)

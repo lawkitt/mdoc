@@ -57,12 +57,12 @@ final class CommentsOnPageUITests: XCTestCase {
         // The title menu: Show comments with the count, Not on the page.
         let title = app.buttons["title-menu"]
         title.tap()
-        let show = app.descendants(matching: .any)["show-comments"].firstMatch
+        let show = MdocUITest.menuItem("Show comments", app)
         XCTAssertTrue(show.waitForExistence(timeout: MdocUITest.timeout))
         // The count under the toggle ("13 comments") is a menu subtitle,
         // which the accessibility tree doesn't expose to XCUITest; it is
         // checked by hand.
-        let notOnPage = app.descendants(matching: .any)["comments-not-on-page"].firstMatch
+        let notOnPage = MdocUITest.menuItem("Not on the page", app)
         XCTAssertTrue(notOnPage.exists)
         XCTAssertTrue(notOnPage.label.contains("Not on the page (1)"), notOnPage.label)
         notOnPage.tap()
@@ -80,7 +80,7 @@ final class CommentsOnPageUITests: XCTestCase {
         XCTAssertTrue(markers.firstMatch.waitForNonExistence(timeout: MdocUITest.timeout))
         title.tap()
         XCTAssertTrue(show.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertFalse(app.descendants(matching: .any)["comments-not-on-page"].firstMatch.exists)
+        XCTAssertFalse(MdocUITest.menuItem("Not on the page", app).exists)
         show.tap()
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
 
