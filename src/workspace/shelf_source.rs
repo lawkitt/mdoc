@@ -1,4 +1,4 @@
-//! What the window gives the menu bar shelf (ADR 0084): its open tabs with
+//! What the window gives the menu bar shelf: its open tabs with
 //! applied aliases and its cases' closed members, read only while the shelf
 //! asks; and, on save, the fingerprint of a ready member's text, kept in its
 //! (encrypted) case.
@@ -90,7 +90,7 @@ impl Workspace {
     }
 }
 
-/// A tab is ready as the shelf counts it (ADR 0084): an applied alias,
+/// A tab is ready as the shelf counts it: an applied alias,
 /// nothing pending or still being found, and no known name left as written.
 fn ready(view: &DocumentView, cx: &App) -> bool {
     shelf_tab(0, view, cx).is_some_and(|row| row.readiness.is_ready())
@@ -130,7 +130,7 @@ fn modified(path: Option<&PathBuf>) -> Option<SystemTime> {
     std::fs::metadata(path?).ok()?.modified().ok()
 }
 
-/// Whose names the shelf's clipboard rows use (ADR 0084): a case, or an
+/// Whose names the shelf's clipboard rows use: a case, or an
 /// open tab without one through its live mapping. Never mixed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ClipboardSource {
@@ -138,7 +138,7 @@ pub(crate) enum ClipboardSource {
         id: String,
         name: String,
     },
-    /// The tab's title, pseudonymized, without `.md` (ADR 0084).
+    /// The tab's title, pseudonymized, without `.md`.
     Tab {
         id: u64,
         title: String,
@@ -195,7 +195,7 @@ impl Workspace {
 
     /// A case as a clipboard source, named as the shelf may show it: with
     /// its own names pseudonymized (a case is often named after a person),
-    /// or "a locked case" while its names cannot be read (ADR 0084).
+    /// or "a locked case" while its names cannot be read.
     fn case_source(&self, id: &str, name: &str) -> ClipboardSource {
         let name = match self.case_coordinator.case(id) {
             Some(case) => RestoreMap::new(case.exported()).pseudonymize(name).0,
@@ -305,7 +305,7 @@ impl Workspace {
         self.show_settings(window, cx);
     }
 
-    /// The first-close note's "Quit when windows close" (ADR 0084): the
+    /// The first-close note's "Quit when windows close": the
     /// switch goes off and mdoc quits, as it now would with its last window
     /// closed. The hidden window shows only if the quit asks something; a
     /// quit that cannot start brings it back, since no item is left to.
@@ -329,13 +329,13 @@ impl Workspace {
         }
     }
 
-    /// Whether the first-close note has shown (ADR 0084).
+    /// Whether the first-close note has shown.
     pub(crate) fn menu_bar_note_shown(&self) -> bool {
         self.general()
             .is_some_and(|general| general.menu_bar_note_shown)
     }
 
-    /// Whether a shelf drag has dropped, retiring its hint (ADR 0084).
+    /// Whether a shelf drag has dropped, retiring its hint.
     pub(crate) fn shelf_drag_hint_shown(&self) -> bool {
         self.general()
             .is_some_and(|general| general.shelf_drag_hint_shown)
@@ -392,7 +392,7 @@ impl Workspace {
         self.unlock_cases(window, cx);
     }
 
-    /// "Restart to update": the ordinary quit, prompts included (ADR 0040).
+    /// "Restart to update": the ordinary quit, prompts included.
     pub(crate) fn restart_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.restart_to_update(window, cx);
     }

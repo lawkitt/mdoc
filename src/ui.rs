@@ -8,7 +8,7 @@ use std::time::Duration;
 
 pub use gpui_pdf::FocusRing as Control;
 
-/// The one keyboard focus indicator (ADR 0074).
+/// The one keyboard focus indicator.
 pub fn focus_ring(id: impl Into<gpui::ElementId>, theme: Theme) -> Control {
     gpui_pdf::focus_ring(id, theme.search_accent())
 }
@@ -106,7 +106,7 @@ pub fn activity(
         .child(div().min_w_0().child(label))
 }
 
-/// A counter or status line for screen readers (ADR 0064): a Label node whose
+/// A counter or status line for screen readers: a Label node whose
 /// value is `spoken`, in a polite live region, so VoiceOver and Narrator read
 /// it and announce each change. Keep `id` stable across states so a change is
 /// an update of one node, not a new one.
@@ -184,7 +184,7 @@ pub fn primary_button(
         .when(enabled, |v| v.hover(move |s| s.bg(p.placeholder_bg)))
 }
 
-/// The header's one filled button (ADR 0048): ink on paper inverted, so it is
+/// The header's one filled button: ink on paper inverted, so it is
 /// the darkest thing in light mode and the brightest in dark.
 pub fn filled_button(
     id: impl Into<gpui::ElementId>,
@@ -295,7 +295,7 @@ pub fn menu_row(
 }
 
 /// A menu row that, when disabled, says why under its label. Screen readers
-/// hear the same reason as the row's description (ADR 0064).
+/// hear the same reason as the row's description.
 pub fn menu_row_because(
     id: impl Into<gpui::ElementId>,
     label: impl Into<gpui::SharedString>,
@@ -388,7 +388,7 @@ pub fn link_button(
         .when(enabled, |v| v.hover(|s| s.underline()))
 }
 
-/// A centred card for a pane that has no content yet (ADR 0026). Callers add
+/// A centred card for a pane that has no content yet. Callers add
 /// the title, one sentence, actions and a footnote, in that order.
 pub fn state_card(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
     let p = theme.pdf_style();
@@ -568,8 +568,8 @@ actions!(
     ]
 );
 
-/// Tab inside a control group here; keyboard reach (ADR 0062), menus and
-/// the sidebar's keys from the shortcuts table (ADR 0073).
+/// Tab inside a control group here; keyboard reach, menus and
+/// the sidebar's keys from the shortcuts table.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("tab", NextControl, Some("UiControl || UiPanel")),
@@ -641,7 +641,7 @@ pub fn control(
     control_base(id, label.clone(), theme, enabled).when(!label.is_empty(), |v| v.child(label))
 }
 
-/// A close button matching the Original viewer's (ADR 0044).
+/// A close button matching the Original viewer's.
 pub fn close_control(id: impl Into<gpui::ElementId>, theme: Theme) -> Control {
     gpui_pdf::close_control(id, &theme.pdf_style())
         .key_context("UiControl")
@@ -748,7 +748,7 @@ pub fn floating_button(
         .tooltip(crate::style::tooltip(label.to_string(), theme))
 }
 
-/// The header's bell while workspace notices wait (ADR 0048): an amber dot
+/// The header's bell while workspace notices wait: an amber dot
 /// with the count; a click opens or closes the notices popover.
 pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyElement> {
     let count = title.notices.get();
@@ -805,7 +805,7 @@ pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyEl
     )
 }
 
-/// The content card's surface (ADR 0048): rounded, on the window ground.
+/// The content card's surface: rounded, on the window ground.
 pub fn card_surface<E: Styled>(surface: E, theme: Theme) -> E {
     surface
         .rounded_lg()
@@ -816,7 +816,7 @@ pub fn card_surface<E: Styled>(surface: E, theme: Theme) -> E {
         .shadow_sm()
 }
 
-/// Make `area` move the window like a title bar (ADR 0048): a press that
+/// Make `area` move the window like a title bar: a press that
 /// moves drags the window, a double click zooms. Controls inside stop the
 /// press first ([`no_drag`]), so clicking them never moves the window.
 /// Windows hit-tests the area as the native caption, which already moves
@@ -854,7 +854,7 @@ pub fn no_drag<E: InteractiveElement>(control: E) -> E {
     control.on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
-/// Drawn window buttons for Windows and client-decorated Linux (ADR 0048);
+/// Drawn window buttons for Windows and client-decorated Linux;
 /// macOS keeps its traffic lights. Windows hit-tests them natively and acts
 /// on release only if the press reached it, so they must not stop it there.
 /// Place them with [`title_bar`].

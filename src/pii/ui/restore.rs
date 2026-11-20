@@ -1,4 +1,4 @@
-//! The AI return journey (ADR 0041, phase 1): Copy for AI adds a placeholder
+//! The AI return journey (phase 1): Copy for AI adds a placeholder
 //! notice; Paste AI Response opens the reply in a new tab with originals
 //! restored as proposals that keep their aliases. Unknown alias-shaped tokens
 //! are highlighted and can be assigned to an identity, never guessed.
@@ -25,7 +25,7 @@ pub(crate) struct RestoredReply {
     pub text: String,
     pub identities: Vec<ExportedIdentity>,
     pub source_name: String,
-    /// The source tab's case: the reply joins it (ADR 0041 #16).
+    /// The source tab's case: the reply joins it.
     pub case: Option<mdoc_store::cases::CaseLink>,
 }
 
@@ -70,7 +70,7 @@ impl DocumentView {
     }
     /// Every name the tab knows: its mapping, its case's names and every
     /// variant, pending and kept ones included. Any of them left in the
-    /// text keeps the tab from being ready (ADR 0084).
+    /// text keeps the tab from being ready.
     pub(crate) fn known_identities(&self) -> Vec<ExportedIdentity> {
         let review = &self.pii.review;
         let mut names = review.export_identities();
@@ -89,8 +89,8 @@ impl DocumentView {
     pub(crate) fn names_not_replaced(&self, cx: &App) -> usize {
         RestoreMap::new(self.known_identities()).known_names(self.editor.read(cx).text())
     }
-    /// What Copy for AI copies: the current text after the placeholder note
-    /// (ADR 0041). The shelf copies and drags the same bytes (ADR 0084).
+    /// What Copy for AI copies: the current text after the placeholder note.
+    /// The shelf copies and drags the same bytes.
     pub(crate) fn text_for_ai(&self, cx: &App) -> String {
         let aliases = self
             .pii
@@ -110,7 +110,7 @@ impl DocumentView {
         self.copied_reply = false;
         self.show_copy_feedback(cx);
     }
-    /// Replace the clipboard text with this tab's aliases (ADR 0041 #30):
+    /// Replace the clipboard text with this tab's aliases:
     /// the case's names, or the tab's own mapping. Exact known names only.
     pub(crate) fn pseudonymize_clipboard(
         &mut self,
@@ -156,7 +156,7 @@ impl DocumentView {
         };
         self.show_clipboard_notice(notice, cx);
     }
-    /// Edit › Restore Clipboard: the shelf's Restore (ADR 0084) with this
+    /// Edit › Restore Clipboard: the shelf's Restore with this
     /// tab's names, its case's or its live mapping's.
     pub(crate) fn restore_clipboard(
         &mut self,
@@ -268,7 +268,7 @@ impl DocumentView {
         false
     }
     /// A new tab with `text` restored against this tab's mapping: Paste AI
-    /// Response, and the reply box's Open as tab (ADR 0078).
+    /// Response, and the reply box's Open as tab.
     pub(crate) fn open_restore_tab(&mut self, text: String, cx: &mut Context<Self>) {
         let identities = self.pii.review.export_identities();
         let name = self.display_name();
@@ -729,7 +729,7 @@ impl DocumentView {
 
 /// The restore bar's headline and detail: the first sentence says the restored
 /// names are proposals and what Apply does. A reply without any placeholder
-/// says so instead (ADR 0046).
+/// says so instead.
 fn summary_text(restored: usize, unresolved: usize) -> (&'static str, String) {
     let plural = |n: usize, one: &'static str, many: &'static str| if n == 1 { one } else { many };
     if restored == 0 && unresolved == 0 {

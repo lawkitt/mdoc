@@ -1,4 +1,4 @@
-//! Spellcheck in the document view (ADR 0036): background checks with a
+//! Spellcheck in the document view: background checks with a
 //! per-document line cache, the session-only per-document switch, the toolbar
 //! indicator and next/previous navigation. Checking and suggestions never run
 //! on the UI thread; it only copies the text and the PII ranges.

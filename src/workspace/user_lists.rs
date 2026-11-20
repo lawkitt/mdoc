@@ -1,4 +1,4 @@
-//! The user-wide Always and Never lists of Settings › Detection (ADR 0092):
+//! The user-wide Always and Never lists of Settings › Detection:
 //! read with the saved cases, since they share the OS-held key, and saved
 //! beside them at once on every change, one revision after another.
 use super::Workspace;

@@ -1,4 +1,4 @@
-//! Closing a tab with unsaved changes, and quitting (ADR 0003): each dirty
+//! Closing a tab with unsaved changes, and quitting: each dirty
 //! tab is asked in turn, then the session is saved and the window closes,
 //! unless a document changed again while that save ran. The workspace view
 //! asks the documents, saves the session, flushes cases and closes the
@@ -11,7 +11,7 @@ use std::{
 };
 
 /// Whether a close or quit waits on a document's answer, shared read-only
-/// with the documents: an import finishing then waits too (ADR 0069, one
+/// with the documents: an import finishing then waits too (one
 /// channel each way).
 #[derive(Clone, Default)]
 pub(crate) struct CloseWatch(Rc<Cell<bool>>);
@@ -190,7 +190,7 @@ impl QuitFlow {
 /// How many documents the Quit summary names before "and N more".
 const SUMMARY_NAMES: usize = 5;
 
-/// The Quit summary's detail (ADR 0071): the at-risk documents by name, in
+/// The Quit summary's detail: the at-risk documents by name, in
 /// sidebar order, one per line, up to five, then "and N more".
 pub(super) fn summary_detail(names: &[String]) -> String {
     let mut lines: Vec<String> = names.iter().take(SUMMARY_NAMES).cloned().collect();

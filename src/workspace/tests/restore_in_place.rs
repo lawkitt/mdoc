@@ -1,4 +1,4 @@
-//! Restore in place (ADR 0078): the Share panel's AI reply box, the Reply
+//! Restore in place: the Share panel's AI reply box, the Reply
 //! view, and the reply kept in the case.
 use super::*;
 use crate::pii::ui::CompareMode;
@@ -76,7 +76,7 @@ fn captured_identities(json: &str) -> Vec<ExportedIdentity> {
         .collect()
 }
 
-/// Every captured ChatGPT and Claude reply (ADR 0056) restores completely in
+/// Every captured ChatGPT and Claude reply restores completely in
 /// the Reply view, exactly as in the restore tab.
 #[gpui::test]
 fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext) {
@@ -87,7 +87,7 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
         .filter(|p| p.is_dir())
         .collect();
     captures.sort();
-    assert!(captures.len() >= 4, "the four captures of ADR 0056");
+    assert!(captures.len() >= 4, "the four captures");
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
@@ -553,7 +553,7 @@ fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut Test
 
 /// The reply editor is one Tab stop: the box only rings it. Tracking the
 /// editor's handle on the box too left a duplicate stop that ⇧Tab looped on,
-/// which hung the What-you-did popover's Tab containment (ADR 0079).
+/// which hung the What-you-did popover's Tab containment.
 #[gpui::test]
 fn the_reply_box_is_one_tab_stop(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -584,7 +584,7 @@ fn the_reply_box_is_one_tab_stop(cx: &mut TestAppContext) {
 }
 
 /// Space, ⌫ and Enter typed in the box edit the reply; none reaches the
-/// Replacements list's bindings (ADR 0048). Share does not mount the list's
+/// Replacements list's bindings. Share does not mount the list's
 /// handlers today; `!ReplyBox` in `LIST` keeps this true if it ever does.
 #[gpui::test]
 fn typing_in_the_reply_box_stays_out_of_the_replacements_list(cx: &mut TestAppContext) {

@@ -1003,7 +1003,7 @@ fn a_cut_name_keeps_its_start_and_gives_its_end_the_rest() {
 
 /// While the rail's reveal slides, the document beside it reuses its last
 /// frame even when the workspace redraws; the slide's end draws it afresh.
-/// With reduced motion nothing slides, so nothing is reused (ADR 0117).
+/// With reduced motion nothing slides, so nothing is reused.
 #[gpui::test]
 fn the_document_waits_out_the_reveal_slide_and_redraws_after(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());

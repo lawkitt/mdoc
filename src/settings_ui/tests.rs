@@ -474,7 +474,7 @@ fn tab_list_keys_show_categories_and_tab_enters_content(cx: &mut TestAppContext)
     }
 }
 
-/// Settings › General › "Show mdoc in the menu bar" (ADR 0084): macOS
+/// Settings › General › "Show mdoc in the menu bar": macOS
 /// only, on by default, saved on change.
 #[gpui::test]
 fn the_menu_bar_switch_is_on_by_default_and_saves_at_once(cx: &mut TestAppContext) {
@@ -745,7 +745,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
             }
             Category::Detection => {
                 expected.pseudonymization = defaults.pseudonymization;
-                // Reset ticks every category again (ADR 0076).
+                // Reset ticks every category again.
                 expected.categories = defaults.categories;
             }
             Category::Recognition => expected.ocr = defaults.ocr,
@@ -1251,15 +1251,15 @@ fn detection_categories_save_on_change_by_mouse_and_keyboard(cx: &mut TestAppCon
     };
     let skip =
         |shared: &mdoc_store::settings::Shared| shared.borrow().snapshot().unwrap().categories.skip;
-    // Every category scans return is listed and on, dates of birth too
-    // (ADR 0092); Other is manual only.
+    // Every category scans return is listed and on, dates of birth too;
+    // Other is manual only.
     for category in mdoc_pii::Category::DETECTED {
         let id: &'static str = format!("settings-detect-{}", category.token()).leak();
         assert!(cx.debug_bounds(id).is_some(), "{id}");
     }
     assert!(cx.debug_bounds("settings-detect-REDACTED").is_none());
     assert!(cx.debug_bounds("settings-detect-DATE").is_some());
-    // Web address comes right after Email (ADR 0094).
+    // Web address comes right after Email.
     let [email, url, phone] = ["EMAIL", "URL", "PHONE"].map(|token| {
         let id: &'static str = format!("settings-detect-{token}").leak();
         cx.debug_bounds(id).unwrap().origin
@@ -1385,7 +1385,7 @@ fn draw_settings(cx: &mut gpui::VisualTestContext) {
     }
 }
 
-/// ADR 0076: every switch shares the right-hand column, About has no Reset,
+/// Every switch shares the right-hand column, About has no Reset,
 /// and Remove… is offered only while it can run.
 #[gpui::test]
 fn settings_states_are_told_apart(cx: &mut TestAppContext) {
@@ -1452,7 +1452,7 @@ fn settings_states_are_told_apart(cx: &mut TestAppContext) {
     assert!(remove(cx, fp16) && !remove(cx, fp32));
 }
 
-/// ADR 0076: a page taller than the overlay fades where rows continue and
+/// A page taller than the overlay fades where rows continue and
 /// shows a scroll thumb.
 #[gpui::test]
 fn a_long_page_shows_where_it_continues(cx: &mut TestAppContext) {

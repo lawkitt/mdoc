@@ -1,5 +1,5 @@
 //! The window's overlays: the command palette and the keyboard shortcuts
-//! sheet (ADR 0073).
+//! sheet.
 use super::{Driver, Result};
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
@@ -8,7 +8,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // Tab may leave a popover's key context. Reset state explicitly between
     // scenes rather than assuming Escape still reaches the previous overlay.
     d.change(|w, window, cx| w.close_palette(window, cx))?;
-    // The keyboard shortcuts sheet, opened by its key as people do (ADR 0073).
+    // The keyboard shortcuts sheet, opened by its key as people do.
     d.key(if cfg!(target_os = "macos") {
         "cmd-/"
     } else {

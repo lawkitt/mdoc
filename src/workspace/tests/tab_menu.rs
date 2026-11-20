@@ -141,7 +141,7 @@ fn close_others_asks_each_at_risk_tab_in_sidebar_order(cx: &mut TestAppContext) 
 
     open_menu(cx, keep);
     click(cx, "context-close-others");
-    // The first tab in the sidebar first: ADR 0071's one question for its
+    // The first tab in the sidebar first: one question for its
     // unsaved changes and mapping.
     assert_eq!(active_name(&tabs, cx), "contract.md");
     cx.simulate_prompt_answer("Don't Save");

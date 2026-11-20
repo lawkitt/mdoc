@@ -1,4 +1,4 @@
-//! The window's tabs in sidebar order (ADR 0048): each tab's id, saved
+//! The window's tabs in sidebar order: each tab's id, saved
 //! record and document view, which tab is active, and whether Home covers
 //! it. Generic over the view, so the order rules run without a window; the
 //! workspace view creates, releases and focuses the documents.
@@ -61,7 +61,7 @@ pub(super) struct TabSet<V> {
     tabs: Vec<Tab<V>>,
     active: u64,
     next_id: u64,
-    /// Home fills the card instead of the active tab (ADR 0048).
+    /// Home fills the card instead of the active tab.
     home: bool,
 }
 
@@ -168,7 +168,7 @@ impl<V> TabSet<V> {
         id
     }
 
-    /// Name new blanks and older unnamed session records (ADR 0071).
+    /// Name new blanks and older unnamed session records.
     /// The view supplies current titles, including unopened restored tabs,
     /// before any unnamed blank is initialized. Existing names stay intact.
     pub(super) fn name_blank_tabs(&mut self, names: impl IntoIterator<Item = String>) {
@@ -217,7 +217,7 @@ impl<V> TabSet<V> {
     }
 
     /// The user acted on blank tab `id` (none: on every tab), so it is no
-    /// longer a placeholder that Home may replace (ADR 0048).
+    /// longer a placeholder that Home may replace.
     pub(super) fn keep_blank(&mut self, id: Option<u64>) {
         for tab in &mut self.tabs {
             if id.is_none_or(|id| id == tab.id) {
@@ -291,8 +291,8 @@ impl<V> TabSet<V> {
         self.tabs.splice(index..index, moved);
     }
 
-    /// Close tab `id`. The last tab leaves a placeholder for Home (ADR
-    /// 0048); closing the active tab activates the one in its place, else
+    /// Close tab `id`. The last tab leaves a placeholder for Home; closing the
+    /// active tab activates the one in its place, else
     /// the one before it.
     pub(super) fn remove(&mut self, id: u64) -> Option<(Tab<V>, Option<TabsEffect>)> {
         let index = self.position(id)?;

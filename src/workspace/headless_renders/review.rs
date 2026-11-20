@@ -1,6 +1,6 @@
 //! Pseudonymization review: the Replacements panel, the word popup, model
 //! setup, Before/After, an applied alias selected at the minimum window
-//! size (#303), the merge hint (ADR 0080) and a running scan.
+//! size (#303), the merge hint and a running scan.
 use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
     document_view::DocumentView,
@@ -129,8 +129,8 @@ pub(super) fn scenes(
     Ok(())
 }
 
-/// "Replace · Person ▾" beside a selection, then its category menu open
-/// (ADR 0024). The pill's Tab walk indents in the editor; undo restores it.
+/// "Replace · Person ▾" beside a selection, then its category menu open.
+/// The pill's Tab walk indents in the editor; undo restores it.
 fn selection_pill(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
     let select = |d: &mut Driver| {
         d.change(|_, window, cx| {
@@ -213,7 +213,7 @@ pub(super) fn applied_alias(d: &mut Driver, view: &Entity<DocumentView>) -> Resu
     d.resize(WIDTH, HEIGHT)
 }
 
-/// ADR 0080: a synthetic proposal pair, rendered on both shipped targets
+/// A synthetic proposal pair, rendered on both shipped targets
 /// in each theme. No scan, model, case key or native window is involved.
 pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
     d.change(|w, window, cx| {
@@ -233,7 +233,7 @@ pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
                 .ingest(
                     &text,
                     // A slip the hint offers to merge; a short form of
-                    // the name would join it by propagation (ADR 0092).
+                    // the name would join it by propagation.
                     [0..12, 21..32]
                         .map(|range| mdoc_pii::Detection {
                             range,

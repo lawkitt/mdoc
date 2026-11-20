@@ -1,4 +1,4 @@
-//! The menu bar shelf's model (ADR 0084), GPUI-free: which documents it
+//! The menu bar shelf's model, GPUI-free: which documents it
 //! lists and whether each is ready, the pseudonymized row it shows, the
 //! text Copy for AI and a drag carry, the temporary `.md` exports a drag
 //! drops, and Restore Clipboard. The window collects what it lists; the
@@ -26,7 +26,7 @@ use std::{
     time::SystemTime,
 };
 
-/// The shelf lists at most this many documents (ADR 0084).
+/// The shelf lists at most this many documents.
 pub(crate) const MAX_DOCUMENTS: usize = 8;
 /// A preview is cut after about this many characters: more than two
 /// wrapped lines of the shelf hold, so the view's clamp ends it.
@@ -43,7 +43,7 @@ const PROSE_LETTERS: usize = 12;
 /// A closed member larger than this is not read; it lists as changed.
 pub(crate) const MAX_MEMBER_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Whether a listed document may leave through the shelf (ADR 0084).
+/// Whether a listed document may leave through the shelf.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Readiness {
     /// At least one applied alias and nothing pending: copy and drag.
@@ -275,7 +275,7 @@ impl ShelfDocument {
         }
     }
 
-    /// The title as the row shows it: without `.md` (ADR 0084).
+    /// The title as the row shows it: without `.md`.
     pub(crate) fn display_title(&self) -> &str {
         let lower = self.title.to_ascii_lowercase();
         [".md", ".markdown"]
@@ -286,7 +286,7 @@ impl ShelfDocument {
             })
     }
 
-    /// The card a drag shows under the pointer (ADR 0084): the title as the
+    /// The card a drag shows under the pointer: the title as the
     /// row shows it and the preview, both pseudonymized; `None` unless
     /// ready.
     pub(crate) fn drag_card(&self) -> Option<(String, String)> {
@@ -871,7 +871,7 @@ fn fence(line: &str) -> Option<(u8, usize)> {
     (n >= 3).then_some((c, n))
 }
 
-/// A ready document's preview (ADR 0084): its first prose lines, skipping
+/// A ready document's preview: its first prose lines, skipping
 /// headings, tables, code, rules and lines too short to be prose, with the
 /// Markdown syntax hidden, pseudonymized with every name the document knows,
 /// cut after about [`PREVIEW_CHARS`] at a word and ending in "…" when the
@@ -1126,7 +1126,7 @@ pub(crate) fn read_member(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// What Restore Clipboard did (ADR 0084).
+/// What Restore Clipboard did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ClipboardRestore {
     /// The clipboard text with the case's aliases restored.

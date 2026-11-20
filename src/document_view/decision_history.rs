@@ -1,6 +1,6 @@
-//! The header's clock button and its What you did popover (ADR 0079): one
+//! The header's clock button and its What you did popover: one
 //! line per pseudonymization decision; a click travels the undo history to
-//! it. Keyboard reach and Esc follow the More menu (ADR 0062).
+//! it. Keyboard reach and Esc follow the More menu.
 use super::DocumentView;
 use crate::ui;
 use gpui::{App, Context, FocusHandle, Window, div, prelude::*, px};
@@ -19,7 +19,7 @@ pub(crate) struct HistoryPopover {
     pub(crate) menu: FocusHandle,
     /// The button's bounds, so a press on it is left to its toggle.
     bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
-    /// The list's scroll, so a row Tab reaches scrolls into view (ADR 0062).
+    /// The list's scroll, so a row Tab reaches scrolls into view.
     pub(crate) scroll: gpui::ScrollHandle,
     /// One focus handle per row, by position in the list.
     pub(crate) rows: RefCell<Vec<FocusHandle>>,
@@ -38,9 +38,9 @@ impl HistoryPopover {
     }
 }
 
-/// The footer note: travel takes text edits with it (ADR 0079).
+/// The footer note: travel takes text edits with it.
 pub(crate) const FOOTER: &str = "Text edits made between decisions are undone with them.";
-/// A row whose undo point the editor's undo limit dropped (ADR 0079).
+/// A row whose undo point the editor's undo limit dropped.
 pub(crate) const PAST_LIMIT: &str = "Older than the undo limit";
 
 impl DocumentView {

@@ -32,7 +32,7 @@ impl ReviewUi {
 
 impl DocumentView {
     /// While a scan runs: a spinner and a stage label beside Pseudonymize that
-    /// crossfades through the scan's stages (ADR 0032). A scan of several
+    /// crossfades through the scan's stages. A scan of several
     /// model windows counts them instead once it knows how many (#309).
     pub(crate) fn scan_status(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let job = self.pii.job.as_ref()?;
@@ -120,7 +120,7 @@ impl DocumentView {
         None
     }
     /// The mention bar, laid out beside the editor inside the scrolled
-    /// content; `layer` records where that content sits (ADR 0055).
+    /// content; `layer` records where that content sits.
     pub(crate) fn mention_popup_layer(
         &self,
         window: &Window,
@@ -160,7 +160,7 @@ pub(super) struct ScanStage {
 
 /// The scan's stage after `elapsed` seconds, from its `(done, windows)`
 /// count. Until a scan of several windows has split the source, stages
-/// advance on a timer and settle on the last ones (ADR 0032); then the label
+/// advance on a timer and settle on the last ones; then the label
 /// names the window being read, "Finding names… 3 of 12" (#309).
 pub(super) fn scan_stage(elapsed: f32, (done, windows): (usize, usize)) -> ScanStage {
     const STAGES: [&str; 4] = [

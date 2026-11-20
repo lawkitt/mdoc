@@ -28,8 +28,8 @@ use std::{
 };
 actions!(mdoc, [RetryPreview]);
 
-/// DOCX previews are rendered locally and only approximate Word's layout
-/// (ADR 0005); the Markdown is converted from the file itself.
+/// DOCX previews are rendered locally and only approximate Word's layout;
+/// the Markdown is converted from the file itself.
 pub(crate) const DOCX_NOTE: &str = "Approximate preview: the layout may differ from Word. The Markdown is converted from the file itself.";
 
 /// The DOCX worker's reader for the comment marks in the PDF it rendered

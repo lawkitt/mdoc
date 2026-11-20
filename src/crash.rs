@@ -1,4 +1,4 @@
-//! Local crash reports the user may preview and send (ADR 0047). A panic hook
+//! Local crash reports the user may preview and send. A panic hook
 //! writes one masked report; the next launch offers it. Nothing is sent
 //! automatically: Send opens a prefilled GitHub issue in the browser.
 use mdoc_store::crash::{mask, safe_message};

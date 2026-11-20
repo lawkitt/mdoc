@@ -1,4 +1,4 @@
-//! The keyboard shortcuts sheet (ADR 0073): a read-only modal over the
+//! The keyboard shortcuts sheet: a read-only modal over the
 //! window listing the one shortcut table by context, with this platform's
 //! keys only. A filter field narrows it; Esc closes it and focus goes back
 //! where it was.

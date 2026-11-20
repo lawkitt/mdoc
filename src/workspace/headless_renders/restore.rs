@@ -1,4 +1,4 @@
-//! Restoring an AI reply: the Reply view beside Share (ADR 0078), Share
+//! Restoring an AI reply: the Reply view beside Share, Share
 //! with a name left after Apply (#301) and a restored reply from the public
 //! Claude fixture.
 use super::{Driver, Result};

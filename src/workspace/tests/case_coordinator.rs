@@ -272,7 +272,7 @@ fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
     cx.run_until_parked();
-    // Edited and pseudonymized: one question covers both (ADR 0071).
+    // Edited and pseudonymized: one question covers both.
     assert_eq!(
         cx.pending_prompt().unwrap().0,
         "Save “contract.md” and keep its mapping?"
@@ -385,7 +385,7 @@ fn quitting_with_two_at_risk_tabs_summarizes_first(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let (message, detail) = cx.pending_prompt().unwrap();
     assert_eq!(message, summary);
-    // It names them, in sidebar order (ADR 0071).
+    // It names them, in sidebar order.
     assert!(
         detail.starts_with("contract.md\nUntitled.md\n\n"),
         "{detail}"
@@ -862,7 +862,7 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
 }
 
 /// Edit › Restore Clipboard puts the tab's names back in copied text, as the
-/// shelf's Restore does (ADR 0084); ⇧⌘C and ⇧⌘M copy for AI and copy the
+/// shelf's Restore does; ⇧⌘C and ⇧⌘M copy for AI and copy the
 /// Markdown (decision 10 of the UI polish grill).
 #[gpui::test]
 fn restore_clipboard_and_the_copy_keys_work_from_the_document(cx: &mut TestAppContext) {
@@ -1304,8 +1304,8 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
     draw(cx);
     let view = active(&tabs, cx);
     cx.update(|_, cx| assert!(view.read(cx).case.link().is_none()));
-    // Nothing marks it as a member yet, so the notice waits behind the bell
-    // (ADR 0043); the bell still offers Unlock.
+    // Nothing marks it as a member yet, so the notice waits behind the bell;
+    // the bell still offers Unlock.
     assert!(cx.debug_bounds("notices-popover").is_none());
     click_toolbar(cx, "header-notices");
     let unlock = cx
@@ -1922,7 +1922,7 @@ fn merge_hint_does_not_rename_an_absorbed_identity_in_another_member(cx: &mut Te
     assert_eq!(saved.identities[0].alias, "PERSON_1");
     assert_eq!(saved.identities[0].originals[0], "Maya Bennett");
     // Undo the followed organization rename, then the merge. Neither split
-    // may become an alias change in the other member (ADR 0041).
+    // may become an alias change in the other member.
     for _ in 0..2 {
         first_view.update_in(cx, |view, window, cx| {
             view.editor

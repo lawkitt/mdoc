@@ -2,7 +2,7 @@
 //! Reveal in Finder (Show in Explorer on Windows) and Copy path for a tab
 //! with a file, then Close tab and Close others. Close others closes the
 //! other tabs in turn, as a case's Close all does, so each at-risk tab asks
-//! with ADR 0071's prompt and Cancel stops the rest.
+//! with the at-risk prompt and Cancel stops the rest.
 use super::Workspace;
 use crate::ui;
 use gpui::{AnyElement, App, Context, Window, prelude::*};
@@ -200,7 +200,7 @@ impl Workspace {
     }
 
     /// Close every tab but `keep`, in sidebar order. Each at-risk tab asks
-    /// first, as closing it alone would (ADR 0071); once a tab is removed the
+    /// first, as closing it alone would; once a tab is removed the
     /// next follows, and Cancel at any question stops the rest. The queue is
     /// the one a case's Close all uses.
     pub(super) fn close_others(&mut self, keep: u64, window: &mut Window, cx: &mut Context<Self>) {

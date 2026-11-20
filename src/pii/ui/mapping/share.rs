@@ -1,6 +1,6 @@
-//! The Inspector's Share tab (ADR 0048 variant C): everything that takes the
+//! The Inspector's Share tab: everything that takes the
 //! pseudonymized document out, and an AI reply box that restores in place
-//! with Copy reply and Open as tab (ADR 0078).
+//! with Copy reply and Open as tab.
 use super::Selection;
 use crate::{
     document_view::{CopyMarkdown, DocumentView, SaveAs},
@@ -212,7 +212,7 @@ impl DocumentView {
         share_status(pending, applied, self.kept_mention_count(cx), left)
     }
 
-    /// The "AI reply" box under Copy for AI (ADR 0078): pasting restores at
+    /// The "AI reply" box under Copy for AI: pasting restores at
     /// once into the Reply view; the summary counts what came back.
     fn reply_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let editor = self.reply_box()?.clone();
@@ -356,18 +356,18 @@ impl DocumentView {
     }
 
     /// Hovering a replacement shows what it is; a click opens the mention
-    /// bar (ADR 0048).
+    /// bar.
     pub(crate) fn replacement_tip(&self, window: &Window, cx: &App) -> Option<AnyElement> {
         let annotation = self.editor.read(cx).hovered_annotation()?;
         // While the popup is open a click moves it; tips would only stack
-        // over it (ADR 0055).
+        // over it.
         if self.pii.popup.is_some() {
             return None;
         }
         let review = &self.pii.review;
         let kept = annotation & KEPT_ID != 0;
         let (alias, category, applied) = if kept {
-            // A kept original (ADR 0055): its entity's name, from the review
+            // A kept original: its entity's name, from the review
             // or the record taken when it was unticked.
             let Some(Selection::Kept {
                 identity, original, ..

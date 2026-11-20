@@ -1,7 +1,7 @@
 //! A quit from outside mdoc on macOS: the Dock's Quit, a quit Apple Event,
 //! logout. AppKit asks first (`applicationShouldTerminate:`, a vendored
 //! patch, see vendor/gpui-pre-macos/MDOC-PATCH.md). mdoc answers "later"
-//! and asks the same questions as Quit (ADR 0071): the answer is yes once
+//! and asks the same questions as Quit: the answer is yes once
 //! the quit flow closes the window, and no if a question is cancelled, so a
 //! logout or shutdown that asked goes on or stops with it.
 

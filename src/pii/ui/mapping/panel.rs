@@ -20,7 +20,7 @@ pub(super) struct ReplacementRow {
     pub category: Category,
     pub mentions: usize,
     pub applied: usize,
-    /// Mentions kept as originals (unticked, ADR 0048).
+    /// Mentions kept as originals (unticked).
     pub kept: usize,
     search_original: String,
     search_alias: String,
@@ -56,7 +56,7 @@ pub(super) struct PanelProjection {
     members: HashMap<u64, Vec<PanelItem>>,
     active_aliases: HashSet<String>,
     kept: usize,
-    /// Merge hints by the identity that shows them (ADR 0080).
+    /// Merge hints by the identity that shows them.
     hints: HashMap<u64, Vec<Arc<MergeHint>>>,
 }
 pub(super) struct EntriesCache {
@@ -74,17 +74,17 @@ pub(super) const ROW_HEIGHT: f32 = 34.;
 pub(super) type PanelEntry = (Arc<ReplacementRow>, PanelItem);
 #[derive(Clone)]
 pub(super) enum PanelItem {
-    /// A category's label above its group headers: entities and mentions shown
-    /// (ADR 0046). Not focusable; navigation skips it.
+    /// A category's label above its group headers: entities and mentions shown.
+    /// Not focusable; navigation skips it.
     Category {
         entities: usize,
         mentions: usize,
     },
     Header,
     Mention(u64, Range<usize>),
-    /// A mention whose original is kept: listed, unticked (ADR 0048).
+    /// A mention whose original is kept: listed, unticked.
     Kept(Range<usize>),
-    /// "Looks like … · Merge ×" under the header (ADR 0080). Not a keyboard
+    /// "Looks like … · Merge ×" under the header. Not a keyboard
     /// row: its Merge and × are Tab stops.
     Hint(Arc<MergeHint>),
 }
@@ -355,7 +355,7 @@ impl DocumentView {
         });
     }
     /// The panel while the selected model is missing: consent, progress and
-    /// retry in place of the review (ADR 0026).
+    /// retry in place of the review.
     fn pii_setup_panel(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let model = self
@@ -466,7 +466,7 @@ impl DocumentView {
         };
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
-            // A card inset in the document, like the content card (ADR 0048).
+            // A card inset in the document, like the content card.
             .m_2()
             .rounded_lg()
             .shadow_none()
@@ -565,7 +565,7 @@ impl DocumentView {
         }
     }
 
-    /// Document undo/redo without leaving the panel (ADR 0033).
+    /// Document undo/redo without leaving the panel.
     pub(super) fn undo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.editor.update(cx, |e, cx| e.undo_step(window, cx));
     }
@@ -597,7 +597,7 @@ impl DocumentView {
         )
     }
 
-    /// The panel-only filter; a dot marks anything but All (ADR 0033).
+    /// The panel-only filter; a dot marks anything but All.
     fn filter_control(&self, cx: &mut Context<Self>) -> gpui::Div {
         let theme = self.theme.get();
         let filter = self.pii.mapping.filter;
@@ -631,7 +631,7 @@ impl DocumentView {
         .on_click(cx.listener(|this, _, window, cx| {
             let menu = &mut this.pii.mapping.panel_menu;
             *menu = (*menu != Some(PanelMenu::Filter)).then_some(PanelMenu::Filter);
-            // The menu takes focus on the current filter (ADR 0062).
+            // The menu takes focus on the current filter.
             if this.pii.mapping.panel_menu.is_some() {
                 let row = format!("replacement-filter-{}", this.pii.mapping.filter.label());
                 window.focus(
@@ -694,7 +694,7 @@ impl DocumentView {
         if self.pii.setup {
             return Some(self.pii_setup_panel(window, cx));
         }
-        // Inspector (ADR 0048 variant C): Review | Share.
+        // Inspector: Review | Share.
         if self.inspector_share {
             return Some(self.share_panel(window, cx));
         }
@@ -707,7 +707,7 @@ impl DocumentView {
         let busy = self.pii.scanning();
         let pending = self.pii.review.remaining();
         let history = self.editor.read(cx).history_id();
-        // The latest step's after-action notice, newest kind first (ADR 0033).
+        // The latest step's after-action notice, newest kind first.
         let notice = mapping
             .notice_visible()
             .then(|| {
@@ -764,7 +764,7 @@ impl DocumentView {
                     }
                 },
             ))
-            // A card inset in the document, like the content card (ADR 0048).
+            // A card inset in the document, like the content card.
             .m_2()
             .rounded_lg()
             .shadow_none()
@@ -786,7 +786,7 @@ impl DocumentView {
                     .inset_0(),
             )
             // An open row or filter menu keeps Tab inside the panel;
-            // otherwise Tab moves on to the next region (ADR 0062).
+            // otherwise Tab moves on to the next region.
             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
                 if this.pii.mapping.panel_menu.is_some() {
                     ui::cycle(window, cx, Some(&this.pii.mapping.focus), false);
@@ -816,7 +816,7 @@ impl DocumentView {
                 this.redo_last_step(window, cx);
                 cx.stop_propagation();
             }))
-            // Releasing ⌥ drops a keyboard move (ADR 0033).
+            // Releasing ⌥ drops a keyboard move.
             .on_modifiers_changed(cx.listener(|this, e: &gpui::ModifiersChangedEvent, _, cx| {
                 if this.pii.mapping.key_moving && !e.modifiers.alt {
                     this.finish_key_move(cx);
@@ -938,7 +938,7 @@ impl DocumentView {
             .when(count == 0, |v| {
                 let searching = !mapping.search.read(cx).value().trim().is_empty();
                 // While scanning: quiet skeleton rows; rows arrive when the
-                // scan ends (ADR 0048 decision 22).
+                // scan ends.
                 let body = if busy && !searching {
                     div()
                         .when(cfg!(test), |v| {

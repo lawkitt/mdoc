@@ -122,7 +122,7 @@ fn opening_and_saving_preserves_markdown_bytes(cx: &mut TestAppContext) {
     assert_eq!(std::fs::read_to_string(path).unwrap(), source);
 }
 
-/// Close a dirty tab with mdoc's confirm dialog installed (ADR 0064).
+/// Close a dirty tab with mdoc's confirm dialog installed.
 fn ask_to_close(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
     let (app, cx) = boot(cx);
     cx.update(|_, cx| {

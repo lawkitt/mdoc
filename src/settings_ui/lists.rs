@@ -1,4 +1,4 @@
-//! Settings › Detection's user-wide Always and Never lists (ADR 0092),
+//! Settings › Detection's user-wide Always and Never lists,
 //! edited by hand: add a typed wording, remove one. They are kept with the
 //! saved cases under the OS-held key, never in `settings.json`, so the
 //! window loads and saves them; while cases are locked they wait too.

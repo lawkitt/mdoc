@@ -3,7 +3,7 @@ use gpui_pdf::{PageOverlays, PdfStyle, ThemedPages};
 use mdoc_editor::SyntaxStyle;
 use mdoc_store::session_store::ThemeChoice;
 
-/// The unified title-bar row (ADR 0048): the content card's top margin and
+/// The unified title-bar row: the content card's top margin and
 /// header height, and the traffic lights centred on that header.
 pub const CARD_MARGIN: f32 = 8.;
 pub const HEADER_HEIGHT: f32 = 44.;
@@ -14,7 +14,7 @@ pub const TRAFFIC_LIGHT_INSET: f32 = if cfg!(target_os = "macos") { 76. } else {
 /// Sidebar toggle (32), two history buttons (28 each), and two 4 px gaps.
 pub const WORKSPACE_NAV_WIDTH: f32 = 96.;
 
-/// What a document header shares with the window (ADR 0048): the left room
+/// What a document header shares with the window: the left room
 /// the traffic lights and a collapsed sidebar's toggle need, and the press
 /// state that turns a header drag into a window move.
 #[derive(Clone, Default)]
@@ -22,10 +22,10 @@ pub struct TitleBar {
     pub inset: std::rc::Rc<std::cell::Cell<f32>>,
     pub armed: std::rc::Rc<std::cell::Cell<bool>>,
     /// Sidebar collapsed: headers sit in the window's title row, beside the
-    /// traffic lights, and the content gets its own card below (ADR 0048).
+    /// traffic lights, and the content gets its own card below.
     pub detached: std::rc::Rc<std::cell::Cell<bool>>,
     /// Workspace notices waiting (locked cases, a crash report, messages):
-    /// headers show a bell with this count (ADR 0048).
+    /// headers show a bell with this count.
     pub notices: std::rc::Rc<std::cell::Cell<usize>>,
     /// The notices popover is open.
     pub notices_open: std::rc::Rc<std::cell::Cell<bool>>,
@@ -41,7 +41,7 @@ pub enum Theme {
     Light,
 }
 
-/// The resolved [`Theme`] for the sidebar's pick (ADR 0048): System follows
+/// The resolved [`Theme`] for the sidebar's pick: System follows
 /// the OS appearance.
 pub fn resolve(choice: ThemeChoice, appearance: gpui::WindowAppearance) -> Theme {
     match choice {
@@ -54,7 +54,7 @@ pub fn resolve(choice: ThemeChoice, appearance: gpui::WindowAppearance) -> Theme
     }
 }
 
-/// The appearance native panels, alerts and menus draw in (macOS, ADR 0076):
+/// The appearance native panels, alerts and menus draw in (macOS):
 /// Light or Dark as chosen; System clears the app's own, so they follow
 /// macOS.
 #[cfg(any(target_os = "macos", test))]
@@ -106,7 +106,7 @@ impl Theme {
                 focus_accent: self.search_accent(),
                 header_muted: rgb(0xa0a0aa).into(),
                 overlays: PageOverlays::default(),
-                // Dark Original pages (ADR 0035): paper a step above the viewer
+                // Dark Original pages: paper a step above the viewer
                 // background so page edges stay visible; ink short of pure white.
                 themed_pages: Some(ThemedPages {
                     paper: rgb(0x26262b).into(),
@@ -125,7 +125,7 @@ impl Theme {
                 border: rgb(0xdcdce0).into(),
                 placeholder_bg: rgb(0xececef).into(),
                 // 4.5:1 or more on every light ground, the selected
-                // sidebar row included (ADR 0067).
+                // sidebar row included.
                 placeholder_fg: rgb(0x5f5f69).into(),
                 header_fg: rgb(0x24242b).into(),
                 focus_accent: self.search_accent(),
@@ -136,7 +136,7 @@ impl Theme {
         }
     }
 
-    /// The dimmed window behind a modal dialog (ADR 0064): darker in Dark,
+    /// The dimmed window behind a modal dialog: darker in Dark,
     /// where a light one would barely separate the dialog from the editor.
     pub fn scrim(self) -> Hsla {
         match self {
@@ -146,7 +146,7 @@ impl Theme {
     }
 
     /// The floating mention bar's edge: a step stronger than `border`, so it
-    /// stays distinct over text in both themes (ADR 0055).
+    /// stays distinct over text in both themes.
     pub fn popup_border(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x56565f),
@@ -182,7 +182,7 @@ impl Theme {
     }
 
     /// Applied alias text on its own blue tint in the editor: a stronger
-    /// shade of [`Self::applied`], 4.5:1 even on the active tint (ADR 0067).
+    /// shade of [`Self::applied`], 4.5:1 even on the active tint.
     pub fn applied_text(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x9cc6fa),
@@ -191,8 +191,8 @@ impl Theme {
         .into()
     }
 
-    /// The window ground: the sidebar and the margin around the content card
-    /// (ADR 0048). A step darker than the card in both themes.
+    /// The window ground: the sidebar and the margin around the content card.
+    /// A step darker than the card in both themes.
     pub fn sidebar_bg(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x161619),
@@ -201,7 +201,7 @@ impl Theme {
         .into()
     }
 
-    /// A ticked checkbox (ADR 0048): a soft, slightly warm grey rather than
+    /// A ticked checkbox: a soft, slightly warm grey rather than
     /// ink, still clearly filled in both themes; and the tick drawn on it.
     pub fn checkbox(self) -> (Hsla, Hsla) {
         match self {
@@ -218,7 +218,7 @@ impl Theme {
         }
     }
 
-    /// A category's colour (ADR 0048): the dot on its panel header and the
+    /// A category's colour: the dot on its panel header and the
     /// underline of its mentions. Muted, readable on both cards; never state.
     pub fn category(self, category: mdoc_pii::Category) -> Hsla {
         use mdoc_pii::Category::*;
@@ -235,18 +235,18 @@ impl Theme {
             // The widest gap left: between Person's orange and Bank's green.
             CaseNumber => (0.18, 0.32),
             // The next widest gap: between Bank's green and Organization's
-            // teal (ADR 0094).
+            // teal.
             Url => (0.40, 0.40),
             Other => (0.0, 0.0),
         };
         match self {
-            // Mention words and aliases are drawn in it: 4.5:1 (ADR 0067).
+            // Mention words and aliases are drawn in it: 4.5:1.
             Self::Dark => hsla(hue, sat, 0.70, 1.),
             Self::Light => hsla(hue, sat, 0.32, 1.),
         }
     }
 
-    /// The selected sidebar row: neutral, a step above the ground (ADR 0048).
+    /// The selected sidebar row: neutral, a step above the ground.
     pub fn sidebar_selected(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x2a2a30),
@@ -320,7 +320,7 @@ impl Theme {
 
 impl Theme {
     /// Text on the notices bell's amber badge: dark on the dark theme's
-    /// lighter amber, white on the light theme's deeper one (ADR 0067).
+    /// lighter amber, white on the light theme's deeper one.
     pub fn badge_fg(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x1e1e22).into(),
@@ -448,7 +448,7 @@ pub fn tooltip(
     }
 }
 
-/// WCAG 2.2 contrast over the theme in light and dark (ADR 0067): text at
+/// WCAG 2.2 contrast over the theme in light and dark: text at
 /// 4.5:1 on the grounds it is drawn on (1.4.3), the marks a control needs
 /// to be seen at 3:1 (1.4.11). Alpha colors are blended onto their ground.
 #[cfg(test)]
@@ -721,7 +721,7 @@ mod contrast_tests {
             let p = theme.pdf_style();
             let accent = theme.search_accent();
             // The outside stroke can cross a neighbouring selected/hovered
-            // row as well as its own control's fill (ADR 0074).
+            // row as well as its own control's fill.
             let grounds = [
                 ("card and menus", p.bg),
                 ("sidebar and state cards", theme.sidebar_bg()),

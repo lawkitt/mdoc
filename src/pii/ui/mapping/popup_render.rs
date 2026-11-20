@@ -142,7 +142,7 @@ impl DocumentView {
             .when(cfg!(test), |v| v.debug_selector(move || debug.clone()))
             .track_focus(&focus)
     }
-    /// The mention bar (ADR 0048, ADR 0055), placed in the scrolled content
+    /// The mention bar, placed in the scrolled content
     /// beside the editor so it moves with its mention in the same frame.
     pub(in crate::pii::ui) fn replacement_popup(
         &self,
@@ -201,7 +201,7 @@ impl DocumentView {
             Vec::new().into()
         };
         // Contacts and identifiers can belong to a person or organization;
-        // the category menu holds that choice (ADR 0055). A case number
+        // the category menu holds that choice. A case number
         // belongs to the dispute, not to one party.
         let ownable = identity.is_some_and(|i| {
             i.owner.is_some()
@@ -219,7 +219,7 @@ impl DocumentView {
             .and_then(|owner| review.identity(owner))
             .map(|owner| owner.alias.clone());
 
-        // Geometry, in the editor's own coordinates (ADR 0055). The bar keeps
+        // Geometry, in the editor's own coordinates. The bar keeps
         // its mention's line and the line below visible, flips above under
         // the same rule, and hides (keeping its state) while the mention is
         // scrolled out of view.
@@ -251,7 +251,7 @@ impl DocumentView {
         let room_below = view.bottom() - bottom - line - px(4.);
         let room_above = top - line - view.top() - px(4.);
         let below = room_below >= bar || room_below >= room_above;
-        // The card fits its content, capped at the view (ADR 0055).
+        // The card fits its content, capped at the view.
         let max_width = (view.size.width - px(8.)).max(px(120.));
         let width = measured.width.min(max_width);
         // One row; only a truly narrow view lets the bar wrap.
@@ -407,7 +407,7 @@ impl DocumentView {
                     .items_center()
                     .gap_x(px(6.))
                     .child(if cancel {
-                        // A just-made selection is backed out, not kept (ADR 0032).
+                        // A just-made selection is backed out, not kept.
                         secondary(
                             self.popup_control("direct-cancel-addition", "Cancel", enabled, cx),
                             theme,
@@ -578,7 +578,7 @@ impl DocumentView {
                             .when(identity.is_some() || kept, |v| {
                                 v.on_click(cx.listener(|this, _, window, cx| {
                                     this.pii.mapping.toggle_category_picker();
-                                    // The menu takes focus (ADR 0062).
+                                    // The menu takes focus.
                                     if this.pii.mapping.pickers.category {
                                         this.focus_category_menu(window, cx);
                                     }
@@ -631,7 +631,7 @@ impl DocumentView {
                     .when(mentions.len() > 1, |v| {
                         v.child(self.scope_control(mentions.len(), &alias, enabled, cx))
                     })
-                    // ‹ n of N › and × follow the scope (ADR 0055).
+                    // ‹ n of N › and × follow the scope.
                     .child(
                         div()
                             .flex()
@@ -752,7 +752,7 @@ impl DocumentView {
                     .when(!offscreen, |v| v.snap_to_window_with_margin(px(4.)))
                     .child(div().relative().child(panel).when(!offscreen, |v| {
                         // A notch on the edge facing the mention ties the card
-                        // to its word across the cleared line (ADR 0055).
+                        // to its word across the cleared line.
                         let at = anchor.left() + (anchor.size.width / 2.).min(px(14.)) - x;
                         let at = at.clamp(px(14.), (width - px(14.)).max(px(14.)));
                         v.child(notch(below, palette.bg, theme.popup_border(), at))
@@ -800,7 +800,7 @@ impl DocumentView {
                     .inset_0()
             })
     }
-    /// A menu that holds focus while open (ADR 0062): Tab, ⇧Tab, ↑ and ↓
+    /// A menu that holds focus while open: Tab, ⇧Tab, ↑ and ↓
     /// stay in its rows, and Esc closes it and hands focus back to `back`.
     /// `close` says whether it closed this menu rather than one on top.
     pub(super) fn focus_menu(
@@ -837,7 +837,7 @@ impl DocumentView {
                 }),
             )
             // A click outside closes the menu, so keys never reach what is
-            // behind it while it shows (ADR 0055); a click on its own button
+            // behind it while it shows; a click on its own button
             // is that button's toggle. A right-click opens a menu on top and
             // leaves this one under it (#92).
             .on_mouse_down_out(cx.listener(move |_, e: &gpui::MouseDownEvent, window, cx| {
@@ -927,7 +927,7 @@ impl DocumentView {
             .child(text)
     }
     /// Category correction: each category with the alias choosing it gives,
-    /// or none where the alias stays (#179); last, Not a name (ADR 0122),
+    /// or none where the alias stays (#179); last, Not a name,
     /// alone for a kept mention.
     fn category_menu(
         &self,
@@ -977,7 +977,7 @@ impl DocumentView {
                     }))
                 }),
         )
-        // Ownership opens in the menu's place (ADR 0055).
+        // Ownership opens in the menu's place.
         .when_some(owner, |v, owner| {
             v.child(div().h(px(1.)).my_1().bg(palette.border)).child(
                 self.menu_row(
@@ -1019,7 +1019,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
-        // Sized to the alias, with room for the pencil (ADR 0055).
+        // Sized to the alias, with room for the pencil.
         let chars = mapping.alias.read(cx).value().chars().count() as f32;
         let width = px((chars * 8.2 + 22.).clamp(60., 220.));
         div()
@@ -1209,7 +1209,7 @@ impl DocumentView {
             .into_any_element()
     }
     /// `Belongs to PERSON_1 ▾` for contacts and identifiers, or whenever an
-    /// owner is set (ADR 0032).
+    /// owner is set.
     /// The owner picker, opened from the category menu's "Belongs to…".
     fn owner_menu(
         &self,
@@ -1299,7 +1299,7 @@ impl DocumentView {
         .into_any_element()
     }
     /// `( This one | All N )`: the popup's one scope, and the only place its
-    /// count appears. All, the whole entity, is the default (ADR 0055).
+    /// count appears. All, the whole entity, is the default.
     fn scope_control(
         &self,
         mentions: usize,
@@ -1383,7 +1383,7 @@ impl DocumentView {
 }
 
 /// The shortcut for `key` in `scope`: ⌘ widens to the same text, ⇧⌘ to the
-/// whole entity (ADR 0033).
+/// whole entity.
 pub(super) fn scope_keys(scope: Scope, key: &str) -> String {
     let modifier = if cfg!(target_os = "macos") {
         "⌘"

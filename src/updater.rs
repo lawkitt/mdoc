@@ -1,5 +1,5 @@
-//! Updates from the project's GitHub Releases: detection (ADR 0038), ported
-//! from Zorite's `updater.rs`, and in-app installation on macOS (ADR 0040).
+//! Updates from the project's GitHub Releases: detection, ported
+//! from Zorite's `updater.rs`, and in-app installation on macOS.
 //!
 //! Checks compare the newest release with `CARGO_PKG_VERSION` and publish
 //! [`UpdateState`] for the toolbar dot, the update banner and Settings →
@@ -70,7 +70,7 @@ pub struct Asset {
     pub size: u64,
 }
 
-/// The install pipeline's state (ADR 0040).
+/// The install pipeline's state.
 #[derive(Clone, Debug, Default)]
 pub enum Install {
     #[default]
@@ -142,7 +142,7 @@ pub struct Banner {
 }
 
 impl UpdateState {
-    /// The banner to show, if any (ADR 0040): install progress first, then the
+    /// The banner to show, if any: install progress first, then the
     /// one-time "updated" notice, then an update found by an automatic check.
     pub fn banner(&self) -> Option<Banner> {
         let (kind, version) = match &self.install {
@@ -322,7 +322,7 @@ pub fn spawn_check(opted_in: bool, automatic: bool, cx: &mut gpui::App) {
                 }
                 state.automatic |= automatic && found.is_some();
                 state.available = found;
-                // A newer release than the staged one replaces it (ADR 0040).
+                // A newer release than the staged one replaces it.
                 if let (Install::Ready { version, staged }, Some(available)) =
                     (&state.install, &state.available)
                     && *version != available.version
@@ -337,7 +337,7 @@ pub fn spawn_check(opted_in: bool, automatic: bool, cx: &mut gpui::App) {
     .detach();
 }
 
-/// Download, verify and stage the available update (ADR 0040). Progress
+/// Download, verify and stage the available update. Progress
 /// and the outcome are published to [`UpdateState`].
 pub fn start_install(cx: &mut gpui::App) {
     let mut state = state(cx);
@@ -469,7 +469,7 @@ pub fn restart_requested(cx: &gpui::App) -> bool {
 
 /// Replace the installed app with a staged update. Blocking: runs in the
 /// synchronous part of the quit handler, after the windows have closed and
-/// before GPUI relaunches (ADR 0040). Failures are kept for the next launch,
+/// before GPUI relaunches. Failures are kept for the next launch,
 /// never retried silently.
 pub fn apply_at_quit(cx: &gpui::App) {
     let Some(Install::Ready { version, staged }) =
@@ -493,7 +493,7 @@ pub fn apply_at_quit(cx: &gpui::App) {
 }
 
 /// `mdoc --mdoc-self-update`: the whole pipeline without a window, for
-/// `just smoke-update` (ADR 0040). Same eligibility and gates as the app.
+/// `just smoke-update`. Same eligibility and gates as the app.
 pub fn self_update() -> Result<String, String> {
     eligibility().map_err(|why| why.reason().to_owned())?;
     let current = current().ok_or("The app version isn't SemVer.")?;

@@ -35,7 +35,7 @@ actions!(
 pub(crate) const TEXT_FIELDS: &str = "TextInput";
 
 /// Bind the text fields' editing keys: caret and deletion basics here, the
-/// clipboard keys from the shortcuts table (ADR 0073).
+/// clipboard keys from the shortcuts table.
 pub fn bind_keys(cx: &mut App) {
     let context = Some(TEXT_FIELDS);
     cx.bind_keys([

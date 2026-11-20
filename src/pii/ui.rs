@@ -90,12 +90,12 @@ pub(crate) struct ReviewUi {
     /// Candidate highlights are shown; Close review hides them.
     reviewing: bool,
     popup: Option<Popup>,
-    /// The popup was opened by a manual addition, so Enter applies (ADR 0024).
+    /// The popup was opened by a manual addition, so Enter applies.
     enter_applies: bool,
     /// The next activation comes from a manual addition (alias cue choice).
     manual_activation: bool,
-    /// The selection pill's category menu is open for this selection
-    /// (ADR 0024); it closes when the selection changes.
+    /// The selection pill's category menu is open for this selection;
+    /// it closes when the selection changes.
     selection_menu: Option<Range<usize>>,
     selection_menu_focus: FocusHandle,
     focus: FocusHandle,
@@ -106,7 +106,7 @@ pub(crate) struct ReviewUi {
     discovery_pending: bool,
     scans: Vec<settings::PiiConfig>,
     error: Option<String>,
-    /// The panel shows the setup consent card instead of a review (ADR 0026).
+    /// The panel shows the setup consent card instead of a review.
     setup: bool,
     /// Download & scan was chosen here: scan this document once setup succeeds.
     setup_subscription: Option<gpui::Subscription>,
@@ -119,15 +119,15 @@ pub(crate) struct ReviewUi {
     popup_anchor: Cell<Option<gpui::Bounds<Pixels>>>,
     /// The popup layer's window origin and the document scroll offset when it
     /// was last laid out; with the current offset this places the mention on
-    /// screen in the frame being built (ADR 0055).
+    /// screen in the frame being built.
     /// The mention bar's size at its last layout, for placing it.
     popup_size: Rc<Cell<gpui::Size<Pixels>>>,
     popup_layer: PopupLayer,
     chooser_scroll: gpui::UniformListScrollHandle,
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
-    /// Set in a tab opened by Paste AI Response (ADR 0041).
+    /// Set in a tab opened by Paste AI Response.
     restore: Option<restore::RestoreState>,
-    /// What you did (ADR 0079): memory only, as long as the tab.
+    /// What you did: memory only, as long as the tab.
     decisions: mdoc_pii::decisions::DecisionLog,
     /// Writes an entry's time; renders and tests fix it.
     clock: fn() -> String,
@@ -209,7 +209,7 @@ impl ReviewUi {
         self.popup.as_ref()
     }
 
-    /// The panel shows the setup consent card instead of a review (ADR 0026).
+    /// The panel shows the setup consent card instead of a review.
     #[cfg(test)]
     pub(crate) fn setup(&self) -> bool {
         self.setup
@@ -260,7 +260,7 @@ impl ReviewUi {
         self.scans.push(scan);
     }
 
-    /// Set in a tab opened by Paste AI Response (ADR 0041).
+    /// Set in a tab opened by Paste AI Response.
     pub(crate) fn restore(&self) -> Option<&restore::RestoreState> {
         self.restore.as_ref()
     }
@@ -308,20 +308,20 @@ impl ReviewUi {
     }
 }
 
-/// The Replacements checklist (ADR 0048): Space ticks, Enter jumps to the
+/// The Replacements checklist: Space ticks, Enter jumps to the
 /// mention, →/← show and hide mentions, ⌫ keeps the original.
 pub(crate) const LIST: &str =
     "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl && !ReplyBox";
 /// The mention bar: Enter applies in the selected scope and moves on, Space
-/// unticks in it, ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same wording / all (ADR 0055).
+/// unticks in it, ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same wording / all.
 pub(crate) const POPUP: &str = "PseudonymReview && !PseudonymReplacement && !UiControl && !UiMenu";
 /// ← → step through the entity's mentions, ⌘← ⌘→ to its ends; the alias
-/// field and menus keep their own arrows (ADR 0055).
+/// field and menus keep their own arrows.
 pub(crate) const STEP: &str = "PseudonymReview && !PseudonymReplacement && !PiiChooser && !UiMenu";
 /// Document undo in the popup; the alias field keeps its own text undo.
 pub(crate) const POPUP_UNDO: &str = "PseudonymReview && !PseudonymReplacement";
 
-/// The review keys come from the shortcuts table (ADR 0073); moving inside
+/// The review keys come from the shortcuts table; moving inside
 /// the chooser and the popup's and panel's menus stays here. Registered
 /// after the table's popup keys: the chooser is also `PseudonymReview`, and
 /// the later binding wins its Enter.
@@ -340,8 +340,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", PiiNextChoice, Some("PiiChooser")),
         KeyBinding::new("up", PiiPreviousChoice, Some("PiiChooser")),
         KeyBinding::new("enter", PiiOpenChoice, Some("PiiChooser")),
-        // In the popup's and panel's menus ↑ ↓ move between rows, like Tab
-        // (ADR 0062).
+        // In the popup's and panel's menus ↑ ↓ move between rows, like Tab.
         KeyBinding::new("up", crate::ui::PreviousControl, Some("PiiMenu")),
         KeyBinding::new("down", crate::ui::NextControl, Some("PiiMenu")),
     ]);
@@ -397,7 +396,7 @@ impl DocumentView {
     /// Paint only: opening a panel or changing theme must not schedule work.
     fn sync_annotations(&mut self, cx: &mut Context<Self>) {
         // Proposals take their category's colour; applied replacements share
-        // the alias blue (ADR 0032, ADR 0048).
+        // the alias blue.
         let theme = self.theme.get();
         let accent = theme.proposed();
         let applied_accent = self.theme.get().applied();
@@ -426,7 +425,7 @@ impl DocumentView {
             annotations.push(if candidate_first {
                 let occurrence = candidates.next().unwrap();
                 // A proposal: a light tint of its category with the category's
-                // underline; the glyphs keep their colour (ADR 0048).
+                // underline; the glyphs keep their colour.
                 let category = review
                     .occurrence_identity(occurrence.variant, &occurrence.range)
                     .and_then(|id| review.identity(id))
@@ -467,7 +466,7 @@ impl DocumentView {
             });
         }
         // Kept originals keep a quiet dotted underline while reviewing; a
-        // click reopens their controls (ADR 0055).
+        // click reopens their controls.
         if show_candidates {
             let muted = theme.pdf_style().header_muted;
             annotations.extend(self.kept_entries().into_iter().map(|(range, _, _)| {
@@ -547,11 +546,11 @@ impl DocumentView {
         }
         parts.join(", ")
     }
-    /// Whether the replacements panel is open (ADR 0048 header toggle).
+    /// Whether the replacements panel is open.
     pub(crate) fn replacements_open(&self) -> bool {
         self.pii.mapping.open
     }
-    /// The replacements panel's focus group, an F6 region (ADR 0062).
+    /// The replacements panel's focus group, an F6 region.
     pub(crate) fn replacements_focus(&self) -> FocusHandle {
         self.pii.mapping.focus.clone()
     }
@@ -637,7 +636,7 @@ impl DocumentView {
             return;
         }
         self.sync_replacement_annotation(id, cx);
-        // Editor selections use the popup; the panel row follows (ADR 0033).
+        // Editor selections use the popup; the panel row follows.
         self.pii.mapping.panel_selected = false;
         self.pii.mapping.cursor = Some(mapping::PanelCursor::Mention(id));
         if !std::mem::take(&mut self.pii.manual_activation) {
@@ -653,7 +652,7 @@ impl DocumentView {
         cx.notify();
     }
     /// Show the document's earliest pending proposal, as a shelf click on a
-    /// document that is not ready does (ADR 0084). Returns whether there
+    /// document that is not ready does. Returns whether there
     /// was one.
     pub(crate) fn select_first_proposal(
         &mut self,
@@ -757,7 +756,7 @@ impl DocumentView {
     }
     /// The category Replace gives `range`, and whether another can be
     /// picked: a proposed wording keeps its own (the popup corrects it),
-    /// new wording takes a guess (ADR 0024, ADR 0025).
+    /// new wording takes a guess.
     fn manual_category(&self, source: &str, range: Range<usize>) -> (Category, bool) {
         match self
             .pii
@@ -768,8 +767,7 @@ impl DocumentView {
             None => (mdoc_detect::guess_category(source, range), true),
         }
     }
-    /// Offer "Replace · Person ▾" beside the settled editor selection
-    /// (ADR 0024).
+    /// Offer "Replace · Person ▾" beside the settled editor selection.
     pub(crate) fn sync_selection_action(&mut self, cx: &mut Context<Self>) {
         let editor = self.editor.read(cx);
         // The editor hides the pill while the popup holds focus.
@@ -824,7 +822,7 @@ impl DocumentView {
         self.add_manual_candidate(None, window, cx);
     }
     /// Add the editor selection in `picked`, or the guessed category, and
-    /// open the popup on it as one undo step (ADR 0024). A proposed wording
+    /// open the popup on it as one undo step. A proposed wording
     /// keeps its own category, so only new wording takes a pick.
     pub(crate) fn add_manual_candidate(
         &mut self,
@@ -890,7 +888,7 @@ impl DocumentView {
     ) {
         if self.pii.reviewing && self.pii.review.remaining() > 0 {
             self.apply_replacements(cx);
-            // Inspector (ADR 0048 variant C): next comes sharing.
+            // Inspector: next comes sharing.
             if self.pii.review.remaining() == 0 && self.has_applied_aliases() {
                 // Share unmounts Review's fields. Neither current focus nor a
                 // closing popup's return target may stay on those controls.
@@ -909,7 +907,7 @@ impl DocumentView {
                 self.inspector_share = true;
             }
         }
-        // Nothing is left to review, so the popup closes (ADR 0055).
+        // Nothing is left to review, so the popup closes.
         if self.pii.reviewing && self.pii.popup.is_some() && self.pii.review.remaining() == 0 {
             self.close_pii_popup(&PiiClosePopup, window, cx);
         }
@@ -984,7 +982,7 @@ impl DocumentView {
         self.roll_replaced(&edits, &source, cx);
         Some(after)
     }
-    /// Replacement motion (ADR 0032): a just-applied chip eases from the
+    /// Replacement motion: a just-applied chip eases from the
     /// proposal gold through a soft blue glow to rest.
     fn flash_applied(&mut self, ids: std::collections::HashSet<u64>, cx: &mut Context<Self>) {
         if cx.reduce_motion() {
@@ -1005,7 +1003,7 @@ impl DocumentView {
             )
         });
     }
-    /// Roll each replaced span's words inside its chip (ADR 0032). `edits`
+    /// Roll each replaced span's words inside its chip. `edits`
     /// are (range in `before`, new text), applied to `before` just now.
     pub(super) fn roll_replaced(
         &mut self,
@@ -1089,7 +1087,7 @@ impl DocumentView {
             )
         });
     }
-    /// Scan results fade in together as the sweep stops (ADR 0032).
+    /// Scan results fade in together as the sweep stops.
     fn fade_in_candidates(&mut self, cx: &mut Context<Self>) {
         if cx.reduce_motion() {
             return;
@@ -1151,7 +1149,7 @@ impl DocumentView {
     /// leave focus on its unrendered card, where shortcuts reach nothing.
     /// Focus returns as Escape returns it (#79). Called while rendering.
     pub(crate) fn release_closed_popup_focus(&mut self, window: &mut Window, cx: &mut App) {
-        // The restore picker shares the popup's focus (ADR 0041).
+        // The restore picker shares the popup's focus.
         if self.pii.popup.is_some()
             || self.pii.restore.as_ref().is_some_and(|r| r.popup.is_some())
             || !(self.pii.focus.is_focused(window) || self.pii.focus.contains_focused(window, cx))
@@ -1170,7 +1168,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         let previous = self.pii.close_popup();
-        // The next popup starts on the whole entity again (ADR 0055).
+        // The next popup starts on the whole entity again.
         self.pii.mapping.set_scope(mapping::Scope::Entity);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));

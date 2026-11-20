@@ -1,5 +1,5 @@
 //! `mdoc --mdoc-self-test <pdf> <expected.txt>`: the packaged-app release gate
-//! (ADR 0037, `just smoke-package`).
+//! (`just smoke-package`).
 //!
 //! Runs inside the shipped binary, so it sees what users get: the release
 //! profile and, on macOS, the hardened-runtime signature that once refused the

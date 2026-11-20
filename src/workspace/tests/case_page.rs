@@ -1,4 +1,4 @@
-//! ADR 0077: a case overview must not implicitly open documents or keys.
+//! A case overview must not implicitly open documents or keys.
 use super::*;
 use mdoc_store::cases::{CaseColor, CaseSummary};
 

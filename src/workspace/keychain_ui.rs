@@ -1,4 +1,4 @@
-//! The Keychain explainer (ADR 0043): before mdoc reads the case key in a way
+//! The Keychain explainer: before mdoc reads the case key in a way
 //! that may show the macOS password dialog, say why, and preview that dialog
 //! with a short, captioned animation below the text so the real one is
 //! expected, not suspicious, and the drawing is never taken for it.

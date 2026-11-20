@@ -1,4 +1,4 @@
-//! The folder sheet (ADR 0075): what a dropped folder shows before anything
+//! The folder sheet: what a dropped folder shows before anything
 //! opens. Plain state, no GPUI: the files with their ticks and the 20-file
 //! cap, the keyboard cursor, and the folders waiting for their turn.
 use mdoc_store::session_store;

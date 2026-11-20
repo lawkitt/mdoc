@@ -1,4 +1,4 @@
-//! The menu bar shelf (ADR 0084): ready, not-ready and changed-since-review
+//! The menu bar shelf: ready, not-ready and changed-since-review
 //! rows with prose previews, case labels and the drag hint; the applied
 //! demos and their "N replaced" hovered (#304); a row's "Copied"; the
 //! first-close note; the empty shelf and the locked shelf.

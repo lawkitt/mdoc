@@ -1,4 +1,4 @@
-//! The tab list's saves to `session.json` (ADR 0003): one write at a time,
+//! The tab list's saves to `session.json`: one write at a time,
 //! the latest snapshot waiting behind it, and none when nothing changed
 //! since the last save. Generic over the snapshot, so the queue rules run
 //! without a window or a disk; the workspace view takes snapshots, runs the

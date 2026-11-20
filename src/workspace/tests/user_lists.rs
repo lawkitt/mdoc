@@ -1,4 +1,4 @@
-//! The user's lists (ADR 0092): a case's from its members' Keeps, the
+//! The user's lists: a case's from its members' Keeps, the
 //! user-wide ones of Settings › Detection, and what each document's scans use.
 use super::*;
 use mdoc_pii::Category::{Organization, Person};
@@ -245,7 +245,7 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
     assert_eq!(store.load(&case).unwrap().lists.never, ["Riverside"]);
 }
 
-/// Not a name on a saved, replaced name (ADR 0122): its case save takes the
+/// Not a name on a saved, replaced name: its case save takes the
 /// wording out of the case, alias reserved, and puts it on no list.
 #[gpui::test]
 fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {

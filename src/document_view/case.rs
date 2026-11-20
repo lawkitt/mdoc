@@ -1,4 +1,4 @@
-//! A tab's link to its saved case (ADR 0041): mapping changes are saved after
+//! A tab's link to its saved case: mapping changes are saved after
 //! a short pause, and a reopened member document gets its mapping back.
 use super::{CaseLinkEffect, DocumentView};
 use crate::workspace;
@@ -11,7 +11,7 @@ impl DocumentView {
     /// changes settle.
     pub(crate) fn schedule_case_save(&mut self, cx: &mut Context<Self>) {
         // Every mapping change passes here, in a case or not: the AI reply's
-        // aliases follow renumbering (ADR 0078).
+        // aliases follow renumbering.
         self.follow_reply_aliases_soon(cx);
         let effect = self.case.mapping_changed();
         self.carry_out_case_link(effect, cx);

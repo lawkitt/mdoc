@@ -1,6 +1,6 @@
 //! What setup and Settings show for each downloadable model. Settings hold
 //! plain model IDs; each engine knows its own manifest, languages and
-//! downloads (ADR 0069), so these dispatch to the OCR module and `mdoc_detect`.
+//! downloads, so these dispatch to the OCR module and `mdoc_detect`.
 use mdoc_import::{model_download::Pending, ocr};
 use mdoc_store::settings::Model;
 

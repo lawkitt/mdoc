@@ -1,4 +1,4 @@
-//! Saved cases: the case list, the case page (ADR 0077), its locked,
+//! Saved cases: the case list, the case page, its locked,
 //! rename, categories and lists states, the Keychain explainer and deleting.
 use super::{Driver, Result};
 use crate::workspace::case_page::Place;
@@ -50,7 +50,7 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<String> {
         w.show_case_page(&id, Place::Categories, window, cx);
     })?;
     d.capture("case-categories")?;
-    // The case's Always and Never lists, each entry with Remove (ADR 0092).
+    // The case's Always and Never lists, each entry with Remove.
     d.change(|w, window, cx| {
         let (_, effect) = w
             .case_coordinator

@@ -119,7 +119,7 @@ fn a_docx_source_notes_its_approximate_preview_without_a_notice(cx: &mut TestApp
     draw(cx);
     draw(cx);
     // The expected limitation sits by the Source name; the bell stays for
-    // real notices (README media decision 9; ADR 0048 names the pane Source).
+    // real notices (README media decision 9; the pane is named Source).
     cx.update(|_, cx| {
         let view = tabs.read(cx).active_view().unwrap();
         let pdf = view.read(cx).preview.pdf().cloned().unwrap();

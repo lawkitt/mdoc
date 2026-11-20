@@ -1,4 +1,4 @@
-//! One shelf row (ADR 0084): the title without `.md`, the case as a tinted
+//! One shelf row: the title without `.md`, the case as a tinted
 //! label (readiness in the same style, amber), an outlined Copy for AI on
 //! ready rows, the preview of two wrapped lines with alias chips, and the
 //! meta line "5 min ago · 1,297 words · 24 replaced". A row that is not
@@ -236,7 +236,7 @@ fn title_width(text: &str, window: &Window) -> f32 {
 }
 
 /// `title` as the row draws it, measured, and its width: whole when it
-/// fits the room its row leaves, else cut in the middle with "…" (ADR 0084).
+/// fits the room its row leaves, else cut in the middle with "…".
 pub(crate) fn fit_title(document: &ShelfDocument, window: &Window) -> (String, f32) {
     let mut room = PREVIEW_WIDTH - HEADER_GAP;
     if document.case.is_some() {
@@ -303,7 +303,7 @@ fn cut_preview(preview: &Preview, cut: usize) -> Preview {
 }
 
 /// `preview` as it fits two lines `width` wide with its real fonts: whole
-/// when it fits, else cut at a word and ending in "…" (ADR 0084). Bold and
+/// when it fits, else cut at a word and ending in "…". Bold and
 /// chips wrap wider than plain text, so the cut is measured, not counted.
 pub(crate) fn fit_preview(preview: &Preview, width: f32, window: &Window) -> Preview {
     if wrapped_lines(preview, width, window) <= PREVIEW_LINES {
@@ -439,7 +439,7 @@ impl ShelfView {
                 .text_color(p.header_fg.opacity(0.82))
                 .line_clamp(2)
                 .text_ellipsis()
-                // A preview is what a drag picks up (ADR 0084).
+                // A preview is what a drag picks up.
                 .cursor(CursorStyle::OpenHand)
                 .child(
                     StyledText::new(preview.text.clone())

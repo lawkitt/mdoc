@@ -243,7 +243,7 @@ impl Driver {
                     "reply_unresolved": w.active_view().map(|v| v.read(cx)).filter(|v| v.reply.exists()).map(|v| v.reply.restored().unresolved.len()),
                     "decision_history": w.active_view().is_some_and(|v| v.read(cx).history.open),
                     // Counts only: labels name originals, which What you
-                    // did never writes to disk (ADR 0079).
+                    // did never writes to disk.
                     "decisions": w.active_view().map(|v| {
                         use mdoc_pii::decisions::EntryState;
                         let v = v.read(cx);

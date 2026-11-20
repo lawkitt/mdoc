@@ -108,11 +108,11 @@ impl OcrState {
 
 pub(crate) struct DocumentView {
     pub(crate) focus: gpui::FocusHandle,
-    /// F6 regions of the document (ADR 0062); the editor and the
+    /// F6 regions of the document; the editor and the
     /// replacements panel bring their own handles.
     pub(crate) toolbar_region: gpui::FocusHandle,
     /// Controls outside the toolbar that belong to its region: the notices
-    /// strip with the pane switch, and the view switcher (ADR 0062).
+    /// strip with the pane switch, and the view switcher.
     pub(crate) controls_region: gpui::FocusHandle,
     pub(crate) switcher_region: gpui::FocusHandle,
     /// The find bar, between the toolbar and the editor in Tab order.
@@ -121,12 +121,12 @@ pub(crate) struct DocumentView {
     pub(crate) comments_region: gpui::FocusHandle,
     /// The toolbar's More button, which its menu returns focus to.
     pub(crate) more_focus: gpui::FocusHandle,
-    /// The open More menu, which holds focus and Tab (ADR 0062).
+    /// The open More menu, which holds focus and Tab.
     pub(crate) more_menu_focus: gpui::FocusHandle,
     /// The More button's bounds, so a press on it is left to its toggle.
     more_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
     /// Whether the last frame drew the Markdown and the original panes: a
-    /// narrow window shows one of them (ADR 0062 skips the hidden one).
+    /// narrow window shows one of them (F6 skips the hidden one).
     panes_drawn: std::cell::Cell<(bool, bool)>,
     /// Whether the window is resolving a close or quit (read-only).
     closing: workspace::CloseWatch,
@@ -136,7 +136,7 @@ pub(crate) struct DocumentView {
     pub(crate) active: bool,
     /// Loading, availability, conversion, unsaved changes and dialogs.
     pub(crate) lifecycle: document_lifecycle::DocumentLifecycle,
-    /// External files over the empty page: whether any is supported (ADR 0028).
+    /// External files over the empty page: whether any is supported.
     pub(crate) file_drag: Option<bool>,
     pub(crate) preferences: settings::Shared,
     pub(crate) model_panel: Entity<settings_ui::Panel>,
@@ -151,25 +151,25 @@ pub(crate) struct DocumentView {
     pub(crate) scroll: ScrollHandle,
     pub(crate) error: Option<String>,
     pub(crate) copy_feedback: Option<gpui::Task<()>>,
-    /// The header's ⋯ menu (ADR 0048).
+    /// The header's ⋯ menu.
     pub(crate) more_open: bool,
-    /// The header's What you did popover (ADR 0079).
+    /// The header's What you did popover.
     pub(crate) history: decision_history::HistoryPopover,
-    /// Text zoom of this document's Markdown, not saved (ADR 0048).
+    /// Text zoom of this document's Markdown, not saved.
     pub(crate) zoom: f32,
-    /// Inspector (ADR 0048 variant C): the Share tab is showing.
+    /// Inspector: the Share tab is showing.
     pub(crate) inspector_share: bool,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
-    /// The running copy feedback belongs to Copy reply (ADR 0078).
+    /// The running copy feedback belongs to Copy reply.
     pub(crate) copied_reply: bool,
-    /// The tab's AI reply and its restoration (ADR 0078).
+    /// The tab's AI reply and its restoration.
     pub(crate) reply: pii::ui::ReplyBox,
     /// The Share panel's reply box, made when Share first draws.
     pub(crate) reply_box: Option<(Entity<EditorState>, Subscription)>,
     /// The reply box's scroll, which keeps its caret in view.
     pub(crate) reply_scroll: gpui::ScrollHandle,
-    /// The saved case this tab's mapping belongs to (ADR 0041).
+    /// The saved case this tab's mapping belongs to.
     pub(crate) case: case_link::CaseLink,
     /// The waiting save of the mapping into the case.
     case_save: Option<gpui::Task<()>>,
@@ -192,7 +192,7 @@ pub(crate) struct DocumentView {
     /// Converting the source to Markdown, OCR consent and setup.
     pub(crate) import: import_flow::ImportFlow,
     pub(crate) markdown_search: Entity<markdown_search::SearchInput>,
-    /// The Replace row's field; its text stays with the tab (ADR 0063).
+    /// The Replace row's field; its text stays with the tab.
     pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
     pub(crate) search: search_session::SearchSession,
     pub(crate) ocr_setup_subscription: Option<Subscription>,
@@ -232,7 +232,7 @@ pub(crate) struct DocumentViewDependencies {
 }
 
 /// The shared OCR state for the Settings model from what Settings already
-/// knows, without starting a check (ADR 0066).
+/// knows, without starting a check.
 pub(crate) fn known_ocr_state(
     preferences: &settings::Shared,
     panel: &settings_ui::Panel,
@@ -273,7 +273,7 @@ impl DocumentView {
         });
         let scroll = ScrollHandle::new();
         let editor = cx.new(|cx| {
-            // Ghost text at the caret; the empty page centers the rest (ADR 0028).
+            // Ghost text at the caret; the empty page centers the rest.
             let mut editor = EditorState::new(window, cx).with_placeholder("Type here…");
             editor.set_markdown_style(style::markdown_style(dependencies.theme.get()), cx);
             editor.set_block_chip_provider(|src| {
@@ -315,7 +315,7 @@ impl DocumentView {
                     this.add_pii_candidate(&PiiAddCandidate, window, cx)
                 }
                 EditorEvent::SelectionActionChoice => this.toggle_selection_menu(window, cx),
-                // A hovered replacement shows its tooltip (ADR 0048).
+                // A hovered replacement shows its tooltip.
                 EditorEvent::HoverAnnotation(_) => cx.notify(),
                 EditorEvent::OpenLink(src) => {
                     if src.starts_with("https://")
@@ -431,7 +431,7 @@ impl DocumentView {
             || (self.session.document.path.is_none() && self.preview.attachment().is_some())
     }
 
-    /// A Markdown tab with no content and no source shows the empty page (ADR 0028).
+    /// A Markdown tab with no content and no source shows the empty page.
     fn shows_empty_page(&self, cx: &App) -> bool {
         !self.lifecycle.loading()
             && !self.lifecycle.unavailable()
@@ -502,7 +502,7 @@ impl DocumentView {
     }
 
     /// This document's recognition languages: the card's pick, else the
-    /// detected default with its reason (ADR 0065).
+    /// detected default with its reason.
     pub(crate) fn recognition_choice(&self) -> recognition::Choice {
         self.import.choice(self.settings_ocr_model())
     }
@@ -638,7 +638,7 @@ impl DocumentView {
             Some(LifecycleEffect::AskToSave) => {}
             _ => return,
         }
-        // Save is the default, Don't Save ⌘D / Alt+D, Cancel Esc (ADR 0064).
+        // Save is the default, Don't Save ⌘D / Alt+D, Cancel Esc.
         let question = format!("Save changes to “{}”?", self.display_name());
         let answer = window.prompt(
             PromptLevel::Warning,
@@ -1041,7 +1041,7 @@ impl DocumentView {
     }
 
     /// The Markdown pane before conversion: one card that changes in place
-    /// through conversion, OCR consent, setup and recognition (ADR 0026).
+    /// through conversion, OCR consent, setup and recognition.
     fn conversion_card(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
@@ -1250,7 +1250,7 @@ impl DocumentView {
         let name = model
             .map(crate::models::short_name)
             .unwrap_or_else(|| "OCR".into());
-        // The engine says what it cannot read (ADR 0065).
+        // The engine says what it cannot read.
         let hint = if unreadable.is_empty() {
             choice.reason.clone()
         } else {
@@ -1764,7 +1764,7 @@ const fn chord(mac: &'static str, other: &'static str) -> &'static str {
 }
 
 /// The find bar's counter: what it shows ("14 / 16") and what a screen reader
-/// says ("Match 14 of 16"), ADR 0064.
+/// says ("Match 14 of 16").
 pub(crate) fn find_counter(
     empty_query: bool,
     searching: bool,
@@ -1799,20 +1799,20 @@ fn toggled(on: bool) -> gpui::Toggled {
     }
 }
 
-/// The find bar's keys, from the shortcuts table (ADR 0063, 0073).
+/// The find bar's keys, from the shortcuts table.
 pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
     let bindings = crate::shortcuts::bindings(crate::shortcuts::Owner::Find, cx);
     cx.bind_keys(bindings);
 }
 
-/// One zoom step (ADR 0048).
+/// One zoom step.
 pub(crate) const ZOOM_STEP: f32 = 0.05;
-/// The widest the Markdown reading column gets at 100% (ADR 0048).
+/// The widest the Markdown reading column gets at 100%.
 const READING_WIDTH: f32 = 760.;
 
 impl DocumentView {
     /// Focus handles outside the toolbar whose controls count as the
-    /// toolbar's region (ADR 0062).
+    /// toolbar's region.
     pub(crate) fn toolbar_members(&self) -> [&gpui::FocusHandle; 3] {
         [
             &self.controls_region,
@@ -1822,7 +1822,7 @@ impl DocumentView {
     }
 
     /// The document's F6 regions in order, each with whether it is a single
-    /// focus target (the editor) rather than a group of controls (ADR 0062).
+    /// focus target (the editor) rather than a group of controls.
     pub(crate) fn focus_regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
         let (markdown, original) = self.panes_drawn.get();
         let mut regions = vec![(self.toolbar_region.clone(), false)];
@@ -1860,7 +1860,7 @@ impl Drop for DocumentView {
 #[cfg(test)]
 thread_local! {
     /// How many times a document view rendered on this thread: tests use it
-    /// to see the workspace reuse a cached frame (ADR 0117).
+    /// to see the workspace reuse a cached frame.
     pub(crate) static RENDERS: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -1868,9 +1868,9 @@ impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         #[cfg(test)]
         RENDERS.with(|renders| renders.set(renders.get() + 1));
-        // The before/after view follows the applied replacements (ADR 0042).
+        // The before/after view follows the applied replacements.
         self.refresh_compare(window, cx);
-        // The Share panel's reply box restores against the live mapping (ADR 0078).
+        // The Share panel's reply box restores against the live mapping.
         if self.inspector_share && self.replacements_open() {
             self.ensure_reply_box(window, cx);
             self.refresh_reply();
@@ -1970,7 +1970,7 @@ impl Render for DocumentView {
             this.toggle_markdown_whole_word(&ToggleMarkdownWholeWord, window, cx)
         }));
         // One live node for the count, "Searching…" and replace results, so
-        // each change is announced (ADR 0063, ADR 0064).
+        // each change is announced.
         let status = self.search.status().cloned();
         let spoken_count = match (&status, self.search.running()) {
             (Some(status), false) => status.clone(),
@@ -2272,9 +2272,9 @@ impl Render for DocumentView {
                             // at the end, as in other editors; it used to take focus away
                             // from the editor, so typing went nowhere.
                             .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| this.click_below_text(event, window, cx)))
-                            // A centred reading column (ADR 0048, from variant B).
+                            // A centred reading column.
                             .child(div().relative().w_full().max_w(px(READING_WIDTH * self.zoom)).mx_auto().child(self.editor.clone())
-                                // The mention bar scrolls with its mention (ADR 0055).
+                                // The mention bar scrolls with its mention.
                                 .children(self.mention_popup_layer(window, cx))))
                         .child(markdown_scrollbar).children((empty_page && self.file_drag.is_some()).then(|| self.empty_page(cx))).into_any_element() })
                     .children(self.view_switcher(window, cx).filter(|_| !self.lifecycle.loading() && !self.lifecycle.unavailable()))))
@@ -2296,7 +2296,7 @@ impl Render for DocumentView {
             .children(self.pii_popup(cx).filter(|_| self.compare.is_none()))
             .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()));
         // Sidebar collapsed: the header joins the title row and the document
-        // sits in its own card below it (ADR 0048).
+        // sits in its own card below it.
         let content = if detached {
             div()
                 .size_full()
@@ -2323,7 +2323,7 @@ impl Render for DocumentView {
             .flex()
             .flex_col()
             // Tab between controls is the workspace's: it knows the F6
-            // regions (ADR 0062).
+            // regions.
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
             .on_action(
@@ -2356,7 +2356,7 @@ impl Render for DocumentView {
                 },
             ))
             // View › Edit, Original and Pseudonymized: the view switcher's
-            // segments (ADR 0046).
+            // segments.
             .on_action(cx.listener(|this, _: &ShowEditView, window, cx| {
                 this.set_view_mode(None, window, cx)
             }))

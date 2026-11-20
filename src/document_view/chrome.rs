@@ -8,7 +8,7 @@ use crate::{
 };
 use gpui::{App, Context, Focusable, Window, div, prelude::*, px};
 
-/// The document header's one filled button (ADR 0048).
+/// The document header's one filled button.
 enum Primary {
     None,
     Convert,
@@ -30,7 +30,7 @@ impl DocumentView {
         }
     }
 
-    /// The centered start view over an empty Markdown tab (ADR 0028). It has no
+    /// The centered start view over an empty Markdown tab. It has no
     /// hitbox of its own, so clicks outside the button reach the editor.
     pub(super) fn empty_page(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
@@ -129,7 +129,7 @@ impl DocumentView {
             .into_any_element()
     }
 
-    /// The header's state-driven primary action (ADR 0048).
+    /// The header's state-driven primary action.
     fn primary(&self, cx: &App) -> Primary {
         if self.lifecycle.source_only() {
             return if self.import.ocr_required().is_none()
@@ -154,7 +154,7 @@ impl DocumentView {
         if self.pii.reviewing() && remaining > 0 {
             return Primary::Apply(remaining);
         }
-        // Inspector (ADR 0048 variant C): sharing lives in the Share tab.
+        // Inspector: sharing lives in the Share tab.
         if self.has_applied_aliases() {
             return Primary::Share;
         }
@@ -202,7 +202,7 @@ impl DocumentView {
                     .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
                     .on_click(cx.listener(|this, _, window, cx| {
                         // Pseudonymize scans once and opens the panel; it never
-                        // closes it (ADR 0048 decision 22).
+                        // closes it.
                         let review = &this.pii.review();
                         let fresh = !this.pii.reviewing()
                             && review.variants().is_empty()
@@ -251,7 +251,7 @@ impl DocumentView {
         })
     }
 
-    /// The title-bar row above the document (ADR 0048): breadcrumb left;
+    /// The title-bar row above the document: breadcrumb left;
     /// Source, panel toggle, ⋯ and the primary action right.
     pub(super) fn header(
         &mut self,
@@ -421,7 +421,7 @@ impl DocumentView {
         ui::title_bar(bar, (!detached).then_some(p.border), window, theme)
     }
 
-    /// Close the More menu, focus back on its button (ADR 0062).
+    /// Close the More menu, focus back on its button.
     pub(crate) fn close_more(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.more_open = false;
         window.focus(&self.more_focus, cx);
@@ -690,7 +690,7 @@ impl DocumentView {
 
     pub(super) fn pane_switch(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
-        // One choice of two panes: a radio group, not two buttons (ADR 0064).
+        // One choice of two panes: a radio group, not two buttons.
         div()
             .id("pane-switch")
             .role(gpui::Role::RadioGroup)
@@ -733,7 +733,7 @@ impl DocumentView {
     }
 }
 
-/// "Documents stay on this Mac", explained on hover (ADR 0046). Literally
+/// "Documents stay on this Mac", explained on hover. Literally
 /// true: the only network use is the update check and chosen model downloads.
 fn local_note(theme: crate::style::Theme) -> impl IntoElement {
     let p = theme.pdf_style();

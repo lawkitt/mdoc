@@ -1,4 +1,4 @@
-//! The shelf's view (ADR 0084): the borderless popup under the menu bar
+//! The shelf's view: the borderless popup under the menu bar
 //! item. Pseudonymized documents as small previews to open, drag out or
 //! Copy for AI; Restart to update; the Clipboard section with Pseudonymize
 //! and Restore for one source; and one footer row: Open mdoc, Settings and
@@ -39,13 +39,13 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 
 actions!(shelf, [CloseShelf, ShelfUp, ShelfDown, ShelfCopyForAi]);
 
-/// ⌘1–⌘8: Copy for AI on that row, numbered from 1 (ADR 0084).
+/// ⌘1–⌘8: Copy for AI on that row, numbered from 1.
 #[derive(Clone, Debug, PartialEq, gpui::Action)]
 #[action(namespace = shelf, no_json)]
 pub(crate) struct ShelfCopyRow(pub usize);
 
-/// Keys inside the shelf: ↑↓ and Esc are plumbing (moving inside a list,
-/// ADR 0073); ⌘C and ⌘1–⌘8 are the table's Copy for AI rows; Enter
+/// Keys inside the shelf: ↑↓ and Esc are plumbing (moving inside a
+/// list); ⌘C and ⌘1–⌘8 are the table's Copy for AI rows; Enter
 /// activates the focused row like any control.
 pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -90,7 +90,7 @@ pub(crate) fn fitted_height(measured: f32, max: f32) -> f32 {
     measured.ceil().min(max)
 }
 
-/// The shelf popup follows its content's height (ADR 0084): after each
+/// The shelf popup follows its content's height: after each
 /// layout the content is measured and, when that changes the height, the
 /// window is resized with its top kept under the item. One path for every
 /// change: the picker, the hint, a result line.
@@ -155,7 +155,7 @@ pub(crate) struct ShelfContent {
 struct PickedSource(Option<ClipboardSource>);
 impl Global for PickedSource {}
 
-/// The drag exports, alive until quit (ADR 0084).
+/// The drag exports, alive until quit.
 #[derive(Default)]
 struct Exports(Option<ShelfExports>);
 impl Global for Exports {}
@@ -333,7 +333,7 @@ impl ShelfView {
             .iter()
             .map(|document| row::fit_title(document, window))
             .collect();
-        // Focus starts on the first row (ADR 0084).
+        // Focus starts on the first row.
         window.focus(rows.first().unwrap_or(&focus), cx);
         // A click outside takes key status from the panel: close it.
         cx.observe_window_activation(window, |_, window, cx| {
@@ -657,7 +657,7 @@ impl ShelfView {
     }
 
     /// A drag ended; a drop somewhere retires "Drag a preview into any app"
-    /// for good (ADR 0084).
+    /// for good.
     // Only the macOS drag reports its end; elsewhere there is no shelf.
     #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
     pub(crate) fn drag_ended(&mut self, dropped: bool, cx: &mut Context<Self>) {
@@ -992,7 +992,7 @@ impl ShelfView {
             .child(
                 self.action_row("shelf-quit", "Quit", cx, |this, window, cx| {
                     this.close(window, cx);
-                    // The quit flow asks about unsaved work as ⌘Q does (ADR 0071).
+                    // The quit flow asks about unsaved work as ⌘Q does.
                     cx.defer(|cx| cx.dispatch_action(&Quit));
                 }),
             )

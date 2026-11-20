@@ -51,20 +51,20 @@ actions!(
     ]
 );
 pub enum Event {
-    /// The window owns and persists the theme choice (ADR 0048).
+    /// The window owns and persists the theme choice.
     ThemeSelected(ThemeChoice),
     Applied,
     Checked,
     Compare(Model),
     Finished(Model, Result<Option<ocr::Installed>, String>),
-    /// Restart now: quit through the workspace, then relaunch (ADR 0040).
+    /// Restart now: quit through the workspace, then relaunch.
     RestartToUpdate,
-    /// Forget the recent files Home lists (ADR 0048).
+    /// Forget the recent files Home lists.
     ClearRecents,
     Shortcuts,
-    /// Saved: Settings › Detection stopped detecting these (ADR 0076).
+    /// Saved: Settings › Detection stopped detecting these.
     CategoriesUnticked(std::collections::HashSet<mdoc_pii::Category>),
-    /// The user-wide lists changed: save them with the cases (ADR 0092).
+    /// The user-wide lists changed: save them with the cases.
     UserListsChanged(mdoc_store::lists::Lists),
     /// The lists wait for locked cases: unlock them.
     UnlockLists,
@@ -174,7 +174,7 @@ pub struct Panel {
     controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
     /// The user dictionary view, replacing the Settings body while open.
     pub dictionary: Option<dictionary::DictionaryView>,
-    /// Settings › Detection's user-wide Always and Never lists (ADR 0092).
+    /// Settings › Detection's user-wide Always and Never lists.
     user_lists: lists::UserListsUi,
 }
 impl gpui::EventEmitter<Event> for Panel {}
@@ -365,7 +365,7 @@ impl Panel {
         }
     }
     /// A Settings › General choice changed and saved outside the panel (the
-    /// menu bar shelf's notes, ADR 0084): the same change is made in the
+    /// menu bar shelf's notes): the same change is made in the
     /// draft, keeping its other choices, so the next save keeps it; a save
     /// in flight, which captured the draft before it, is followed by one
     /// with it.
@@ -445,7 +445,7 @@ impl Panel {
         self.theme_choice
     }
     /// Show some Categories to detect off, unsaved, with keyboard focus on
-    /// the chip `token`, for the Detection render (ADR 0076).
+    /// the chip `token`, for the Detection render.
     #[cfg(all(
         debug_assertions,
         feature = "headless-renders",
@@ -600,7 +600,7 @@ impl Panel {
         }
         cx.notify();
     }
-    /// Select a model and save the choice at once (ADR 0026).
+    /// Select a model and save the choice at once.
     pub fn select(&mut self, model: Model, cx: &mut Context<Self>) {
         if matches!(self.statuses[Self::index(model)], Status::Unavailable(_)) {
             return;
@@ -811,7 +811,7 @@ impl Panel {
         match self.category {
             Category::General => {
                 self.draft.updates = defaults.updates;
-                // Notes already seen stay seen (ADR 0084).
+                // Notes already seen stay seen.
                 self.draft.general.menu_bar = defaults.general.menu_bar;
             }
             Category::Detection => {
@@ -1080,8 +1080,8 @@ impl Panel {
         self.progress = None;
         cx.notify();
     }
-    /// Settings → Updates: detection (ADR 0038) and, on macOS, installation
-    /// after an explicit click (ADR 0040).
+    /// Settings → Updates: detection and, on macOS, installation
+    /// after an explicit click.
     fn updates_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
         let p = theme.pdf_style();
         let updates = self.draft.updates;
@@ -1205,7 +1205,7 @@ impl Panel {
                 )
             });
         // The switch has a row of its own, so every Settings switch shares
-        // the right-hand column; the status and its actions follow (ADR 0076).
+        // the right-hand column; the status and its actions follow.
         div()
             .flex()
             .flex_col()
@@ -1371,7 +1371,7 @@ impl Panel {
                     .when(matches!(status, Status::Damaged(_)) && !working, |v| v.child(self.scrolled_control(("repair-now", index), "Repair", theme, idle && ocr::SUPPORTED, cx)
                         .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
                     // Remove… is a bordered button like Download and Repair, and is
-                    // absent rather than dimmed while it can't run (ADR 0076).
+                    // absent rather than dimmed while it can't run.
                     .when(!missing && !working && !checking && removable, |v| v.child(self.scrolled_control(("remove-model", index), "Remove…", theme, true, cx)
                         .when(cfg!(test), move |v| v.debug_selector(move || format!("settings-remove-{index}")))
                         .on_click(cx.listener(move |_, _, window, cx| {

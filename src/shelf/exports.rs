@@ -1,4 +1,4 @@
-//! Shelf exports (ADR 0084): the `.md` file a drag carries, written fresh
+//! Shelf exports: the `.md` file a drag carries, written fresh
 //! from the current text into a private temporary folder that is cleared at
 //! quit. Each process owns one folder and holds a lock in it; a folder whose
 //! lock is free belongs to a process that ended without clearing it (a
