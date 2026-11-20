@@ -168,6 +168,11 @@
     <string name="download_and_continue">Download %1$s &amp; continue</string>
     <string name="cancel_download">Cancel download</string>
     <string name="not_now">Not now</string>
+    <string name="password_title">This document is password-protected</string>
+    <string name="password_body">Enter its password to import it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.</string>
+    <string name="password_wrong">The password is incorrect. Check it and try again.</string>
+    <string name="password_label">Password</string>
+    <string name="unlock">Unlock</string>
     <string name="downloading_models">Downloading models</string>
 
     <!-- Restore with mdoc -->

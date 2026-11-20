@@ -248,6 +248,38 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(comments.snapshot.leftOut)
     }
 
+    /// A locked DOCX asks for its password in place of an error, asks again
+    /// after a wrong one, and imports with the right one. The password is
+    /// in none of the app's files afterwards.
+    func testALockedDocxAsksForItsPasswordUntilItUnlocks() async throws {
+        var storage: MdocStorage?
+        let model = try imported(
+            {
+                storage = $0
+                return try .file(Fixture.copy("tests/fixtures/locked-office/word-locked.docx", into: $0), .docx)
+            },
+            title: "Locked")
+        await model.recognize()
+        XCTAssertEqual(model.passwordPrompt, .needed)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.snapshot.phase)
+        await model.unlock(password: "petrov-2026")
+        XCTAssertEqual(model.passwordPrompt, .wrong)
+        XCTAssertNil(model.errorMessage)
+        await model.unlock(password: "Petrov-2026")
+        XCTAssertNil(model.passwordPrompt)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
+        XCTAssertFalse(model.snapshot.markdown.isEmpty)
+        let root = try XCTUnwrap(storage).root
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? []
+        for file in files where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            let bytes = try Data(contentsOf: file)
+            XCTAssertNil(bytes.range(of: Data("Petrov-2026".utf8)), file.lastPathComponent)
+        }
+    }
+
     /// A cancelled recognition ends the job and offers it again. Resume,
     /// after OCR kept pages, is `ResumeDeleteTests`' and `OCRResumeTests`'.
     func testACancelledRecognitionCanStartAgain() async throws {

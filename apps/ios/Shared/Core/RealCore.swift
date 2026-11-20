@@ -77,6 +77,8 @@ extension CoreError {
         case .importFailed(let message): .importFailed(message)
         // Pages without text: reading them needs text recognition.
         case .needsOcr: .modelMissing
+        case .needsPassword: .needsPassword
+        case .wrongPassword: .wrongPassword
         case .ocr(let message): .recognitionFailed(message)
         case .detect(let message): .findNamesFailed(message)
         case .cancelled: .cancelled
@@ -779,7 +781,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return try core(call)
     }
 
-    func recognize(observer: any JobObserver) throws -> DocumentSnapshot {
+    func recognize(observer: any JobObserver, password: String?) throws -> DocumentSnapshot {
         guard let source = lock.withLock({ self.source }) else { return snapshot() }
         let reporter = StageReporter(observer)
         observer.progress(JobUpdate(stage: .reading))
@@ -800,8 +802,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             // pages left.
             _ = try job(observer) {
                 try ffi.importFileIn(
-                    library: library.ffi, path: url.path, options: ImportOptions(ocr: ocr, nativeTextOnly: false),
-                    progress: reporter)
+                    library: library.ffi, path: url.path,
+                    options: ImportOptions(ocr: ocr, nativeTextOnly: false, password: password), progress: reporter)
             }
         }
         lock.withLock {

@@ -426,6 +426,9 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     case modelMissing
     /// Reading or converting the file.
     case importFailed(String)
+    /// A locked DOCX: its password is needed, or the one given was wrong.
+    case needsPassword
+    case wrongPassword
     /// Text recognition failed.
     case recognitionFailed(String)
     /// Finding names failed.
@@ -467,6 +470,10 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "Download the models first.")
         case .importFailed(let reason):
             String(localized: "mdoc could not open this file: \(reason)")
+        case .needsPassword:
+            String(localized: "This document is password-protected")
+        case .wrongPassword:
+            String(localized: "The password is incorrect. Check it and try again.")
         case .recognitionFailed(let reason):
             String(localized: "Text recognition stopped: \(reason)")
         case .findNamesFailed(let reason):

@@ -257,7 +257,17 @@ fun DocumentScreen(
             }
             snapshot.warning?.let { Notice(it) }
             val needs = state.needsSetup
-            if (needs != null && setup != null) {
+            val prompt = state.passwordPrompt
+            if (prompt != null && job == null) {
+                PasswordCard(
+                    prompt,
+                    onUnlock = {
+                        beforeJob()
+                        model.unlock(it)
+                    },
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else if (needs != null && setup != null) {
                 val setupState by setup.state.collectAsStateWithLifecycle()
                 // Download & continue: the job that asked for setup runs again.
                 SetupCard(

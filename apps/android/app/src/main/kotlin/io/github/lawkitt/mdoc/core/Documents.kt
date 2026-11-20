@@ -227,8 +227,12 @@ class Documents(
             )
         }
 
-        /** Import and OCR; resumes after the pages already finished. */
-        fun recognize(observer: JobObserver): DocumentSnapshot {
+        /**
+         * Import and OCR; resumes after the pages already finished. A locked
+         * DOCX throws [AppError.NeedsPassword] until [password] unlocks it;
+         * the password goes no further than this call.
+         */
+        fun recognize(observer: JobObserver, password: String? = null): DocumentSnapshot {
             val source = synchronized(this) { source } ?: return snapshot()
             observer.onCancel { ffi.cancel() }
             val progress = Progress(observer, device)
@@ -244,7 +248,8 @@ class Documents(
                     }
                     core {
                         ffi.importFileIn(
-                            this@Documents.ffi, input.file.path, ImportOptions(ocr, nativeTextOnly = false), progress,
+                            this@Documents.ffi, input.file.path,
+                            ImportOptions(ocr, nativeTextOnly = false, password = password), progress,
                         )
                     }
                 }
@@ -472,6 +477,10 @@ internal fun <T> core(call: () -> T): T = try {
     throw AppError.Cancelled()
 } catch (error: CoreException.NeedsOcr) {
     throw AppError.ModelMissing()
+} catch (error: CoreException.NeedsPassword) {
+    throw AppError.NeedsPassword()
+} catch (error: CoreException.WrongPassword) {
+    throw AppError.WrongPassword()
 } catch (error: CoreException) {
     throw AppError.Failed(error.detailOrMessage())
 }

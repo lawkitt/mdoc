@@ -587,6 +587,9 @@
     "Enough memory to find names on this device." : {
 
     },
+    "Enter its password to import it. mdoc unlocks it in memory and never keeps the password or an unlocked copy." : {
+
+    },
     "Failed · %@" : {
 
     },
@@ -1030,6 +1033,9 @@
     "Outdent" : {
 
     },
+    "Password" : {
+
+    },
     "Paste" : {
 
     },
@@ -1464,6 +1470,9 @@
     "The name finder is too slow on this phone. Select text to mark a name." : {
 
     },
+    "The password is incorrect. Check it and try again." : {
+
+    },
     "The scanned pages could not be read." : {
 
     },
@@ -1474,6 +1483,9 @@
 
     },
     "This document is no longer in mdoc." : {
+
+    },
+    "This document is password-protected" : {
 
     },
     "This iPad" : {
@@ -1528,6 +1540,9 @@
 
     },
     "Undone" : {
+
+    },
+    "Unlock" : {
 
     },
     "URL" : {

@@ -23,6 +23,7 @@ pub(super) struct Imported {
 pub(super) fn import_file(
     path: &Path,
     options: &ImportOptions,
+    password: Option<&mdoc_import::import::Password>,
     cancel: &AtomicBool,
     progress: Option<&dyn JobProgress>,
     kept: Option<&mdoc_import::resume::KeptPages>,
@@ -95,7 +96,7 @@ pub(super) fn import_file(
         match kept {
             Some(kept) => mdoc_import::resume::prepare_resumable(
                 path,
-                None,
+                password,
                 installed,
                 options.native_text_only,
                 cancel,
@@ -111,7 +112,7 @@ pub(super) fn import_file(
             None => (
                 mdoc_import::import::prepare_cancellable(
                     path,
-                    None,
+                    password,
                     installed,
                     options.native_text_only,
                     cancel,
@@ -125,19 +126,26 @@ pub(super) fn import_file(
     }
     Ok(Imported {
         title,
-        note: ImportNote {
+        note: ImportNote::of(&imported),
+        markdown: imported.markdown,
+        kept: completed,
+    })
+}
+
+impl ImportNote {
+    fn of(imported: &mdoc_import::import::Imported) -> Self {
+        Self {
             warning: imported.note(),
             notice: imported.warning.clone(),
             // A Word file's comments show on its rendered original, which
             // iOS has (`crate::original`) and Android not yet; every other
-            // format's comments (a PDF's annotations included) count here.
+            // format's comments (a PDF's annotations included) count here,
+            // and so do an unlocked DOCX's, whose original never renders.
             left_out: imported
                 .left_out
-                .line(cfg!(not(target_os = "android")) && imported.is_docx),
-        },
-        markdown: imported.markdown,
-        kept: completed,
-    })
+                .line(cfg!(not(target_os = "android")) && imported.is_docx && !imported.decrypted),
+        }
+    }
 }
 
 /// What an import says it left out.
@@ -306,6 +314,31 @@ impl Drop for Scratch {
 mod tests {
     use super::*;
 
+    /// An unlocked DOCX's comments count in the left-out line on every
+    /// phone, since no original shows them. The open file stands in for its
+    /// unlocked bytes, so no locked copy is made.
+    #[test]
+    fn an_unlocked_docx_counts_its_comments_in_the_left_out_line() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/import/handmade-comments.docx");
+        let mut imported = mdoc_import::import::prepare_cancellable(
+            &path,
+            None,
+            None,
+            true,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(!imported.comments.is_empty());
+        let counted = |line: Option<String>| line.is_some_and(|line| line.contains("not shown"));
+        assert_eq!(
+            counted(ImportNote::of(&imported).left_out),
+            cfg!(target_os = "android")
+        );
+        imported.decrypted = true;
+        assert!(counted(ImportNote::of(&imported).left_out));
+    }
+
     /// The smallest baseline JPEG: an 8×8 grey frame (SOI, DQT, SOF0, DHT,
     /// SOS, EOI), enough for the frame reader and PDF structure.
     fn tiny_jpeg(width: u16, height: u16) -> Vec<u8> {
@@ -354,6 +387,7 @@ mod tests {
         let result = import_file(
             &path,
             &ImportOptions::default(),
+            None,
             &AtomicBool::new(false),
             None,
             None,
@@ -375,6 +409,7 @@ mod tests {
         let imported = import_file(
             &path,
             &ImportOptions::default(),
+            None,
             &AtomicBool::new(false),
             None,
             None,
@@ -405,6 +440,7 @@ mod tests {
             let imported = import_file(
                 &fixtures.join(name),
                 &ImportOptions::default(),
+                None,
                 &AtomicBool::new(false),
                 None,
                 None,
@@ -427,6 +463,7 @@ mod tests {
         let result = import_file(
             &path,
             &ImportOptions::default(),
+            None,
             &AtomicBool::new(false),
             None,
             None,
