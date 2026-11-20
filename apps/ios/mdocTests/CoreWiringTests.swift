@@ -202,6 +202,9 @@ final class CoreWiringTests: XCTestCase {
         let failures: [(CoreFailure, CoreError)] = [
             (.importFailed("x"), .importFailed("x")),
             (.needsOcr(pages: [1], pageCount: 1), .modelMissing),
+            (.needsPassword, .needsPassword),
+            (.wrongPassword, .wrongPassword),
+            (.originalLocked, .originalLocked),
             (.ocr("x"), .recognitionFailed("x")),
             (.detect("x"), .findNamesFailed("x")),
             (.cancelled, .cancelled),

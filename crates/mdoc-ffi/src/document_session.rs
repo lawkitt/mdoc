@@ -75,12 +75,34 @@ pub trait JobProgress: Send + Sync {
 }
 
 /// How to import a file.
-#[derive(Clone, Debug, Default, PartialEq, uniffi::Record)]
+#[derive(Clone, Default, PartialEq, uniffi::Record)]
 pub struct ImportOptions {
     /// Recognize pages without a text layer, and images, with these.
     pub ocr: Option<OcrPaths>,
     /// Take a PDF's text layer only, skipping pages that need OCR.
     pub native_text_only: bool,
+    /// A locked DOCX's password, for this import only: never kept, and
+    /// wiped once the import returns.
+    #[uniffi(default = None)]
+    pub password: Option<String>,
+}
+
+/// Never the password.
+impl std::fmt::Debug for ImportOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportOptions")
+            .field("ocr", &self.ocr)
+            .field("native_text_only", &self.native_text_only)
+            .field("password", &self.password.as_ref().map(|_| ".."))
+            .finish()
+    }
+}
+
+impl ImportOptions {
+    /// Moves the password out into one that wipes itself when dropped.
+    fn take_password(&mut self) -> Option<mdoc_import::import::Password> {
+        self.password.take().map(mdoc_import::import::Password::new)
+    }
 }
 
 /// A candidate found by something other than the core's scan: the parity
@@ -202,17 +224,21 @@ impl DocumentSession {
     /// Import `path`: PDF, DOCX (in-process) and the other formats desktop
     /// opens, Markdown and plain text as they are, and JPEG images (camera
     /// scans, photos) through OCR. A PDF with pages that need OCR fails with
-    /// `CoreError::NeedsOcr` unless `options` say how to treat them.
+    /// `CoreError::NeedsOcr` unless `options` say how to treat them; a
+    /// locked DOCX, with `CoreError::NeedsPassword` or `WrongPassword`
+    /// until `options` carry its password.
     pub fn import_file(
         &self,
         path: String,
-        options: ImportOptions,
+        mut options: ImportOptions,
         progress: Option<Box<dyn JobProgress>>,
     ) -> Result<ReviewSnapshot, CoreError> {
         let cancel = self.start_job();
+        let password = options.take_password();
         let imported = intake::import_file(
             std::path::Path::new(&path),
             &options,
+            password.as_ref(),
             &cancel,
             progress.as_deref(),
             None,
@@ -230,13 +256,15 @@ impl DocumentSession {
         &self,
         library: Arc<Library>,
         path: String,
-        options: ImportOptions,
+        mut options: ImportOptions,
         progress: Option<Box<dyn JobProgress>>,
     ) -> Result<ReviewSnapshot, CoreError> {
         let cancel = self.start_job();
+        let password = options.take_password();
         let imported = intake::import_file(
             std::path::Path::new(&path),
             &options,
+            password.as_ref(),
             &cancel,
             progress.as_deref(),
             Some(&library.kept_pages()),
@@ -1318,6 +1346,80 @@ mod tests {
         }
     }
 
+    /// A locked DOCX, saved by Word and by LibreOffice: no password asks for
+    /// one, a wrong one asks again, and the right one gives what its
+    /// unlocked twin gives. Nothing is written beside it or into the library.
+    #[test]
+    fn a_locked_docx_imports_with_its_password_only() {
+        const PASSWORD: &str = "Petrov-2026";
+        fn files(root: &Path) -> Vec<std::path::PathBuf> {
+            let mut found = Vec::new();
+            for entry in std::fs::read_dir(root).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    found.extend(files(&path));
+                } else {
+                    found.push(path);
+                }
+            }
+            found.sort();
+            found
+        }
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        for app in ["word", "libreoffice"] {
+            let locked = scratch.path().join(format!("{app}-locked.docx"));
+            std::fs::copy(
+                fixture(&format!("locked-office/{app}-locked.docx")),
+                &locked,
+            )
+            .unwrap();
+            let before = files(scratch.path());
+            let import = |password: Option<&str>| {
+                DocumentSession::new().import_file_in(
+                    library.clone(),
+                    locked.display().to_string(),
+                    ImportOptions {
+                        password: password.map(Into::into),
+                        ..ImportOptions::default()
+                    },
+                    None,
+                )
+            };
+            assert!(
+                matches!(import(None), Err(CoreError::NeedsPassword)),
+                "{app}"
+            );
+            assert!(
+                matches!(import(Some("petrov-2026")), Err(CoreError::WrongPassword)),
+                "{app}"
+            );
+            let unlocked = import(Some(PASSWORD)).unwrap();
+            let open = DocumentSession::new()
+                .import_file(
+                    fixture(&format!("locked-office/{app}-open.docx")),
+                    ImportOptions::default(),
+                    None,
+                )
+                .unwrap();
+            assert_eq!(unlocked.text, open.text, "{app}");
+            assert_eq!(unlocked.warning, open.warning, "{app}");
+            assert_eq!(unlocked.left_out, open.left_out, "{app}");
+            assert_eq!(files(scratch.path()), before, "{app}");
+        }
+    }
+
+    /// Import options never show their password.
+    #[test]
+    fn import_options_never_show_the_password() {
+        let options = ImportOptions {
+            password: Some("Petrov-2026".into()),
+            ..ImportOptions::default()
+        };
+        let shown = format!("{options:?} {options:#?}");
+        assert!(!shown.contains("Petrov"), "{shown}");
+    }
+
     /// Without OCR, importing into a library is `import_file`, and keeps
     /// nothing.
     #[test]
@@ -1423,7 +1525,7 @@ mod tests {
         };
         let options = ImportOptions {
             ocr: Some(paths.clone()),
-            native_text_only: false,
+            ..ImportOptions::default()
         };
         let pdf = fixture("import/handmade-partly-scanned.pdf");
         let uninterrupted = DocumentSession::new()
