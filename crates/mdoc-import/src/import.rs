@@ -1033,6 +1033,93 @@ mod tests {
         assert_eq!(imported.left_out.pictures, 1, "{:?}", imported.note());
     }
 
+    /// #1004's PDF: one line outside any layer, one in layer L1, which the
+    /// default configuration turns off (`/D /OFF`), and one in layer L2,
+    /// which it turns on; and an attached file. Fictional names.
+    fn pdf_with_an_off_layer() -> Vec<u8> {
+        fn stream(dictionary: &str, data: &[u8]) -> Vec<u8> {
+            let mut object =
+                format!("<< {dictionary}/Length {} >>\nstream\n", data.len()).into_bytes();
+            object.extend_from_slice(data);
+            object.extend_from_slice(b"\nendstream");
+            object
+        }
+        let content = b"BT /F1 14 Tf 72 720 Td (Visible paragraph on the page.) Tj ET\n\
+/OC /L1 BDC\n\
+BT /F1 14 Tf 72 690 Td (Off layer: Ivan Petrov, 12 Baker Street) Tj ET\n\
+EMC\n\
+/OC /L2 BDC\n\
+BT /F1 14 Tf 72 660 Td (On layer: second visible line.) Tj ET\n\
+EMC\n";
+        let attachment = b"Client notes: Ivan Petrov phoned on Monday.\n";
+        let objects: Vec<Vec<u8>> = vec![
+            b"<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [6 0 R 7 0 R] \
+              /D << /Order [6 0 R 7 0 R] /ON [7 0 R] /OFF [6 0 R] >> >> \
+              /Names << /EmbeddedFiles << /Names [(client-notes.txt) 8 0 R] >> >> >>"
+                .to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+              /Resources << /Font << /F1 5 0 R >> /Properties << /L1 6 0 R /L2 7 0 R >> >> >>"
+                .to_vec(),
+            stream("", content),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+            b"<< /Type /OCG /Name (Hidden notes) >>".to_vec(),
+            b"<< /Type /OCG /Name (Visible layer) >>".to_vec(),
+            b"<< /Type /Filespec /F (client-notes.txt) /UF (client-notes.txt) /EF << /F 9 0 R >> >>"
+                .to_vec(),
+            stream("/Type /EmbeddedFile ", attachment),
+        ];
+        let mut pdf = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+            pdf.extend_from_slice(object);
+            pdf.extend_from_slice(b"\nendobj\n");
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    /// Text in a PDF layer the default configuration turns off is in no
+    /// reader: it stays out of the Markdown and counts with the other
+    /// hidden passages, while the lines outside any layer and in a layer
+    /// that is on stay (#1004).
+    #[test]
+    fn text_in_an_off_pdf_layer_is_left_out_and_counted_as_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdf = dir.path().join("layers.pdf");
+        std::fs::write(&pdf, pdf_with_an_off_layer()).unwrap();
+        let imported = convert(&pdf).unwrap();
+        for hidden in ["Off layer", "Ivan Petrov", "Baker Street"] {
+            assert!(!imported.markdown.contains(hidden), "{}", imported.markdown);
+        }
+        for kept in [
+            "Visible paragraph on the page.",
+            "On layer: second visible line.",
+        ] {
+            assert!(imported.markdown.contains(kept), "{}", imported.markdown);
+        }
+        assert_eq!(imported.warning, None);
+        assert_eq!(imported.left_out.hidden_text, 1);
+        let note = imported.note().unwrap_or_default();
+        assert!(note.contains("1 hidden passage not imported."), "{note}");
+        assert!(!note.contains("Ivan Petrov"), "{note}");
+    }
+
     /// Invisible PDF text and form field names never reach the Markdown;
     /// the note counts them after the pictures (#925 decision 9). The
     /// fields' values stay.

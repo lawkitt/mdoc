@@ -46,7 +46,7 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3.12", features = 
 
 [dependencies]
 regex = "1"
-pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "2c1b44d7fea1b6fac820c68029294b378ec898cc", features = ["ocr"] }
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "84079ec9f4ba814023575ff832464fdb3bd510a5", features = ["ocr"] }
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
 # models, updates, crash report); a bump must keep those paths (ADR 0053).
 dirs = "7"

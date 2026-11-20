@@ -3637,7 +3637,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -5668,7 +5668,7 @@ dependencies = [
 [[package]]
 name = "pdf-inspector"
 version = "1.26.1"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=2c1b44d7fea1b6fac820c68029294b378ec898cc#2c1b44d7fea1b6fac820c68029294b378ec898cc"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=84079ec9f4ba814023575ff832464fdb3bd510a5#84079ec9f4ba814023575ff832464fdb3bd510a5"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
@@ -7335,7 +7335,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a"
 dependencies = [
  "foldhash",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -8920,7 +8920,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
