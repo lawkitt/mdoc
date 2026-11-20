@@ -10,9 +10,9 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - Never merge with `--admin`. The maintainer's bypass is for `just release`
   and break-glass reverts only.
 - Nothing posts a waiver or a partial result as green.
-- Enqueue a green, reviewed PR with `gh pr merge <N> --auto`. The queue
-  takes only PRs based on `main`, so make independent PRs off `main`; a
-  stack goes one PR at a time.
+- Enqueue a green, reviewed PR with `gh pr merge <N> --auto`, and
+  independent PRs off `main` together so they batch. The queue takes only
+  PRs based on `main`, so a stack goes one PR at a time.
 - Merge `main` into a PR only when GitHub reports it `CONFLICTING`, because
   each new head reruns its checks.
 
@@ -47,6 +47,9 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - Never commit your own `--refresh-snapshots` output: push, let the head's
   detection gate fail, run `just snapshots-fetch <PR>`, review the diff,
   then commit and push.
+- After a runtime or model pin change, record every snapshot with
+  `gh workflow run ci-detection.yml --ref <branch> -f record=true`, because
+  scores can shift within the gate's tolerance.
 
 ## Changing CI
 
