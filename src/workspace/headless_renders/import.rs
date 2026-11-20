@@ -75,7 +75,7 @@ fn comments_note(d: &mut Driver) -> Result<()> {
     ) else {
         return Err("the preview renders tracked changes now; show it instead".into());
     };
-    let source = imported.source.clone();
+    let source = imported.source.path.clone();
     // No preview worker: the failure above stands in for its answer.
     imported.is_docx = false;
     d.change(|w, window, cx| {

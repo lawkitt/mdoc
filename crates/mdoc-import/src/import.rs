@@ -3,7 +3,10 @@ use crate::comments::Comment;
 use std::{
     io::Read,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// Whether a file dragged from the OS looks openable by its extension alone;
@@ -75,10 +78,8 @@ pub fn supported_source(path: &Path) -> bool {
 #[derive(Clone, Debug)]
 pub struct Imported {
     pub ocr_configuration: Option<mdoc_store::settings::OcrConfig>,
-    pub source: PathBuf,
-    /// The source's size and modification time as the import opened it:
-    /// its comments describe the file only while the file still has them.
-    pub stamp: Option<SourceStamp>,
+    /// The bytes this import converted: the DOCX preview renders these.
+    pub source: Source,
     pub markdown: String,
     /// The notice: a partial import (pages OCR skipped, or may have read
     /// badly).
@@ -94,6 +95,96 @@ pub struct Imported {
     pub is_pdf: bool,
     pub is_docx: bool,
 }
+
+/// A document's bytes, read from its file once: the import converts them,
+/// and its comments and the DOCX preview read them too, never the file
+/// again, so bytes that differ from the file's (an unlocked copy of a
+/// locked one) never have to be written anywhere.
+#[derive(Clone)]
+pub struct Source {
+    /// Where the bytes came from (absolute when an import read them); its
+    /// extension names the format when the content does not.
+    pub path: PathBuf,
+    /// The file's size and modification time when it was read: what the
+    /// bytes say about the file holds only while the stamp still matches.
+    pub stamp: Option<SourceStamp>,
+    bytes: Arc<[u8]>,
+}
+
+impl Source {
+    /// The file at `path`, read as an import reads it: a PDF (by its header,
+    /// so a renamed one counts) within the import limit, anything else
+    /// whole, since AnyDoc applies its own limits.
+    pub fn read(path: &Path) -> Result<Self, ImportError> {
+        let path = std::path::absolute(path).map_err(ImportError::Read)?;
+        let file = std::fs::File::open(&path).map_err(ImportError::Read)?;
+        let stamp = file
+            .metadata()
+            .ok()
+            .map(|metadata| SourceStamp::from(&metadata));
+        let mut file = file.take(MAX_PDF_BYTES + 1);
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).map_err(ImportError::Io)?;
+        if is_pdf(&bytes) {
+            if bytes.len() as u64 > MAX_PDF_BYTES {
+                return Err(ImportError::PdfTooLarge);
+            }
+        } else {
+            file.into_inner()
+                .read_to_end(&mut bytes)
+                .map_err(ImportError::Io)?;
+        }
+        Ok(Self::new(path, stamp, bytes))
+    }
+
+    /// `bytes`, said to come from `path` as `stamp` stood.
+    pub fn new(path: PathBuf, stamp: Option<SourceStamp>, bytes: Vec<u8>) -> Self {
+        Self {
+            path,
+            stamp,
+            bytes: bytes.into(),
+        }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// The bytes, shared rather than copied: for the workers (Android has
+    /// neither).
+    #[cfg(not(target_os = "android"))]
+    pub(crate) fn shared_bytes(&self) -> Arc<[u8]> {
+        self.bytes.clone()
+    }
+
+    fn extension(&self) -> Option<&str> {
+        self.path
+            .extension()
+            .and_then(|extension| extension.to_str())
+    }
+}
+
+/// Never the bytes: they are the user's document.
+impl std::fmt::Debug for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Source")
+            .field("path", &self.path)
+            .field("stamp", &self.stamp)
+            .field("len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// Every PDF goes to pdf-inspector: AnyDoc, built without its `pdf`
+/// feature, would refuse one, and detects a PDF by the same window.
+pub(crate) fn is_pdf(bytes: &[u8]) -> bool {
+    bytes[..bytes.len().min(1024)]
+        .windows(5)
+        .any(|window| window == b"%PDF-")
+}
+
+/// The largest PDF an import reads.
+const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
 
 /// A file's size and modification time: a later reading of the same path
 /// is taken to be of the same bytes while its stamp matches.
@@ -238,34 +329,36 @@ fn not_shown_note(count: u64) -> Option<String> {
     }
 }
 
-/// The comments of the office document at `path`, read as its import reads
+/// The comments of the office document `source`, read as its import reads
 /// them: the Source's cards for a document this session did not import.
 /// None when AnyDoc cannot convert it.
-pub fn source_comments(path: &Path) -> Vec<Comment> {
-    source_comments_cancellable(path, &AtomicBool::new(false))
+pub fn source_comments(source: &Source) -> Vec<Comment> {
+    source_comments_cancellable(source, &AtomicBool::new(false))
 }
 
-pub(crate) fn source_comments_cancellable(path: &Path, cancel: &AtomicBool) -> Vec<Comment> {
-    convert_document(path, cancel)
+pub(crate) fn source_comments_cancellable(source: &Source, cancel: &AtomicBool) -> Vec<Comment> {
+    convert_document(source, cancel)
         .map(|converted| converted.comments)
         .unwrap_or_default()
 }
 
-/// The left-out line's phrase for the comments of the office document at
-/// `path` that its rendering would show: for an original that could not
+/// The left-out line's phrase for the comments of the office document
+/// `source` that its rendering would show: for an original that could not
 /// render, whose import counted them there instead of in the line.
-pub fn source_comments_not_shown(path: &Path) -> Option<String> {
-    not_shown_note(source_comments(path).len() as u64)
+pub fn source_comments_not_shown(source: &Source) -> Option<String> {
+    not_shown_note(source_comments(source).len() as u64)
 }
 
-/// The annotations of the PDF at `path` that carry text, read by the same
+/// The annotations of the PDF `source` that carry text, read by the same
 /// native pass its import makes: the Source's cards for a PDF this session
-/// did not import. `None` when the pass cannot read it (unreadable, past
-/// the import's size limit, encrypted or damaged).
-pub fn source_annotations(path: &Path) -> Option<Vec<pdf_inspector::PdfAnnotation>> {
+/// did not import. `None` when the pass cannot read it (past the import's
+/// size limit, encrypted or damaged).
+pub fn source_annotations(source: &Source) -> Option<Vec<pdf_inspector::PdfAnnotation>> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
-    let bytes = read_pdf(path).ok()?;
-    process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new())
+    if source.bytes().len() as u64 > MAX_PDF_BYTES {
+        return None;
+    }
+    process_pdf_with_ocr_mem(source.bytes(), OcrPdfOptions::new())
         .ok()
         .map(|native| native.annotations)
 }
@@ -361,25 +454,25 @@ pub fn prepare_cancellable(
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     check_cancel(cancel)?;
-    let source = std::path::absolute(path).map_err(ImportError::Read)?;
-    // Detect PDFs by their header, preserving renamed-file import support.
-    // Only PDF conversion reads the complete buffer here; AnyDoc retains its
-    // format detection and resource limits for all other inputs.
-    let mut file = std::fs::File::open(&source).map_err(ImportError::Read)?;
-    let stamp = file
-        .metadata()
-        .ok()
-        .map(|metadata| SourceStamp::from(&metadata));
-    let mut header = [0; 1024];
-    let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
-    // Every PDF goes to pdf-inspector: AnyDoc, built without its `pdf`
-    // feature, would refuse one, and detects a PDF by the same window.
-    if header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
-        return convert_pdf(source, stamp, installed, skip_ocr, cancel);
+    let source = Source::read(path)?;
+    import_source(source, installed, skip_ocr, cancel)
+}
+
+/// Imports `source`'s bytes: the one conversion every import makes after it
+/// has read them.
+pub(crate) fn import_source(
+    source: Source,
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    if is_pdf(source.bytes()) {
+        return convert_pdf(source, installed, skip_ocr, cancel);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
     let is_docx = source
+        .path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
     // Comments never reach the Markdown: AnyDoc reports them beside it, read
@@ -390,7 +483,7 @@ pub fn prepare_cancellable(
     let comments_unread = u64::from(converted.comments_left_out).saturating_sub(read);
     // Nor do Word's pictures: embedded ones render as their alt text at
     // most (ROADMAP Vision item 1).
-    let format = anydoc::Format::from_path(&source);
+    let format = anydoc::Format::from_path(&source.path);
     let pictures = if matches!(format, Some(anydoc::Format::Docx) | None) {
         u64::from(converted.images_left_out)
     } else {
@@ -399,7 +492,6 @@ pub fn prepare_cancellable(
     Ok(Imported {
         ocr_configuration: None,
         source,
-        stamp,
         markdown: converted.markdown,
         // Only a PDF's import can be partial.
         warning: None,
@@ -454,13 +546,12 @@ pub const CONVERSION_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 /// app installed one (desktop, `conversion_worker::supervise`), otherwise in
 /// this process with a converter panic contained (the phones, whose
 /// profile unwinds, and tests).
-fn convert_document(source: &Path, cancel: &AtomicBool) -> Result<Converted, ImportError> {
-    let bytes = std::fs::read(source).map_err(ImportError::Read)?;
-    let extension = source.extension().and_then(|extension| extension.to_str());
+fn convert_document(source: &Source, cancel: &AtomicBool) -> Result<Converted, ImportError> {
+    let (bytes, extension) = (source.bytes(), source.extension());
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if let Some(executable) = crate::conversion_worker::installed() {
         return crate::conversion_worker::convert_with_executable(
-            bytes,
+            source.shared_bytes(),
             extension,
             cancel,
             executable,
@@ -468,7 +559,7 @@ fn convert_document(source: &Path, cancel: &AtomicBool) -> Result<Converted, Imp
         );
     }
     check_cancel(cancel)?;
-    contained(|| convert_bytes(&bytes, extension))
+    contained(|| convert_bytes(bytes, extension))
 }
 
 /// Converts a document other than a PDF from its bytes, as the worker and
@@ -511,20 +602,19 @@ pub(crate) fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
 }
 
 fn convert_pdf(
-    source: PathBuf,
-    stamp: Option<SourceStamp>,
+    source: Source,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
-    let bytes = read_pdf(&source)?;
-    let mut native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let bytes = pdf_bytes(&source)?;
+    let mut native = process_pdf_with_ocr_mem(bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(
-            source,
+            source.path,
             native.pages_recommended_for_ocr.clone(),
             crate::recognition::text_languages(&native.markdown),
             native.page_count,
@@ -545,7 +635,7 @@ fn convert_pdf(
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
         crate::ocr::load_onnx_runtime(&installed.onnx)
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
-        match process_pdf_with_ocr_mem(&bytes, installed.options()) {
+        match process_pdf_with_ocr_mem(bytes, installed.options()) {
             Ok(result) => (result, true),
             Err(error) => {
                 return Err(ImportError::OcrFailed(OcrFailure::Engine(
@@ -580,7 +670,6 @@ fn convert_pdf(
             None
         },
         source,
-        stamp,
         markdown: result.markdown,
         warning,
         left_out,
@@ -592,19 +681,11 @@ fn convert_pdf(
 }
 
 /// A PDF's bytes, within the import limit.
-pub(crate) fn read_pdf(source: &Path) -> Result<Vec<u8>, ImportError> {
-    const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
-    let file = std::fs::File::open(source).map_err(ImportError::Read)?;
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::io::Read::take(file, MAX_PDF_BYTES + 1),
-        &mut bytes,
-    )
-    .map_err(ImportError::Io)?;
-    if bytes.len() as u64 > MAX_PDF_BYTES {
+pub(crate) fn pdf_bytes(source: &Source) -> Result<&[u8], ImportError> {
+    if source.bytes().len() as u64 > MAX_PDF_BYTES {
         return Err(ImportError::PdfTooLarge);
     }
-    Ok(bytes)
+    Ok(source.bytes())
 }
 
 /// The warning for a converted PDF's `markdown`: the pages OCR may have
@@ -844,6 +925,26 @@ mod tests {
             let by_bytes = convert_bytes(&std::fs::read(&path).unwrap(), extension)
                 .map_err(|error| error.to_string());
             assert_eq!(by_bytes, by_path, "{}", path.display());
+        }
+    }
+
+    /// An import converts the bytes it holds: a document and a PDF held
+    /// under a name no file has import as their files do, comments and
+    /// annotations included.
+    #[test]
+    fn an_import_converts_held_bytes_without_their_file() {
+        for name in ["handmade-comments.docx", "text_annotations.pdf"] {
+            let from_file = convert(&fixture(name)).unwrap();
+            let held = Source::new(
+                format!("never-written-{name}").into(),
+                None,
+                std::fs::read(fixture(name)).unwrap(),
+            );
+            let imported = import_source(held, None, true, &AtomicBool::new(false)).unwrap();
+            assert_eq!(imported.markdown, from_file.markdown, "{name}");
+            assert_eq!(imported.left_out, from_file.left_out, "{name}");
+            assert_eq!(imported.comments, from_file.comments, "{name}");
+            assert_eq!(imported.annotations, from_file.annotations, "{name}");
         }
     }
 
@@ -1296,7 +1397,7 @@ mod tests {
     fn source_cards_read_what_the_import_counted() {
         let path = fixture("handmade-comments.docx");
         let imported = convert(&path).unwrap();
-        assert_eq!(source_comments(&path), imported.comments);
+        assert_eq!(source_comments(&read(&path)), imported.comments);
         let row = |id: &str| {
             let c = imported.comments.iter().find(|c| c.id == id).unwrap();
             (
@@ -1339,8 +1440,8 @@ mod tests {
         );
         assert_eq!(imported.comments[0].date, "2026-11-18T09:30:00Z");
         // A PDF has no office comments; one AnyDoc can't convert has none.
-        assert!(source_comments(&fixture("text_annotations.pdf")).is_empty());
-        assert!(source_comments(&fixture("missing.docx")).is_empty());
+        assert!(source_comments(&read(&fixture("text_annotations.pdf"))).is_empty());
+        assert!(source_comments(&damaged("damaged.docx")).is_empty());
     }
 
     /// A Source shown without an import reads the annotations the import
@@ -1350,9 +1451,18 @@ mod tests {
         let path = fixture("text_annotations.pdf");
         let imported = convert(&path).unwrap();
         assert_eq!(imported.annotations.len(), 8);
-        assert_eq!(source_annotations(&path), Some(imported.annotations));
-        assert_eq!(source_annotations(&fixture("missing.pdf")), None);
-        assert_eq!(source_annotations(&fixture("text.docx")), None);
+        assert_eq!(source_annotations(&read(&path)), Some(imported.annotations));
+        assert_eq!(source_annotations(&damaged("damaged.pdf")), None);
+        assert_eq!(source_annotations(&read(&fixture("text.docx"))), None);
+    }
+
+    fn read(path: &Path) -> Source {
+        Source::read(path).unwrap()
+    }
+
+    /// Bytes no converter reads, named `name`.
+    fn damaged(name: &str) -> Source {
+        Source::new(name.into(), None, b"%PDF-1.7 not a document".to_vec())
     }
 
     /// Pictures never reach the Markdown, so the note counts them, for PDF

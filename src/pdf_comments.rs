@@ -99,7 +99,8 @@ mod tests {
     /// on page 1 through an offset CropBox, on page 2 through a quarter turn.
     #[test]
     fn the_fixture_anchors_where_its_pages_draw() {
-        let annotations = mdoc_import::import::source_annotations(&fixture()).unwrap();
+        let source = mdoc_import::import::Source::read(&fixture()).unwrap();
+        let annotations = mdoc_import::import::source_annotations(&source).unwrap();
         let doc = gpui_pdf::parse(Arc::new(std::fs::read(fixture()).unwrap())).unwrap();
         let frames = gpui_pdf::page_frames(&doc);
         assert_eq!(frames.len(), 2);

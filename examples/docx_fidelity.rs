@@ -57,8 +57,10 @@ fn run(dir: &Path, update: bool) -> Result<bool, String> {
             missing.push(reference);
             continue;
         }
+        let source =
+            mdoc_import::docx_preview::read_source(docx).map_err(|e| format!("{name}: {e}"))?;
         let preview = mdoc_import::docx_preview::render_in_process(
-            docx,
+            &source,
             Arc::new(AtomicBool::new(false)),
             |_| Ok(Vec::new()),
             Default::default(),
