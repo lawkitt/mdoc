@@ -34,8 +34,7 @@ fn every_recognition_fixture_is_as_its_status_says() {
         verdict(&fixture, &comparison).map_or(Ok(()), Err)
     };
     // The fixtures are independent and share the rule pack, so they are
-    // checked on every core: one after another, the loop took 15 to 17 s on
-    // hosted macOS and 20 s on the PC.
+    // checked on every core: one after another they are too slow for a test.
     let next = AtomicUsize::new(0);
     let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
     let mut failed: Vec<(usize, String)> = std::thread::scope(|scope| {

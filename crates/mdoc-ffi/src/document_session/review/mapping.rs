@@ -1,4 +1,4 @@
-//! Identity changes (the identity tools), ported from desktop's
+//! Identity changes (the identity tools). They mirror desktop's
 //! `src/pii/ui/mapping.rs` (`MappingAction`, `prepare_mapping_change`,
 //! `change_mapping`) and the popup that picks the action by scope
 //! (`src/pii/ui/mapping/popup.rs`: `confirm_alias`, `correct_category`,
