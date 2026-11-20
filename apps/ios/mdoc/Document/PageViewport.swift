@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 /// The Original's one control: back to fit once zoomed, or back to the
-/// first page once past it at fit (originals.md, Original page controls).
+/// first page once past it at fit.
 enum PageControl: Equatable {
     case fit
     case top
@@ -86,7 +86,7 @@ extension EnvironmentValues {
 /// changes (rotation, iPad's columns); `autoScales` alone keeps the scale it
 /// first computed. Zoom stays between fit and 5× fit, a double-tap toggles
 /// fit and 2× at the tapped point, and `onControl` hears which control the
-/// pane shows (originals.md, Original page controls).
+/// pane shows.
 final class FittingPDFView: PDFView {
     /// Past fit by more than this, the page counts as zoomed.
     static let fitTolerance: CGFloat = 0.02

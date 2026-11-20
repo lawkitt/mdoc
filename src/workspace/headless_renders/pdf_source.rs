@@ -1,10 +1,10 @@
-//! A PDF's annotations on the comment rail beside its Source page
-//! (originals spec, Comments in Source): the generated fixture with a sticky
-//! note, a FreeText box, a highlight with a comment and a reply, a resolved
-//! note with a reply, and markup, its own drawing of them hidden. The rail
-//! with the highlight's thread open, the resolved note open, the turned
-//! second page, markers in a 640×480 window, and the plain page with
-//! comments off, where the stamp, ink and the uncommented highlight stay.
+//! A PDF's annotations on the comment rail beside its Source page: the
+//! generated fixture with a sticky note, a FreeText box, a highlight with a
+//! comment and a reply, a resolved note with a reply, and markup, its own
+//! drawing of them hidden. The rail with the highlight's thread open, the
+//! resolved note open, the turned second page, markers in a 640×480 window,
+//! and the plain page with comments off, where the stamp, ink and the
+//! uncommented highlight stay.
 use super::{Driver, HEIGHT, Result, WIDTH};
 use std::path::PathBuf;
 

@@ -1309,8 +1309,7 @@ mod tests {
     }
 
     /// A partial import's notice belongs to the import: a saved document
-    /// reopens without it, so the phones' notice card closes for good
-    /// (originals.md, The import note).
+    /// reopens without it, so the phones' notice card closes for good.
     #[test]
     fn a_reopened_document_has_no_import_notice() {
         let scratch = Scratch::new();

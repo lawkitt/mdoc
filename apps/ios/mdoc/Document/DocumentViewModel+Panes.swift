@@ -55,7 +55,7 @@ extension DocumentViewModel {
 
     /// The Original covers the text: its pane in a compact window. Nothing
     /// there acts on names, so the bottom bar and Identities go, and come
-    /// back as they were on Text (originals.md, Phones).
+    /// back as they were on Text.
     var originalCoversText: Bool {
         pane == .original && !layout.isRegular
     }

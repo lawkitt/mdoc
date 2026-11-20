@@ -3,8 +3,7 @@ import SwiftUI
 /// A message about the document, inset at the top of its text: the partial
 /// import, a job that stopped when mdoc left the screen. A quiet fill with
 /// the orange only in the icon, never an orange fill; an informational card
-/// closes with ×, and one whose button is the only way on has none
-/// (originals.md, The import note).
+/// closes with ×, and one whose button is the only way on has none.
 struct NoticeCard<Action: View>: View {
     let message: Text
     var symbol = "exclamationmark.triangle"

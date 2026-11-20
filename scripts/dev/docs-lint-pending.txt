@@ -5,7 +5,6 @@ docs/specs/ci.md 800
 docs/specs/cases-and-privacy.md 3000
 docs/specs/desktop.md 3000
 docs/specs/mobile.md 3000
-docs/specs/originals.md 3000
 docs/specs/recognition.md 3000
 docs/specs/release.md 3000
 CONTEXT.md 3000

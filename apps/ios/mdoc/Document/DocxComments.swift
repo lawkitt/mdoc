@@ -140,7 +140,7 @@ extension DocxComments.Marker {
 /// The comment sheet: every thread in reading order and the one it shows.
 /// Its id never changes, so stepping or opening another thread while the
 /// sheet is up changes what it shows without presenting it again, and the
-/// sheet keeps its height (originals.md, Phones).
+/// sheet keeps its height.
 struct CommentSheetState: Identifiable, Equatable {
     let threads: [DocxComments.Thread]
     /// Threads with no place on the page, which the sheet says so for.
