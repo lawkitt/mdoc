@@ -374,13 +374,6 @@ of a file.
    portfolios; the note adds "1 attached file not imported", never a name.
    Its pin bump rebases on item 1's. *Done when:* an import test shows the
    count for each kind and no file name.
-4. **[Import] Password-protected DOCX, XLSX and PPTX on desktop.** *From
-   #1007.* `craft-offcrypto` pinned by revision; the import takes an
-   optional password and the import card asks for it; nothing decrypted is
-   written, and the password is never stored or logged.
-   *Blocked by:* item 3. *Done when:* fixtures saved by real Word, Excel and
-   LibreOffice import with the right password and refuse a missing or wrong
-   one, plus headless renders of the card, light and dark.
 5. **[Import] Password-protected DOC.** *From #1007.* RC4 through
    `craft-doc-binary`, in the same card. *Blocked by:* item 4. *Done when:*
    Word and LibreOffice DOC fixtures behave as in item 4.
@@ -770,6 +763,8 @@ Android takes what applies. Its clipboard finding is
   (native resolution, no OCR or vision model). *From #911.*
 - **[OCR]** QR codes on scans: re-measure `rxing` on at least 20 real scanned
   codes. *From #911.*
+- **[Import]** Secure keyboard entry while the desktop password field has
+  focus (`EnableSecureEventInput` on macOS). *From #1010.*
 - **[Import]** Dynamic XFA forms, which import as "Please wait…": first find
   at least 3 real legal XFA PDFs in public sources; only then spike
   pdfcraft's `xfa` layout in the pdf-inspector fork. *From the 2026-11-20
