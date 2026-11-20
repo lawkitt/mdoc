@@ -589,6 +589,28 @@ fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestApp
 }
 
 #[gpui::test]
+fn cancelling_the_save_as_of_save_as_case_cancels_the_close(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| None);
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.contains(tab)));
+    active(&tabs, cx).read_with(cx, |view, cx| {
+        assert!(view.dirty(cx));
+        assert_eq!(view.pii.review().applied().len(), 2);
+    });
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    assert!(store.list().0.is_empty());
+}
+
+#[gpui::test]
 fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
@@ -1410,6 +1432,36 @@ fn case_quit_retry_saves_the_latest_pending_revision(cx: &mut TestAppContext) {
         .load(&case)
         .unwrap();
     assert_eq!(saved.skip.len(), 2);
+}
+
+#[gpui::test]
+fn discard_all_still_offers_retry_for_a_failed_case_save(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+    });
+    for draft in ["first draft", "second draft"] {
+        tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+        cx.simulate_input(draft);
+    }
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    // Discard All drops the drafts, never the case's pending mapping.
+    cx.simulate_prompt_answer("Discard All");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "Could not save replacement mappings"
+    );
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    cx.simulate_prompt_answer("Retry");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let saved = mdoc_store::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert!(!saved.skip.is_empty());
 }
 
 #[gpui::test]
