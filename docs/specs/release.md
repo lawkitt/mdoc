@@ -226,9 +226,9 @@ cannot establish these rows.
 - **What to Test**, in a file outside the repository: first "Test with
   documents you are allowed to share, never client files; check a
   screenshot before you send it.", then what is new since the previous
-  uploaded build (from the `changes/ios/` fragments, for testers; a
-  recognition change in a line or none), what to try and the known gaps,
-  under about 2,000 characters.
+  uploaded build (from the `changes/ios/` and `changes/mobile/` fragments,
+  for testers; a recognition change in a line or none), what to try and
+  the known gaps, under about 2,000 characters.
 - **Tag:** `just release-ios <x.y.z>-rc.N <file>`, by an agent on the Mac
   with the gate's phone. The tag's `ios-release.yml` run tests, archives,
   signs with Apple-managed signing, uploads, waits for processing and sets
@@ -242,7 +242,8 @@ cannot establish these rows.
   invited testers, no public link) go at most weekly, for a fix that
   affects testers. The maintainer adds testers, answers Beta App Review and
   releases the plain `ios-v<x.y.z>` for App Store review, when a PR joins
-  the `changes/ios/` fragments into `apps/ios/CHANGELOG.md`.
+  the `changes/ios/` and `changes/mobile/` fragments into
+  `apps/ios/CHANGELOG.md` ([rule](../../changes/README.md)).
 - Signing uses an App Store Connect Team key with the Admin role, the
   least cloud signing accepts, kept only in `release-ios` (`ASC_KEY_ID`,
   `ASC_ISSUER_ID`, `ASC_KEY_P8`); no certificate lives on the runner.
@@ -302,8 +303,9 @@ Results go in the release's issue.
   and each app records its core commit and shows it in Settings and crash
   reports.
 - Each app has its own changelog fed by `changes/ios/` or
-  `changes/android/`; `just release` leaves those. A core change users see
-  on more than one platform gets a fragment in each folder.
+  `changes/android/`, and both by `changes/mobile/`; `just release` leaves
+  those. A core change users see on more than one platform gets a fragment
+  for each: top-level for the desktop, `changes/mobile/` for both apps.
 - Release configurations are tested before upload: the iOS Release build
   in the Simulator, and the minified Android build on the emulator.
 - Dependabot and fork PRs build only on hosted runners.
