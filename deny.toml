@@ -99,6 +99,8 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/lawkitt/anydoc.git",
     "https://github.com/lawkitt/pdf-inspector.git",
+    # craft-offcrypto, pinned by revision (ADR 0001, #1007).
+    "https://github.com/storytold/craft-libs.git",
 ]
 
 [sources.allow-org]
