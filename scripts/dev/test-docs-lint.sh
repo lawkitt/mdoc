@@ -177,10 +177,11 @@ done
 # Changelog fragments, by release.sh's rules: good ones in each folder and
 # the folder READMEs pass; each broken rule fails, naming the file.
 fragments() { # writes good fragments and READMEs
-  mkdir -p "$tmp/repo/changes/ios" "$tmp/repo/changes/android"
+  mkdir -p "$tmp/repo/changes/ios" "$tmp/repo/changes/android" "$tmp/repo/changes/mobile"
   printf -- '- Desktop.\n' >"$tmp/repo/changes/desk_top-1.2.md"
   printf -- '- iOS.\n' >"$tmp/repo/changes/ios/phone.md"
   printf -- '- Android.\n' >"$tmp/repo/changes/android/droid.md"
+  printf -- '- Both apps.\n' >"$tmp/repo/changes/mobile/both.md"
   printf '# Changelog fragments\n' >"$tmp/repo/changes/README.md"
   printf '# Changelog\n\n## Unreleased\n' >"$tmp/repo/CHANGELOG.md"
 }
@@ -191,6 +192,12 @@ expect 0 "docs-lint: ok" "good fragments fail"
 printf 'Not a bullet.\n' >"$tmp/repo/changes/ios/plain.md"
 run
 expect 1 "changes/ios/plain.md must start with a '- ' CHANGELOG bullet" "a fragment that is not a bullet passes"
+base
+run
+fragments
+printf 'Not a bullet.\n' >"$tmp/repo/changes/mobile/plain.md"
+run
+expect 1 "changes/mobile/plain.md must start with a '- ' CHANGELOG bullet" "a mobile fragment that is not a bullet passes"
 base
 run
 fragments
