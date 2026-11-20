@@ -614,9 +614,6 @@
     "Finding names" : {
 
     },
-    "Finding names in %@" : {
-
-    },
     "Finding names stopped when mdoc left the screen." : {
 
     },
@@ -1123,7 +1120,7 @@
     "Recognize text" : {
 
     },
-    "Recognizing %@" : {
+    "Recognizing a document" : {
 
     },
     "Recognizing page %lld of %lld" : {

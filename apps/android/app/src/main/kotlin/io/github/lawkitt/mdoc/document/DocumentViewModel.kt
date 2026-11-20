@@ -111,17 +111,17 @@ class DocumentViewModel(
 
     // Long jobs
 
-    fun recognize(title: String) = viewModelScope.launch {
+    fun recognize() = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
-        finish(JobKind.Recognize, jobs.run(JobKind.Recognize, jobId, title) { session.recognize(it) })
+        finish(JobKind.Recognize, jobs.run(JobKind.Recognize, jobId) { session.recognize(it) })
     }
 
     /** Minutes a scan takes on this phone, when more than about one. */
     fun scanEstimate(): Int? = if (findsNames) session.scanEstimate() else null
 
-    fun findNames(title: String) = viewModelScope.launch {
+    fun findNames() = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
-        val outcome = jobs.run(JobKind.Scan, jobId, title) { session.scan(it) }
+        val outcome = jobs.run(JobKind.Scan, jobId) { session.scan(it) }
         finish(JobKind.Scan, outcome)
         // A scan that finds nothing says so, rather than going quietly to Share.
         if (outcome is JobOutcome.Finished && outcome.value.candidates.isEmpty()) {

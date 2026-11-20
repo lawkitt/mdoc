@@ -60,8 +60,7 @@
     <string name="recognizing_text">Recognizing text</string>
     <string name="reading_the_file">Reading the file</string>
     <string name="converting">Converting</string>
-    <string name="recognizing_title">Recognizing %1$s</string>
-    <string name="finding_names_in">Finding names in %1$s</string>
+    <string name="recognizing_document">Recognizing a document</string>
     <string name="replace_all">Replace all</string>
     <string name="replace_count">Replace %1$d</string>
     <string name="another_job_running">Another job is running. Try again when it finishes.</string>

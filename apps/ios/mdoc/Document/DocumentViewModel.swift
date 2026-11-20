@@ -206,10 +206,15 @@ final class DocumentViewModel {
 
     // MARK: Jobs
 
+    /// The system's task UI shows a job's title outside the app, so it
+    /// never names the document: titles hold client names.
+    static let recognizeTaskTitle = String(localized: "Recognizing a document")
+    static let findNamesTaskTitle = String(localized: "Finding names")
+
     func recognize() async {
         waitingForSetup = nil
         let session = session
-        let outcome = await jobs.run(.recognize, documentID: id, title: String(localized: "Recognizing \(snapshot.title)")) { observer in
+        let outcome = await jobs.run(.recognize, documentID: id, title: Self.recognizeTaskTitle) { observer in
             try session.recognize(observer: observer)
         }
         if case .failed(CoreError.modelMissing) = outcome {
@@ -223,7 +228,7 @@ final class DocumentViewModel {
     func findNames() async {
         waitingForSetup = nil
         let session = session
-        let outcome = await jobs.run(.scan, documentID: id, title: String(localized: "Finding names in \(snapshot.title)")) { observer in
+        let outcome = await jobs.run(.scan, documentID: id, title: Self.findNamesTaskTitle) { observer in
             try session.scan(observer: observer)
         }
         if case .failed(CoreError.modelMissing) = outcome {

@@ -197,11 +197,11 @@ fun DocumentScreen(
                 showsReply = state.showsReply,
                 onRecognize = {
                     beforeJob()
-                    model.recognize(context.getString(R.string.recognizing_title, snapshot.title))
+                    model.recognize()
                 },
                 onFindNames = {
                     beforeJob()
-                    model.findNames(context.getString(R.string.finding_names_in, snapshot.title))
+                    model.findNames()
                 },
                 onCancel = model::cancelJob,
                 onReplaceAll = model::replaceAll,
@@ -267,9 +267,9 @@ fun DocumentScreen(
                         beforeJob()
                         setup.download {
                             if (needs == JobKind.Scan) {
-                                model.findNames(context.getString(R.string.finding_names_in, snapshot.title))
+                                model.findNames()
                             } else {
-                                model.recognize(context.getString(R.string.recognizing_title, snapshot.title))
+                                model.recognize()
                             }
                         }
                     },

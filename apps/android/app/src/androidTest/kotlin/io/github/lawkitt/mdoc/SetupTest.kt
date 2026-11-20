@@ -56,7 +56,7 @@ class SetupTest {
             val session = app.core.documents.importDocument(
                 ImportSource.File(pdf, SourceKind.Pdf), "English scan", CaseChoice.New("English scan"),
             )
-            val outcome = app.jobs.run(JobKind.Recognize, session.id, "Recognizing English scan") { observer -> session.recognize(observer) }
+            val outcome = app.jobs.run(JobKind.Recognize, session.id) { observer -> session.recognize(observer) }
             assertTrue(outcome.toString(), outcome is JobOutcome.Finished)
             val text = (outcome as JobOutcome.Finished).value.markdown
                 .lines().joinToString(" ") { it.trimStart('#').trim() }

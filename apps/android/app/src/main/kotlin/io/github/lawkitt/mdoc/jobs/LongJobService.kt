@@ -28,7 +28,8 @@ class LongJobService : Service() {
             (application as MdocApplication).jobs.cancel(CancelReason.User)
             return START_NOT_STICKY
         }
-        val title = intent?.getStringExtra(EXTRA_TITLE) ?: getString(R.string.app_name)
+        val kind = intent?.getStringExtra(EXTRA_KIND)?.let { runCatching { JobKind.valueOf(it) }.getOrNull() }
+        val title = getString(kind?.title ?: R.string.app_name)
         // Always, once started with startForegroundService: Android ends an app
         // whose service does not, even when the job finished first.
         startForeground(NOTIFICATION, notification(title), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -83,11 +84,11 @@ class LongJobService : Service() {
 
         private const val CHANNEL = "jobs"
         private const val NOTIFICATION = 1
-        private const val EXTRA_TITLE = "title"
+        private const val EXTRA_KIND = "kind"
         private const val ACTION_CANCEL = "io.github.lawkitt.mdoc.CANCEL_JOB"
 
         fun intent(context: Context) = Intent(context, LongJobService::class.java)
 
-        fun start(context: Context, title: String) = intent(context).putExtra(EXTRA_TITLE, title)
+        fun start(context: Context, kind: JobKind) = intent(context).putExtra(EXTRA_KIND, kind.name)
     }
 }

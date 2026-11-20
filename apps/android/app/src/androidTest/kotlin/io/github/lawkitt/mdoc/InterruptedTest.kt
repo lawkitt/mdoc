@@ -43,7 +43,7 @@ class InterruptedTest {
 
         // A recognition that Android ends while it runs, as when it stops the service.
         val started = CountDownLatch(1)
-        val job = app.jobs.start(JobKind.Recognize, session.id, title) { observer ->
+        val job = app.jobs.start(JobKind.Recognize, session.id) { observer ->
             val stop = CountDownLatch(1)
             observer.onCancel { stop.countDown() }
             started.countDown()

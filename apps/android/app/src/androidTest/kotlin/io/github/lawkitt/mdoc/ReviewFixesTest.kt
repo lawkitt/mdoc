@@ -130,14 +130,14 @@ class ReviewFixesTest {
     fun aJobOutlivesTheScreenThatStartedIt() = runBlocking {
         val release = CountDownLatch(1)
         val caller = CoroutineScope(Dispatchers.Main).launch {
-            app.jobs.run(JobKind.Recognize, null, "Blocked") { release.await() }
+            app.jobs.run(JobKind.Recognize, null) { release.await() }
         }
         withTimeout(10_000) { app.jobs.current.first { it != null } }
         // The screen goes away mid-job.
         caller.cancelAndJoin()
         release.countDown()
         withTimeout(10_000) { app.jobs.current.first { it == null } }
-        val next = app.jobs.run(JobKind.Recognize, null, "Next") { 1 }
+        val next = app.jobs.run(JobKind.Recognize, null) { 1 }
         assertTrue(next.toString(), next is JobOutcome.Finished)
     }
 
