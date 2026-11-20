@@ -23,8 +23,8 @@ wrong is right. The rules live in `docs/development.md` (Writing docs).
   that itself needs upkeep; the maintainer runs the `codebase-doctor` skill
   by hand instead.
 - **Keep the ADR index and `Folds:` lines.** They existed to resolve
-  citations, which are gone from the code; git history resolves an old
-  number.
+  citations, which are leaving the code (#981); git history resolves an
+  old number, and a Retired line keeps numbers from being reused.
 
 ## Revisit when
 

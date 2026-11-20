@@ -147,6 +147,9 @@ click.
   must-fix Fail; rows only the maintainer can do may follow, listed in the
   report.
 - Before an RC, `ROADMAP.md`'s Current status is up to date.
+- Desktop acceptance keeps at most 10 rows and iOS acceptance at most 8
+  device rows, because a run must fit one sitting; results go in the
+  release's issue.
 - During acceptance, test-only and CI-only PRs merge when green; product
   PRs (app code, forks) wait, and no fork rev is bumped, until both runs
   finish.

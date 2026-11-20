@@ -3,8 +3,8 @@
 ## Build from source
 
 All dependencies, including the pinned AnyDoc converter, are public:
-`git clone https://github.com/lawkitt/mdoc.git`, then `cargo run` (or
-`cargo run -- path/to/document.pdf`). Development commands are
+`git clone https://github.com/lawkitt/mdoc.git`, `cd mdoc`, then `cargo run`
+(or `cargo run -- path/to/document.pdf`). Development commands are
 [just](https://just.systems) recipes, and CI runs the same ones; `just
 --list` describes each. `just setup` installs the pinned tools and `just
 doctor` checks them.
@@ -42,9 +42,7 @@ hard to reverse. [privacy.md](privacy.md) is for users.
   context and the result of a real trade-off. Template: title;
   `Status: Accepted, YYYY-MM-DD.`; Why; Rejected; Revisit when (one
   paragraph is enough when the last two add nothing). A change rewrites the
-  ADR in place. A new one takes the number after `docs/adr/README.md`'s
-  "Last number"; a retired number's text is in git
-  (`git log --all -- 'docs/adr/NNNN-*'`).
+  ADR in place; numbering follows [adr/README.md](adr/README.md).
 - **Comments** give a non-obvious why in their own words. Decision numbers
   and the story of how code got here belong in git.
 - **CONTEXT.md** keeps a term only if it fixes a word users see, forbids a

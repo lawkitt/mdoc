@@ -10,9 +10,13 @@
 #     repository's own and vendor/. A file on the pending list
 #     (scripts/dev/docs-lint-pending.txt) keeps its older ceiling until its
 #     #981 PR trims it, and fails once it fits the new one, so the list only
-#     shrinks;
-#   - an ADR number used by two files, or docs/adr/README.md without a
-#     "Last number: NNNN" line at or above every ADR file's number;
+#     shrinks; a pending ADR is held to its older count, which also left out
+#     References and Terms paragraphs. A pending row must name an existing
+#     file and a number;
+#   - ADR numbers against docs/adr/README.md: its "Last number: NNNN" line
+#     must be at or above every ADR file, and every number up to it must be
+#     either one file or on its "Retired:" line (NNNN or NNNN-NNNN items),
+#     never both, so a retired number is never reused;
 #   - a docs/design/ folder: a grill's record goes in its PR or an issue;
 #   - a dated (YYYY-MM-DD…) or pr-* folder anywhere under docs/evidence/;
 #   - a changelog fragment (changes/, changes/ios/, changes/android/; not
@@ -41,19 +45,30 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 words() { wc -w <"$1" | tr -d ' '; }
-check() { # file ceiling count
+check() { # file ceiling count [count under the older rule]
   local old
   old=$(pending "$1")
   if [ -n "$old" ]; then
     if [ "$3" -le "$2" ]; then
       err "$1 fits its ceiling of $2 now: take it off docs-lint's pending list"
-    elif [ "$3" -gt "$old" ]; then
-      err "$1: $3 words, over its pending ceiling of $old (the target is $2)"
+    elif [ "${4:-$3}" -gt "$old" ]; then
+      err "$1: ${4:-$3} words, over its pending ceiling of $old (the target is $2)"
     fi
   elif [ "$3" -gt "$2" ]; then
     err "$1: $3 words, over its ceiling of $2"
   fi
 }
+
+# The pending list's rows.
+if [ -f "$pending_list" ]; then
+  { grep -v '^#' "$pending_list" || true; } | while read -r path limit rest; do
+    [ -n "$path" ] || continue
+    [ -f "$path" ] || echo "$pending_list: $path is not a file"
+    case "$limit" in '' | *[!0-9]*) echo "$pending_list: $path needs a number, not '$limit'" ;; esac
+    [ -z "$rest" ] || echo "$pending_list: $path has more than a path and a number"
+  done >"$tmp/rows"
+  while IFS= read -r line; do err "$line"; done <"$tmp/rows"
+fi
 
 # Ceilings.
 if [ -f docs/development.md ]; then
@@ -70,7 +85,8 @@ done
 for f in docs/adr/[0-9][0-9][0-9][0-9]-*.md; do
   [ -f "$f" ] || continue
   n=$(awk '/^Status:/ { skip = 1 } /^[ \t]*$/ { skip = 0 } !skip { w += NF } END { print w + 0 }' "$f")
-  check "$f" 250 "$n"
+  older=$(awk '/^(Status|References|Terms):/ { skip = 1 } /^[ \t]*$/ { skip = 0 } !skip { w += NF } END { print w + 0 }' "$f")
+  check "$f" 250 "$n" "$older"
 done
 if [ -f CONTEXT.md ]; then
   check CONTEXT.md 2000 "$(words CONTEXT.md)"
@@ -104,11 +120,29 @@ done >"$tmp/dupes"
 while IFS= read -r line; do err "$line"; done <"$tmp/dupes"
 if [ -s "$tmp/numbers" ]; then
   last=$(sed -n 's/^Last number: \([0-9][0-9][0-9][0-9]\)\.*$/\1/p' docs/adr/README.md 2>/dev/null | head -1)
-  high=$(sort "$tmp/numbers" | tail -1)
   if [ -z "$last" ]; then
     err "docs/adr/README.md has no 'Last number: NNNN' line"
-  elif [ "$((10#$high))" -gt "$((10#$last))" ]; then
-    err "ADR $high is above docs/adr/README.md's Last number ($last): raise it"
+  else
+    # Retired numbers, one per line, from items like 0003 or 0006-0016.
+    sed -n 's/^Retired: //p' docs/adr/README.md | tr ',' '\n' | tr -d ' .' | awk -F- '
+      /^[0-9][0-9][0-9][0-9]$/ { print $1; next }
+      /^[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]$/ { for (i = $1 + 0; i <= $2 + 0; i++) printf "%04d\n", i; next }
+      NF { print "bad " $0 }
+    ' >"$tmp/retired"
+    awk -v last="$last" '
+      FILENAME == ARGV[1] { if ($0 ~ /^bad /) bad[substr($0, 5)] = 1; else retired[$1] = 1; next }
+      { file[$1] = 1 }
+      END {
+        for (b in bad) printf "docs/adr/README.md: Retired item \"%s\" is not NNNN or NNNN-NNNN\n", b
+        for (n in file) if (n + 0 > last + 0) printf "ADR %s is above docs/adr/README.md'"'"'s Last number (%s): raise it\n", n, last
+        for (i = 1; i <= last + 0; i++) {
+          n = sprintf("%04d", i)
+          if ((n in file) && (n in retired)) printf "ADR %s is a file and Retired: a retired number is never reused\n", n
+          else if (!(n in file) && !(n in retired)) printf "ADR %s is neither a file nor Retired in docs/adr/README.md\n", n
+        }
+      }
+    ' "$tmp/retired" "$tmp/numbers" | sort >"$tmp/gaps"
+    while IFS= read -r line; do err "$line"; done <"$tmp/gaps"
   fi
 fi
 

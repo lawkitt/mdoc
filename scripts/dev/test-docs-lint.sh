@@ -4,7 +4,8 @@
 # and each rule fails on its own, naming what broke it: every ceiling (an
 # ADR's Status paragraph and development.md's fleet-profile block not
 # counted), the pending list's older ceilings and its shrinking, a CONTEXT.md
-# entry, a README, ADR numbers against docs/adr/README.md, a docs/design
+# entry, a README, the pending rows, a pending ADR's older count, ADR
+# numbers against Last number and Retired, a docs/design
 # folder, dated and pr-* evidence, and a changelog fragment release.sh would
 # reject. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
@@ -32,7 +33,7 @@ base() {
   mkdir -p "$tmp/repo/scripts/dev" "$tmp/repo/docs/adr" "$tmp/repo/docs/specs" "$tmp/repo/docs/evidence/baseline"
   cp scripts/lib.sh "$tmp/repo/scripts/"
   cp scripts/dev/docs-lint.sh "$tmp/repo/scripts/dev/"
-  printf '# Pending.\ndocs/specs/desktop.md 3000\n' >"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+  printf '# Pending.\n' >"$tmp/repo/scripts/dev/docs-lint-pending.txt"
   git -C "$tmp/repo" init -q
   printf '# Kept choice\n\nStatus: Accepted, 2026-01-01.\n\n%s\n' "$(words 200)" >"$tmp/repo/docs/adr/0001-kept.md"
   printf '# Architecture decisions\n\nLast number: 0001.\n' >"$tmp/repo/docs/adr/README.md"
@@ -88,6 +89,7 @@ expect 0 "docs-lint: ok" "an ADR's Status or the fleet profile counts"
 # The pending list: the older ceiling holds, and a file that fits the new
 # one must leave the list.
 base
+printf 'docs/specs/desktop.md 3000\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
 printf '%s\n' "$(words 2900)" >"$tmp/repo/docs/specs/desktop.md"
 run
 expect 0 "docs-lint: ok" "a pending spec under its older ceiling fails"
@@ -97,6 +99,23 @@ expect 1 "docs/specs/desktop.md: 3001 words, over its pending ceiling of 3000" "
 printf '%s\n' "$(words 1400)" >"$tmp/repo/docs/specs/desktop.md"
 run
 expect 1 "docs/specs/desktop.md fits its ceiling of 1500 now" "a trimmed spec can stay pending"
+
+# A pending ADR is held to its older count, which left out References.
+base
+printf 'docs/adr/0001-kept.md 400\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+printf '# Kept choice\n\nStatus: Accepted.\n\n%s\n\nReferences: %s\n' "$(words 390)" "$(words 20)" >"$tmp/repo/docs/adr/0001-kept.md"
+run
+expect 0 "docs-lint: ok" "a pending ADR under its older count fails"
+printf '# Kept choice\n\nStatus: Accepted.\n\n%s\n\nReferences: %s\n' "$(words 405)" "$(words 20)" >"$tmp/repo/docs/adr/0001-kept.md"
+run
+expect 1 "docs/adr/0001-kept.md: 408 words, over its pending ceiling of 400" "a pending ADR over its older count passes"
+
+# A pending row names an existing file and a number.
+base
+printf 'docs/specs/gone.md 3000\ndocs/specs/ci.md 300O\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+run
+expect 1 "docs/specs/gone.md is not a file" "a pending row for a missing file passes"
+expect 1 "docs/specs/ci.md needs a number, not '300O'" "a pending row with a bad number passes"
 
 # A CONTEXT.md entry over 60 words, named; CONTEXT.md over 2,000.
 base
@@ -129,6 +148,23 @@ expect 0 "docs-lint: ok" "raising Last number does not fix it"
 printf '# Architecture decisions\n' >"$tmp/repo/docs/adr/README.md"
 run
 expect 1 "has no 'Last number: NNNN' line" "a README without Last number passes"
+
+# Every number up to Last number is one file or Retired, never both.
+base
+printf '# Five\n' >"$tmp/repo/docs/adr/0005-five.md"
+printf 'Last number: 0006.\n\nRetired: 0002-0003, 0006.\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 1 "ADR 0004 is neither a file nor Retired" "a gap passes"
+grep -qF "ADR 0002" "$tmp/out" && fail "a retired range was reported"
+printf 'Last number: 0006.\n\nRetired: 0002-0004, 0006.\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 0 "docs-lint: ok" "retired ranges and items fail"
+printf '# Reused\n' >"$tmp/repo/docs/adr/0003-reused.md"
+run
+expect 1 "ADR 0003 is a file and Retired" "a reused number passes"
+printf 'Last number: 0006.\n\nRetired: 0002-0004, 6.\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 1 'Retired item "6" is not NNNN' "a malformed Retired item passes"
 
 # docs/design and dated or per-PR evidence; an undated folder is fine.
 for d in docs/design docs/evidence/runs/2026-11-15 docs/evidence/runs/2026-11-15-native docs/evidence/pr-12; do

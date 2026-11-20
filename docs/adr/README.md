@@ -2,6 +2,10 @@
 
 The few choices that are hard to reverse, surprising without context and the
 result of a real trade-off ([Writing docs](../development.md#writing-docs)).
-A retired number's text is in git: `git log --all -- 'docs/adr/NNNN-*'`.
+A new ADR takes the number after Last number and raises it. Deleting one adds
+its number to Retired, never to be reused; its text stays in git:
+`git log --all -- 'docs/adr/NNNN-*'`.
 
 Last number: 0123.
+
+Retired: 0003, 0006-0016, 0018-0035, 0037-0038, 0042-0044, 0046-0068, 0070-0071, 0073-0084, 0087-0088, 0090-0091, 0093-0094, 0096-0103, 0105-0108, 0110-0118.
