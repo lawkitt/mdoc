@@ -1579,6 +1579,38 @@ version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
 
 [[package]]
+name = "craft-codepage"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+
+[[package]]
+name = "craft-doc-binary"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "chrono",
+ "craft-cfb",
+ "craft-codepage",
+ "craft-wordmodel",
+ "image",
+ "log",
+ "md4",
+ "miniz_oxide 0.9.1",
+ "sha1",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-math"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "craft-xml",
+ "roxmltree 0.21.2",
+ "serde",
+]
+
+[[package]]
 name = "craft-offcrypto"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
@@ -1593,6 +1625,20 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror 2.0.21",
  "zeroize",
+]
+
+[[package]]
+name = "craft-wordmodel"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "base64 0.23.1",
+ "craft-math",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -4529,6 +4575,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "md4"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd76fb0fd6b2e4be62a73f8e0858ca97f81babcb1af322dcaca196f735f17f80"
+dependencies = [
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "mdoc"
 version = "0.4.0-rc.3"
 dependencies = [
@@ -4636,6 +4691,7 @@ name = "mdoc-import"
 version = "0.1.0"
 dependencies = [
  "anydoc",
+ "craft-doc-binary",
  "craft-offcrypto",
  "docxide-pdf",
  "flate2",

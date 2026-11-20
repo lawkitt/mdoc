@@ -24,6 +24,8 @@ url = "2"
 # Unlocks password-protected DOCX, XLSX and PPTX in memory; pinned in the
 # workspace manifest.
 craft-offcrypto = { workspace = true }
+# Unlocks password-protected DOC in memory; pinned in the workspace manifest.
+craft-doc-binary = { workspace = true }
 # The password and an unlocked document's bytes are wiped when dropped.
 zeroize = "1"
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
