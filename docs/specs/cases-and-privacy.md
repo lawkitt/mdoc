@@ -1,7 +1,5 @@
 # Cases and privacy
 
-Folds: 0013, 0014, 0018, 0022, 0034, 0043, 0047, 0056, 0077, 0078, 0105.
-
 Mappings, saved cases and their key, restoring AI replies, what never leaves
 the device, and crash reports. The user-facing summary is
 [privacy.md](../privacy.md); keep it true when a rule here changes. Terms are

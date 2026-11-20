@@ -1,70 +1,66 @@
 # Development
 
-Folds: 0010, 0021, 0029, 0049, 0050, 0051, 0052, 0053, 0059, 0070.
-
 ## Build from source
 
-All dependencies, including the pinned AnyDoc converter, are public.
-
-```sh
-git clone https://github.com/lawkitt/mdoc.git
-cd mdoc
-cargo run
-# Or open a document:
-cargo run -- path/to/document.pdf
-```
-
-Development commands are [just](https://just.systems) recipes, and CI runs
-the same ones. `just setup` installs the pinned tools and `just doctor`
-checks them; `just check` runs fmt, cargo-deny, clippy and the tests as CI
-does, and `just check-all` adds the OCR and model smoke tests (downloads).
+All dependencies, including the pinned AnyDoc converter, are public:
+`git clone https://github.com/lawkitt/mdoc.git`, then `cargo run` (or
+`cargo run -- path/to/document.pdf`). Development commands are
+[just](https://just.systems) recipes, and CI runs the same ones; `just
+--list` describes each. `just setup` installs the pinned tools and `just
+doctor` checks them.
 
 **The repository gate.** Before a PR is ready, run `just lint` and the tests
 of what it changes: `cargo nextest run -p <crate>`, the app's with
 `-p mdoc --features headless-renders`, a script's suite with
 `bash scripts/<area>/test-<suite>.sh`, and `just test` for a change to
 `Cargo.lock`, the toolchain or `.config/nextest.toml`. How the PR then
-merges is in [specs/ci.md](specs/ci.md).
+merges is in [specs/ci.md](specs/ci.md). A slow test is a bug to fix, not a
+limit to raise; tests never retry.
 
 ## Docs
 
-Read this file and your area's spec, its source of truth.
-
-- [specs/desktop.md](specs/desktop.md), [specs/mobile.md](specs/mobile.md),
-  [specs/originals.md](specs/originals.md), [specs/recognition.md](specs/recognition.md),
-  [specs/cases-and-privacy.md](specs/cases-and-privacy.md): product rules.
-- [specs/ci.md](specs/ci.md): how a PR reaches `main`.
-- [specs/release.md](specs/release.md): releases, signing and acceptance.
-- [ROADMAP.md](../ROADMAP.md) for open work, [Issues](https://github.com/lawkitt/mdoc/issues)
-  for bugs, [CONTEXT.md](../CONTEXT.md) for terms,
-  [privacy.md](privacy.md) for users.
-- [adr/](adr/): the few architecture records kept, and where each
-  folded number went.
+The code is the record of what mdoc does. Read this file and your area's
+spec: [desktop](specs/desktop.md), [mobile](specs/mobile.md),
+[originals](specs/originals.md), [recognition](specs/recognition.md),
+[cases and privacy](specs/cases-and-privacy.md), [CI](specs/ci.md) or
+[release](specs/release.md). [ROADMAP.md](../ROADMAP.md) holds open work,
+[Issues](https://github.com/lawkitt/mdoc/issues) bugs,
+[CONTEXT.md](../CONTEXT.md) terms, and [adr/](adr/) the few choices that are
+hard to reverse. [privacy.md](privacy.md) is for users.
 
 ### Writing docs
 
-- A doc stays only if an agent would get something wrong without it and
-  code, tests or lint don't already say so. History lives in git and PRs.
-- Specs have one rule per bullet, with at most one "because" clause, no ADR
-  numbers, paths only where an agent must go, and no narration. Each opens
-  with a `Folds: NNNN, …` line.
-- An ADR records only a hard-to-reverse choice: one that needs a migration
-  or a rewrite to change, or picks a dependency or platform. Sections:
-  Problem, Decision, Consequences; status `Status: Accepted, YYYY-MM-DD.`;
-  no amendment chain. Product behaviour gets no new ADR.
-- Never renumber an ADR: code cites them by number, and `docs/adr/README.md`
-  resolves folded ones. New code doesn't cite ADRs.
-- No design records in the tree: a grill's output is the spec change and its
-  PR, with the record in the PR description or an issue.
-- Documentation of one script or module lives beside it, in its header or a
-  folder README. Agent guidance lives here: no `AGENTS.md` or `CLAUDE.md`.
-- Don't commit survey or before-and-after PNGs; they go in the PR. Evidence
-  stays only while a rerun script reads it. Platform acceptance results go in
-  the release's issue.
-- A PR that folds or trims rules lists each one it dropped, with a reason.
-- `just lint` runs `scripts/dev/docs-lint.sh --check`: word budgets, no
-  design or dated evidence folders, and every ADR number a file or folded.
-  After an ADR change, run it bare to rewrite the index.
+- **A doc line says what the code can't**: intent, a promise to users, a
+  rejected option, or why code that looks wrong is right. A line that
+  restates code, tests, lint, config or `just --list` is a *cache*: it goes
+  stale, so delete it. History lives in git, PRs and issues.
+- **Specs: test or delete.** One rule per bullet, with at most one "because"
+  clause, paths only where an agent must go, and no narration. A rule about
+  privacy, data loss or the case key that a test can pin becomes that test
+  and leaves the spec; a behaviour the code already shows leaves.
+- **ADRs** record a choice that is hard to reverse, surprising without
+  context and the result of a real trade-off. Template: title;
+  `Status: Accepted, YYYY-MM-DD.`; Why; Rejected; Revisit when (one
+  paragraph is enough when the last two add nothing). A change rewrites the
+  ADR in place. A new one takes the number after `docs/adr/README.md`'s
+  "Last number"; a retired number's text is in git
+  (`git log --all -- 'docs/adr/NNNN-*'`).
+- **Comments** give a non-obvious why in their own words. Decision numbers
+  and the story of how code got here belong in git.
+- **CONTEXT.md** keeps a term only if it fixes a word users see, forbids a
+  synonym, or names a domain idea with no type in the code.
+- A grill's record goes in its PR or an issue; its output is the spec or
+  code change. Documentation of one script or module lives beside it, in its
+  header or a folder README. Agent guidance lives here: no `AGENTS.md` or
+  `CLAUDE.md`.
+- Survey or before-and-after PNGs go in the PR. Evidence stays only while a
+  rerun script reads it; acceptance results go in the release's issue.
+- A PR that trims rules lists each one it dropped, with a reason, for the
+  cross-provider reviewer and the maintainer.
+- `just lint` runs `scripts/dev/docs-lint.sh`: word ceilings (its header
+  lists them), no design or dated evidence folders, ADR numbers and
+  changelog fragments. The maintainer runs the `codebase-doctor` skill to
+  clear sediment the lint can't see.
 
 ### Roadmap upkeep
 
@@ -91,9 +87,10 @@ Read this file and your area's spec, its source of truth.
 
 ## Code layout
 
-[ADR 0069](adr/0069-app-architecture-and-code-ownership.md) sets the layout
-and ownership rules, and the table follows each move. Conversion and OCR
-algorithm changes belong in the dependency forks.
+[ADR 0069](adr/0069-app-architecture-and-code-ownership.md) sets ownership.
+Conversion and OCR algorithm changes belong in the dependency forks
+([ADR 0001](adr/0001-conversion-and-ocr-in-dependency-forks.md)). Each
+module's header says what it owns.
 
 **Where code goes:**
 
@@ -104,139 +101,59 @@ algorithm changes belong in the dependency forks.
   out. No trait hierarchy or service container.
 - Logic that needs no GPUI goes into a GUI-free crate (`mdoc-store`,
   `mdoc-import`, `mdoc-detect`, `mdoc-pii`, …), with typed errors.
-- A document reaches the window only through `TabEvent`. No glob imports
-  outside test modules (except `gpui::prelude::*`), no `#[path]`; actions
-  live with the feature that handles them. `just lint` checks boundaries;
-  easement was declined ([#895](https://github.com/lawkitt/mdoc/issues/895)).
+- A document reaches the window only through `TabEvent`. Actions live with
+  the feature that handles them. Boundary easements were declined
+  ([#895](https://github.com/lawkitt/mdoc/issues/895)).
 - A user-facing key binding is a row in `src/shortcuts.rs`; plumbing keys
   (Tab in a control group, moving in a menu, caret basics) stay with the
   feature.
 - mdoc is an application: code the binary cannot reach is dead unless a
-  named consumer exists. Crates are internal (`publish = false`, short
-  READMEs).
-- `unsafe` lives only in modules marked `#[allow(unsafe_code)]`, each block
-  under a `// SAFETY:` comment. Miri, sanitizers and Valgrind were declined
-  ([#897](https://github.com/lawkitt/mdoc/issues/897)).
+  named consumer exists. Crates are internal (`publish = false`).
 - A refactor preserves behaviour; anything a user can observe needs its own
   decision. Judge it by clearer ownership, explicit effects and measured
   cost; file size alone never justifies a split.
-- A test goes only when it exercises removed code, duplicates another test,
-  asserts implementation detail or cannot fail, or when a lower-level test
-  asserts the same thing. A UI test covers only what the real UI shows.
-- UI tests boot through the real tab shell with production dependencies;
-  fixtures supply deterministic settings, models and results, never real
-  downloads.
+- A test goes when it exercises removed code, duplicates another, asserts
+  implementation detail or cannot fail. UI tests boot through the real tab
+  shell with production dependencies and deterministic fixtures, never real
+  downloads, and cover only what the real UI shows.
 - A closed tab or stale completion never changes another tab or frees a
   running worker's slot.
-- Mobile app code follows [specs/mobile.md](specs/mobile.md).
 
-| Location | Responsibility |
-| --- | --- |
-| `src/main.rs` | Startup, menus, key binding order (`bind_all_keys`), window creation |
-| `src/shortcuts.rs`, `src/workspace/shortcuts_ui.rs` | The one table of user-facing key bindings, and the Keyboard Shortcuts sheet |
-| `src/workspace.rs`, `src/workspace/` | The window shell: sidebar, tab identity, admission, scheduling, session persistence |
-| `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator,user_lists}.rs` | The window's owners: tabs, the sidebar, F6 regions, notices, session saves, the DOCX queue, close and quit, cases, the user-wide lists |
-| `src/workspace/tab_menu.rs` | The sidebar tab menu's file and close rows |
-| `src/workspace/{folder_sheet,folder_sheet_ui,case_page,shelf_source}.rs` | The folder sheet, the case page, and what the window gives the shelf |
-| `src/settings_ui.rs`, `src/settings_ui/` | Settings categories, model actions, the dictionary, Detection's Always and Never lists |
-| `src/document_view.rs`, `src/document_view/` | One tab: editor, source preview, import and OCR state, toolbar |
-| `src/document_view/{case_link,document_lifecycle,import_flow}.rs` | The tab's owners: its case link, its lifecycle, its conversion |
-| `src/pii.rs`, `src/pii/ui*` | Pseudonymization UI: scan and edit controller, Replacements panel, word popup |
-| `src/{preview,comment_rail,markdown_search,search_session,images,style,models,spelling,updater,system_quit}.rs` | Preview, the comment rail, find, local images, styling, model listings, spellcheck UI, the update check, macOS quit hooks |
-| `src/shelf.rs`, `src/shelf/`, `src/menu_bar.rs`, `src/shelf_ui.rs`, `src/shelf_ui/` | The menu bar shelf's GPUI-free model, the menu bar item and the shelf's view |
-| `src/document_view/tests.rs`, `src/workspace/tests.rs`, their `tests/`, `src/perf_tests.rs` | Headless flows, one file per owner, and opt-in performance tests |
-| `src/workspace/headless_renders*`, `tests/headless_renders.rs`, `tests/headless_screens.txt` | Dev-only offscreen screen renders (the module header documents them) |
-| `crates/mdoc-store` | Storage: app paths, atomic saves, sessions, recents, settings, encrypted cases and lists, crash-report masking |
-| `crates/mdoc-import` | Import, offline OCR, resumable OCR for the apps, model downloads, the DOCX preview worker, recognition languages |
-| `crates/mdoc-detect` | Offline detection: the GLiNER2 model stage, the correction stage, the user's lists, recognition fixtures and scoring |
-| `crates/mdoc-pii`, `crates/mdoc-history` | The pseudonymization review model and its edit transactions |
-| `crates/mdoc-editor`, `crates/mdoc-editor-core`, `crates/mdoc-markdown` | The GPUI editor; GUI-free editing rules and Markdown recognition shared with the apps |
-| `crates/mdoc-spell` | The EN and RU spelling engine with bundled dictionaries |
-| `crates/gpui-pdf`, `crates/gpui-bidi` | The PDF preview and bidirectional text layout |
-| `crates/mdoc-ffi`, `apps/ios`, `apps/android` | The mobile core bindings and the apps ([iOS](../apps/ios/README.md), [Android](../apps/android/README.md)) |
-
-**Dependencies.** `Cargo.toml` and `Cargo.lock` define dependency
-revisions, `crates/mdoc-import/src/ocr.rs` the runtime URLs and digests, and
-the pinned pdf-inspector manifest the OCR models; don't copy these
-elsewhere. `Cargo.lock` must be what cargo resolves from `Cargo.toml`
-(`just lint` fails otherwise): change a requirement in `Cargo.toml`, never
-the lockfile alone. An exact pin carries its reason in a comment. Bump
-`dirs`, `aes-gcm` and `docxide-pdf` deliberately, one PR each, checking
-their paths, old cases and the preview corpus; `docxide-pdf` as
-[originals](specs/originals.md) says. Fork updates follow
-[ADR 0001](adr/0001-conversion-and-ocr-in-dependency-forks.md). If
-Cargo's Git fetch cannot authenticate, use
+**Dependencies.** `Cargo.toml` is the only place to change a revision:
+`just lint` fails when `Cargo.lock` isn't what cargo resolves from it. An
+exact pin carries its reason in a comment. Bump `dirs`, `aes-gcm` and
+`docxide-pdf` deliberately, one PR each, checking their paths, old cases
+and the preview corpus. If Cargo's Git fetch cannot authenticate, use
 `CARGO_NET_GIT_FETCH_WITH_CLI=true`; never change global Cargo
-configuration.
-
-**Fixtures.** The [import](../tests/fixtures/import/README.md),
-[DOCX](../tests/fixtures/docx-preview/README.md) and
-[OCR](../tests/fixtures/ocr-qualification/README.md) notes give reproduction
-and qualification limits. Never distribute local user-provided fixtures.
+configuration. Never distribute local user-provided fixtures.
 
 **Native checks.** Native appearance, shortcuts, IME, accessibility, GPU
 presentation and installers need a native run; headless tests do not
-establish them. `just perf` measures hotspots (its script's header has the
-rules).
+establish them.
 
 **Tests and OS services.** A test never asks the OS's security or identity
-services: the code signature (`SecCodeCopySelf`), the case key (Keychain,
-Windows data protection, Secret Service) or the build identity built on
-them. Tests inject a case store (`Store::with_key`) and take the build label
-as `Dev`. `mdoc-store`'s `deny-os-services` feature, on in the app's
-dev-dependencies, makes those calls panic in every test build, and
-`tests/os_services_guard.rs` proves it. A new call into such a service goes
-behind the same guard.
+services (the code signature, the case key, the build identity built on
+them): tests inject a case store (`Store::with_key`) and take the build
+label as `Dev`. `mdoc-store`'s `deny-os-services` feature makes those calls
+panic in every test build; a new call into such a service goes behind the
+same guard.
 
-## Recipes
-
-`just` lists every recipe; Git Bash runs them on Windows.
-
-| Recipe | What it does |
-| --- | --- |
-| `just setup` / `just doctor` | Install / check the pinned toolchain and tools |
-| `just check`, `just check-all` | The CI gate; plus the smoke recipes |
-| `just test`, `just test-tier <tier>` | Every test; one tier (`unit`, `app`, `renders`, `recognition`, `rust`, `scripts`, `quarantined`) |
-| `just lint-scripts`, `just actionlint` | shellcheck and shfmt over `scripts/`; workflow lint |
-| `just smoke-ocr`, `just smoke-models`, `just smoke-package`, `just smoke-update` | Release gates |
-| `just perf` | Ignored performance tests, serially |
-| `just recognize`, `just import`, `just detection-gate`, `just snapshots-fetch` | Recognition fixtures ([guide](../tests/fixtures/recognition/README.md)) |
-| `just headless-renders <new-dir>` | Offscreen light and dark PNGs, Tab walks and frame costs |
-| `just package`, `just release`, `just release-ios` | Installers into `dist/`; releases ([specs/release.md](specs/release.md)) |
-| `just ios-core`, `just ios-app`, `just ios-test`, `just ios-release`, `just ios-device-test`, `just mobile` | The iOS core, app, tests and device runs |
-| `just android-setup`, `just android-emulator`, `just android-core`, `just android`, `just android-device-test` | The Android SDK, emulator, core, CI job and device runs |
-| `just ios-survey <out>`, `just android-survey <out>` | Every screen, light and dark, into a folder outside the tree (such as `target/ios/survey`); not CI |
-| `just icon`, `just disk`, `just retire-worktree <path>` | Icon assets from `build/appicon.svg`; worktree `target/` sizes; remove a finished worktree |
-
-A slow test is a bug to fix, not a limit to raise; tests never retry.
-
-### Shell scripts
-
-Recipes stay one command; anything longer is a Bash script in
-[scripts/](../scripts/README.md), no `xtask`. Each starts with
-`#!/usr/bin/env bash` and a `# Usage:` header, then sources `lib.sh`, which
-sets `-euo pipefail`, moves to the repository root and provides `die`,
-`platform`, `confirm` and `load_tools`. Scripts run in Git Bash on Windows;
-one whose header says so stays Bash 3.2 compatible for macOS's `/bin/bash`.
-`shfmt -w scripts` applies the style in `.editorconfig`.
+**Shell scripts.** Recipes stay one command; anything longer is a Bash
+script in [scripts/](../scripts/README.md) that sources `lib.sh`, no
+`xtask`. Scripts run in Git Bash on Windows; one whose header says so stays
+Bash 3.2 compatible for macOS's `/bin/bash`.
 
 ## Build cache
 
-- The dev and test profiles keep line tables for workspace crates and no
-  debug information for dependencies. For a debugger, build into
-  `target/debugging/`: `cargo run --profile debugging`.
 - A dependency gets its own dev `opt-level` (2) only when a profile shows it
   hot and the cold test build grows no more than about 30% on both macOS and
-  Windows; blanket levels stay off.
-- Don't override profiles or `RUSTFLAGS` through environment variables, and
-  never share a `CARGO_TARGET_DIR` between worktrees: both invalidate
-  artifacts, and a shared one tested stale code.
-- Each worktree has its own `target/`, with no cap or automatic eviction.
-  `just disk` reports their sizes;
-  `just retire-worktree <path>` deletes a merged worktree's `target/` and
-  then the worktree, refusing uncommitted, untracked or ignored files.
+  Windows.
+- Never override profiles or `RUSTFLAGS` through environment variables, or
+  share a `CARGO_TARGET_DIR` between worktrees: both invalidate artifacts,
+  and a shared one tested stale code.
 - Cargo never deletes superseded artifacts: after a toolchain bump or a
-  large dependency update, run `cargo clean --profile dev`.
+  large dependency update, run `cargo clean --profile dev`; `just disk` and
+  `just retire-worktree <path>` manage worktrees' `target/`.
 
 ## Fleet
 

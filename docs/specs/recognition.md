@@ -1,7 +1,5 @@
 # Recognition
 
-Folds: 0006, 0016, 0026, 0065, 0066, 0068, 0080, 0093, 0094, 0108.
-
 What mdoc proposes for replacement, how it recognizes scanned pages, and how
 recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 

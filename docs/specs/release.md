@@ -1,7 +1,5 @@
 # Releases
 
-Folds: 0037, 0057, 0083, 0091, 0097, 0107.
-
 How desktop and mobile builds are cut, signed, accepted and published.
 Orchestrating a release run across machines (hub, lanes, GUI sessions,
 polling) is the `fleet` skill's job, not this repository's.
