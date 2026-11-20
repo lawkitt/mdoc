@@ -1268,6 +1268,55 @@ mod tests {
         }
     }
 
+    /// Comments are context for the original, never part of the document:
+    /// no comment's text or author (an annotation's, for a PDF) reaches the
+    /// text, Copy for AI, Share or the saved file.
+    #[test]
+    fn comments_never_reach_the_saved_copied_or_shared_text() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        for name in [
+            "import/handmade-comments.docx",
+            "import/handmade-comments.odt",
+            "import/handmade-comments.rtf",
+            "import/text_annotations.pdf",
+        ] {
+            let path = fixture(name);
+            let comments: Vec<_> = mdoc_import::import::source_comments(Path::new(&path))
+                .into_iter()
+                .chain(
+                    mdoc_import::import::source_annotations(Path::new(&path))
+                        .unwrap_or_default()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, a)| mdoc_import::comments::Comment::from_pdf(i, a)),
+                )
+                .collect();
+            assert!(comments.len() >= 6, "{name}");
+            let session = DocumentSession::new();
+            let snapshot = session
+                .import_file(path, ImportOptions::default(), None)
+                .unwrap();
+            let saved = session.save(library.clone()).unwrap();
+            let carried = [
+                snapshot.text,
+                session.copy_for_ai().unwrap(),
+                session.share_text().unwrap(),
+                std::fs::read_to_string(&saved.path).unwrap(),
+            ];
+            for comment in &comments {
+                for words in [comment.text.trim(), comment.author.trim()] {
+                    if words.is_empty() {
+                        continue;
+                    }
+                    for text in &carried {
+                        assert!(!text.contains(words), "{name}: {words:?} was carried");
+                    }
+                }
+            }
+        }
+    }
+
     /// Without OCR, importing into a library is `import_file`, and keeps
     /// nothing.
     #[test]

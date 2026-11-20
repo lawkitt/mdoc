@@ -33,4 +33,5 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 ## Phones
 
-- Android follows iOS as it reaches the Original pane.
+- Android follows iOS as it reaches the Original pane; TalkBack reaches each
+  comment marker right after its line.
