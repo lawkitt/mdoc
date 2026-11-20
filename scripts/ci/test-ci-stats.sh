@@ -98,7 +98,7 @@ retried ios:mdocUITests/S/testG"
 eq "$(ios_annotations </dev/null)" ""
 echo "ok: what ci/ios's annotations name"
 
-# The slower UI shard of a green pair, or the old single job.
+# The slowest UI shard of a green set, or the old single job.
 jobs='success 1000 2000 ios / ci/ios (unit)
 success 1000 1840 ios / ci/ios (ui 1)
 success 1100 1500 ios / ci/ios (ui 2)
@@ -111,12 +111,18 @@ eq "$(sed 2s/success/cancelled/ <<<"$jobs" | ios_ui_seconds)" ""
 eq "$(sed 3s/1500/0/ <<<"$jobs" | ios_ui_seconds)" ""
 eq "$(sed 3d <<<"$jobs" | ios_ui_seconds)" ""
 eq "$(printf '%s\n' "$jobs" 'success 1000 1200 ios / ci/ios (ui)' | ios_ui_seconds)" ""
+# Three shards since #997: the whole set, never one with a gap or a repeat.
+three=$(printf '%s\n' "$jobs" 'success 1000 2300 ios / ci/ios (ui 3)')
+eq "$(ios_ui_seconds <<<"$three")" "1300 2300"
+eq "$(sed 3d <<<"$three" | ios_ui_seconds)" ""
+eq "$(ios_ui_seconds <<<"${three/(ui 3)/(ui 2)}")" ""
+eq "$(sed 5s/success/failure/ <<<"$three" | ios_ui_seconds)" ""
 jobs='success 1000 2000 ios / ci/ios (unit)
 success 1000 2140 ios / ci/ios (ui)'
 eq "$(ios_ui_seconds <<<"$jobs")" "1140 2140"
 eq "$(sed 2s/success/failure/ <<<"$jobs" | ios_ui_seconds)" ""
 eq "$(echo 'success 1 2 macos / ci/macos (tests)' | ios_ui_seconds)" ""
-echo "ok: the slower iOS UI shard, and the single job before it"
+echo "ok: the slowest iOS UI shard, and the single job before it"
 
 # A queue commit's class from the jobs it started.
 eq "$(printf '%s\n' 'success 10 20 ios / ci/ios (unit)' 'failure 11 30 macos / ci/macos (tests)' \

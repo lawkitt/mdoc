@@ -6,7 +6,7 @@
 # a new table of the classes under apps/ios/mdocUITests; a class measured
 # by fewer than 3 parts keeps its row, so one slow run moves nothing (a
 # class without a row takes even one measurement). When it would move
-# a class to the other shard, or measures a class the table lacks, it
+# a class to another shard, or measures a class the table lacks, it
 # commits the table as one commit on this checkout's HEAD (main) and
 # force-pushes it to the branch nightly/ui-class-times, unless that branch
 # already holds the same table on the same commit; otherwise it deletes

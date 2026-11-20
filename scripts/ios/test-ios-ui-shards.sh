@@ -39,29 +39,32 @@ expect 0 scripts/ios/ios-ui-shards.sh 1
 one=$(cat "$tmp/out")
 expect 0 scripts/ios/ios-ui-shards.sh 2
 two=$(cat "$tmp/out")
-if [ -z "$one" ] || [ -z "$two" ]; then fail "a shard is empty"; fi
+expect 0 scripts/ios/ios-ui-shards.sh 3
+three=$(cat "$tmp/out")
+if [ -z "$one" ] || [ -z "$two" ] || [ -z "$three" ]; then fail "a shard is empty"; fi
 # shellcheck disable=SC2086 # one identifier per word
-both=$(printf '%s\n' $one $two | LC_ALL=C sort)
-[ -z "$(printf '%s\n' "$both" | uniq -d)" ] || fail "in both shards: $(printf '%s\n' "$both" | uniq -d)"
-for id in $one $two; do
+both=$(printf '%s\n' $one $two $three | LC_ALL=C sort)
+[ -z "$(printf '%s\n' "$both" | uniq -d)" ] || fail "in two shards: $(printf '%s\n' "$both" | uniq -d)"
+for id in $one $two $three; do
   case "$id" in mdocUITests/*UITests) ;; *) fail "not an identifier: $id" ;; esac
 done
 want=$(grep -rhoE 'class +[A-Za-z0-9_]+ *: *XCTestCase' apps/ios/mdocUITests |
   awk '{ sub(/^class +/, ""); sub(/ *:.*/, ""); print "mdocUITests/" $0 }' | LC_ALL=C sort)
 [ "$both" = "$want" ] || fail "the shards are not every XCTestCase class: $(diff <(echo "$both") <(echo "$want") || true)"
-# The plan covers every class, and its totals are the two shards'.
+# The plan covers every class, and its totals are the three shards'.
 expect 0 scripts/ios/ios-ui-shards.sh --plan
-[ "$(grep -c '^[12] ' "$tmp/out")" = "$(printf '%s
+[ "$(grep -c '^[123] ' "$tmp/out")" = "$(printf '%s
 ' "$want" | wc -l | tr -d ' ')" ] || fail "plan: $(cat "$tmp/out")"
-grep -q '^shard 2: ' "$tmp/out" || fail "plan totals: $(cat "$tmp/out")"
-expect 1 scripts/ios/ios-ui-shards.sh 3
-grep -q 'no shard 3' "$tmp/out" || fail "shard 3: $(cat "$tmp/out")"
+grep -q '^shard 3: ' "$tmp/out" || fail "plan totals: $(cat "$tmp/out")"
+expect 1 scripts/ios/ios-ui-shards.sh 4
+grep -q 'no shard 4' "$tmp/out" || fail "shard 4: $(cat "$tmp/out")"
 expect 1 scripts/ios/ios-ui-shards.sh
 expect 1 scripts/ios/ios-ui-shards.sh 1 2
 
-# Scratch classes and tables: MDOC_UI_TESTS_DIR and MDOC_UI_CLASS_TIMES.
+# Scratch classes and tables: MDOC_UI_TESTS_DIR and MDOC_UI_CLASS_TIMES,
+# packed into two shards (MDOC_UI_SHARDS) but where a case says three.
 s=scripts/ios/ios-ui-shards.sh
-export MDOC_UI_TESTS_DIR="$tmp/ui" MDOC_UI_CLASS_TIMES="$tmp/times.tsv"
+export MDOC_UI_TESTS_DIR="$tmp/ui" MDOC_UI_CLASS_TIMES="$tmp/times.tsv" MDOC_UI_SHARDS=2
 # classes <name>...: a fresh tests folder with these classes.
 classes() {
   rm -rf "$tmp/ui"
@@ -112,6 +115,14 @@ classes AUITests BUITests CUITests DUITests EUITests
 times EUITests 40 DUITests 50 CUITests 60 BUITests 90 AUITests 100.4
 shard 1 AUITests DUITests
 shard 2 BUITests CUITests EUITests
+# Three shards, as ci-ios.yml runs: the third takes C, then the least
+# loaded takes each of D and E.
+MDOC_UI_SHARDS=3
+times AUITests 100 BUITests 90 CUITests 60 DUITests 50 EUITests 40
+shard 1 AUITests
+shard 2 BUITests EUITests
+shard 3 CUITests DUITests
+MDOC_UI_SHARDS=2
 
 # A class the table lacks counts as its median (60 of 100, 90, 60, 50, 40),
 # placed by name among equal times, and the plan marks it.

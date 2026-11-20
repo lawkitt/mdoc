@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-ui-shards.sh <shard> | --check | --plan | --classes
 # The UI test classes (mdocUITests) split over ci-ios.yml's UI parts,
-# `ci/ios (ui 1)` and `ci/ios (ui 2)`, by measured time: `<shard>` prints that
+# `ci/ios (ui 1)`, `(ui 2)` and `(ui 3)`, by measured time: `<shard>` prints that
 # shard's classes as xcodebuild `-only-testing`
 # identifiers on one line (`mdocUITests/EditToolbarUITests ...`), which
 # `just ios-test` takes as its `only` arguments. `--check` prints nothing;
@@ -26,7 +26,9 @@
 # compatible.
 source "$(dirname "$0")/../lib.sh"
 
-count=2
+# Three since Xcode 27: a shard of two took 31 minutes on the xcode-27
+# image, 16-21 on macos-26 (#997). MDOC_UI_SHARDS replaces it (the tests').
+count=${MDOC_UI_SHARDS:-3}
 dir=${MDOC_UI_TESTS_DIR:-apps/ios/mdocUITests}
 times=${MDOC_UI_CLASS_TIMES:-apps/ios/ui-class-times.tsv}
 usage="usage: scripts/ios/ios-ui-shards.sh <shard 1-$count> | --check | --plan | --classes"
