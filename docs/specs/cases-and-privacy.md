@@ -11,9 +11,9 @@ in [CONTEXT.md](../../CONTEXT.md).
   and no shared category markers.
 - Never offer realistic fake names, because they are harder to restore and
   collide with real names.
-- Detection only proposes: text changes only on Apply, as one undoable edit,
-  and linking two wordings needs a user action unless the form is a unique
-  propagated one.
+- Detection never changes text: applying proposals is explicit and
+  undoable, and linking two wordings needs a user action unless the form is
+  a unique propagated one.
 - 2 MiB with 20,000 occurrences is the stress benchmark, not a cap.
 
 ## Cases

@@ -2035,3 +2035,32 @@ fn merge_hint_into_a_later_case_identity_keeps_one_case_entry(cx: &mut TestAppCo
         assert_eq!(view.pii.review().identity(next).unwrap().alias, "PERSON_3");
     });
 }
+
+/// The session keeps a saved case's summary only: never a closed member's
+/// path or an original wording.
+#[gpui::test]
+fn the_session_keeps_a_case_summary_never_its_members_or_originals(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    cx.run_until_parked();
+    let closed = dir.path().join("closed-member-file.md");
+    std::fs::write(&closed, "PERSON_1").unwrap();
+    tabs.update(cx, |tabs, _| {
+        tabs.case_coordinator.cases_mut()[0]
+            .members
+            .push(session_store::identity(&closed))
+    });
+    let session = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    assert!(session.cases.iter().any(|summary| summary.id == id));
+    let manifest = dir.path().join("session.json");
+    session_store::save(&manifest, &session).unwrap();
+    let json = std::fs::read_to_string(&manifest).unwrap();
+    assert!(json.contains(&id));
+    for leak in ["closed-member-file", "Anna Petrova", "Northwind Traders"] {
+        assert!(!json.contains(leak), "{leak} reached the session");
+    }
+}
