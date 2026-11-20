@@ -7,12 +7,7 @@
 #     every other spec 1,500; each ADR 250, not counting its Status paragraph;
 #     CONTEXT.md 2,000, and 60 per entry (a `**Term**` line up to the next
 #     entry or heading); every tracked README.md 800, except the
-#     repository's own and vendor/. A file on the pending list
-#     (scripts/dev/docs-lint-pending.md) keeps its older ceiling until its
-#     #981 PR trims it, and fails once it fits the new one, so the list only
-#     shrinks; a pending ADR is held to its older count, which also left out
-#     References and Terms paragraphs. A pending row must name an existing
-#     file and a number;
+#     repository's own and vendor/;
 #   - ADR numbers against docs/adr/README.md: its "Last number: NNNN" line
 #     must be at or above every ADR file, and every number up to it must be
 #     either one file or on its "Retired:" line (NNNN or NNNN-NNNN items),
@@ -31,12 +26,6 @@ source "$(dirname "$0")/../lib.sh"
 
 [ $# -eq 0 ] || die "usage: scripts/dev/docs-lint.sh"
 
-pending_list=scripts/dev/docs-lint-pending.md
-pending() { # path: its older ceiling, if it is on the pending list
-  [ -f "$pending_list" ] || return 0
-  awk -v f="$1" '$1 == f { print $2; exit }' "$pending_list"
-}
-
 bad=0
 err() {
   echo "docs-lint: $*" >&2
@@ -46,30 +35,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 words() { wc -w <"$1" | tr -d ' '; }
-check() { # file ceiling count [count under the older rule]
-  local old
-  old=$(pending "$1")
-  if [ -n "$old" ]; then
-    if [ "$3" -le "$2" ]; then
-      err "$1 fits its ceiling of $2 now: take it off docs-lint's pending list"
-    elif [ "${4:-$3}" -gt "$old" ]; then
-      err "$1: ${4:-$3} words, over its pending ceiling of $old (the target is $2)"
-    fi
-  elif [ "$3" -gt "$2" ]; then
-    err "$1: $3 words, over its ceiling of $2"
-  fi
+check() { # file ceiling count
+  [ "$3" -le "$2" ] || err "$1: $3 words, over its ceiling of $2"
 }
-
-# The pending list's rows.
-if [ -f "$pending_list" ]; then
-  { grep -v '^#' "$pending_list" || true; } | while read -r path limit rest; do
-    [ -n "$path" ] || continue
-    [ -f "$path" ] || echo "$pending_list: $path is not a file"
-    case "$limit" in '' | *[!0-9]*) echo "$pending_list: $path needs a number, not '$limit'" ;; esac
-    [ -z "$rest" ] || echo "$pending_list: $path has more than a path and a number"
-  done >"$tmp/rows"
-  while IFS= read -r line; do err "$line"; done <"$tmp/rows"
-fi
 
 # Ceilings.
 if [ -f docs/development.md ]; then
@@ -86,8 +54,7 @@ done
 for f in docs/adr/[0-9][0-9][0-9][0-9]-*.md; do
   [ -f "$f" ] || continue
   n=$(awk '/^Status:/ { skip = 1 } /^[ \t]*$/ { skip = 0 } !skip { w += NF } END { print w + 0 }' "$f")
-  older=$(awk '/^(Status|References|Terms):/ { skip = 1 } /^[ \t]*$/ { skip = 0 } !skip { w += NF } END { print w + 0 }' "$f")
-  check "$f" 250 "$n" "$older"
+  check "$f" 250 "$n"
 done
 if [ -f CONTEXT.md ]; then
   check CONTEXT.md 2000 "$(words CONTEXT.md)"
