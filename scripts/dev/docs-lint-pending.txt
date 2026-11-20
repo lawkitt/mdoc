@@ -7,7 +7,6 @@ docs/specs/desktop.md 3000
 docs/specs/mobile.md 3000
 docs/specs/recognition.md 3000
 docs/specs/release.md 3000
-CONTEXT.md 3000
 docs/adr/0001-conversion-and-ocr-in-dependency-forks.md 400
 docs/adr/0002-reviewable-local-pseudonymization.md 400
 docs/adr/0036-bundled-spellcheck.md 400
