@@ -3,4 +3,3 @@
 # on a listed file that already fits). Format: <path> <ceiling>. It is a .md
 # file so that a PR trimming only docs and this list stays docs-only for the
 # merge queue (scripts/ci/ci-areas.txt) and runs no build jobs.
-docs/specs/release.md 3000
