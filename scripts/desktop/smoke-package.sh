@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Usage: scripts/desktop/smoke-package.sh
-# Release gate on what ships (ADR 0037): runs `mdoc --mdoc-self-test` from the
+# Release gate on what ships: runs `mdoc --mdoc-self-test` from the
 # packaged artifact after `just package`. On macOS that is the app inside the
 # .dmg, under its real hardened-runtime signature, which test builds never
 # have; on Windows the release mdoc.exe the installer carries. The self-test
 # downloads the OCR runtime and model into throwaway storage and recognizes
 # the English qualification fixture. A Developer ID build must also pass
-# Gatekeeper with stapled tickets (ADR 0039); MDOC_REQUIRE_SIGNING=1 refuses
+# Gatekeeper with stapled tickets; MDOC_REQUIRE_SIGNING=1 refuses
 # any other build.
 # shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"

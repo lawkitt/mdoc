@@ -3,7 +3,7 @@
 # Boots an Android emulator from the pinned API 36 image with 16 KB pages
 # (scripts/android/install-android-sdk.sh), x86_64, or arm64-v8a on the Mac
 # (android_emulator_abi), headless unless --window, waits until Android has
-# booted and prints its adb serial (ADR 0089, 0091). The virtual
+# booted and prints its adb serial. The virtual
 # devices live in $(android_home)/avd and are written here on first use: a
 # Pixel 8-sized phone (emulator-5554), a Pixel Tablet-sized tablet
 # (emulator-5556) and CI's own phone (emulator-5560), so a CI run

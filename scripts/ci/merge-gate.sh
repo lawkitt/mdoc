@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/merge-gate.sh
 #
-# The `merge-gate` status (ADR 0095): the one required check beside `lint
+# The `merge-gate` status: the one required check beside `lint
 # (ubuntu)`, posted on two kinds of commit.
 #
 #   A PR head: green when the fast tier (`fast (ubuntu)`) passed, and says
 #   that the full suite runs in the merge queue; "Docs only" when the PR
-#   touches no area (scripts/ci/ci-areas.txt). A recognition-area PR (ADR 0100:
-#   a file on the table's recognition lines, head_detection in lib.sh) also
+#   touches no area (scripts/ci/ci-areas.txt). A recognition-area PR
+#   (a file on the table's recognition lines, head_detection in lib.sh) also
 #   waits for the detection gate on its head, `detection-head / ci/detection`
 #   (ci.yml); a failure names `just snapshots-fetch <PR>`. That job skipped
 #   by the PR's CI (its own copy of the table said no), or a finished PR CI
@@ -22,7 +22,7 @@
 #   is docs only needs no job, whatever the entries ahead bring (docs_only
 #   in lib.sh). Hosted jobs (queue.yml) are check runs
 #   named ci/macos, ci/ios, ci/detection (the detection gate's summary of
-#   its shards) and ci/scripts (the CI machinery's script suites, ADR 0100);
+#   its shards) and ci/scripts (the CI machinery's script suites);
 #   a check counts only when it concluded success, or skipped
 #   as not affected; anything else fails. A needed ci/scripts with no check
 #   run at all takes the commit's ci/macos verdict, which runs the same
@@ -30,7 +30,7 @@
 #   statuses ci/windows and ci/android, and refreshes a pending one at least
 #   every 5 minutes while it runs (its heartbeat).
 #
-# A hosted job that never ran (ADR 0100) is no result: cancelled with no
+# A hosted job that never ran is no result: cancelled with no
 # runner and no step started, cancelled after it started (an internal error,
 # a lost runner: GitHub reports a test failure as `failure`) unless it hit
 # its own timeout-minutes, or a summary job whose failing parts (its

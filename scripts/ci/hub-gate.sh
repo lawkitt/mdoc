@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/hub-gate.sh <PR number>
 #
-# The recognition hub's gate before it enqueues a PR (ADR 0108). In a
+# The recognition hub's gate before it enqueues a PR. In a
 # worktree of its own it checks out origin/main, merges the head of every PR
 # ahead of the candidate in main's merge queue (all of them when the
 # candidate is not queued yet), then the candidate's head, and runs

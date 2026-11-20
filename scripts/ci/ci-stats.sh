@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/ci-stats.sh [--days N | --since <UTC time>] [--nights K]
 #
-# ADR 0113's CI targets, measured from GitHub's queue commits (the merge
+# The CI targets, measured from GitHub's queue commits (the merge
 # queue's Queue runs) over the last N days (default 7) or since a time such
 # as 2026-11-05T22:20:00Z (to measure only what ran after a change landed):
 #
@@ -26,7 +26,7 @@
 # no time. A drop is a queue commit whose merge-gate failed (the queue then
 # drops its PR). It counts as not caused by the PR when every job its first
 # failing merge-gate status names is one of:
-#   - an infrastructure failure (ADR 0100), as merge-gate words it: "no macOS
+#   - an infrastructure failure, as merge-gate words it: "no macOS
 #     runner, 3 attempts", "cancelled on macOS, 3 attempts" or "did not run";
 #   - a PC job (ci/windows, ci/android) whose failing status names one test
 #     (not "<test> and 2 more": the others are unknown), or the hosted iOS
@@ -46,12 +46,12 @@
 # Unrelated drops are listed under the drops line, with the rule that matched.
 #
 # Two report lines follow, which never set the exit: `retried`, every hosted
-# iOS UI test `ci/ios` warned of as passed on its retry (ADR 0113: "Passed
+# iOS UI test `ci/ios` warned of as passed on its retry ("Passed
 # on retry in ci/ios (ui 1): <test>, <test>"), each an unrelated failure; and
 # `flaky`, each test not on the quarantine list with two or more unrelated
 # failures (a retried pass, or a test an unrelated drop names: one that
-# failed on another PR's queue commit too), on different queue commits: ADR
-# 0112 quarantines it. Both read
+# failed on another PR's queue commit too), on different queue commits:
+# quarantine it. Both read
 # from the drops target's start.
 #
 # --nights K measures K windows, ending now, a day ago and so on (each N days
@@ -96,9 +96,10 @@ repeat_s=$((14 * 86400))
 #   core     items 27 (one rule pack), 28 (UI shards by time) and 31
 #            (detection on hosted Windows)
 #   desktop  item 24 (detection only when its inputs change)
-#   queue    ADR 0112's rollout, the median it keeps as a floor
+#   queue    the queue-speed and quarantine rollout, the median it keeps
+#            as a floor
 #   ios-ui   item 28 (UI shards by time)
-#   drops    ADR 0112's rollout
+#   drops    the queue-speed and quarantine rollout
 target_start() { # target
   case "$1" in
     core) echo 2026-11-13T12:57:58Z ;;
@@ -215,7 +216,7 @@ failed_jobs() { # description
 }
 
 # Whether a job's place (from failed_jobs) is merge-gate's wording for an
-# infrastructure failure (ADR 0100): a job with no runner, one cancelled
+# infrastructure failure: a job with no runner, one cancelled
 # after it started (not by its own timeout, which merge-gate words as a
 # plain failure), or one that never ran.
 infra_where() { # where
@@ -615,7 +616,7 @@ report_flaky() { # from to dir drops
   } | awk 'NF { x = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", x) }
       NF && !seen[$1 " " x]++ { n[x]++; w[x] = w[x] (w[x] == "" ? "" : ", ") $3 " on PR #" $2 }
       END { for (x in n) if (n[x] >= 2) print x "\t" n[x] "\t" w[x] }' | sort)
-  echo "flaky    tests with unrelated failures on two or more queue commits, not quarantined (ADR 0112: quarantine each): $count"
+  echo "flaky    tests with unrelated failures on two or more queue commits, not quarantined (quarantine each): $count"
   printf '%s' "$list"
 }
 

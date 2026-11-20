@@ -464,7 +464,7 @@ flake=$(qc 14 setupflake src/lib.rs)
 unread=$(qc 15 unread src/lib.rs)
 echo 2 >"$FAKE/pr-down-15"
 gradlefail=$(at=apps/android/ci-behavior qc 19 gradlefail apps/android/App.kt)
-# The CI machinery alone (ADR 0100): ci/scripts runs it, hosted.
+# The CI machinery alone: ci/scripts runs it, hosted.
 gate=$(at=scripts/ci/merge-gate.sh qc 20 gate .github/workflows/ci.yml)
 {
   for n in 1 2 3 7 8 9 10 11 12 14 15 19 20; do echo "$n User false"; done
@@ -624,8 +624,8 @@ check "the job's refs are cleaned up" [ -z "$(git -C "$LOCAL_CI_HOME/queue-windo
 # --- a job over its limit ---------------------------------------------------------
 
 # A pass of its own, with its own limit: in the pass above, this job waited
-# out the 60 s the heartbeat job needs, most of the suite's time (ADR 0112's
-# sweep). It stalls in setup, so only its checkout has to fit in 20 s.
+# out the 60 s the heartbeat job needs, most of the suite's time. It stalls in
+# setup, so only its checkout has to fit in 20 s.
 slow=$(qc 9 slow src/lib.rs)
 QUEUE_CI_TIMEOUT=20 run_once windows "$tmp/slow.log"
 check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in scripts/setup.sh after 0m20s	*"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-device-test.sh <hardware UDID> [auto|detector|below-floor]
-# The device UI tests (ADR 0088) on a connected iPhone: the review flow and,
+# The device UI tests on a connected iPhone: the review flow and,
 # by the phone's tier, the long jobs at the detector tier
 # (DeviceLongJobsUITests) or the below-floor test (DeviceBelowFloorUITests),
 # through the real background task the Simulator refuses. `auto` (the
@@ -29,13 +29,13 @@ container_fixtures=Library/mdoc-ui-fixtures
 result=target/ios/device-test-$(date +%Y%m%d-%H%M%S).xcresult
 # A pass on a clean checkout is recorded by commit (scripts/ios/ios-gate.sh);
 # `just release-ios` tags only a commit with a pass on the iPhone 12 Pro at
-# its own tier (ADR 0107).
+# its own tier.
 commit=$(git rev-parse HEAD)
 clean=no
 ! bash scripts/ios/ios-gate.sh clean || clean=yes
 
 # The phone's model, always: the record names the real phone even when the
-# tier is forced. The detector floor is 4 GB (ADR 0120).
+# tier is forced. The detector floor is 4 GB.
 details=$(mktemp)
 xcrun devicectl device info details --device "$device" --json-output "$details" >/dev/null 2>&1 ||
   die "could not read the phone's model"

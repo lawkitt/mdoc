@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-asc-key.sh <folder>
-# Writes the App Store Connect API key from the environment (ADR 0107) to
+# Writes the App Store Connect API key from the environment to
 # <folder>/AuthKey_<ASC_KEY_ID>.p8, readable by its owner only, and prints
 # that path. ASC_KEY_P8 is the key's base64 body without its BEGIN and END
 # lines, as `release-ios` holds it; a full PEM works too. ios-release.yml

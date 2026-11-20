@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/ci-cache-cleanup.sh
-# Run by ci.yml on main after the jobs that save cargo caches (ADR 0082):
+# Run by ci.yml on main after the jobs that save cargo caches:
 # keeps the newest cache of each job and deletes its older generations.
 # Swatinem/rust-cache keys are `v0-rust-<job>-<os>-<arch>-<env hash>-<lock
 # hash>`; a generation differs in its lock hash (Cargo files) or env hash

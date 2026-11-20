@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/test-ios-ui-shards.sh
-# scripts/ios/ios-ui-shards.sh (ADR 0112, ADR 0113): on the real tree every UI
+# scripts/ios/ios-ui-shards.sh: on the real tree every UI
 # test class is in exactly one shard, and the shards print disjoint
 # `-only-testing` lists that cover them all; on scratch copies the greedy
 # longest-first packing by apps/ios/ui-class-times.tsv, a class the table

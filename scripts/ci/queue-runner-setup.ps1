@@ -1,6 +1,6 @@
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\ci\queue-runner-setup.ps1 [-Jobs windows,android] [-Uninstall] [-Root E:\ci]
 #
-# The merge-queue runners on the PC (ADR 0095). For each job (windows,
+# The merge-queue runners on the PC. For each job (windows,
 # android) makes its home E:\ci\queue-<job> with its own CI checkout (a clone
 # at E:\ci\queue-<job>\mdoc, on the Dev Drive), copies the runner from this
 # repository to E:\ci\queue-<job>\runner\scripts, writes
@@ -184,7 +184,7 @@ foreach ($job in $Jobs) {
     $vars = "LOCAL_CI_HOME=$(ConvertTo-BashWord $bashRoot) QUEUE_CI_HOME=$(ConvertTo-BashWord "$bashRoot/queue-$job") QUEUE_CI_JOB=$job"
     Register-CiTask (Get-TaskName $job) `
         "$vars PATH=`$HOME/.cargo/bin:`$PATH exec bash $runner run >>$taskLog 2>&1" `
-        "mdoc merge-queue runner (ADR 0095): scripts/queue-runner.sh run, ci/$job"
+        "mdoc merge-queue runner: scripts/queue-runner.sh run, ci/$job"
 }
 
 # The results: the local CI web task serves $out already; else this one.
@@ -207,7 +207,7 @@ if (-not $localWeb) {
     $serve = "MSYS_NO_PATHCONV=1 $tailscale serve --bg --set-path /ci http://127.0.0.1:$Port >/dev/null 2>&1"
     Register-CiTask $webTaskName `
         "for _ in `$(seq 30); do $serve && break; sleep 10; done; exec $(ConvertTo-BashWord (ConvertTo-BashPath $python.Source)) -m http.server --bind 127.0.0.1 $Port --directory $(ConvertTo-BashWord $outArg) >/dev/null 2>&1" `
-        "mdoc merge-queue results (ADR 0095): $out on 127.0.0.1:$Port, and /ci on the tailnet"
+        "mdoc merge-queue results: $out on 127.0.0.1:$Port, and /ci on the tailnet"
 }
 
 Write-Output "Queue CI installed for $($Jobs -join ', '): results https://$dns/ci/queue-<job>/"

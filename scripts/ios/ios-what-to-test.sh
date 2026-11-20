@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-what-to-test.sh check <file>
 #        scripts/ios/ios-what-to-test.sh from-tag <tag>
-# A TestFlight build's What to Test (ADR 0107). `check` fails unless the text
+# A TestFlight build's What to Test. `check` fails unless the text
 # opens with the never-client-files line, fits TestFlight's 4,000
 # characters, has no `---` line (which ends it in a tag's annotation) and no
 # symbol App Store Connect refuses in What to Test: emoji, the Miscellaneous

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/desktop/smoke-update.sh [path/to/mdoc_<version>_arm64.dmg]
-# In-app update check on real artifacts (ADR 0040), run by hand before a
+# In-app update check on real artifacts, run by hand before a
 # release that changes the updater. Copies the app out of a Developer ID
 # signed .dmg OLDER than the latest published release into a throwaway
 # Applications folder, runs `mdoc --mdoc-self-update` there (the app's own

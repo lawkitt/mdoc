@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Usage: QUEUE_CI_JOB=windows|android scripts/queue-runner.sh [run|once|status]
 #
-# The PC's runner for merge-queue commits (ADR 0095). One job per instance:
+# The PC's runner for merge-queue commits. One job per instance:
 # QUEUE_CI_JOB=windows posts ci/windows (scripts/setup.sh, just lint, just
 # test-tier rust: the Rust tests and doctests, not the script suites, which
-# hosted Linux and macOS run; ADR 0112), QUEUE_CI_JOB=android posts
+# hosted Linux and macOS run), QUEUE_CI_JOB=android posts
 # ci/android (scripts/setup.sh, just android). The PC runs both side by side, each in its own home
 # ($LOCAL_CI_HOME/queue-<job>, E:\ci\queue-<job>) with its own CI checkout,
 # target/ and state. It tests only queue commits, the branches under
@@ -89,7 +89,7 @@ config() {
   net_s=${QUEUE_CI_NET_TIMEOUT:-60}
   # How long a failed checkout waits before its one retry.
   clean_wait_s=${QUEUE_CI_CLEAN_WAIT:-30}
-  # The job's area (scripts/ci/ci-areas.txt), steps and whole-job limit (ADR 0095).
+  # The job's area (scripts/ci/ci-areas.txt), steps and whole-job limit.
   case "$job" in
     windows) area=desktop steps='setup lint test' limit_s=${QUEUE_CI_TIMEOUT:-1800} ;;
     android) area=android steps='setup android' limit_s=${QUEUE_CI_TIMEOUT:-2400} ;;
@@ -466,7 +466,7 @@ job() { # sha dir clean-reason
     # A stopped job's processes (Gradle, its test run) can hold files for a
     # while after they are killed; on Windows git then cannot remove them
     # (2026-11-04, the job after a stopped Android job). Infrastructure: one
-    # retry, logged (ADR 0095).
+    # retry, logged.
     echo "queue-runner: checkout failed; retrying once in ${clean_wait_s}s"
     echo "checkout: failed once; retried" >>"$dir/summary.txt"
     sleep "$clean_wait_s"
@@ -479,7 +479,7 @@ job() { # sha dir clean-reason
     rc=0
     case "$step" in
       # Not through just: setup may replace the just binary. Its downloads
-      # are infrastructure: one retry, logged (ADR 0095); tests never retry.
+      # are infrastructure: one retry, logged; tests never retry.
       setup)
         if ! bash scripts/setup.sh </dev/null; then
           echo "queue-runner: scripts/setup.sh failed; retrying once"
@@ -860,7 +860,7 @@ cmd_status() {
   ci_served || served=$?
   case "$served" in
     0)
-      # The page itself (ADR 0100): served is not enough if the web server
+      # The page itself: served is not enough if the web server
       # is down or serves another folder.
       if [ -z "$url" ]; then
         echo "tailnet: /ci served; no results URL (QUEUE_CI_URL) to fetch"

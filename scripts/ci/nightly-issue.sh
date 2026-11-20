@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/nightly-issue.sh <job>=<result>...
 #
-# The nightly run's report (ADR 0095): one open issue titled "Nightly CI is
+# The nightly run's report: one open issue titled "Nightly CI is
 # red" while any job of the run did not succeed. A red night opens it, or
 # comments on the one already open, naming the failed jobs and linking the
 # run; a green night closes it with a comment. <result> is a job's

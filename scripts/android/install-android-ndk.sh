@@ -2,7 +2,7 @@
 # Usage: scripts/android/install-android-ndk.sh
 # Installs the pinned Android NDK under $(android_home)/ndk (lib.sh): on the
 # Mac for its mobile check, and on Windows, the Mac or Linux for the Android
-# app (ADR 0089, 0091).
+# app.
 # Verified against the size and SHA-1 Google publishes in
 # https://dl.google.com/android/repository/repository2-3.xml (it publishes no
 # SHA-256). Prints the NDK's directory on stdout. A new ANDROID_NDK_VERSION

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/deny-ci.sh
 #
-# CI's cargo-deny step (ADR 0095): `just deny-policy` (licences, bans,
+# CI's cargo-deny step: `just deny-policy` (licences, bans,
 # sources) always, and `just deny-advisories` only when the change touches
 # Cargo.lock or deny.toml, so an advisory published today turns red the PR
 # that brings the crate in and the nightly run (which opens an issue), never

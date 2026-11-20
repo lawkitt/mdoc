@@ -255,7 +255,7 @@ contains "$CHECK_LOG" check-all
 [ ! -e "$PUSH_LOG" ] || fail 'interactive no pushed'
 echo 'ok: unflagged release retains both interactive prompts'
 
-# Changelog fragments (ADR 0072): newest merge first, renamed ones last.
+# Changelog fragments: newest merge first, renamed ones last.
 cd "$tmp/repo"
 mkdir -p changes
 printf 'Not a fragment.\n' >changes/README.md
@@ -273,7 +273,7 @@ printf -- '- Renamed.\n' >changes/a-renamed.md
 commit 'renamed fragment, before'
 git mv changes/a-renamed.md changes/z-renamed.md
 commit 'renamed fragment'
-# App fragments feed each app's own CHANGELOG (ADR 0091); desktop leaves them.
+# App fragments feed each app's own CHANGELOG; desktop leaves them.
 mkdir -p changes/ios changes/android
 printf -- '- iOS only.\n' >changes/ios/ios-only.md
 printf -- '- Android only.\n' >changes/android/android-only.md

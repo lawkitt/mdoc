@@ -3,12 +3,12 @@
 #        scripts/ios/ios-gate.sh tier <model>
 #        scripts/ios/ios-gate.sh record <commit> <udid> <model> <tier>
 #        scripts/ios/ios-gate.sh check <commit>
-# The iPhone 12 Pro gate's record (ADR 0107), shared by
+# The iPhone 12 Pro gate's record, shared by
 # scripts/ios/ios-device-test.sh, which writes it, and `just release-ios`, which
 # requires it. Records live in target/ios/gate/<commit> (MDOC_GATE_DIR).
 #   clean   Succeeds when the checkout has no change, untracked files
 #           included: Xcode builds untracked sources the tag would lack.
-#   tier    The phone's tier by its model (ADR 0120's 4 GB floor):
+#   tier    The phone's tier by its model (a 4 GB floor):
 #           below-floor for the 3 GB iPhone SE 2nd generation (iPhone12,8),
 #           detector for every other iPhone iOS 26 runs on.
 #   record  Writes the record of a pass.

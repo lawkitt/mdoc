@@ -375,7 +375,7 @@ eq "$(sed -n 7p <<<"$out")" "         1970-01-02T01:00:00Z q2 PR #2: infrastruct
 eq "$(sed -n 8p <<<"$out")" "         1970-01-03T01:00:00Z q3 PR #3: repeated (mdoc-core tests::flake, on another PR's queue commit)"
 eq "$(sed -n 9p <<<"$out")" "         1970-01-06T01:00:00Z q5 PR #3: quarantined (android:io.github.x.ATest#flaky)"
 eq "$(sed -n 10p <<<"$out")" "retried  hosted iOS UI tests passed on their retry, each an unrelated failure: 0 on 0 queue commits"
-eq "$(sed -n 11p <<<"$out")" "flaky    tests with unrelated failures on two or more queue commits, not quarantined (ADR 0112: quarantine each): 0"
+eq "$(sed -n 11p <<<"$out")" "flaky    tests with unrelated failures on two or more queue commits, not quarantined (quarantine each): 0"
 eq "$(wc -l <<<"$out" | tr -d ' ')" 11
 echo "ok: a week's report, each class, each target and the drops the PRs did not cause"
 
@@ -521,7 +521,7 @@ retried  hosted iOS UI tests passed on their retry, each an unrelated failure: 4
          1970-01-01T01:00:00Z h1 PR #7: ios:mdocUITests/S/testG
          1970-01-02T01:00:00Z h2 PR #8: ios:mdocUITests/S/testG
          1970-01-03T01:00:00Z h3 PR #9: ios:mdocUITests/S/testQuar
-flaky    tests with unrelated failures on two or more queue commits, not quarantined (ADR 0112: quarantine each): 2
+flaky    tests with unrelated failures on two or more queue commits, not quarantined (quarantine each): 2
          ios:mdocUITests/S/testF: 3 (retried on PR #7, repeated on PR #8, repeated on PR #10)
          ios:mdocUITests/S/testG: 3 (retried on PR #7, retried on PR #8, repeated on PR #10)"
 # A window known before h2's ci/ios finished: h1's retried passes alone.
@@ -529,7 +529,7 @@ out=$(report 0 $(($(q 2) + 869)) "$dir") && rc=0 || rc=$?
 eq "$(sed -n '/^retried /,$p' <<<"$out")" "retried  hosted iOS UI tests passed on their retry, each an unrelated failure: 2 on 1 queue commits
          1970-01-01T01:00:00Z h1 PR #7: ios:mdocUITests/S/testF
          1970-01-01T01:00:00Z h1 PR #7: ios:mdocUITests/S/testG
-flaky    tests with unrelated failures on two or more queue commits, not quarantined (ADR 0112: quarantine each): 0"
+flaky    tests with unrelated failures on two or more queue commits, not quarantined (quarantine each): 0"
 # Each read from the drops target's start.
 out=$(t_drops=1970-01-02T00:00:00Z report 0 "$week" "$dir") && rc=0 || rc=$?
 eq "$(grep -c '^         .*h1 PR #7' <<<"$out")" 0

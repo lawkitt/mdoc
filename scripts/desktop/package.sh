@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Usage: scripts/desktop/package.sh
-# Builds this machine's release artifacts into dist/ (ADR 0037):
+# Builds this machine's release artifacts into dist/:
 #   macOS arm64  mdoc_<version>_arm64.dmg, Developer ID signed and notarized
 #                when APPLE_SIGNING_IDENTITY is set (scripts/desktop/macos-sign.sh);
 #                MDOC_REQUIRE_SIGNING=1 refuses an unsigned build
-#   Windows x64  mdoc_<version>_x64-setup.exe (NSIS; no .msi, ADR 0083)
+#   Windows x64  mdoc_<version>_x64-setup.exe (NSIS; no .msi)
 source "$(dirname "$0")/../lib.sh"
 require_shipped_target "packaging"
 
@@ -41,7 +41,7 @@ case "$(platform)" in
     [[ $entitlements == *com.apple.security.cs.disable-library-validation* ]] ||
       die "mdoc.app is missing the disable-library-validation entitlement"
     # A profile without the access group would quietly fall back to the
-    # login keychain (ADR 0045).
+    # login keychain.
     if [ -f "$app/Contents/embedded.provisionprofile" ]; then
       [[ $entitlements == *keychain-access-groups* ]] ||
         die "mdoc.app embeds a provisioning profile but has no keychain-access-groups"

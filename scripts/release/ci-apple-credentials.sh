@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Usage: scripts/release/ci-apple-credentials.sh setup | cleanup
-# GitHub Actions only (release.yml, signed macOS builds; ADR 0039). `setup`
+# GitHub Actions only (release.yml, signed macOS builds). `setup`
 # imports the Developer ID certificate into a throwaway keychain for
 # scripts/desktop/macos-sign.sh; `cleanup` deletes it.
 # Environment (secrets of the `release` environment):
 #   APPLE_CERTIFICATE           base64 of the Developer ID Application .p12
 #   APPLE_CERTIFICATE_PASSWORD  its export password
 #   APPLE_PROVISIONING_PROFILE_BASE64  optional: base64 of the Developer ID
-#                               provisioning profile (ADR 0045); exported as
+#                               provisioning profile; exported as
 #                               APPLE_PROVISIONING_PROFILE for macos-sign.sh
 # shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"

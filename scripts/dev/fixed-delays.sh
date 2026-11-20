@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/dev/fixed-delays.sh
-# Fails when the mobile apps' code waits a fixed time without saying why
-# (ADR 0104, Timing): a call that sleeps or delays in apps/ios/mdoc,
+# Fails when the mobile apps' code waits a fixed time without saying why:
+# a call that sleeps or delays in apps/ios/mdoc,
 # apps/ios/Shared, apps/ios/RestoreExtension, apps/ios/MdocFFI or
 # apps/android/app/src/main (Swift, Kotlin, Java). The calls: anything named
 # `sleep`, `usleep`, `nanosleep` or `delay` (`Task.sleep`, `Thread.sleep`, a
@@ -83,6 +83,6 @@ echo "$files" | tr '\n' '\0' | xargs -0 awk '
   }
   END { exit bad }
 ' || {
-  echo "error: a fixed delay in app code (ADR 0104): wait for the event instead, or mark the line \`// timing: <why> (#<issue>)\` (a deliberate on-screen duration: \`(docs/specs/mobile.md)\`)" >&2
+  echo "error: a fixed delay in app code: wait for the event instead, or mark the line \`// timing: <why> (#<issue>)\` (a deliberate on-screen duration: \`(docs/specs/mobile.md)\`)" >&2
   exit 1
 }

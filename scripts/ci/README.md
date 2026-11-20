@@ -67,9 +67,8 @@ table line or one script rule to undo.
   a code entry, but still waits for it. `merge-gate` says "Docs only".
 - Markdown that tests read is not docs: the fixture folders
   (`tests/fixtures/**`, `crates/**/fixtures/**`) precede the `none` lines,
-  each with its folder's area, as the recognition fixtures did since
-  ADR 0093. Fixture folders the apps read still route to desktop only,
-  Markdown or not; that is the broader CI grill's question.
+  each with its folder's area, as the recognition fixtures do. Fixture
+  folders the apps read still route to desktop only, Markdown or not; that is the broader CI grill's question.
 - No link checker: an external one needs the network and flakes.
 
 ## `main` and caches

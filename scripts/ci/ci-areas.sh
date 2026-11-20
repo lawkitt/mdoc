@@ -3,7 +3,7 @@
 #        scripts/ci/ci-areas.sh --github
 #        scripts/ci/ci-areas.sh --queue
 #
-# The areas a change touches, by scripts/ci/ci-areas.txt (ADR 0091): one line
+# The areas a change touches, by scripts/ci/ci-areas.txt: one line
 # of core, desktop, recognition, ios, android and ci, in that order; empty
 # for docs only.
 # A core change lists every area. <from> and <to> default to HEAD^1 and
@@ -15,9 +15,9 @@
 # base, a push against the commit before it; a manual run, a release call or
 # a push whose earlier commit is unknown lists every area. On a PR it also
 # writes `detection-head=true|false`: whether the head runs the detection
-# gate (head_detection in lib.sh, ADR 0100).
+# gate (head_detection in lib.sh).
 #
-# --queue is queue.yml's areas job (ADR 0095): what a queue commit brings
+# --queue is queue.yml's areas job: what a queue commit brings
 # onto main, from main's merge base (origin/main, fetched), the same diff
 # merge-gate reads. It writes `areas=<list>`, `jobs=<list>` (needed_jobs)
 # and `<job>=true|false` for macos, ios, detection and scripts, the hosted

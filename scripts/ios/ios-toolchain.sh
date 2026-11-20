@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-toolchain.sh [--no-simulator | --start | --finish]
-# Readies the iOS job's pinned toolchain (scripts/tools.env, ADR 0091) and
+# Readies the iOS job's pinned toolchain (scripts/tools.env) and
 # prints `DEVELOPER_DIR=<its Developer folder>` on stdout, which ci-ios.yml
-# appends to $GITHUB_ENV (ADR 0095). Finds the Xcode whose `xcodebuild
+# appends to $GITHUB_ENV. Finds the Xcode whose `xcodebuild
 # -version` is XCODE_VERSION (the selected one, or /Applications/Xcode_<v>.app
 # as the hosted images name them) and fails when none is; uses the installed
 # iOS Simulator runtime of build IOS_SIM_RUNTIME_BUILD (IOS_SIM_RUNTIME), and
@@ -58,7 +58,7 @@ fi
 runtime() { ios_sim_runtime; }
 pin="iOS $IOS_SIM_RUNTIME ($IOS_SIM_RUNTIME_BUILD)"
 
-# download: the runtime from Apple, one retry, as for any download (ADR 0095).
+# download: the runtime from Apple, one retry, as for any download.
 download() {
   # By build: a version alone is ambiguous (26.2 resolves to the 23C52
   # release candidate; 26.1 to 23B80, which left Xcode 26.1.1 without an iOS

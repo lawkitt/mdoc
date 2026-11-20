@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/desktop/macos-sign.sh app <mdoc.app> | dmg <file.dmg>
-# Developer ID signing and notarization for the macOS release (ADR 0039).
+# Developer ID signing and notarization for the macOS release.
 #   app  signs the bundle with the hardened runtime and the entitlements, then
 #        notarizes and staples it, so a copy outside the .dmg opens offline.
 #   dmg  signs, notarizes and staples the disk image.
@@ -10,7 +10,7 @@
 #   APPLE_PROVISIONING_PROFILE  optional: a Developer ID provisioning profile for
 #                           io.github.lawkitt.mdoc with Keychain sharing. Embedded
 #                           with the Keychain access-group entitlements, so the
-#                           case key uses the data protection keychain (ADR 0045).
+#                           case key uses the data protection keychain.
 #   Notarization, either:
 #     APPLE_KEYCHAIN_PROFILE  a `xcrun notarytool store-credentials` profile
 #   or the Apple ID with an app-specific password (CI):

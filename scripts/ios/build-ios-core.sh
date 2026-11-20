@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/build-ios-core.sh
 # Builds the mobile core (crates/mdoc-ffi) for iOS devices and the Simulator
-# and assembles what an iOS app links (ADR 0085):
+# and assembles what an iOS app links:
 #   target/ios/MdocCore.xcframework  the core with ONNX Runtime linked in
 #   target/ios/swift/                its generated Swift bindings
 #   target/ios/pdfium.xcframework    PDFium as an embedded framework, with
@@ -89,8 +89,8 @@ slice() {
 </dict>
 </plist>
 PLIST
-  # PDFium reads files' metadata with stat and fstat, a required-reason API
-  # (ADR 0097): its own files, inside mdoc's containers.
+  # PDFium reads files' metadata with stat and fstat, a required-reason API:
+  # its own files, inside mdoc's containers.
   cat >"$stage/pdfium.framework/PrivacyInfo.xcprivacy" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
