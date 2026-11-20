@@ -96,9 +96,10 @@ repeat_s=$((14 * 86400))
 #   core     items 27 (one rule pack), 28 (UI shards by time) and 31
 #            (detection on hosted Windows)
 #   desktop  item 24 (detection only when its inputs change)
-#   queue    its rollout, the median it keeps as a floor
+#   queue    the queue-speed and quarantine rollout, the median it keeps
+#            as a floor
 #   ios-ui   item 28 (UI shards by time)
-#   drops    its rollout
+#   drops    the queue-speed and quarantine rollout
 target_start() { # target
   case "$1" in
     core) echo 2026-11-13T12:57:58Z ;;

@@ -80,10 +80,9 @@ android               .github/workflows/ci-android.yml
 desktop,ios           scripts/ios/mobile-check.sh
 desktop,android       scripts/android/install-android-ndk.sh
 
-# Recognition code and the rule pack (applied early on
-# 2026-11-02): the desktop jobs with the detection gate and the mobile cargo
-# check, no iOS or Android app job; the desktop parity test (mdoc-ffi) checks
-# the bindings' output.
+# Recognition code and the rule pack: the desktop jobs with the detection
+# gate and the mobile cargo check, no iOS or Android app job; the desktop
+# parity test (mdoc-ffi) checks the bindings' output.
 recognition,desktop   crates/mdoc-detect/**
 recognition,desktop   crates/mdoc-pii/**
 recognition,desktop   resources/**

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/dev/test-fixed-delays.sh
-# scripts/dev/fixed-delays.sh on scratch trees (ADR 0104): an unmarked fixed
+# scripts/dev/fixed-delays.sh on scratch trees: an unmarked fixed
 # delay in app code fails and names its line; one marked with its reason and
 # an issue, or a deliberate duration with its ADR, passes, on its own line or
 # in the comment just above; a marker without a reference, a marker on the
