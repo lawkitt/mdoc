@@ -61,8 +61,12 @@ enum BigButton {
     /// What the system's glass button adds above and below its label at the
     /// regular control size; `ComponentSnapshotTests` checks the sum is 44.
     static let systemPadding: CGFloat = 7
-    /// What it adds each side of an icon in a circle.
-    static let systemCirclePadding: CGFloat = 12
+    /// What it adds each side of an icon in a circle: 12 pt on iOS 26, the
+    /// same as above and below (7 pt) from iOS 27, where a fixed 12 left
+    /// Undo 34 pt wide.
+    static var systemCirclePadding: CGFloat {
+        if #available(iOS 27, *) { 7 } else { 12 }
+    }
     /// The label's least height, so the button is `height` high.
     static var labelHeight: CGFloat { height - 2 * systemPadding }
     /// An icon's width in a circle `height` across.
