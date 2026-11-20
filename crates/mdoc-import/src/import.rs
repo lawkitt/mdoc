@@ -1085,6 +1085,77 @@ mod tests {
         }
     }
 
+    /// Files locked by real Word, Excel, PowerPoint (agile encryption) and
+    /// LibreOffice (standard encryption) import only with their password,
+    /// as their unlocked twins do, and the folder never gains a file. Their
+    /// DOCs (RC4) still ask for an unlocked copy until item 5 (#1007).
+    #[test]
+    fn office_files_locked_by_word_excel_powerpoint_and_libreoffice_import() {
+        // The fixtures' published test password (their README).
+        const PASSWORD: &str = "Petrov-2026";
+        let folder =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/locked-office");
+        let files = || {
+            let mut names: Vec<_> = std::fs::read_dir(&folder)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            names.sort();
+            names
+        };
+        let before = files();
+        let import = |name: &str, password: Option<&str>| {
+            let password = password.map(|text| Password::new(text.into()));
+            prepare_cancellable(
+                &folder.join(name),
+                password.as_ref(),
+                None,
+                true,
+                &AtomicBool::new(false),
+            )
+        };
+        for (app, extension) in [
+            ("word", "docx"),
+            ("excel", "xlsx"),
+            ("powerpoint", "pptx"),
+            ("libreoffice", "docx"),
+            ("libreoffice", "xlsx"),
+            ("libreoffice", "pptx"),
+        ] {
+            let locked = format!("{app}-locked.{extension}");
+            assert!(
+                matches!(import(&locked, None), Err(ImportError::PasswordRequired)),
+                "{locked}"
+            );
+            assert!(
+                matches!(
+                    import(&locked, Some("petrov-2026")),
+                    Err(ImportError::WrongPassword)
+                ),
+                "{locked}"
+            );
+            let imported = import(&locked, Some(PASSWORD)).unwrap();
+            let open = import(&format!("{app}-open.{extension}"), None).unwrap();
+            assert!(imported.decrypted && !open.decrypted, "{locked}");
+            assert!(
+                imported.markdown.contains("Petrov"),
+                "{locked}: {}",
+                imported.markdown
+            );
+            assert_eq!(imported.markdown, open.markdown, "{locked}");
+            assert_eq!(imported.left_out, open.left_out, "{locked}");
+        }
+        for doc in ["word-locked.doc", "libreoffice-locked.doc"] {
+            for password in [None, Some(PASSWORD)] {
+                assert!(
+                    matches!(import(doc, password), Err(ImportError::Encrypted)),
+                    "{doc}"
+                );
+            }
+        }
+        assert_eq!(files(), before);
+    }
+
     /// A password given for a file that isn't locked changes nothing.
     #[test]
     fn a_password_an_unlocked_document_does_not_need_is_ignored() {
