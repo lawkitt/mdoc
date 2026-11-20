@@ -356,6 +356,44 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
+## Import gaps (#1007)
+
+Hidden PDF layers and attached files, and locked Office files, from the
+[craft crates grill](https://github.com/lawkitt/mdoc/pull/1006)
+([spec](https://github.com/lawkitt/mdoc/issues/1007)). Items merge when
+green and ride the next RC. Every test goes through `mdoc-import`'s import
+of a file.
+
+1. **[Import] Text in an off PDF layer stays out of the Markdown.** *From
+   #1004.* The pdf-inspector fork leaves out content in a layer the default
+   configuration turns off, including form XObjects, `/OCMD` and annotations,
+   and counts it as hidden text; mdoc bumps the pin. *Done when:* #1004's
+   PDF imports without the off line, counted in the import note.
+2. **[Import] The import note counts a PDF's attached files.** *From
+   #1005.* The fork counts embedded files, attachment annotations and
+   portfolios; the note adds "1 attached file not imported", never a name.
+   Its pin bump rebases on item 1's. *Done when:* an import test shows the
+   count for each kind and no file name.
+3. **[Import] An import reads its source once, as bytes.** *From #1007.*
+   Conversion, the DOCX preview and comments read the bytes the import
+   holds, not the path, so a decrypted file never touches disk. No
+   behaviour change. *Done when:* the import and preview suites pass
+   unchanged.
+4. **[Import] Password-protected DOCX, XLSX and PPTX on desktop.** *From
+   #1007.* `craft-offcrypto` pinned by revision; the import takes an
+   optional password and the import card asks for it; nothing decrypted is
+   written, and the password is never stored or logged.
+   *Blocked by:* item 3. *Done when:* fixtures saved by real Word, Excel and
+   LibreOffice import with the right password and refuse a missing or wrong
+   one, plus headless renders of the card, light and dark.
+5. **[Import] Password-protected DOC.** *From #1007.* RC4 through
+   `craft-doc-binary`, in the same card. *Blocked by:* item 4. *Done when:*
+   Word and LibreOffice DOC fixtures behave as in item 4.
+6. **[Mobile] Password-protected files on iOS and Android.** *From #1007.*
+   The phones' import takes the password and both import cards ask for it,
+   in one change. *Blocked by:* item 4. *Done when:* the core tests pass with
+   a password and both apps build with the card.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -737,11 +775,6 @@ Android takes what applies. Its clipboard finding is
   (native resolution, no OCR or vision model). *From #911.*
 - **[OCR]** QR codes on scans: re-measure `rxing` on at least 20 real scanned
   codes. *From #911.*
-- **[Import]** Password-protected DOCX, XLSX, PPTX and DOC: `mdoc-import`
-  decrypts with storytold's `craft-offcrypto` (and `craft-doc-binary` for
-  RC4) before conversion and the preview; the password is asked in the
-  import card and never stored. *Done when:* real files saved by Word, Excel
-  and LibreOffice open. *From the 2026-11-20 craft crates grill.*
 - **[Import]** Dynamic XFA forms, which import as "Please wait…": first find
   at least 3 real legal XFA PDFs in public sources; only then spike
   pdfcraft's `xfa` layout in the pdf-inspector fork. *From the 2026-11-20
