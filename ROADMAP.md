@@ -364,16 +364,6 @@ Hidden PDF layers and attached files, and locked Office files, from the
 green and ride the next RC. Every test goes through `mdoc-import`'s import
 of a file.
 
-1. **[Import] Text in an off PDF layer stays out of the Markdown.** *From
-   #1004.* The pdf-inspector fork leaves out content in a layer the default
-   configuration turns off, including form XObjects, `/OCMD` and annotations,
-   and counts it as hidden text; mdoc bumps the pin. *Done when:* #1004's
-   PDF imports without the off line, counted in the import note.
-2. **[Import] The import note counts a PDF's attached files.** *From
-   #1005.* The fork counts embedded files, attachment annotations and
-   portfolios; the note adds "1 attached file not imported", never a name.
-   Its pin bump rebases on item 1's. *Done when:* an import test shows the
-   count for each kind and no file name.
 5. **[Import] Password-protected DOC.** *From #1007.* RC4 through
    `craft-doc-binary`, in the same card. *Blocked by:* item 4. *Done when:*
    Word and LibreOffice DOC fixtures behave as in item 4.
