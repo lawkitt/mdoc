@@ -43,9 +43,9 @@ case "$(platform)" in
   windows-x64)
     packages=(
       "cmdline-tools/latest $repo/commandlinetools-win-16111833_latest.zip 154957218 57d04f2d75eb8e8fffc5000a987e5de4b5a63e9d"
-      "platform-tools $repo/platform-tools_r37.0.1-win.zip 8044989 e03e78b1d80b396f1c3358e31251cb31740e1110"
+      "platform-tools $repo/platform-tools_r37.0.3-win.zip 8188601 7fea85bc18d0480bc81d3603952d666f49496e5a"
       "build-tools/36.1.0 $repo/build-tools_r36.1_windows.zip 59366211 95f048ae758dad90617975fe3f787f038b03338c"
-      "emulator $repo/emulator-windows_x64-16740729.zip 455344678 4d7268aa7787c640ad892844e6c9a5f159e91ad3"
+      "emulator $repo/emulator-windows_x64-16970787.zip 456613348 7599293267e61ce67423f87848ff8219da09258b"
       "system-images/android-36/google_apis_ps16k/x86_64 $sysimg/x86_64-ps16k-36_r07.zip 1849428145 dd783282e84bf475a02eba6777c79fc5695e1583"
     )
     jdk_url=$jdk_base/OpenJDK21U-jdk_x64_windows_hotspot_21.0.13_9.zip
@@ -54,9 +54,9 @@ case "$(platform)" in
   macos-arm64)
     packages=(
       "cmdline-tools/latest $repo/commandlinetools-mac_arm64-16111833_latest.zip 155384151 ad03dc49bfacfd52c110b14104ea548b8a07e830"
-      "platform-tools $repo/platform-tools_r37.0.1-darwin.zip 16110554 6ae73f4de6452dc57e62ec02b68eed92a4c21661"
+      "platform-tools $repo/platform-tools_r37.0.3-darwin.zip 16597626 d48920e2650321710b4d15d3acd9e277d59cd55b"
       "build-tools/36.1.0 $repo/build-tools_r36.1_macosx.zip 80527175 d365b05ca1810ca92b428b92717865ad4188b5e1"
-      "emulator $repo/emulator-darwin_aarch64-16740729.zip 416113219 6c5e61b873e11c7d1d08683bea089f762baee070"
+      "emulator $repo/emulator-darwin_aarch64-16970787.zip 420629851 3ec739595d44092e835f006d806dd380bc8d6dd7"
       "system-images/android-36/google_apis_ps16k/arm64-v8a $sysimg/arm64-v8a-ps16k-36_r07.zip 1875087037 dda632745023567113d9954101709c6526a3c250"
     )
     jdk_url=$jdk_base/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.13_9.tar.gz
@@ -65,9 +65,9 @@ case "$(platform)" in
   Linux-x86_64)
     packages=(
       "cmdline-tools/latest $repo/commandlinetools-linux-16111833_latest.zip 181052239 e025545c62a8e64c7559119566a569fb1dec5f60"
-      "platform-tools $repo/platform-tools_r37.0.1-linux.zip 9054187 477254aa5f903c15cf51001717bdf347fb6b53e0"
+      "platform-tools $repo/platform-tools_r37.0.3-linux.zip 9571024 e1579b288a7ae4e9bc28dedec6a154d78b3c04ed"
       "build-tools/36.1.0 $repo/build-tools_r36.1_linux.zip 64195204 936a0d6bd5ae3e2118a7567dddbc95ff67ed46e9"
-      "emulator $repo/emulator-linux_x64-16740729.zip 349658551 f41f9e31eb5ca64926603c03265c50bbc0ff4172"
+      "emulator $repo/emulator-linux_x64-16970787.zip 350068887 5f7314368fc6c05c937f6991bb4106214dc389e7"
       "system-images/android-36/google_apis_ps16k/x86_64 $sysimg/x86_64-ps16k-36_r07.zip 1849428145 dd783282e84bf475a02eba6777c79fc5695e1583"
     )
     jdk_url=$jdk_base/OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz
@@ -79,6 +79,8 @@ packages+=("${platforms[@]}")
 mkdir -p "$sdk" "$cache"
 
 # The manifest that lists a package's archive: package.xml is copied from it.
+# Fetched once per run: a copy a failed run left behind may predate a new pin.
+rm -f "$cache/repository2-3.xml" "$cache/sys-img2-3.xml"
 manifest_for() {
   local url=$1 manifest
   case "$url" in
