@@ -23,12 +23,3 @@ docs/adr/0109-mobile-markdown-editor.md 400
 docs/adr/0120-phone-detector-floor-and-scan-time.md 400
 docs/adr/0121-mirage-on-candle-as-the-vision-engine.md 400
 docs/adr/0122-not-a-name.md 400
-apps/ios/README.md 1500
-scripts/ci/README.md 1500
-tests/fixtures/import/README.md 1500
-tests/fixtures/model-settings/README.md 1500
-tests/fixtures/pseudonymization/README.md 1500
-tests/fixtures/recognition/README.md 1500
-tools/detection-eval/README.md 1500
-tools/pseudonymization/README.md 1500
-tools/vision-eval/README.md 1500

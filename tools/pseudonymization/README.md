@@ -1,79 +1,62 @@
 # Rust pseudonymization qualification
 
-This is developer evaluation tooling, outside mdoc's workspace and dependency
-graph. It does not enable a product action. Read the
-[dated qualification result](../../tests/fixtures/pseudonymization/README.md)
-before choosing a detector.
+Developer evaluation tooling, outside mdoc's workspace and dependency graph;
+it enables no product action. Read the
+[qualification result](../../tests/fixtures/pseudonymization/README.md)
+before choosing a detector. The tooling compares GLiNER-family models; it
+does not qualify the app's experimental options (see
+[app runtime verification](../../tests/fixtures/model-settings/README.md)).
+The [hybrid evaluation](../../tests/fixtures/pseudonymization/hybrid/README.md)
+adds a structured-rule comparison; no production detector selection has
+been approved.
 
-The app catalog retains only GLiNER2 FP16/FP32 as of 2026-10-04; see
-[app runtime verification](../../tests/fixtures/model-settings/README.md).
-The qualification tooling below compares GLiNER-family models and does not
-establish accuracy qualification for the experimental app options.
-
-The [2026-10-07 hybrid evaluation](../../tests/fixtures/pseudonymization/hybrid/README.md)
-adds an isolated structured-rule comparison and an adapter matching the app's
-tokenizer-bounded windows. It records individual rule ablations and a proposed
-email/INN/SNILS subset; no production detector selection has been approved.
-
-The shared crate handles explicit setup, artifact integrity, annotated fixtures,
-exact scoring, measurements, and process supervision. Two small adapters use
-existing Rust engines. Separate Cargo locks are necessary: `gline-rs` pins
-`ort` rc.9, while `gliner2-rs` and mdoc's OCR use rc.13. No Python, Docker, or
-model-export step is required to reproduce inference.
+The shared crate handles explicit setup, artifact integrity, annotated
+fixtures, exact scoring, measurements and process supervision; two small
+adapters wrap existing Rust engines. Separate Cargo locks are needed:
+`gline-rs` pins `ort` rc.9, while `gliner2-rs` and mdoc's OCR use rc.13. No
+Python, Docker or model export is needed to reproduce inference.
 
 ## Build and check
 
-Run from the repository root. Model setup and inference are opt-in; ordinary
-tests do not fetch models or require a native runtime. The adapter dependencies
-are fixed by their committed lockfiles.
+From the repository root. Ordinary tests fetch no models and need no native
+runtime.
 
 ```sh
 cargo build --release --locked --manifest-path tools/pseudonymization/Cargo.toml
 cargo build --release --locked --manifest-path tools/pseudonymization/gline/Cargo.toml
 cargo build --release --locked --manifest-path tools/pseudonymization/gliner2/Cargo.toml
-
-cargo fmt --check --manifest-path tools/pseudonymization/Cargo.toml
-cargo fmt --check --manifest-path tools/pseudonymization/gline/Cargo.toml
-cargo fmt --check --manifest-path tools/pseudonymization/gliner2/Cargo.toml
-cargo clippy --locked --all-targets --manifest-path tools/pseudonymization/Cargo.toml -- -D warnings
-cargo clippy --locked --all-targets --manifest-path tools/pseudonymization/gline/Cargo.toml -- -D warnings
-cargo clippy --locked --all-targets --features ocr-compat --manifest-path tools/pseudonymization/gliner2/Cargo.toml -- -D warnings
 cargo test --locked --manifest-path tools/pseudonymization/Cargo.toml
 ```
 
-## Explicit setup
+`cargo fmt --check` and `cargo clippy --locked --all-targets -- -D warnings`
+take the same three manifests; the `gliner2` one's clippy also takes
+`--features ocr-compat`, before `--`.
 
-The three candidates are `multi-v2.1-q8`, `pii-base-q8`, and `gliner2-pii-fp16`.
-`models.json` pins export revisions, paths, byte counts and SHA-256 digests,
-including tokenizers and model cards. Setup streams bounded downloads into
-temporary files, verifies them, and publishes individual files atomically.
-An incomplete or modified installation cannot pass inference validation.
-Verified files are reused; setup never downloads document contents.
+## Setup
+
+The candidates are `multi-v2.1-q8`, `pii-base-q8` and `gliner2-pii-fp16`,
+pinned in `models.json`. Setup verifies every file before publishing it,
+reuses verified files and never downloads document contents; inference
+rejects an incomplete or modified installation.
 
 ```sh
-tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup multi-v2.1-q8 .qualification/models
-tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup pii-base-q8 .qualification/models
-tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup gliner2-pii-fp16 .qualification/models
+tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup <candidate> .qualification/models
 ```
 
-Models are retained in the ignored `.qualification/` directory. Cleanup is manual.
-The total pinned artifacts are approximately 365.45, 205.43, and 631.52 MB,
-respectively, excluding runtime and compiled tooling. The inference binary uses
-local paths; GLiNER2's Hub feature is disabled. `gline-rs` unavoidably enables
-its tokenizer dependency's HTTP feature, so network-denied reproduction is
-especially useful for that candidate.
+Models stay in the ignored `.qualification/` directory; clean up by hand.
+`gline-rs` unavoidably enables its tokenizer's HTTP feature, so run that
+candidate under a network block.
 
 ## Offline measurements
 
-Use a fresh output filename. `run` records the child's exit status and deadline
-separately from the inference report, so a crash after writing results is visible.
-The supervisor sets the library path only in the child environment; inference
-never runs setup or recovers missing artifacts through the network.
-
-On Apple Silicon macOS with mdoc's OCR already set up:
+Use a fresh output filename. `run` records the child's exit status and
+deadline apart from the inference report, so a crash after writing results
+shows. Inference never runs setup or reaches the network. On Apple Silicon
+macOS with mdoc's OCR set up:
 
 ```sh
-tools/pseudonymization/target/release/mdoc-pseudonymization-qualification run \
+sandbox-exec -p '(version 1)(allow default)(deny network*)' \
+  tools/pseudonymization/target/release/mdoc-pseudonymization-qualification run \
   tools/pseudonymization/gline/target/release/mdoc-qualify-gline \
   multi-v2.1-q8 .qualification/models tests/fixtures/pseudonymization/corpus.json \
   .qualification/results/multi-t05.json \
@@ -81,52 +64,34 @@ tools/pseudonymization/target/release/mdoc-pseudonymization-qualification run \
   "describe CPU, RAM, OS and rustc" 0.5 600
 ```
 
-For `pii-base-q8`, use the same adapter. For `gliner2-pii-fp16`, use
-`tools/pseudonymization/gliner2/target/release/mdoc-qualify-gliner2`. Repeat at
-threshold `0.3` with a new output filename. Threshold and label policies are
-recorded in each report; they are experiments, not accepted product settings.
+`pii-base-q8` uses the same adapter; `gliner2-pii-fp16` uses
+`tools/pseudonymization/gliner2/target/release/mdoc-qualify-gliner2`. Repeat
+at threshold `0.3` into a new file. Thresholds and label policies are
+experiments, not product settings. On Windows use the `.exe` files, the
+installed `onnxruntime.1.32.0.dll` and an external network block; Linux
+needs a separately verified native runtime. Neither has been run.
 
-The dated macOS runs prefixed the executable with
-`sandbox-exec -p '(version 1)(allow default)(deny network*)'`, denying network
-access to the supervisor and its child. Windows reproduction uses the `.exe`
-executables, the installed `onnxruntime.1.32.0.dll`, and an externally enforced network
-block. Linux requires a separately verified compatible native runtime. Those
-platforms have not been run in this qualification.
+Reading a report: peak RSS is the whole process's high-water mark,
+including stress fixtures, not model size, idle memory or GPU memory. Each
+short fixture runs three times in one loaded engine (determinism and warm
+latency); long documents run once. Both adapters use 128-word regex windows
+with 32-word overlap, GLiNER2 its library's chunker. Word windows are not a
+subword budget: production needs a tokenizer-aware bound.
 
-Reports include exact predictions, every miss/false positive, invalid source
-offsets, duplicate counts, source/corpus/runtime hashes, CPU threads, build
-profile, verify/load/drop times, first and warm inference times, and process
-peak RSS. The supervisor adds machine details and successful-exit/deadline
-evidence. Peak RSS is the whole process high-water mark, including stress
-fixtures; it is not model-file size, retained idle memory, or GPU memory.
+`summarize <report.json>...` prints the category, language and fixture
+tables. The retained macOS run is no longer in the tree; restore it with
+`git checkout f368e436cd2d3e70789d51879b9f54f379900e1e -- docs/evidence/pseudonymization/2026-10-01`
+and pass its `*-t0.[35].json`.
 
-Each short fixture runs three times in one loaded engine to check deterministic
-results and warm latency. Long documents run once. Both adapters use 128 regex
-word windows with 32-word overlap; GLiNER2 uses its library's chunker and merge.
-Word windows do not establish a strict subword budget. Stress fixtures expose
-that distinction; production needs a tokenizer-aware bound before adoption.
-
-Generate the category/language and fixture tables from raw evidence. The 2026-10-01
-run was removed from the tree (ADR 0052); restore it first with
-`git checkout f368e436cd2d3e70789d51879b9f54f379900e1e -- docs/evidence/pseudonymization/2026-10-01`:
-
-```sh
-tools/pseudonymization/target/release/mdoc-pseudonymization-qualification summarize \
-  docs/evidence/pseudonymization/2026-10-01/*-t0.[35].json
-```
-
-Set a short deadline, for example three seconds, to exercise termination during
-actual synchronous inference. The child is killed and reaped; the `.process.json`
-records `deadline_exceeded: true`. This is tooling cancellation, not an
-implementation of the app's future revision/tab review lifecycle.
+A short deadline (say three seconds) checks that the child is killed and
+reaped mid-inference; its `.process.json` records `deadline_exceeded: true`.
 
 ## Same-process OCR compatibility
 
-The opt-in probe retains the original qualification `pdf-inspector` fork pin
-(`620afae42eac4b92fffa2437b89e10a912bb93ee`) and shares `ort` rc.13
-with GLiNER2. It checks EN/RU scanned-PDF transcripts before PII loading, while
-both engines coexist, and after PII is dropped. It compares source PDF hashes
-and validates PII byte offsets. No OCR download is attempted.
+The opt-in probe keeps the qualification's `pdf-inspector` pin and shares
+`ort` rc.13 with GLiNER2. It checks EN/RU scanned-PDF transcripts before PII
+load, with both engines loaded and after PII drop, compares the PDFs' hashes
+and validates PII offsets. It downloads no OCR.
 
 ```sh
 cargo build --release --locked --manifest-path tools/pseudonymization/gliner2/Cargo.toml \
@@ -136,23 +101,21 @@ env GLINER2_DEVICE=cpu tools/pseudonymization/gliner2/target/release/mdoc-qualif
   tests/fixtures/ocr-qualification .qualification/results/ocr-coexistence.json
 ```
 
-Run with a network block for an offline assertion. On Windows, pass the installed
-OCR bundle directory instead of the macOS path. The macOS result is retained
-with the corpus evidence.
+Run it under a network block. On Windows pass the installed OCR bundle
+directory.
 
-`provenance.json` records exact engine/wrapper/tokenizer code revisions and
-license-file digests, upstream model-card revisions, and the tested runtime.
-`models.json` identifies the actual exported weights and tokenizer bytes.
-Shipping any model still requires retaining applicable licenses/notices and
-resolving the documented export provenance questions.
+`provenance.json` records engine, wrapper and tokenizer revisions, licence
+digests, model-card revisions and the tested runtime; `models.json` the
+exported weights' and tokenizers' bytes. Shipping any model still needs
+the applicable licences and notices and the open export-provenance
+questions resolved.
 
+## Restoration policy performance
 
-### Restoration policy performance
-
-`python3 tools/pseudonymization/benchmark_policy.py` captures the pre-refactor
-policy from pinned commit `68960389525c8f7ae4eb7fc62eb7a242dd9b648c` and compiles
-that baseline plus the current app policy in isolated optimized harnesses. It
-uses cached dependencies only and writes raw timings/source hashes under
-`.qualification/restoration/reproduced`. No GPUI/model load occurs in this matrix.
-See the [full report](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
-for geometry/history/storage commands and evidence limits.
+`python3 tools/pseudonymization/benchmark_policy.py` builds an older policy
+(its pinned commit) and the current app policy in isolated optimized
+harnesses, from cached dependencies only, and writes timings and source
+hashes under `.qualification/restoration/reproduced`. It loads no GPUI or
+model. The retained
+[report](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
+has the geometry and storage commands and the evidence's limits.

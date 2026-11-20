@@ -23,7 +23,7 @@ Shapes seen:
   and wrote around them («ноутбук PERSON_1», «мужу (PERSON_6)»). Not retried,
   by the maintainer's choice.
 - **Paraphrases without a token** ("the Employee", «Работник», "her adviser"):
-  out of scope (ADR 0056).
+  out of scope: Restore replaces only the tokens it recognizes.
 - **ChatGPT's Copy** adds `&#x20;` and a `sent.md` line, a citation of the
   pasted text as an attachment; kept as captured.
 - **A wording ending in a period** («31 октября 2026 г.») followed by the

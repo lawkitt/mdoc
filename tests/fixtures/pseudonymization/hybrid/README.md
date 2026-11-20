@@ -1,17 +1,18 @@
-# Isolated hybrid detector research — 2026-10-07
+# Isolated hybrid detector research
 
-The user confirmed Q14: evaluate a small structured-rule prototype alongside
-GLiNER2 before choosing any production additions. This tooling is outside the
-app dependency graph. Q15 subsequently selected email plus contextual
-checksum-valid INN/SNILS for experimental app use under
-[ADR 0014](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0014-highlighted-pii-replacements.md). Read the [measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
-and [historical OSS source review](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pii-oss-research.md).
+A small structured-rule prototype evaluated alongside GLiNER2, outside the
+app dependency graph. The app's structured recognizers
+(`crates/mdoc-detect/src/structured.rs`) take email and contextual
+checksum-valid INN/SNILS from it, for experimental use;
+`selected_recognizers_match_the_frozen_research_predictions` checks them
+against `comparison.json`. Read the [measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
+and [OSS source review](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pii-oss-research.md).
 
 ## Corpus
 
 Frozen for research reproduction: its cases are imported, re-marked by
-the annotation guide, as [recognition fixtures](../../recognition/README.md)
-(ADR 0093); change those, not this corpus.
+the annotation guide, as [recognition fixtures](../../recognition/README.md);
+change those, not this corpus.
 
 `corpus.json` is original synthetic material dedicated to CC0-1.0, with no user
 documents. It preserves 13 existing short fixtures verbatim and adds eight
@@ -28,7 +29,7 @@ excluded; the separate rules stress is exactly 2 MiB with 20,000 occurrences.
 ## Reproduce
 
 From the repo root, use the existing explicitly installed pinned models and
-verified ONNX Runtime 1.27.0. No setup/download is performed by these commands.
+the app's verified ONNX Runtime (the retained run used 1.27.0). No setup/download is performed by these commands.
 Use a fresh output directory. `generate_hybrid_corpus.py` only generates fixtures;
 Python performs no detection, inference or app work.
 
@@ -43,7 +44,7 @@ sandbox-exec -p '(version 1)(allow default)(deny network*)' \
   gliner2-pii-fp16 .qualification/models \
   tests/fixtures/pseudonymization/hybrid/corpus.json \
   .qualification/hybrid-reproduction/model.json \
-  "$HOME/Library/Application Support/mdoc/ocr/v1/libonnxruntime.1.27.0.dylib" \
+  "$HOME/Library/Application Support/mdoc/ocr/v1/libonnxruntime.1.32.0.dylib" \
   "describe CPU, RAM, OS and rustc; release CPU 4 threads; network denied" 0.5 600
 tools/pseudonymization/target/release/hybrid \
   tests/fixtures/pseudonymization/hybrid/corpus.json \

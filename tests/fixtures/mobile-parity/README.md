@@ -1,8 +1,7 @@
 # Mobile parity goldens
 
 What the mobile core (`crates/mdoc-ffi`) gives for the demo documents, checked
-against the desktop's GUI-free path by `crates/mdoc-ffi/tests/parity.rs`
-([ADR 0085](../../../docs/adr/0085-mobile-apps.md), Parity tests). The Swift
+against the desktop's GUI-free path by `crates/mdoc-ffi/tests/parity.rs`. The Swift
 parity suite reads the same files.
 
 The captured Claude round trip in [`../restore/claude-en`](../restore/claude-en)

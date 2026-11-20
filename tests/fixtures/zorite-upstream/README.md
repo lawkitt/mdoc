@@ -1,8 +1,5 @@
 # Selected Zorite ports — verification
 
-Date: 2026-10-05. Accepted scope is recorded in
-[ADR 0009](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0009-selected-zorite-upstream-fixes.md).
-
 ## Upstream provenance
 
 Reviewed Zorite mainline boundary `3f14fafba120386b058e3cde24ced55f23dd653e`

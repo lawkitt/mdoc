@@ -1,44 +1,29 @@
 # mdoc for iOS
 
-The iPhone and iPad app ([ADR 0085](../../docs/adr/0085-mobile-apps.md),
-[spec](../../docs/specs/mobile.md)):
-scan or open a document, review the names mdoc finds, share the
-pseudonymized text to an AI app and restore its reply. SwiftUI on iOS 26
-and later over the Rust core (`crates/mdoc-ffi`); no third-party Swift
-packages.
+The iPhone and iPad app: scan or open a document, review the names mdoc
+finds, share the pseudonymized text to an AI app and restore its reply.
+SwiftUI on iOS 26 and later over the Rust core (`crates/mdoc-ffi`); no
+third-party Swift packages.
 
 ```sh
-just ios-app    # the core, then the app, extension and test targets for the Simulator
-just ios-test   # unit, parity and UI tests on an iOS 26.2 Simulator
-just ios-test "<Simulator name>"   # another device, such as an iPad
-just ios-test "iPhone 17" mdocUITests/LivePreviewUITests   # only these (-only-testing)
-just mobile     # what CI runs: --ffi in ci/macos, --ios (the iOS job) as ci/ios
-just ios-device-test <hardware UDID>   # the device UI tests on a connected iPhone
+just ios-app
+just ios-test
+just ios-test "iPhone 17" mdocUITests/LivePreviewUITests   # only these
 ```
 
-They need Xcode 26.2 and the iOS 26.2 Simulator runtime of build 23C54, as
-CI (`scripts/tools.env`; `scripts/ios/ios-toolchain.sh` downloads the runtime,
-about 8 GB, and `just doctor` checks both). Both build the core first
-(`just ios-core`: `target/ios/MdocCore.xcframework`, its Swift bindings and
-`pdfium.xcframework`; a few seconds when nothing changed). Builds go to
-`target/ios/DerivedData`, unsigned, arm64 only.
+They need the Xcode and Simulator runtime pinned in `scripts/tools.env`.
+Builds are unsigned, arm64 only. A TestFlight build is a tagged `main` commit
+([iOS betas](../../docs/specs/release.md#ios-betas)) built from full history,
+since the build number is the commit count.
 
-`just ios-core` also writes `target/ios/Build.xcconfig`: the build number
-is the commit count up to HEAD and `MdocCoreCommit` is HEAD. A shallow clone
-warns, and fails with `MDOC_REQUIRE_FULL_HISTORY=1`, which every TestFlight
-build sets. A TestFlight build is a tagged `main`
-commit ([iOS betas](../../docs/specs/release.md#ios-betas)). The app, the
-Restore extension and both embedded frameworks carry a
-`PrivacyInfo.xcprivacy` (no tracking, no collected data, the required-reason
-APIs they call); `Info.plist` answers export compliance
-(`ITSAppUsesNonExemptEncryption` NO: the core's AES-GCM is a standard
-algorithm, and off the App Store in France it needs no documentation).
+`Info.plist` sets `ITSAppUsesNonExemptEncryption` to NO: the core's AES-GCM
+is a standard algorithm, and off the App Store in France it needs no
+documentation.
 
 ## On a phone
 
-The project signs with the maintainer's team (`DEVELOPMENT_TEAM =
-F33DLM8K53`, automatic signing). With that Apple ID in Xcode, the phone
-connected, unlocked, trusted and in Developer Mode:
+Signing is automatic, with the maintainer's team. With that Apple ID in Xcode, the phone connected, unlocked, trusted and in Developer
+Mode:
 
 ```sh
 just ios-core
@@ -55,122 +40,62 @@ Xcode once and let Signing & Capabilities register it (the command line
 cannot). A new developer certificate needs one tap of an installed app on the
 phone with `ppq.apple.com` reachable before iOS lets it launch.
 
-Device tests, timing and how UI tests launch:
-[ui-tests.md](ui-tests.md).
+Device tests: [ui-tests.md](ui-tests.md).
 
-## Layout
+## Project
 
-The project is written by hand (`objectVersion` 77): each folder below is a
-synchronized group, so adding a file needs no project edit.
+Each folder is a synchronized group: adding a file needs no project edit.
 
-| Folder | Target | What it holds |
-| --- | --- | --- |
-| `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's errors (`CoreError` and `ReviewError`, one case each) |
-| `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
-| `mdoc/` | app | `App/`: the app model, the navigator and its one presenter, the open documents' models, the UI tests' seed; `Library/`: the library model, file intake, the sidebar, Start, Cases and Documents; the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
-| `RestoreExtension/` | Restore with mdoc | The share extension's entry point |
-| `mdocTests/`, `mdocUITests/` | tests | View models on the real core over temporary storage, with the fixtures and test doubles in `mdocTests/Support`; `RealCore`, the downloader and the Keychain store; parity with the desktop's goldens; one open → review → share → restore walk and the screenshots on the core |
-| `Config/` | — | Info.plist additions and entitlements |
+The core finds ONNX Runtime through `OrtGetApiBase` in its own image, so
+`MdocFFI` keeps that symbol, strips local symbols only and builds no debug
+dylib. PDFium's prebuilt binary has no DWARF: PDFium frames in crash reports
+get function names but no file or line.
 
-The app embeds `MdocFFI.framework` and `pdfium.framework`; the extension
-links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
-`OrtGetApiBase` in the image that holds it, so `MdocFFI` keeps that symbol
-(`-u _OrtGetApiBase`), strips local symbols only and builds no debug dylib.
-PDFium's prebuilt binary has no DWARF, so its dSYM in `pdfium.xcframework`
-holds the symbol table only: PDFium frames in crash reports get function
-names but no file or line.
-
-Archiving in Xcode syncs the `InfoPlist.xcstrings` catalogs from Info.plist
-(its spacing, a `comment` per key, extracted `CFBundleName`); they are
-committed as Xcode writes them, so an archive leaves the checkout clean.
+Archiving in Xcode rewrites the `InfoPlist.xcstrings` catalogs, so they are
+committed as Xcode writes them.
 
 ## UI changes
 
-Every component and screen state has a `#Preview` fed by
-`PreviewFixtures`: light, dark, AX5 and iPad. Check a change there, then
-run the snapshot tests; an intended change re-records them with
-`TEST_RUNNER_MDOC_RECORD_SNAPSHOTS=1` and commits the PNGs under
-`apps/ios/mdocTests/Snapshots/`.
+Check a change in the `#Preview`s (light, dark, AX5, iPad), then run the
+snapshot tests. An intended change re-records them with
+`TEST_RUNNER_MDOC_RECORD_SNAPSHOTS=1` and commits the PNGs.
 
 ## Rules
 
-The UI and app-structure rules are in
-[docs/specs/mobile.md](../../docs/specs/mobile.md). Beside them:
+Beside the [spec](../../docs/specs/mobile.md)'s UI and app-structure rules:
 
-- **Saving.** A review tap saves on a utility queue once taps pause
-  (`SaveScheduler`, the core's `save_pending`). `CoreFactory` opens
-  `RealCore` for the app and the extension.
-- **Edit mode types into the core.** `TypingBridge` sends each committed
-  edit, never marked IME text, to the session (`type`); its mirror of the
-  core's text checks UIKit's edits, so the view's string stays the core's.
-  Return, ⌫ and ⌦ ask the editor core (`StructuralKeys`). The view is
-  restyled in place, never given new text: each keystroke restyles its block
-  and the caret's lines (`LivePreview`, `markdown_block_styling`), with the
-  caret's markers dimmed (`editor_visible_markers`); the caret never rests
-  in a hidden run (`CaretSnap`). Cut and Copy use `InAppClipboard`; Paste
-  reads it first, unless another app copied since, then the system
-  clipboard.
-- **Offsets are source bytes.** `TextOffsets` converts the core's UTF-8
-  offsets for UIKit.
-- **Markdown.** `MarkdownStyling` asks the core for spans;
-  `MarkdownStyler` maps them to fonts and colours.
-- **One long job at a time**, kept running in the background by
-  `BGContinuedProcessingTask`. It reports a fraction, since iOS stops a
-  continued task that shows no progress. When the system refuses the task,
-  the job gets the short background grace, then cancels, and the app offers
-  to resume on return. While a job runs, review waits: a
-  Replace would make the core throw the scan away.
-- **Locked phone.** A job pauses on lock. A result or save that comes while
-  locked stays in the session and is saved on unlock (`ProtectedData`,
-  `Library.saveDeferred`), because Data Protection Complete blocks writes.
-- **OCR keeps finished pages** (`import_file_in`, the core's `imports/`);
-  Resume recognition reads only the pages left. Dropping an import or
-  deleting a document goes through the core (`discard_import`,
-  `delete_document`).
-- **Storage.** Everything lives in the App Group container
-  (`group.io.github.lawkitt.mdoc`), excluded from backups; all but models use
-  Data Protection Complete. The case key is in the Keychain's shared access
-  group, this device only.
-- **Intake.** PDF, DOCX and pasted text go to the core as they are; camera
-  and photo pages become upright JPEGs, several pages one image-only PDF.
-- **Downloads.** A background `URLSession`; "Waiting for Wi-Fi" comes from
-  `NWPathMonitor`, because background sessions never call
-  `taskIsWaitingForConnectivity`.
+- **Edit mode types into the core.** Each committed edit, never marked IME
+  text, goes to the session; the view is restyled in place, never given new
+  text.
+- **Long jobs** report a fraction, since iOS stops a continued task that
+  shows no progress. While a job runs, review waits: a Replace would make
+  the core throw the scan away.
+- **Locked phone.** A result or save that comes while locked is saved on
+  unlock, because Data Protection Complete blocks writes.
+- **Storage.** Everything lives in the App Group container, excluded from
+  backups; all but models use Data Protection Complete. The case key is in
+  the Keychain's shared access group, this device only.
+- **Downloads.** "Waiting for Wi-Fi" comes from `NWPathMonitor`, because
+  background sessions never call `taskIsWaitingForConnectivity`.
 - **Core calls** stay synchronous on the main actor while a review tap on
   the iPhone 12 Pro takes under about 16 ms.
-- **Undo.** Every core step is registered with the window's undo manager,
-  so shake, the three-finger swipe and ⌘Z share the review bar's history.
-- **Buttons.** Big buttons are Liquid Glass: `.primaryAction()`
-  (ink-tinted prominent glass, semibold) and `.secondaryAction()` (clear
-  glass, ink words).
 - **Handlers the system calls on its own queues** carry no actor
   isolation, because a main-actor check there crashed every long job on a
   phone.
-- **Drawers.** `SideDrawer`'s drag is one UIKit pan moving layers by
-  transform; it changes no shadow, mask or SwiftUI state per frame, because
-  that lagged. The panel stays built while closed. An `.inspector` never
-  goes inside the drawer's hosting controller, because it reset its child's
+- **Drawers.** `SideDrawer`'s drag moves layers by transform and changes no
+  SwiftUI state per frame, because that lagged. An `.inspector` never goes
+  inside the drawer's hosting controller, because it reset its child's
   traits without end.
-- **Edit toolbar.** `EditToolbar`'s host never becomes first responder, and
-  the text keeps room below the caret for it, so the caret's line stays
-  above it.
-- **Menus.** In a system menu an alias is `unbrokenAlias` (whole up to 12
-  characters, else broken only after a separator) and the row's icon
-  carries the category color, because a system menu draws every row's words
-  in one color. A `Menu` or toolbar item uses `primaryGlass()` /
-  `secondaryGlass()`, because it takes only the system's styles.
-- **Candidate links** never show the system's link menu, in any state,
-  because it exposed the raw `mdoc-candidate://` URL and Share.
-- **No cross-fade.** Entering or leaving Adjust Words or Select never
-  cross-fades changed text, because both layouts showed at once.
+- **Menus.** A system menu draws every row's words in one color, so the
+  row's icon carries the category color.
+- **Candidate links** never show the system's link menu, because it exposed
+  the raw `mdoc-candidate://` URL and Share.
+- **No cross-fade** entering or leaving Adjust Words or Select, because both
+  layouts showed at once.
 - **Drag-merge** is the app's own gesture on the ≡ handle, because
   SwiftUI's List never delivers a drop of a drag that started inside it.
 - **Table cells.** The text view drags a cell selection's handles itself,
   because UIKit's gesture hit-tests the table's hidden source.
-- **Tips.** TipKit decides when a hint shows (display frequency
-  immediate); mdoc draws it, never as `TipView` or `.popoverTip`. UI tests
-  hide every tip (`Tips.hideAllTipsForTesting()`) unless
-  `MDOC_SHOW_TIPS=1`. Reset tips resets each tip's eligibility, because
-  `Tips.resetDatastore()` works only before TipKit starts.
-- **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
-  each target's `InfoPlist.xcstrings`).
+- **Tips.** TipKit decides when a hint shows; mdoc draws it. UI tests hide
+  tips unless `MDOC_SHOW_TIPS=1`. Reset tips resets each tip's eligibility,
+  because `Tips.resetDatastore()` works only before TipKit starts.

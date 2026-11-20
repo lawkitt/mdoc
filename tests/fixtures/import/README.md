@@ -1,152 +1,76 @@
 # Import regression corpus
 
-These fixtures and expected Markdown are copied from MIT-licensed
-[AnyDoc](https://github.com/firecrawl/anydoc), revision
-`76c444fd1df4df5eb824b55fd3ad144347c839a2` (upstream PR 153).
-The license is retained in `LICENSE.anydoc`.
+Synthetic test documents, not user files; `<name>.md` beside one is its
+expected Markdown. `crates/mdoc-import/src/import.rs` tests them through
+mdoc's import; `crates/mdoc-import/src/resume.rs` runs the partly-scanned
+and running-header PDFs through the phones' page-at-a-time import.
 
-Inputs originate in upstream `tests/fixtures/{doc,docx,xls,xlsx,pdf,malformed}`.
-Expected Markdown comes from the corresponding `tests/snapshots` files with
-Insta metadata removed. The partly-scanned expected output is the `--skip`
-snapshot. Upstream `tests/gen_fixtures.py` and `tests/fixture-src` contain their
-generators and sources. They are synthetic test documents, not user files.
+The corpus checks converter stability, not visual fidelity, and does not
+promise exact source layout. Review every output change when updating a
+fork; do not regenerate expectations blindly.
 
-The corpus checks converter stability, not visual fidelity. Review output
-changes when updating the fork; do not regenerate expectations blindly.
+## From AnyDoc
 
-## PDF baseline update, 2026-09-19
+Fixtures with no generator and no entry below are copied from MIT-licensed
+[AnyDoc](https://github.com/firecrawl/anydoc) at
+`76c444fd1df4df5eb824b55fd3ad144347c839a2`, from its
+`tests/fixtures/{doc,docx,xls,xlsx,pdf,malformed}`. `LICENSE.anydoc` keeps
+the licence and covers every AnyDoc-derived file and builder here. Expected
+Markdown is upstream's `tests/snapshots` with Insta metadata removed; the
+partly-scanned one is the `--skip` snapshot. Upstream's
+`tests/gen_fixtures.py` and `tests/fixture-src` hold their generators and
+sources.
 
-PDFs now go directly through the OCR-capable pdf-inspector 1.21.0 fork. The
-Office snapshots and AnyDoc dependency retain their previous baseline.
-Reviewed changes in `text.pdf.md`: Persian text is in the corrected reading
-order, the endnote reference is attached as superscript, and the existing flat
-table/list extraction now treats the Table label as inline bold rather than a
-heading. That heading/paragraph grouping difference is a known formatting
-limitation; table cell text is preserved. This corpus does not promise exact
-source layout reconstruction. The partly-scanned snapshot includes additional
-blank page separators; readable pages and original warning page numbers remain
-unchanged. No source PDFs were modified.
+PDFs go through the pdf-inspector fork, not AnyDoc, so PDF expectations
+follow that fork. Known limit in `text.pdf.md`: the Table label comes out
+as inline bold, not a heading; the table's cell text is kept.
 
-## Selected AnyDoc fidelity fixes, 2026-10-04
+- `handmade-nested.docx`: byte-for-byte from upstream PR 17 at
+  `35f278e516471cb96841af7e8b0a0b8cdf19649b`; its generator is the
+  `handmade-nested.docx` section of upstream `tests/gen_fixtures.py`. A
+  single-cell wrapper renders its inner grid; the adjacent multi-cell
+  nested table still flattens. The expected output keeps our base's header
+  inference.
+- `handmade-checkboxes.docx`: a minimal OOXML package made locally, no
+  application involved; its source XML is inside the ZIP.
+- `handmade-revisions.doc`: built with `document` and `run` from upstream
+  PR 174's `tests/doc_revisions.rs` at
+  `96d59988d6e9f0b946d7849c1d64d80b61680502`. Recipe: deleted `Old clause`
+  with `[0x00, 0x08, 1]`, inserted `New clause` with `[1, 8, 1]`, an
+  ordinary space, `Ordinary strike` with `[0x37, 8, 1]`, and a plain `\r`;
+  no piece modifiers.
+- `handmade-hidden.{docx,rtf,doc}`: byte-for-byte from the lawkitt/anydoc
+  fork at `520ae174d75e85bc8e1edc03678cdefdf5f2a126`
+  (`tests/fixtures/{docx,rtf,doc}`), made by `hidden_docx`, `hidden_rtf`
+  and `hidden_doc` in its `tests/gen_fixtures.py`; expected Markdown is its
+  snapshots without Insta metadata. Every hidden word is `SECRET-*`.
+- `handmade-comments.*`: byte-for-byte from AnyDoc `5e22f0a2`'s fixtures;
+  `text_annotations.pdf` from pdf-inspector `957693f5`'s (both MIT).
 
-Three synthetic fixtures exercise upstream PRs #17, #177 and #174 through mdoc's
-actual import boundary. Expected outputs were compared with the old pinned fork
-before adoption; every pre-existing expected Markdown file remains unchanged.
+Broader symbol and revision edge cases stay in the AnyDoc fork's tests.
 
-- `handmade-nested.docx`: copied byte-for-byte from upstream PR #17, commit
-  `35f278e516471cb96841af7e8b0a0b8cdf19649b`. Its generator is the
-  `handmade-nested.docx` section of upstream `tests/gen_fixtures.py`. A single-cell
-  wrapper now renders its inner grid; the adjacent multi-cell nested table still
-  flattens. The expected output retains our base's existing header inference.
-- `handmade-checkboxes.docx`: locally generated minimal OOXML package with
-  supported Wingdings/Wingdings 2 symbols, private-use and ordinary codes, a styled
-  checked run, and an unknown-font symbol after literal parentheses. The source
-  XML is retained inside the ZIP. This exercises PR #177 at
-  `2f0907d3bb8920e4b44e39443d575db4ce2eb59a` without using application documents.
-- `handmade-revisions.doc`: generated using `document` and `run` from upstream
-  PR #174's `tests/doc_revisions.rs` at
-  `96d59988d6e9f0b946d7849c1d64d80b61680502`. Recipe: deleted `Old clause` with
-  `[0x00, 0x08, 1]`, inserted `New clause` with `[1, 8, 1]`, ordinary space,
-  `Ordinary strike` with `[0x37, 8, 1]`, and a plain `\r`; no piece modifiers.
-  The replacement survives, deleted text disappears, and ordinary strikethrough
-  remains. The upstream builder and tests are MIT-licensed; `LICENSE.anydoc`
-  covers their attribution here.
+## Generated here
 
-The import regression checks exact Markdown, retained source bytes, source-kind
-metadata, and warnings. Broader symbol/revision edge cases stay in the fork's
-regression tests. See [verification](anydoc-fidelity-verification.md).
+Each `gen_*.py` writes its fixture beside itself; its header says what the
+pages hold. Run with Python 3 (standard library only):
+`python3 tests/fixtures/import/gen_running_header.py`.
 
-## Hidden Office content, 2026-11-01
+| Generator | Fixtures |
+| --- | --- |
+| `gen_hidden_content.py` | `handmade-hidden-content.docx` |
+| `gen_running_header.py` | `handmade-running-header.pdf` |
+| `gen_scanned_running_header.py` | `handmade-scanned-running-header.pdf` |
+| `gen_sparse_page_header.py` | `handmade-sparse-page-header.pdf`, `handmade-scanned-sparse-page-header.pdf` |
+| `gen_mixed_size_header.py` | `handmade-mixed-size-header.pdf`, `handmade-scanned-mixed-size-header.pdf` |
+| `gen_sparse_page_closest_header.py` | `handmade-sparse-page-closest-header.pdf` |
 
-`handmade-hidden-content.docx` is a synthetic package from
-`gen_hidden_content.py` (run it with Python 3; the output is deterministic).
-Its comments, deleted and moved-from tracked changes, footnote deletion and
-core, extended and custom document properties all name "Margaret Holloway"
-or "Ivan Petrov"; its insertions and moved-to text are ordinary wording.
-Checked against the pinned AnyDoc
-(`d01cce0dda4a8918fc4b603c4afe9c329102371c`): it reads no comments or
-property parts and skips `w:del` and `w:moveFrom`, with no option to keep
-them, so `handmade-hidden-content.docx.md` holds the document as it reads
-now and no name. `mdoc-import` counts the comments for the import note
-("2 comments not imported."), and its test fails if a fork update carries
-any of the hidden text.
+Native-text output is deterministic. The scans are rasterized by macOS
+`sips` with seeded page offsets, so only a different `sips` changes their
+bytes, and they can only be regenerated on a Mac. The later generators
+import `gen_scanned_running_header.py` (and the closest-header one
+`gen_sparse_page_header.py`); rerunning the earlier generators with the
+current shared code gives byte-identical fixtures.
 
-## Hidden-formatted text, 2026-11-18
-
-`handmade-hidden.docx`, `handmade-hidden.rtf` and `handmade-hidden.doc` are
-copied byte-for-byte from the AnyDoc fork's `master` (lawkitt/anydoc PR 6) at
-`520ae174d75e85bc8e1edc03678cdefdf5f2a126` (`tests/fixtures/{docx,rtf,doc}`),
-generated by `hidden_docx`, `hidden_rtf` and `hidden_doc` in its
-`tests/gen_fixtures.py`; the expected Markdown is its snapshots without Insta
-metadata. Every hidden word is `SECRET-*`. The import note counts 7, 6 and 3
-hidden passages left out.
-
-## Running header and hidden PDF text, 2026-11-18
-
-`handmade-running-header.pdf` is a synthetic four-page PDF from
-`gen_running_header.py` (Python 3, standard library; deterministic). Each
-page opens with the header "Case No. 2-123/2026 Confidential"; page 1 also
-draws `SECRET-WHITE` in white on the bare page. With the pdf-inspector fork
-after lawkitt/pdf-inspector PRs 7 and 8, the header stays on page 1 only and
-the import note reads "1 hidden passage not imported. 3 repeated header and
-footer lines removed."
-
-## Scanned running header, 2026-11-19
-
-`handmade-scanned-running-header.pdf` is a synthetic image-only scan from
-`gen_scanned_running_header.py` (Python 3, standard library and macOS
-`sips`; the page offsets are seeded). Four bilevel 150 dpi US Letter pages
-share the header "Annual Report of the Board 2026 Confidential" and the
-footer "Prepared for the shareholders of Acme Holdings Ltd.", each page
-shifted by up to 2 pt. With OCR, the desktop's whole-document import and the
-phones' page-at-a-time import (`resume.rs`, after lawkitt/pdf-inspector PR
-19) both keep them on page 1 only, and the note counts "6 repeated header
-and footer lines removed."
-
-## Sentence matching the header on a sparse page, 2026-11-19
-
-`handmade-sparse-page-header.pdf` (native text) and
-`handmade-scanned-sparse-page-header.pdf` (an image-only scan of the same
-pages) are from `gen_sparse_page_header.py` (Python 3, standard library;
-the scan also needs macOS `sips` and reuses `gen_scanned_running_header.py`
-with its page offsets). Pages 1-3 carry that fixture's header and footer;
-page 4 has only two body lines, the second the header's sentence, 130 pt
-below the header's position. With the pdf-inspector fork after
-lawkitt/pdf-inspector PR 22, the sentence stays on page 4, the header and
-footer stay on page 1 only, and the note counts "4 repeated header and
-footer lines removed.", on the desktop and on the phones. Before PR 22,
-page 4 lost the sentence and the note counted 5.
-
-## Sentence matching the header on a mixed-size sparse page, 2026-11-19
-
-`handmade-mixed-size-header.pdf` (native text) and
-`handmade-scanned-mixed-size-header.pdf` (an image-only scan of the same
-pages) are from `gen_mixed_size_header.py` (Python 3, standard library;
-the scan also needs macOS `sips` and reuses `gen_scanned_running_header.py`,
-whose `scan` now takes each page's height). Pages 1-3 (US Letter) and page 4
-(US Legal) carry that fixture's header and footer at the same heights, so
-the header is 42 pt below Letter's top but 258 pt below Legal's: a steady
-distance from the bottom edge only. Page 5 is a sparse Letter page whose
-second line is the header's sentence 96 pt below the top, the full pages'
-average distance from the top, which no page uses. With the pdf-inspector
-fork after lawkitt/pdf-inspector PR 23, the sentence stays on page 5, the
-header and footer stay on page 1 only, and the note counts "6 repeated
-header and footer lines removed.", on the desktop and on the phones. Before
-PR 23, page 5 lost the sentence and the note counted 7. Regenerating leaves
-the earlier scanned and sparse-page fixtures byte-identical.
-
-## Sentence matching the header right under it on a sparse page, 2026-11-19
-
-`handmade-sparse-page-closest-header.pdf` (native text) is from
-`gen_sparse_page_closest_header.py` (Python 3, standard library; it reuses
-`gen_scanned_running_header.py` and `gen_sparse_page_header.py`). Pages 1-3
-carry that fixture's header and footer. Page 4 has only two lines: the
-header where the full pages have it (y=750), and the header's sentence again
-24 pt lower, inside the 5% position tolerance (35.5 pt). With the
-pdf-inspector fork after lawkitt/pdf-inspector PR 24, only the match closest
-to the header's place goes: the sentence stays on page 4, the header and
-footer stay on page 1 only, and the note counts "5 repeated header and
-footer lines removed.", on the desktop and on the phones. Before PR 24,
-page 4 lost both lines and the note counted 6. There is no scanned copy:
-the scan generator needs macOS `sips`; the phones' page-at-a-time OCR reads
-this native file in `resume.rs`'s test.
+`handmade-hidden-content.docx.md` holds no name because the pinned AnyDoc
+reads no comment or property parts and skips `w:del` and `w:moveFrom`,
+with no option to keep them.
