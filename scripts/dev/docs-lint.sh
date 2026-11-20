@@ -19,10 +19,11 @@
 #     never both, so a retired number is never reused;
 #   - a docs/design/ folder: a grill's record goes in its PR or an issue;
 #   - a dated (YYYY-MM-DD…) or pr-* folder anywhere under docs/evidence/;
-#   - a changelog fragment (changes/, changes/ios/, changes/android/; not
-#     their README.md) that `just release` would reject: a name outside
-#     letters, digits, '.', '_' and '-', a first line that is not a '- '
-#     bullet, or top-level fragments with no `## Unreleased` in CHANGELOG.md.
+#   - a changelog fragment (changes/, changes/ios/, changes/android/,
+#     changes/mobile/; not their README.md) that `just release` would
+#     reject: a name outside letters, digits, '.', '_' and '-', a first line
+#     that is not a '- ' bullet, or top-level fragments with no
+#     `## Unreleased` in CHANGELOG.md.
 # Reads no history: CI clones one commit. Bash 3.2 compatible; BWK awk, mawk
 # and gawk. scripts/dev/test-docs-lint.sh checks it.
 # shellcheck source=../lib.sh
@@ -150,7 +151,7 @@ fi
 # than at `just release`. find, as release.sh does: a glob would miss a
 # dot-named one.
 top=0
-for d in changes changes/ios changes/android; do
+for d in changes changes/ios changes/android changes/mobile; do
   if [ -d "$d" ]; then find "$d" -maxdepth 1 -type f -name '*.md'; fi
 done | LC_ALL=C sort >"$tmp/fragments"
 while IFS= read -r f; do

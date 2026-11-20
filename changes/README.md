@@ -20,8 +20,15 @@ Unreleased.
 
 A change to the iOS or Android app puts its fragment in `changes/ios/` or
 `changes/android/` instead, in the same format and with the same
-repository-root links; that app's release joins them into
-`apps/ios/CHANGELOG.md` or `apps/android/CHANGELOG.md`, and the desktop
-release leaves them alone ([releases](../docs/specs/release.md)).
-A core change users notice on several platforms gets a fragment in each
-folder it affects.
+repository-root links, and a change users notice in both apps puts one in
+`changes/mobile/`; the desktop release leaves all three alone
+([releases](../docs/specs/release.md)). A core change gets one fragment for
+each place users notice it: top-level for the desktop, `changes/mobile/`
+for both apps.
+
+The app releases join their fragments by hand, in the PR that releases the
+app: it moves its own folder's fragments into `apps/ios/CHANGELOG.md` or
+`apps/android/CHANGELOG.md` and deletes them, and copies in every
+`changes/mobile/` fragment its changelog lacks. It deletes a
+`changes/mobile/` fragment only when the other app's changelog already has
+that entry, so the second app to release it removes it.
