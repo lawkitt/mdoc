@@ -1,4 +1,4 @@
-# mdoc's rule pack, part 1 of 3: rules for any language (ADR 0092).
+# mdoc's rule pack, part 1 of 3: rules for any language.
 # Compiled in with `include_str!`; `src/rules/` checks every entry when it
 # loads. The pack is shared.toml, then en.toml, then ru.toml.
 #
@@ -660,7 +660,7 @@ forbid = [
     '^\s*[A-Za-z0-9_-]*(?:[a-z]{3}[A-Za-z0-9_-]*[A-Z]|[A-Z][A-Za-z0-9_-]*[a-z]{3})[A-Za-z0-9_-]*\s*$',
 ]
 
-# Web addresses (ADR 0094, guide rule 9). Scans propose a URL by its shape:
+# Web addresses (guide rule 9). Scans propose a URL by its shape:
 # a scheme (`http://`, `https://`, `ftp://`), `www.`, or a bare domain
 # written as an address (no space, not inside an email) that ends in one of
 # the `zones` below. The span runs from the scheme (or `www.`, or the bare

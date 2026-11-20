@@ -1,7 +1,7 @@
-//! Propagation (ADR 0092): the forms of a known full person name elsewhere in
+//! Propagation: the forms of a known full person name elsewhere in
 //! the document become proposals. A form with exactly one candidate full
 //! name joins that identity; with two or more it keeps an identity of its
-//! own (ADR 0068) and Same as… or the merge hint (ADR 0080) offers each.
+//! own and Same as… or the merge hint offers each.
 //!
 //! Forms: the surname alone (with a title), the first name alone, first name
 //! and patronymic, the surname with initials, the whole name in another
@@ -29,7 +29,7 @@ use unicode_normalization::UnicodeNormalization;
 
 /// Nicknames of a lowercase given name, lowercase. Only names already in the
 /// document yield them. Data until the rule pack's `variants` section takes
-/// it over (ADR 0092).
+/// it over.
 pub fn nicknames(given: &str) -> &'static [&'static str] {
     const TABLE: &[(&str, &[&str])] = &[
         // Russian
@@ -1190,7 +1190,7 @@ pub(crate) fn glued(source: &str, range: &Range<usize>) -> bool {
 /// Lowercase nouns that name an institution or an office, which a model's
 /// surname with initials may be ("Суд Н. О.", "U.S. Bank", "J. P. State")
 /// while the bare word names the institution: their bare forms are no
-/// form of it (#749). mdoc-pii has no rule pack (ADR 0092), so the list
+/// form of it (#749). mdoc-pii has no rule pack, so the list
 /// lives here; a document that writes the word in lower case or after
 /// "the" says the same of any word ([`People::reading`]).
 #[rustfmt::skip]
@@ -1204,7 +1204,7 @@ const INSTITUTIONS: &[&str] = &[
 /// person's initials, though a name's letters may spell them: US state and
 /// territory codes, countries, legal forms, post-nominals and titles, court
 /// and agency abbreviations, letter and document marks, currencies, and
-/// their Russian counterparts. mdoc-pii has no rule pack (ADR 0092), so the
+/// their Russian counterparts. mdoc-pii has no rule pack, so the
 /// list lives here; a word missing from it is still held back by the
 /// position [`bare_initials_at`] asks of all bare initials.
 #[rustfmt::skip]
@@ -1841,7 +1841,7 @@ fn find_forms_with(
 }
 
 /// Spans of the forms of full person names `names` in `source`, found as
-/// for a name in the document: the user's Always list (ADR 0092) proposes
+/// for a name in the document: the user's Always list proposes
 /// a listed person's forms where the full name never appears, so no
 /// identity carries a form's context. A form that is also an ordinary word
 /// ("Hill") is left out: without the review's mid-sentence restriction it

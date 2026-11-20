@@ -1,4 +1,4 @@
-//! The text detection and readiness read (ADR 0092, preprocessing): the
+//! The text detection and readiness read (preprocessing): the
 //! source with what only hides a value's characters undone, and a map from
 //! its offsets back to the source's. HTML character references are decoded
 //! ("Ann&#97; Petrova" reads "Anna Petrova"), soft hyphens and zero-width
@@ -788,7 +788,7 @@ pub(crate) fn header_name(header: &str) -> String {
 
 /// Each cell of an identifier column ([`IDENTIFIER_HEADERS`]) with its
 /// header inserted before the value, as empty source ranges and the header
-/// they read: a value alone in a cell loses what it is (ADR 0092, table
+/// they read: a value alone in a cell loses what it is (table
 /// cells read as sentences). Only a value with a digit or an "@" gets one:
 /// a totals row's "Итого" or a dash in the column is no identifier. A span
 /// over an inserted header maps to its cell; one only over it, to nothing.
@@ -1277,7 +1277,7 @@ fn line_break(text: &str) -> Option<usize> {
 }
 
 /// Whether the line breaks inside `range` of `source` only wrap one value
-/// (ADR 0092: OCR and narrow columns wrap names, emails, phones): each is a
+/// (OCR and narrow columns wrap names, emails, phones): each is a
 /// line-end hyphen inside a word, or the value ends its last line but for
 /// closing punctuation. "Delva Rosk\nExhibition company" before ": …" is two
 /// lines' text, not one wrapped value.

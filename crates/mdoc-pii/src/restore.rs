@@ -1,4 +1,4 @@
-//! Restoring originals into text returned by an external AI (ADR 0041). The
+//! Restoring originals into text returned by an external AI. The
 //! AI often reshapes placeholders, so generated aliases match leniently; an
 //! alias-shaped token that matches nothing is reported, never guessed.
 use super::{Category, Review};
@@ -210,7 +210,7 @@ impl RestoreMap {
     /// How many names of this map still appear in `text`: by an original
     /// wording (exact, whole words), or by a lone word of a multi-word
     /// person original ("Марина" of "Марина Сергеевна"): names a
-    /// pseudonymized text did not replace (ADR 0084). Counted by alias, as
+    /// pseudonymized text did not replace. Counted by alias, as
     /// a tab's mapping and its case list one person twice. Text and
     /// originals are read as detection reads them (`view`): "Ann&#97;
     /// Petrova" is "Anna Petrova".
@@ -261,7 +261,7 @@ impl RestoreMap {
     }
     /// Lone words of multi-word person originals in `text`, exact and
     /// whole, with the first identity that has each. Only name-like words:
-    /// 3+ letters, not starting lowercase, no courtesy title (ADR 0068), so
+    /// 3+ letters, not starting lowercase, no courtesy title, so
     /// "Ms", "van" and initials never count.
     fn name_words_in(&self, text: &str) -> Vec<(Range<usize>, usize)> {
         let mut patterns: Vec<&str> = Vec::new();
@@ -367,7 +367,7 @@ impl RestoreMap {
     }
     /// The aliases of this map's identities that `text` restores, as
     /// [`Self::tokens`] reads them: a case keeps a Not a name wording
-    /// while another member's text still needs it (ADR 0122).
+    /// while another member's text still needs it.
     pub fn restored_aliases(&self, text: &str) -> Vec<String> {
         self.tokens(text)
             .into_iter()
@@ -382,7 +382,7 @@ impl RestoreMap {
             .map(|t| t.range)
             .collect()
     }
-    /// [`Self::restore`] applied to `text` for reading in place (ADR 0078):
+    /// [`Self::restore`] applied to `text` for reading in place:
     /// the restored text, where each restored wording landed and where each
     /// unresolved token sits in it. Same matching as the restore tab.
     pub fn restore_in_place(&self, text: &str) -> RestoredText {
@@ -417,7 +417,7 @@ impl RestoreMap {
         }
     }
     /// Rewrite `text`'s alias tokens so they keep naming the same identities
-    /// after their aliases change (ADR 0078): a token naming identity `i` of
+    /// after their aliases change: a token naming identity `i` of
     /// this map takes `aliases[i]` when that is `Some`. All tokens are read
     /// against this map first, so swapped aliases swap back correctly. A
     /// reshaped generated token (`person 1`) keeps its shape and takes the
@@ -457,7 +457,7 @@ impl RestoreMap {
     }
 }
 
-/// A reply restored for reading in place (ADR 0078).
+/// A reply restored for reading in place.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RestoredText {
     pub text: String,
@@ -978,7 +978,7 @@ impl Review {
     }
 }
 
-/// How a document joining a case lines up with it (ADR 0041 #10).
+/// How a document joining a case lines up with it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct JoinPlan {
     /// Identity id → alias, category and custom flag it takes.

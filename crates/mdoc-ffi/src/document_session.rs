@@ -1,7 +1,7 @@
-//! `DocumentSession` (ADR 0085): one document from intake to the AI and
+//! `DocumentSession`: one document from intake to the AI and
 //! back. Import and OCR through `mdoc_import`, scans through `mdoc_detect`,
-//! the review of `mdoc_pii` as snapshots and transitions with undo and redo
-//! (ADR 0098), typing in edit mode (ADR 0109), Copy for AI and Share text,
+//! the review of `mdoc_pii` as snapshots and transitions with undo and redo,
+//! typing in edit mode, Copy for AI and Share text,
 //! and the mapping saved into its case. Long jobs report their stage to the
 //! platform and stop when it cancels; the platform runs them off its main
 //! thread.
@@ -108,7 +108,7 @@ struct Document {
     review: ReviewText,
     /// The case the document joined or started; it never changes.
     case: Option<String>,
-    /// Categories its case does not detect (ADR 0041); scans drop them.
+    /// Categories its case does not detect; scans drop them.
     skip: HashSet<mdoc_pii::Category>,
     /// Where `save` keeps the Markdown, reserved on the first save.
     path: Option<PathBuf>,
@@ -131,7 +131,7 @@ struct Document {
     /// app yet (`SavedChange::rejoined`).
     rejoined: bool,
     /// How it began, when that matters later: a new document is named
-    /// after its first line, the sample restores (ADR 0109).
+    /// after its first line, the sample restores.
     origin: DocumentOrigin,
     /// The first line's title a new document last took
     /// (`follow_first_line`), so an unchanged line renames nothing.
@@ -221,7 +221,7 @@ impl DocumentSession {
     }
 
     /// `import_file`, with a PDF's OCR keeping its finished pages under
-    /// `library`'s root (ADR 0085 Long jobs): after a cancel, or mdoc
+    /// `library`'s root: after a cancel, or mdoc
     /// stopping, importing the same file with the same OCR model again
     /// recognizes only the pages left, and gives the Markdown an
     /// uninterrupted run gives. The kept pages are removed once this
@@ -249,7 +249,7 @@ impl DocumentSession {
         self.import_text_as(text, title, DocumentOrigin::Ordinary)
     }
 
-    /// `import_text` for a document that begins in mdoc (ADR 0109): a new
+    /// `import_text` for a document that begins in mdoc: a new
     /// document (`DocumentOrigin::New`, its text empty) is named after its
     /// first line until renamed and is discarded when left empty; the
     /// sample (`DocumentOrigin::Sample`) is the one Try a sample restores.
@@ -387,10 +387,10 @@ impl DocumentSession {
     /// Scan for candidates: the GLiNER2 detector and the structured rules.
     /// Without `detector` the rules run alone: only UI tests seed candidates
     /// that way, since below the detector floor the apps offer no Find
-    /// names (ADR 0088). A detector scan has no fixed deadline: it stops
+    /// names. A detector scan has no fixed deadline: it stops
     /// only after a minute without progress, refuses to start without
     /// enough free memory, reports the time it has left and pauses while
-    /// the phone is too hot (ADR 0120). The
+    /// the phone is too hot. The
     /// review stays usable meanwhile; a transition that changes the text
     /// (Replace, Keep of a replaced mention) or a new import discards the
     /// scan's result, as an edit does on desktop.
@@ -489,7 +489,7 @@ impl DocumentSession {
         self.with_document(|document| document.review.link(from, into))
     }
 
-    /// Undo the last step (ADR 0098): a decision, a mark or an identity
+    /// Undo the last step: a decision, a mark or an identity
     /// change. The snapshot's `redo_step` names what it undid and where.
     /// Nothing to undo leaves the review as it is.
     pub fn undo(&self) -> Result<ReviewSnapshot, CoreError> {
@@ -597,7 +597,7 @@ impl DocumentSession {
     }
 
     /// × on a merge hint: hidden from now on, and in the document's case
-    /// once it saves (ADR 0080). Not an undo step.
+    /// once it saves. Not an undo step.
     pub fn dismiss_hint(&self, from: u64, into: u64) -> Result<ReviewSnapshot, CoreError> {
         self.with_document(|document| document.review.dismiss_hint(from, into))
     }
@@ -608,7 +608,7 @@ impl DocumentSession {
         self.read_document(|document| document.review.copy_for_ai())
     }
 
-    /// What Share sends: the same text as Copy for AI (ADR 0085).
+    /// What Share sends: the same text as Copy for AI.
     pub fn share_text(&self) -> Result<String, CoreError> {
         self.copy_for_ai()
     }
@@ -620,7 +620,7 @@ impl DocumentSession {
     }
 
     /// Restore an AI reply with this document's mapping, as desktop's reply
-    /// box does (ADR 0078).
+    /// box does.
     pub fn restore_reply(&self, reply: String) -> Result<RestoredReply, CoreError> {
         self.read_document(|document| {
             RestoredReply::of(
@@ -631,7 +631,7 @@ impl DocumentSession {
     }
 
     /// Add this document to case `case_id` before saving: its names take
-    /// the case's aliases and the case's names are proposed (ADR 0041). A
+    /// the case's aliases and the case's names are proposed. A
     /// document belongs to one case; joining another is refused.
     pub fn join_case(
         &self,
@@ -658,7 +658,7 @@ impl DocumentSession {
 
     /// Save the Markdown into the library's documents folder and its
     /// mapping into its case, starting a case named after the document when
-    /// it has none (ADR 0085: each prepared document starts a new case).
+    /// it has none (each prepared document starts a new case).
     /// The document first joins its case as stored now, so names another
     /// document added meanwhile keep their aliases and this one's move to
     /// free numbers; one library write lock covers the whole save.
@@ -682,7 +682,7 @@ impl DocumentSession {
         let document = guard.as_mut().ok_or_else(no_document)?;
         let renamed = document.rename(&library, &title)?;
         // Named by the user, a new document is an ordinary one: its title
-        // stops following its first line, and an empty one stays (ADR 0109).
+        // stops following its first line, and an empty one stays.
         if document.origin == DocumentOrigin::New {
             document.origin = DocumentOrigin::Ordinary;
             if let Some(path) = &document.path {
@@ -1465,7 +1465,7 @@ mod tests {
     /// Same as saved into the case, then undone and saved again: the
     /// document has two people again and restores each to its own. The case
     /// keeps the merge, as on desktop: a member's save never reverses a case
-    /// merge (ADR 0041, `unmerged_members_cannot_reverse_a_case_merge`).
+    /// merge (`unmerged_members_cannot_reverse_a_case_merge`).
     #[test]
     fn an_undone_merge_is_two_people_in_the_document_again() {
         let scratch = Scratch::new();
@@ -1504,7 +1504,7 @@ mod tests {
     }
 
     /// × on a merge hint is kept in the case: the document reopened, or
-    /// another member, no longer shows it (ADR 0080).
+    /// another member, no longer shows it.
     #[test]
     fn a_dismissed_hint_is_kept_in_the_case() {
         let scratch = Scratch::new();
@@ -1514,7 +1514,7 @@ mod tests {
         select(&session, "Ms Bennett");
         let mut snapshot = session.snapshot().unwrap();
         if snapshot.identities.len() == 1 {
-            // Propagation joined the short form (ADR 0092): split it off.
+            // Propagation joined the short form: split it off.
             snapshot = session
                 .new_alias(range_of(&snapshot, "Ms Bennett", 0))
                 .unwrap();
@@ -1732,7 +1732,7 @@ mod tests {
         );
     }
 
-    /// The case a document leaves stays, even empty (ADR 0041: a case is
+    /// The case a document leaves stays, even empty (a case is
     /// deleted only on its own). Moving back keeps the names the move added
     /// where something still uses them: another document of that case, or
     /// a reply to text shared from it (the current case).

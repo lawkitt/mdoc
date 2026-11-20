@@ -93,9 +93,9 @@ fn in_table_cell(source: &str, blocks: Blocks, caret: usize, rendered: bool) -> 
     rendered && blocks.row_in_table_cell(row) && row_in_drawn_table(source, blocks, row)
 }
 
-/// Enter: a new block (ADR 0060). In a rendered table it moves to the cell
+/// Enter: a new block. In a rendered table it moves to the cell
 /// below; in the last row it adds a row, or leaves the table from an empty
-/// one ([`table_rules::return_in_last_row`], ADR 0110); in code and math it
+/// one ([`table_rules::return_in_last_row`]); in code and math it
 /// types a newline; a selection becomes a paragraph break.
 pub fn enter(source: &str, selection: Range<usize>, rendered: bool) -> EditResult {
     let scan = BlockScan::new(source);
@@ -138,7 +138,7 @@ pub fn enter(source: &str, selection: Range<usize>, rendered: bool) -> EditResul
     EditResult::one(range, text, to)
 }
 
-/// The phones' typing helper (ADR 0109): Return at the end of an opening
+/// The phones' typing helper: Return at the end of an opening
 /// code fence nobody closed yet (```` ``` ````, a language after it or not)
 /// closes it, the caret on the empty line between. Desktop's Enter types a
 /// newline there.
@@ -220,7 +220,7 @@ pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Optio
     }
     let scan = BlockScan::new(source);
     let blocks = scan.view();
-    // In a drawn table's cell: only that cell's bytes (ADR 0109).
+    // In a drawn table's cell: only that cell's bytes.
     if rendered && let Some(result) = cells::delete(source, blocks, selection.clone(), false) {
         return Some(result);
     }
@@ -236,7 +236,7 @@ pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Optio
         let caret = range.start;
         return Some(delete_range(range, caret));
     }
-    // At a paragraph's start, one ⌫ undoes Enter's paragraph break (ADR 0060).
+    // At a paragraph's start, one ⌫ undoes Enter's paragraph break.
     let body = blockquote_prefix(&source[off - col..line_end(source, row)]);
     if (col == 0 || Some(col) == body)
         && let Some((range, caret)) = delete::break_delete_range(source, blocks, row, false)
@@ -441,8 +441,8 @@ pub fn table_command(
 /// caret's deleted (`None`), as desktop's column commands rewrite the
 /// table. The caret's column is the cells' reading
 /// ([`cells::cell_at`]), which counts a last cell left without its closing
-/// pipe. A new column takes the caret into its cell in the caret's row
-/// (ADR 0110); after a delete the caret stays in its place.
+/// pipe. A new column takes the caret into its cell in the caret's row;
+/// after a delete the caret stays in its place.
 fn column_edit(
     source: &str,
     blocks: Blocks,
@@ -470,7 +470,7 @@ fn column_edit(
     Some((range, text, caret))
 }
 
-/// Tab, ⇧Tab or an arrow key in a rendered table (ADR 0109): the caret to
+/// Tab, ⇧Tab or an arrow key in a rendered table: the caret to
 /// the next or previous cell, or a character or a cell over. `None` outside
 /// a rendered table, where the key does what it does elsewhere.
 pub fn table_move(

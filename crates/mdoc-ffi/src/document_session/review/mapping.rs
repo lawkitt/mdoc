@@ -1,4 +1,4 @@
-//! Identity changes (ADR 0098's identity tools), ported from desktop's
+//! Identity changes (the identity tools), ported from desktop's
 //! `src/pii/ui/mapping.rs` (`MappingAction`, `prepare_mapping_change`,
 //! `change_mapping`) and the popup that picks the action by scope
 //! (`src/pii/ui/mapping/popup.rs`: `confirm_alias`, `correct_category`,
@@ -277,7 +277,7 @@ impl ReviewText {
 
     /// Link identity `from` into `into`, which keeps its alias; `from`'s
     /// applied mentions take it (`change_mapping` with `MappingAction::Merge`).
-    /// Linking is only ever this explicit action (ADR 0002).
+    /// Linking is only ever this explicit action.
     pub fn link(&mut self, from: u64, into: u64) -> Result<(), CoreError> {
         let step = super::Step {
             kind: super::StepKind::SameAs,

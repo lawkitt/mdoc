@@ -1,4 +1,4 @@
-//! Web addresses in the review (ADR 0094): one span that wins over what is
+//! Web addresses in the review: one span that wins over what is
 //! inside it, link targets replaced in place, and one identity across
 //! scheme, `www.` and trailing-slash writings.
 use super::tests::plan_all;
@@ -267,8 +267,8 @@ fn a_known_address_never_replaces_the_start_of_a_longer_one() {
     );
 }
 
-/// A hand mark is the user's own selection (ADR 0094 reviews only scans'
-/// repeats): every exact match counts, inside a longer address or a kept
+/// A hand mark is the user's own selection (only a scan's repeats
+/// get reviewed): every exact match counts, inside a longer address or a kept
 /// one too.
 #[test]
 fn a_hand_marked_address_counts_every_exact_match() {

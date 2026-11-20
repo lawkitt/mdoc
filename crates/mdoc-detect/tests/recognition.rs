@@ -1,4 +1,4 @@
-//! The recognition fixtures on their snapshots (ADR 0093), on any OS: each
+//! The recognition fixtures on their snapshots, on any OS: each
 //! fixture's committed raw model output through the correction stage and the
 //! review, against its gold and status. The Mac's detection gate
 //! (`just recognize --check`) also reruns the model to keep snapshots fresh.
@@ -35,7 +35,7 @@ fn every_recognition_fixture_is_as_its_status_says() {
     };
     // The fixtures are independent and share the rule pack, so they are
     // checked on every core: one after another, the loop took 15 to 17 s on
-    // hosted macOS and 20 s on the PC (ADR 0112's sweep).
+    // hosted macOS and 20 s on the PC.
     let next = AtomicUsize::new(0);
     let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
     let mut failed: Vec<(usize, String)> = std::thread::scope(|scope| {
@@ -92,7 +92,7 @@ fn every_recognition_fixture_is_as_its_status_says() {
 
 /// #366 (U27): in the Russian demo, from its snapshot, every form of
 /// Павлова Марина Сергеевна the review proposes is one identity, and her
-/// husband and her lawyer keep their own (ADR 0092 propagation).
+/// husband and her lawyer keep their own.
 /// "Павлову" alone is her accusative and his dative: either, so its own.
 #[test]
 fn the_russian_demo_names_pavlova_once() {

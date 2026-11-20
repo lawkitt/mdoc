@@ -5,7 +5,7 @@ use crate::rules::load::rust_classes;
 use mdoc_pii::Recognizer;
 use regex::Captures;
 
-/// ADR 0113: callers in one process share an immutable, lazily built pack.
+/// Callers in one process share an immutable, lazily built pack.
 /// Nextest starts a process per test, so each test still pays for its first
 /// use; repeated calls and worker threads in that test reuse the same pack.
 #[test]
@@ -542,7 +542,7 @@ fn person_not_endings_need_a_stem() {
     assert!(Pack::load(&[("test.toml", source)]).is_ok());
 }
 
-/// ADR 0094: a public domain's subdomain is never listed beside it, in
+/// A public domain's subdomain is never listed beside it, in
 /// one file or across files.
 #[test]
 fn a_public_domain_inside_another_is_rejected() {

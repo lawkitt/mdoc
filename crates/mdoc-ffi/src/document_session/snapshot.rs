@@ -1,7 +1,7 @@
 //! What the review screen draws, rebuilt after every transition: the text,
 //! its mentions with their source byte ranges, identities by category, merge
 //! hints and the undo history's ends. Swift and Kotlin keep only view state
-//! beside it (ADR 0085, ADR 0098).
+//! beside it.
 use super::review::{Focus, ReviewText, Step, StepKind};
 use crate::library::TextRange;
 use std::collections::HashMap;
@@ -85,7 +85,7 @@ pub struct Mention {
     pub category: Category,
     pub identity: Option<u64>,
     /// Stays the same while the mention does, across Replace, Keep, edits
-    /// elsewhere, Undo and Redo (ADR 0104); transitions by id take it.
+    /// elsewhere, Undo and Redo; transitions by id take it.
     pub id: u64,
 }
 
@@ -142,7 +142,7 @@ pub struct CategoryChoice {
     pub current: bool,
 }
 
-/// An undo step Undo or Redo reaches (ADR 0098): the toast names it, and
+/// An undo step Undo or Redo reaches: the toast names it, and
 /// the bar moves to where it acted.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct HistoryStep {
@@ -159,7 +159,7 @@ pub struct HistoryStep {
     pub identity: Option<u64>,
 }
 
-/// Two identities that look like one subject (ADR 0080); linking them is
+/// Two identities that look like one subject; linking them is
 /// the user's explicit choice.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct LinkHint {

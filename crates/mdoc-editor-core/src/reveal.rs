@@ -11,7 +11,7 @@
 //!   caret is in them; the line prefix reveals only with the caret inside
 //!   it. A selection reveals inline markers on the lines it touches, never
 //!   the line prefix behind its painted mark.
-//! - [`RevealRule::CaretSpan`] (ADR 0109, the phones): the construct the
+//! - [`RevealRule::CaretSpan`] (the phones): the construct the
 //!   caret touches shows all its markers, formatting ones included; the line
 //!   prefix shows anywhere on the caret's line. A selection reveals every
 //!   marker on the lines it touches.

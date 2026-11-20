@@ -1,4 +1,4 @@
-//! Saving a document into the library, and saving after the tap (ADR 0104,
+//! Saving a document into the library, and saving after the tap (
 //! Calls stay synchronous while they are cheap): a review action with no
 //! library changes the document only, and `save_pending` saves what
 //! changed since the last save, however many actions that was, from any
@@ -122,7 +122,7 @@ struct Pending {
     text: String,
     identities: Vec<ExportedIdentity>,
     /// Not a name (alias, wording) pairs the case drops on this save, and
-    /// the kept ones it may take back from an undone one (ADR 0122).
+    /// the kept ones it may take back from an undone one.
     not_names: Vec<(String, String)>,
     kept: Vec<(String, String)>,
     dismissed: Vec<(String, String)>,
@@ -195,7 +195,7 @@ impl Document {
         };
         let case = library.load(id)?;
         // This live document's own Not a name reserved an alias its undo
-        // may still give back; its own decisions stand (ADR 0122).
+        // may still give back; its own decisions stand.
         let reserved = match self.path.as_deref() {
             Some(path) => case.reserved_aliases_for(&library.member(path)),
             None => case.reserved_aliases(),

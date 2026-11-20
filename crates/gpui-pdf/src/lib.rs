@@ -221,7 +221,7 @@ pub fn page_frames(doc: &Document) -> Vec<PageFrame> {
 }
 
 /// How rasterized pages are painted: the original paper, or *themed* — paper and
-/// ink remapped to a dark palette (ADR 0035).
+/// ink remapped to a dark palette.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PageTone {
     #[default]
@@ -3582,7 +3582,7 @@ mod scrolling_tests {
         }
         assert!(overflowed_somewhere);
         assert!(cx.debug_bounds("pdf-find").is_some());
-        // The highlight tools are gone (ADR 0031).
+        // The highlight tools are gone.
         for selector in ["pdf-mark", "pdf-area", "pdf-tools"] {
             assert!(cx.debug_bounds(selector).is_none());
         }

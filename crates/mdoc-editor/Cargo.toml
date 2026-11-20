@@ -20,7 +20,7 @@ unicode-segmentation = "1"
 # every caret/click lookup in this crate goes through `VisualMap` on RTL rows.
 gpui-bidi = { path = "../gpui-bidi" }
 
-# The GUI-free editing rules (ADR 0109): Enter, joins, formatting toggles,
+# The GUI-free editing rules: Enter, joins, formatting toggles,
 # indent, turn into, tables, paste, the undo history, the reveal rule,
 # search and spell exclusions, shared with the mobile apps.
 mdoc-editor-core = { path = "../mdoc-editor-core" }
@@ -30,7 +30,7 @@ mdoc-editor-core = { path = "../mdoc-editor-core" }
 mdoc-history = { path = "../mdoc-history" }
 
 # GUI-free Markdown recognition (spans, line prefixes, tables) shared with
-# the mobile apps (ADR 0085); this crate maps its spans to GPUI styles.
+# the mobile apps; this crate maps its spans to GPUI styles.
 mdoc-markdown = { path = "../mdoc-markdown" }
 
 # The standalone demo needs a platform backend to open a real window (the `gpui`
@@ -41,10 +41,10 @@ gpui = { workspace = true, features = ["test-support"] }
 gpui_platform = { workspace = true }
 
 # A CommonMark/GFM reader for tests that check what the copied Markdown
-# renders as (ADR 0060). Already in the graph through mdoc-pii.
+# renders as. Already in the graph through mdoc-pii.
 markdown = "1"
 
-# The demo wires the editor to the app's spell checker (ADR 0036). Dev-only,
+# The demo wires the editor to the app's spell checker. Dev-only,
 # so the editor crate itself stays host-agnostic.
 mdoc-spell = { path = "../mdoc-spell" }
 

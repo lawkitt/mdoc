@@ -1,7 +1,7 @@
-//! mdoc's Markdown editing rules without a GUI (ADR 0109).
+//! mdoc's Markdown editing rules without a GUI.
 //!
 //! The desktop editor (`mdoc-editor`, GPUI) and the phones (through
-//! `mdoc-ffi`) call these rules, so each one exists once (ADR 0104). The rules
+//! `mdoc-ffi`) call these rules, so each one exists once. The rules
 //! work on the source text and UTF-8 byte offsets into it, and return the
 //! edit to apply (a replaced range and its text) with where the caret or
 //! selection lands; the caller applies it and records it in its history.

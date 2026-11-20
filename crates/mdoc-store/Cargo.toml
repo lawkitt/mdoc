@@ -2,7 +2,7 @@
 name = "mdoc-store"
 version = "0.1.0"
 edition = "2024"
-description = "GUI-free app storage: paths, documents, session, recents, settings, saved cases and crash-report masking (ADR 0069)."
+description = "GUI-free app storage: paths, documents, session, recents, settings, saved cases and crash-report masking."
 license = "GPL-3.0-or-later"
 publish = false
 repository = "https://github.com/lawkitt/mdoc"
@@ -11,13 +11,13 @@ repository = "https://github.com/lawkitt/mdoc"
 # The dev renderer's profile sandbox (app_paths::isolate); see the app's feature.
 headless-renders = []
 # Test builds: asking the OS for the build's signature or the case key
-# panics (ADR 0095). The app's dev-dependencies turn it on, so every
+# panics. The app's dev-dependencies turn it on, so every
 # `cargo test` of the workspace has it and no shipped build does.
 deny-os-services = []
 
 [dependencies]
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
-# models, updates, crash report); a bump must keep those paths (ADR 0053).
+# models, updates, crash report); a bump must keep those paths.
 dirs = "7"
 # canonicalize without Windows verbatim (`\\?\`) prefixes in user-visible paths.
 dunce = "1"
@@ -28,7 +28,7 @@ thiserror = "2"
 url = "2"
 mdoc-pii = { path = "../mdoc-pii" }
 mdoc-spell = { path = "../mdoc-spell" }
-# Saved cases (ADR 0041): AES-256-GCM files, the key held by the OS.
+# Saved cases: AES-256-GCM files, the key held by the OS.
 aes-gcm = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]

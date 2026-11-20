@@ -1,4 +1,4 @@
-//! What a tap on the review screen does, in one core call (ADR 0104, refactor
+//! What a tap on the review screen does, in one core call (refactor
 //! grill Q12): `DocumentSession::review` takes the action by mention id,
 //! saves into the library when something changed, and returns the snapshot
 //! after it, so the app neither looks the mention up in a snapshot first nor
@@ -25,7 +25,7 @@ pub enum ReviewAction {
         mention: u64,
         scope: Scope,
     },
-    /// Not a name (ADR 0122): the mark, or every mark of its identity,
+    /// Not a name: the mark, or every mark of its identity,
     /// comes off with no trace; replaced text returns first.
     NotAName {
         mention: u64,
@@ -39,7 +39,7 @@ pub enum ReviewAction {
         range: TextRange,
         category: Option<Category>,
     },
-    /// Fix the words (ADR 0114): the mention takes `words`, a range of its
+    /// Fix the words: the mention takes `words`, a range of its
     /// draft (`DocumentSession::fix_words_draft`, where a replaced mention
     /// shows its original); the new wording replaces the old one
     /// everywhere it fits, keeping the identity and its alias, or joins the
@@ -122,12 +122,12 @@ pub struct SessionInfo {
     pub phase: DocumentPhase,
     pub proposed: u64,
     /// How it began: a new document follows its first line, the sample
-    /// restores (ADR 0109).
+    /// restores.
     pub origin: super::DocumentOrigin,
 }
 
 /// What Hide name's callout or Fix the words' Hide «…» would hide: the
-/// selection snapped to whole words and trimmed (ADR 0114).
+/// selection snapped to whole words and trimmed.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct WordsTarget {
     pub range: TextRange,
@@ -138,7 +138,7 @@ pub struct WordsTarget {
     pub categories: Vec<Category>,
 }
 
-/// What Fix the words shows while a name's words are fixed (ADR 0114).
+/// What Fix the words shows while a name's words are fixed.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct FixWordsDraft {
     /// The review as it shows meanwhile: a replaced name has its original
@@ -167,7 +167,7 @@ impl DocumentSession {
     /// Apply `action`, then, given `library`, save as `save` does unless
     /// nothing changed since the last save; the snapshot after. Without
     /// `library` the change waits for `save_pending`, which saves every
-    /// action since the last save at once (ADR 0104: the save follows the
+    /// action since the last save at once (the save follows the
     /// tap).
     pub fn review(
         &self,
@@ -460,7 +460,7 @@ mod tests {
     }
 
     /// A mention keeps its id through Replace, Keep, edits elsewhere, Undo
-    /// and Redo (ADR 0104).
+    /// and Redo.
     #[test]
     fn mention_ids_survive_changes() {
         let (session, start) = session(
@@ -793,7 +793,7 @@ mod tests {
         assert!(reopened(&marked).scanned);
     }
 
-    /// What a review tap costs on a long document (ADR 0104: async calls
+    /// What a review tap costs on a long document (async calls
     /// only past about 16 ms on an iPhone 12 Pro): about 20 pages, 200
     /// names, 1,600 mentions. `cargo test --release -p mdoc-ffi --lib
     /// measure_a_review_tap -- --ignored --nocapture`.

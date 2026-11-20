@@ -1,9 +1,9 @@
-//! The Markdown spans the mobile apps style their text with (ADR 0085's Text
+//! The Markdown spans the mobile apps style their text with (the Text
 //! display rule), from `mdoc-markdown`, the recognition the desktop editor
 //! uses.
 //!
 //! The apps draw the Markdown source rendered, markers hidden, as desktop
-//! does (ADR 0096), or with its markers dimmed (Show Markdown). Either way
+//! does, or with its markers dimmed (Show Markdown). Either way
 //! the text is the source, so every range is a UTF-8 byte range into the
 //! text the review returned, the same offsets candidates use. The bindings say what a piece of text is, never how it
 //! looks: no fonts and no theme colours, only the colours the document itself
@@ -74,7 +74,7 @@ pub struct MarkdownLine {
 }
 
 /// A list item's line: where its bullet, number or box goes and how deep it
-/// sits (ADR 0096). Its source marker is a hidden marker span.
+/// sits. Its source marker is a hidden marker span.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct MarkdownListItem {
     /// The line without its line break.
@@ -84,7 +84,7 @@ pub struct MarkdownListItem {
     pub depth: u32,
     /// What desktop paints in the marker's place: `•`, or the number
     /// written in the source in its depth's style (`9.` shows `9.`, a nested
-    /// `3.` shows `c.`, deeper `iii.`; ADR 0110). Empty for a task.
+    /// `3.` shows `c.`, deeper `iii.`). Empty for a task.
     pub label: String,
     /// A task item's box: checked or not. `None` for a plain item.
     pub task: Option<bool>,
@@ -104,7 +104,7 @@ pub enum MarkdownAlertKind {
 }
 
 /// What a line is beyond its [`MarkdownLineKind`]: roles the rendered view
-/// draws (ADR 0096).
+/// draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum MarkdownBlockKind {
     /// A code block's opening or closing fence, hidden in the rendered view.
@@ -157,13 +157,13 @@ pub struct MarkdownTableRow {
     /// range where its content would be.
     pub cells: Vec<TextRange>,
     /// Each cell's whole span between its pipes, its spaces included: where
-    /// a caret in that cell rests in edit mode (ADR 0109).
+    /// a caret in that cell rests in edit mode.
     pub spans: Vec<TextRange>,
-    /// The `<br>` tags that break a cell's lines (ADR 0046), in source order.
+    /// The `<br>` tags that break a cell's lines, in source order.
     pub breaks: Vec<TextRange>,
 }
 
-/// A GFM table the rendered view draws as a grid (ADR 0096).
+/// A GFM table the rendered view draws as a grid.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct MarkdownTable {
     /// Every line of the table, from its style marker (if any) to its last
@@ -185,18 +185,18 @@ pub struct MarkdownTable {
 pub struct MarkdownStyling {
     pub spans: Vec<MarkdownSpan>,
     pub lines: Vec<MarkdownLine>,
-    /// List items, in source order (ADR 0096).
+    /// List items, in source order.
     pub list_items: Vec<MarkdownListItem>,
-    /// Code fences, alerts and greyed lines, in source order (ADR 0096).
+    /// Code fences, alerts and greyed lines, in source order.
     pub blocks: Vec<MarkdownBlock>,
-    /// Tables, in source order (ADR 0096).
+    /// Tables, in source order.
     pub tables: Vec<MarkdownTable>,
-    /// Inline images, in source order, outside code and tables (ADR 0096).
+    /// Inline images, in source order, outside code and tables.
     pub images: Vec<MarkdownImage>,
 }
 
 /// An inline `![alt](src)` image: the rendered view draws an Image chip in
-/// its place, since the app shows no pictures (ADR 0096).
+/// its place, since the app shows no pictures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct MarkdownImage {
     /// The whole `![alt](src)`.
@@ -212,7 +212,7 @@ pub fn markdown_styling(text: String) -> MarkdownStyling {
     styling(&text)
 }
 
-/// The block an edit or the caret touched, styled on its own (ADR 0109): edit
+/// The block an edit or the caret touched, styled on its own: edit
 /// mode restyles it in place on each keystroke rather than the whole text.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct MarkdownBlockStyling {
@@ -307,7 +307,7 @@ pub(crate) fn block_styling(text: &str, range: TextRange) -> MarkdownBlockStylin
 }
 
 /// What a copy holding HTML and perhaps plain text pastes as: the ChatGPT
-/// iOS app copies no Markdown, so it comes from the HTML (ADR 0105). Nil when
+/// iOS app copies no Markdown, so it comes from the HTML. Nil when
 /// neither holds text.
 #[uniffi::export]
 pub fn pasted_markdown(html: String, plain: Option<String>) -> Option<String> {
@@ -1120,7 +1120,7 @@ mod tests {
         }
     }
 
-    /// What the rendered view draws (ADR 0096): list items with desktop's
+    /// What the rendered view draws: list items with desktop's
     /// labels and levels, fences, alerts, greyed lines and table rows.
     #[test]
     fn rendered_view_roles() {
@@ -1141,7 +1141,7 @@ mod tests {
         assert_eq!(
             items,
             [
-                // The number written, in its depth's style (ADR 0110).
+                // The number written, in its depth's style.
                 ("1. One", 0, "1.", None),
                 ("3. Two", 0, "3.", None),
                 ("    - Sub", 1, "•", None),

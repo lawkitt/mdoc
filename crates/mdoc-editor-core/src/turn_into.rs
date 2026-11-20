@@ -1,5 +1,5 @@
 //! "Turn into": convert the blocks a selection touches between text,
-//! headings, lists, to-dos, quotes, callouts, code and math (ADR 0110).
+//! headings, lists, to-dos, quotes, callouts, code and math.
 
 use std::ops::Range;
 
@@ -319,7 +319,7 @@ pub fn selected_kinds(source: &str, blocks: Blocks, selection: Range<usize>) -> 
         .collect()
 }
 
-/// "Turn into" over `selection` (ADR 0110): every block it touches becomes
+/// "Turn into" over `selection`: every block it touches becomes
 /// `kind`; when every one is `kind` already, they all turn back into text.
 /// `None` when nothing changes.
 pub fn turn_selection(

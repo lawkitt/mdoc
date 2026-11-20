@@ -4,9 +4,9 @@
 //! order, as on desktop (`src/pii/ui.rs` `commit_plans` and
 //! `checkpoint_review`, `src/pii/ui/mapping/popup.rs`, `src/pii/ui/mapping.rs`
 //! and `src/pii/ui/case_sync.rs`). The history is a line of states, each
-//! one user action, typing coalesced into "Typing" steps (`typing`, ADR
-//! 0109): Undo and Redo travel it as desktop's editor does (`history`, ADR
-//! 0098), and the identity tools are desktop's mapping changes (`mapping`).
+//! one user action, typing coalesced into "Typing" steps (`typing`): Undo
+//! and Redo travel it as desktop's editor does (`history`), and the identity
+//! tools are desktop's mapping changes (`mapping`).
 mod history;
 mod ids;
 mod mapping;
@@ -30,8 +30,8 @@ use std::{
 };
 pub use typing::Typed;
 
-/// Where a decision or an identity change reaches (ADR 0085's review sheet,
-/// ADR 0098's scope chip).
+/// Where a decision or an identity change reaches (the review sheet's
+/// scope chip).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Scope {
     /// Just this mention.
@@ -47,7 +47,7 @@ pub(crate) enum Reverted {
     Proposed,
     /// Kept as their originals.
     Kept,
-    /// Not a name (ADR 0122): excluded, shown nowhere.
+    /// Not a name: excluded, shown nowhere.
     NotAName,
 }
 
@@ -78,7 +78,7 @@ pub(crate) struct ReviewText {
     /// The step in progress's edits, one sorted batch per transaction.
     edits: Vec<Vec<SourceEdit>>,
     /// Merge hints dismissed here or in the case, by the wordings that
-    /// matched (`MergeHint::pair`, ADR 0080).
+    /// matched (`MergeHint::pair`).
     dismissed: HashSet<(Arc<str>, Arc<str>)>,
     /// Mention ids that survive changes (`ids`).
     pub ids: ids::MentionIds,
@@ -405,7 +405,7 @@ impl ReviewText {
 
     // ---- Merge hints --------------------------------------------------------
 
-    /// Merge hints (ADR 0080) without the dismissed ones
+    /// Merge hints without the dismissed ones
     /// (`MappingUi::hint_dismissed`).
     pub fn merge_hints(&self) -> Vec<MergeHint> {
         let mut hints = self.review.merge_hints();
@@ -460,7 +460,7 @@ impl ReviewText {
 
     /// A selection added as proposals of every exact repeat
     /// (`add_manual_candidate`): `picked` is taken for new wording, else the
-    /// guess; proposed wording keeps its own category (ADR 0024).
+    /// guess; proposed wording keeps its own category.
     ///
     /// The selection is taken as Hide name's callout shows it: snapped to
     /// whole words and trimmed (`hide_target`) when that leaves a name to
@@ -601,7 +601,7 @@ impl ReviewText {
         Ok(())
     }
 
-    /// Not a name (ADR 0122): every mark in scope comes off, shown nowhere
+    /// Not a name: every mark in scope comes off, shown nowhere
     /// but still excluded, so Find names again doesn't propose it; applied
     /// mentions return to their originals first. One step.
     pub fn not_a_name(&mut self, range: Range<usize>, scope: Scope) -> Result<(), CoreError> {
@@ -786,7 +786,7 @@ impl ReviewText {
     /// A saved member reopened (`open_case_mapping`): the case's names are
     /// proposed, and alias tokens already in the text become their applied
     /// replacements, so Copy for AI and restore know them.
-    /// Open in `case` as its member `member` (ADR 0122): the case's names
+    /// Open in `case` as its member `member`: the case's names
     /// proposed with every retired alias reserved, and the Not a name
     /// pairs the case keeps for this document left off again. No step.
     pub fn open_in_case(
@@ -914,7 +914,7 @@ mod tests {
         assert_eq!(document.text, "Ann Lee met Ann Lee and PERSON_1.");
     }
 
-    /// Not a name (ADR 0122) from a proposed mention, for All: the kept,
+    /// Not a name from a proposed mention, for All: the kept,
     /// replaced and proposed mentions all come off, the replaced one back
     /// to its original, and nothing shows them; one Undo brings them back;
     /// Find names again doesn't propose the wording.
@@ -1142,7 +1142,7 @@ mod tests {
     #[test]
     fn linking_is_explicit_and_moves_applied_aliases() {
         // Two full names, one a slip: a short form ("Ms Bennett") would join
-        // the name by propagation (ADR 0092).
+        // the name by propagation.
         let text = "Maya Bennett met Maya Benett.";
         let mut document = document(
             text,
@@ -1179,7 +1179,7 @@ mod tests {
         assert_eq!(document.text, "PERSON_4 and PERSON_5 signed.");
     }
 
-    // ---- Undo, redo and the identity tools (ADR 0098) -------------------------
+    // ---- Undo, redo and the identity tools -------------------------
 
     /// What the review screen shows, without the history's ends.
     fn shown(document: &mut ReviewText) -> String {
@@ -1576,7 +1576,7 @@ mod tests {
         ];
         let hinted = || {
             let mut document = document(text, &names);
-            // A short form joins its full name by propagation (ADR 0092):
+            // A short form joins its full name by propagation:
             // split it off to see the hint.
             if document.review.active_identities().len() == 1 {
                 document.new_alias(range(text, "Ms Bennett", 0)).unwrap();

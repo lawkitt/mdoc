@@ -1,4 +1,4 @@
-//! OCR that keeps finished pages (ADR 0085 Long jobs). An import with OCR
+//! OCR that keeps finished pages. An import with OCR
 //! recognizes a PDF one page at a time and keeps each finished page under a
 //! folder of the caller's, keyed by the file's digest and the OCR
 //! configuration, so a cancelled or stopped import resumes with the pages

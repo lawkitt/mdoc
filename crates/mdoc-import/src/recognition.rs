@@ -1,9 +1,9 @@
-//! Recognition languages (ADR 0065): the list of languages OCR is asked to
+//! Recognition languages: the list of languages OCR is asked to
 //! read, and the default list for one document with the reason it was chosen.
 //! Engines map the list to what they read (`ocr::plan` for PP-OCR).
 
 /// A document language, by ISO 639-1 code. Lists of these, never pairs or
-/// per-language switches, choose and report recognition (ADR 0065).
+/// per-language switches, choose and report recognition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Language(pub &'static str);
 
@@ -19,7 +19,7 @@ impl Language {
         }
     }
     /// The language a letter's script suggests: Cyrillic suggests Russian,
-    /// the only qualified Cyrillic language (ADR 0065).
+    /// the only qualified Cyrillic language.
     fn of_letter(c: char) -> Option<Self> {
         match c {
             'a'..='z' | 'A'..='Z' => Some(ENGLISH),

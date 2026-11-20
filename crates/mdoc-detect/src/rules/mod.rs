@@ -1,4 +1,4 @@
-//! The rule pack (ADR 0092): `rules/{shared,en,ru}.toml`, compiled in, read
+//! The rule pack: `rules/{shared,en,ru}.toml`, compiled in, read
 //! and checked once. Its `never` words and `shape`s decide which model spans
 //! are kept and what a manual selection is guessed to be.
 //!

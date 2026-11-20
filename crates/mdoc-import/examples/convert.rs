@@ -1,7 +1,7 @@
 //! `just import <file>`: the Markdown mdoc's own import makes of a file,
 //! on stdout; its warning and errors on stderr. Not shipped.
 //!
-//! Probes are judged on this text, not on another converter's (ADR 0093).
+//! Probes are judged on this text, not on another converter's.
 //! A PDF that needs OCR is recognized as the app would: the recognition
 //! languages come from its text layer, file name and keyboards, else the
 //! default bundle, with the installed OCR models and runtimes from the app

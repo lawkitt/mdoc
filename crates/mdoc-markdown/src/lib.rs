@@ -1,5 +1,5 @@
 //! GUI-free Markdown recognition, shared by mdoc's desktop editor and its
-//! mobile apps (ADR 0085): what counts as a construct and which source bytes
+//! mobile apps: what counts as a construct and which source bytes
 //! it covers, never how it looks.
 //!
 //! - [`spans`]: inline spans over source byte ranges — emphasis, strike,
@@ -12,7 +12,7 @@
 //!   table styles, writing direction, links, highlight and styled tags.
 //!
 //! - [`from_html`]: Markdown from the HTML an app's Copy puts on the
-//!   clipboard (ADR 0105).
+//!   clipboard.
 //!
 //! Offsets are UTF-8 byte offsets into the source; markers are ASCII.
 #![forbid(unsafe_code)]

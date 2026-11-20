@@ -1,7 +1,6 @@
 # mdoc-spell
 
-Offline English/Russian spellcheck for mdoc
-([ADR 0036](../../docs/adr/0036-bundled-spellcheck.md)). Wraps
+Offline English/Russian spellcheck for mdoc. Wraps
 [spellbook](https://github.com/helix-editor/spellbook) (pure-Rust Hunspell) with
 built-in en_US, en_GB and ru_RU dictionaries, so results are the same on every
 platform. Knows nothing about Markdown or PII: the host passes excluded byte

@@ -1,4 +1,4 @@
-//! Recognition fixtures and their scoring (ADR 0093): one Markdown file per
+//! Recognition fixtures and their scoring: one Markdown file per
 //! fixture with front matter and `⟦CATEGORY|text⟧` gold, its raw model
 //! snapshot `<id>.model.json` beside it, and what the user would be shown
 //! for it: the correction stage, then the review's own overlap rules and
@@ -187,7 +187,7 @@ impl Fixture {
                 KINDS.join(", ")
             ));
         }
-        // A hunt round, or a probe round's synthetic reproduction (ADR 0093).
+        // A hunt round, or a probe round's synthetic reproduction.
         let round = ["hunt-r", "probe-r"].iter().any(|prefix| {
             self.origin
                 .strip_prefix(prefix)
@@ -310,8 +310,8 @@ pub fn annotate(source: &str, spans: &[Span]) -> String {
     out
 }
 
-/// A fixture's committed raw model output (ADR 0093), recorded on the
-/// reference platform, CI's hosted Windows (ADR 0113).
+/// A fixture's committed raw model output, recorded on the
+/// reference platform, CI's hosted Windows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     /// The model it came from: [`crate::model_name`].
@@ -597,7 +597,7 @@ impl Comparison {
 /// Why a fixture's result is not as expected, if it isn't: the ratchet on
 /// its status, then, for a known-flaw fixture, its flaws against the
 /// recorded ones, so a change can't add a false hit while the fixture still
-/// fails for its old reasons (ADR 0093). A fixture without a status is
+/// fails for its old reasons. A fixture without a status is
 /// expected to pass.
 pub fn verdict(fixture: &Fixture, comparison: &Comparison) -> Option<String> {
     if let Some(why) = ratchet(fixture.expected(), comparison.passes()) {
@@ -685,7 +685,7 @@ pub fn fixture_paths(root: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Recall and precision per language × category × kind, and fixtures per
-/// status (ADR 0093). Counts are wordings per fixture: a repeated mention
+/// status. Counts are wordings per fixture: a repeated mention
 /// with the same result counts once.
 #[derive(Clone, Debug, Default)]
 pub struct Scoreboard {

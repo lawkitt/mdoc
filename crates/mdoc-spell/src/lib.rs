@@ -1,5 +1,4 @@
-//! Offline English/Russian spellcheck with built-in Hunspell dictionaries
-//! ([ADR 0036](../../../docs/adr/0036-bundled-spellcheck.md)).
+//! Offline English/Russian spellcheck with built-in Hunspell dictionaries.
 //!
 //! The same text and [`Options`] give the same misspellings on every platform.
 //! The crate knows nothing about Markdown or PII: the host passes

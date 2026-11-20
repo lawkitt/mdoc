@@ -1,4 +1,4 @@
-//! Parity (ADR 0085): the same document and candidates give the same bytes
+//! Parity: the same document and candidates give the same bytes
 //! through the FFI objects as through the desktop's GUI-free path, import →
 //! review → Copy for AI → restore. The goldens under
 //! `tests/fixtures/mobile-parity/` are the Swift parity suite's too; with
@@ -591,7 +591,7 @@ fn candidates(
 
 // ---- Tests ----------------------------------------------------------------
 
-/// The captured Claude round trip (ADR 0056): the demo joins a case holding
+/// The captured Claude round trip: the demo joins a case holding
 /// the reviewed mapping, Copy for AI gives exactly what desktop put on the
 /// clipboard (`sent.md`), and the reply restores to `expected.md` through
 /// the session (desktop's reply box) and through the library (the Restore
@@ -729,7 +729,7 @@ fn the_demo_docx_with_injected_candidates_matches_desktop_and_goldens() {
     assert_eq!(desktop_copy_for_ai(&review, &text), copied);
 
     // An AI that answers with the document itself gets every original back;
-    // "Maya" alone joined her full name (ADR 0092), so it comes back as that.
+    // "Maya" alone joined her full name, so it comes back as that.
     let (_, body) = copied.split_once("\n\n---\n\n").unwrap();
     let reply = format!("Summary of the agreement:\n\n{body}");
     let desktop = RestoreMap::new(review.export_identities()).restore_in_place(&reply);
@@ -746,7 +746,7 @@ fn the_demo_docx_with_injected_candidates_matches_desktop_and_goldens() {
     golden("settlement-docx/restored.md", &restored.text);
 }
 
-/// ADR 0098: Replace, Keep, Same as (a whole-identity merge) and Rename,
+/// Replace, Keep, Same as (a whole-identity merge) and Rename,
 /// then Undo and Redo, reach the same text and mentions through the FFI as
 /// through desktop's editor and mapping changes, step by step.
 #[test]
@@ -843,7 +843,7 @@ fn identity_tools_and_undo_match_desktop() {
     );
 }
 
-/// ADR 0098's This-one paths and the other identity tools: category (All
+/// The This-one paths and the other identity tools: category (All
 /// and This one), New alias, Same as one mention, Belongs to…, each with
 /// every undo and redo, reach desktop's text, mentions and identities.
 #[test]

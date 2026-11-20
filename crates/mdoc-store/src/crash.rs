@@ -1,4 +1,4 @@
-//! Crash-report masking (ADR 0047): a report keeps the crash's place and
+//! Crash-report masking: a report keeps the crash's place and
 //! never document text, folder names or document names.
 use std::path::Path;
 

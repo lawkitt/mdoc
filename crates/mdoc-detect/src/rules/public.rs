@@ -57,8 +57,8 @@ impl Pack {
         self.zones.contains(&zone.to_lowercase())
     }
 
-    /// Whether `host` is a public or legal site's, or a subdomain of one
-    /// (ADR 0094): "kad.arbitr.ru", "www.legislation.gov.uk".
+    /// Whether `host` is a public or legal site's, or a subdomain of one:
+    /// "kad.arbitr.ru", "www.legislation.gov.uk".
     pub(crate) fn public_host(&self, host: &str) -> bool {
         let host = host.trim_end_matches('.').to_lowercase();
         let mut rest = host.as_str();

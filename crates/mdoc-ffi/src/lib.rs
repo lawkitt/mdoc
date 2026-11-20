@@ -1,12 +1,12 @@
-//! The mobile apps' bridge to the GUI-free core (ADR 0085), through UniFFI.
+//! The mobile apps' bridge to the GUI-free core, through UniFFI.
 //!
 //! Rust owns document, review, case and restore state; Swift and Kotlin hold
-//! view state only. ADR 0085's three coarse objects, one module each:
+//! view state only. Three coarse objects, one module each:
 //! [`library`] (cases, stored documents, storage paths, restoring replies),
 //! [`document_session`] (import and OCR, scan, review, Copy for AI and Share
 //! text, saving into a case) and [`setup`] (models that fit the device,
 //! verifying and installing downloads). [`editor`] exports the stateless
-//! editing rules edit mode calls (ADR 0109), and [`original`] renders a DOCX
+//! editing rules edit mode calls, and [`original`] renders a DOCX
 //! file for the Original pane.
 uniffi::setup_scaffolding!();
 

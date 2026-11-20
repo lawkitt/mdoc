@@ -542,10 +542,10 @@ pub(super) fn emphasis_delimiters_at(source: &str, at: usize, end: usize) -> usi
     inner - at
 }
 /// Node kinds and child counts in document order, ignoring text values.
-/// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich",
-/// ADR 0092): `<br>` nodes wholly inside `value` are skipped and the text
+/// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich"):
+/// `<br>` nodes wholly inside `value` are skipped and the text
 /// around them is one. So is a GFM autolink literal wholly inside it
-/// ("https://site.invalid/u/alice_r", ADR 0094): the web address is the
+/// ("https://site.invalid/u/alice_r"): the web address is the
 /// value, and its alias is plain text.
 static AS_TEXT: markdown::mdast::Node = markdown::mdast::Node::Text(markdown::mdast::Text {
     value: String::new(),

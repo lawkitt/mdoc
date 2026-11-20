@@ -1,7 +1,6 @@
 # Case file fixture
 
-`0123456789abcdef0123456789abcdef.case` is a saved case
-([ADR 0041](../../../../../docs/adr/0041-cases-and-ai-response-restoration.md)) written
+`0123456789abcdef0123456789abcdef.case` is a saved case written
 by mdoc with aes-gcm 0.10.3 under the test key `[7; 32]`: `MDOCCASE1`, a 12-byte
 nonce, then AES-256-GCM over the case JSON, authenticated with the case id. Its
 contents are `fixture_case()` in `crates/mdoc-store/src/cases.rs`.

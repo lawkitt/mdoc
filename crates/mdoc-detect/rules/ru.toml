@@ -1184,7 +1184,7 @@ guess = [
     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
 ]
 
-# Case numbers after "номер дела" or "дело №" (ADR 0092): "**Номер дела:**
+# Case numbers after "номер дела" or "дело №": "**Номер дела:**
 # 2-1842/2026", "**Дело №** 1234", "дело № А40-123456/2026". The value is the
 # whole identifier and needs four digits: the review proposes a wording
 # everywhere it appears, and a short one would mark "статья 12" too. A date
@@ -1382,7 +1382,7 @@ between = '[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
 value = '\d{2}[\p{Zs}\t]?\p{Uppercase}{2}[\p{Zs}\t]?\d{6,7}'
 min_digits = 8
 
-# Russian identifiers after their label (ADR 0092), whatever their checksum:
+# Russian identifiers after their label, whatever their checksum:
 # the guide marks invalid and damaged ones too. The structured rules propose
 # only valid ones; these give the label's category over the model's guess.
 # A table column headed by the label takes its cells' values too.
@@ -1680,7 +1680,7 @@ between = '(?:[\p{Zs}\t]+(?:адвоката|нотариуса|арбитраж
 value = '(?:\p{Uppercase}{1,4}[\p{Zs}-]?)?\d{3,10}(?:/\d{1,6})?'
 min_digits = 3
 
-# Addresses (ADR 0092, issue #362) in reverse, the flat first and the city
+# Addresses (issue #362) in reverse, the flat first and the city
 # last, where a city without "г." ends its field: "кв. 9, д. 32, переулок
 # Бумажных лодок, Тверь", then an index. A city of several words needs its
 # "г." ("г. Нижний Новгород"): without one it reads as a name. A
@@ -1721,7 +1721,7 @@ parts.number = '\d+(?:-\d{1,3}\b)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic
 parts.building = '\b(?:корп|КОРП|стр|СТР|К)\b\.?[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bк\.[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:корпус|КОРПУС|строение|СТРОЕНИЕ)\b[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:лит|ЛИТ)(?:\.|ера|ЕРА|ер|ЕР|\b)[\p{Zs}\t]*\p{Uppercase}\b|\b(?:эт|ЭТ)\.[\p{Zs}\t]*\d+|\bэтаж[\p{Zs}\t]*\d+'
 parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ком|КОМ|комн|КОМН)\b\.?[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)|\b(?:квартира|КВАРТИРА|офис|ОФИС|помещение|ПОМЕЩЕНИЕ|комната|КОМНАТА)\b[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)'
 
-# Addresses (ADR 0092, issue #362) forward: a street and a house ("д. 7",
+# Addresses (issue #362) forward: a street and a house ("д. 7",
 # "д 31", "Д. 14", or a bare number after the street's comma: "ул.
 # Еловая,16"), after an optional index and the places above the street,
 # then buildings, flats and offices in any order: "191187, Санкт-Петербург,
@@ -1861,7 +1861,7 @@ parts.building = '\b(?:корп|КОРП|стр|СТР|К)\b\.?[\p{Zs}\t]*\d+(?:
 parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ком|КОМ|комн|КОМН)\b\.?[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)|\b(?:квартира|КВАРТИРА|офис|ОФИС|помещение|ПОМЕЩЕНИЕ|комната|КОМНАТА)\b[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)'
 parts.box = '\b(?:а/я|А/Я|а/)[\p{Zs}\t]*\d+\b'
 
-# Addresses (ADR 0092, guide rule 3, #506 item 6): an index and the places
+# Addresses (guide rule 3, #506 item 6): an index and the places
 # after it are an address with no street where a mask follows them, which
 # no span holds: "999999, Энская область, г.о. Кедровск, <...> … д. 5"
 # has "999999, Энская область, г.о. Кедровск" (and the house after the
@@ -1886,7 +1886,7 @@ parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic
 parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|р\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]](?:[\p{Cyrillic}\p{Latin}\d-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*|[\p{Cyrillic}\p{Latin}\d-]*)(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}|(?:\b(?:Ч|П|С|Х|Д|СТ|ПОС|ДЕР|ТЕР)\.|\b(?:ПГТ|РП|МКР)\b\.?|\b(?:Г\.[\p{Zs}\t]?[ОП]|С\.[\p{Zs}\t]?П|Р\.[\p{Zs}\t]?П|М\.[\p{Zs}\t]?Р-Н|ВН\.[\p{Zs}\t]?ТЕР\.[\p{Zs}\t]?Г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+){0,3}'
 parts.bare_city = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
 
-# Addresses (ADR 0092, guide rule 3, #482): a settlement by its type, then
+# Addresses (guide rule 3, #482): a settlement by its type, then
 # a house right after it with no street, then buildings and flats, as a
 # village or a garrison writes it: "с. Кедровка, д. 5, кв. 2", "п.
 # Кедровый ключ ДОС № 1, кв. 2" (a «ДОС» is an officers' house), with the
@@ -1925,7 +1925,7 @@ parts.number = '\d+(?:-\d{1,3}\b)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic
 parts.building = '\b(?:корп|КОРП|стр|СТР|К)\b\.?[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bк\.[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:корпус|КОРПУС|строение|СТРОЕНИЕ)\b[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:лит|ЛИТ)(?:\.|ера|ЕРА|ер|ЕР|\b)[\p{Zs}\t]*\p{Uppercase}\b|\b(?:эт|ЭТ)\.[\p{Zs}\t]*\d+|\bэтаж[\p{Zs}\t]*\d+'
 parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ком|КОМ|комн|КОМН)\b\.?[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)|\b(?:квартира|КВАРТИРА|офис|ОФИС|помещение|ПОМЕЩЕНИЕ|комната|КОМНАТА)\b[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)'
 
-# Addresses (ADR 0092, guide rule 3, #362 run 4) house first, in prose: a
+# Addresses (guide rule 3, #362 run 4) house first, in prose: a
 # house in any case form and its number, then «по» and a street in the
 # dative or with its type abbreviated, then the settlement if any: "дома
 # 41 по ул. Кедровая пос. Ольховый", "в доме № 7 по улице Садовой г.
@@ -2014,7 +2014,7 @@ trim = [
     "№", "инн", "огрн", "огрнип", "тел", "телефон",
 ]
 
-# Dates of birth (ADR 0092): a date after "дата рождения", "д.р.", "род.",
+# Dates of birth: a date after "дата рождения", "д.р.", "род.",
 # "родился" is a personal date ("дата рождения 14 марта 1988 г.",
 # "Дата рождения: 19 февраля 1987 года"). Every other date stays. The value
 # must be one the DATE guesses take, a quoted day too ("«14» марта 1988 г."),
@@ -2058,7 +2058,7 @@ value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?(?:[
 only_guessed = ["DATE"]
 
 # Russian courts, public bodies, laws and legal databases are never web
-# addresses to replace (ADR 0094, guide rule 8): "kad.arbitr.ru/Card/…",
+# addresses to replace (guide rule 8): "kad.arbitr.ru/Card/…",
 # "http://pravo.gov.ru/proxy/ips/?docbody=…", "www.consultant.ru/document/…",
 # every "*.gov.ru" and every court's "*.sudrf.ru". Fedresurs is not listed:
 # its "/persons/…" pages are people's.

@@ -126,7 +126,7 @@ struct PrivateEntry {
     unless: Vec<String>,
 }
 
-/// Web addresses' data (ADR 0094): which bare domains are addresses and
+/// Web addresses' data: which bare domains are addresses and
 /// which domains are public or legal, never proposed.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

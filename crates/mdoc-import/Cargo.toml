@@ -2,7 +2,7 @@
 name = "mdoc-import"
 version = "0.1.0"
 edition = "2024"
-description = "GUI-free document import: conversion, OCR and its verified setup, recognition languages, model downloads and the DOCX preview worker (ADR 0069)."
+description = "GUI-free document import: conversion, OCR and its verified setup, recognition languages, model downloads and the DOCX preview worker."
 license = "GPL-3.0-or-later"
 publish = false
 repository = "https://github.com/lawkitt/mdoc"
@@ -23,16 +23,16 @@ tempfile = "3"
 url = "2"
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
 # C API 17, which 1.17 and later serve: 1.32.0 downloaded on desktop
-# (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS
-# (ADR 0085), where ort finds it in the app's own executable.
+# (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS,
+# where ort finds it in the app's own executable.
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
 # Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
 libloading = "0.9"
 
 # The DOCX preview: a supervised worker process on desktop, in process on
-# iOS (ADR 0085); Android has no Original pane for DOCX yet.
+# iOS; Android has no Original pane for DOCX yet.
 [target.'cfg(not(target_os = "android"))'.dependencies]
-# Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
+# Exact: DOCX preview rendering changes between releases; bump by hand.
 docxide-pdf = { version = "=0.21.4", default-features = false }
 roxmltree = "0.21"
 

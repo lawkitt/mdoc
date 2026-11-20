@@ -119,7 +119,7 @@ pub fn html_block(line: &str) -> bool {
 
 /// The ordered labels the editor and the mobile apps paint: `(number, level)`
 /// of every ordered list item, the number as written in the source (a clause
-/// number is content, ADR 0110) and the level STRUCTURAL (how many lists are
+/// number is content) and the level STRUCTURAL (how many lists are
 /// open above, not an indent-width guess), plus, for each ordered item, the
 /// list it belongs to: siblings share an id (a nested list, a new marker type
 /// at the same indent, or a new list after a break gets its own), so their
@@ -275,7 +275,7 @@ mod tests {
                 None
             ]
         );
-        // The number written shows, at its structural level (ADR 0110).
+        // The number written shows, at its structural level.
         let (numbers, lists) = ordered_scan(&["9. а", "10. б", "   3. в", "11. г", "", "5. д"]);
         assert_eq!(numbers, [(9, 0), (10, 0), (3, 1), (11, 0), (0, 0), (5, 0)]);
         // The nested list and the list after the break are lists of their own.

@@ -547,7 +547,7 @@ fn a_lone_word_of_a_multi_word_person_original_is_a_name_not_replaced() {
         1,
         "counted once"
     );
-    // Whole words and exact case only: no inflection beyond ADR 0068's
+    // Whole words and exact case only: no inflection beyond the
     // proposed variants.
     assert_eq!(map.known_names("Маринад, марина, Марину, PERSON_1."), 0);
     // An organisation's words are no names: "Северный ветер" is not ORG_1.
@@ -666,7 +666,7 @@ fn captured_identities(json: &str) -> Vec<ExportedIdentity> {
 }
 
 /// Real ChatGPT and Claude answers to the settlement demos leave no alias
-/// behind (ADR 0056). `<assistant>-<en|ru>[-date]` names each capture.
+/// behind. `<assistant>-<en|ru>[-date]` names each capture.
 #[test]
 fn captured_replies_restore_completely() {
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -717,7 +717,7 @@ fn captured_replies_restore_completely() {
             "{name}: aliases left after Restore: {left:?}"
         );
         assert_eq!(restored, read(&dir.join("expected.md")), "{name}");
-        // The Reply view (ADR 0078) shows the same text, nothing unresolved.
+        // The Reply view shows the same text, nothing unresolved.
         let in_place = map.restore_in_place(&reply);
         assert_eq!(in_place.text, restored, "{name}: in place");
         assert!(in_place.unresolved.is_empty(), "{name}: in place");
@@ -889,7 +889,7 @@ fn withdrawing_a_category_keeps_restored_wordings() {
 #[test]
 fn same_as_into_a_shorter_seeded_identity_restores_the_longest_full_form() {
     // A case knows PERSON_1 only as "Ms Bennett"; this member links the full
-    // name to it with Same as…. The pin breaks ties only (ADR 0080).
+    // name to it with Same as…. The pin breaks ties only.
     let source = "Maya Bennett signed. Ms Bennett agreed.";
     let mut review = Review::default();
     let seeded = review.seed(
@@ -977,7 +977,7 @@ fn a_failed_merge_leaves_the_identities_unchanged() {
     assert_eq!(review.variant_identity(person), Some(maya));
 }
 
-/// A case number's alias (ADR 0092) is generated, recognised and restored
+/// A case number's alias is generated, recognised and restored
 /// like any other, loose forms included.
 #[test]
 fn a_case_number_alias_restores_like_any_alias() {

@@ -15,7 +15,7 @@ pub enum PreviewFit {
     Manual,
 }
 
-/// What the user picked at the foot of the sidebar (ADR 0048). System follows
+/// What the user picked at the foot of the sidebar. System follows
 /// the OS appearance; the app resolves it to the theme everything paints with.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeChoice {
@@ -53,7 +53,7 @@ pub struct TabRecord {
     pub preview_zoom: Option<f32>,
     pub preview_fit: PreviewFit,
     pub preview_split: Option<f32>,
-    /// The saved case this document belongs to (ADR 0041); never its contents.
+    /// The saved case this document belongs to; never its contents.
     pub case: Option<String>,
 }
 
@@ -71,7 +71,7 @@ pub struct Session {
     /// Case labels and counts for locked pages; never originals or member contents.
     #[serde(default)]
     pub cases: Vec<crate::cases::CaseSummary>,
-    /// The sidebar's System / Light / Dark pick (ADR 0048).
+    /// The sidebar's System / Light / Dark pick.
     #[serde(default)]
     pub theme_choice: ThemeChoice,
 }

@@ -1,4 +1,4 @@
-//! Markdown from the HTML an app's Copy puts on the clipboard (ADR 0105).
+//! Markdown from the HTML an app's Copy puts on the clipboard.
 //!
 //! The ChatGPT iOS app copies a reply as HTML, RTF and a flattened plain
 //! text: no Markdown, and a table's cells end up separated by tabs. This

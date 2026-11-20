@@ -54,7 +54,7 @@ pub(super) struct Exclusion {
     pub original: Arc<str>,
     pub identity: Option<u64>,
     pub id: u64,
-    /// Not a name (ADR 0122): excluded like a Keep, but shown nowhere.
+    /// Not a name: excluded like a Keep, but shown nowhere.
     pub silent: bool,
 }
 #[derive(Default)]
@@ -612,7 +612,7 @@ impl Tracking {
     }
     /// Text edits returning these applied occurrences to their prior values,
     /// or with `to_original` past every rename to the first original
-    /// (Not a name, ADR 0122).
+    /// (Not a name).
     pub(crate) fn reversion_plan_to(
         &self,
         source: &str,

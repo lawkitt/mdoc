@@ -1,4 +1,4 @@
-//! The editing rules the apps' edit mode calls (ADR 0109), from
+//! The editing rules the apps' edit mode calls, from
 //! `mdoc-editor-core`, the rules the desktop editor runs.
 //!
 //! Plain typing is applied natively; structural keys and buttons (Enter,
@@ -157,11 +157,11 @@ impl From<TurnKind> for EditorBlockKind {
     }
 }
 
-/// Return: a new block (ADR 0060). Lists, tasks, numbers and quotes
+/// Return: a new block. Lists, tasks, numbers and quotes
 /// continue, and an empty item ends its list; in a rendered table it moves
 /// to the cell below, and in the last row adds a row with the caret in the
 /// same column, or, on a last row whose cells are all empty, removes it and
-/// leaves the table (a table of only a header keeps it; ADR 0110); in code
+/// leaves the table (a table of only a header keeps it); in code
 /// and math it types a newline.
 #[uniffi::export]
 pub fn editor_enter(text: String, selection: TextRange, rendered: bool) -> EditorChange {
@@ -207,7 +207,7 @@ pub fn editor_delete_forward(
 /// otherwise a selection is wrapped (the same text kept selected), a caret
 /// in a word wraps the word, and a caret elsewhere gets an empty pair to
 /// type into. Italic on a bold selection gives bold italic (`***x***`) and
-/// back, as does Bold on an italic one (ADR 0110). Nil on a blank
+/// back, as does Bold on an italic one. Nil on a blank
 /// selection, and in code or math.
 #[uniffi::export]
 pub fn editor_toggle_format(
@@ -243,7 +243,7 @@ pub fn editor_outdent(text: String, selection: TextRange, rendered: bool) -> Opt
     commands::outdent(&text, sel, rendered).map(change)
 }
 
-/// Turn every block the selection touches into `kind` (ADR 0110): blank
+/// Turn every block the selection touches into `kind`: blank
 /// lines are skipped, and between new list or task items they go; a code
 /// or math block or a callout wraps the selection in one. When every block
 /// is `kind` already they all turn back into text. A selection keeps the
@@ -275,7 +275,7 @@ pub fn editor_toggle_task(text: String, selection: TextRange) -> Option<EditorCh
 
 /// Run a table command on the table holding the caret. A new row takes the
 /// caret into its cell in the caret's column, a new column into its cell in
-/// the caret's row (ADR 0110). Nil outside a table or where it does not
+/// the caret's row. Nil outside a table or where it does not
 /// apply (deleting the header row or the last column).
 #[uniffi::export]
 pub fn editor_table_command(
@@ -308,7 +308,7 @@ pub fn editor_table_command(
     commands::table_command(&text, sel, &command).map(change)
 }
 
-/// A caret move in a drawn table (ADR 0109): Tab, ⇧Tab, the arrow keys and
+/// A caret move in a drawn table: Tab, ⇧Tab, the arrow keys and
 /// the table controls' move keys.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum EditorTableMove {
@@ -398,7 +398,7 @@ pub struct EditorLink {
 }
 
 /// What the editing toolbar and the formatting keyboard show for the
-/// selection (ADR 0109).
+/// selection.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct EditorCaretState {
     /// The inline formats the caret is inside (or the selection lies
@@ -419,7 +419,7 @@ pub struct EditorCaretState {
     /// The caret is in a table the view draws.
     pub in_table: bool,
     /// In live preview, the drawn table's cell holding the caret: the
-    /// formatting keyboard shows the table controls (ADR 0109).
+    /// formatting keyboard shows the table controls.
     pub cell: Option<EditorTableCell>,
     /// The link holding or touching the caret, for its Open and Edit chip.
     pub link: Option<EditorLink>,
@@ -474,8 +474,8 @@ pub fn editor_caret_state(text: String, selection: TextRange, rendered: bool) ->
 
 /// The toolbar's list button: every block the selection touches becomes a
 /// bulleted item, the blank lines between them gone; when each is a
-/// bulleted or numbered item already, they all turn back into text
-/// (ADR 0110). The changed blocks stay selected.
+/// bulleted or numbered item already, they all turn back into text.
+/// The changed blocks stay selected.
 #[uniffi::export]
 pub fn editor_toggle_list(text: String, selection: TextRange) -> Option<EditorChange> {
     let sel = self::selection(&text, selection);
@@ -484,7 +484,7 @@ pub fn editor_toggle_list(text: String, selection: TextRange) -> Option<EditorCh
 
 /// The toolbar's task button: on one task line its box checks or unchecks;
 /// otherwise every block the selection touches becomes a task, or, when
-/// each is a task already, they all turn back into text (ADR 0110).
+/// each is a task already, they all turn back into text.
 #[uniffi::export]
 pub fn editor_task_button(text: String, selection: TextRange) -> Option<EditorChange> {
     let sel = self::selection(&text, selection);
@@ -536,7 +536,7 @@ pub fn editor_paste(
 }
 
 /// The marker ranges live preview shows for the selection under the phone's
-/// reveal rule (ADR 0109): the construct the caret touches shows its
+/// reveal rule: the construct the caret touches shows its
 /// markers, and the line prefix (`#`, `>`, a bullet) shows on the caret's
 /// line; a selection shows every marker on its lines. Every other marker
 /// span stays hidden.
@@ -672,7 +672,7 @@ mod tests {
         let c = editor_task_button("- [ ] a".into(), caret(7)).unwrap();
         assert_eq!(applied("- [ ] a", &c).0, "- [x] a");
         // Over several paragraphs: an item each, the selection kept on them,
-        // and back to text (ADR 0110). Offsets are UTF-8 bytes.
+        // and back to text. Offsets are UTF-8 bytes.
         let s = "Первый.\n\nВторой.";
         let all = range(0, s.len() as u64);
         let c = editor_toggle_list(s.into(), all).unwrap();
@@ -725,7 +725,7 @@ mod tests {
             editor_block_kind("> [!TIP]\n> x".into(), caret(11)),
             EditorBlockKind::Callout
         );
-        // Already that kind: back to text (ADR 0110).
+        // Already that kind: back to text.
         let c = editor_turn_into("- a".into(), caret(3), EditorBlockKind::BulletList).unwrap();
         assert_eq!(applied("- a", &c).0, "a");
         assert_eq!(

@@ -7,7 +7,7 @@ use std::{
 };
 
 /// Whether a file dragged from the OS looks openable by its extension alone;
-/// drag feedback cannot afford `supported_source`'s content reads (ADR 0028).
+/// drag feedback cannot afford `supported_source`'s content reads.
 pub fn supported_extension(path: &Path) -> bool {
     mdoc_store::document::is_markdown(path) || anydoc::Format::from_path(path).is_some()
 }
@@ -51,7 +51,7 @@ pub fn supported_formats() -> String {
 }
 
 /// What a drop target accepts:a supported file, or a folder that opens as a
-/// case (ADR 0041 #28). One stat per dragged path.
+/// case. One stat per dragged path.
 pub fn droppable(path: &Path) -> bool {
     supported_extension(path) || path.is_dir()
 }

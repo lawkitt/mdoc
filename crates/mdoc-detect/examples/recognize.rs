@@ -1,4 +1,4 @@
-//! `just recognize`: the recognition fixtures' tool (ADR 0093). Not shipped.
+//! `just recognize`: the recognition fixtures' tool. Not shipped.
 //!
 //! ```text
 //! just recognize <file.md|folder> [--gold] [--snapshot]
@@ -20,7 +20,7 @@
 //! `--snapshot` reads each fixture's committed `<id>.model.json` instead.
 //! `--scoreboard` prints recall and precision per language × category ×
 //! kind, and exits 0 whatever the documents did. `--refresh-snapshots` rewrites snapshots; the
-//! reference platform is CI's hosted Windows (ADR 0113), so elsewhere it makes
+//! reference platform is CI's hosted Windows, so elsewhere it makes
 //! a draft that CI's `detection-snapshots-<k>` replace (`just snapshots-fetch`).
 //! `--check` is the detection gate: it reruns the model
 //! over every fixture, fails on a stale snapshot or an unexpected result,
@@ -28,7 +28,7 @@
 //! refreshes) every n-th fixture from the k-th (1-based) in sorted order,
 //! one CI shard, and `--out` writes each stale or missing snapshot afresh under that folder at
 //! its path in the repository (CI's `detection-snapshots-<k>` artifact, which
-//! `just snapshots-fetch` applies; ADR 0095). `--setup` installs the pinned
+//! `just snapshots-fetch` applies). `--setup` installs the pinned
 //! FP16 and the ONNX Runtime into the app data through mdoc's own verified
 //! setup, for CI's runner; no other mode downloads. `--record-flaws` writes each
 //! known-flaw fixture's flaws, from its snapshot, as its `expect:` lines:
@@ -311,13 +311,13 @@ fn run() -> Result<bool, String> {
             );
             if elapsed > BUDGET {
                 failures.push(format!(
-                    "the model run took {:.0}s, over its {}s budget: raise the detection gate's shards (ADR 0095)",
+                    "the model run took {:.0}s, over its {}s budget: raise the detection gate's shards",
                     elapsed.as_secs_f64(),
                     BUDGET.as_secs()
                 ));
             } else if elapsed > BUDGET.mul_f64(0.8) {
                 // A GitHub Actions annotation, plain text elsewhere: the
-                // signal to add a shard before the budget fails (ADR 0100).
+                // signal to add a shard before the budget fails.
                 println!(
                     "::warning::detection gate{part}: the model run took {:.0}s, over 80% of its {}s budget: add a shard (queue.yml, nightly.yml)",
                     elapsed.as_secs_f64(),
@@ -366,7 +366,7 @@ fn write_fresh(out: &Path, fixture: &Fixture, fresh: &Snapshot) -> Result<(), St
 }
 
 /// The pinned FP16 and the shared ONNX Runtime, downloaded and verified as
-/// mdoc's own setup does them (CI's detection gate; ADR 0095). Files already
+/// mdoc's own setup does them (CI's detection gate). Files already
 /// in place and verified are kept.
 fn setup() -> Result<(), String> {
     let config = mdoc_store::settings::PiiConfig {

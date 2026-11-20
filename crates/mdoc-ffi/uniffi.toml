@@ -1,4 +1,4 @@
-# UniFFI binding settings (ADR 0085, 0089). Swift needs none.
+# UniFFI binding settings. Swift needs none.
 # Names that clash in Kotlin: `Library` with JNA's `com.sun.jna.Library`,
 # which the bindings import, and an error variant's `message` with
 # `Throwable.message`.

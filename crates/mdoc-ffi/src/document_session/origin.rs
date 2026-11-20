@@ -1,4 +1,4 @@
-//! Documents that begin in mdoc (ADR 0109): a new document, named after its
+//! Documents that begin in mdoc: a new document, named after its
 //! first line until the user renames it and discarded when it is left
 //! empty, and the sample document, which Try a sample restores. The origin
 //! is kept with the document (`documents.json`), so a new document goes on
@@ -35,7 +35,7 @@ impl DocumentOrigin {
 /// The longest title a first line gives, in characters.
 const MAX_TITLE_CHARS: usize = 60;
 
-/// The title a new document takes from its text (ADR 0109): its first line
+/// The title a new document takes from its text: its first line
 /// with words, as the line reads rendered, without a heading's `#`, a
 /// quote's `>`, a list's or task's marker or the inline markers (`**`, a
 /// link's target), its spaces collapsed, trimmed, and at most 60
@@ -115,7 +115,7 @@ fn shortened(words: &str) -> String {
 
 #[uniffi::export]
 impl DocumentSession {
-    /// A new document's title follows its first line (ADR 0109): renamed
+    /// A new document's title follows its first line: renamed
     /// after `first_line_title` of its text when that changed since it last
     /// followed, as Rename… renames (its file, and its case while the case
     /// holds only it and is named after it), keeping it a new document.
@@ -147,7 +147,7 @@ impl DocumentSession {
         Ok(Some(renamed))
     }
 
-    /// A new document left empty goes (ADR 0109): its file, and its case
+    /// A new document left empty goes: its file, and its case
     /// when that holds nothing else (no other document, no name, no reply),
     /// as it was made for it. True when it went; the session then holds no
     /// document. Any other document stays, even empty, as does a new one

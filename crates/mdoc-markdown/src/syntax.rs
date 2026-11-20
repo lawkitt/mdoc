@@ -1071,7 +1071,7 @@ mod tests {
 
     #[test]
     fn links_cover_urls_only() {
-        // Note-taking syntax is plain text (ADR 0030): `[[wiki]]`, `#tag`, `((id))`.
+        // Note-taking syntax is plain text: `[[wiki]]`, `#tag`, `((id))`.
         let hits =
             links("see [[Page|alias]] and [x](https://a.io) #tag/sub ((b1)) https://b.io/p, done");
         assert_eq!(

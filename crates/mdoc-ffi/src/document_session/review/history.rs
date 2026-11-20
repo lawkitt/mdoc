@@ -1,4 +1,4 @@
-//! Undo and redo (ADR 0098): the line of states desktop's editor keeps
+//! Undo and redo: the line of states desktop's editor keeps
 //! (`crates/mdoc-editor/src/input.rs`, 256 steps), each with its text and
 //! the step that made it. Travelling sends `mdoc_pii::Review` the same
 //! transaction an editor undo sends: a change with no edits, and every state
@@ -32,16 +32,16 @@ pub enum StepKind {
     Owner,
     /// Joining a case renumbered aliases or proposed its names.
     JoinCase,
-    /// A run of typing in edit mode (ADR 0109), coalesced as desktop's
+    /// A run of typing in edit mode, coalesced as desktop's
     /// editor coalesces it.
     Typing,
-    /// One edit-mode command (ADR 0109): a toolbar or formatting-keyboard
+    /// One edit-mode command: a toolbar or formatting-keyboard
     /// button, a hardware shortcut or the link sheet.
     Formatting,
-    /// Fix the words (ADR 0114): a name's span moved, its new wording in
+    /// Fix the words: a name's span moved, its new wording in
     /// the old one's place everywhere it fits.
     FixWords,
-    /// Not a name (ADR 0122): marks taken off, of one mention or of an
+    /// Not a name: marks taken off, of one mention or of an
     /// identity's.
     NotAName,
 }

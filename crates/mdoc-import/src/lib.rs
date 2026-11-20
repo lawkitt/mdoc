@@ -1,5 +1,5 @@
-//! GUI-free document import (ADR 0069): conversion and its sessions, OCR and
-//! its verified setup, OCR that keeps finished pages (`resume`, ADR 0085),
+//! GUI-free document import: conversion and its sessions, OCR and
+//! its verified setup, OCR that keeps finished pages (`resume`),
 //! recognition languages, model downloads and the one-at-a-time model work
 //! permit, the comments the forks read, the DOCX preview (a supervised
 //! worker on desktop, in process on iOS; Android has none yet) and the

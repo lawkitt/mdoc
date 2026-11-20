@@ -316,7 +316,7 @@ fn scan_inline(
             continue;
         }
         // A hard line break (`\` ending a line with text before it, as ⇧Enter
-        // writes, ADR 0060): the reader consumes the backslash, so it hides
+        // writes): the reader consumes the backslash, so it hides
         // like any marker and the caret reveals it.
         if c == b'\\'
             && b.get(i + 1).is_none_or(|&n| n == b'\n')
