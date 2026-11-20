@@ -1,5 +1,8 @@
 // Exercise the shipping worker rather than the headless UI test adapter.
-use mdoc_import::docx_preview::{PreviewError, render_with_executable};
+use mdoc_import::{
+    docx_preview::{PreviewError, read_source, render_with_executable},
+    import::Source,
+};
 use std::{
     path::Path,
     sync::{Arc, atomic::AtomicBool},
@@ -12,7 +15,7 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.docx");
     let original = std::fs::read(&source).unwrap();
     let preview = render_with_executable(
-        &source,
+        &held(&source),
         Arc::new(AtomicBool::new(false)),
         executable,
         Duration::from_secs(30),
@@ -33,19 +36,15 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
         std::thread::sleep(Duration::from_millis(5));
     }
 
-    let result = render_with_executable(
-        Path::new("missing.docx"),
-        Arc::new(AtomicBool::new(false)),
-        executable,
-        Duration::from_secs(30),
-        Default::default(),
-        None,
-    );
+    let result = read_source(Path::new("missing.docx"));
     assert!(matches!(result, Err(PreviewError::Read(_))));
     // The worker reports what kind of failure it was, so a damaged package
     // is not shown as a failed worker with Retry.
     let result = render_with_executable(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/truncated--errors.docx"),
+        &held(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/import/truncated--errors.docx"),
+        ),
         Arc::new(AtomicBool::new(false)),
         executable,
         Duration::from_secs(30),
@@ -72,12 +71,16 @@ fn timeout_and_cancellation_kill_and_reap_worker() {
     let executable = dir.path().join("worker");
     let pid = dir.path().join("pid");
     // The worker writes its pid before anything else, then hangs.
-    std::fs::write(&executable, "#!/bin/sh\necho $$ > \"$2\"\nexec sleep 60\n").unwrap();
+    std::fs::write(
+        &executable,
+        format!("#!/bin/sh\necho $$ > '{}'\nexec sleep 60\n", pid.display()),
+    )
+    .unwrap();
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
     // Enough time for the shell to start on a loaded machine running test
     // binaries in parallel (nextest), so the kill usually hits a live worker.
     let result = render_with_executable(
-        &pid,
+        &unused(),
         Arc::new(AtomicBool::new(false)),
         &executable,
         Duration::from_secs(5),
@@ -117,7 +120,7 @@ fn timeout_and_cancellation_kill_and_reap_worker() {
             cancel.store(true, Ordering::Relaxed);
         });
         let result = render_with_executable(
-            pid,
+            &unused(),
             cancelled,
             &executable,
             Duration::from_secs(10),
@@ -140,7 +143,7 @@ fn crash_and_false_success_are_failures() {
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(matches!(
             render_with_executable(
-                Path::new("unused"),
+                &unused(),
                 Arc::new(AtomicBool::new(false)),
                 &executable,
                 Duration::from_secs(5),
@@ -161,7 +164,7 @@ fn oversize_input_is_rejected_in_the_worker() {
         .set_len(50 * 1024 * 1024 + 1)
         .unwrap();
     let result = render_with_executable(
-        &source,
+        &held(&source),
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
@@ -177,7 +180,7 @@ fn coverage_corpus_preserves_text_links_and_landscape() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/coverage.docx");
     let started = std::time::Instant::now();
     let preview = render_with_executable(
-        &source,
+        &held(&source),
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
@@ -248,7 +251,7 @@ fn legal_opinion_justified_heading_preserves_word_spaces() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/docx-preview/legal-opinion.docx");
     let preview = render_with_executable(
-        &source,
+        &held(&source),
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
@@ -291,7 +294,7 @@ fn worker_preserves_comments_and_source() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
     let original = std::fs::read(&path).unwrap();
     let preview = render_with_executable(
-        &path,
+        &held(&path),
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
@@ -303,7 +306,7 @@ fn worker_preserves_comments_and_source() {
     // the worker gave only where they sit.
     assert_eq!(
         *preview.comments,
-        mdoc_import::import::source_comments(&path)
+        mdoc_import::import::source_comments(&held(&path))
     );
     assert_eq!(preview.comments.len(), 6);
     let c = &preview.comments[0];
@@ -339,7 +342,7 @@ fn worker_preserves_comments_and_source() {
     assert_eq!(preview.hidden_text, 1);
     assert!(!text.contains("drafting note"), "{text}");
     let shown = render_with_executable(
-        &path,
+        &held(&path),
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
@@ -371,7 +374,7 @@ fn uploaded_comments_preserved() {
             .join("tests/fixtures/docx-preview")
             .join(name);
         let preview = render_with_executable(
-            &path,
+            &held(&path),
             Arc::new(AtomicBool::new(false)),
             Path::new(env!("CARGO_BIN_EXE_mdoc")),
             Duration::from_secs(30),
@@ -413,6 +416,46 @@ fn uploaded_comments_preserved() {
     }
 }
 
+/// The worker renders the bytes it is given and the cards read them too:
+/// no file needs to exist for either.
+#[test]
+fn worker_renders_held_bytes_without_their_file() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
+    let held = Source::new(
+        Path::new("never-written.docx").into(),
+        None,
+        std::fs::read(&path).unwrap(),
+    );
+    let preview = render_with_executable(
+        &held,
+        Arc::new(AtomicBool::new(false)),
+        Path::new(env!("CARGO_BIN_EXE_mdoc")),
+        Duration::from_secs(30),
+        Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(preview.comments.len(), 6);
+    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    assert!(
+        gpui_pdf::extract_page_text(&pdf, 0)
+            .unwrap()
+            .text()
+            .contains("First")
+    );
+}
+
+/// The bytes of the file at `path`, as an import holds them.
+fn held(path: &Path) -> Source {
+    Source::read(path).unwrap()
+}
+
+/// A source whose bytes the worker never reads.
+fn unused() -> Source {
+    Source::new("unused.docx".into(), None, Vec::new())
+}
+
 /// The real worker on `path`, with its PDF parsed.
 fn render_parsed(
     path: &Path,
@@ -421,7 +464,7 @@ fn render_parsed(
     Arc<gpui_pdf::Document>,
 ) {
     let preview = render_with_executable(
-        path,
+        &held(path),
         Arc::new(AtomicBool::new(false)),
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),

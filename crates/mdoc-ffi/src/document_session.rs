@@ -1282,10 +1282,11 @@ mod tests {
             "import/text_annotations.pdf",
         ] {
             let path = fixture(name);
-            let comments: Vec<_> = mdoc_import::import::source_comments(Path::new(&path))
+            let source = mdoc_import::import::Source::read(Path::new(&path)).unwrap();
+            let comments: Vec<_> = mdoc_import::import::source_comments(&source)
                 .into_iter()
                 .chain(
-                    mdoc_import::import::source_annotations(Path::new(&path))
+                    mdoc_import::import::source_annotations(&source)
                         .unwrap_or_default()
                         .iter()
                         .enumerate()

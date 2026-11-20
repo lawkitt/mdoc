@@ -105,7 +105,8 @@ fn read_marks(pdf: &Path) -> Result<Vec<LinkMark>, String> {
 /// left-out line, so nothing is lost without a note.
 #[uniffi::export]
 pub fn docx_comments_not_shown(source: String) -> Option<String> {
-    mdoc_import::import::source_comments_not_shown(Path::new(&source))
+    let source = mdoc_import::import::Source::read(Path::new(&source)).ok()?;
+    mdoc_import::import::source_comments_not_shown(&source)
 }
 
 #[uniffi::export]
@@ -122,12 +123,14 @@ impl DocxOriginal {
         let _one = RENDER.lock().unwrap_or_else(|e| e.into_inner());
         MARKS.set(Some(marks));
         // Phones offer no hidden text: the page as Word prints it.
-        let preview = docx_preview::render_in(
-            Path::new(&folder),
-            Path::new(&source),
-            read_marks,
-            RenderOptions::default(),
-        );
+        let preview = docx_preview::read_source(Path::new(&source)).and_then(|source| {
+            docx_preview::render_in(
+                Path::new(&folder),
+                &source,
+                read_marks,
+                RenderOptions::default(),
+            )
+        });
         MARKS.set(None);
         let preview = preview.map_err(|error| CoreError::Import {
             message: error.to_string(),

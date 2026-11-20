@@ -687,21 +687,17 @@ impl DocumentView {
                 self.lifecycle.converted(automatic);
                 // A PDF shown before its file changed loads again, so its
                 // pages and rail are what the import read.
-                let retain_preview = self.preview.source() == Some(&imported.source)
+                let retain_preview = self.preview.source() == Some(&imported.source.path)
                     && (self.preview.pdf().is_some() || self.preview.loading())
                     && !self
                         .preview
-                        .shows_other_annotations(&imported.source, &imported.annotations);
+                        .shows_other_annotations(&imported.source.path, &imported.annotations);
                 self.session
-                    .import(imported.source.clone(), imported.warning);
+                    .import(imported.source.path.clone(), imported.warning);
                 self.session.left_out = imported.left_out.line(true);
                 self.session.comments_left_out = imported.left_out.comments_not_shown();
-                self.preview.imported(
-                    imported.source.clone(),
-                    imported.stamp,
-                    imported.comments,
-                    imported.annotations,
-                );
+                self.preview
+                    .imported(&imported.source, imported.comments, imported.annotations);
                 self.session.ocr_configuration = imported.ocr_configuration;
                 self.reset_pii(cx);
                 if !retain_preview {
@@ -723,11 +719,11 @@ impl DocumentView {
                 if retain_preview {
                     self.preview.show();
                 } else if imported.is_pdf {
-                    self.open_pdf(imported.source, window, cx);
+                    self.open_pdf(imported.source.path, window, cx);
                 } else if imported.is_docx {
-                    self.open_docx(imported.source, window, cx);
+                    self.open_docx(imported.source.path, window, cx);
                 } else {
-                    self.preview.no_preview(imported.source);
+                    self.preview.no_preview(imported.source.path);
                 }
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
             }

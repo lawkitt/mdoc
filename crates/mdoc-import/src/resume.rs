@@ -13,8 +13,8 @@
 //! ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
-    ImportError, Imported, LeftOut, OcrFailure, SourceStamp, check_cancel, pdf_error, pdf_warning,
-    read_pdf, repeated_lines,
+    ImportError, Imported, LeftOut, OcrFailure, Source, check_cancel, import_source, is_pdf,
+    pdf_bytes, pdf_error, pdf_warning, repeated_lines,
 };
 use pdf_inspector::{MarkdownOptions, vision::OcrRepeatEvidence};
 use sha2::{Digest, Sha256};
@@ -224,35 +224,21 @@ pub fn prepare_resumable(
     kept: &KeptPages,
     recognized: &dyn Fn(u32, u32),
 ) -> Result<(Imported, Option<Completed>), ImportError> {
-    let desktop = |installed| {
-        crate::import::prepare_cancellable(path, installed, skip_ocr, cancel)
-            .map(|imported| (imported, None))
-    };
-    let Some(installed) = installed.filter(|_| !skip_ocr) else {
-        return desktop(installed);
-    };
     check_cancel(cancel)?;
-    let source = std::path::absolute(path).map_err(ImportError::Read)?;
-    let mut file = std::fs::File::open(&source).map_err(ImportError::Read)?;
-    let stamp = file
-        .metadata()
-        .ok()
-        .map(|metadata| SourceStamp::from(&metadata));
-    let mut header = [0; 1024];
-    let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
-    if !header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
-        return desktop(Some(installed));
-    }
+    let source = Source::read(path)?;
+    let Some(installed) = installed.filter(|_| !skip_ocr && is_pdf(source.bytes())) else {
+        return import_source(source, installed, skip_ocr, cancel).map(|imported| (imported, None));
+    };
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
-    let bytes = read_pdf(&source)?;
+    let bytes = pdf_bytes(&source)?;
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
-    let mut native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let mut native = process_pdf_with_ocr_mem(bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
     let annotations = std::mem::take(&mut native.annotations);
     drop(native);
     check_cancel(cancel)?;
-    let digest = digest(&bytes);
+    let digest = digest(bytes);
     let folder = kept.folder(&digest, &installed.config);
     folder.open();
     let markdown_options = installed.options().markdown;
@@ -271,7 +257,7 @@ pub fn prepare_resumable(
             .options()
             .retain_repeat_evidence(true)
             .page_numbers([page]);
-        let result = process_pdf_with_ocr_mem(&bytes, options)
+        let result = process_pdf_with_ocr_mem(bytes, options)
             .map_err(|error| ImportError::OcrFailed(OcrFailure::Engine(error.to_string())))?;
         let review = result.pages.iter().any(|fused| {
             fused.provenance.hosted_recommended || !fused.provenance.warnings.is_empty()
@@ -298,7 +284,6 @@ pub fn prepare_resumable(
         Imported {
             ocr_configuration: Some(installed.config.clone()),
             source,
-            stamp,
             markdown,
             warning,
             left_out,

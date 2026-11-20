@@ -13,7 +13,7 @@ fn render(options: RenderOptions) -> Result<(PathBuf, docx_preview::DocxPreview)
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
     let preview = docx_preview::render_in_process(
-        &source,
+        &docx_preview::read_source(&source).map_err(|e| e.to_string())?,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::preview::read_comment_marks,
         options,

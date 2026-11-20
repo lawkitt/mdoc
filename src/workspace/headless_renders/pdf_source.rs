@@ -12,15 +12,14 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.resize(1500., 900.)?;
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source/comments.pdf");
-    let annotations = mdoc_import::import::source_annotations(&source).unwrap_or_default();
+    let read = mdoc_import::import::Source::read(&source).map_err(|e| e.to_string())?;
+    let annotations = mdoc_import::import::source_annotations(&read).unwrap_or_default();
     let view = d.change(|w, window, cx| {
         w.new_tab(window, cx);
         let view = w.active_view().unwrap();
         view.update(cx, |v, cx| {
             v.preview.set_split(0.25);
-            let stamp = mdoc_import::import::SourceStamp::of(&source);
-            v.preview
-                .imported(source.clone(), stamp, Vec::new(), annotations);
+            v.preview.imported(&read, Vec::new(), annotations);
             v.open_pdf(source, window, cx);
         });
         view

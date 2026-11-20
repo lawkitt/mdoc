@@ -7,7 +7,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("docs/product-media/Соглашение об урегулировании.docx");
     let preview = mdoc_import::docx_preview::render_in_process(
-        &source,
+        &mdoc_import::docx_preview::read_source(&source).map_err(|e| e.to_string())?,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::preview::read_comment_marks,
         Default::default(),

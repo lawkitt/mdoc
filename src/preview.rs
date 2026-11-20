@@ -13,7 +13,7 @@ use gpui_pdf::{HeaderToggle, PdfView, ViewOptions};
 use mdoc_import::{
     comments::Comment,
     docx_preview::{self, PreviewError},
-    import::{self, SourceStamp},
+    import::{self, Source, SourceStamp},
 };
 use mdoc_store::{session_store, settings};
 use pdf_inspector::PdfAnnotation;
@@ -78,6 +78,9 @@ struct ImportedComments {
     stamp: SourceStamp,
     comments: Arc<Vec<Comment>>,
     annotations: Arc<Vec<PdfAnnotation>>,
+    /// A DOCX's bytes as its import read them, within the preview's limit:
+    /// its preview renders these, not the file.
+    docx: Option<Source>,
 }
 
 impl ImportedComments {
@@ -85,10 +88,11 @@ impl ImportedComments {
         SourceStamp::of(&self.source) == Some(self.stamp)
     }
 
-    /// The comments, while the file is still the one the import read; a
-    /// changed file's cards come from its own reading, as its anchors do.
-    fn current(self) -> Option<Arc<Vec<Comment>>> {
-        self.unchanged().then_some(self.comments)
+    /// The comments, and a DOCX's bytes, while the file is still the one
+    /// the import read; a changed file's cards come from its own reading,
+    /// as its anchors do.
+    fn current(self) -> Option<(Arc<Vec<Comment>>, Option<Source>)> {
+        self.unchanged().then_some((self.comments, self.docx))
     }
 
     /// A PDF's annotations, likewise.
@@ -219,24 +223,31 @@ impl PreviewState {
                     }))
     }
 
-    /// An import of `source`, as `stamp` stood, read `comments` (office
-    /// documents) or `annotations` (PDF): its rendering's cards while the
-    /// file is unchanged.
+    /// An import of `source` read `comments` (office documents) or
+    /// `annotations` (PDF): its rendering's cards while the file is
+    /// unchanged, and a DOCX's page too.
     pub(super) fn imported(
         &mut self,
-        source: PathBuf,
-        stamp: Option<SourceStamp>,
+        source: &Source,
         comments: Vec<Comment>,
         annotations: Vec<PdfAnnotation>,
     ) {
-        if self.unread_annotations.as_ref() == Some(&source) {
+        if self.unread_annotations.as_ref() == Some(&source.path) {
             self.unread_annotations = None;
         }
-        self.imported_comments = stamp.map(|stamp| ImportedComments {
-            source,
+        // Past its limit the preview refuses the file, so none are kept.
+        let docx = (source
+            .path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"))
+            && source.bytes().len() as u64 <= docx_preview::MAX_INPUT_BYTES)
+            .then(|| source.clone());
+        self.imported_comments = source.stamp.map(|stamp| ImportedComments {
+            source: source.path.clone(),
             stamp,
             comments: Arc::new(comments),
             annotations: Arc::new(annotations),
+            docx,
         });
     }
 
@@ -850,7 +861,10 @@ impl DocumentView {
             async move {
                 known
                     .and_then(ImportedComments::current_annotations)
-                    .or_else(|| import::source_annotations(&path).map(Arc::new))
+                    .or_else(|| {
+                        let source = Source::read(&path).ok()?;
+                        import::source_annotations(&source).map(Arc::new)
+                    })
             }
         });
         self.preview.annotation_read = Some(cx.spawn_in(window, async move |this, cx| {
@@ -911,18 +925,22 @@ impl DocumentView {
         };
         let known = self.preview.imported_comments(&path);
         let task = cx.background_executor().spawn(async move {
-            let comments = known.and_then(ImportedComments::current);
+            let (comments, held) = known.and_then(ImportedComments::current).unzip();
+            let source = match held.flatten() {
+                Some(source) => source,
+                None => docx_preview::read_source(&path)?,
+            };
             // Headless UI tests cannot launch the test harness as a worker.
             if cfg!(test) {
                 docx_preview::render_in_process(
-                    &path,
+                    &source,
                     cancel,
                     read_comment_marks,
                     options,
                     comments,
                 )
             } else {
-                docx_preview::render_with_cancel(&path, cancel, options, comments)
+                docx_preview::render_with_cancel(&source, cancel, options, comments)
             }
         });
         let task = cx.spawn_in(window, async move |this, cx| {
@@ -1141,10 +1159,9 @@ mod tests {
         });
         // Read once its import has: the rail, and the page leaves them out.
         app.update_in(cx, |app, window, cx| {
-            let annotations = mdoc_import::import::source_annotations(&source).unwrap();
-            let stamp = SourceStamp::of(&source);
-            app.preview
-                .imported(source.clone(), stamp, Vec::new(), annotations);
+            let read = Source::read(&source).unwrap();
+            let annotations = mdoc_import::import::source_annotations(&read).unwrap();
+            app.preview.imported(&read, Vec::new(), annotations);
             app.open_pdf(source, window, cx);
         });
         cx.run_until_parked();
@@ -1169,20 +1186,23 @@ mod tests {
             ..Comment::default()
         };
         preview.imported(
-            source.clone(),
-            SourceStamp::of(&source),
+            &Source::read(&source).unwrap(),
             vec![comment.clone()],
             Vec::new(),
         );
         assert!(preview.imported_comments(Path::new("other.docx")).is_none());
         let known = preview.imported_comments(&source).unwrap();
-        assert_eq!(known.clone().current().unwrap().as_slice(), [comment]);
+        assert_eq!(known.clone().current().unwrap().0.as_slice(), [comment]);
         assert!(known.clone().current_annotations().unwrap().is_empty());
         std::fs::write(&source, b"saved over").unwrap();
         assert!(known.clone().current().is_none());
         assert!(known.current_annotations().is_none());
         // An import whose file it could not stat offers nothing to reuse.
-        preview.imported(source.clone(), None, Vec::new(), Vec::new());
+        preview.imported(
+            &Source::new(source.clone(), None, Vec::new()),
+            Vec::new(),
+            Vec::new(),
+        );
         assert!(preview.imported_comments(&source).is_none());
     }
 
