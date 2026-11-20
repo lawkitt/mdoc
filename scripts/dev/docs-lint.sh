@@ -8,7 +8,7 @@
 #     CONTEXT.md 2,000, and 60 per entry (a `**Term**` line up to the next
 #     entry or heading); every tracked README.md 800, except the
 #     repository's own and vendor/. A file on the pending list
-#     (scripts/dev/docs-lint-pending.txt) keeps its older ceiling until its
+#     (scripts/dev/docs-lint-pending.md) keeps its older ceiling until its
 #     #981 PR trims it, and fails once it fits the new one, so the list only
 #     shrinks; a pending ADR is held to its older count, which also left out
 #     References and Terms paragraphs. A pending row must name an existing
@@ -30,7 +30,7 @@ source "$(dirname "$0")/../lib.sh"
 
 [ $# -eq 0 ] || die "usage: scripts/dev/docs-lint.sh"
 
-pending_list=scripts/dev/docs-lint-pending.txt
+pending_list=scripts/dev/docs-lint-pending.md
 pending() { # path: its older ceiling, if it is on the pending list
   [ -f "$pending_list" ] || return 0
   awk -v f="$1" '$1 == f { print $2; exit }' "$pending_list"
