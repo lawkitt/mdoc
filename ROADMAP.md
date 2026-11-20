@@ -377,10 +377,6 @@ of a file.
 5. **[Import] Password-protected DOC.** *From #1007.* RC4 through
    `craft-doc-binary`, in the same card. *Blocked by:* item 4. *Done when:*
    Word and LibreOffice DOC fixtures behave as in item 4.
-6. **[Mobile] Password-protected files on iOS and Android.** *From #1007.*
-   The phones' import takes the password and both import cards ask for it,
-   in one change. *Blocked by:* item 4. *Done when:* the core tests pass with
-   a password and both apps build with the card.
 
 ## Later
 
