@@ -213,7 +213,8 @@ impl SidebarStatus {
             importing: view.import.busy(),
             error: view.error.is_some()
                 || view.preview.failed()
-                || view.import.ocr_required().is_some(),
+                || view.import.ocr_required().is_some()
+                || view.import.password_prompt().is_some(),
             pseudonymized: view.pseudonymized(),
             recognized: view.recognized(),
         }
@@ -2405,6 +2406,7 @@ impl Workspace {
                     (v.error.is_some() && !v.conversion_cancelled())
                         || v.preview.failed()
                         || v.import.ocr_required().is_some()
+                        || v.import.password_prompt().is_some()
                 });
                 let pseudonymized = view.is_some_and(|v| v.pseudonymized());
                 let recognized = view.is_some_and(|v| v.recognized());

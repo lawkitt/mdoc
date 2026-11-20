@@ -670,7 +670,7 @@ fn the_demo_docx_with_injected_candidates_matches_desktop_and_goldens() {
         .import_file(docx.display().to_string(), ImportOptions::default(), None)
         .unwrap();
     let markdown =
-        mdoc_import::import::prepare_cancellable(&docx, None, false, &AtomicBool::new(false))
+        mdoc_import::import::prepare_cancellable(&docx, None, None, false, &AtomicBool::new(false))
             .unwrap()
             .markdown;
     assert_eq!(opened.text, markdown, "conversion differs from desktop's");

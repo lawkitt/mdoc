@@ -40,7 +40,7 @@ fn main() -> ExitCode {
 
 fn convert(path: &Path) -> Result<Imported, String> {
     let cancel = AtomicBool::new(false);
-    match prepare_cancellable(path, None, false, &cancel) {
+    match prepare_cancellable(path, None, None, false, &cancel) {
         Err(ImportError::NeedsOcr(source, pages, text, page_count)) => {
             let signals = recognition::Signals {
                 text,
@@ -78,7 +78,8 @@ fn convert(path: &Path) -> Result<Imported, String> {
                     )
                 })?;
             eprintln!("{needs}");
-            prepare_cancellable(path, Some(&installed), false, &cancel).map_err(|e| e.to_string())
+            prepare_cancellable(path, None, Some(&installed), false, &cancel)
+                .map_err(|e| e.to_string())
         }
         result => result.map_err(|e| e.to_string()),
     }

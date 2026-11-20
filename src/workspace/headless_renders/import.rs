@@ -53,6 +53,34 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         });
     })?;
     d.capture("ocr-consent")?;
+    // A locked document's card asks for its password, then again after a
+    // wrong one (#1007). The field holds a typed password: only bullets
+    // show.
+    for (name, file, wrong) in [
+        ("import-password", "Settlement terms.docx", false),
+        ("import-password-wrong", "Board minutes.docx", true),
+    ] {
+        d.change(move |w, window, cx| {
+            w.new_tab(window, cx);
+            w.active_view().unwrap().update(cx, |v, cx| {
+                let source = PathBuf::from(file);
+                v.lifecycle.show_source();
+                v.preview.unlocked_docx(source.clone());
+                v.import.show_password_fixture(
+                    v.session.generation,
+                    source.to_str().unwrap(),
+                    wrong,
+                );
+                v.resume_import(window, cx);
+                v.password_field.update(cx, |field, cx| {
+                    field.set_value("fictional-pass".into(), cx);
+                    field.move_to_end(cx);
+                });
+                cx.notify();
+            });
+        })?;
+        d.capture(name)?;
+    }
     comments_note(d)
 }
 
@@ -63,9 +91,14 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
 fn comments_note(d: &mut Driver) -> Result<()> {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/import/handmade-hidden-content.docx");
-    let mut imported =
-        mdoc_import::import::prepare_cancellable(&fixture, None, true, &AtomicBool::new(false))
-            .map_err(|e| e.to_string())?;
+    let mut imported = mdoc_import::import::prepare_cancellable(
+        &fixture,
+        None,
+        None,
+        true,
+        &AtomicBool::new(false),
+    )
+    .map_err(|e| e.to_string())?;
     let Err(failure) = mdoc_import::docx_preview::render_in_process(
         &imported.source,
         Arc::new(AtomicBool::new(false)),
@@ -101,9 +134,14 @@ fn comments_note(d: &mut Driver) -> Result<()> {
 fn hidden_text_note(d: &mut Driver) -> Result<()> {
     let fixture =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/handmade-hidden.rtf");
-    let imported =
-        mdoc_import::import::prepare_cancellable(&fixture, None, true, &AtomicBool::new(false))
-            .map_err(|e| e.to_string())?;
+    let imported = mdoc_import::import::prepare_cancellable(
+        &fixture,
+        None,
+        None,
+        true,
+        &AtomicBool::new(false),
+    )
+    .map_err(|e| e.to_string())?;
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {

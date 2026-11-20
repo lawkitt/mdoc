@@ -1436,6 +1436,7 @@ mod tests {
             let cancel = AtomicBool::new(false);
             let stopped = mdoc_import::resume::prepare_resumable(
                 Path::new(&pdf),
+                None,
                 Some(&paths.installed().unwrap()),
                 false,
                 &cancel,

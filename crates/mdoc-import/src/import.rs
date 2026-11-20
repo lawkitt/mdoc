@@ -94,6 +94,10 @@ pub struct Imported {
     pub annotations: Vec<pdf_inspector::PdfAnnotation>,
     pub is_pdf: bool,
     pub is_docx: bool,
+    /// The file was password-protected and this import unlocked it in
+    /// memory. No rendering shows it (that would write it to disk), so the
+    /// left-out line counts its comments.
+    pub decrypted: bool,
 }
 
 /// A document's bytes, read from its file once: the import converts them,
@@ -108,7 +112,21 @@ pub struct Source {
     /// The file's size and modification time when it was read: what the
     /// bytes say about the file holds only while the stamp still matches.
     pub stamp: Option<SourceStamp>,
-    bytes: Arc<[u8]>,
+    bytes: SharedBytes,
+    /// The bytes are a locked file's, unlocked in memory: they differ from
+    /// the file's and must never be written anywhere.
+    unlocked: bool,
+}
+
+/// A document's bytes, shared rather than copied, and wiped when the last
+/// holder drops them: they may be a locked document's, unlocked.
+#[derive(Clone)]
+pub(crate) struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
+
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl Source {
@@ -142,19 +160,52 @@ impl Source {
         Self {
             path,
             stamp,
-            bytes: bytes.into(),
+            bytes: SharedBytes(Arc::new(zeroize::Zeroizing::new(bytes))),
+            unlocked: false,
         }
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.bytes
+        self.bytes.as_ref()
     }
 
     /// The bytes, shared rather than copied: for the workers (Android has
     /// neither).
     #[cfg(not(target_os = "android"))]
-    pub(crate) fn shared_bytes(&self) -> Arc<[u8]> {
+    pub(crate) fn shared_bytes(&self) -> SharedBytes {
         self.bytes.clone()
+    }
+
+    /// The bytes are a password-protected file's, unlocked in memory: no
+    /// copy of them may be written, so the DOCX preview, which renders to a
+    /// temporary file, leaves them alone.
+    pub fn unlocked(&self) -> bool {
+        self.unlocked
+    }
+
+    /// The bytes as an import converts them: a password-protected DOCX,
+    /// XLSX or PPTX unlocked in memory with `password`, anything else as it
+    /// is (a password it doesn't need is ignored). Without a password a
+    /// locked file is `PasswordRequired`, so the caller knows to ask; a
+    /// scheme no password opens here is `EncryptionUnsupported`.
+    pub fn unlock(self, password: Option<&Password>) -> Result<Self, ImportError> {
+        if self.unlocked || !craft_offcrypto::is_encrypted(self.bytes()) {
+            return Ok(self);
+        }
+        let package = craft_offcrypto::decrypt(self.bytes(), password.map(Password::expose))
+            .map_err(|error| match error {
+                craft_offcrypto::Error::PasswordRequired => ImportError::PasswordRequired,
+                craft_offcrypto::Error::WrongPassword => ImportError::WrongPassword,
+                craft_offcrypto::Error::Unsupported(scheme) => {
+                    ImportError::EncryptionUnsupported(scheme)
+                }
+                // Malformed, TooLarge, and whatever a later revision adds.
+                _ => ImportError::Damaged,
+            })?;
+        Ok(Self {
+            unlocked: true,
+            ..Self::new(self.path, self.stamp, package)
+        })
     }
 
     fn extension(&self) -> Option<&str> {
@@ -170,8 +221,38 @@ impl std::fmt::Debug for Source {
         f.debug_struct("Source")
             .field("path", &self.path)
             .field("stamp", &self.stamp)
-            .field("len", &self.bytes.len())
+            .field("len", &self.bytes().len())
+            .field("unlocked", &self.unlocked)
             .finish()
+    }
+}
+
+/// The password for one import of a password-protected document. It lives
+/// only as long as that import: never stored, logged or shown, and wiped
+/// from memory when dropped.
+pub struct Password(zeroize::Zeroizing<String>);
+
+impl Password {
+    /// Takes `text` without copying it.
+    pub fn new(text: String) -> Self {
+        Self(zeroize::Zeroizing::new(text))
+    }
+
+    fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<zeroize::Zeroizing<String>> for Password {
+    fn from(text: zeroize::Zeroizing<String>) -> Self {
+        Self(text)
+    }
+}
+
+/// Never the password.
+impl std::fmt::Debug for Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Password(..)")
     }
 }
 
@@ -379,8 +460,18 @@ pub enum ImportError {
     PdfTooLarge,
     #[error("This PDF is password-protected. Import an unlocked copy.")]
     PdfEncrypted,
+    /// A password-protected format mdoc can't unlock (ODT, DOC).
     #[error("This document is password-protected. Import an unlocked copy.")]
     Encrypted,
+    /// A locked DOCX, XLSX or PPTX and no password: the app asks for one.
+    #[error("This document is password-protected. Enter its password to import it.")]
+    PasswordRequired,
+    #[error("The password is incorrect. Check it and try again.")]
+    WrongPassword,
+    /// A locked DOCX, XLSX or PPTX whose encryption no password opens here,
+    /// named to complete "uses {0} encryption" (`RC4`, `rights-management`).
+    #[error("This document uses {0} encryption, which mdoc can’t unlock. Import an unlocked copy.")]
+    EncryptionUnsupported(String),
     #[error("This format is not supported. Choose a {} file.", supported_formats())]
     Unsupported,
     #[error("{DAMAGED}")]
@@ -444,17 +535,22 @@ pub fn prepare(
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
 ) -> Result<Imported, ImportError> {
-    prepare_cancellable(path, installed, skip_ocr, &AtomicBool::new(false))
+    prepare_cancellable(path, None, installed, skip_ocr, &AtomicBool::new(false))
 }
 
+/// Imports the file at `path`. `password` unlocks a password-protected
+/// DOCX, XLSX or PPTX in memory for this import only; without it such a
+/// file is `PasswordRequired`, and a wrong one `WrongPassword`.
 pub fn prepare_cancellable(
     path: &Path,
+    password: Option<&Password>,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     check_cancel(cancel)?;
-    let source = Source::read(path)?;
+    let source = Source::read(path)?.unlock(password)?;
+    check_cancel(cancel)?;
     import_source(source, installed, skip_ocr, cancel)
 }
 
@@ -475,6 +571,7 @@ pub(crate) fn import_source(
         .path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
+    let decrypted = source.unlocked();
     // Comments never reach the Markdown: AnyDoc reports them beside it, read
     // (DOCX, ODT, RTF) or only counted (DOC, PPTX, XLSX, ODS, ODP), and the
     // left-out line says how many.
@@ -509,6 +606,7 @@ pub(crate) fn import_source(
         annotations: Vec::new(),
         is_pdf: false,
         is_docx,
+        decrypted,
     })
 }
 
@@ -677,6 +775,7 @@ fn convert_pdf(
         annotations,
         is_pdf: true,
         is_docx: false,
+        decrypted: false,
     })
 }
 
@@ -926,6 +1025,131 @@ mod tests {
                 .map_err(|error| error.to_string());
             assert_eq!(by_bytes, by_path, "{}", path.display());
         }
+    }
+
+    /// A password-protected DOCX, XLSX or PPTX, agile (Office 2010 and
+    /// later) or standard (Office 2007): no password asks for one, a wrong
+    /// one is refused, and the right one imports what the unlocked file
+    /// imports. Nothing but the locked file is ever in its folder.
+    #[test]
+    fn a_locked_office_document_imports_only_with_its_password() {
+        const PASSWORD: &str = "Пароль-2026";
+        for name in ["text.docx", "sheet.xlsx", "handmade-comments.pptx"] {
+            let unlocked = convert(&fixture(name)).unwrap();
+            assert!(!unlocked.decrypted, "{name}");
+            let plain = std::fs::read(fixture(name)).unwrap();
+            for (scheme, locked) in [
+                (
+                    "agile",
+                    craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap(),
+                ),
+                (
+                    "standard",
+                    craft_offcrypto::encrypt_standard(&plain, PASSWORD, 128).unwrap(),
+                ),
+            ] {
+                let case = format!("{name}, {scheme}");
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join(format!("locked-{name}"));
+                std::fs::write(&path, locked).unwrap();
+                let import = |password: Option<&str>| {
+                    let password = password.map(|text| Password::new(text.into()));
+                    prepare_cancellable(
+                        &path,
+                        password.as_ref(),
+                        None,
+                        true,
+                        &AtomicBool::new(false),
+                    )
+                };
+                assert!(
+                    matches!(import(None), Err(ImportError::PasswordRequired)),
+                    "{case}"
+                );
+                assert!(
+                    matches!(import(Some("пароль-2026")), Err(ImportError::WrongPassword)),
+                    "{case}"
+                );
+                let imported = import(Some(PASSWORD)).unwrap();
+                assert!(imported.decrypted && imported.source.unlocked(), "{case}");
+                assert_eq!(imported.markdown, unlocked.markdown, "{case}");
+                assert_eq!(imported.left_out, unlocked.left_out, "{case}");
+                assert_eq!(imported.comments, unlocked.comments, "{case}");
+                assert_eq!(imported.is_docx, unlocked.is_docx, "{case}");
+                let left: Vec<_> = std::fs::read_dir(dir.path())
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect();
+                assert_eq!(left, [path.file_name().unwrap()], "{case}");
+            }
+        }
+    }
+
+    /// A password given for a file that isn't locked changes nothing.
+    #[test]
+    fn a_password_an_unlocked_document_does_not_need_is_ignored() {
+        for name in ["text.docx", "text.pdf", "text.doc"] {
+            let password = Password::new("unused".into());
+            let imported = prepare_cancellable(
+                &fixture(name),
+                Some(&password),
+                None,
+                true,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert!(!imported.decrypted, "{name}");
+            assert_eq!(
+                imported.markdown,
+                convert(&fixture(name)).unwrap().markdown,
+                "{name}"
+            );
+        }
+    }
+
+    /// A locked package whose encryption no password opens here is named,
+    /// before any password is asked for or tried.
+    #[test]
+    fn a_locked_office_document_names_encryption_it_cannot_unlock() {
+        let plain = std::fs::read(fixture("text.docx")).unwrap();
+        let mut locked = craft_offcrypto::encrypt_standard(&plain, "secret", 128).unwrap();
+        // EncryptionInfo's version: 3.2 (standard, with its CryptoAPI and
+        // AES flags) becomes 4.3, the extensible scheme.
+        let at = locked
+            .windows(8)
+            .position(|bytes| bytes == [3, 0, 2, 0, 0x24, 0, 0, 0])
+            .unwrap();
+        locked[at..at + 4].copy_from_slice(&[4, 0, 3, 0]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("locked.docx");
+        std::fs::write(&path, locked).unwrap();
+        for password in [None, Some(Password::new("secret".into()))] {
+            let error = prepare_cancellable(
+                &path,
+                password.as_ref(),
+                None,
+                true,
+                &AtomicBool::new(false),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(&error, ImportError::EncryptionUnsupported(scheme) if scheme == "Extensible"),
+                "{error:?}"
+            );
+            assert_eq!(
+                error.to_string(),
+                "This document uses Extensible encryption, which mdoc can’t unlock. Import an unlocked copy."
+            );
+        }
+    }
+
+    /// A password never shows: not in its own `Debug`, nor in a source's.
+    #[test]
+    fn a_password_never_shows() {
+        let password = Password::new("Секрет".into());
+        assert_eq!(format!("{password:?}"), "Password(..)");
+        let source = Source::new("locked.docx".into(), None, "Секрет".as_bytes().to_vec());
+        assert!(!format!("{source:?}").contains("Секрет"));
     }
 
     /// An import converts the bytes it holds: a document and a PDF held

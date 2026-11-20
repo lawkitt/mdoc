@@ -133,6 +133,7 @@ impl DocumentView {
     fn primary(&self, cx: &App) -> Primary {
         if self.lifecycle.source_only() {
             return if self.import.ocr_required().is_none()
+                && self.import.password_prompt().is_none()
                 && !self.import.auto_pending()
                 && !self.import.busy()
             {

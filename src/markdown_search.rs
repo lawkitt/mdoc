@@ -74,7 +74,13 @@ pub struct SearchInput {
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
     scroll_x: Pixels,
+    /// A password field: shown, and told to assistive technology and input
+    /// methods, as bullets; never copied; wiped when taken or dropped.
+    secure: bool,
 }
+
+/// What a secure field shows for each character it holds.
+const BULLET: char = '•';
 
 impl SearchInput {
     pub fn with_focus_accent(mut self, accent: std::rc::Rc<dyn Fn() -> Hsla>) -> Self {
@@ -101,6 +107,68 @@ impl SearchInput {
             last_bounds: None,
             is_selecting: false,
             scroll_x: px(0.),
+            secure: false,
+        }
+    }
+
+    /// A password field. Read it with [`Self::take_secret`], which empties
+    /// it.
+    pub fn secure(mut self) -> Self {
+        self.secure = true;
+        self
+    }
+
+    /// The text, leaving the field empty; it is wiped from memory when the
+    /// returned value drops.
+    pub fn take_secret(&mut self, cx: &mut Context<Self>) -> zeroize::Zeroizing<String> {
+        let text = zeroize::Zeroizing::new(std::mem::take(&mut self.content));
+        self.reset(cx);
+        text
+    }
+
+    /// The text as drawn and as told to assistive technology: a secure
+    /// field's is a bullet per character.
+    fn shown(&self) -> String {
+        if self.secure {
+            std::iter::repeat_n(BULLET, self.content.chars().count()).collect()
+        } else {
+            self.content.clone()
+        }
+    }
+
+    /// What assistive technology is told the field is: a secure field is a
+    /// password field (macOS: a secure text field).
+    fn accessible_role(&self) -> gpui::Role {
+        if self.secure {
+            gpui::Role::PasswordInput
+        } else {
+            gpui::Role::TextInput
+        }
+    }
+
+    /// The value assistive technology reads: never a secure field's text.
+    fn accessible_value(&self) -> SharedString {
+        self.shown().into()
+    }
+
+    /// The offset in [`Self::shown`] of the content's byte `offset`.
+    fn shown_offset(&self, offset: usize) -> usize {
+        if self.secure {
+            self.content[..offset].chars().count() * BULLET.len_utf8()
+        } else {
+            offset
+        }
+    }
+
+    /// The content's byte offset at `shown`, an offset in [`Self::shown`].
+    fn content_offset(&self, shown: usize) -> usize {
+        if self.secure {
+            self.content
+                .char_indices()
+                .nth(shown / BULLET.len_utf8())
+                .map_or(self.content.len(), |(index, _)| index)
+        } else {
+            shown
         }
     }
 
@@ -222,7 +290,7 @@ impl SearchInput {
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected_range.is_empty() {
+        if !self.secure && !self.selected_range.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
@@ -230,7 +298,7 @@ impl SearchInput {
     }
 
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected_range.is_empty() {
+        if !self.secure && !self.selected_range.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
@@ -368,10 +436,9 @@ impl SearchInput {
         if position.x >= bounds.right() {
             return self.content.len();
         }
-        self.content.floor_char_boundary(
-            line.closest_index_for_x(position.x - bounds.left() + self.scroll_x)
-                .min(self.content.len()),
-        )
+        let shown = line.closest_index_for_x(position.x - bounds.left() + self.scroll_x);
+        self.content
+            .floor_char_boundary(self.content_offset(shown).min(self.content.len()))
     }
 
     fn replace_text(&mut self, range: Range<usize>, new_text: &str) {
@@ -386,6 +453,14 @@ impl SearchInput {
 
 impl EventEmitter<SearchInputEvent> for SearchInput {}
 
+impl Drop for SearchInput {
+    fn drop(&mut self) {
+        if self.secure {
+            zeroize::Zeroize::zeroize(&mut self.content);
+        }
+    }
+}
+
 impl EntityInputHandler for SearchInput {
     fn text_for_range(
         &mut self,
@@ -395,8 +470,14 @@ impl EntityInputHandler for SearchInput {
         _: &mut Context<Self>,
     ) -> Option<String> {
         let range = self.range_from_utf16(&range_utf16);
-        actual_range.replace(self.range_to_utf16(&range));
-        Some(self.content[range].to_string())
+        let range_utf16 = self.range_to_utf16(&range);
+        actual_range.replace(range_utf16.clone());
+        // Input methods and assistive technology ask for text too.
+        Some(if self.secure {
+            std::iter::repeat_n(BULLET, range_utf16.len()).collect()
+        } else {
+            self.content[range].to_string()
+        })
     }
 
     fn selected_text_range(
@@ -488,11 +569,11 @@ impl EntityInputHandler for SearchInput {
         let range = self.range_from_utf16(&range_utf16);
         Some(Bounds::from_corners(
             point(
-                bounds.left() - self.scroll_x + line.x_for_index(range.start),
+                bounds.left() - self.scroll_x + line.x_for_index(self.shown_offset(range.start)),
                 bounds.top(),
             ),
             point(
-                bounds.left() - self.scroll_x + line.x_for_index(range.end),
+                bounds.left() - self.scroll_x + line.x_for_index(self.shown_offset(range.end)),
                 bounds.bottom(),
             ),
         ))
@@ -506,7 +587,8 @@ impl EntityInputHandler for SearchInput {
     ) -> Option<usize> {
         let bounds = self.last_bounds?;
         let line = self.last_layout.as_ref()?;
-        Some(self.offset_to_utf16(line.index_for_x(point.x - bounds.left() + self.scroll_x)?))
+        let shown = line.index_for_x(point.x - bounds.left() + self.scroll_x)?;
+        Some(self.offset_to_utf16(self.content_offset(shown)))
     }
 }
 
@@ -573,7 +655,7 @@ impl Element for SearchInputElement {
         let display: SharedString = if input.content.is_empty() {
             input.placeholder.into()
         } else {
-            input.content.clone().into()
+            input.shown().into()
         };
         let text_color = window.text_style().color;
         let color = if input.content.is_empty() {
@@ -598,7 +680,7 @@ impl Element for SearchInputElement {
             &[run],
             None,
         );
-        let cursor = input.cursor_offset();
+        let cursor = input.shown_offset(input.cursor_offset());
         let cursor_x = line.x_for_index(cursor);
         let visible_width = (bounds.size.width - px(2.)).max(px(0.));
         let scroll_x = input
@@ -623,11 +705,11 @@ impl Element for SearchInputElement {
                 Some(fill(
                     Bounds::from_corners(
                         point(
-                            left + line.x_for_index(input.selected_range.start),
+                            left + line.x_for_index(input.shown_offset(input.selected_range.start)),
                             bounds.top(),
                         ),
                         point(
-                            left + line.x_for_index(input.selected_range.end),
+                            left + line.x_for_index(input.shown_offset(input.selected_range.end)),
                             bounds.bottom(),
                         ),
                     ),
@@ -704,10 +786,10 @@ impl Element for SearchInputElement {
 impl Render for SearchInput {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         gpui_pdf::focus_ring("search-input", (self.focus_accent)())
-            .role(gpui::Role::TextInput)
+            .role(self.accessible_role())
             .aria_label(self.label.unwrap_or(self.placeholder))
             .aria_placeholder(self.placeholder)
-            .aria_value(SharedString::from(self.content.clone()))
+            .aria_value(self.accessible_value())
             .flex()
             .flex_1()
             .min_w_0()
@@ -767,6 +849,49 @@ mod tests {
             assert_eq!(input.value(), "");
             assert_eq!(input.selected_range, 0..0);
         });
+    }
+
+    /// A password field never gives its text away: not on screen, to the
+    /// clipboard, to input methods or to assistive technology, which still
+    /// hears a password field by its label.
+    #[gpui::test]
+    fn a_secure_field_never_shows_its_text(cx: &mut TestAppContext) {
+        const PASSWORD: &str = "Секрет-1😀";
+        let (input, cx) =
+            cx.add_window_view(|_, cx| SearchInput::new(cx).with_placeholder("Password").secure());
+        input.update_in(cx, |input, window, cx| {
+            input.replace_text_in_range(None, PASSWORD, window, cx);
+            input.select_all(cx);
+            input.copy(&Copy, window, cx);
+            input.cut(&Cut, window, cx);
+            assert_eq!(input.value(), PASSWORD);
+            let mut actual = None;
+            let all = 0..PASSWORD.encode_utf16().count();
+            let told = input
+                .text_for_range(all.clone(), &mut actual, window, cx)
+                .unwrap();
+            assert_eq!(told, "•".repeat(all.len()));
+            assert_eq!(input.shown(), "•".repeat(PASSWORD.chars().count()));
+            // Caret, selection and clicks map between the text and its
+            // bullets character by character.
+            for (index, _) in PASSWORD.char_indices() {
+                assert_eq!(input.content_offset(input.shown_offset(index)), index);
+            }
+            assert_eq!(input.content_offset(input.shown().len()), PASSWORD.len());
+        });
+        assert!(cx.read_from_clipboard().is_none());
+        // GPUI's test windows build no accessibility tree, so this checks
+        // what the field's render hands it.
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.accessible_role(), gpui::Role::PasswordInput);
+            assert_eq!(input.label.unwrap_or(input.placeholder), "Password");
+            let value = input.accessible_value();
+            assert_eq!(value.as_ref(), "•".repeat(PASSWORD.chars().count()));
+            assert!(!value.contains("Секрет"));
+        });
+        let taken = input.update(cx, |input, cx| input.take_secret(cx));
+        assert_eq!(taken.as_str(), PASSWORD);
+        input.read_with(cx, |input, _| assert_eq!(input.value(), ""));
     }
 
     #[gpui::test]
