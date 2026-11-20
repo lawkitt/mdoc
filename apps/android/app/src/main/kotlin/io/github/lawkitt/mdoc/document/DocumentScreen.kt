@@ -191,7 +191,8 @@ fun DocumentScreen(
             )
         },
         bottomBar = {
-            ActionBar(
+            // The password card's Unlock is the way on while it asks, as on iOS.
+            if (state.passwordPrompt == null || job != null) ActionBar(
                 action = model.primaryAction(state, job),
                 hasReply = snapshot.reply != null,
                 showsReply = state.showsReply,

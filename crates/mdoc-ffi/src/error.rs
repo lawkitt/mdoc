@@ -13,6 +13,9 @@ pub enum CoreError {
     /// The password given doesn't unlock the document: the app asks again.
     #[error("{}", mdoc_import::import::ImportError::WrongPassword)]
     WrongPassword,
+    /// A locked DOCX's Original: rendering it would write an unlocked copy.
+    #[error("Password-protected DOCX files aren’t shown, so no unlocked copy is written to disk.")]
+    OriginalLocked,
     #[error("{message}")]
     Ocr { message: String },
     #[error("{message}")]

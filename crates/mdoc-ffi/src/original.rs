@@ -132,15 +132,12 @@ impl DocxOriginal {
             )
         });
         MARKS.set(None);
-        let preview = preview.map_err(|error| CoreError::Import {
-            message: match error {
-                // docxide renders to a file, which would be an unlocked copy;
-                // the import already counted the comments.
-                docx_preview::PreviewError::Encrypted => {
-                    "Password-protected DOCX files aren’t shown, so no unlocked copy is written to disk."
-                        .into()
-                }
-                error => error.to_string(),
+        let preview = preview.map_err(|error| match error {
+            // docxide renders to a file, which would be an unlocked copy; the
+            // import already counted the comments.
+            docx_preview::PreviewError::Encrypted => CoreError::OriginalLocked,
+            error => CoreError::Import {
+                message: error.to_string(),
             },
         })?;
         Ok(Arc::new(Self { preview }))

@@ -16,6 +16,8 @@ public enum CoreFailure: Error, Equatable, Sendable {
     case needsPassword
     /// The password given doesn't unlock the document: ask again.
     case wrongPassword
+    /// A locked DOCX's Original, which is never rendered.
+    case originalLocked
     /// Text recognition failed.
     case ocr(String)
     /// Finding names failed.
@@ -57,6 +59,7 @@ public enum CoreFailure: Error, Equatable, Sendable {
             case .NeedsOcr(let pages, let pageCount): .needsOcr(pages: pages, pageCount: pageCount)
             case .NeedsPassword: .needsPassword
             case .WrongPassword: .wrongPassword
+            case .OriginalLocked: .originalLocked
             case .Ocr(let message): .ocr(message)
             case .Detect(let message): .detect(message)
             case .Cancelled: .cancelled

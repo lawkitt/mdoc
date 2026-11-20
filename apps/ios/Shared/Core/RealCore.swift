@@ -79,6 +79,7 @@ extension CoreError {
         case .needsOcr: .modelMissing
         case .needsPassword: .needsPassword
         case .wrongPassword: .wrongPassword
+        case .originalLocked: .originalLocked
         case .ocr(let message): .recognitionFailed(message)
         case .detect(let message): .findNamesFailed(message)
         case .cancelled: .cancelled
