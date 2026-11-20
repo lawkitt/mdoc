@@ -150,7 +150,9 @@ impl Source {
         &self.bytes
     }
 
-    /// The bytes, shared rather than copied.
+    /// The bytes, shared rather than copied: for the workers (Android has
+    /// neither).
+    #[cfg(not(target_os = "android"))]
     pub(crate) fn shared_bytes(&self) -> Arc<[u8]> {
         self.bytes.clone()
     }

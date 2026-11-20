@@ -451,7 +451,9 @@ fn held(path: &Path) -> Source {
     Source::read(path).unwrap()
 }
 
-/// A source whose bytes the worker never reads.
+/// A source whose bytes the worker never reads (the fake workers are shell
+/// scripts).
+#[cfg(unix)]
 fn unused() -> Source {
     Source::new("unused.docx".into(), None, Vec::new())
 }
