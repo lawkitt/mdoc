@@ -1,5 +1,5 @@
-//! Saving a document into the library, and saving after the tap (
-//! Calls stay synchronous while they are cheap): a review action with no
+//! Saving a document into the library, and saving after the tap (calls
+//! stay synchronous while they are cheap): a review action with no
 //! library changes the document only, and `save_pending` saves what
 //! changed since the last save, however many actions that was, from any
 //! thread. The document lock is held only to take what to write, to
