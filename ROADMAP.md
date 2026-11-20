@@ -374,11 +374,6 @@ of a file.
    portfolios; the note adds "1 attached file not imported", never a name.
    Its pin bump rebases on item 1's. *Done when:* an import test shows the
    count for each kind and no file name.
-3. **[Import] An import reads its source once, as bytes.** *From #1007.*
-   Conversion, the DOCX preview and comments read the bytes the import
-   holds, not the path, so a decrypted file never touches disk. No
-   behaviour change. *Done when:* the import and preview suites pass
-   unchanged.
 4. **[Import] Password-protected DOCX, XLSX and PPTX on desktop.** *From
    #1007.* `craft-offcrypto` pinned by revision; the import takes an
    optional password and the import card asks for it; nothing decrypted is
