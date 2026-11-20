@@ -61,8 +61,8 @@ Decided 2026-11-15 (the docs-only CI grill); no ADR, since each part is one
 table line or one script rule to undo.
 
 - A change of only `none` files (Markdown, `docs/`) runs no job but
-  `lint (ubuntu)`, which holds docs-lint: word budgets, the ADR index,
-  `Folds:` lines and the `changes/` fragments as `just release` reads them.
+  `lint (ubuntu)`, which holds docs-lint: word ceilings, ADR numbers and
+  the `changes/` fragments as `just release` reads them.
   The fast jobs skip their steps; a queue entry needs nothing, even behind
   a code entry, but still waits for it. `merge-gate` says "Docs only".
 - Markdown that tests read is not docs: the fixture folders

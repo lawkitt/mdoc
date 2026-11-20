@@ -1,5 +1,3 @@
-Folds: 0087, 0088, 0090, 0096, 0098, 0099, 0101, 0102, 0103, 0106, 0110, 0111, 0114, 0115, 0116
-
 # Mobile
 
 Rules for the iOS and Android apps. A rule or section marked iOS is iOS

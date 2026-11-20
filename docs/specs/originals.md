@@ -1,7 +1,5 @@
 # Originals
 
-Folds: none.
-
 How mdoc shows a source document beside its Markdown: the DOCX rendering,
 its comments and hidden text, and PDF annotations, on desktop and phones.
 Terms are in [CONTEXT.md](../../CONTEXT.md). Record: the 2026-11-18

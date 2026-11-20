@@ -1,43 +1,41 @@
 #!/usr/bin/env bash
-# Usage: scripts/dev/docs-lint.sh [--check]
-# The docs' shape (ADR 0118), checked by `just lint` with --check. It fails on:
-#   - a file over its word budget: docs/development.md 2,500; docs/specs/ci.md
-#     800 and every other spec 3,000; each ADR 400, not counting its Status,
-#     References and Terms paragraphs; CONTEXT.md 3,000, and 60 per entry (a
-#     `**Term**` line up to the next entry or heading); every tracked
-#     README.md 1,500, except the repository's own, vendor/ and the generated
-#     docs/adr/README.md (`wc -w` words);
+# Usage: scripts/dev/docs-lint.sh
+# The docs' shape (docs/development.md, Writing docs), run by `just lint`. It
+# fails on:
+#   - a file over its word ceiling (`wc -w` words): docs/development.md 1,500,
+#     not counting its ```toml fleet-profile block; docs/specs/ci.md 500 and
+#     every other spec 1,500; each ADR 250, not counting its Status paragraph;
+#     CONTEXT.md 2,000, and 60 per entry (a `**Term**` line up to the next
+#     entry or heading); every tracked README.md 800, except the
+#     repository's own and vendor/. A file on the pending list
+#     (scripts/dev/docs-lint-pending.txt) keeps its older ceiling until its
+#     #981 PR trims it, and fails once it fits the new one, so the list only
+#     shrinks; a pending ADR is held to its older count, which also left out
+#     References and Terms paragraphs. A pending row must name an existing
+#     file and a number;
+#   - ADR numbers against docs/adr/README.md: its "Last number: NNNN" line
+#     must be at or above every ADR file, and every number up to it must be
+#     either one file or on its "Retired:" line (NNNN or NNNN-NNNN items),
+#     never both, so a retired number is never reused;
 #   - a docs/design/ folder: a grill's record goes in its PR or an issue;
 #   - a dated (YYYY-MM-DD…) or pr-* folder anywhere under docs/evidence/;
-#   - an ADR number from 0001 to the highest one that is neither a file in
-#     docs/adr/ nor claimed by exactly one `Folds:` line, or that is both. A
-#     `Folds:` line (any Markdown file under docs/ but the index, kept ADRs
-#     included) lists 4-digit numbers and may wrap until a blank line;
 #   - a changelog fragment (changes/, changes/ios/, changes/android/; not
 #     their README.md) that `just release` would reject: a name outside
 #     letters, digits, '.', '_' and '-', a first line that is not a '- '
-#     bullet, or top-level fragments with no `## Unreleased` in CHANGELOG.md;
-#   - with --check, a stale docs/adr/README.md: its rows must name each number
-#     once, as the kept file or the file whose `Folds:` line claims it.
-# Without --check it writes docs/adr/README.md first: a row per number with
-# its title, and for a folded number the claiming file and a permalink to its
-# last full text in git history. A folded number already in the index keeps
-# its title and permalink, even when another file claims it now, so only new
-# folds read history (a shallow clone cannot).
-# --check reads no history: CI clones one commit. Bash 3.2 compatible; BWK
-# awk, mawk and gawk. scripts/dev/test-docs-lint.sh checks it.
+#     bullet, or top-level fragments with no `## Unreleased` in CHANGELOG.md.
+# Reads no history: CI clones one commit. Bash 3.2 compatible; BWK awk, mawk
+# and gawk. scripts/dev/test-docs-lint.sh checks it.
 # shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 
-mode=index
-case "${1:-}" in
-  --check) mode=check ;;
-  '') ;;
-  *) die "usage: scripts/dev/docs-lint.sh [--check]" ;;
-esac
+[ $# -eq 0 ] || die "usage: scripts/dev/docs-lint.sh"
 
-index=docs/adr/README.md
-repo_url=https://github.com/lawkitt/mdoc
+pending_list=scripts/dev/docs-lint-pending.txt
+pending() { # path: its older ceiling, if it is on the pending list
+  [ -f "$pending_list" ] || return 0
+  awk -v f="$1" '$1 == f { print $2; exit }' "$pending_list"
+}
+
 bad=0
 err() {
   echo "docs-lint: $*" >&2
@@ -47,25 +45,51 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 words() { wc -w <"$1" | tr -d ' '; }
-over() { # file limit count
-  [ "$3" -le "$2" ] || err "$1: $3 words, over its budget of $2"
+check() { # file ceiling count [count under the older rule]
+  local old
+  old=$(pending "$1")
+  if [ -n "$old" ]; then
+    if [ "$3" -le "$2" ]; then
+      err "$1 fits its ceiling of $2 now: take it off docs-lint's pending list"
+    elif [ "${4:-$3}" -gt "$old" ]; then
+      err "$1: ${4:-$3} words, over its pending ceiling of $old (the target is $2)"
+    fi
+  elif [ "$3" -gt "$2" ]; then
+    err "$1: $3 words, over its ceiling of $2"
+  fi
 }
 
-# Budgets.
-[ -f docs/development.md ] && over docs/development.md 2500 "$(words docs/development.md)"
+# The pending list's rows.
+if [ -f "$pending_list" ]; then
+  { grep -v '^#' "$pending_list" || true; } | while read -r path limit rest; do
+    [ -n "$path" ] || continue
+    [ -f "$path" ] || echo "$pending_list: $path is not a file"
+    case "$limit" in '' | *[!0-9]*) echo "$pending_list: $path needs a number, not '$limit'" ;; esac
+    [ -z "$rest" ] || echo "$pending_list: $path has more than a path and a number"
+  done >"$tmp/rows"
+  while IFS= read -r line; do err "$line"; done <"$tmp/rows"
+fi
+
+# Ceilings.
+if [ -f docs/development.md ]; then
+  n=$(awk '/^```toml fleet-profile/ { fenced = 1 } !fenced { w += NF } fenced && /^```$/ { fenced = 0 } END { print w + 0 }' docs/development.md)
+  check docs/development.md 1500 "$n"
+fi
 for f in docs/specs/*.md; do
   [ -f "$f" ] || continue
-  limit=3000
-  [ "$f" = docs/specs/ci.md ] && limit=800
-  over "$f" "$limit" "$(words "$f")"
+  [ "${f##*/}" = README.md ] && continue
+  limit=1500
+  [ "$f" = docs/specs/ci.md ] && limit=500
+  check "$f" "$limit" "$(words "$f")"
 done
 for f in docs/adr/[0-9][0-9][0-9][0-9]-*.md; do
   [ -f "$f" ] || continue
-  n=$(awk '/^(Status|References|Terms):/ { skip = 1 } /^[ \t]*$/ { skip = 0 } !skip { w += NF } END { print w + 0 }' "$f")
-  over "$f" 400 "$n"
+  n=$(awk '/^Status:/ { skip = 1 } /^[ \t]*$/ { skip = 0 } !skip { w += NF } END { print w + 0 }' "$f")
+  older=$(awk '/^(Status|References|Terms):/ { skip = 1 } /^[ \t]*$/ { skip = 0 } !skip { w += NF } END { print w + 0 }' "$f")
+  check "$f" 250 "$n" "$older"
 done
 if [ -f CONTEXT.md ]; then
-  over CONTEXT.md 3000 "$(words CONTEXT.md)"
+  check CONTEXT.md 2000 "$(words CONTEXT.md)"
   awk '
     function done_entry() { if (term != "" && w > 60) printf "%s\t%d\n", term, w }
     /^\*\*[^*]+\*\*/ { done_entry(); term = $0; sub(/^\*\*/, "", term); sub(/\*\*.*/, "", term); w = 0 }
@@ -80,14 +104,51 @@ fi
 git ls-files -- '*README.md' 2>/dev/null >"$tmp/readmes" || true
 while IFS= read -r f; do
   case "$f" in
-    README.md | "$index" | vendor/*) continue ;;
+    README.md | vendor/*) continue ;;
   esac
-  [ -f "$f" ] && over "$f" 1500 "$(words "$f")"
+  [ -f "$f" ] && check "$f" 800 "$(words "$f")"
 done <"$tmp/readmes"
 
-# Changelog fragments (ADR 0072), by release.sh's rules, so a bad one fails
-# here rather than at `just release`.
-# find, as release.sh does: a glob would miss a dot-named one.
+# ADR numbers.
+: >"$tmp/numbers"
+for f in docs/adr/[0-9][0-9][0-9][0-9]-*.md; do
+  [ -f "$f" ] && basename "$f" | cut -c1-4 >>"$tmp/numbers"
+done
+sort "$tmp/numbers" | uniq -d | while IFS= read -r n; do
+  echo "ADR $n has more than one file"
+done >"$tmp/dupes"
+while IFS= read -r line; do err "$line"; done <"$tmp/dupes"
+if [ -s "$tmp/numbers" ]; then
+  last=$(sed -n 's/^Last number: \([0-9][0-9][0-9][0-9]\)\.*$/\1/p' docs/adr/README.md 2>/dev/null | head -1)
+  if [ -z "$last" ]; then
+    err "docs/adr/README.md has no 'Last number: NNNN' line"
+  else
+    # Retired numbers, one per line, from items like 0003 or 0006-0016.
+    sed -n 's/^Retired: //p' docs/adr/README.md | tr ',' '\n' | tr -d ' .' | awk -F- '
+      /^[0-9][0-9][0-9][0-9]$/ { print $1; next }
+      /^[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]$/ { for (i = $1 + 0; i <= $2 + 0; i++) printf "%04d\n", i; next }
+      NF { print "bad " $0 }
+    ' >"$tmp/retired"
+    awk -v last="$last" '
+      FILENAME == ARGV[1] { if ($0 ~ /^bad /) bad[substr($0, 5)] = 1; else retired[$1] = 1; next }
+      { file[$1] = 1 }
+      END {
+        for (b in bad) printf "docs/adr/README.md: Retired item \"%s\" is not NNNN or NNNN-NNNN\n", b
+        for (n in file) if (n + 0 > last + 0) printf "ADR %s is above docs/adr/README.md'"'"'s Last number (%s): raise it\n", n, last
+        for (i = 1; i <= last + 0; i++) {
+          n = sprintf("%04d", i)
+          if ((n in file) && (n in retired)) printf "ADR %s is a file and Retired: a retired number is never reused\n", n
+          else if (!(n in file) && !(n in retired)) printf "ADR %s is neither a file nor Retired in docs/adr/README.md\n", n
+        }
+      }
+    ' "$tmp/retired" "$tmp/numbers" | sort >"$tmp/gaps"
+    while IFS= read -r line; do err "$line"; done <"$tmp/gaps"
+  fi
+fi
+
+# Changelog fragments, by release.sh's rules, so a bad one fails here rather
+# than at `just release`. find, as release.sh does: a glob would miss a
+# dot-named one.
 top=0
 for d in changes changes/ios changes/android; do
   if [ -d "$d" ]; then find "$d" -maxdepth 1 -type f -name '*.md'; fi
@@ -115,130 +176,5 @@ if [ -d docs/evidence ]; then
   done <"$tmp/evidence"
 fi
 
-# ADR numbers: "<number>\t<file>" for each kept file and each claim.
-: >"$tmp/files"
-for f in docs/adr/[0-9][0-9][0-9][0-9]-*.md; do
-  [ -f "$f" ] && printf '%s\t%s\n' "$(basename "$f" | cut -c1-4)" "$f" >>"$tmp/files"
-done
-find docs -name '*.md' ! -path "$index" | sort | while IFS= read -r f; do
-  awk -v file="$f" '
-    function claims(line) {
-      while (match(line, /[0-9][0-9][0-9][0-9]/)) {
-        printf "%s\t%s\n", substr(line, RSTART, 4), file
-        line = substr(line, RSTART + 4)
-      }
-    }
-    /^Folds:/ { on = 1; claims(substr($0, 7)); next }
-    on && /^[ \t]*$/ { on = 0 }
-    on { claims($0) }
-  ' "$f"
-done >"$tmp/claims"
-cut -f1 "$tmp/files" | sort | uniq -d | while IFS= read -r n; do
-  echo "ADR $n has more than one file"
-done >"$tmp/numbers"
-cut -f1 "$tmp/claims" | sort | uniq -d | while IFS= read -r n; do
-  echo "ADR $n is claimed by more than one Folds: line ($(awk -v n="$n" '$1 == n { print $2 }' "$tmp/claims" | tr '\n' ' ' | sed 's/ $//'))"
-done >>"$tmp/numbers"
-max=$(cut -f1 "$tmp/files" "$tmp/claims" | sort | tail -1)
-max=${max:-0}
-n=1
-while [ "$n" -le "$((10#$max))" ]; do
-  num=$(printf '%04d' "$n")
-  file=$(awk -v n="$num" '$1 == n { print $2; exit }' "$tmp/files")
-  claim=$(awk -v n="$num" '$1 == n { print $2; exit }' "$tmp/claims")
-  if [ -n "$file" ] && [ -n "$claim" ]; then
-    echo "ADR $num is a file and claimed by $claim: delete one"
-  elif [ -z "$file" ] && [ -z "$claim" ]; then
-    echo "ADR $num is neither a file in docs/adr/ nor claimed by a Folds: line"
-  fi
-  if [ -n "$file" ]; then
-    printf '%s\tkept\t%s\n' "$num" "$(basename "$file")"
-  elif [ -n "$claim" ]; then
-    case "$claim" in
-      docs/adr/*) target="${claim#docs/adr/}" ;;
-      docs/*) target="../${claim#docs/}" ;;
-      *) target="../../$claim" ;;
-    esac
-    printf '%s\tfolded\t%s\n' "$num" "$target"
-  fi >>"$tmp/expected"
-  n=$((n + 1))
-done >>"$tmp/numbers"
-: >>"$tmp/expected"
-while IFS= read -r line; do err "$line"; done <"$tmp/numbers"
-
-# The index's rows as "<number>\t<kind>\t<target>\t<title>\t<permalink>".
-index_rows() {
-  [ -f "$index" ] || return 0
-  awk -F'|' '
-    $2 ~ /^ [0-9][0-9][0-9][0-9] $/ {
-      num = $2; gsub(/ /, "", num)
-      title = $3; sub(/^ /, "", title); sub(/ $/, "", title)
-      where = $4
-      if (where ~ /^ Kept/) {
-        target = title; sub(/^.*\]\(/, "", target); sub(/\).*$/, "", target)
-        sub(/^\[/, "", title); sub(/\]\(.*$/, "", title)
-        printf "%s\tkept\t%s\t%s\t\n", num, target, title
-      } else {
-        target = where; sub(/^[^(]*\(/, "", target); sub(/\).*$/, "", target)
-        link = where; sub(/^.*\[last text\]\(/, "", link); sub(/\).*$/, "", link)
-        printf "%s\tfolded\t%s\t%s\t%s\n", num, target, title, link
-      }
-    }
-  ' "$index"
-}
-
-if [ "$mode" = check ]; then
-  index_rows | cut -f1-3 >"$tmp/actual"
-  if ! cmp -s "$tmp/expected" "$tmp/actual"; then
-    err "$index is stale: run scripts/dev/docs-lint.sh"
-    diff "$tmp/expected" "$tmp/actual" | sed -n 's/^\([<>]\)/  \1/p' | head -20 >&2
-  fi
-else
-  index_rows >"$tmp/old"
-  {
-    echo "# Architecture decisions"
-    echo
-    echo "Generated by \`scripts/dev/docs-lint.sh\` from the ADR files and the"
-    echo "specs' \`Folds:\` lines; don't edit it by hand. A kept ADR is a file"
-    echo "here. A folded one lives on in the file that claims it, and its last"
-    echo "full text is in git history."
-    echo
-    echo "| ADR | Title | Where |"
-    echo "|---|---|---|"
-    while IFS="$(printf '\t')" read -r num kind target; do
-      if [ "$kind" = kept ]; then
-        title=$(sed -n 's/^# //p' "docs/adr/$target" | head -1)
-        echo "| $num | [$title]($target) | Kept |"
-        continue
-      fi
-      title=$(awk -F'\t' -v n="$num" '$1 == n && $2 == "folded" && $5 != "" { print $4; exit }' "$tmp/old")
-      link=$(awk -F'\t' -v n="$num" '$1 == n && $2 == "folded" && $5 != "" { print $5; exit }' "$tmp/old")
-      if [ -z "$link" ]; then
-        # The file as it last was: still in HEAD (deleted in the work tree),
-        # or before the commit that deleted it.
-        path=$(git ls-tree --name-only HEAD docs/adr/ 2>/dev/null | grep "^docs/adr/$num-" | head -1 || true)
-        if [ -n "$path" ]; then
-          last=$(git log -1 --format=%H -- "$path" 2>/dev/null || true)
-        else
-          path=$(git log --diff-filter=D --name-only --format= -- "docs/adr/$num-*.md" 2>/dev/null | grep -m1 . || true)
-          last=
-          if [ -n "$path" ]; then
-            gone=$(git log -1 --format=%H --diff-filter=D -- "$path")
-            last=$(git log -1 --format=%H "$gone^" -- "$path" 2>/dev/null || true)
-          fi
-        fi
-        if [ -z "$last" ]; then
-          err "ADR $num: no earlier text in git history (a shallow clone?)"
-          continue
-        fi
-        title=$(git show "$last:$path" | sed -n 's/^# //p' | head -1)
-        link="$repo_url/blob/$last/$path"
-      fi
-      echo "| $num | $title | [${target#../}]($target) · [last text]($link) |"
-    done <"$tmp/expected"
-  } >"$tmp/index"
-  cp "$tmp/index" "$index"
-fi
-
 [ "$bad" -eq 0 ] || exit 1
-[ "$mode" = check ] && echo "docs-lint: ok" || echo "docs-lint: ok, wrote $index"
+echo "docs-lint: ok"

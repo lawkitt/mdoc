@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Usage: scripts/dev/test-docs-lint.sh
 # scripts/dev/docs-lint.sh on scratch repositories: a tree that fits passes,
-# and each rule fails on its own, naming what broke it: every budget (an ADR's
-# Status and References not counted), a CONTEXT.md entry, a README, a
-# docs/design folder, dated and pr-* evidence, an unclaimed, twice-claimed or
-# both-ways ADR number, a stale index and a changelog fragment release.sh
-# would reject. The index names each folded ADR's
-# claiming file and a permalink to its last text from history, and keeps a
-# row it already has without reading history. Bash 3.2 compatible.
+# and each rule fails on its own, naming what broke it: every ceiling (an
+# ADR's Status paragraph and development.md's fleet-profile block not
+# counted), the pending list's older ceilings and its shrinking, a CONTEXT.md
+# entry, a README, the pending rows, a pending ADR's older count, ADR
+# numbers against Last number and Retired, a docs/design
+# folder, dated and pr-* evidence, and a changelog fragment release.sh would
+# reject. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -27,34 +27,27 @@ words() { # n: n words on one line
   echo "$out"
 }
 
-git_() { git -C "$tmp/repo" -c user.name=t -c user.email=t@example.com "$@"; }
-
-# A repository that fits: kept ADR 0001, and 0002 committed, then deleted
-# and claimed by a spec's wrapped Folds: line.
+# A repository that fits.
 base() {
   rm -rf "$tmp/repo"
   mkdir -p "$tmp/repo/scripts/dev" "$tmp/repo/docs/adr" "$tmp/repo/docs/specs" "$tmp/repo/docs/evidence/baseline"
   cp scripts/lib.sh "$tmp/repo/scripts/"
   cp scripts/dev/docs-lint.sh "$tmp/repo/scripts/dev/"
-  git_ init -q
-  printf '# Kept choice\n\nStatus: Accepted, 2026-01-01.\n\n%s\n' "$(words 300)" >"$tmp/repo/docs/adr/0001-kept.md"
-  printf '# Folded choice\n\nStatus: Accepted, 2026-01-02.\n' >"$tmp/repo/docs/adr/0002-folded.md"
+  printf '# Pending.\n' >"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+  git -C "$tmp/repo" init -q
+  printf '# Kept choice\n\nStatus: Accepted, 2026-01-01.\n\n%s\n' "$(words 200)" >"$tmp/repo/docs/adr/0001-kept.md"
+  printf '# Architecture decisions\n\nLast number: 0001.\n' >"$tmp/repo/docs/adr/README.md"
   printf '# Development\n\n%s\n' "$(words 100)" >"$tmp/repo/docs/development.md"
-  printf '# CI\n\n%s\n' "$(words 700)" >"$tmp/repo/docs/specs/ci.md"
+  printf '# CI\n\n%s\n' "$(words 400)" >"$tmp/repo/docs/specs/ci.md"
   printf '# Glossary\n\n## Terms\n\n**Term**: %s\n\n**Other**: %s\n' "$(words 50)" "$(words 50)" >"$tmp/repo/CONTEXT.md"
   printf '# Repo\n\n%s\n' "$(words 2000)" >"$tmp/repo/README.md"
-  printf '# Tool\n\n%s\n' "$(words 1400)" >"$tmp/repo/docs/specs/README.md"
-  git_ add -A
-  git_ commit -qm one
-  git_ rm -q docs/adr/0002-folded.md
-  printf '# Desktop\n\nFolds:\n0002\n\nBody.\n' >"$tmp/repo/docs/specs/desktop.md"
-  git_ add -A
-  git_ commit -qm two
+  printf '# Tool\n\n%s\n' "$(words 700)" >"$tmp/repo/docs/specs/README.md"
+  git -C "$tmp/repo" add -A
 }
 
-run() { # mode...: runs the lint in the repository; output in $tmp/out
+run() { # args...: runs the lint in the repository; output in $tmp/out
   rc=0
-  (cd "$tmp/repo" && bash scripts/dev/docs-lint.sh "$@") >"$tmp/out" 2>&1 || rc=$?
+  (cd "$tmp/repo" && git add -A && bash scripts/dev/docs-lint.sh "$@") >"$tmp/out" 2>&1 || rc=$?
 }
 
 expect() { # rc text what
@@ -63,93 +56,115 @@ expect() { # rc text what
   fi
 }
 
-# The fitting tree: writing the index passes, then --check passes.
 base
 run
-expect 0 "wrote docs/adr/README.md" "a fitting tree fails"
+expect 0 "docs-lint: ok" "a fitting tree fails"
 run --check
-expect 0 "docs-lint: ok" "the index just written is stale"
-index=$tmp/repo/docs/adr/README.md
-grep -qF '| 0001 | [Kept choice](0001-kept.md) | Kept |' "$index" || fail "no kept row: $(cat "$index")"
-grep -q '^| 0002 | Folded choice | \[specs/desktop.md\](\.\./specs/desktop.md) · \[last text\](https://github.com/lawkitt/mdoc/blob/[0-9a-f]\{40\}/docs/adr/0002-folded.md) |$' "$index" ||
-  fail "no folded row with a permalink: $(cat "$index")"
-link=$(sed -n 's/.*blob\/\([0-9a-f]*\)\/docs\/adr\/0002.*/\1/p' "$index")
-[ "$(git_ rev-list -1 HEAD~1)" = "$link" ] || fail "the permalink is not the last commit with the text"
-grep -qF '| 0003 |' "$index" && fail "0003 is in the index before anything names it"
-git_ add -A
-git_ commit -qm index
+expect 1 "usage:" "an argument is accepted"
 
-# A folded row already in the index keeps its title and link: no history read.
-sed -i.bak 's#blob/[0-9a-f]*/docs/adr/0002-folded.md#blob/kept/docs/adr/0002-folded.md#' "$index"
-rm -f "$index.bak"
-run
-expect 0 "wrote" "rewriting an index with a known row fails"
-grep -qF 'blob/kept/docs/adr/0002-folded.md' "$index" || fail "the known row was looked up again: $(cat "$index")"
-
-# A claim that moves to another file keeps the row's title and link, with
-# no history read, and names its new file.
-printf '# Desktop\n\nBody.\n' >"$tmp/repo/docs/specs/desktop.md"
-printf '# Kept choice\n\nStatus: Accepted, 2026-01-01.\n\nFolds: 0002.\n\n%s\n' "$(words 10)" >"$tmp/repo/docs/adr/0001-kept.md"
-run
-expect 0 "wrote" "moving a claim fails"
-grep -qF '| 0002 | Folded choice | [0001-kept.md](0001-kept.md) · [last text](https://github.com/lawkitt/mdoc/blob/kept/docs/adr/0002-folded.md) |' "$index" ||
-  fail "a moved claim lost its row or names the wrong file: $(cat "$index")"
-run --check
-expect 0 "docs-lint: ok" "the index after a moved claim is stale"
-
-# A claim in a kept ADR counts: one in a spec too is a double claim.
-printf '# Desktop\n\nFolds: 0002.\n' >"$tmp/repo/docs/specs/desktop.md"
-run --check
-expect 1 "ADR 0002 is claimed by more than one Folds: line (docs/adr/0001-kept.md docs/specs/desktop.md)" "a spec and a kept ADR both claim one number"
-
-# A number claimed without history: no earlier text.
-printf '# Desktop\n\nFolds: 0002.\n' >"$tmp/repo/docs/specs/desktop.md"
-printf '# Kept choice\n\n%s\n' "$(words 10)" >"$tmp/repo/docs/adr/0001-kept.md"
-printf '# Development\n\nFolds: 0003, 0004.\n' >"$tmp/repo/docs/development.md"
-run
-expect 1 "ADR 0003: no earlier text in git history" "a claim with no history passes"
-
-# Budgets.
-check_budget() { # path text what
+# Ceilings.
+check_ceiling() { # path text what
   base
-  run
   mkdir -p "$(dirname "$tmp/repo/$1")"
   printf '%s\n' "$2" >"$tmp/repo/$1"
-  git_ add -A
-  git_ commit -qm budget
-  run --check
+  run
   expect 1 "$1:" "$3"
 }
-check_budget docs/development.md "$(words 2501)" "development.md over 2,500 passes"
-check_budget docs/specs/ci.md "$(words 801)" "ci.md over 800 passes"
-check_budget docs/specs/desktop.md "Folds: 0002. $(words 3001)" "a spec over 3,000 passes"
-check_budget docs/adr/0001-kept.md "# Kept choice $(words 400)" "an ADR over 400 passes"
-check_budget CONTEXT.md "$(words 3001)" "CONTEXT.md over 3,000 passes"
-check_budget scripts/README.md "$(words 1501)" "a README over 1,500 passes"
+check_ceiling docs/development.md "$(words 1501)" "development.md over 1,500 passes"
+check_ceiling docs/specs/ci.md "$(words 501)" "ci.md over 500 passes"
+check_ceiling docs/specs/originals.md "$(words 1501)" "a spec over 1,500 passes"
+check_ceiling docs/adr/0003-new.md "# New choice $(words 250)" "an ADR over 250 passes"
+check_ceiling scripts/README.md "$(words 801)" "a README over 800 passes"
 
-# An ADR's Status, References and Terms paragraphs do not count.
+# An ADR's Status paragraph and development.md's fleet-profile block do not count.
 base
-printf '# Kept choice\n\nStatus: Accepted, 2026-01-01. Supersedes\n%s\n\n%s\n\nReferences: %s\n' \
-  "$(words 300)" "$(words 390)" "$(words 300)" >"$tmp/repo/docs/adr/0001-kept.md"
+printf '# Kept choice\n\nStatus: Accepted, 2026-01-01. Replaces\n%s\n\n%s\n' \
+  "$(words 300)" "$(words 240)" >"$tmp/repo/docs/adr/0001-kept.md"
+# shellcheck disable=SC2016 # literal backticks
+printf '# Development\n\n%s\n\n```toml fleet-profile\n%s\n```\n\n%s\n' \
+  "$(words 700)" "$(words 900)" "$(words 700)" >"$tmp/repo/docs/development.md"
 run
-expect 0 "docs-lint: ok" "an ADR's Status and References count"
+expect 0 "docs-lint: ok" "an ADR's Status or the fleet profile counts"
 
-# A CONTEXT.md entry over 60 words, named.
+# The pending list: the older ceiling holds, and a file that fits the new
+# one must leave the list.
+base
+printf 'docs/specs/desktop.md 3000\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+printf '%s\n' "$(words 2900)" >"$tmp/repo/docs/specs/desktop.md"
+run
+expect 0 "docs-lint: ok" "a pending spec under its older ceiling fails"
+printf '%s\n' "$(words 3001)" >"$tmp/repo/docs/specs/desktop.md"
+run
+expect 1 "docs/specs/desktop.md: 3001 words, over its pending ceiling of 3000" "a pending spec over its older ceiling passes"
+printf '%s\n' "$(words 1400)" >"$tmp/repo/docs/specs/desktop.md"
+run
+expect 1 "docs/specs/desktop.md fits its ceiling of 1500 now" "a trimmed spec can stay pending"
+
+# A pending ADR is held to its older count, which left out References.
+base
+printf 'docs/adr/0001-kept.md 400\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+printf '# Kept choice\n\nStatus: Accepted.\n\n%s\n\nReferences: %s\n' "$(words 390)" "$(words 20)" >"$tmp/repo/docs/adr/0001-kept.md"
+run
+expect 0 "docs-lint: ok" "a pending ADR under its older count fails"
+printf '# Kept choice\n\nStatus: Accepted.\n\n%s\n\nReferences: %s\n' "$(words 405)" "$(words 20)" >"$tmp/repo/docs/adr/0001-kept.md"
+run
+expect 1 "docs/adr/0001-kept.md: 408 words, over its pending ceiling of 400" "a pending ADR over its older count passes"
+
+# A pending row names an existing file and a number.
+base
+printf 'docs/specs/gone.md 3000\ndocs/specs/ci.md 300O\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.txt"
+run
+expect 1 "docs/specs/gone.md is not a file" "a pending row for a missing file passes"
+expect 1 "docs/specs/ci.md needs a number, not '300O'" "a pending row with a bad number passes"
+
+# A CONTEXT.md entry over 60 words, named; CONTEXT.md over 2,000.
 base
 printf '# Glossary\n\n**Short**: %s\n\n**Long one**: %s\n%s\n\n## Next\n\n%s\n' \
-  "$(words 10)" "$(words 40)" "$(words 30)" "$(words 200)" >"$tmp/repo/CONTEXT.md"
+  "$(words 10)" "$(words 40)" "$(words 30)" "$(words 2000)" >"$tmp/repo/CONTEXT.md"
 run
 expect 1 'CONTEXT.md: "Long one" is' "a long CONTEXT.md entry passes"
 grep -qF '"Short"' "$tmp/out" && fail "a short entry was reported"
+check_ceiling CONTEXT.md "$(words 2001)" "CONTEXT.md over 2,000 passes"
 
-# The repository README, vendor/ and the index have no budget.
+# The repository README and vendor/ have no ceiling.
 base
 mkdir -p "$tmp/repo/vendor/x"
 printf '%s\n' "$(words 2000)" >"$tmp/repo/vendor/x/README.md"
-git_ add -A
-git_ commit -qm vendor
 run
 expect 0 "docs-lint: ok" "an exempt README fails"
+
+# ADR numbers.
+base
+printf '# Twin\n' >"$tmp/repo/docs/adr/0001-twin.md"
+run
+expect 1 "ADR 0001 has more than one file" "two files with one number pass"
+base
+printf '# Next\n' >"$tmp/repo/docs/adr/0002-next.md"
+run
+expect 1 "ADR 0002 is above docs/adr/README.md's Last number (0001)" "an ADR above Last number passes"
+printf '# Architecture decisions\n\nLast number: 0002.\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 0 "docs-lint: ok" "raising Last number does not fix it"
+printf '# Architecture decisions\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 1 "has no 'Last number: NNNN' line" "a README without Last number passes"
+
+# Every number up to Last number is one file or Retired, never both.
+base
+printf '# Five\n' >"$tmp/repo/docs/adr/0005-five.md"
+printf 'Last number: 0006.\n\nRetired: 0002-0003, 0006.\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 1 "ADR 0004 is neither a file nor Retired" "a gap passes"
+grep -qF "ADR 0002" "$tmp/out" && fail "a retired range was reported"
+printf 'Last number: 0006.\n\nRetired: 0002-0004, 0006.\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 0 "docs-lint: ok" "retired ranges and items fail"
+printf '# Reused\n' >"$tmp/repo/docs/adr/0003-reused.md"
+run
+expect 1 "ADR 0003 is a file and Retired" "a reused number passes"
+printf 'Last number: 0006.\n\nRetired: 0002-0004, 6.\n' >"$tmp/repo/docs/adr/README.md"
+run
+expect 1 'Retired item "6" is not NNNN' "a malformed Retired item passes"
 
 # docs/design and dated or per-PR evidence; an undated folder is fine.
 for d in docs/design docs/evidence/runs/2026-11-15 docs/evidence/runs/2026-11-15-native docs/evidence/pr-12; do
@@ -158,35 +173,6 @@ for d in docs/design docs/evidence/runs/2026-11-15 docs/evidence/runs/2026-11-15
   run
   expect 1 "$d" "$d passes"
 done
-
-# ADR numbers.
-base
-printf '# Kept 5\n' >"$tmp/repo/docs/adr/0005-five.md"
-run
-expect 1 "ADR 0003 is neither a file in docs/adr/ nor claimed" "a gap passes"
-expect 1 "ADR 0004 is neither" "the second gap is not named"
-base
-printf '# Desktop\n\nFolds: 0002, 0001.\n' >"$tmp/repo/docs/specs/desktop.md"
-run
-expect 1 "ADR 0001 is a file and claimed by docs/specs/desktop.md" "a kept and claimed ADR passes"
-base
-printf '# CI\n\nFolds: 0002.\n\n%s\n' "$(words 10)" >"$tmp/repo/docs/specs/ci.md"
-run
-expect 1 "ADR 0002 is claimed by more than one Folds: line (docs/specs/ci.md docs/specs/desktop.md)" "a double claim passes"
-
-# A stale index: --check fails and says how to fix it; writing fixes it.
-base
-run
-git_ rm -q docs/adr/0001-kept.md 2>/dev/null || true
-printf '# Mobile\n\nFolds: 0001.\n' >"$tmp/repo/docs/specs/mobile.md"
-run --check
-expect 1 "docs/adr/README.md is stale: run scripts/dev/docs-lint.sh" "a stale index passes"
-run
-expect 0 "wrote" "rewriting a stale index fails"
-run --check
-expect 0 "docs-lint: ok" "the rewritten index is stale"
-grep -qF '| 0001 | Kept choice | [specs/mobile.md](../specs/mobile.md) · [last text](' "$index" ||
-  fail "a newly folded ADR has no row from its last text: $(cat "$index")"
 
 # Changelog fragments, by release.sh's rules: good ones in each folder and
 # the folder READMEs pass; each broken rule fails, naming the file.
@@ -199,32 +185,31 @@ fragments() { # writes good fragments and READMEs
   printf '# Changelog\n\n## Unreleased\n' >"$tmp/repo/CHANGELOG.md"
 }
 base
-run
 fragments
-run --check
+run
 expect 0 "docs-lint: ok" "good fragments fail"
 printf 'Not a bullet.\n' >"$tmp/repo/changes/ios/plain.md"
-run --check
+run
 expect 1 "changes/ios/plain.md must start with a '- ' CHANGELOG bullet" "a fragment that is not a bullet passes"
 base
 run
 fragments
 printf -- '- Spaced.\n' >"$tmp/repo/changes/two words.md"
-run --check
+run
 expect 1 "changes/two words.md: name fragments with letters" "a badly named fragment passes"
 base
 run
 fragments
 printf '# Changelog\n\n## 1.0.0\n' >"$tmp/repo/CHANGELOG.md"
-run --check
+run
 expect 1 "CHANGELOG.md has no ## Unreleased section for changes/" "fragments with no Unreleased section pass"
 rm "$tmp/repo/changes/desk_top-1.2.md"
-run --check
+run
 expect 0 "docs-lint: ok" "app fragments alone need the desktop Unreleased section"
 # A dot-named fragment counts, as release.sh finds it, for its bullet and
 # for the Unreleased section.
 printf 'Hidden.\n' >"$tmp/repo/changes/.hidden.md"
-run --check
+run
 expect 1 "changes/.hidden.md must start with a '- ' CHANGELOG bullet" "a dot-named fragment is skipped"
 expect 1 "CHANGELOG.md has no ## Unreleased section for changes/" "a dot-named fragment needs no Unreleased section"
 

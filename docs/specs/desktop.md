@@ -1,10 +1,5 @@
 # Desktop
 
-Folds: 0003, 0011, 0012, 0015, 0019, 0020, 0023, 0024, 0025, 0027, 0028,
-0030, 0031, 0032, 0033, 0035, 0038, 0042, 0044, 0046, 0048, 0054, 0055,
-0058, 0060, 0061, 0062, 0063, 0064, 0067, 0071, 0073, 0074, 0075, 0076,
-0079, 0081, 0084, 0117.
-
 Rules of the macOS and Windows app; headless renders and flow tests specify
 the screens. Terms are in [CONTEXT.md](../../CONTEXT.md).
 

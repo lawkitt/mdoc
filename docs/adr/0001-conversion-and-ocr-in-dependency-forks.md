@@ -2,8 +2,6 @@
 
 Status: Accepted, 2026-10-01.
 
-Folds: 0007, 0008, 0009.
-
 ## Decision
 
 - mdoc extracts documents through its forks of AnyDoc and pdf-inspector,

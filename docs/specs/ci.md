@@ -1,7 +1,5 @@
 # CI
 
-Folds: 0082, 0100, 0112, 0113.
-
 How a PR reaches `main`. The machinery and the PC's runners:
 [scripts/ci/README.md](../../scripts/ci/README.md).
 
