@@ -3,82 +3,53 @@
 How a PR reaches `main`. The machinery and the PC's runners:
 [scripts/ci/README.md](../../scripts/ci/README.md).
 
-## Required checks
+## Merging
 
-- `main` merges only through GitHub's merge queue. A ruleset requires
+- `main` merges only through GitHub's merge queue; a ruleset requires
   `lint (ubuntu)` and `merge-gate` on the PR head and on the queue commit.
 - Never merge with `--admin`. The maintainer's bypass is for `just release`
   and break-glass reverts only.
-- A PR head runs `lint (ubuntu)` and the fast tier, `fast (ubuntu)`
-  (`unit` and `scripts`, idle when docs only), on hosted Linux. Its
-  `merge-gate` is green when the fast tier passed, or when the PR is docs
-  only.
-- A recognition-area PR head also runs the detection gate
-  (`detection-head / ci/detection`), and its `merge-gate` waits for it.
-- A queue commit runs the full jobs its areas need, none when its own
-  change (against its parent) is docs only: safe only while the queue is
-  `ALLGREEN`. Its `merge-gate` is green only when each ran in full and
-  passed; nothing posts a waiver or partial result as green.
-- `scripts/ci/ci-areas.txt` decides the areas. A core change runs every job,
-  docs only none (fixture Markdown is not docs), and a ci-only change only
-  `ci/scripts`. A new script a mobile job runs needs a line there, or it
-  counts as desktop.
-
-## Before ready
-
-- Run development.md's gate. A full hosted job may run on your branch:
-  `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`
-  (for a UI change add `-f screens='<globs>'` and download
-  `renders-macos-screens`), or `ci-android.yml`.
-
-## Merging
-
-- Enqueue a green, reviewed PR with `gh pr merge <N> --auto`. The queue
-  squashes.
-- A failing PR is dropped with a red `merge-gate` naming the failing job;
-  fix it on the branch and enqueue it again.
-- Make independent PRs off `main` and enqueue them together: the queue takes
-  only PRs based on `main`, so a stack goes one PR at a time.
-- Merge `main` into a PR only when GitHub reports it `CONFLICTING`:
+- Nothing posts a waiver or a partial result as green.
+- Enqueue a green, reviewed PR with `gh pr merge <N> --auto`, and
+  independent PRs off `main` together so they batch. The queue takes only
+  PRs based on `main`, so a stack goes one PR at a time.
+- Merge `main` into a PR only when GitHub reports it `CONFLICTING`, because
   each new head reruns its checks.
 
 ## A red or stale gate
 
 - If `merge-gate` says "Waiting" after its checks finished, or a green PR
-  with auto-merge is not queued after 5 minutes, run `gh workflow run merge-gate.yml --repo lawkitt/mdoc`. Never
-  re-run the PR's own `pull_request_target` gate run. If the PR still is
-  not queued, turn auto-merge off and on.
+  with auto-merge is not queued after 5 minutes, run
+  `gh workflow run merge-gate.yml --repo lawkitt/mdoc`; never re-run the
+  PR's own `pull_request_target` gate run.
 - A queue failure is unrelated when it is infrastructure, the same test
   failed the same way on another queue commit, on `main` or in the nightly
-  within 14 days, or the failing test is in an area the PR does not touch. Anything else goes back to the PR's author.
+  within 14 days, or the failing test is in an area the PR does not touch.
+  Anything else goes back to the PR's author.
 - After an unrelated failure the hub re-queues the PR once, naming the
   matching rule in a PR comment. A second drop goes to the maintainer.
 - A red `main` stops enqueueing until fixed.
 
 ## Quarantine
 
-- Tests never retry, except the hosted iOS UI tests, which retry once. A
-  pass on the retry is named in the job's annotations and counts as an
-  unrelated failure.
-- After a test's second unrelated failure, the hub adds it to
-  `.config/quarantine.txt` with its issue, by PR and without asking:
-  `<nextest filter>  #<issue>  <expires YYYY-MM-DD>`, or
-  `android:<class>#<method>`, or `ios:<target>/<class>/<method>`.
-- Every tier skips a quarantined test except `quarantined`, which runs the
-  list nightly without failing. A line past its date fails `scripts` until
-  the test is fixed or a PR renews the date and says why.
+- A pass on the hosted iOS UI tests' one retry counts as an unrelated
+  failure.
+- After a test's second unrelated failure, the hub quarantines it in
+  `.config/quarantine.txt` (its header has the format) by PR, without
+  asking.
 - Tests that measure speed, take screenshots or survey layouts stay off the
-  queue; the timing tests run nightly.
+  queue.
 
 ## Detection snapshots
 
-- Hosted `windows-latest` is the reference platform: a developer machine's
-  scores differ in the fourth decimal.
-- Never commit your own `--refresh-snapshots` output; it is only a draft
-  for a new fixture. Push, let the head's detection gate fail,
-  run `just snapshots-fetch <PR>`, review the diff, then commit and push.
+- Hosted `windows-latest` is the reference platform, because a developer
+  machine's scores differ in the fourth decimal.
+- Never commit your own `--refresh-snapshots` output: push, let the head's
+  detection gate fail, run `just snapshots-fetch <PR>`, review the diff,
+  then commit and push.
 - After a runtime or model pin change, record every snapshot with
-  `gh workflow run ci-detection.yml --ref <branch> -f record=true`.
+  `gh workflow run ci-detection.yml --ref <branch> -f record=true`, because
+  scores can shift within the gate's tolerance.
 
 ## Changing CI
 
@@ -86,8 +57,6 @@ How a PR reaches `main`. The machinery and the PC's runners:
   workflows, `queue-runner.sh`, `ci-areas.txt`) first passes a shadow run on
   `ci-shadow/main/<name>`, with a deliberately broken twin that must fail.
   Delete both branches afterwards.
-- Name a summary job's parts `<summary> (<part>)`, or the gate counts their
-  capacity cancels as failures.
 - If a merged gate change blocks the queue, the maintainer pushes its revert
   straight to `main`.
 
@@ -95,8 +64,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 - Run only the test classes you touched
   (`just ios-test "iPhone 17" mdocUITests/<Class>`), one heavy build at a
-  time after checking `uptime`: the full suite takes 25 to 30 minutes on the
-  fanless Air; parallel runs overheat it.
+  time after checking `uptime`, because the full suite takes 25 to 30
+  minutes on the fanless Air and parallel runs overheat it.
 - On macOS 27, Xcode 26.2's test runner hangs: set
-  `DEVELOPER_DIR=/Applications/Xcode-27.2.app/Contents/Developer` (the
-  pinned iOS 26.2 runtime still). Hosted `ci/ios` stays the reference.
+  `DEVELOPER_DIR=/Applications/Xcode-27.2.app/Contents/Developer`. Hosted
+  `ci/ios` stays the reference.
