@@ -50,7 +50,7 @@ craft-offcrypto = { git = "https://github.com/storytold/craft-libs.git", rev = "
 
 [dependencies]
 regex = "1"
-pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "84079ec9f4ba814023575ff832464fdb3bd510a5", features = ["ocr"] }
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "7e35e4daaafee464727a5bab952e9d3859f3cc7f", features = ["ocr"] }
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
 # models, updates, crash report); a bump must keep those paths (ADR 0053).
 dirs = "7"
