@@ -1,4 +1,4 @@
-# The area table (ADR 0091): which CI jobs a change runs. One line per
+# The area table: which CI jobs a change runs. One line per
 # glob: the areas it belongs to (comma-separated), then a GitHub filter glob
 # (`**` crosses directories, `*` and `?` do not). A file takes the areas of
 # the first line that matches it; a file no line matches is desktop.
@@ -8,15 +8,15 @@
 #            fails when they disagree), and come first, so a README under
 #            apps/ or crates/ is still docs. Only exceptions precede them:
 #            the fixture folders, whose Markdown tests read (expected
-#            conversions, include_str! inputs, the recognition fixtures of
-#            ADR 0093), each with its folder's area. The merge queue runs
+#            conversions, include_str! inputs, the recognition
+#            fixtures), each with its folder's area. The merge queue runs
 #            them as their area; ci.yml's push filter still skips them
 #            (paths-ignore has no exceptions). A fixture folder's README
 #            counts as a fixture.
 #   ios      the iOS job (ci/ios): apps/ios/ and the iOS scripts.
 #   android  the Android job (ci/android): apps/android/ and the Android
 #            scripts.
-#   recognition  the detection gate's inputs (ADR 0113): only the detection
+#   recognition  the detection gate's inputs: only the detection
 #            gate (ci/detection) runs; the desktop and mobile jobs are not
 #            affected. This includes resources/ and the gate's machinery;
 #            the full desktop jobs run too when the change is also desktop.
@@ -29,7 +29,7 @@
 #            vendor/, build/, resources/, .github/ and every script not
 #            listed here (the desktop scripts: release, packaging, smoke
 #            tests and the suites of those).
-#   ci       the CI machinery (ADR 0100): the merge gate, the queue runner,
+#   ci       the CI machinery: the merge gate, the queue runner,
 #            the CI scripts, the workflows that build and test nothing
 #            themselves, and their suites. On a queue commit only ci/scripts
 #            runs (the script suites on Linux and under macOS /bin/bash 3.2)
@@ -80,7 +80,7 @@ android               .github/workflows/ci-android.yml
 desktop,ios           scripts/ios/mobile-check.sh
 desktop,android       scripts/android/install-android-ndk.sh
 
-# Recognition code and the rule pack (ADR 0095, applied early on
+# Recognition code and the rule pack (applied early on
 # 2026-11-02): the desktop jobs with the detection gate and the mobile cargo
 # check, no iOS or Android app job; the desktop parity test (mdoc-ffi) checks
 # the bindings' output.
@@ -106,7 +106,7 @@ core                  scripts/dev/install-actionlint.sh
 core                  scripts/dev/install-shfmt.sh
 core                  scripts/dev/doctor.sh
 
-# The CI machinery (ADR 0100), after core so the table's own script stays
+# The CI machinery, after core so the table's own script stays
 # core. Their checks are lint (ubuntu), which runs on every commit, and the
 # script suites (ci/scripts); a workflow here runs on the PR or on main, not
 # in the queue.

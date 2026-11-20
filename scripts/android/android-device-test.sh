@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/android/android-device-test.sh [<serial> | <model>:<api> ...]
-# The Android device tests (ADR 0089): the app's instrumented tests and the
+# The Android device tests: the app's instrumented tests and the
 # long-job test (apps/android/longjobs: the model download, text recognition
 # and Find names off screen and after a process kill, then no crash or ANR
 # in mdoc's exit info).

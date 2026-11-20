@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The iOS UI survey (ADR 0087): run SurveyUITests on a Simulator and export
+# The iOS UI survey: run SurveyUITests on a Simulator and export
 # every screen, light and dark, downscaled to 1000 px high, into a folder.
 #   scripts/ios/ios-survey.sh "iPhone 17 Pro" target/ios/survey
 # The folder takes no PNGs into the repository: before and after images go in

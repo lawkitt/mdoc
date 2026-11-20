@@ -2,8 +2,8 @@
 # Usage: scripts/ios/ios-build-info.sh
 # Writes target/ios/Build.xcconfig, which apps/ios/Config/Build.xcconfig
 # includes: the build number is the number of commits up to HEAD (on a `main`
-# commit, ADR 0091's count) and MDOC_CORE_COMMIT is HEAD, shown in Settings ›
-# About (ADR 0097). Rewritten only when it changes, so Xcode rebuilds nothing
+# commit count) and MDOC_CORE_COMMIT is HEAD, shown in Settings ›
+# About. Rewritten only when it changes, so Xcode rebuilds nothing
 # for an unchanged commit. A shallow clone counts only the commits it has, so
 # its number is wrong: a warning for test builds, an error when
 # MDOC_REQUIRE_FULL_HISTORY=1 (a build for TestFlight).

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/android/install-android-sdk.sh
-# Installs what the Android app builds and runs with (ADR 0089, 0091) on
+# Installs what the Android app builds and runs with on
 # Windows x64, Apple Silicon macOS or Linux x86_64, under $(android_home)
 # (lib.sh: E:\Android on the PC, ~/Library/Android on the Mac, ~/Android on
 # Linux), the SDK in its Sdk folder (mdoc-sdk on macOS and Linux, apart from

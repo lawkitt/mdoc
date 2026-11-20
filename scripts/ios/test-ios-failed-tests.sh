@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/test-ios-failed-tests.sh
-# scripts/ios/ios-failed-tests.py (ADR 0113) without Xcode: a fake xcrun prints
+# scripts/ios/ios-failed-tests.py without Xcode: a fake xcrun prints
 # the checked-in xcresulttool sample (scripts/ios/fixtures/ios-failed-tests.json),
 # whose failed cases a part names, as the PC words its status, in its error,
 # summary and output; a case that passed on its retry, warned in a green part

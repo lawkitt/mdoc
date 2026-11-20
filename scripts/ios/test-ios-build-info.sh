@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/test-ios-build-info.sh
-# scripts/ios/ios-build-info.sh on scratch repositories (ADR 0097): the build
+# scripts/ios/ios-build-info.sh on scratch repositories: the build
 # number is the commit count, the commit is HEAD, and a shallow clone warns,
 # or fails when a TestFlight build requires the full history. No network.
 source "$(dirname "$0")/../lib.sh"

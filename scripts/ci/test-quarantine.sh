@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/test-quarantine.sh
-# The quarantine list's parser and expiry check (scripts/ci/quarantine.sh,
-# ADR 0095) on scratch files. Bash 3.2 compatible.
+# The quarantine list's parser and expiry check (scripts/ci/quarantine.sh) on
+# scratch files. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

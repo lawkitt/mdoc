@@ -7,7 +7,7 @@ writes the metadata sdkmanager would: AGP and avdmanager then miss packages
 such as a platform with a minor API level or a 16 KB system image. This copies
 the manifest entry whose archive has the pinned SHA-1, as sdkmanager does:
 the remotePackage becomes a localPackage, without its channel, archives and
-licence reference (ADR 0089).
+licence reference.
 """
 
 import re

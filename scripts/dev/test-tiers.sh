@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Usage: scripts/dev/test-tiers.sh
-# scripts/dev/test.sh's tier dispatch (ADR 0095) against a fake cargo: each tier
+# scripts/dev/test.sh's tier dispatch against a fake cargo: each tier
 # runs only its own commands, with the quarantined tests left out, and exits
 # with their status. mdoc-detect's lib tests run from the binary nextest lists
 # (a fake that logs its arguments), quarantined ones skipped by exact path,
-# and their failures printed as nextest's (ADR 0113). Never runs --tier
+# and their failures printed as nextest's. Never runs --tier
 # scripts or the whole run (this suite is one of their suites). Bash 3.2
 # compatible.
 source "$(dirname "$0")/../lib.sh"

@@ -4,7 +4,7 @@
 # the comma-separated <globs> (`*` also matches `/`, so `*settings*` finds
 # both themes) into <out-dir>, keeping their paths: the small screens
 # artifact of the desktop CI job, for a reviewer who wants a few screens, not
-# the full set (ADR 0095). Fails when nothing matches, so a mistyped glob is
+# the full set. Fails when nothing matches, so a mistyped glob is
 # not an empty artifact. Relative paths are from the repository root. Bash 3.2
 # compatible (macOS /bin/bash).
 source "$(dirname "$0")/../lib.sh"

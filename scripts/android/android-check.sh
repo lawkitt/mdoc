@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/android/android-check.sh
-# The Android job (ADR 0089, 0091), ci/android on the PC's queue runner (ADR
-# 0095), when the commit touches the android area of scripts/ci/ci-areas.txt (on
+# The Android job, ci/android on the PC's queue runner, when the commit touches
+# the android area of scripts/ci/ci-areas.txt (on
 # a merge ref, against its main): the Android core, the app's JVM parity and
 # unit tests, the app, its instrumented tests and the minified release-like
 # app (R8) built; on CI's own emulator (emulator-5560), which is stopped
@@ -65,7 +65,7 @@ stop() {
 trap stop EXIT
 scripts/android/android-emulator.sh ci >/dev/null
 
-# The minified app (ADR 0091), opened as a person would: Home lists the
+# The minified app, opened as a person would: Home lists the
 # library only once the core opened through JNA and read a snapshot back,
 # which is what R8 breaks when it strips or renames what the bindings reach
 # by name. A crash or Home's "could not open" fails the job.
@@ -118,7 +118,7 @@ minified_opens() {
 }
 minified_opens
 
-# Quarantined tests (.config/quarantine.txt, ADR 0095) are left out.
+# Quarantined tests (.config/quarantine.txt) are left out.
 skip=$(bash scripts/ci/quarantine.sh android) || die "scripts/ci/quarantine.sh: .config/quarantine.txt does not parse"
 gradle=(--no-daemon --console=plain :app:connectedDebugAndroidTest)
 [ -z "$skip" ] || gradle+=("-Pandroid.testInstrumentationRunnerArguments.notClass=$skip")

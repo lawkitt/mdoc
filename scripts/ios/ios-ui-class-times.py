@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The UI test classes' measured times, which scripts/ios/ios-ui-shards.sh packs
-into ci-ios.yml's UI shards (ADR 0113).
+into ci-ios.yml's UI shards.
 
 Usage:
   scripts/ios/ios-ui-class-times.py collect <xcresult folder>
@@ -37,7 +37,7 @@ from pathlib import Path
 
 ARTIFACT = re.compile(r"^ios-ui-times-ui[0-9]+-[0-9]+$")
 HEADER = """\
-# The UI test classes' times on hosted macos-26 (ADR 0113), which
+# The UI test classes' times on hosted macos-26, which
 # scripts/ios/ios-ui-shards.sh packs into ci-ios.yml's UI shards, longest first,
 # each into the shard with less so far. Per class: the median, over the green
 # UI parts of the last {days} days (the `ios-ui-times-*` artifacts), of its

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/test-merge-gate.sh
-# scripts/ci/merge-gate.sh (ADR 0095, ADR 0100) against fake GitHub calls: its
+# scripts/ci/merge-gate.sh against fake GitHub calls: its
 # GitHub wrapper, its decisions, then passes over PR heads and queue commits.
 # No network. Bash 3.2 compatible.
 # shellcheck disable=SC2317,SC2329 # the fakes are called by the sourced gate
@@ -147,7 +147,7 @@ eq "$(printf 'crates/mdoc-core/src/lib.rs\n' | areas_of)" "core desktop recognit
 # Recognition code is no core change: the app jobs skip it (#526).
 eq "$(printf 'crates/mdoc-pii/src/lib.rs\n' | areas_of)" "desktop recognition"
 eq "$(printf 'tests/fixtures/recognition/en/letter/x.md\n' | areas_of)" "recognition"
-# The CI machinery (ADR 0100): the script suites, not the desktop jobs.
+# The CI machinery: the script suites, not the desktop jobs.
 eq "$(printf 'scripts/ci/merge-gate.sh\n.github/workflows/ci.yml\n' | areas_of)" "ci"
 eq "$(printf 'scripts/ci/merge-gate.sh\nsrc/main.rs\n' | areas_of)" "desktop ci"
 echo "ok: areas from a file list"
@@ -203,7 +203,7 @@ cp scripts/ci/ci-areas.sh scripts/ci/ci-areas.txt "$repo_dir/scripts/ci/"
   g add -A && g commit -qm "PII (#2)"
   eq "$(bash scripts/ci/ci-areas.sh --queue | tr '\n' ' ')" \
     "areas=desktop recognition ios jobs=macos windows ios detection macos=true ios=true detection=true scripts=false "
-  # The CI machinery alone (ADR 0100): only the script suites.
+  # The CI machinery alone: only the script suites.
   g update-ref refs/remotes/origin/main HEAD
   echo x >scripts/ci/merge-gate.sh
   mkdir -p .github/workflows && echo x >.github/workflows/merge-gate.yml
@@ -241,7 +241,7 @@ done
 grep -q 'run: scripts/ci/ci-areas.sh --queue' .github/workflows/queue.yml || fail "queue.yml's areas job reads no areas"
 echo "ok: queue.yml's jobs are the ones merge-gate waits for"
 
-# Detection on PR heads (ADR 0100): only a file on a recognition line of the
+# Detection on PR heads: only a file on a recognition line of the
 # table, never core's every area; ci.yml's areas job says the same.
 detects() { if tr '\n' '\0' | head_detection "$(cat scripts/ci/ci-areas.txt)"; then echo yes; else echo no; fi; }
 eq "$(printf 'tests/fixtures/recognition/en/letter/x.model.json\n' | detects)" yes
@@ -597,7 +597,7 @@ stale_pass
 eq "$(tr '\n' ' ' <"$cancelled")" "12 15 16 "
 echo "ok: runs of queue commits that left the queue are cancelled"
 
-# --- ADR 0100: errors, jobs that never ran, the area table, the follow-up ----
+# --- Errors, jobs that never ran, the area table, the follow-up ----
 
 # An error on one PR: the others are decided, the skip is logged, the pass is red.
 : >"$posted"
@@ -898,7 +898,7 @@ eq "$(cat "$reran")" ""
 eq "$(cat "$posted")" "bbbb failure Fast tier did not run (no Linux runner, 3 attempts): fast (ubuntu)"
 echo "ok: a fast tier that never ran is re-run, then fails as infrastructure"
 
-# Detection on PR heads (ADR 0100). #575 changes a fixture's snapshot, #2 the
+# Detection on PR heads. #575 changes a fixture's snapshot, #2 the
 # app: its head has its fast tier alone, #575's head the checks of
 # ffff_checks.
 fetch_heads() { printf '2 false bbbb 0 false\n575 false ffff 0 false\n'; }
@@ -1040,7 +1040,7 @@ grep -qxF "qqqq: could not read its scripts/ci/ci-areas.txt; using main's" "$log
 fetch_file() { cat "$2"; }
 echo "ok: the queue commit's own area table, else main's"
 
-# The CI machinery alone (ADR 0100): only ci/scripts, the summary of the
+# The CI machinery alone: only ci/scripts, the summary of the
 # suites on Linux and under bash 3.2; no desktop, PC or detection job, and
 # nothing dispatched for the silent PC.
 fetch_compare() {

@@ -2,7 +2,7 @@
 """Usage: scripts/ios/ios-failed-tests.py part <part> <status> <xcresult folder>
           scripts/ios/ios-failed-tests.py summary <result> <part>...
 
-A failed hosted iOS job names its failing tests (ADR 0113), as the PC's
+A failed hosted iOS job names its failing tests, as the PC's
 status does (scripts/queue-runner.sh): an error annotation
 `Failed in ci/ios (<part>): <first test> and <n> more`, or
 `Failed in ci/ios (<part>)` when it names none, and every name in the job
@@ -11,7 +11,7 @@ its one retry (`just ios-test` with MDOC_IOS_TEST_RETRY=1) keeps the job
 green but is named too: a warning annotation
 `Passed on retry in ci/ios (<part>): <test>, <test>...` (one a part, every
 test), and a list in the job summary. A name is the quarantine list's `ios:<target>/<class>/<method>`
-(.config/quarantine.txt), so ADR 0112's "same test elsewhere" rule and its
+(.config/quarantine.txt), so the "same test elsewhere" rule and its
 quarantine after two unrelated failures can read it
 (scripts/ci/ci-stats.sh reads ci/ios's annotations).
 
@@ -114,7 +114,7 @@ def report_retried(job, names):
     if path:
         with open(path, "a") as summary:
             summary.write(f"### {job}: passed on retry\n\n")
-            summary.write(f"Failed, then passed on the one retry ({len(names)}); each counts as an unrelated failure toward quarantine (ADR 0113):\n\n")
+            summary.write(f"Failed, then passed on the one retry ({len(names)}); each counts as an unrelated failure toward quarantine:\n\n")
             summary.writelines(f"- `{name}`\n" for name in names)
             summary.write("\n")
 

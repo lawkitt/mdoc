@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/quarantine.sh check|filter|android|ios|list [file]
 #
-# The quarantine list (ADR 0095), .config/quarantine.txt by default: lines of
+# The quarantine list, .config/quarantine.txt by default: lines of
 # `<test>  #<issue>  <expires YYYY-MM-DD>`, fields separated by two or more
 # spaces; `#` lines and blank lines are comments. <test> is a nextest filter,
 # or an app UI test: `android:<class>#<method>` (an instrumented test, as

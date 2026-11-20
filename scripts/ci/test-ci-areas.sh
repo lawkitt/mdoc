@@ -95,7 +95,7 @@ routes "desktop recognition" .github/actions/setup/action.yml .github/workflows/
 routes "desktop recognition" resources/pseudonymization-model.json
 routes "desktop recognition" resources/other-input.json crates/mdoc-detect/src/lib.rs
 routes desktop scripts/release/release.sh scripts/release/test-release.sh scripts/ci/quarantine.sh scripts/dev/test.sh
-# The CI machinery (ADR 0100): the script suites, not the desktop jobs.
+# The CI machinery: the script suites, not the desktop jobs.
 routes ci scripts/ci/merge-gate.sh scripts/ci/test-merge-gate.sh scripts/queue-runner.sh scripts/ci/test-queue-runner.sh scripts/ci/queue-runner-setup.ps1
 routes ci scripts/ci/ci-cache-cleanup.sh scripts/ci/ci-stats.sh scripts/ci/deny-ci.sh scripts/ci/nightly-issue.sh
 routes ci .github/workflows/ci.yml .github/workflows/ci-scripts.yml .github/workflows/merge-gate.yml .github/workflows/nightly.yml .github/workflows/main-caches.yml

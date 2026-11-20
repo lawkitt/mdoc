@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/dev/disk.sh
-# Reports the size of each worktree's target/ (ADR 0050). Reports only;
+# Reports the size of each worktree's target/. Reports only;
 # cleanup is `just retire-worktree <path>` or `cargo clean --profile dev`.
 source "$(dirname "$0")/../lib.sh"
 

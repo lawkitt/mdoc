@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/dev/retire-worktree.sh <path>
-# Removes a retired git worktree together with its Cargo target/ directories
-# (ADR 0050). The path is absolute or relative to the repository root. Refuses
+# Removes a retired git worktree together with its Cargo target/ directories.
+# The path is absolute or relative to the repository root. Refuses
 # the main worktree and any worktree with uncommitted, untracked or ignored
 # files other than target/ and .DS_Store, since `git worktree remove` would
 # delete ignored files such as dist/ or .qualification/; never forces. The

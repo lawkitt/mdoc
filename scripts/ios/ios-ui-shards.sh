@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-ui-shards.sh <shard> | --check | --plan | --classes
 # The UI test classes (mdocUITests) split over ci-ios.yml's UI parts,
-# `ci/ios (ui 1)` and `ci/ios (ui 2)` (ADR 0112), by measured time (ADR
-# 0113): `<shard>` prints that shard's classes as xcodebuild `-only-testing`
+# `ci/ios (ui 1)` and `ci/ios (ui 2)`, by measured time: `<shard>` prints that
+# shard's classes as xcodebuild `-only-testing`
 # identifiers on one line (`mdocUITests/EditToolbarUITests ...`), which
 # `just ios-test` takes as its `only` arguments. `--check` prints nothing;
 # `--plan` prints each class's shard and seconds (`1 EditModeUITests 146`,

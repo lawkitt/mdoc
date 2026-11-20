@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/android/android-survey.sh <output folder> [phone|tablet]
-# The Android UI survey (ADR 0087, 0089): SurveyTest walks every screen on
+# The Android UI survey: SurveyTest walks every screen on
 # the emulator, light, dark and at the largest font, and the screenshots are
 # copied into the folder (tablet ones prefixed "tablet-"). Boots the emulator
 # if needed (scripts/android/android-emulator.sh) and needs the core built

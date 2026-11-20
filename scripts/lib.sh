@@ -9,7 +9,7 @@ die() {
   exit 1
 }
 
-# The [package] version in Cargo.toml — the single source of truth (ADR 0037).
+# The [package] version in Cargo.toml — the single source of truth.
 version() {
   awk '
     /^\[/ { in_pkg = ($0 == "[package]") }
@@ -21,7 +21,7 @@ is_semver() {
   [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]
 }
 
-# Shipped targets (ADR 0037): macos-arm64 and windows-x64; anything else is
+# Shipped targets: macos-arm64 and windows-x64; anything else is
 # reported as-is so callers can refuse it.
 platform() {
   local os arch
@@ -50,7 +50,7 @@ confirm() {
   [[ $answer =~ ^[Yy]$ ]]
 }
 
-# Where the Android toolchain lives (ADR 0089, 0091): ~/Library/Android on
+# Where the Android toolchain lives: ~/Library/Android on
 # the Mac, ~/Android on Linux; on Windows the E: Dev Drive's E:\Android when
 # there is one, else %LOCALAPPDATA%\Android. MDOC_ANDROID_HOME overrides them.
 android_home() {
@@ -91,7 +91,7 @@ android_jdk() {
 
 # The ABI an Android emulator on this computer runs: arm64-v8a on Apple
 # Silicon, whose emulator runs no x86_64 image,
-# x86_64 elsewhere (ADR 0091).
+# x86_64 elsewhere.
 android_emulator_abi() {
   if [ "$(platform)" = macos-arm64 ]; then echo arm64-v8a; else echo x86_64; fi
 }
@@ -165,7 +165,7 @@ for r in json.load(sys.stdin)["runtimes"]:
 ' "$IOS_SIM_RUNTIME_BUILD" "$IOS_SIM_RUNTIME"
 }
 
-# --- areas (ADR 0091) ---------------------------------------------------------
+# --- areas ---------------------------------------------------------
 
 # A GitHub filter glob as an anchored extended regex: ** crosses directories,
 # * and ? do not.
@@ -252,11 +252,11 @@ changed_areas() { # table-text
 affects() { [[ " $2 " == *" $1 "* ]]; }
 
 # The jobs a queue commit needs, from its areas: macos, windows, ios,
-# android, detection, scripts (ADR 0095, ADR 0100). merge-gate.sh waits for
+# android, detection, scripts. merge-gate.sh waits for
 # these and queue.yml (scripts/ci/ci-areas.sh --queue) starts them, so the two
 # agree. The fixtures alone need only the detection gate; it decides itself
-# whether recognition changed. App-only desktop changes skip detection
-# (ADR 0113). The CI machinery needs only the script suites
+# whether recognition changed. App-only desktop changes skip detection.
+# The CI machinery needs only the script suites
 # (ci/scripts), which ci/macos runs too, so a desktop change does not add it.
 needed_jobs() { # areas
   local a=$1 out=''
@@ -290,12 +290,12 @@ diff_areas() { # from to
   git diff --no-renames --name-only -z "$1" "$2" | changed_areas "$table"
 }
 
-# Whether a PR head runs the detection gate (ADR 0100): true when one of the
+# Whether a PR head runs the detection gate: true when one of the
 # files on stdin (NUL-separated, as changed_areas reads them) takes the
 # recognition area from its own line of the table given as text, the
 # fixtures', recognition code's, resources' or gate machinery's. Core lists
 # every area, so a core change alone runs it only in the queue; app-only
-# desktop changes skip it (ADR 0113).
+# desktop changes skip it.
 # ci.yml's areas job (scripts/ci/ci-areas.sh --github) starts the head run and
 # merge-gate.sh waits for it.
 head_detection() { # table-text

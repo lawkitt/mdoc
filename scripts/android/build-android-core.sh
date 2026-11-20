@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/android/build-android-core.sh
 # Builds the mobile core (crates/mdoc-ffi) for Android and assembles what the
-# app packages (ADR 0089):
+# app packages:
 #   target/android/jniLibs/<abi>/  libmdoc_ffi.so, libonnxruntime.so, libpdfium.so
 #   target/android/kotlin/         the core's generated Kotlin bindings
 #   target/android/licenses/       ONNX Runtime's and PDFium's licences
@@ -115,7 +115,7 @@ for so in "$out"/jniLibs/*/*.so; do
 done
 
 # The same core for this computer: the app's JVM parity tests call it
-# through the same Kotlin bindings (ADR 0089).
+# through the same Kotlin bindings.
 echo "build-android-core: mdoc-ffi for this computer" >&2
 cargo rustc --locked --profile mobile -p mdoc-ffi --lib --crate-type cdylib
 cp "$cargo_target/mobile/$host_lib" "$out/host/"

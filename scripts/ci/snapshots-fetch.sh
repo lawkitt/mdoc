@@ -2,7 +2,7 @@
 # Usage: scripts/ci/snapshots-fetch.sh <pr|run> (`just snapshots-fetch`)
 #
 # Writes the detection gate's regenerated snapshots into the tree for an
-# agent to review and commit (ADR 0095): a failing `ci/detection (<k>)`
+# agent to review and commit: a failing `ci/detection (<k>)`
 # shard uploads the fresh snapshot of each stale fixture as the artifact
 # `detection-snapshots-<k>`; no workflow writes to PR branches. <pr> is a PR
 # number or URL: the newest of its runs (on its head branch or commit, or

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Usage: scripts/release/release.sh <version> [--yes] [--check-all]
 #        [--skip-checks-if-ci-green] [--no-push] [--help]
-# Makes the release commit and tag (ADR 0037): checks main is clean and
+# Makes the release commit and tag: checks main is clean and
 # current, runs the checks, sets the version, joins changes/*.md into
-# CHANGELOG's Unreleased (ADR 0072), names the CHANGELOG section for stable
+# CHANGELOG's Unreleased, names the CHANGELOG section for stable
 # versions, commits `release: v<version>`, tags, and pushes on y/N.
 source "$(dirname "$0")/../lib.sh"
 source scripts/release/release-ci.sh # lib.sh has moved to the repository root
@@ -59,7 +59,7 @@ git fetch --quiet --tags origin main
 ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "tag $tag already exists"
 [ "$new" != "$(version)" ] || die "the repository is already at $new"
 
-# Changelog fragments (ADR 0072), newest merge first: in the order commits on
+# Changelog fragments, newest merge first: in the order commits on
 # main's first-parent history added them, then any others by name.
 fragments() {
   local f

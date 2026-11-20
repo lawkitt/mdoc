@@ -29,7 +29,7 @@ check cargo-nextest "$CARGO_NEXTEST_VERSION" "$(out cargo nextest --version)"
 check cargo-packager "$CARGO_PACKAGER_VERSION" "$(out cargo packager --version)"
 check actionlint "$ACTIONLINT_VERSION" "$(out actionlint --version)"
 check shfmt "$SHFMT_VERSION" "$(out shfmt --version)"
-# Xcode installs by hand; the iOS job needs exactly this one (ADR 0091).
+# Xcode installs by hand; the iOS job needs exactly this one.
 if [ "$(uname -s)" = Darwin ]; then
   check xcode "$XCODE_VERSION" "$(out xcodebuild -version)"
   # The iOS Simulator runtime, by build (#654); scripts/ios/ios-toolchain.sh

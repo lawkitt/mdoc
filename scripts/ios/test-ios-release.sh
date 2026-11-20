@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/test-ios-release.sh
-# The iOS TestFlight scripts (ADR 0107) without Apple or GitHub: What to
+# The iOS TestFlight scripts without Apple or GitHub: What to
 # Test's checks (scripts/ios/ios-what-to-test.sh), `just release-ios` and the
 # workflow's tag checks on scratch repositories with a local origin
 # (scripts/ios/ios-release.sh), the key file from a throwaway key made here
@@ -174,7 +174,7 @@ g checkout -q "$good"
 (cd "$repo" && bash scripts/ios/ios-release.sh --check-main) >"$tmp/check" 2>&1 || fail "--check-main failed: $(cat "$tmp/check")"
 grep -qx "build=2" "$tmp/check" || fail "--check-main printed: $(cat "$tmp/check")"
 
-# The tiers by model (ADR 0120): only the 3 GB iPhone SE 2nd generation is below the floor.
+# The tiers by model: only the 3 GB iPhone SE 2nd generation is below the floor.
 for pair in iPhone12,8:below-floor iPhone12,1:detector iPhone13,3:detector iPhone14,6:detector iPhone18,2:detector; do
   [ "$(bash scripts/ios/ios-gate.sh tier "${pair%%:*}")" = "${pair#*:}" ] || fail "tier of ${pair%%:*}"
 done

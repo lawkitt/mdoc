@@ -3,15 +3,15 @@
 # (`just test`, `just test-tier <tier>`)
 #
 # The workspace tests through cargo-nextest (.config/nextest.toml), then
-# doctests, which nextest does not run (ADR 0082). mdoc-detect's lib tests
+# doctests, which nextest does not run. mdoc-detect's lib tests
 # run in one process instead, from the binary nextest built, so its rule pack
-# is built once and not in each test's process (ADR 0113). The script suites (release,
+# is built once and not in each test's process. The script suites (release,
 # CI cache cleanup, the area table, the quarantine list, the merge gate, the merge-queue runner) need no build and mostly wait on fakes and timers, so they run beside
 # the Rust tests instead of after them: about a minute off a Windows run
 # (#240). Each suite's output is printed after the Rust tests, in order; any
 # failure fails the run.
 #
-# With --tier, one test tier (ADR 0095), which CI runs as its own job:
+# With --tier, one test tier, which CI runs as its own job:
 #   unit         the crates outside the app package, without the recognition
 #                fixtures (mdoc-detect's lib tests in one process), and the
 #                doctests
@@ -20,7 +20,7 @@
 #   recognition  the recognition fixtures on their snapshots
 #   rust         unit, app, renders and recognition in one nextest run (but
 #                mdoc-detect's lib tests, after it in one process), then
-#                the doctests: the PC's ci/windows (ADR 0112), which leaves
+#                the doctests: the PC's ci/windows, which leaves
 #                the script suites to hosted Linux and macOS
 #   scripts      the script suites and the quarantine list's expiry check
 #   quarantined  only the quarantined tests (.config/quarantine.txt); reports
@@ -62,7 +62,7 @@ nextest() {
 }
 
 # mdoc-detect's lib tests in one process, so the rule pack is built once and
-# not in each test's process (ADR 0113). It runs the test binary nextest
+# not in each test's process. It runs the test binary nextest
 # built: `cargo test -p mdoc-detect` would resolve other features and rebuild
 # about 90 crates. Each quarantined test is skipped by its exact path, as
 # nextest lists it for the quarantine filter. No per-test timeout: the job's

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/desktop/keychain-launch-check.sh [/Applications/mdoc.app]
-# Release check (ADR 0045): launching mdoc never shows the macOS Keychain
+# Release check: launching mdoc never shows the macOS Keychain
 # password dialog, even when a case key exists that this build cannot read
 # silently. Run on a clean macOS user account with the signed release
 # installed and quit.

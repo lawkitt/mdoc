@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/detection-gate.sh (`just detection-gate`)
 #
-# The detection gate (ADR 0093), Windows x64 only, the reference platform's
+# The detection gate, Windows x64 only, the reference platform's
 # OS, on this machine's scores (CI runs `just recognize --check` in shards on
-# hosted windows-latest, whose scores the snapshots record; ADR 0095, ADR
-# 0113). It reruns the pinned FP16 model, read
+# hosted windows-latest, whose scores the snapshots record). It reruns the
+# pinned FP16 model, read
 # from the app data and never downloaded, over every recognition fixture
 # (`just recognize --check`): a stale snapshot, a fixture not as its status
 # says, or a model run over its 5-minute budget fails. It runs when the

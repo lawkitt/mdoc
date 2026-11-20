@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""App Store Connect steps of an iOS TestFlight build (ADR 0107).
+"""App Store Connect steps of an iOS TestFlight build.
 
 Usage:
   scripts/ios/ios-testflight.py check-auth
@@ -194,14 +194,14 @@ def ensure_in_group(api, app, build_id, name, deadline):
     if group is None:
         raise Fail(f"no beta group named {name}")
     if not group["attributes"].get("isInternalGroup"):
-        raise Fail(f"{name} is not an internal group; agents stop at internal testers (ADR 0091)")
+        raise Fail(f"{name} is not an internal group; agents stop at internal testers")
 
     def probe():
         detail = api.call("GET", f"/v1/builds/{build_id}/buildBetaDetail")["data"]["attributes"]
         state = detail.get("internalBuildState")
         log(f"internal testing: {state}")
         if state == "MISSING_EXPORT_COMPLIANCE":
-            raise Fail("the build is missing export compliance; ITSAppUsesNonExemptEncryption should answer it (ADR 0097)")
+            raise Fail("the build is missing export compliance; ITSAppUsesNonExemptEncryption should answer it")
         if state == "PROCESSING_EXCEPTION":
             raise Fail("App Store Connect reports a processing exception for the build")
         return True if in_group(api, group["id"], build_id) else None
@@ -237,7 +237,7 @@ def summary(lines):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="App Store Connect steps of an iOS TestFlight build (ADR 0107)")
+    parser = argparse.ArgumentParser(description="App Store Connect steps of an iOS TestFlight build")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("check-auth")
     finish = sub.add_parser("finish")

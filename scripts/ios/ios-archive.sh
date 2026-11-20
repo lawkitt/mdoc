@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-archive.sh archive
 #        scripts/ios/ios-archive.sh export | validate | upload
-# The iOS TestFlight build (ADR 0107); ios-release.yml runs it after the
+# The iOS TestFlight build; ios-release.yml runs it after the
 # core is built (`just ios-core`), with the build number from the full
 # history (MDOC_REQUIRE_FULL_HISTORY=1).
 #   archive   Archives the Release configuration unsigned, then signs the
@@ -63,7 +63,7 @@ do_archive() {
 build_number() { /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist"; }
 
 # options <destination>: the export options for an App Store build. Xcode
-# must not renumber the build (ADR 0091's number is the commit count).
+# must not renumber the build (its number is the commit count).
 options() {
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

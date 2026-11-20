@@ -3,7 +3,7 @@
 #        [--yes] [--no-push]
 #        scripts/ios/ios-release.sh --check-tag <tag>
 #        scripts/ios/ios-release.sh --check-main
-# Tags an iOS TestFlight build (ADR 0107): an annotated `ios-v<x.y.z>-rc.<n>`
+# Tags an iOS TestFlight build: an annotated `ios-v<x.y.z>-rc.<n>`
 # on a `main` commit that passed the iPhone 12 Pro gate (`just
 # ios-device-test`, which records the pass, scripts/ios/ios-gate.sh): HEAD,
 # which must be origin/main's tip, or --commit. No commit is made, and the
@@ -44,7 +44,7 @@ check_commit() {
   git fetch --quiet origin main
   git merge-base --is-ancestor "$1" origin/main || die "$1 is not on origin/main"
   git show "$1:$plist" | tr -d '\t\n ' | grep -q '<key>ITSAppUsesNonExemptEncryption</key><false/>' ||
-    die "$plist at $1 does not declare ITSAppUsesNonExemptEncryption NO (ADR 0097)"
+    die "$plist at $1 does not declare ITSAppUsesNonExemptEncryption NO"
 }
 
 # split_version <x.y.z>-rc.<n>: sets marketing and rc.
