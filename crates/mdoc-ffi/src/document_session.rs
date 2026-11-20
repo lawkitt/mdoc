@@ -1586,6 +1586,65 @@ mod tests {
         assert!(reopened.link_hints.is_empty());
     }
 
+    /// A merge hint only suggests: replacing, saving and reopening leave
+    /// the two people apart until the user merges them.
+    #[test]
+    fn a_merge_hint_never_merges_on_its_own() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = session("Maya Bennett met Ms Bennett.", "Letter");
+        select(&session, "Maya Bennett");
+        select(&session, "Ms Bennett");
+        let mut snapshot = session.snapshot().unwrap();
+        if snapshot.identities.len() == 1 {
+            // Propagation joined the short form: split it off.
+            snapshot = session
+                .new_alias(range_of(&snapshot, "Ms Bennett", 0))
+                .unwrap();
+        }
+        assert_eq!(snapshot.link_hints.len(), 1);
+        let replaced = session.replace_all().unwrap();
+        assert_eq!(replaced.identities.len(), 2);
+        let saved = session.save(library.clone()).unwrap();
+        assert_eq!(saved.review.identities.len(), 2);
+        assert_eq!(library.load(&saved.case.id).unwrap().identities.len(), 2);
+        let reopened = DocumentSession::new()
+            .open_document(library.clone(), saved.path)
+            .unwrap();
+        assert_eq!(reopened.identities.len(), 2);
+        assert_eq!(reopened.link_hints.len(), 1);
+    }
+
+    /// Undo history belongs to one document: opening another in the same
+    /// session leaves nothing to undo, so Undo never reaches the first
+    /// document's step.
+    #[test]
+    fn opening_another_document_starts_its_own_undo_history() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let first = session("Ann Lee wrote.", "First");
+        select(&first, "Ann Lee");
+        first.replace_all().unwrap();
+        let first_saved = first.save(library.clone()).unwrap();
+        let second = saved(&library, "Mia Fox replied.", &["Mia Fox"], "Second");
+
+        let session = DocumentSession::new();
+        session
+            .open_document(library.clone(), first_saved.path.clone())
+            .unwrap();
+        select(&session, "wrote");
+        assert!(session.snapshot().unwrap().can_undo);
+        let opened = session
+            .open_document(library.clone(), second.path.clone())
+            .unwrap();
+        assert!(!opened.can_undo);
+        assert_eq!(session.undo().unwrap().text, opened.text);
+        let first_again = DocumentSession::new()
+            .open_document(library.clone(), first_saved.path)
+            .unwrap();
+        assert_eq!(first_again.text, "PERSON_1 wrote.");
+    }
+
     /// The identity tools through the session: the category menu, owner,
     /// the alias lookup Rename's Same as uses.
     #[test]

@@ -4,6 +4,5 @@
 # file so that a PR trimming only docs and this list stays docs-only for the
 # merge queue (scripts/ci/ci-areas.txt) and runs no build jobs.
 docs/specs/desktop.md 3000
-docs/specs/mobile.md 3000
 docs/specs/recognition.md 3000
 docs/specs/release.md 3000
