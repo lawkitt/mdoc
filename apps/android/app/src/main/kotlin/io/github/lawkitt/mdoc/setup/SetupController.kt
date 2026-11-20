@@ -111,7 +111,7 @@ class SetupController(
         cancelled = false
         mutable.update { it.copy(working = true, error = null) }
         scope.launch {
-            val outcome = jobs.run(JobKind.Install, null, context.getString(R.string.downloading_models)) { observer ->
+            val outcome = jobs.run(JobKind.Install, null) { observer ->
                 observer.onCancel { cancelled = true }
                 install(observer)
             }

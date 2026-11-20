@@ -1,7 +1,9 @@
 package io.github.lawkitt.mdoc.jobs
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
+import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.AppError
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.JobObserver
@@ -19,7 +21,16 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import uniffi.mdoc_ffi.JobStage
 
-enum class JobKind { Recognize, Scan, Install }
+/**
+ * A long job, with the title its notification shows. The notification is
+ * outside the app, so the title never names a document: titles hold client
+ * names.
+ */
+enum class JobKind(@StringRes val title: Int) {
+    Recognize(R.string.recognizing_document),
+    Scan(R.string.finding_names),
+    Install(R.string.downloading_models),
+}
 
 enum class CancelReason {
     User,
@@ -31,7 +42,6 @@ enum class CancelReason {
 data class RunningJob(
     val kind: JobKind,
     val documentId: DocumentId?,
-    val title: String,
     val stage: JobStage? = null,
     /** A scan's estimate of the seconds it has left. */
     val secondsLeft: Long? = null,
@@ -73,11 +83,11 @@ class Jobs(private val context: Context) {
      * caller: a screen that closes stops waiting, but the job finishes, stops
      * its service and frees the slot.
      */
-    suspend fun <T> run(kind: JobKind, documentId: DocumentId?, title: String, work: (JobObserver) -> T): JobOutcome<T> =
-        start(kind, documentId, title, work)?.await() ?: JobOutcome.Busy
+    suspend fun <T> run(kind: JobKind, documentId: DocumentId?, work: (JobObserver) -> T): JobOutcome<T> =
+        start(kind, documentId, work)?.await() ?: JobOutcome.Busy
 
-    fun <T> start(kind: JobKind, documentId: DocumentId?, title: String, work: (JobObserver) -> T): Deferred<JobOutcome<T>>? {
-        val job = RunningJob(kind, documentId, title)
+    fun <T> start(kind: JobKind, documentId: DocumentId?, work: (JobObserver) -> T): Deferred<JobOutcome<T>>? {
+        val job = RunningJob(kind, documentId)
         if (!running.compareAndSet(null, job)) return null
         val token = Token(
             onStage = { stage -> running.value = running.value?.copy(stage = stage) },
@@ -90,7 +100,7 @@ class Jobs(private val context: Context) {
                 // A foreground service starts only while mdoc is on screen;
                 // refused, the job does not run.
                 LongJobService.wanted = true
-                ContextCompat.startForegroundService(context, LongJobService.start(context, title))
+                ContextCompat.startForegroundService(context, LongJobService.start(context, kind))
                 // Written first: a process Android ends mid-job leaves it behind.
                 saveInterrupted(InterruptedJob(kind, documentId))
                 val result = withContext(Dispatchers.IO) { runCatching { work(token) } }
