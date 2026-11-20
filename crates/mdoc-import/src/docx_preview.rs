@@ -306,7 +306,7 @@ pub fn render_with_executable(
     thread::Builder::new()
         .spawn(move || {
             if let Some(mut stdin) = stdin {
-                let _ = std::io::Write::write_all(&mut stdin, &input);
+                let _ = std::io::Write::write_all(&mut stdin, input.as_ref());
             }
         })
         .map_err(|e| PreviewError::Render(format!("no thread to feed the worker: {e}")))?;

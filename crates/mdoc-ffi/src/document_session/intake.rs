@@ -72,6 +72,7 @@ pub(super) fn import_file(
         });
         let imported = mdoc_import::import::prepare_cancellable(
             wrapped.path(),
+            None,
             installed.as_ref(),
             false,
             cancel,
@@ -94,6 +95,7 @@ pub(super) fn import_file(
         match kept {
             Some(kept) => mdoc_import::resume::prepare_resumable(
                 path,
+                None,
                 installed,
                 options.native_text_only,
                 cancel,
@@ -109,6 +111,7 @@ pub(super) fn import_file(
             None => (
                 mdoc_import::import::prepare_cancellable(
                     path,
+                    None,
                     installed,
                     options.native_text_only,
                     cancel,

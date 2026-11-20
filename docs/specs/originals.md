@@ -24,6 +24,9 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 ## DOCX rendering
 
+- A password-protected DOCX shows no rendering, even unlocked: docxide
+  renders to a temporary PDF, which would be an unlocked copy on disk. Its
+  comments count in the left-out line instead.
 - docxide is bumped at the start of each desktop milestone, with the DOCX
   fidelity check; no fork unless a patch is unavoidable.
 - Upstream docxide issues carry synthetic fixtures only, never a user's

@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
     sync::{
-        Arc, OnceLock,
+        OnceLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
@@ -166,7 +166,7 @@ impl Drop for Running {
 
 /// Converts a document's `bytes` in `executable`'s worker mode.
 pub fn convert_with_executable(
-    bytes: impl Into<Arc<[u8]>>,
+    bytes: impl AsRef<[u8]> + Send + 'static,
     extension: Option<&str>,
     cancel: &AtomicBool,
     executable: &Path,
@@ -179,7 +179,7 @@ pub fn convert_with_executable(
 /// caller (tests set its environment); the worker's arguments, stdio and
 /// window flags are added here.
 pub fn convert_with_command(
-    bytes: impl Into<Arc<[u8]>>,
+    bytes: impl AsRef<[u8]> + Send + 'static,
     extension: Option<&str>,
     cancel: &AtomicBool,
     mut command: Command,
@@ -213,11 +213,10 @@ pub fn convert_with_command(
         ImportError::ConverterFailed(format!("no thread to supervise the worker: {error}"))
     };
     let stdin = worker.0.stdin.take();
-    let bytes = bytes.into();
     let feeder = thread::Builder::new()
         .spawn(move || {
             if let Some(mut stdin) = stdin {
-                let _ = stdin.write_all(&bytes);
+                let _ = stdin.write_all(bytes.as_ref());
             }
         })
         .map_err(no_thread)?;

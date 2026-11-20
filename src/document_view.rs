@@ -40,6 +40,8 @@ mod document_lifecycle;
 use document_lifecycle::LifecycleEffect;
 mod import_flow;
 use import_flow::ImportEffect;
+#[cfg(test)]
+pub(crate) use import_flow::PasswordPrompt;
 pub(crate) mod save_prompt;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -192,6 +194,9 @@ pub(crate) struct DocumentView {
     /// Converting the source to Markdown, OCR consent and setup.
     pub(crate) import: import_flow::ImportFlow,
     pub(crate) markdown_search: Entity<markdown_search::SearchInput>,
+    /// The conversion card's field for a locked document's password: what
+    /// it holds goes to one conversion on Unlock and is wiped.
+    pub(crate) password_field: Entity<markdown_search::SearchInput>,
     /// The Replace row's field; its text stays with the tab.
     pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
     pub(crate) search: search_session::SearchSession,
@@ -270,6 +275,13 @@ impl DocumentView {
                 .with_theme(dependencies.theme.clone())
                 .with_key_context("MarkdownReplace")
                 .with_placeholder("Replace with")
+        });
+        let password_field = cx.new(|cx| {
+            markdown_search::SearchInput::new(cx)
+                .with_theme(dependencies.theme.clone())
+                .with_key_context("DocumentPassword")
+                .with_placeholder("Password")
+                .secure()
         });
         let scroll = ScrollHandle::new();
         let editor = cx.new(|cx| {
@@ -397,6 +409,7 @@ impl DocumentView {
                 dependencies.input_languages,
             ),
             markdown_search,
+            password_field,
             markdown_replace,
             search: search_session::SearchSession::default(),
             ocr_setup_subscription: None,
@@ -720,6 +733,8 @@ impl DocumentView {
                     self.preview.show();
                 } else if imported.is_pdf {
                     self.open_pdf(imported.source.path, window, cx);
+                } else if imported.is_docx && imported.decrypted {
+                    self.preview.unlocked_docx(imported.source.path);
                 } else if imported.is_docx {
                     self.open_docx(imported.source.path, window, cx);
                 } else {
@@ -854,6 +869,7 @@ impl DocumentView {
                 }
                 ImportEffect::Run {
                     path,
+                    password,
                     installed,
                     skip_ocr,
                     permit,
@@ -863,8 +879,10 @@ impl DocumentView {
                     self.error = None;
                     let generation = self.session.generation;
                     let task = cx.background_executor().spawn(async move {
+                        // The password lives only as long as this run.
                         let result = import::prepare_cancellable(
                             &path,
+                            password.as_ref(),
                             installed.as_ref(),
                             skip_ocr,
                             &cancel,
@@ -1030,10 +1048,93 @@ impl DocumentView {
         self.carry_out_import(effect, window, cx);
     }
 
+    /// Unlock on the conversion card: the field's text goes to one
+    /// conversion as the document's password and is wiped from the field.
+    fn unlock_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.import.can_unlock() || self.lifecycle.prompting() {
+            return;
+        }
+        let password = self
+            .password_field
+            .update(cx, |field, cx| field.take_secret(cx));
+        if password.is_empty() {
+            return;
+        }
+        let effect = self.import.unlock(import::Password::from(password));
+        self.carry_out_import(effect, window, cx);
+    }
+
     /// The last conversion ended because Cancel was pressed (#950): a state
     /// the user chose, so the tab shows no error mark for it.
     pub(crate) fn conversion_cancelled(&self) -> bool {
         self.error.as_deref() == Some(&*mdoc_import::import::ImportError::Cancelled.to_string())
+    }
+
+    /// The conversion card for a locked document: its password, asked for
+    /// first or again after a wrong one. Unlocking converts it in memory.
+    fn password_card(
+        &mut self,
+        card: gpui::Stateful<gpui::Div>,
+        prompt: import_flow::PasswordPrompt,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let field_focus = self.password_field.read(cx).focus_handle(cx);
+        if std::mem::take(&mut self.focus_card)
+            && (self.focus.contains_focused(window, cx) || window.focused(cx).is_none())
+        {
+            let focus = field_focus.clone();
+            window.defer(cx, move |window, cx| window.focus(&focus, cx));
+        }
+        let can_unlock = self.import.can_unlock();
+        card.child(ui::card_title("This document is password-protected"))
+            .child(ui::card_text(
+                "Enter its password to convert it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.",
+                theme,
+            ))
+            .when(prompt == import_flow::PasswordPrompt::Wrong, |v| {
+                v.child(ui::card_error(
+                    mdoc_import::import::ImportError::WrongPassword.to_string(),
+                    theme,
+                ))
+            })
+            .child(
+                ui::card_actions()
+                    .flex_nowrap()
+                    .child(
+                        div()
+                            .id("document-password")
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "document-password".into())
+                            })
+                            .flex_1()
+                            .min_w_0()
+                            .border_1()
+                            .rounded_md()
+                            .border_color(theme.pdf_style().border)
+                            .bg(theme.pdf_style().bg)
+                            .px_2()
+                            .py_1()
+                            // Enter unlocks, as the button does.
+                            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                                let keystroke = &event.keystroke;
+                                if keystroke.key == "enter" && !keystroke.modifiers.modified() {
+                                    cx.stop_propagation();
+                                    this.unlock_document(window, cx);
+                                }
+                            }))
+                            .child(self.password_field.clone()),
+                    )
+                    .child(
+                        ui::primary_button("unlock-document", "Unlock", theme, can_unlock)
+                            .when(cfg!(test), |v| v.debug_selector(|| "unlock-document".into()))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.unlock_document(window, cx);
+                            })),
+                    ),
+            )
+            .into_any_element()
     }
 
     /// The Markdown pane before conversion: one card that changes in place
@@ -1065,6 +1166,13 @@ impl DocumentView {
                     .text_ellipsis()
                     .child(self.display_name()),
             );
+        if let Some(prompt) = self
+            .import
+            .password_prompt()
+            .filter(|_| !self.import.busy())
+        {
+            return self.password_card(card, prompt, window, cx);
+        }
         let Some(pages) = self.import.ocr_required().map(<[u32]>::to_vec) else {
             let cancelled = self.conversion_cancelled();
             let running = self.import.busy();

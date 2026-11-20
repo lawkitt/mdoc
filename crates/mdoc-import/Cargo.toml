@@ -21,6 +21,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 url = "2"
+# Unlocks password-protected DOCX, XLSX and PPTX in memory; pinned in the
+# workspace manifest.
+craft-offcrypto = { workspace = true }
+# The password and an unlocked document's bytes are wiped when dropped.
+zeroize = "1"
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
 # C API 17, which 1.17 and later serve: 1.32.0 downloaded on desktop
 # (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS,

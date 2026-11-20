@@ -19,12 +19,13 @@ pub fn converted(source: PathBuf) -> Imported {
         annotations: Vec::new(),
         is_pdf: false,
         is_docx: false,
+        decrypted: false,
     }
 }
 
 /// Import `path` without OCR, as a document open would before OCR consent.
 pub fn convert(path: &Path) -> Result<Imported, import::ImportError> {
-    import::prepare_cancellable(path, None, true, &AtomicBool::new(false))
+    import::prepare_cancellable(path, None, None, true, &AtomicBool::new(false))
 }
 
 /// Whether a closed preview's file is gone, allowing for the cleanup thread

@@ -235,11 +235,14 @@ impl PreviewState {
         if self.unread_annotations.as_ref() == Some(&source.path) {
             self.unread_annotations = None;
         }
-        // Past its limit the preview refuses the file, so none are kept.
+        // Past its limit the preview refuses the file, so none are kept;
+        // nor are a locked file's unlocked bytes, which the preview would
+        // render to a temporary file.
         let docx = (source
             .path
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"))
+            && !source.unlocked()
             && source.bytes().len() as u64 <= docx_preview::MAX_INPUT_BYTES)
             .then(|| source.clone());
         self.imported_comments = source.stamp.map(|stamp| ImportedComments {
@@ -360,6 +363,18 @@ impl PreviewState {
         self.attachment = Some(path.clone());
         self.source = Some(path);
         self.message = Some(NO_PREVIEW.into());
+    }
+
+    /// A locked DOCX this session unlocked: no preview renders it, since
+    /// that would write the unlocked document to a temporary file. It reads
+    /// as the locked file's own preview failure, so the left-out line
+    /// counts its comments.
+    pub(super) fn unlocked_docx(&mut self, path: PathBuf) {
+        self.attachment = Some(path.clone());
+        self.source = Some(path);
+        self.retryable = false;
+        self.failed = true;
+        self.message = Some(docx_message(&PreviewError::Encrypted).into());
     }
 
     /// A source without a preview was checked for `generation`; it is
@@ -998,8 +1013,10 @@ pub(crate) fn docx_message(error: &PreviewError) -> &'static str {
             "This DOCX is too large to preview. Previews take files up to 50 MB."
         }
         PreviewError::MacrosNotSupported => "DOCX files with macros can't be previewed.",
+        // The preview renders to a temporary file, which would hold the
+        // unlocked document.
         PreviewError::Encrypted => {
-            "This DOCX is password-protected. Open an unlocked copy to preview it."
+            "Password-protected DOCX files aren’t previewed, so no unlocked copy is written to disk."
         }
         PreviewError::TrackedChangesNotSupported => {
             "DOCX files with tracked changes can't be previewed. Accept or reject the changes in Word first."

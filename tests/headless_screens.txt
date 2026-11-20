@@ -59,6 +59,8 @@ model-comparison
 conversion-failed
 conversion-cancelled
 ocr-consent
+import-password
+import-password-wrong
 import-comments-note
 import-hidden-note
 restored-reply
