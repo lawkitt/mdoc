@@ -10,7 +10,9 @@ what each piece does; this page says how they fit and why.
   after a 5-minute wait, two groups at a time, each on `main` plus the PRs
   ahead of it.
 - One diff decides every job: what a queue commit brings onto its merge
-  base with `main`, routed by the commit's own `ci-areas.txt`. `queue.yml`
+  base with `main`, routed by the commit's own `ci-areas.txt` (except a
+  queue commit whose own change is docs only: see
+  [ci.md](../../docs/specs/ci.md)). `queue.yml`
   (`ci-areas.sh --queue`), the PC's runners and `merge-gate.sh` all read
   it, so a job one skips, the others do not wait for.
 - `merge-gate.sh` alone posts the verdict. `merge-gate.yml` runs `main`'s

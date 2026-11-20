@@ -29,8 +29,8 @@ cargo test --locked --manifest-path tools/pseudonymization/Cargo.toml
 ```
 
 `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D warnings`
-take the same three manifests; the `gliner2` one also with
-`--features ocr-compat`.
+take the same three manifests; the `gliner2` one's clippy also takes
+`--features ocr-compat`, before `--`.
 
 ## Setup
 

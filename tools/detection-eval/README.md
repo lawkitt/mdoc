@@ -50,6 +50,8 @@ The verdict rule (what "listed" means) is in `report.py`.
 
 ## Where to look for new candidates
 
+Every rerun on new releases starts with this search.
+
 - The PIIMB leaderboard:
   [piimb/pii-masking-benchmark-leaderboard](https://huggingface.co/spaces/piimb/pii-masking-benchmark-leaderboard).
   Its synthetic English sets do not predict our real set, so treat it as a
@@ -77,8 +79,9 @@ language.
 
 ## What the numbers mean
 
-- **Harness windows.** Every model reads the same windows, after the app's
-  `windows.rs`. The app also decodes character references and rewrites
+- **Harness windows.** Every model starts from the same window plan, after
+  the app's `windows.rs`, and each adapter halves a window until its `fits`
+  accepts it, so two models can see different context. The app also decodes character references and rewrites
   `L.L.C.` for GLiNER2's word budget; the harness does not, so the
   `gliner2-pii` row (PyTorch, harness windows) beside `default` (the app)
   shows how much the harness itself moves the scores.

@@ -44,8 +44,8 @@ as inline bold, not a heading; the table's cell text is kept.
   (`tests/fixtures/{docx,rtf,doc}`), made by `hidden_docx`, `hidden_rtf`
   and `hidden_doc` in its `tests/gen_fixtures.py`; expected Markdown is its
   snapshots without Insta metadata. Every hidden word is `SECRET-*`.
-- `handmade-comments.*` and `text_annotations.pdf` come from the AnyDoc and
-  pdf-inspector forks' own fixtures (both MIT).
+- `handmade-comments.*`: byte-for-byte from AnyDoc `5e22f0a2`'s fixtures;
+  `text_annotations.pdf` from pdf-inspector `957693f5`'s (both MIT).
 
 Broader symbol and revision edge cases stay in the AnyDoc fork's tests.
 
