@@ -609,7 +609,7 @@ struct DocumentScreen: View {
             }
             if let prompt = model.passwordPrompt, model.runningJob == nil {
                 // Unlock is the view's one primary button while it asks.
-                PasswordCard(prompt: prompt, maxWordsHeight: screenHeight * 0.18) { password in
+                PasswordCard(prompt: prompt) { password in
                     await model.unlock(password: password)
                 }
             } else if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {

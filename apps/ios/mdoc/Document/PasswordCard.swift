@@ -5,48 +5,43 @@ import SwiftUI
 /// that uses it; the field is emptied then, and after a wrong one.
 struct PasswordCard: View {
     let prompt: DocumentViewModel.PasswordPrompt
-    /// The tallest the card's words grow at accessibility sizes; past it
-    /// they scroll, so the field and Unlock stay on screen above the
-    /// keyboard and the card stays under the toolbar.
-    var maxWordsHeight: CGFloat = 200
     let unlock: @MainActor (String) async -> Void
     @State private var password = ""
     @FocusState private var focused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// Four lines of the card's words at its largest text size
+    /// (accessibility2): at accessibility sizes they scroll in this much
+    /// room, so the whole card fits between the panes row and the keyboard.
+    static let wordsHeight = UIFont.preferredFont(
+        forTextStyle: .subheadline, compatibleWith: UITraitCollection(preferredContentSizeCategory: .accessibilityLarge)
+    ).lineHeight * 4
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Whole at every size: never in the scrolling area.
+            Label("This document is password-protected", systemImage: "lock")
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
             if dynamicTypeSize.isAccessibilitySize {
                 ScrollView {
-                    words
+                    VStack(alignment: .leading, spacing: 12) {
+                        // First, so it shows without scrolling.
+                        wrongLine
+                        promise
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                // The error line over the field takes some of the words' room:
-                // they were read on the first try.
-                .frame(height: prompt == .wrong ? maxWordsHeight * 0.6 : maxWordsHeight)
+                .frame(height: Self.wordsHeight)
                 .scrollIndicators(.visible)
                 .scrollIndicatorsFlash(onAppear: true)
+                .scrollIndicatorsFlash(trigger: prompt)
                 .accessibilityIdentifier("password-words")
             } else {
-                words
+                promise
+                wrongLine
             }
-            // Over the field, never scrolled away with the words.
-            if prompt == .wrong {
-                Label {
-                    Text("The password is incorrect. Check it and try again.")
-                } icon: {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundStyle(Palette.warning)
-                }
-                .font(.subheadline)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("password-wrong")
-            }
-            // Side by side, the field leaves the button no room at
-            // accessibility sizes.
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-                : AnyLayout(HStackLayout(spacing: 12))
-            layout {
+            HStack(spacing: 12) {
                 SecureField("Password", text: $password)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -60,6 +55,7 @@ struct PasswordCard: View {
                     .accessibilityIdentifier("document-password")
                 Button("Unlock", action: submit)
                     .primaryAction()
+                    .fixedSize()
                     .disabled(password.isEmpty)
                     .accessibilityIdentifier("unlock-document")
             }
@@ -72,17 +68,28 @@ struct PasswordCard: View {
         .onChange(of: prompt) { focused = true }
     }
 
-    private var words: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("This document is password-protected", systemImage: "lock")
-                .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Enter its password to import it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    /// The privacy promise: always on the card, scrolled to at the largest
+    /// sizes.
+    private var promise: some View {
+        Text("Enter its password to import it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var wrongLine: some View {
+        if prompt == .wrong {
+            Label {
+                Text("The password is incorrect. Check it and try again.")
+            } icon: {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(Palette.warning)
+            }
+            .font(.subheadline)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("password-wrong")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func submit() {
