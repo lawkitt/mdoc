@@ -1,12 +1,12 @@
 //! What the library keeps beside each document that neither its file nor
 //! its case holds: whether it was scanned, so a scan that found nothing
-//! reopens as scanned (ADR 0104), and for its summary the review's counts
+//! reopens as scanned, and for its summary the review's counts
 //! at its last save or open, the file as it was then, and when it was last
 //! opened, so lists need not open each document. `documents.json` at the root, keyed as
 //! cases name members (`Library::member`): file paths, whose names are the
 //! documents' titles and can hold originals, as the files' own names do.
 //! It holds no text and nothing more of a document but how it began, when
-//! it began in mdoc (ADR 0109: a new document, the sample). Written under the
+//! it began in mdoc (a new document, the sample). Written under the
 //! library's write lock; entries whose file is gone (removed outside the
 //! app, or by desktop) go when the library lists its documents.
 use super::{Library, WriteLock};

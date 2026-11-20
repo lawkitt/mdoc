@@ -25,7 +25,7 @@ pub struct DiscoveryInput {
     /// Case numbers: a repeat counts only standing alone, never inside a
     /// longer identifier or number, nor as an amount ([`whole_value`]).
     pub(super) whole: Vec<bool>,
-    /// Web addresses (ADR 0094): a mention is a whole address
+    /// Web addresses: a mention is a whole address
     /// ([`crate::web::whole`]), and one shields the names, emails and IDs inside it
     /// even when kept.
     pub(super) url: Vec<bool>,

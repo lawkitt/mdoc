@@ -1813,7 +1813,7 @@ guess = [
     '(?i)\s*\d{1,2}-(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)-(?:\d{2}|\d{4})\s*',
 ]
 
-# Claim and case numbers after their label (ADR 0092): "Claim No.
+# Claim and case numbers after their label: "Claim No.
 # 6001842/2026", "**Case number:** 2026/314", "Case No. 1:26-cv-01234-JAB",
 # "Claim No CL-2026-000123". The value is the whole identifier. Statute,
 # article and clause numbers have no such label and stay unmarked. A value
@@ -2198,7 +2198,7 @@ pattern = '(?P<lead>\b(?:{maker})[\p{Zs}\t]+[A-Z0-9][A-Za-z0-9-]*(?:[\p{Zs}\t]+[
 parts.maker = 'Boeing|BOEING|Airbus|AIRBUS|Embraer|EMBRAER|Bombardier|BOMBARDIER|Cessna|CESSNA|Gulfstream|GULFSTREAM|Learjet|LEARJET|Beechcraft|BEECHCRAFT|Dassault|DASSAULT|Pilatus|PILATUS|Cirrus|CIRRUS|Sikorsky|SIKORSKY|ATR'
 parts.mark = 'N[1-9]\d{0,4}[A-HJ-NP-Z]{0,2}|(?:[A-Z]{1,2}|[2-9][A-Z]|[A-Z][2-9])-[A-Z]{3,4}'
 
-# Addresses (ADR 0092, issues #361, #498): from the first element, a
+# Addresses (issues #361, #498): from the first element, a
 # building name included, to the postcode or town: "Flat 3, 41 Larch Road,
 # Bristol BS6 9ZY", "123 Main Street, Apt 4, Boston, MA 02110", "27 Wisp
 # Lane<br>Norwich NR2 8ZZ". Two elements at least, so a number before "High
@@ -2252,7 +2252,7 @@ parts.mark = 'N[1-9]\d{0,4}[A-HJ-NP-Z]{0,2}|(?:[A-Z]{1,2}|[2-9][A-Z]|[A-Z][2-9])
 # street after it ("Harrow House Ltd agreed", "Harrow House agreed") or
 # not ending in a building word ("Tower Records") stays a company.
 #
-# The shapes of #498's third round (ADR 0108):
+# The shapes of #498's third round:
 # - A city, a state and a ZIP with no street are an address (guide rule 3,
 #   #506 item 6), on a line of their own or after a body's name ("Bureau of
 #   Records, Haddon, VA 20170": the name stays out): the last form. Its
@@ -2609,7 +2609,7 @@ words = ["unit"]
 anywhere_in = ["BANK", "IDENTITY"]
 last_word_of = ["ORG"]
 
-# Dates of birth (ADR 0092): a date after born, DOB or date of birth is a
+# Dates of birth: a date after born, DOB or date of birth is a
 # personal date ("born 14 March 1988", "**DOB:** 23 September 1991"). Every
 # other date stays: signing, deadlines, hearings. The value must be one the
 # DATE guesses take. The label may be in the cell before or on the line
@@ -2656,7 +2656,7 @@ value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}-\p{Alphabetic}+
 only_guessed = ["DATE"]
 
 # English-speaking courts, public bodies, laws and legal databases are never
-# web addresses to replace (ADR 0094, guide rule 8): "www.gov.uk/…",
+# web addresses to replace (guide rule 8): "www.gov.uk/…",
 # "https://www.legislation.gov.uk/ukpga/2018/12" (every "*.gov.uk"; US
 # courts are "*.gov"). Justia and FindLaw also host lawyers' profiles, so
 # only their case-law hosts are listed.

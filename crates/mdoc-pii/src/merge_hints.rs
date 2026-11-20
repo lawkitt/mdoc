@@ -1,4 +1,4 @@
-//! Merge hints (ADR 0080): two identities that very likely name the same
+//! Merge hints: two identities that very likely name the same
 //! subject. A hint is shown, never applied; nothing links without a click.
 use super::{
     Category, Review,
@@ -137,7 +137,7 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
     }
 
     // First name + patronymic, or a surname with every initial matching,
-    // with one candidate full name (ADR 0092).
+    // with one candidate full name.
     let people = People::new(
         all()
             .filter(|(_, category, _)| *category == Category::Person)
@@ -361,7 +361,7 @@ fn one_edit(a: &str, b: &str) -> bool {
 
 impl Review {
     /// Merge hints between the identities this document still replaces, in
-    /// identity order (ADR 0080).
+    /// identity order.
     pub fn merge_hints(&self) -> Vec<MergeHint> {
         let identities: Vec<_> = self
             .export_identities_with_ids()

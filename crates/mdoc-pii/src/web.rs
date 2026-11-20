@@ -1,4 +1,4 @@
-//! Where a web address starts and ends (ADR 0094). The detector
+//! Where a web address starts and ends. The detector
 //! (`mdoc_detect`) and discovery share these rules, so a repeat of a known
 //! address counts exactly where a scan would have found that address, and
 //! nowhere inside a longer one.

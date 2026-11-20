@@ -1,4 +1,4 @@
-//! "What you did" (ADR 0079): the document's pseudonymization decisions, each
+//! "What you did": the document's pseudonymization decisions, each
 //! marking the undo point it created. Memory only: entries name originals, so
 //! nothing here is serializable, and the log lives as long as its tab.
 use super::{Category, Review};
@@ -34,7 +34,7 @@ pub enum Decision {
     /// Kept mentions proposed for replacement again.
     Repropose(Mentions),
     UndoReplacement(Mentions),
-    /// Marks taken off with no trace (ADR 0122).
+    /// Marks taken off with no trace.
     NotAName(Mentions),
     Rename {
         original: Arc<str>,
@@ -245,7 +245,7 @@ impl DecisionLog {
         path.steps_to(entry.history)
     }
     /// The wordings this document's manual marks put on its case's Always
-    /// list (ADR 0092), each in the category it was marked in: every mark
+    /// list, each in the category it was marked in: every mark
     /// still done, or past the undo limit, oldest first. Undoing a mark
     /// takes it off.
     pub fn marked<'a>(
@@ -263,8 +263,8 @@ impl DecisionLog {
 }
 
 impl Review {
-    /// The wordings this document's Keeps put on its case's Never list (ADR
-    /// 0092): the kept wordings of each identity with no mention still
+    /// The wordings this document's Keeps put on its case's Never list: the
+    /// kept wordings of each identity with no mention still
     /// proposed or replaced, so keeping one mention of a name lists
     /// nothing. A kept mention outside any identity counts once no mention
     /// of its wording is proposed or replaced. Follows undo, as the kept

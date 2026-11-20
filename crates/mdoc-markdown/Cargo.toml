@@ -8,12 +8,12 @@ publish = false
 repository = "https://github.com/lawkitt/mdoc"
 
 # No GUI framework: the desktop editor and the mobile apps each map span
-# kinds to their own colours and fonts (ADR 0085). `just lint` keeps gpui out
-# of this crate's tree (ADR 0069).
+# kinds to their own colours and fonts. `just lint` keeps gpui out
+# of this crate's tree.
 [dependencies]
 # HTML named-entity data for decoding `&amp;`-style entities in spans.
 entities = "1"
-# Tokenizes the HTML an AI app's Copy puts on the clipboard (ADR 0105).
+# Tokenizes the HTML an AI app's Copy puts on the clipboard.
 html5ever = "0.40"
 
 [lints]

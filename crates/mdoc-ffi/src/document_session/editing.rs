@@ -1,4 +1,4 @@
-//! Edit mode (ADR 0109): typed edits from the phone's text view, as
+//! Edit mode: typed edits from the phone's text view, as
 //! "Typing" steps in the one undo line (`review/typing.rs`), and discovery
 //! once the typing pauses. Each edit returns a small `Typed`, never the
 //! whole snapshot: the view already shows the text. The save that follows

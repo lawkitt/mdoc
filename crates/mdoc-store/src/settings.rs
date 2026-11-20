@@ -1,7 +1,7 @@
 //! Application preferences only. No document text, QA results or replacement maps.
 //! The user's spelling dictionary is a word list beside the settings file.
 //! Models are plain IDs here; their manifests, languages and downloads live
-//! with their engines (ADR 0069).
+//! with their engines.
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
@@ -73,7 +73,7 @@ impl From<io::Error> for DictionaryError {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OcrModel {
     Cyrillic,
-    /// English-first default (ADR 0026).
+    /// English-first default.
     #[default]
     V6Small,
 }
@@ -220,7 +220,7 @@ impl Default for PiiConfig {
         }
     }
 }
-/// Spellcheck choices (ADR 0036). The per-document switch is session-only
+/// Spellcheck choices. The per-document switch is session-only
 /// and lives in the document view, not here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -253,7 +253,7 @@ impl SpellingConfig {
         })
     }
 }
-/// Update check choices (ADR 0038). Pre-release builds include pre-releases
+/// Update check choices. Pre-release builds include pre-releases
 /// regardless of `include_prereleases`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -269,7 +269,7 @@ impl Default for UpdatesConfig {
         }
     }
 }
-/// Saved-case choices (ADR 0041).
+/// Saved-case choices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CasesConfig {
@@ -287,7 +287,7 @@ impl Default for CasesConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GeneralConfig {
-    /// "Show mdoc in the menu bar" (ADR 0084, macOS): the shelf, and mdoc
+    /// "Show mdoc in the menu bar" (macOS): the shelf, and mdoc
     /// keeps running after its last window closes. On by default; the
     /// default, the first-close note and this switch are the consent to
     /// keep running.
@@ -334,7 +334,7 @@ impl GeneralConfig {
         *self == Self::default()
     }
 }
-/// Settings › Detection › Categories to detect (ADR 0076): scans of
+/// Settings › Detection › Categories to detect: scans of
 /// documents without a case skip these, and a new case's list starts here.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -614,7 +614,7 @@ pub fn is_latest_write(write: u64) -> bool {
 /// Save `prefs` as write `write` of [`next_write`], unless a later write
 /// was started meanwhile; `Ok(false)` when skipped. An older Settings save
 /// still running can then never land over a newer choice (the menu bar
-/// shelf's notes save while the panel may be saving, ADR 0084).
+/// shelf's notes save while the panel may be saving).
 pub fn save_in_order(path: &Path, prefs: &Preferences, write: u64) -> Result<bool, SettingsError> {
     let _guard = PREFS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
     if PREFS_LATEST.load(Ordering::SeqCst) != write {

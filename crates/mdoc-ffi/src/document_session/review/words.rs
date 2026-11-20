@@ -1,4 +1,4 @@
-//! A name's words (ADR 0114): what Hide name hides for a selection, and Fix
+//! A name's words: what Hide name hides for a selection, and Fix
 //! the words, which moves a found name's span and puts the new wording in
 //! the old one's place everywhere it fits, keeping the identity and its
 //! alias, as one undo step. `mdoc_pii::fix_words` decides; this drives the
@@ -110,7 +110,7 @@ impl ReviewText {
         let target = fix_words::words_target(&draft.text, words, &draft.blocked)
             .map_err(CoreError::review)?;
         // The words stay the name's: some of it, within the reach of its
-        // handles (ADR 0114).
+        // handles.
         if target.start >= draft.wording.end || draft.wording.start >= target.end {
             return Err(CoreError::review("Keep some of the name's words."));
         }

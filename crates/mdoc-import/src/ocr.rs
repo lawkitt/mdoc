@@ -186,7 +186,7 @@ pub struct Measured {
 pub fn title(model: OcrModel) -> String {
     crate::recognition::label(languages(model))
 }
-/// The recognition languages the bundle reads (ADR 0065).
+/// The recognition languages the bundle reads.
 pub fn languages(model: OcrModel) -> &'static [Language] {
     match model {
         OcrModel::V6Small => &[ENGLISH],
@@ -545,7 +545,7 @@ fn resolve_models(
     Ok((installed, models))
 }
 
-/// The PDFium and ONNX Runtime that ship inside the iOS app (ADR 0085): no
+/// The PDFium and ONNX Runtime that ship inside the iOS app: no
 /// runtime is downloaded there.
 #[cfg(target_os = "ios")]
 #[derive(Clone, Debug)]

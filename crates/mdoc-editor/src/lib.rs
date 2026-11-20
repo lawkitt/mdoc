@@ -124,7 +124,7 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 /// The editor's key bindings on macOS (`mac`) or Windows and Linux. Taking the
-/// platform as an argument lets tests on any OS check both sets (ADR 0061).
+/// platform as an argument lets tests on any OS check both sets.
 pub fn key_bindings(mac: bool) -> Vec<KeyBinding> {
     let ctx = Some(CONTEXT);
     let mut bindings = vec![
@@ -628,7 +628,7 @@ pub struct EditorState {
     rtl_rows: Vec<Option<RtlRow>>,
     last_bounds: Option<Bounds<Pixels>>,
     line_height: Pixels,
-    /// The host scroll view this editor keeps its caret visible in (ADR 0054).
+    /// The host scroll view this editor keeps its caret visible in.
     autoscroll: Option<ScrollHandle>,
     /// A keyboard change moved the caret: reveal it after the next paint.
     reveal_caret: bool,
@@ -667,7 +667,7 @@ pub struct EditorState {
     /// The target x for vertical (Up/Down) movement, so the caret keeps its
     /// column across short lines. `Some` only during a run of Up/Down.
     goal_x: Option<Pixels>,
-    /// Upstream caret affinity (ADR 0061): the caret offset and content
+    /// Upstream caret affinity: the caret offset and content
     /// generation it was set for. A caret on a soft-wrap boundary draws at
     /// the upper row's end while this matches, else at the lower row's
     /// start; any other caret move or edit drops it.
@@ -954,7 +954,7 @@ impl EditorState {
     }
 
     /// Keep the caret visible in the host's scroll view: keyboard moves fit
-    /// it with context, and a held selection drag scrolls at the edges (ADR 0054).
+    /// it with context, and a held selection drag scrolls at the edges.
     pub fn set_autoscroll(&mut self, scroll: ScrollHandle) {
         self.autoscroll = Some(scroll);
     }
@@ -1765,8 +1765,8 @@ impl EditorState {
         Some((source(left), source(right)))
     }
 
-    /// A table cell holding the caret: its source range (ADR 0061 keeps the
-    /// line moves inside it).
+    /// A table cell holding the caret: its source range (line moves
+    /// stay inside it).
     fn caret_table_cell(&self) -> Option<Range<usize>> {
         let (row, col) = self.row_col(self.cursor_offset());
         let t = self.table_rows.get(row).and_then(Option::as_ref)?;
@@ -2626,10 +2626,10 @@ impl EditorState {
 
     /// A compact pill just above the settled selection's end (below it near
     /// the window top) offering the host's selection action. It lives only
-    /// while the selection is held, so it may cover the line above (ADR 0055).
+    /// while the selection is held, so it may cover the line above.
     /// An action the selection cannot take shows no pill; the right-click
     /// menu keeps the item and its reason. A [`SelectionChoice`] splits it:
-    /// "Replace · Person ▾" (ADR 0024).
+    /// "Replace · Person ▾".
     fn selection_pill(&self, window: &Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         use gpui::prelude::FluentBuilder as _;
         self.selection_choice_bounds.set(None);
@@ -2833,7 +2833,7 @@ impl EditorState {
     }
 
     /// Convert every block the selection touches to `kind` — the "Turn
-    /// into" menu action (ADR 0110): one undoable edit; fenced kinds (code,
+    /// into" menu action: one undoable edit; fenced kinds (code,
     /// math) and quote runs convert as whole blocks, and when every block is
     /// `kind` already they all turn back into text.
     fn turn_into(&mut self, kind: TurnKind, window: &mut Window, cx: &mut Context<Self>) {
@@ -3046,7 +3046,7 @@ impl EditorState {
     }
 
     /// Whether the caret has upstream affinity: on a soft-wrap boundary it
-    /// belongs to the row above (ADR 0061).
+    /// belongs to the row above.
     pub(crate) fn caret_upstream(&self) -> bool {
         self.upstream_caret == Some((self.cursor_offset(), self.content_gen))
     }
@@ -3095,7 +3095,7 @@ impl EditorState {
         cx.notify();
     }
 
-    // --- Autoscroll (ADR 0054) ----------------------------------------------
+    // --- Autoscroll ----------------------------------------------
 
     /// Scroll the host view the least that shows the caret row with up to three
     /// base line heights of context (Zed's `Fit`). Runs after a paint, so the
@@ -3753,7 +3753,7 @@ impl EditorState {
     }
 }
 
-/// Wrap a keyboard action so the caret it moves is kept in view (ADR 0054).
+/// Wrap a keyboard action so the caret it moves is kept in view.
 fn revealing<A: 'static>(
     action: fn(&mut EditorState, &A, &mut Window, &mut Context<EditorState>),
 ) -> impl Fn(&mut EditorState, &A, &mut Window, &mut Context<EditorState>) + 'static {
@@ -6328,7 +6328,7 @@ mod annotation_tests {
     }
 
     /// A host that stacks the editor in its own scroll view, like mdoc's
-    /// document view (ADR 0054).
+    /// document view.
     struct ScrollHost {
         editor: gpui::Entity<super::EditorState>,
         scroll: gpui::ScrollHandle,

@@ -1,4 +1,4 @@
-//! The user's lists (ADR 0092): wordings scans always propose (Always) or
+//! The user's lists: wordings scans always propose (Always) or
 //! never propose (Never). Each case keeps its own, from Keep and manual
 //! marks in its members; Settings › Detection keeps user-wide ones, edited
 //! by hand. Both can name clients, so they are stored only in the

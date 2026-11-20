@@ -1,4 +1,4 @@
-//! Web addresses by their shape (ADR 0094): a scheme, `www.` or a bare
+//! Web addresses by their shape: a scheme, `www.` or a bare
 //! domain in one of the rule pack's zones, minus its public and legal
 //! domains. Read on the source itself, not the view: an address is written
 //! as it is, and the view reads a link target's "_" as a space.

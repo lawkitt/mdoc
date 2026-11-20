@@ -93,7 +93,7 @@ pub fn alert_kind(body: &str) -> Option<AlertKind> {
 }
 
 /// `(number, nesting level)` of every ordered list item: the number as
-/// written in the source (ADR 0110), the level 0-based and STRUCTURAL (how
+/// written in the source, the level 0-based and STRUCTURAL (how
 /// many lists are open above), so it survives any spaces-per-level setting.
 /// Non-items are (0, 0). See [`mdoc_markdown::lines::ordered_scan`].
 pub fn ordered_numbers(lines: &[&str]) -> Vec<(u32, usize)> {

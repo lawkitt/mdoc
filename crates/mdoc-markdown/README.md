@@ -1,7 +1,7 @@
 # mdoc-markdown
 
 GUI-free Markdown recognition shared by [`mdoc-editor`](../mdoc-editor) and
-the mobile apps ([ADR 0085](../../docs/adr/0085-mobile-apps.md)): what counts
+the mobile apps: what counts
 as a construct and which source bytes it covers, never how it looks.
 
 - `spans`: `scan` and `scan_line` classify source into spans over byte

@@ -1,4 +1,4 @@
-//! A phone's scan as the platform sees it (ADR 0120): no fixed deadline
+//! A phone's scan as the platform sees it: no fixed deadline
 //! but a stall guard, a free-memory check at the start, the time left as
 //! windows finish, and a pause while the phone is at the critical thermal
 //! state.

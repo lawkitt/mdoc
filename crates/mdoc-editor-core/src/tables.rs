@@ -100,7 +100,7 @@ fn applied(source: &str, range: &Range<usize>, text: &str) -> String {
 }
 
 /// Insert an empty row above/below the caret's row; the caret moves into the
-/// new row's cell in its own column (ADR 0110). `None` outside a table.
+/// new row's cell in its own column. `None` outside a table.
 pub fn insert_row(source: &str, blocks: Blocks, cursor: usize, below: bool) -> Option<TableEdit> {
     let (row, _, _) = cell_pos(source, blocks, cursor)?;
     let cell = caret_column(source, blocks, cursor)?;
@@ -121,7 +121,7 @@ pub fn insert_row(source: &str, blocks: Blocks, cursor: usize, below: bool) -> O
     Some((range, new_row, caret))
 }
 
-/// Return in a table's last row (ADR 0110): a new row below it, the caret
+/// Return in a table's last row: a new row below it, the caret
 /// in the new row's cell in its own column. On a last body row whose cells
 /// are all empty that row goes and the caret leaves the table onto a fresh
 /// line below it ([`crate::enter::table_exit_edit`]), as an empty item ends
@@ -359,7 +359,7 @@ pub fn rewrite_table_columns(
 
 /// Insert an empty column left/right of the caret's column (a cell added to
 /// every row; the separator gets a default-left marker). The caret moves
-/// into the new column's cell in its own row (ADR 0110). `None` outside a
+/// into the new column's cell in its own row. `None` outside a
 /// table.
 pub fn insert_column(
     source: &str,

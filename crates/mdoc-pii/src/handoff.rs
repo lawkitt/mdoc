@@ -1,4 +1,4 @@
-//! The text handed to an external AI (ADR 0041, ADR 0084): Copy for AI is
+//! The text handed to an external AI: Copy for AI is
 //! the Markdown with a note asking the AI to keep placeholders exactly. The
 //! editor and the shelf build it here, so both copy the same bytes.
 

@@ -1,4 +1,4 @@
-//! Intake (ADR 0085): files become Markdown through `mdoc_import` as on
+//! Intake: files become Markdown through `mdoc_import` as on
 //! desktop. Markdown and plain text open as they are. A JPEG (a camera scan
 //! or a photo the platform saved upright) is wrapped as a one-page PDF so
 //! PP-OCR reads it through the same PDF path as a scanned document.

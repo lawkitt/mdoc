@@ -2,7 +2,7 @@
 name = "mdoc-ffi"
 version = "0.1.0"
 edition = "2024"
-description = "UniFFI bindings of the GUI-free core for the mobile apps (ADR 0085)."
+description = "UniFFI bindings of the GUI-free core for the mobile apps."
 license = "GPL-3.0-or-later"
 publish = false
 repository = "https://github.com/lawkitt/mdoc"
@@ -22,7 +22,7 @@ required-features = ["bindgen"]
 
 [dependencies]
 mdoc-detect = { path = "../mdoc-detect" }
-# The editing rules edit mode calls (src/editor.rs, ADR 0109).
+# The editing rules edit mode calls (src/editor.rs).
 mdoc-editor-core = { path = "../mdoc-editor-core" }
 mdoc-history = { path = "../mdoc-history" }
 mdoc-import = { path = "../mdoc-import" }

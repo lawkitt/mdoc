@@ -427,7 +427,7 @@ fn case_originals(library: &Library, case: &str, alias: &str) -> Vec<String> {
         .originals
 }
 
-/// Not a name on a saved, replaced name (ADR 0122): the save takes its
+/// Not a name on a saved, replaced name: the save takes its
 /// wording out of the case, the alias staying reserved; Undo and the next
 /// save put it back under its old alias.
 #[test]
@@ -497,7 +497,7 @@ fn not_a_name_stays_in_the_case_while_another_member_uses_it() {
 }
 
 /// Keep instead, then Not a name, saved, then undone: the kept name comes
-/// back into the case under its alias (ADR 0122).
+/// back into the case under its alias.
 #[test]
 fn undoing_not_a_name_after_keep_instead_refills_the_case() {
     let scratch = Scratch::new();

@@ -2989,7 +2989,7 @@ impl Element for EditorElement {
             editor.paint_font = Some(font.clone());
         });
         // A keyboard change asked to keep the caret in view: fit it against
-        // this paint's layout once drawing ends (ADR 0054).
+        // this paint's layout once drawing ends.
         if self
             .editor
             .update(cx, |editor, _| std::mem::take(&mut editor.reveal_caret))
@@ -3332,7 +3332,7 @@ fn shape_document(
     let diagnostics = DiagnosticRanges::new(content, diagnostics);
     let lines: Vec<&str> = content.split('\n').collect();
     // Ordered items paint the number written in the source, in their
-    // depth's style (ADR 0110), as the phones do.
+    // depth's style, as the phones do.
     let ordered_nums = &scan.ordered;
     // Rows a (non-empty) selection touches. A selected block reveals its raw
     // source just like the caret's block does, so what's highlighted is what a

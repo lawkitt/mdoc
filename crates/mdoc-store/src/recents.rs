@@ -1,4 +1,4 @@
-//! Recently opened files for Home and the command palette (ADR 0048).
+//! Recently opened files for Home and the command palette.
 //! Paths and dates only, never content; stored beside the session and
 //! cleared from Settings.
 use serde::{Deserialize, Serialize};

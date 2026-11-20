@@ -1,4 +1,4 @@
-//! The phones' table cells (ADR 0109): in live preview a table is the drawn
+//! The phones' table cells: in live preview a table is the drawn
 //! grid, edited cell by cell. A caret rests in one cell, between its pipes;
 //! typing, ⌫, ⌦ and paste change only that cell's bytes; Return, Tab and the
 //! arrows move between cells. Nothing pads or realigns, and no other cell's
@@ -276,7 +276,8 @@ pub fn keep_in_cell(source: &str, selection: Range<usize>) -> Option<Range<usize
 
 /// Moves the caret as Tab, ⇧Tab or an arrow key does in a drawn table:
 /// no edit, except Tab from the last cell, which leaves the table onto a
-/// fresh line below it ([`crate::enter::table_exit_edit`], ADR 0060). `None` outside a drawn table.
+/// fresh line below it ([`crate::enter::table_exit_edit`]). `None` outside a
+/// drawn table.
 pub fn move_caret(source: &str, selection: Range<usize>, by: CellMove) -> Option<EditResult> {
     let scan = BlockScan::new(source);
     let blocks = scan.view();

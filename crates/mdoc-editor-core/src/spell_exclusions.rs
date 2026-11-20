@@ -1,5 +1,5 @@
 //! Source ranges a spell checker should skip, from the editor's own Markdown
-//! recognition (ADR 0036): code, math, link/image targets and other hidden
+//! recognition: code, math, link/image targets and other hidden
 //! syntax, and raw HTML tags. Using the same scanner as rendering keeps the
 //! checker from disagreeing with what the user sees as prose.
 

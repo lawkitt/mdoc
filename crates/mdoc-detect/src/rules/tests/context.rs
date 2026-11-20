@@ -2,7 +2,7 @@
 use super::*;
 use crate::rules::test_support::{cases, pairs, proposed, shown};
 
-/// Claim and case numbers after their label, the value only (ADR 0092);
+/// Claim and case numbers after their label, the value only;
 /// statute and article numbers and "case" as a common word stay out.
 #[test]
 fn labelled_case_numbers_are_proposed() {
@@ -859,7 +859,7 @@ fn charges_amounts_statutes_and_price_indexes_are_no_case_numbers() {
 }
 
 /// A date in a personal context is proposed as Date, the label left out
-/// (#363); every other date stays (ADR 0092).
+/// (#363); every other date stays.
 #[test]
 fn dates_of_birth_are_proposed_and_other_dates_stay() {
     let dates = |source: &str| -> Vec<String> {

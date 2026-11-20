@@ -1,4 +1,4 @@
-//! Fix the words (ADR 0114): a found name's span corrected in the text. The
+//! Fix the words: a found name's span corrected in the text. The
 //! new wording takes the old one's place everywhere it fits, keeping the
 //! identity and its alias; a selection outside any name snaps to whole
 //! words the same way before it is hidden.

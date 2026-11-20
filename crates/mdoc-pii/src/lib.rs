@@ -37,7 +37,7 @@ pub enum Category {
     Person,
     Organization,
     Email,
-    /// An identifying web address (ADR 0094): a profile, a private site, a
+    /// An identifying web address: a profile, a private site, a
     /// share link. Public and legal addresses are never proposed.
     Url,
     Phone,
@@ -45,10 +45,10 @@ pub enum Category {
     Identity,
     Tax,
     Bank,
-    /// A claim or case number after its label (ADR 0092). Its token is
+    /// A claim or case number after its label. Its token is
     /// `CASE`, so an alias never reads as a saved case.
     CaseNumber,
-    /// Scans propose only a date of birth (ADR 0092); any other date is a
+    /// Scans propose only a date of birth; any other date is a
     /// manual addition.
     Date,
     /// Manual additions only.
@@ -80,7 +80,7 @@ impl Category {
         }
     }
     /// What scans can return, in picker order: Categories to detect lists
-    /// these (ADR 0041, ADR 0076).
+    /// these.
     pub const DETECTED: [Self; 11] = [
         Self::Person,
         Self::Organization,
@@ -151,7 +151,7 @@ pub struct Variant {
     /// Seeded by a scan, not by the user, a case or a restored mapping.
     detected: bool,
     /// What proposed it: the detector's recognizer for a scan's seed,
-    /// `Propagation` for a form of a known full name (ADR 0092); `None` for
+    /// `Propagation` for a form of a known full name; `None` for
     /// a manual mark, a case or a restored mapping.
     recognizer: Option<Recognizer>,
     /// An ordinary word too ("Rose", "Мира"): only its capitalised
@@ -261,7 +261,7 @@ fn safe_span(value: &str) -> bool {
 /// its label proposed ("March 9,\n1984 birth date"; #363). Adjacent
 /// emphasis runs and paired inline `<sup>`/`<sub>` tags inside it are text too.
 ///
-/// A web address keeps its own characters (ADR 0094): a final `_` and
+/// A web address keeps its own characters: a final `_` and
 /// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
 /// a link's own bracket. An email address may start with `_`
 /// ("_roman@…", #412) where that `_` is no emphasis delimiter, or with
@@ -358,22 +358,22 @@ pub enum Recognizer {
     Snils,
     Ogrn,
     /// A value beside its label: a `context` rule of the rule pack
-    /// ("Claim No 6001842/2026", ADR 0092).
+    /// ("Claim No 6001842/2026").
     Context,
     /// A value before its label: a `context` rule's `after` form ("a March
     /// 9, 1984 birth date", «01.01.1980 года рождения»; #363). A date of
     /// birth's repeats count before the same label, never after a word.
     ContextAfter,
     /// A whole span by a pattern of the rule pack's `span` section: an
-    /// address (ADR 0092).
+    /// address.
     Span,
     /// A web address by its shape, outside the rule pack's public and legal
-    /// domains (ADR 0094). It wins over a name, an email or an ID inside it.
+    /// domains. It wins over a name, an email or an ID inside it.
     Url,
     /// A form of a known full name, found by the review after a scan or a
-    /// mark (ADR 0092); never a detector's.
+    /// mark; never a detector's.
     Propagation,
-    /// A wording on the user's Always list (ADR 0092), the last scan-time
+    /// A wording on the user's Always list, the last scan-time
     /// stage.
     UserList,
 }
@@ -439,7 +439,7 @@ impl Review {
         &self.tracking.applied
     }
     /// Mentions kept as their originals (Keep decisions): range, wording, and
-    /// the occurrence's identity when it was kept (ADR 0048).
+    /// the occurrence's identity when it was kept.
     pub fn kept_mentions(&self) -> Vec<(Range<usize>, Arc<str>, Option<u64>)> {
         self.tracking
             .exclusions
@@ -448,7 +448,7 @@ impl Review {
             .map(|e| (e.range.clone(), e.original.clone(), e.identity))
             .collect()
     }
-    /// Wordings taken off as Not a name (ADR 0122), each with the identity
+    /// Wordings taken off as Not a name, each with the identity
     /// it was taken from, where no mention of that identity shows the
     /// wording any more (proposed, replaced or kept): what a save takes
     /// out of the case. A homonym's other identity is not this one.
@@ -482,7 +482,7 @@ impl Review {
         self.alias_pairs(self.not_a_name_wordings())
     }
     /// The kept mentions as (alias, wording) pairs: what a case save puts
-    /// back after an undone Not a name (ADR 0122).
+    /// back after an undone Not a name.
     pub fn kept_pairs(&self) -> Vec<(String, String)> {
         self.alias_pairs(
             self.kept_mentions()
@@ -504,7 +504,7 @@ impl Review {
     }
     /// Not a name again, with no undo step, for the proposed mentions of
     /// these (alias, wording) pairs: a document opening in a case that
-    /// keeps them for another member (ADR 0122).
+    /// keeps them for another member.
     pub fn leave_off(&mut self, pairs: &[(String, String)]) {
         if pairs.is_empty() {
             return;
@@ -531,7 +531,7 @@ impl Review {
         }
     }
     /// Whether every mention of `variant` is taken off as Not a name: its
-    /// wording names nothing any more (ADR 0122).
+    /// wording names nothing any more.
     pub(crate) fn silenced(&self, variant: &Variant) -> bool {
         let wording = variant.original.as_ref();
         let excluded = |silent: bool| {
@@ -573,7 +573,7 @@ impl Review {
         self.tracking.reversion_plan(source, ids)
     }
     /// Text edits returning these applied occurrences to their first
-    /// originals, past every rename (Not a name, ADR 0122).
+    /// originals, past every rename (Not a name).
     pub fn reversion_edits_to_originals(
         &self,
         source: &str,
@@ -586,8 +586,8 @@ impl Review {
         self.revision.advance();
         self.tracking.commit_restore(history, restored, true, false);
     }
-    /// Record restorations committed as `history` that are Not a name
-    /// (ADR 0122): excluded as Keep is, shown nowhere.
+    /// Record restorations committed as `history` that are Not a name:
+    /// excluded as Keep is, shown nowhere.
     pub fn commit_not_a_name(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
         self.revision.advance();
         self.tracking.commit_restore(history, restored, true, true);
@@ -930,8 +930,8 @@ impl Review {
             })
             .unwrap_or_default();
         selected.retain(|detection| !unseen.contains(&source[detection.range.clone()]));
-        // A form of a full name joins it when that is its one candidate
-        // (ADR 0092), so it waits for the full names and takes no alias of
+        // A form of a full name joins it when that is its one candidate,
+        // so it waits for the full names and takes no alias of
         // its own. Others keep their place in alias order.
         let mut people: Vec<(u64, &str)> = Vec::new();
         let mut provisional = HashMap::new();
@@ -971,7 +971,7 @@ impl Review {
         let mut forms = Vec::new();
         // A date of birth's labels limit its mentions (#466); a wording
         // another recognizer found too, such as the Always list, counts
-        // every mention (ADR 0092), and so does a date whose label before
+        // every mention, and so does a date whose label before
         // it is not found, rather than every other unlabelled date. A date
         // before its label is limited by that label (#363): what precedes
         // it ("суда от", a paragraph's start) is no label.
@@ -1154,7 +1154,7 @@ impl Review {
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);
         self.refresh(source);
-        // A marked full name proposes its forms elsewhere (ADR 0092), and
+        // A marked full name proposes its forms elsewhere, and
         // so does a surname with initials (#749).
         if category == Category::Person
             && (identities::split_full_name(original).is_some()
@@ -1166,7 +1166,7 @@ impl Review {
     }
     /// The category of `original`'s variant when the wording is proposed
     /// already. `add_manual` then keeps that variant and its category, so
-    /// a category is picked only for new wording (ADR 0024).
+    /// a category is picked only for new wording.
     pub fn proposed_wording_category(&self, original: &str) -> Option<Category> {
         let id = self.candidates.by_original(original)?;
         self.variant(id).map(|variant| variant.category)
@@ -1282,7 +1282,7 @@ impl Review {
         let source = self.source.clone();
         self.refresh(&source);
     }
-    /// Not a name (ADR 0122) for these pending mentions and these kept
+    /// Not a name for these pending mentions and these kept
     /// ranges, as one metadata change, refreshing once.
     pub fn not_a_name_mentions(
         &mut self,

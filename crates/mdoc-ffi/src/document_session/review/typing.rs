@@ -1,4 +1,4 @@
-//! Typing in edit mode (ADR 0109): the phone applies plain typing in its
+//! Typing in edit mode: the phone applies plain typing in its
 //! text view and sends each committed edit here, where it joins the undo
 //! line as a "Typing" step beside review decisions. A run of one-character
 //! inserts, each where the last ended, or a run of deletes is one step, as
@@ -8,7 +8,7 @@
 //! applied aliases follow the edits through `Review::on_transaction`;
 //! discovery waits for the typing pause (`DocumentSession::discover`).
 //!
-//! The editor core (ADR 0109's first slice) takes the coalescing rule over
+//! The editor core takes the coalescing rule over
 //! once it is exported; until then it lives here, its one place.
 use super::{Focus, ReviewText, Step, StepKind};
 use crate::CoreError;
@@ -39,7 +39,7 @@ pub struct Typed {
     /// The edit started a new undo step rather than joining the last one.
     pub new_step: bool,
     /// The edit overlapped an applied alias, which stops tracking it: that
-    /// mention won't restore (ADR 0109's one-line hint).
+    /// mention won't restore.
     pub broke_alias: bool,
     pub can_undo: bool,
     pub can_redo: bool,

@@ -52,7 +52,7 @@ pub fn toggle_wrap_pair(
 /// An emphasis marker (`*`, `**`, `_`, `__`) counts only as the whole run
 /// of its character there: `**` beside a selection is bold, not two italic
 /// markers, so Italic on bold wraps it into `***bold italic***` and Italic
-/// on that takes one `*` back off (ADR 0110). A run of three is both and
+/// on that takes one `*` back off. A run of three is both and
 /// gives up whichever is asked for.
 pub fn unwrap_edit(source: &str, sel: Range<usize>, open: &str, close: &str) -> Option<WrapEdit> {
     let (ol, cl) = (open.len(), close.len());

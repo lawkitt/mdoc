@@ -22,7 +22,7 @@ use mdoc_markdown::spans::{Background, Color, SpanStyle, scan};
 
 use crate::Diagnostic;
 
-// Recognition shared with the mobile apps (ADR 0085), re-exported under the
+// Recognition shared with the mobile apps, re-exported under the
 // names the editor's modules already use.
 pub(crate) use mdoc_editor_core::markdown::{
     MathRegion, alert_kind, image_row, math_regions, toggle_task_checkbox,
@@ -268,7 +268,7 @@ pub(crate) fn hidden_runs(
         if span.range.start > pos {
             segs.push((pos..span.range.start, None, None));
         }
-        // Desktop's reveal rule (ADR 0109): formatting markers never reveal;
+        // Desktop's reveal rule: formatting markers never reveal;
         // the caret's construct and a revealed line prefix do.
         let hidden =
             RevealRule::Desktop.marker_hidden(&span.style, &span.range, &reveal, &line_reveal);
@@ -946,7 +946,7 @@ mod tests {
     #[test]
     fn link_at_hits_only_urls() {
         let line = "see [[Ops Net|the net]] and #scada plus [docs](https://x.io/d) `#not` [[]]";
-        // Wiki links and tags are plain text (ADR 0030).
+        // Wiki links and tags are plain text.
         assert_eq!(link_at(line, 4), None);
         assert_eq!(link_at(line, 15), None);
         assert_eq!(link_at(line, 28), None);
@@ -984,7 +984,7 @@ mod tests {
 
     #[test]
     fn note_taking_syntax_renders_as_plain_text() {
-        // ADR 0030: wiki links, tags, block ids and block refs are ordinary text.
+        // Wiki links, tags, block ids and block refs are ordinary text.
         let font = gpui::font("Helvetica");
         let c = hsla(0., 0., 0., 1.);
         let st = test_style();
@@ -1441,7 +1441,7 @@ mod tests {
 
     #[test]
     fn ordered_numbers_are_the_numbers_written() {
-        // The number written shows (ADR 0110); the level is structural —
+        // The number written shows; the level is structural —
         // ANY deeper indent nests, whatever the tab setting.
         assert_eq!(
             ordered_numbers(&["1. a", "2. b", "  3. c", "  9. d", "6. e"]),

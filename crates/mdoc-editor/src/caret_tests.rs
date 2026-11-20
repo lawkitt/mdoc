@@ -1,4 +1,4 @@
-//! macOS caret moves and deletions (ADR 0061), run on any OS through the
+//! macOS caret moves and deletions, run on any OS through the
 //! macOS keymap.
 use super::*;
 use gpui::Entity;

@@ -1,4 +1,4 @@
-//! `Setup` (ADR 0085): the models a device may offer, from the desktop's
+//! `Setup`: the models a device may offer, from the desktop's
 //! pinned manifests, installing a file the platform downloaded (SHA-256
 //! against the pinned digest, then an atomic move into the model folder),
 //! and timing the detector once it is installed. The platform runs the
@@ -19,7 +19,7 @@ use std::{
 
 const MIB: u64 = 1024 * 1024;
 
-/// GLiNER2 FP16's RAM floor: devices sold as 4 GB and up (ADR 0120).
+/// GLiNER2 FP16's RAM floor: devices sold as 4 GB and up.
 /// Devices report a little less than their nominal RAM (a 4 GB iPhone
 /// about 3.6 GiB, a 3 GB one under 3 GiB), so the cut sits between the two
 /// classes, at 3.25 GiB.
@@ -388,7 +388,7 @@ fn install_file(pinned: &ModelFile, downloaded: &Path, target: &Path) -> Result<
 }
 
 /// The pinned files: the detector's manifest, or the OCR bundle's. The
-/// runtimes are linked into the app, so none is downloaded (ADR 0085).
+/// runtimes are linked into the app, so none is downloaded.
 fn files(model: ModelId) -> Vec<ModelFile> {
     match model.ocr() {
         None => mdoc_detect::manifest_for(PiiModel::Fp16)
@@ -425,8 +425,8 @@ pub struct Runtimes {
 /// The runtimes that ship inside the app. iOS: linked into it. Android: the
 /// APK's own `libpdfium.so` and `libonnxruntime.so` beside this library in
 /// the app's native library folder, which needs the APK to extract its
-/// libraries (`useLegacyPackaging`): PDFium is opened by file path (ADR
-/// 0089). Elsewhere there are none, and callers pass the desktop's
+/// libraries (`useLegacyPackaging`): PDFium is opened by file path. Elsewhere
+/// there are none, and callers pass the desktop's
 /// downloaded libraries instead.
 #[uniffi::export]
 pub fn linked_runtimes() -> Result<Runtimes, CoreError> {

@@ -83,7 +83,7 @@ const COLUMN_SCORE: f32 = 0.95;
 const ROLE_INITIALS_SCORE: f32 = 0.95;
 
 /// Guess a manual selection's category without a model, correctable in the
-/// popup (ADR 0025): a structured rule covering exactly the selection
+/// popup: a structured rule covering exactly the selection
 /// (evaluated on its line, so labels count), else the rule pack's guesses (a
 /// date, a phone, a legal form, a name shape for Person), else Other.
 pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
@@ -531,7 +531,7 @@ fn scan_in(
 }
 
 /// Where one scan's time went. Only measurements read it (the mobile
-/// feasibility spike, ADR 0085); scanning behaves the same without it.
+/// feasibility spike); scanning behaves the same without it.
 #[derive(Clone, Debug, Default)]
 pub struct ScanTimings {
     /// Checking the model files against their pinned digests.
@@ -541,7 +541,7 @@ pub struct ScanTimings {
     pub tokenizer: Duration,
     /// Splitting the source into token-bounded windows.
     pub windowing: Duration,
-    /// Building the GLiNER2 sessions, which every scan does (ADR 0002).
+    /// Building the GLiNER2 sessions, which every scan does.
     pub engine_load: Duration,
     /// One entry per distinct model window, in source order.
     pub windows: Vec<WindowTiming>,
@@ -561,7 +561,7 @@ pub struct WindowTiming {
 
 /// The structured rules alone (emails, phones, IBAN, INN/SNILS and the
 /// rest), with no model: the mobile UI tests seed candidates with it. No
-/// device scans with the rules alone (ADR 0088). Full scans add these same
+/// device scans with the rules alone. Full scans add these same
 /// detections.
 pub fn scan_rules(source: &str) -> Result<Vec<Detection>, DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
@@ -617,11 +617,11 @@ fn scan_timed(
 }
 
 /// One span the model proposed, in document byte offsets, before any
-/// correction (ADR 0092): its label from the schema, its score at the
+/// correction: its label from the schema, its score at the
 /// configured threshold and its text. The model reads the source's
 /// [`View`](mdoc_pii::view::View) (character references decoded); its
 /// spans are mapped back to the source's offsets and text. Recognition
-/// snapshots are these (ADR 0093).
+/// snapshots are these.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RawEntity {
     pub start: usize,
@@ -1087,11 +1087,12 @@ fn model_categories(
         .collect()
 }
 
-/// The correction stage (ADR 0092): the model's raw entities through the
+/// The correction stage: the model's raw entities through the
 /// shape filter (`identifying`) and the rule pack's `span` fixes, then its
 /// `context` rules and
 /// the structured rules over the whole source, all reading it as the model
-/// does, and web addresses as the source writes them (ADR 0094). Rules win the review's conflicts with the model. Pure: the same
+/// does, and web addresses as the source writes them. Rules win the review's
+/// conflicts with the model. Pure: the same
 /// source and entities give the same detections, in the order a scan
 /// returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
@@ -2044,7 +2045,7 @@ fn case_repeats<'a>(
 
 /// The model's wordings where the source spells them otherwise and the view
 /// reads them the same: "Liora%20Nesket" in a link target, "Alice_Morgan"
-/// in a file name, for a detected "Liora Nesket" (ADR 0092). Each is a
+/// in a file name, for a detected "Liora Nesket". Each is a
 /// wording of its own, so Copy for AI replaces it as written.
 fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Vec<Detection> {
     if view.is_source() {
@@ -2281,8 +2282,8 @@ fn run_window(
 }
 
 /// The model stage loaded once for many sources: the recognition tool's
-/// snapshots and the detection gate (ADR 0093). The app scans through
-/// [`scan_config`], which builds its engine per scan (ADR 0002). Holds the
+/// snapshots and the detection gate. The app scans through
+/// [`scan_config`], which builds its engine per scan. Holds the
 /// model work permit while it lives.
 pub struct ModelSession {
     engine: SpanEngine,
@@ -2356,8 +2357,8 @@ fn schema_tasks() -> Vec<SchemaTask> {
 }
 
 /// ONNX Runtime's threads for the detector: 4, unless `MDOC_DETECT_THREADS`
-/// names another count. The Android spike times other counts with it
-/// (ADR 0089); nothing else sets it.
+/// names another count. The Android spike times other counts with it;
+/// nothing else sets it.
 fn intra_threads() -> usize {
     std::env::var("MDOC_DETECT_THREADS")
         .ok()
@@ -2841,7 +2842,7 @@ mod tests {
         );
     }
 
-    /// ADR 0094: a web address reaches the review whole, after a field's
+    /// A web address reaches the review whole, after a field's
     /// colon or an attribute's "=", with its own "_", brackets and port, and
     /// wins over a labelled value inside it.
     #[test]
@@ -2953,7 +2954,7 @@ mod tests {
             text: "Liora Nesket".into(),
         }];
         // The web address around a spelling is proposed too, and wins in the
-        // review (ADR 0094); the spellings stand for files and paths.
+        // review; the spellings stand for files and paths.
         let found: Vec<_> = correct(source, &raw)
             .into_iter()
             .filter(|d| d.category != Category::Url)

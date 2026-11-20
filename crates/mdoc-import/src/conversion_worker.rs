@@ -1,7 +1,7 @@
 //! The supervised conversion worker (desktop only, #925 decision 10): AnyDoc
 //! converts every document other than a PDF in a child process, the app's
 //! own executable in its `--mdoc-conversion-worker` mode, as the DOCX
-//! preview does (ADR 0005).
+//! preview does.
 //! The desktop release profile aborts on a panic, so a converter panic, stack
 //! overflow, abort or failed allocation would otherwise end the app; here it
 //! ends the worker, and the import fails with a plain error.

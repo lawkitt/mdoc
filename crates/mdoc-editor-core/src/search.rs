@@ -20,7 +20,7 @@ pub struct SearchMatch {
     pub source: Vec<Range<usize>>,
     /// Whether Replace may rewrite this occurrence: its visible text comes from
     /// one contiguous source range and whole source units, so no hidden syntax
-    /// or partly matched entity would be rewritten (ADR 0063).
+    /// or partly matched entity would be rewritten.
     pub replaceable: bool,
 }
 

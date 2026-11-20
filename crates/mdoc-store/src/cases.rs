@@ -1,4 +1,4 @@
-//! Saved cases (ADR 0041): a named replacement mapping its documents share,
+//! Saved cases: a named replacement mapping its documents share,
 //! stored as one AES-256-GCM file per case in app data. The key is held by the
 //! OS (macOS Keychain, Windows data protection); there is no plaintext
 //! fallback. Originals never reach the session manifest.
@@ -17,7 +17,7 @@ use std::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum CaseError {
-    /// The user declined the macOS Keychain dialog (ADR 0043).
+    /// The user declined the macOS Keychain dialog.
     #[error("Saved cases need Keychain access.")]
     KeyDenied,
     /// A Keychain call failed; the OS error, as macOS words it.
@@ -86,8 +86,8 @@ pub struct StoredIdentity {
     pub custom: bool,
     /// The primary wording first.
     pub originals: Vec<String>,
-    /// The member whose Not a name took wordings out of this identity (ADR
-    /// 0122): only its undo gives them back, a reserved alias included.
+    /// The member whose Not a name took wordings out of this identity: only its
+    /// undo gives them back, a reserved alias included.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_a_name_by: Option<PathBuf>,
 }
@@ -121,7 +121,7 @@ impl StoredIdentity {
     }
 }
 
-/// The eight case swatches (ADR 0077), in hue order.
+/// The eight case swatches, in hue order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CaseColor {
     Red,
@@ -253,30 +253,30 @@ pub struct Case {
     /// Category tokens scans in member documents skip.
     #[serde(default)]
     pub skip: Vec<String>,
-    /// Each member's AI reply as pasted, aliases and all (ADR 0078).
+    /// Each member's AI reply as pasted, aliases and all.
     #[serde(default)]
     pub replies: Vec<CaseReply>,
-    /// Dismissed merge hints, as the identities’ primary wordings (shorter, fuller)
-    /// (ADR 0080).
+    /// Dismissed merge hints, as the identities’ primary wordings (shorter,
+    /// fuller).
     #[serde(default)]
     pub dismissed_hints: Vec<(String, String)>,
     /// Each member's fingerprint of the text it saved while ready: a closed
-    /// member is ready on the shelf only while its file matches (ADR 0084).
+    /// member is ready on the shelf only while its file matches.
     #[serde(default)]
     pub reviewed: Vec<ReviewedMember>,
     /// The case's Always and Never lists, from its members' manual marks
-    /// and Keeps (ADR 0092).
+    /// and Keeps.
     #[serde(default)]
     pub lists: Lists,
     /// Wordings a member took off as Not a name that the case keeps for
-    /// another member's sake (ADR 0122): that member's document leaves
+    /// another member's sake: that member's document leaves
     /// them off when it opens.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     /// Each is (member, alias, wording).
     pub not_names: Vec<(PathBuf, String, String)>,
 }
 
-/// The user-wide Always and Never lists as stored (ADR 0092).
+/// The user-wide Always and Never lists as stored.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct UserLists {
     /// Bumped on every change; a store never writes an older revision.
@@ -284,7 +284,7 @@ pub struct UserLists {
     pub lists: Lists,
 }
 
-/// A member's text as last saved while ready (ADR 0084): a fingerprint of
+/// A member's text as last saved while ready: a fingerprint of
 /// the text, never the text.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReviewedMember {
@@ -294,7 +294,7 @@ pub struct ReviewedMember {
     pub fingerprint: String,
 }
 
-/// One member document's AI reply, kept for its Reply view (ADR 0078).
+/// One member document's AI reply, kept for its Reply view.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CaseReply {
     /// The member, as in [`Case::members`].
@@ -354,7 +354,7 @@ impl Case {
             _ => false,
         }
     }
-    /// The fingerprint `member` saved while ready (ADR 0084).
+    /// The fingerprint `member` saved while ready.
     pub fn reviewed(&self, member: &Path) -> Option<&str> {
         self.reviewed
             .iter()
@@ -427,7 +427,7 @@ impl Case {
             .collect()
     }
     /// Match an identity by its current alias, then earlier aliases, then a
-    /// shared original. Alias matches keep homonyms distinct (ADR 0041).
+    /// shared original. Alias matches keep homonyms distinct.
     fn identity_position(&self, incoming: &StoredIdentity) -> Option<usize> {
         let position =
             |matches: &dyn Fn(&StoredIdentity) -> bool| self.identities.iter().position(matches);
@@ -443,7 +443,7 @@ impl Case {
     /// did not merge, still exports several entries matching it: the one with
     /// its alias, then one renamed from it, then the one holding its earliest
     /// wording (restored Undo history may not remember the newer alias). The
-    /// others are absorbed or split entries, not its rename (ADR 0041).
+    /// others are absorbed or split entries, not its rename.
     fn member_counterpart<'a>(
         &self,
         index: usize,
@@ -471,7 +471,7 @@ impl Case {
     }
     /// Renames and category changes of surviving identities. Start from each
     /// current entry so a merge's absorbed entries cannot become renames in
-    /// other members; merges and splits are not propagated (ADR 0041).
+    /// other members; merges and splits are not propagated.
     pub fn renames_since(&self, before: &Self) -> Vec<(String, ExportedIdentity)> {
         self.identities
             .iter()
@@ -492,12 +492,12 @@ impl Case {
     }
     /// Fold a member document's current identities into the case. Identities
     /// the document no longer uses stay; a renamed alias is kept as an earlier
-    /// alias, so old files and replies still restore (ADR 0041 #23).
+    /// alias, so old files and replies still restore.
     pub fn merge(&mut self, exported: &[ExportedIdentity]) {
         self.merge_from(exported, None);
     }
     /// [`Self::merge`] from `member`, whose undo of a saved Not a name may
-    /// give the identity it emptied its wordings again (ADR 0122).
+    /// give the identity it emptied its wordings again.
     pub fn merge_from(&mut self, exported: &[ExportedIdentity], member: Option<&Path>) {
         for e in exported {
             // A forgotten identity retains only its aliases, reserving them and
@@ -524,7 +524,7 @@ impl Case {
             {
                 // This member still has the case's current identity alongside
                 // an absorbed or split one. Keep the current identity rather
-                // than interpreting the other entry as its rename (ADR 0041).
+                // than interpreting the other entry as its rename.
                 let mut retained = self.identities[index].clone();
                 for alias in std::iter::once(&incoming.alias).chain(&incoming.previous) {
                     if !retained.names(alias) {
@@ -540,7 +540,7 @@ impl Case {
             }
             // Identities the member merged into this one are now named only by
             // its earlier aliases: fold them in, so no two entries share an
-            // alias (ADR 0080).
+            // alias.
             let mut absorbed = Vec::new();
             let found = found.map(|index| {
                 let mut kept = Vec::with_capacity(self.identities.len());
@@ -603,7 +603,7 @@ impl Case {
     }
 
     /// Irreversibly discard originals, retaining alias reservations only.
-    /// Not a name (ADR 0122): each (alias, wording) leaves the identity
+    /// Not a name: each (alias, wording) leaves the identity
     /// the alias names, except where `in_use` finds that identity restored
     /// in another member's saved text. An identity left with no wording
     /// keeps its aliases, reserved. Each identity changed remembers
@@ -634,7 +634,7 @@ impl Case {
         self.not_names
             .extend(kept.into_iter().map(|(a, w)| (member.to_path_buf(), a, w)));
     }
-    /// Undo of a saved Not a name (ADR 0122): each (alias, wording) the
+    /// Undo of a saved Not a name: each (alias, wording) the
     /// document shows again goes back into the identity `member` took it
     /// out of.
     pub fn refill(&mut self, pairs: &[(String, String)], member: &Path) {
@@ -670,7 +670,7 @@ impl Case {
             .collect()
     }
     /// A member saved under a new path (Save As, a rename): its Not a name
-    /// marks follow it (ADR 0122).
+    /// marks follow it.
     pub fn not_a_name_member_moved(&mut self, from: &Path, to: &Path) {
         for (member, _, _) in &mut self.not_names {
             if member == from {
@@ -684,7 +684,7 @@ impl Case {
         }
     }
     /// [`Self::reserved_aliases`] but those `member`'s own Not a name
-    /// reserved, which its undo may give back (ADR 0122).
+    /// reserved, which its undo may give back.
     pub fn reserved_aliases_for(&self, member: &Path) -> Vec<String> {
         self.identities
             .iter()
@@ -728,7 +728,7 @@ impl Store {
         crate::app_paths::data_local_dir().map(|p| p.join("mdoc").join(key::folder()))
     }
     /// Open the store without any OS dialog: `None` when the key can only be
-    /// read after the macOS password dialog (ADR 0043).
+    /// read after the macOS password dialog.
     pub fn open_quietly(dir: PathBuf) -> Result<Option<Self>, CaseError> {
         if crate::app_paths::isolated() {
             return Err(CaseError::KeysDisabled);
@@ -835,7 +835,7 @@ impl Store {
         }
         Ok(case)
     }
-    /// The user-wide lists of Settings › Detection (ADR 0092), sealed like a
+    /// The user-wide lists of Settings › Detection, sealed like a
     /// case beside the cases; none saved yet: empty lists at revision 0.
     pub fn load_lists(&self) -> Result<UserLists, CaseError> {
         let path = self.dir.join(LISTS_FILE);
@@ -940,7 +940,7 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Test builds (feature `deny-os-services`, ADR 0095): a call that would ask
+/// Test builds (feature `deny-os-services`): a call that would ask
 /// the OS's security or identity services panics, so a test that reaches one
 /// fails at once instead of waiting on macOS (#510). The headless render
 /// sandbox is a dev build that asks nothing: there it returns `true`, and the
@@ -956,7 +956,7 @@ fn deny_os_service(what: &str) -> bool {
     )
 }
 
-/// Public build label, using the same runtime identity as case storage (ADR 0045).
+/// Public build label, using the same runtime identity as case storage.
 /// This inspects signing metadata only; it never reads the case key.
 pub fn build_identity() -> &'static str {
     #[cfg(feature = "deny-os-services")]
@@ -986,7 +986,7 @@ mod key {
     use std::io::{self, Write};
 
     /// Which Keychain holds the key, decided once from this build's
-    /// signature (ADR 0045).
+    /// signature.
     #[cfg(target_os = "macos")]
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum Keychain {
@@ -1052,7 +1052,7 @@ mod key {
 
     /// Read (or create) the key with Keychain dialogs turned off, so this
     /// never asks: `None` when reading it would show the macOS password
-    /// dialog, e.g. for a new build or after "Allow Once" (ADR 0043).
+    /// dialog, e.g. for a new build or after "Allow Once".
     #[cfg(target_os = "macos")]
     pub fn load_quietly(_: &Path) -> Result<Option<[u8; 32]>, CaseError> {
         load(true)
@@ -1110,7 +1110,7 @@ mod key {
     /// errSecInteractionNotAllowed or, for an item whose access list does not
     /// trust this app, errSecAuthFailed. Both mean "may ask", never a denial:
     /// treating errSecAuthFailed as denied is how beta.7 fell through to a
-    /// loud read at launch (ADR 0045).
+    /// loud read at launch.
     #[cfg(target_os = "macos")]
     fn login(service: &str, quiet: bool) -> Result<Login, CaseError> {
         use security_framework::{
@@ -1391,7 +1391,7 @@ mod tests {
         assert_eq!(store.load(&next.id).unwrap(), next);
     }
 
-    /// Web address only adds a token (ADR 0094): every token saved before
+    /// Web address only adds a token: every token saved before
     /// it reads back as the same category, and a URL identity round trips.
     #[test]
     fn tokens_saved_before_web_address_load_unchanged() {
@@ -1971,7 +1971,7 @@ mod tests {
 
     /// Not a name drops a wording from the identity its alias names only,
     /// never a homonym's; the member's undo refills it, and its own
-    /// reservation is not reserved for it (ADR 0122).
+    /// reservation is not reserved for it.
     #[test]
     fn not_a_name_drops_one_identitys_wording_and_its_undo_refills_it() {
         let mut case = Case::new("Case".into(), &[], None);
@@ -2024,7 +2024,7 @@ mod tests {
     }
 
     /// A note kept for another member follows a rename of its identity and
-    /// a move of its member (ADR 0122).
+    /// a move of its member.
     #[test]
     fn not_a_name_notes_follow_renames_and_moves() {
         let mut case = Case::new("Case".into(), &[], None);

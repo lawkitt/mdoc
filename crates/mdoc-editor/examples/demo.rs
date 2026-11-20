@@ -1,5 +1,5 @@
-//! A standalone window wiring the editor's spell-check hooks to `mdoc-spell`
-//! (ADR 0036), without the app's background scheduling.
+//! A standalone window wiring the editor's spell-check hooks to `mdoc-spell`,
+//! without the app's background scheduling.
 //!
 //! Run with: `cargo run -p mdoc-editor --example demo`.
 //!

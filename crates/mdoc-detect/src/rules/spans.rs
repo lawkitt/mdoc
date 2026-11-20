@@ -35,7 +35,7 @@ impl Pack {
     }
 
     /// Whole spans the `span` patterns find in `source`: an address from
-    /// its first element to its postcode or city (ADR 0092).
+    /// its first element to its postcode or city.
     #[cfg(test)]
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
         self.spans_beside(source, &[], &[])

@@ -1,4 +1,4 @@
-//! GUI-free app storage (ADR 0069): app paths, documents and their atomic
+//! GUI-free app storage: app paths, documents and their atomic
 //! saves, the document and window sessions, recents, settings, saved cases, the user's lists and
 //! crash-report masking. Store types name no GPUI or app-style types; errors
 //! are typed and become user text at the UI edge.

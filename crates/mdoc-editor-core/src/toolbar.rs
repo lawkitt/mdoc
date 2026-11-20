@@ -1,4 +1,4 @@
-//! The phones' editing toolbar and formatting keyboard (ADR 0109): what
+//! The phones' editing toolbar and formatting keyboard: what
 //! their buttons show at the caret, and the commands desktop has no
 //! counterpart for: a format toggled at a caret, the list and task buttons,
 //! links, a rule and a table skeleton.
@@ -40,7 +40,7 @@ pub struct CaretState {
     /// The caret is in a table the view draws.
     pub in_table: bool,
     /// In live preview, the drawn table's cell holding the caret: the
-    /// formatting keyboard's table controls (ADR 0109).
+    /// formatting keyboard's table controls.
     pub cell: Option<Cell>,
     /// The link holding or touching the caret.
     pub link: Option<LinkAt>,
@@ -343,7 +343,7 @@ fn marker_edits(
 
 /// The list button: every block the selection touches becomes a bulleted
 /// item; when each is a bulleted or numbered item already, they all turn
-/// back into text (ADR 0110).
+/// back into text.
 pub fn toggle_list(source: &str, selection: Range<usize>) -> Option<EditResult> {
     let scan = BlockScan::new(source);
     turn_selection_where(
@@ -357,7 +357,7 @@ pub fn toggle_list(source: &str, selection: Range<usize>) -> Option<EditResult> 
 
 /// The task button: on one task line its box checks or unchecks; otherwise
 /// every block the selection touches becomes a task, or, when each is a
-/// task already, they all turn back into text (ADR 0110).
+/// task already, they all turn back into text.
 pub fn task_button(source: &str, selection: Range<usize>) -> Option<EditResult> {
     let sel = sorted(&selection);
     let (first, last) = selected_rows(source, sel.clone());

@@ -1,4 +1,4 @@
-//! Enter and ⇧Enter (ADR 0060): Enter makes a new block, so the copied
+//! Enter and ⇧Enter: Enter makes a new block, so the copied
 //! Markdown breaks where the editor shows a break; ⇧Enter is a line break
 //! inside the block.
 

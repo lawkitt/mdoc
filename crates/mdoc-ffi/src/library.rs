@@ -1,4 +1,4 @@
-//! `Library` (ADR 0085): the cases and stored documents under one storage
+//! `Library`: the cases and stored documents under one storage
 //! root, the App Group container on iOS, shared by the app and its Restore
 //! extension. Cases are the desktop's encrypted files
 //! (`mdoc_store::cases::Store`) under the key the platform passes in; Rust
@@ -19,7 +19,7 @@ use std::{
 
 const CASES: &str = "cases";
 const DOCUMENTS: &str = "documents";
-/// OCR's finished pages of imports not yet complete (ADR 0085 Long jobs).
+/// OCR's finished pages of imports not yet complete.
 const IMPORTS: &str = "imports";
 /// The case of the most recently shared document: an id, no names.
 const CURRENT_CASE: &str = "current-case.json";
@@ -118,7 +118,7 @@ pub struct StoredDocument {
     pub modified: u64,
 }
 
-/// A document as lists show it (ADR 0104): its review's counts and phase
+/// A document as lists show it: its review's counts and phase
 /// without opening it. Nothing in it names a person beyond the title, which
 /// the file name holds already.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -137,7 +137,7 @@ pub struct DocumentSummary {
     /// When it was last opened or saved, in seconds since the Unix epoch;
     /// `None` for one not opened since the library began keeping it.
     pub opened: Option<u64>,
-    /// How it began: Try a sample finds its sample by it (ADR 0109).
+    /// How it began: Try a sample finds its sample by it.
     pub origin: DocumentOrigin,
 }
 
@@ -187,7 +187,7 @@ impl TextRange {
     }
 }
 
-/// A reply restored in place (ADR 0078): the restored text, where restored
+/// A reply restored in place: the restored text, where restored
 /// values and unresolved alias-shaped tokens sit in it, and the counts for
 /// "N values restored · M unrecognised".
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -414,7 +414,7 @@ impl Library {
     }
 
     /// Make the document at `path` a member of case `case_id`. A document
-    /// belongs to one case at most (ADR 0041).
+    /// belongs to one case at most.
     pub fn add_document(&self, case_id: String, path: String) -> Result<CaseInfo, CoreError> {
         let member = self.member(Path::new(&path));
         self.refuse_other_case(&member, &case_id)?;
@@ -428,7 +428,7 @@ impl Library {
     }
 
     /// A document of case `case_id` was shared: the Restore extension uses
-    /// this case until another is shared (ADR 0084's current case).
+    /// this case until another is shared (the current case).
     pub fn note_shared(&self, case_id: String) -> Result<(), CoreError> {
         self.load(&case_id)?;
         let path = self.root.join(CURRENT_CASE);
@@ -453,7 +453,7 @@ impl Library {
     }
 
     /// Keep `reply`, as pasted (aliases, not restored text), as the reply of
-    /// `document`, a member of case `case_id` (ADR 0078); a blank reply
+    /// `document`, a member of case `case_id`; a blank reply
     /// removes it.
     pub fn save_reply(
         &self,
@@ -476,7 +476,7 @@ impl Library {
     }
 
     /// Delete `path`, a document in the documents folder: it leaves its
-    /// case, with the reply kept for it (ADR 0078), then its file is
+    /// case, with the reply kept for it, then its file is
     /// removed, under the library's write lock. The case is saved first, so
     /// a case that cannot be saved leaves the document as it was, and a
     /// file that cannot be removed (or mdoc stopping in between) leaves an
@@ -515,8 +515,8 @@ impl Library {
     /// `title`. Its file is renamed after the title (characters a file name
     /// cannot hold become look-alikes, so the title reads back as typed),
     /// and what cases keep by the file follows it: membership, the reply
-    /// kept for it in any case (ADR 0078) and its review fingerprint (ADR
-    /// 0084). A case holding only this document and named after it takes
+    /// kept for it in any case and its review fingerprint. A case holding only
+    /// this document and named after it takes
     /// the title too. One write lock covers it; when a case cannot be
     /// saved, the file and the cases saved before it go back as they were.
     /// A document open in a `DocumentSession` is renamed through
@@ -528,8 +528,7 @@ impl Library {
     ) -> Result<RenamedDocument, CoreError> {
         let lock = self.lock()?;
         let renamed = self.rename_locked(&lock, Path::new(&path), &title)?;
-        // Named by the user, a new document stops following its first line
-        // (ADR 0109).
+        // Named by the user, a new document stops following its first line.
         if let Some(path) = &renamed.path
             && self
                 .document_state(Path::new(path))
@@ -551,7 +550,7 @@ impl Library {
     }
 
     /// Move to case: `path`, a document in the documents folder, leaves its
-    /// case and joins case `case_id`, as on desktop (ADR 0041 Joining). It
+    /// case and joins case `case_id`, as on desktop. It
     /// is opened in its case and lined up with the other by
     /// `mdoc_pii::restore::plan_join`: a name the case knows takes its
     /// alias, a clashing alias the case's next unused number, the case's
@@ -559,7 +558,7 @@ impl Library {
     /// aliases. The case it left keeps its identities and the reply kept
     /// for the document, so replies to text already sent still restore with
     /// it, and it stays even with no documents left, as on desktop (a case
-    /// is deleted only on its own, confirmed: ADR 0041).
+    /// is deleted only on its own, confirmed).
     ///
     /// Undo is `move_back`. Refused for a document already in that case.
     /// The case is saved first, then the file, then the case left; a step
@@ -670,8 +669,8 @@ impl Library {
     }
 
     /// Delete case `id` when nothing is in it: no document, no name, no
-    /// reply kept (a new document's own case, once it is discarded: ADR
-    /// 0109). True when it went.
+    /// reply kept (a new document's own case, once it is discarded). True when
+    /// it went.
     pub(crate) fn delete_case_if_unused(&self, id: &str) -> Result<bool, CoreError> {
         let _lock = self.lock()?;
         let case = self.load(id)?;
@@ -721,7 +720,7 @@ impl Library {
         Ok(self.info(&case))
     }
 
-    /// A document belongs to one case at most (ADR 0041): refuse `member`
+    /// A document belongs to one case at most: refuse `member`
     /// when a case other than `case_id` has it.
     pub(crate) fn refuse_other_case(&self, member: &Path, case_id: &str) -> Result<(), CoreError> {
         let (cases, _) = self.store.list();
@@ -1125,8 +1124,8 @@ impl Library {
 
     /// The aliases of `map`'s identities that `member`'s saved text
     /// restores, as Restore reads them with the whole case's map: a case
-    /// keeps a Not a name wording while another member still needs it (ADR
-    /// 0122). A file that can't be read counts as needing them all.
+    /// keeps a Not a name wording while another member still needs it. A file
+    /// that can't be read counts as needing them all.
     pub(crate) fn restored_aliases(
         &self,
         member: &Path,

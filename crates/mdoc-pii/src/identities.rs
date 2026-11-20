@@ -27,7 +27,7 @@ pub struct IdentityPolicy {
     /// long wordings, since the primary is the longest full form.
     primary: HashMap<u64, Arc<str>>,
     /// Variants whose entry in `variants` propagation made, not the user;
-    /// it may move them again (ADR 0092).
+    /// it may move them again.
     automatic: HashSet<u64>,
     /// Dates of birth marked by hand: every mention counts, not only those
     /// after its labels (#466); undone with the mark.
@@ -164,7 +164,7 @@ pub(crate) fn normalization_key(value: &str, category: Category) -> String {
     }
     canonical(value)
 }
-/// A web address's identity (ADR 0094): `http` or `https`, a leading
+/// A web address's identity: `http` or `https`, a leading
 /// `www.` and a trailing slash are writings of one address; anything else,
 /// letter case included, is another.
 fn url_key(value: &str) -> String {
@@ -374,7 +374,7 @@ pub(crate) fn split_full_name_inflected(value: &str) -> Option<(String, Vec<Stri
 /// Lowercase wordings that stand for `surname` alone: itself and, for a
 /// Russian surname, its conservative case forms ("раман" → "рамана",
 /// "раману"). Some forms are shared with relatives ("петрова"), so a form
-/// links only when one full name fits (ADR 0092).
+/// links only when one full name fits.
 pub(crate) fn surname_forms(surname: &str) -> Vec<String> {
     // With a particle: its forms with the particle and without it ("де
     // Лаваль", "Лаваль").
@@ -522,7 +522,7 @@ impl Review {
             self.forget_identity(id);
         }
     }
-    /// Stop proposing `category` (ADR 0076): forget its identities that are
+    /// Stop proposing `category`: forget its identities that are
     /// scan proposals only. An identity that replaced text (now or in undo
     /// history), or that has a manual, case or restored variant, stays.
     /// Returns how many identities were forgotten.
@@ -548,7 +548,7 @@ impl Review {
         ids.len()
     }
     /// Forget the mapping in live state and metadata history. Text is untouched;
-    /// undo/redo cannot bring this mapping back (ADR 0041, ADR 0077).
+    /// undo/redo cannot bring this mapping back.
     pub fn forget_identity(&mut self, id: u64) {
         self.revision.advance();
         let groups: HashSet<_> = self
@@ -957,7 +957,7 @@ impl Review {
         Ok(())
     }
     /// Link `from` into `target`, which keeps its alias; `from`'s alias
-    /// retires and keeps restoring (ADR 0041, ADR 0080). All or nothing: an
+    /// retires and keeps restoring. All or nothing: an
     /// error leaves the identities as they were.
     pub fn merge_identity(&mut self, from: u64, target: u64) -> Result<(), String> {
         self.revision.advance();

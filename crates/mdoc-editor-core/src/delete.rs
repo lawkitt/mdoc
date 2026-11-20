@@ -9,7 +9,7 @@ use crate::markdown::fmt_marker_pairs;
 use crate::text::{line_end, line_starts, next_boundary, previous_boundary, row_col};
 
 /// What ⌫ at the body start of `row` (or ⌦, with `forward`, at its end)
-/// removes around a paragraph break (ADR 0060): the range and where the
+/// removes around a paragraph break: the range and where the
 /// caret lands. Across one blank line the two paragraphs join, undoing
 /// Enter. In a quote the blank line is a bare `>` and the next row's
 /// prefix goes too; extra bare `>` rows go one at a time, as plain blank

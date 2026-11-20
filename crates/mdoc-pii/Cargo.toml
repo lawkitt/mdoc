@@ -15,7 +15,7 @@ regex = "1"
 # CommonMark/GFM structure checks for manual selections with escapes or
 # emphasis characters.
 markdown = "1"
-# NFC for the text detection reads: decomposed letters compose (ADR 0092).
+# NFC for the text detection reads: decomposed letters compose.
 unicode-normalization = "=0.1.26"
 # Grapheme clusters for `view::occurrences`, as the platforms' string search
 # matches whole characters.
@@ -23,7 +23,7 @@ unicode-segmentation = "1"
 mdoc-history = { path = "../mdoc-history" }
 
 [dev-dependencies]
-# Reads the identity maps of captured AI replies (ADR 0056).
+# Reads the identity maps of captured AI replies.
 serde_json = "1"
 
 [lints]

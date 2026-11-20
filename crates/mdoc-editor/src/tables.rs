@@ -208,7 +208,7 @@ impl EditorState {
     }
 
     /// [`Self::table_offset_at`], and whether the offset ends a wrapped row
-    /// of the cell (the caret's upstream affinity, ADR 0061).
+    /// of the cell (the caret's upstream affinity).
     pub(crate) fn table_hit(
         &self,
         position: Point<Pixels>,
@@ -987,7 +987,7 @@ pub(crate) fn table_column_widths(
             if header {
                 font.weight = gpui::FontWeight::BOLD;
             }
-            // A `<br>` cell is as wide as its widest line (ADR 0046).
+            // A `<br>` cell is as wide as its widest line.
             let mut start = 0;
             let mut parts = Vec::new();
             for tag in cell_breaks(cell) {
@@ -1117,8 +1117,8 @@ fn shape_cell(
     Some((line, map))
 }
 
-/// Byte ranges of the `<br>`, `<br/>` and `<br />` tags in a table cell
-/// (ADR 0046): the shared rule, which the phones' grids draw too.
+/// Byte ranges of the `<br>`, `<br/>` and `<br />` tags in a table cell:
+/// the shared rule, which the phones' grids draw too.
 pub(crate) fn cell_breaks(content: &str) -> Vec<Range<usize>> {
     mdoc_markdown::tables::table_cell_breaks(content)
 }

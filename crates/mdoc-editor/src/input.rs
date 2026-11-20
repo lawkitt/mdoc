@@ -215,7 +215,7 @@ impl EditorState {
                 return;
             }
             // At a paragraph's start, one ⌫ undoes Enter's paragraph break
-            // (ADR 0060) instead of leaving two soft-joined lines.
+            // instead of leaving two soft-joined lines.
             let body =
                 markdown_syntax::blockquote_prefix(&self.content[off - col..self.line_end(row)]);
             if (col == 0 || Some(col) == body)
@@ -301,7 +301,7 @@ impl EditorState {
         // Inside a table, a raw newline would split the row's `| … |` markup.
         // Enter instead moves to the cell directly below (next row, same column,
         // spreadsheet-style); in the last row it adds a row, or from an empty
-        // last row exits onto a fresh line below the table (ADR 0110).
+        // last row exits onto a fresh line below the table.
         if self.caret_in_table() {
             if let Some(off) = self.table_move_vertical(1)
                 && self
@@ -345,7 +345,7 @@ impl EditorState {
             self.replace_text_in_range(None, "\n", window, cx);
             return;
         }
-        // ADR 0060: everywhere else Enter makes a new block, so the copied
+        // Everywhere else Enter makes a new block, so the copied
         // Markdown breaks where the editor shows a break. A selection is
         // replaced by a plain paragraph break.
         if !self.selected_range.is_empty() {
@@ -384,7 +384,7 @@ impl EditorState {
         }
     }
 
-    /// ⇧Enter: a line break inside the block (ADR 0060). In prose, lists and
+    /// ⇧Enter: a line break inside the block. In prose, lists and
     /// quotes it's a CommonMark hard break (`\` then a newline, the list or
     /// quote prefix kept); in a table cell `<br>`; in code and math a plain
     /// newline. Headings can't hold a break, and a break needs text before it
@@ -424,7 +424,7 @@ impl EditorState {
     }
 
     /// What ⌫ at the body start of `row` (or ⌦, with `forward`, at its end)
-    /// removes around a paragraph break (ADR 0060): the range and where the
+    /// removes around a paragraph break: the range and where the
     /// caret lands ([`delete::break_delete_range`]).
     fn break_delete_range(&self, row: usize, forward: bool) -> Option<(Range<usize>, usize)> {
         delete::break_delete_range(&self.content, self.scan_data().blocks(), row, forward)
@@ -585,7 +585,7 @@ impl EditorState {
 
     pub(super) fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
-            // Ordered items show the numbers written (ADR 0110), so the
+            // Ordered items show the numbers written, so the
             // source copies as the screen reads.
             let text = self.content[self.copy_range()].to_string();
             self.write_clipboard(text, cx);
@@ -910,7 +910,7 @@ impl EntityInputHandler for EditorState {
         // Composition updates retain the existing editor undo contract: only
         // the commit records a snapshot. Hosts still receive every exact change.
         // The state a composition starts from is an undo point too, so Undo
-        // still reaches a host's step just before it (a decision, ADR 0079).
+        // still reaches a host's step just before it (a decision).
         if self.marked_range.is_none() && !new_text.is_empty() {
             self.push_undo_point();
         }
@@ -1372,8 +1372,7 @@ mod tests {
             text_of(&editor, cx),
             "| A | B |\n| --- | --- |\n| one<br> | two |"
         );
-        // From the last row, Enter adds a row, the caret in its column
-        // (ADR 0110).
+        // From the last row, Enter adds a row, the caret in its column.
         cx.simulate_keystrokes("enter");
         assert_eq!(
             text_of(&editor, cx),
@@ -1461,7 +1460,7 @@ mod tests {
 
     #[gpui::test]
     fn math_is_ordinary_text_for_arrows_and_deletion(cx: &mut gpui::TestAppContext) {
-        // ADR 0031: mdoc has no math editor, so the caret enters math and
+        // Mdoc has no math editor, so the caret enters math and
         // Backspace edits it character by character instead of deferring.
         let (editor, cx) = cx.add_window_view(EditorState::new);
         editor.update_in(cx, |e, window, cx| {

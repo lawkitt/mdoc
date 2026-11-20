@@ -148,7 +148,7 @@ pub fn table_cell_ranges(line: &str) -> Vec<Range<usize>> {
 
 /// Each cell's whole span between its pipes, line-local, in the order of
 /// [`table_cell_ranges`]: the cell's content with its spaces, where typing
-/// in the cell stays in the cell (ADR 0109). A row left without its closing
+/// in the cell stays in the cell. A row left without its closing
 /// pipe (`| a | b`) ends with the text after its last pipe, when there is
 /// some.
 pub fn table_cell_spans(line: &str) -> Vec<Range<usize>> {
@@ -171,7 +171,7 @@ pub fn table_cell_spans(line: &str) -> Vec<Range<usize>> {
 }
 
 /// Byte ranges of the `<br>`, `<br/>` and `<br />` tags (any case) in a table
-/// cell: converted DOCX tables break cell lines with them (ADR 0046). A tag
+/// cell: converted DOCX tables break cell lines with them. A tag
 /// inside a code span or after a backslash is literal text, not a break.
 pub fn table_cell_breaks(content: &str) -> Vec<Range<usize>> {
     let b = content.as_bytes();

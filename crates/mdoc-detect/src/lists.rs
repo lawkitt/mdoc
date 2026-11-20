@@ -1,4 +1,4 @@
-//! The user's lists (ADR 0092), the last scan-time stage: a proposal whose
+//! The user's lists, the last scan-time stage: a proposal whose
 //! wording is on Never goes, and every whole-word mention of an Always
 //! wording becomes one, ignoring case and whitespace. A person's Always
 //! entry also proposes propagation's forms of the name
@@ -22,7 +22,7 @@ pub fn apply(source: &str, mut detections: Vec<Detection>, lists: &Lists) -> Vec
     for entry in &lists.always {
         let category = entry.category();
         let mut found = mentions(source, &entry.wording);
-        // A listed person's other names too (ADR 0092). Where the full name
+        // A listed person's other names too. Where the full name
         // appears, the review's propagation proposes them from it, with a
         // title's context and the ordinary-word rule; only where it does
         // not does the list find them.

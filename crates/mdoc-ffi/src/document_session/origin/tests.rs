@@ -271,7 +271,7 @@ fn the_sample_is_known_in_the_list() {
     assert_eq!(session.follow_first_line(library.clone()).unwrap(), None);
 }
 
-/// Find names again (ADR 0109): a second scan over the edited text
+/// Find names again: a second scan over the edited text
 /// proposes what was typed and keeps every decision made.
 #[test]
 fn finding_names_again_proposes_typed_names_and_keeps_decisions() {

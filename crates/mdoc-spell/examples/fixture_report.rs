@@ -1,4 +1,4 @@
-//! Spellcheck evidence over the OCR fixtures (ADR 0036): flags on the
+//! Spellcheck evidence over the OCR fixtures: flags on the
 //! ground-truth transcripts are false positives; flags on the prepared OCR
 //! output mix real recognition errors with the same false positives.
 //!

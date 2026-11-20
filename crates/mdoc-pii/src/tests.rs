@@ -1939,7 +1939,7 @@ fn identity_variants(review: &Review, identity: u64) -> Vec<(String, usize)> {
 }
 
 /// U27: the model's six aliases for one person in the Russian demo, and
-/// "Марина" it missed, become one identity (ADR 0092).
+/// "Марина" it missed, become one identity.
 #[test]
 fn the_russian_demo_gives_pavlova_one_identity() {
     let source = include_str!("../../../docs/product-media/Соглашение об урегулировании.md");
@@ -3341,7 +3341,7 @@ fn a_birth_dates_label_is_its_column_or_its_label_words() {
 }
 
 /// Review of #439: a date on the Always list counts every mention, even
-/// one a context rule found as a date of birth too (ADR 0092).
+/// one a context rule found as a date of birth too.
 #[test]
 fn an_always_listed_date_counts_every_mention() {
     let source = "DOB: 14/03/1988. Recorded 14/03/1988.";

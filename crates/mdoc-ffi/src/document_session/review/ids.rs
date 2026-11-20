@@ -1,4 +1,4 @@
-//! Mention ids that stay the same across a change (ADR 0104): the apps keep
+//! Mention ids that stay the same across a change: the apps keep
 //! the review bar on a mention by its id while Replace, Keep or an edit
 //! elsewhere moves its range. `mdoc_pii` numbers proposals, replacements and
 //! kept mentions apart, so a mention changing state would change id; here a

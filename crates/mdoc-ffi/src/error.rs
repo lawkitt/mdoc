@@ -31,7 +31,7 @@ pub enum CoreError {
 }
 
 /// Why a review call (`DocumentSession::review`, `hand_off`) did not
-/// apply, typed so each shows its own message (ADR 0104).
+/// apply, typed so each shows its own message.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum ReviewError {
     /// Copy for AI and Share wait until every proposal is replaced or kept.
