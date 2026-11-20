@@ -428,6 +428,10 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Shelf]** Windows notification-area flyout under ADR 0084's rules, and
   Open at login (`SMAppService` on macOS) under the menu bar setting.
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
+  Candidates: Fluent and storytold's `craft-i18n` (English-keyed TSV, CLDR
+  plurals); decide first whether core strings that cross FFI (the import
+  note) are localized in Rust or sent as counts for the platforms to word.
+  *From the 2026-11-20 craft crates grill.*
 - **[Import]** Images (screenshots, photos of pages) through OCR, like Anoni's
   Image → text. On desktop, Mirage's masks give the page outline.
   *From the vision grill (#911).*
@@ -572,12 +576,17 @@ never lists, role-aware aliases and hidden Office content moved to 0.4.0.
   whether mdoc's reviewed-text-only rule can hold over MCP (serve only
   reviewed, ready documents of a case; restore through the case) and
   whether that comes before or after the browser companion. *From the
-  2026-10-31 competitor scan.*
+  2026-10-31 competitor scan.* Base: storytold's `craft-mcp-server` (stdio,
+  serde_json only), the reviewed-only rule in our handlers. *From the
+  2026-11-20 craft crates grill.*
 - **[Import] To grill: e-mail import.** Anoni reads e-mail; lawyers'
   facts often arrive as `.eml` or Outlook `.msg` threads with attachments.
   Questions: headers (From/To are personal data), quoted history,
   attachments as separate tabs of one case. *From the 2026-10-31
-  competitor scan.*
+  competitor scan.* Engine: storytold's `craft-mime` for `.eml` (charset
+  detection on); no crate reads `.msg`, so our own reader on `craft-cfb` and
+  `craft-rtf`'s compressed-RTF decoder; `craft-pst` if mailboxes come up.
+  *From the 2026-11-20 craft crates grill.*
 - **[Cases] To grill: firm-managed settings.** Doczilla lets a firm make
   pseudonymization mandatory; Harvey enforces ethical walls on every AI
   call; Velum and Anoni keep audit logs. A managed profile (macOS
@@ -728,6 +737,19 @@ Android takes what applies. Its clipboard finding is
   (native resolution, no OCR or vision model). *From #911.*
 - **[OCR]** QR codes on scans: re-measure `rxing` on at least 20 real scanned
   codes. *From #911.*
+- **[Import]** Password-protected DOCX, XLSX, PPTX and DOC: `mdoc-import`
+  decrypts with storytold's `craft-offcrypto` (and `craft-doc-binary` for
+  RC4) before conversion and the preview; the password is asked in the
+  import card and never stored. *Done when:* real files saved by Word, Excel
+  and LibreOffice open. *From the 2026-11-20 craft crates grill.*
+- **[Import]** Dynamic XFA forms, which import as "Please wait…": first find
+  at least 3 real legal XFA PDFs in public sources; only then spike
+  pdfcraft's `xfa` layout in the pdf-inspector fork. *From the 2026-11-20
+  craft crates grill.*
+- **[Restore]** Save a restored reply as a new Word file through storytold's
+  `craft-markdown` and `craft-docx` writer; no original file involved. Pairs
+  with mobile's Save reply as document. *From the 2026-11-20 craft crates
+  grill.*
 
 ## Ongoing tracks
 
@@ -779,6 +801,11 @@ Android takes what applies. Its clipboard finding is
   report of replacements; a re-identification risk hint. For PDF, Panoply's `pdf.redact`
   shape fits: redraw only matched pages with aliases painted in, an invisible
   text layer, matched metadata dropped, and a leak check before saving.
+  pdfcraft's `redact` (glyph removal, residue check, leak proof over every
+  stream) and its OCR text-layer writer are the reference to port; its
+  aliases are WinAnsi-only and a partly marked JPEG is removed whole.
+  storytold's `craft-docx` doesn't fit DOCX export: it rebuilds the body
+  from its model and drops unknown XML.
 - Agent access (CLI or MCP, as in Panoply and MiaoYan) only where the agent
   receives text the user reviewed in mdoc, then restores through the case;
   design and trust model separately.
