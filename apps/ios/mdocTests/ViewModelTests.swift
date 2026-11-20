@@ -24,6 +24,22 @@ final class DocumentViewModelTests: XCTestCase {
             findsNames: findsNames)
     }
 
+    /// The system shows a continued task's title outside the app, so a
+    /// document job never puts the document's title there.
+    func testBackgroundTaskTitlesNeverNameTheDocument() async throws {
+        let title = "Halvorsen v. Okonkwo"
+        let (core, storage) = try Fixture.core(memory: Fixture.belowFloor)
+        let session = try core.library.importDocument(
+            .text(Letters.quotation), title: title, into: .newCase(name: "Case"))
+        let background = RecordingContinuation()
+        let model = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: background), storage: storage)
+        await model.recognize()
+        await model.findNames()
+        XCTAssertEqual(background.titles, ["Recognizing a document", "Finding names"])
+        XCTAssertFalse(background.titles.contains { $0.contains(title) })
+    }
+
     /// Below the floor the document offers no Find names: it says why, and
     /// the hand-off is there for what the user marks (ADR 0088).
     func testBelowTheFloorTheNoteStandsWhereFindNamesWouldBe() async throws {
@@ -422,4 +438,15 @@ private final class EmptyLibrary: Library {
     func deleteDocument(_ document: DocumentID) throws {}
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult { throw CoreError.noCase }
     func saveReply(_ reply: String, to document: DocumentID) throws {}
+}
+
+/// Records the title of every continued task a job asks for.
+private final class RecordingContinuation: BackgroundContinuation, @unchecked Sendable {
+    private(set) var titles: [String] = []
+
+    @MainActor
+    func begin(title: String, expire: @escaping @Sendable () -> Void) -> any BackgroundLease {
+        titles.append(title)
+        return NoBackgroundContinuation().begin(title: title, expire: expire)
+    }
 }
