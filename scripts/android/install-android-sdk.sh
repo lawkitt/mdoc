@@ -79,6 +79,8 @@ packages+=("${platforms[@]}")
 mkdir -p "$sdk" "$cache"
 
 # The manifest that lists a package's archive: package.xml is copied from it.
+# Fetched once per run: a copy a failed run left behind may predate a new pin.
+rm -f "$cache/repository2-3.xml" "$cache/sys-img2-3.xml"
 manifest_for() {
   local url=$1 manifest
   case "$url" in
