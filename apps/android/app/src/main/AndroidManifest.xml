@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Nothing leaves the phone in a backup or a device-to-device transfer
- : backups are off, and the extraction rules exclude every domain
+  Nothing leaves the phone in a backup or a device-to-device transfer:
+  backups are off, and the extraction rules exclude every domain
   for both, which Android 12+ needs beyond allowBackup="false".
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
