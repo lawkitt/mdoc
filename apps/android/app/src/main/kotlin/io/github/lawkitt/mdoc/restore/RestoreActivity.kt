@@ -62,7 +62,7 @@ import kotlinx.coroutines.withContext
 import uniffi.mdoc_ffi.markdownStyling
 
 /**
- * Restore with mdoc (ADR 0085, 0089): an AI app shares its reply here as
+ * Restore with mdoc: an AI app shares its reply here as
  * text; mdoc restores it with the case of the most recently shared document,
  * with a picker for another case and never mixing two, then offers Copy,
  * Share and Save to document. It runs in mdoc's own process, so it opens the
@@ -217,7 +217,7 @@ private fun Actions(
         ) {
             notice?.let { Text(stringResource(it), style = MaterialTheme.typography.labelLarge) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Copy leads: most replies go back into a message (ADR 0087).
+                // Copy leads: most replies go back into a message.
                 Button({
                     // The restored reply holds originals: marked sensitive (lawkitt/mdoc#321).
                     copy(context, result.text, sensitive = true)

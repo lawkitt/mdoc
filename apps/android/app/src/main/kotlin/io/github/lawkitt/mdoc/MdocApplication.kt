@@ -24,7 +24,7 @@ class MdocApplication : Application() {
         setup.refresh()
     }
 
-    /** The one long job (ADR 0006, 0089). */
+    /** The one long job. */
     val jobs: Jobs by lazy { Jobs(this) }
 
     val network: NetworkWatch by lazy { NetworkWatch(this) }

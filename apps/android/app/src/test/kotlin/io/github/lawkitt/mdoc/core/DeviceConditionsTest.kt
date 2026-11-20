@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import uniffi.mdoc_ffi.Thermal
 
-/** Android's thermal statuses on the core's four steps (ADR 0120): the scan pauses only at critical. */
+/** Android's thermal statuses on the core's four steps: the scan pauses only at critical. */
 class DeviceConditionsTest {
     @Test
     fun statusesMapOntoTheCoresSteps() {

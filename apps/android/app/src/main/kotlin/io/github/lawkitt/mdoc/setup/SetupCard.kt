@@ -27,7 +27,7 @@ import io.github.lawkitt.mdoc.core.DeviceTier
 import uniffi.mdoc_ffi.ModelId
 
 /**
- * The first-use setup card (ADR 0026, 0085): what downloads and how large,
+ * The first-use setup card: what downloads and how large,
  * on Wi-Fi unless the user allows cellular; each model's state while it runs.
  * `continues`: a document asked for it, so the button says "& continue".
  */
@@ -95,7 +95,7 @@ fun SetupCard(
     }
 }
 
-/** "Download over cellular?" (ADR 0088): asked on any cellular connection. */
+/** "Download over cellular?": asked on any cellular connection. */
 @Composable
 fun CellularQuestion(state: SetupState, onAnswer: (useCellular: Boolean) -> Unit) {
     if (!state.asksCellular) return

@@ -6,7 +6,7 @@ import java.io.InputStream
 import java.util.UUID
 
 /**
- * mdoc's on-device folders (ADR 0085, 0089), all app-private and kept out of
+ * mdoc's on-device folders, all app-private and kept out of
  * backups and device transfers by the manifest's extraction rules. The
  * core's `Library` keeps Markdown in `documents/`, cases in `cases/` and the
  * OCR pages of unfinished imports in `imports/`; the app keeps the source

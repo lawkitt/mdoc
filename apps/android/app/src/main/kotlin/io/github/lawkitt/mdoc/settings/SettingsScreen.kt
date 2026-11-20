@@ -36,9 +36,9 @@ private const val SOURCE = "https://github.com/lawkitt/mdoc"
 private const val PERMISSION = "https://github.com/lawkitt/mdoc/blob/main/LICENSE-APP-STORES.md"
 
 /**
- * Settings (ADR 0085, 0088): the models and their downloads, where the
- * documents live, and About with the licence and the app-store permission
- * (ADR 0086). Below the detector floor it says the phone cannot find names.
+ * Settings: the models and their downloads, where the
+ * documents live, and About with the licence and the app-store permission.
+ * Below the detector floor it says the phone cannot find names.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

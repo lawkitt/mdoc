@@ -46,7 +46,7 @@ import uniffi.mdoc_ffi.MarkdownStyling
 
 /**
  * The document's Markdown source, read-only and selectable, styled from the
- * core's spans with markers dimmed (ADR 0085, 0087, 0089): the twin of the
+ * core's spans with markers dimmed: the twin of the
  * iOS `UITextView`. Every range is the core's UTF-8 source range, mapped
  * once per text; the Markdown is never re-rendered. Candidates are tappable
  * and spoken with their state; a selection offers only Replace…, never Copy,
@@ -133,7 +133,7 @@ private fun reviewTextView(
     setTextIsSelectable(true)
     textSize = 17f
     setLineSpacing(4f, 1f)
-    // A hyphen inside a name or an email reads as part of it (ADR 0087).
+    // A hyphen inside a name or an email reads as part of it.
     hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
     breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
     movementMethod = CandidateMovement(onCandidate)
@@ -257,7 +257,7 @@ fun styledReviewText(
     fun set(span: Any, range: IntRange) = text.setSpan(span, range.first, range.last + 1, flags)
 
     // A blank source line draws about a third of a line high; the text, and
-    // so every offset, stays the same (ADR 0087).
+    // so every offset, stays the same.
     var lineStart = 0
     while (lineStart < markdown.length) {
         val newline = markdown.indexOf('\n', lineStart).let { if (it < 0) markdown.length else it }
@@ -348,7 +348,7 @@ private fun withAlpha(colour: Int, alpha: Float): Int = (colour and 0x00FFFFFF) 
 
 /**
  * A restored reply, styled with the review text's spans and colours, its
- * restored values highlighted (ADR 0087). The reply holds the user's own
+ * restored values highlighted. The reply holds the user's own
  * names again, so it is selectable and copyable as ordinary text.
  */
 @Composable

@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 sealed interface PrimaryAction {
     data class Recognize(val resume: Boolean) : PrimaryAction
 
-    /** A file that needs no recognition stopped importing before its text was read (ADR 0088). */
+    /** A file that needs no recognition stopped importing before its text was read. */
     data object FinishImport : PrimaryAction
 
     data object FindNames : PrimaryAction
@@ -73,7 +73,7 @@ class DocumentViewModel(
     private val documents: Documents,
     private val session: Documents.Session,
     private val jobs: Jobs,
-    /** Above the detector floor; below it there is no Find names (ADR 0088). */
+    /** Above the detector floor; below it there is no Find names. */
     val findsNames: Boolean,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(DocumentState(session.snapshot()))
@@ -116,14 +116,14 @@ class DocumentViewModel(
         finish(JobKind.Recognize, jobs.run(JobKind.Recognize, jobId, title) { session.recognize(it) })
     }
 
-    /** Minutes a scan takes on this phone, when more than about one (ADR 0120). */
+    /** Minutes a scan takes on this phone, when more than about one. */
     fun scanEstimate(): Int? = if (findsNames) session.scanEstimate() else null
 
     fun findNames(title: String) = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
         val outcome = jobs.run(JobKind.Scan, jobId, title) { session.scan(it) }
         finish(JobKind.Scan, outcome)
-        // A scan that finds nothing says so, rather than going quietly to Share (ADR 0087).
+        // A scan that finds nothing says so, rather than going quietly to Share.
         if (outcome is JobOutcome.Finished && outcome.value.candidates.isEmpty()) {
             mutable.update { it.copy(notice = io.github.lawkitt.mdoc.R.string.no_names_found) }
         }

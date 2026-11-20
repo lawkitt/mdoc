@@ -22,7 +22,7 @@ import uniffi.mdoc_ffi.JobStage
 import uniffi.mdoc_ffi.ModelId
 
 /**
- * Setup and a long job on an Android image (ADR 0088, 0089): text
+ * Setup and a long job on an Android image: text
  * recognition downloads on Wi-Fi as a foreground-service job started with
  * mdoc on screen, Rust verifies and installs it, and a scanned PDF then
  * reads exactly through it as another long job. The emulator is below the

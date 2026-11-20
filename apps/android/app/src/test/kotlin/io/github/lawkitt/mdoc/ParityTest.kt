@@ -16,7 +16,7 @@ import uniffi.mdoc_ffi.ReviewSnapshot
 import uniffi.mdoc_ffi.TextRange
 
 /**
- * ADR 0085's parity tests on the JVM (ADR 0089): the core called through
+ * The core's parity tests on the JVM: the core called through
  * the Kotlin bindings gives the same bytes as the desktop's GUI-free path,
  * checked against the goldens `crates/mdoc-ffi/tests/parity.rs` writes in
  * `tests/fixtures/mobile-parity/`. The twin of the iOS `ParityTests`; the
@@ -140,7 +140,7 @@ class ParityTest {
                     val inSession = session.restoreReply(reply)
                     val inShareTarget = library.restore(saved.case.id, reply)
                     assertEquals(inSession.text, inShareTarget.text)
-                    // "Maya" alone joined her full name (ADR 0092), so it restores as that.
+                    // "Maya" alone joined her full name, so it restores as that.
                     val expected = markdown.replaceFirst("Maya brought", "Maya Bennett brought")
                     assertEquals("Summary:\n\n$expected", inShareTarget.text)
                 }

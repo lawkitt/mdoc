@@ -10,7 +10,7 @@ import uniffi.mdoc_ffi.Runtimes
 import uniffi.mdoc_ffi.Setup
 import java.io.File
 
-/** Below the floor the phone cannot find names; it still reads and marks (ADR 0088, 0089). */
+/** Below the floor the phone cannot find names; it still reads and marks. */
 enum class DeviceTier { Detector, BelowFloor }
 
 /** One model setup offers, with what it still needs. */
@@ -19,7 +19,7 @@ data class ModelOffer(val id: ModelId, val name: String, val bytes: Long, val in
 data class SetupSnapshot(
     val tier: DeviceTier,
     val offers: List<ModelOffer>,
-    /** Why the phone is below the floor: too little memory, or too slow (ADR 0120). */
+    /** Why the phone is below the floor: too little memory, or too slow. */
     val belowFloor: FloorReason? = null,
     /** Seconds 10 pages take on this phone, once the detector was timed. */
     val tenPagesSeconds: Long? = null,
@@ -60,7 +60,7 @@ class Models(
     }
 
     /**
-     * Times one short detector run and keeps it (ADR 0120): right after the
+     * Times one short detector run and keeps it: right after the
      * detector installs. It runs as a scan does: it needs the memory free,
      * pauses while the phone is too hot and stops when the job is cancelled.
      * A phone past the speed ceiling is below the floor afterwards, and its

@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Nothing leaves the phone in a backup or a device-to-device transfer
-  (ADR 0089): backups are off, and the extraction rules exclude every domain
+ : backups are off, and the extraction rules exclude every domain
   for both, which Android 12+ needs beyond allowBackup="false".
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Model downloads, the only network use (ADR 0002). -->
+    <!-- Model downloads, the only network use. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Long jobs keep running in a dataSync foreground service (ADR 0089). -->
+    <!-- Long jobs keep running in a dataSync foreground service. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -34,7 +34,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Open in mdoc: PDF, DOCX and images from other apps (ADR 0089). -->
+            <!-- Open in mdoc: PDF, DOCX and images from other apps. -->
             <intent-filter android:label="@string/app_name">
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.VIEW" />
@@ -50,7 +50,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Restore with mdoc: an AI reply shared as text (ADR 0085, 0089). -->
+        <!-- Restore with mdoc: an AI reply shared as text. -->
         <activity
             android:name=".restore.RestoreActivity"
             android:exported="true"

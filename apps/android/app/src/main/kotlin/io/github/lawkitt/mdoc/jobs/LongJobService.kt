@@ -14,7 +14,7 @@ import io.github.lawkitt.mdoc.MdocApplication
 import io.github.lawkitt.mdoc.R
 
 /**
- * Keeps a long job running while mdoc is in the background (ADR 0089): a
+ * Keeps a long job running while mdoc is in the background: a
  * `dataSync` foreground service (Android lists import and local file
  * processing under it) with a notification that names the job and offers
  * Cancel. Started only by [Jobs.run], from a visible screen; Android 15's

@@ -12,15 +12,15 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Where the 32-byte key sealing saved cases comes from (ADR 0085, 0089). */
+/** Where the 32-byte key sealing saved cases comes from. */
 fun interface CaseKeyStore {
     /** The key, made and stored the first time. */
     fun key(): ByteArray
 }
 
 /**
- * The case key as 32 random bytes wrapped by an Android Keystore AES key
- * (ADR 0089): the wrapping key never leaves the Keystore (StrongBox when the
+ * The case key as 32 random bytes wrapped by an Android Keystore AES key:
+ * the wrapping key never leaves the Keystore (StrongBox when the
  * phone has one) and needs no fingerprint; the wrapped bytes live in
  * no-backup storage, so a backup or a new phone never has them. From Android
  * 15 it also works only while the phone is unlocked. On Android 12 to 14 that

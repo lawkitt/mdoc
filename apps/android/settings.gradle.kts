@@ -1,4 +1,4 @@
-// The mdoc Android app (ADR 0089): Compose over the Rust core's Kotlin bindings.
+// The mdoc Android app: Compose over the Rust core's Kotlin bindings.
 pluginManagement {
     repositories {
         google()

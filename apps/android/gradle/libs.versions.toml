@@ -1,4 +1,4 @@
-# Exact pins (ADR 0089). Every artifact's SHA-256 is checked against
+# Exact pins. Every artifact's SHA-256 is checked against
 # gradle/verification-metadata.xml; regenerate it after a bump with
 #   ./gradlew --write-verification-metadata sha256 help assembleDebug testDebugUnitTest assembleDebugAndroidTest
 [versions]

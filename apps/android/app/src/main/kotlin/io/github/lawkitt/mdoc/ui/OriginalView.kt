@@ -46,7 +46,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The page a document came from (ADR 0085): a PDF's pages, drawn by
+ * The page a document came from: a PDF's pages, drawn by
  * Android's own renderer (PDFium stays in the core for reading text), or a
  * photo, both zoomable with two fingers. DOCX and pasted text have none.
  */

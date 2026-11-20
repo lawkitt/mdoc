@@ -13,7 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** One job at a time (ADR 0006): a download asked for while another job runs says so, as on iOS. */
+/** One job at a time: a download asked for while another job runs says so, as on iOS. */
 @RunWith(AndroidJUnit4::class)
 class JobSlotTest {
     @get:Rule

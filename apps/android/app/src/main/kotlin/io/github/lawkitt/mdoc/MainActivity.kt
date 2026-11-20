@@ -106,7 +106,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     var settings by rememberSaveable { mutableStateOf(false) }
     var readAfterOpen by rememberSaveable { mutableStateOf(false) }
 
-    // Notification permission is asked at the first long job; the job runs either way (ADR 0089).
+    // Notification permission is asked at the first long job; the job runs either way.
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     fun beforeJob() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -120,7 +120,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         home.received(context.contentResolver, uris, io.github.lawkitt.mdoc.core.SourceKind.Image, context.getString(R.string.photo))
     }
-    // Scan: the system camera, a page per photo (ADR 0089); mdoc itself asks for no camera permission.
+    // Scan: the system camera, a page per photo; mdoc itself asks for no camera permission.
     // Kept through activity recreation: Android may recreate mdoc while the camera is open.
     var pagePaths by rememberSaveable { mutableStateOf(listOf<String>()) }
     var askNextPage by rememberSaveable { mutableStateOf(false) }

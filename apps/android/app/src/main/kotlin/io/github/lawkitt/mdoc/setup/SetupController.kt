@@ -24,7 +24,7 @@ data class SetupState(
     val snapshot: SetupSnapshot,
     /** Download progress by model, 0 to 1, while it runs. */
     val progress: Map<ModelId, Float> = emptyMap(),
-    /** Downloading, but held: no Wi-Fi, and cellular not allowed (ADR 0088). */
+    /** Downloading, but held: no Wi-Fi, and cellular not allowed. */
     val waitingForWiFi: Boolean = false,
     /** Checking and installing the last file. */
     val installing: Boolean = false,
@@ -38,12 +38,12 @@ data class SetupState(
     val missingBytes: Long get() = snapshot.offers.filter { !it.installed }.sumOf { it.bytes }
     val needsSetup: Boolean get() = snapshot.offers.any { !it.installed }
 
-    /** Home's card: the detector tier, something missing, not dismissed (ADR 0088). */
+    /** Home's card: the detector tier, something missing, not dismissed. */
     val showsCard: Boolean get() = snapshot.tier == io.github.lawkitt.mdoc.core.DeviceTier.Detector && needsSetup && !dismissed
 }
 
 /**
- * Model setup for the whole app (ADR 0085, 0088, 0089): downloads each
+ * Model setup for the whole app: downloads each
  * pinned file in Kotlin as a long job, Wi-Fi only unless the user says yes
  * to cellular, and hands it to Rust to verify and install. A job that asked
  * for setup runs again once the models are in.
@@ -76,7 +76,7 @@ class SetupController(
         mutable.update { it.copy(dismissed = true) }
     }
 
-    /** Download what is missing; on cellular, ask first (ADR 0088). Then run `then`. */
+    /** Download what is missing; on cellular, ask first. Then run `then`. */
     fun download(then: (() -> Unit)? = null) {
         if (mutable.value.working) return
         continuation = then
@@ -121,7 +121,7 @@ class SetupController(
                 it.copy(
                     snapshot = snapshotOrEmpty(), working = false, progress = emptyMap(), waitingForWiFi = false,
                     installing = false,
-                    // The one job slot is taken (ADR 0006): say so, as iOS does, rather than nothing.
+                    // The one job slot is taken: say so, as iOS does, rather than nothing.
                     error = when (outcome) {
                         is JobOutcome.Failed -> outcome.error.message
                         JobOutcome.Busy -> context.getString(R.string.another_job_running)
@@ -129,7 +129,7 @@ class SetupController(
                     },
                 )
             }
-            // Too slow to find names (ADR 0120): the job that asked for the
+            // Too slow to find names: the job that asked for the
             // detector does not run; the document says why instead.
             val tooSlow = mutable.value.snapshot.belowFloor == uniffi.mdoc_ffi.FloorReason.SPEED
             if (outcome is JobOutcome.Finished && !mutable.value.needsSetup && !tooSlow) next?.invoke()
@@ -167,7 +167,7 @@ class SetupController(
                 done += file.bytes.toLong()
             }
         }
-        // Right after the detector installs, in the same job: time it (ADR 0120).
+        // Right after the detector installs, in the same job: time it.
         // A failed run leaves it installed and untimed, for the next launch.
         if (models.snapshot().needsTiming) runCatching { models.timeDetector(observer) }
     }

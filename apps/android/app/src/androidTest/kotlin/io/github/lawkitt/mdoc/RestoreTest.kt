@@ -20,9 +20,9 @@ import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.JobStage
 
 /**
- * Restore with mdoc (ADR 0085, 0089): a reply shared as text restores with
+ * Restore with mdoc: a reply shared as text restores with
  * the case of the document shared last, and Save to document keeps it as
- * that document's reply (ADR 0078).
+ * that document's reply.
  */
 @RunWith(AndroidJUnit4::class)
 class RestoreTest {
