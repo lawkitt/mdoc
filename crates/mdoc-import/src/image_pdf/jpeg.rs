@@ -10,9 +10,14 @@ use super::{MAX_LONG_SIDE, Page, Stream};
 /// The page keeps every segment a decoder needs and loses the rest:
 /// APP0–APP13 and APP15 (JFIF, EXIF with its GPS position and camera,
 /// XMP, ICC profiles, MPF and its previews, Photoshop's resources) and
-/// comments go. APP14 stays: Adobe's colour transform flag holds no
-/// metadata and tells the decoder how to read the colours. Anything after
-/// the end-of-image marker (depth maps, appended previews) goes too.
+/// comments go. Of APP14, only Adobe's colour-transform marker stays, and
+/// rebuilt from its fixed fields: it holds no metadata and tells the
+/// decoder how to read the colours. Anything after the end-of-image marker
+/// (depth maps, appended previews) goes too.
+///
+/// A file whose scans use a quantization or Huffman table it never defines
+/// can't be decoded, so it doesn't pass through: the decoder refuses it
+/// instead of OCR reading a broken page.
 pub(super) fn passthrough(jpeg: &[u8]) -> Option<Page> {
     let segments = Segments::read(jpeg)?;
     let frame = segments.frame?;
@@ -39,6 +44,72 @@ struct Frame {
     height: u16,
     width: u16,
     components: u8,
+    /// Each component's identifier and quantization table.
+    tables: Vec<(u8, u8)>,
+    progressive: bool,
+}
+
+/// The tables defined so far: quantization by identifier, Huffman by
+/// class (0 DC, 1 AC) and identifier.
+#[derive(Default)]
+struct Tables {
+    quantization: [bool; 4],
+    huffman: [[bool; 4]; 2],
+}
+
+impl Tables {
+    /// Record the tables a DQT segment's body defines.
+    fn quantization(&mut self, mut body: &[u8]) -> Option<()> {
+        while let Some((&head, rest)) = body.split_first() {
+            let size = if head >> 4 == 0 { 64 } else { 128 };
+            *self.quantization.get_mut(usize::from(head & 0x0f))? = true;
+            body = rest.get(size..)?;
+        }
+        Some(())
+    }
+
+    /// Record the tables a DHT segment's body defines.
+    fn huffman(&mut self, mut body: &[u8]) -> Option<()> {
+        while let Some((&head, rest)) = body.split_first() {
+            let counts = rest.get(..16)?;
+            let values: usize = counts.iter().map(|&count| usize::from(count)).sum();
+            let class = self.huffman.get_mut(usize::from(head >> 4))?;
+            *class.get_mut(usize::from(head & 0x0f))? = true;
+            body = rest.get(16 + values..)?;
+        }
+        Some(())
+    }
+
+    /// Whether every table the scan in an SOS segment's `body` uses is
+    /// defined, for `frame`.
+    fn cover(&self, frame: &Frame, body: &[u8]) -> Option<()> {
+        let count = usize::from(*body.first()?);
+        let selectors = body.get(1..1 + 2 * count)?;
+        let spectral = body.get(1 + 2 * count..4 + 2 * count)?;
+        let (start, approximation_high) = (spectral[0], spectral[2] >> 4);
+        // Baseline scans and a progressive first DC scan decode DC values;
+        // a progressive scan past DC decodes AC values; DC refinement needs
+        // no table.
+        let dc = !frame.progressive || (start == 0 && approximation_high == 0);
+        let ac = !frame.progressive || start > 0;
+        for selector in selectors.as_chunks::<2>().0 {
+            let (_, quantization) = frame.tables.iter().find(|(id, _)| *id == selector[0])?;
+            self.quantization
+                .get(usize::from(*quantization))?
+                .then_some(())?;
+            if dc {
+                self.huffman[0]
+                    .get(usize::from(selector[1] >> 4))?
+                    .then_some(())?;
+            }
+            if ac {
+                self.huffman[1]
+                    .get(usize::from(selector[1] & 0x0f))?
+                    .then_some(())?;
+            }
+        }
+        Some(())
+    }
 }
 
 /// A JPEG read segment by segment.
@@ -61,6 +132,7 @@ impl Segments {
             orientation: 1,
         };
         let (mut exif_seen, mut scanned) = (false, false);
+        let mut tables = Tables::default();
         segments.kept.extend_from_slice(&jpeg[..2]);
         let mut at = 2;
         loop {
@@ -96,13 +168,25 @@ impl Segments {
                     if segments.frame.is_some() || body.len() < 6 {
                         return None;
                     }
+                    let components = body[5];
+                    let tables = body
+                        .get(6..6 + 3 * usize::from(components))?
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
+                        .map(|component| (component[0], component[2]))
+                        .collect();
                     segments.frame = Some(Frame {
                         precision: body[0],
                         height: u16::from_be_bytes([body[1], body[2]]),
                         width: u16::from_be_bytes([body[3], body[4]]),
-                        components: body[5],
+                        components,
+                        tables,
+                        progressive: marker == 0xc2,
                     });
                 }
+                0xdb => tables.quantization(body)?,
+                0xc4 => tables.huffman(body)?,
                 // Lossless, hierarchical and arithmetic-coded frames are
                 // left to the decoder.
                 0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf => return None,
@@ -116,14 +200,21 @@ impl Segments {
                 }
                 _ => {}
             }
-            let metadata = matches!(marker, 0xe0..=0xed | 0xef | 0xfe);
+            let metadata = matches!(marker, 0xe0..=0xef | 0xfe);
             if !metadata {
                 segments.kept.extend_from_slice(segment);
+            } else if marker == 0xee && body.len() >= 12 && body.starts_with(b"Adobe") {
+                // Adobe's marker, rebuilt from its fixed fields (version,
+                // two flag words, colour transform): nothing private after
+                // them travels.
+                segments.kept.extend_from_slice(&[0xff, 0xee, 0x00, 0x0e]);
+                segments.kept.extend_from_slice(&body[..12]);
             }
             at = end;
             if marker == 0xda {
-                // A scan before any frame has nothing to decode against.
-                segments.frame.as_ref()?;
+                // A scan before any frame has nothing to decode against,
+                // nor one whose tables were never defined.
+                tables.cover(segments.frame.as_ref()?, body)?;
                 scanned = true;
                 // Entropy-coded data runs to the next marker that isn't a
                 // stuffed byte or a restart.

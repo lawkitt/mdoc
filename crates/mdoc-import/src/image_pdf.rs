@@ -185,19 +185,26 @@ fn pages(format: ImageFormat, bytes: &[u8]) -> Result<Vec<Page>, ImageError> {
     {
         return Ok(vec![page]);
     }
-    let (image, orientation) = decode(format, bytes)?;
+    let (image, orientation) = decode(format, bytes, later_frames(format, bytes) > 0)?;
     Ok(vec![encode(image, orientation, format.is_photo())?])
 }
 
 /// The first frame of `bytes`, within [`limits`], and its EXIF orientation.
-fn decode(format: ImageFormat, bytes: &[u8]) -> Result<(image::DynamicImage, u8), ImageError> {
+/// An `animated` image's decoder holds a canvas and a frame besides the
+/// output, so its budget is three images' worth.
+fn decode(
+    format: ImageFormat,
+    bytes: &[u8],
+    animated: bool,
+) -> Result<(image::DynamicImage, u8), ImageError> {
     use image::ImageDecoder;
     let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format.image_format());
     reader.limits(limits());
     let mut decoder = reader.into_decoder().map_err(error)?;
     // Not every decoder charges its output buffer to the limits, so the
     // pixels' size is checked here, before any is decoded.
-    if decoder.total_bytes() > MAX_ALLOC {
+    let buffers = if animated { 3 } else { 1 };
+    if decoder.total_bytes().saturating_mul(buffers) > MAX_ALLOC {
         return Err(ImageError::TooLarge);
     }
     let orientation = decoder

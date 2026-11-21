@@ -891,6 +891,80 @@ fn accepted_image_import_shows_its_pdf_from_memory(cx: &mut TestAppContext) {
     });
 }
 
+/// An accepted image import always shows the PDF it built, even when an
+/// Original of the same path is already up: the file may have changed
+/// since, and the Original must be the image OCR read.
+#[gpui::test]
+fn an_image_import_replaces_the_original_already_shown(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let photo = dir.path().join("scan.jpg");
+    std::fs::write(&photo, crate::preview::tests::marked_photo(1)).unwrap();
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.open_path(photo.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let first = cx.update(|_, cx| {
+        app.read(cx)
+            .preview
+            .pdf()
+            .cloned()
+            .expect("the first Original")
+    });
+    // The file changed before OCR ran: the import read the new version.
+    let built =
+        mdoc_import::image_pdf::build(&[&crate::preview::tests::marked_photo(6)], 150).unwrap();
+    app.update_in(cx, |app, window, cx| {
+        let mut imported = converted(photo.clone());
+        imported.source = import::Source::new(photo.clone(), None, built.pdf);
+        imported.is_pdf = true;
+        imported.is_image = true;
+        imported.warning = None;
+        app.proceed(Next::Import(Box::new(imported)), window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        let shown = app.preview.pdf().expect("the import's Original");
+        assert_ne!(shown.entity_id(), first.entity_id());
+        assert!(shown.read(cx).is_loaded());
+        // Orientation 6 makes the page tall: the import's PDF, not the first.
+        let frame = shown.read(cx).page_frames()[0];
+        assert!(
+            frame.height > frame.width,
+            "{} x {}",
+            frame.width,
+            frame.height
+        );
+    });
+}
+
+/// A renamed photo is known by its content, as the import knows it: its
+/// Original shows instead of "No preview".
+#[gpui::test]
+fn a_renamed_image_shows_its_original(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let photo = dir.path().join("scan.bin");
+    std::fs::write(&photo, crate::preview::tests::marked_photo(1)).unwrap();
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.open_source(photo.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert_ne!(
+            app.preview.message().map(String::as_str),
+            Some(crate::preview::NO_PREVIEW)
+        );
+        assert!(
+            app.preview
+                .pdf()
+                .is_some_and(|pdf| pdf.read(cx).is_loaded())
+        );
+    });
+}
+
 /// Opening a photo shows its Original, built from the file in memory; a
 /// damaged one says why it can't be shown.
 #[gpui::test]

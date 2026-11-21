@@ -65,6 +65,28 @@ fn page(pdf: &[u8]) -> Built {
     }
 }
 
+/// `bytes` saved as `name` and taken through the file import seam: the
+/// import asks OCR for its one page, and reading the file as the import
+/// does gives the PDF it built and the animation frames it left out.
+fn through_import(name: &str, bytes: &[u8]) -> ImagePdf {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(name);
+    std::fs::write(&path, bytes).unwrap();
+    match crate::import::prepare(&path, None, false) {
+        Err(crate::import::ImportError::NeedsOcr(_, pages, _, count)) => {
+            assert_eq!((pages, count), (vec![1], 1), "{name}");
+        }
+        other => panic!("{name}: {other:?}"),
+    }
+    let source = crate::import::Source::read(&path).unwrap();
+    let (pdf, frames_left_out) = source.image_pdf(DEFAULT_DPI).unwrap().unwrap();
+    ImagePdf {
+        pdf: pdf.bytes().to_vec(),
+        pages: 1,
+        frames_left_out,
+    }
+}
+
 fn build_one(bytes: &[u8]) -> ImagePdf {
     build(&[bytes], DEFAULT_DPI).unwrap()
 }
@@ -318,12 +340,12 @@ fn a_gps_tagged_jpeg_passes_through_without_any_metadata() {
 #[test]
 fn an_oversized_photo_is_scaled_down_and_only_it() {
     let at_limit = jpeg(MAX_LONG_SIDE, 16, [30, 60, 90]);
-    let page_at_limit = page(&build_one(&at_limit).pdf);
+    let page_at_limit = page(&through_import("at-limit.jpg", &at_limit).pdf);
     assert_eq!(page_at_limit.data, without_app0(&at_limit));
     assert_eq!((page_at_limit.width, page_at_limit.height), (4500, 16));
 
     let oversized = jpeg(4800, 320, [30, 60, 90]);
-    let page = page(&build_one(&oversized).pdf);
+    let page = page(&through_import("oversized.jpg", &oversized).pdf);
     assert_eq!((page.width, page.height), (4500, 300));
     assert_eq!(page.filter, "DCTDecode");
     assert_ne!(page.data, without_app0(&oversized));
@@ -339,7 +361,7 @@ fn an_oversized_photo_is_scaled_down_and_only_it() {
         20,
         Rgb([255, 255, 255]),
     )));
-    let page = self::page(&build_one(&wide_png).pdf);
+    let page = self::page(&through_import("wide.png", &wide_png).pdf);
     assert_eq!(
         (page.width, page.height, page.filter.as_str()),
         (4500, 10, "FlateDecode")
@@ -357,7 +379,7 @@ fn transparency_is_composited_on_white() {
             Rgba([255, 0, 0, 128])
         }
     });
-    let page = page(&build_one(&png(&DynamicImage::ImageRgba8(rgba))).pdf);
+    let page = page(&through_import("alpha.png", &png(&DynamicImage::ImageRgba8(rgba))).pdf);
     assert_eq!(
         (page.filter.as_str(), page.color.as_str()),
         ("FlateDecode", "DeviceRGB")
@@ -367,7 +389,7 @@ fn transparency_is_composited_on_white() {
     let gray = ImageBuffer::from_fn(2, 1, |x, _| {
         image::LumaA([0u8, if x == 0 { 0 } else { 255 }])
     });
-    let page = self::page(&build_one(&png(&DynamicImage::ImageLumaA8(gray))).pdf);
+    let page = self::page(&through_import("gray.png", &png(&DynamicImage::ImageLumaA8(gray))).pdf);
     assert_eq!(page.color, "DeviceGray");
     assert_eq!(inflate(&page.data), [255, 0]);
 }
@@ -382,7 +404,7 @@ fn sixteen_bit_images_become_eight_bit() {
             Rgb([0u16, 32896, 65535])
         }
     });
-    let built = build_one(&png(&DynamicImage::ImageRgb16(deep)));
+    let built = through_import("deep.png", &png(&DynamicImage::ImageRgb16(deep)));
     assert!(String::from_utf8_lossy(&built.pdf).contains("/BitsPerComponent 8 "));
     assert_eq!(inflate(&page(&built.pdf).data), [255, 0, 0, 0, 128, 255]);
 }
@@ -451,7 +473,7 @@ fn cmyk_becomes_rgb() {
     // Red in CMYK is no cyan, full magenta and yellow, no black; Adobe
     // stores the samples inverted.
     let red = cmyk_jpeg([255, 0, 0, 255]);
-    let page = page(&build_one(&red).pdf);
+    let page = page(&through_import("cmyk.jpg", &red).pdf);
     assert_eq!(
         (page.filter.as_str(), page.color.as_str()),
         ("DCTDecode", "DeviceRGB")
@@ -484,7 +506,7 @@ fn gif(colors: &[[u8; 4]]) -> Vec<u8> {
 #[test]
 fn an_animated_gif_gives_its_first_frame() {
     let animated = gif(&[[200, 0, 0, 255], [0, 200, 0, 255], [0, 0, 200, 255]]);
-    let built = build_one(&animated);
+    let built = through_import("animated.gif", &animated);
     assert_eq!(built.frames_left_out, 2);
     let page = page(&built.pdf);
     assert_eq!(page.filter, "FlateDecode");
@@ -544,11 +566,10 @@ fn webp_animated(colors: &[[u8; 4]]) -> Vec<u8> {
 /// stored as a JPEG.
 #[test]
 fn an_animated_webp_gives_its_first_frame() {
-    let built = build_one(&webp_animated(&[
-        [200, 0, 0, 255],
-        [0, 200, 0, 255],
-        [0, 0, 200, 255],
-    ]));
+    let built = through_import(
+        "animated.webp",
+        &webp_animated(&[[200, 0, 0, 255], [0, 200, 0, 255], [0, 0, 200, 255]]),
+    );
     assert_eq!(built.frames_left_out, 2);
     let page = page(&built.pdf);
     assert_eq!(page.filter, "DCTDecode");
@@ -852,4 +873,98 @@ mod import_seam {
         let built = super::build_one(&std::fs::read(photo).unwrap());
         assert_eq!(built.pages, 1);
     }
+}
+
+/// A JPEG missing a table its scan uses can't be decoded, so it doesn't
+/// pass through as a page OCR would read broken: the decoder refuses it,
+/// at the builder and at the import.
+#[test]
+fn a_jpeg_missing_its_tables_is_refused() {
+    let clean = jpeg(64, 48, [90, 160, 60]);
+    for marker in [0xdb, 0xc4] {
+        // The file without its quantization (DB) or Huffman (C4) tables.
+        let mut broken = clean[..2].to_vec();
+        let mut at = 2;
+        while at + 4 <= clean.len() && clean[at] == 0xff {
+            let kind = clean[at + 1];
+            let length = usize::from(u16::from_be_bytes([clean[at + 2], clean[at + 3]]));
+            if kind != marker {
+                broken.extend_from_slice(&clean[at..at + 2 + length]);
+            }
+            at += 2 + length;
+            if kind == 0xda {
+                broken.extend_from_slice(&clean[at..]);
+                break;
+            }
+        }
+        assert!(
+            matches!(build(&[&broken], DEFAULT_DPI), Err(ImageError::Unreadable)),
+            "without {marker:02x}"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.jpg");
+        std::fs::write(&path, &broken).unwrap();
+        assert!(matches!(
+            crate::import::prepare(&path, None, false),
+            Err(crate::import::ImportError::Image(ImageError::Unreadable))
+        ));
+    }
+}
+
+/// Of APP14, only Adobe's colour-transform marker travels, rebuilt from its
+/// fixed fields: an application's own APP14 data doesn't.
+#[test]
+fn only_adobe_s_colour_marker_survives_from_app14() {
+    let clean = jpeg(64, 48, [90, 160, 60]);
+    let adobe = b"Adobe\x00\x64\x00\x00\x00\x00\x01";
+    let photo = with_segments(
+        &clean,
+        &[
+            segment(0xee, &[adobe.as_slice(), b"PRIVATE-TRAILER"].concat()),
+            segment(0xee, b"VendorPrivate fictional data"),
+        ],
+    );
+    let built = build_one(&photo);
+    let page = page(&built.pdf);
+    assert_eq!(
+        page.data,
+        with_segments(&without_app0(&clean), &[segment(0xee, adobe)])
+    );
+    for leaked in [b"PRIVATE-TRAILER".as_slice(), b"VendorPrivate"] {
+        assert!(
+            !contains(&built.pdf, leaked),
+            "{}",
+            String::from_utf8_lossy(leaked)
+        );
+    }
+}
+
+/// A JPEG whose comment holds `%PDF-` is still a JPEG: its own signature
+/// comes first, at the import as at the Original.
+#[test]
+fn an_image_mentioning_pdf_is_still_an_image() {
+    let photo = with_segments(
+        &jpeg(64, 48, [90, 160, 60]),
+        &[segment(0xfe, b"%PDF-1.7 fictional comment")],
+    );
+    assert!(!crate::import::is_pdf(&photo));
+    let built = through_import("mention.jpg", &photo);
+    assert!(!contains(&built.pdf, b"fictional comment"));
+}
+
+/// An animated image's decoder holds a canvas and a frame besides its
+/// output: a WebP whose canvas fits the budget once but not three times is
+/// refused before decoding.
+#[test]
+fn a_large_animation_is_refused_before_decoding() {
+    let mut animation = webp_animated(&[[200, 0, 0, 255], [0, 200, 0, 255]]);
+    // The VP8X canvas, 11,000 by 11,000: 484 MB of RGBA once.
+    let canvas = 12 + 8 + 4;
+    let side = (11_000u32 - 1).to_le_bytes();
+    animation[canvas..canvas + 3].copy_from_slice(&side[..3]);
+    animation[canvas + 3..canvas + 6].copy_from_slice(&side[..3]);
+    assert!(matches!(
+        build(&[&animation], DEFAULT_DPI),
+        Err(ImageError::TooLarge)
+    ));
 }

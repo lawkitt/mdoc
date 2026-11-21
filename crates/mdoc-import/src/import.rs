@@ -305,8 +305,12 @@ impl std::fmt::Debug for Password {
 }
 
 /// Every PDF goes to pdf-inspector: AnyDoc, built without its `pdf`
-/// feature, would refuse one, and detects a PDF by the same window.
+/// feature, would refuse one, and detects a PDF by the same window. An
+/// image's own signature comes first: a JPEG comment can hold `%PDF-`.
 pub(crate) fn is_pdf(bytes: &[u8]) -> bool {
+    if ImageFormat::from_bytes(bytes).is_some() {
+        return false;
+    }
     bytes[..bytes.len().min(1024)]
         .windows(5)
         .any(|window| window == b"%PDF-")

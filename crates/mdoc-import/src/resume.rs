@@ -431,7 +431,8 @@ mod tests {
     }
 
     /// An image's pages are kept under its file's digest, not the digest of
-    /// the PDF built from it, so discarding them by the file finds them.
+    /// the PDF built from it: a later run reuses them, and discarding them
+    /// by the file finds them.
     #[test]
     fn an_image_keeps_its_pages_under_the_file_s_digest() {
         let dir = tempfile::tempdir().unwrap();
@@ -462,6 +463,30 @@ mod tests {
         let file_digest = digest(&std::fs::read(&photo).unwrap());
         let folder = kept.folder(&file_digest, &installed.config);
         assert!(folder.0.is_dir());
+        // A page kept under the file's digest is reused: the run needs no
+        // OCR runtime and recognizes nothing.
+        folder.store(&Page {
+            page: 1,
+            markdown: "Kept text of the scanned page.\n".into(),
+            review: false,
+            repeated_lines: 0,
+            repeat_evidence: Vec::new(),
+        });
+        let recognized = std::cell::Cell::new(0);
+        let (imported, completed) = prepare_resumable(
+            &photo,
+            None,
+            Some(&installed),
+            false,
+            &AtomicBool::new(false),
+            &kept,
+            &|_, _| recognized.set(recognized.get() + 1),
+        )
+        .unwrap();
+        assert_eq!(recognized.get(), 0);
+        assert!(imported.is_image && imported.is_pdf);
+        assert_eq!(imported.markdown.trim(), "Kept text of the scanned page.");
+        assert!(completed.is_some());
         kept.discard(&photo).unwrap();
         assert!(!folder.0.exists());
     }

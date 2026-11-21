@@ -700,7 +700,10 @@ impl DocumentView {
                 self.lifecycle.converted(automatic);
                 // A PDF shown before its file changed loads again, so its
                 // pages and rail are what the import read.
-                let retain_preview = self.preview.source() == Some(&imported.source.path)
+                // An image's Original is always the PDF this import built:
+                // the one shown may be of an earlier version of the file.
+                let retain_preview = !imported.is_image
+                    && self.preview.source() == Some(&imported.source.path)
                     && (self.preview.pdf().is_some() || self.preview.loading())
                     && !self
                         .preview
@@ -1679,15 +1682,27 @@ impl DocumentView {
             ])));
         } else if self.lifecycle.source_only() {
             let generation = self.begin_preview(path.clone());
-            let task = cx.background_executor().spawn(async move {
-                std::fs::File::open(path)
-                    .and_then(|file| file.metadata())
-                    .map(|_| ())
+            // A renamed image is known by its content, as the import knows
+            // it, so its Original shows.
+            let task = cx.background_executor().spawn({
+                let path = path.clone();
+                async move {
+                    use std::io::Read as _;
+                    let mut head = Vec::with_capacity(256);
+                    std::fs::File::open(path)?
+                        .take(256)
+                        .read_to_end(&mut head)?;
+                    Ok::<_, std::io::Error>(
+                        mdoc_import::image_pdf::ImageFormat::from_bytes(&head).is_some(),
+                    )
+                }
             });
             cx.spawn_in(window, async move |this, cx| {
                 let result = task.await;
-                let _ = this.update(cx, |this, cx| {
-                    if this.preview.checked(generation, result.is_ok()) {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if matches!(result, Ok(true)) && this.preview.generation() == generation {
+                        this.open_image(path, window, cx);
+                    } else if this.preview.checked(generation, result.is_ok()) {
                         cx.notify();
                     }
                 });
