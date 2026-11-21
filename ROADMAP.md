@@ -363,12 +363,6 @@ green and ride the next RC. Every item that touches opening, importing or
 the preview posts before-and-after `just perf` numbers; a regression goes
 to the maintainer, never a raised ceiling.
 
-3. **[Desktop] Every DOCX renders in memory.** *From #1024.* The worker
-   takes bytes on stdin and returns the PDF and anchors on stdout; the path
-   functions go, and an unlocked DOCX shows its Original. *Blocked by:*
-   items 1, 2. *Done when:* the temp folder stays empty in a test, and 5
-   release `just perf` runs on the M4 keep the first page within 5% and
-   peak memory within 10%; otherwise only unlocked DOCX render in memory.
 4. **[Import] Password-protected PDFs on desktop.** *From #1024.* The card
    for PDFs, the password through every PDF call, no kept OCR pages, three
    errors (none, wrong, unsupported), no card for owner-only locks.
