@@ -53,7 +53,7 @@ as inline bold, not a heading; the table's cell text is kept.
   one hidden column holding fictional names, every hidden one spelled
   `HIDDEN-*`; expected Markdown is its snapshots without Insta metadata.
 - `russian-*.csv` and `western-*.csv`: byte-for-byte from the
-  lawkitt/anydoc fork at `38f207125ef081c09b1a5267650238cced7f250c`
+  lawkitt/anydoc fork at `a0ee8dbf1c894ef8ede0b64e9cd5a3eb1d204119`
   (`tests/fixtures/csv`), made by `csvs` in its `tests/gen_fixtures.py`:
   the same fictional people in UTF-8, UTF-8 with a BOM, Windows-1251 and
   KOI8-R (Russian), and in UTF-8 and Windows-1252 (Western European). Each
