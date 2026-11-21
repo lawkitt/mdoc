@@ -42,14 +42,15 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 ## Detection snapshots
 
-- Hosted `windows-latest` is the reference platform, because a developer
-  machine's scores differ in the fourth decimal.
-- Never commit your own `--refresh-snapshots` output: push, let the head's
-  detection gate fail, run `just snapshots-fetch <PR>`, review the diff,
-  then commit and push.
-- After a runtime or model pin change, record every snapshot with
-  `gh workflow run ci-detection.yml --ref <branch> -f record=true`, because
-  scores can shift within the gate's tolerance.
+- Detection's model budget fails only the nightly, because a shared VM's
+  wall clock must not decide merges.
+- Never commit your own `--refresh-snapshots` output, because a developer
+  machine's scores differ from hosted `windows-latest`'s in the fourth
+  decimal: commit what `just snapshots-fetch <PR>` takes from the head's
+  failed gate, reviewed.
+- After a runtime or model pin change, record every snapshot
+  (`ci-detection.yml`'s `record`), because scores can shift within the
+  gate's tolerance.
 
 ## Changing CI
 
