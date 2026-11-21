@@ -324,14 +324,33 @@ items 8–15: [ADR 0100](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c
 
 ## CI speed
 
-The queue's long jobs get shorter and its unrelated drops stop needing the
-maintainer ([ADR 0112](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0112-ci-speed-after-the-first-fortnight.md),
-[CI speed grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-speed-grill-2026-11-12.md)) and the
-[second grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-grill-2-2026-11-13.md)
-([ADR 0113](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
-Items 16–31 have shipped; item 22 (the PC's slow bursts) closed as not
-needed, and item 30 (a prebuilt library for UI test launches) was measured
-and dropped (#857).
+Items 16–31 shipped (ADR 0112 and 0113, retired; item 30 dropped, #857).
+Items 32–37 come from the third grill, #1041: a core change's queue time
+went from a median of 32 minutes to 51 when iOS moved to the `xcode-27`
+image, and every iOS part builds the core itself. Items 32–35 edit
+`ci-ios.yml` and go in order; 36 and 37 are independent.
+
+32. **[CI] The iOS core once per run.** One job builds or restores the iOS
+    core and hands it to the unit and UI parts as an artifact. *Done when:*
+    a core change's queue run builds the core in one job.
+33. **[CI] iOS tests on `macos-26`.** The unit and UI parts run with Xcode
+    26.2 and the iOS 26.2 Simulator; the Release build, the archive and a
+    nightly test pass stay on `xcode-27`
+    ([ADR 0124](docs/adr/0124-ios-tests-on-xcode-26-builds-on-xcode-27.md)).
+    *Done when:* the queue's iOS tests run on `macos-26` and the nightly's
+    on `xcode-27`, both green.
+34. **[CI] Three UI shards on `macos-26`.** *Done when:* a queue commit's
+    slower UI shard takes 15 minutes of tests or less.
+35. **[CI] Branch iOS runs test what they touched.** A dispatch runs the
+    unit part or the UI shards holding the touched classes by default, one
+    branch iOS run at a time. *Done when:* a UI-only branch dispatch runs
+    one shard.
+36. **[CI] Detection's model budget warns in the queue.** The nightly
+    still fails on it; the queue and PR heads run 4 shards instead of 12.
+    *Done when:* a queue commit runs 4 detection shards.
+37. **[CI] A core change's target is 30 minutes** in `ci-stats.sh`;
+    missing it reopens a self-hosted Mac (#1041). *Done when:* the nightly
+    reports it.
 
 ## Desktop GPUI
 
