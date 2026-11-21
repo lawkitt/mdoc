@@ -21,10 +21,12 @@ pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
     );
     for (index, page) in pages.iter().enumerate() {
         let first = 3 + 3 * index;
+        // The sheet's size comes from the image's size before scaling: a
+        // scaled-down page keeps its sheet, its pixels drawn larger.
         let scale = 72. / f64::from(dpi.max(1));
         let (width, height) = (
-            f64::from(page.width) * scale,
-            f64::from(page.height) * scale,
+            f64::from(page.sheet.0) * scale,
+            f64::from(page.sheet.1) * scale,
         );
         let [a, b, c, d, e, f] = upright(page.orientation, width, height);
         // Orientations 5 to 8 turn the image a quarter, swapping its sides.

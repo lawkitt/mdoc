@@ -347,6 +347,8 @@ fn an_oversized_photo_is_scaled_down_and_only_it() {
     let oversized = jpeg(4800, 320, [30, 60, 90]);
     let page = page(&through_import("oversized.jpg", &oversized).pdf);
     assert_eq!((page.width, page.height), (4500, 300));
+    // The sheet stays the photo's own: 4,800 by 320 pixels at 150 dpi.
+    assert_eq!(page.media_box, (4800. * 72. / 150., 320. * 72. / 150.));
     assert_eq!(page.filter, "DCTDecode");
     assert_ne!(page.data, without_app0(&oversized));
     let decoded = image::load_from_memory(&page.data).unwrap().into_rgb8();

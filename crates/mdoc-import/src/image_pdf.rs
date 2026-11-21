@@ -176,6 +176,9 @@ struct Page {
     data: Vec<u8>,
     /// EXIF orientation, 1 to 8.
     orientation: u8,
+    /// The image's size before it was scaled down, in pixels: with the
+    /// resolution, the sheet's size, which scaling doesn't change.
+    sheet: (u32, u32),
 }
 
 /// The pages `bytes` give as `format`. The seam later formats plug into.
@@ -225,6 +228,7 @@ fn error(error: image::ImageError) -> ImageError {
 /// stored as a JPEG when it is a `photo`, else with Flate.
 fn encode(image: image::DynamicImage, orientation: u8, photo: bool) -> Result<Page, ImageError> {
     let gray = !image.color().has_color();
+    let sheet = (image.width(), image.height());
     let image = scale_down(on_white(image, gray));
     let (width, height) = (image.width(), image.height());
     let (stream, data) = if photo {
@@ -246,6 +250,7 @@ fn encode(image: image::DynamicImage, orientation: u8, photo: bool) -> Result<Pa
         stream,
         data,
         orientation,
+        sheet,
     })
 }
 
