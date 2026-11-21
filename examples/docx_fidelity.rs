@@ -68,8 +68,13 @@ fn run(dir: &Path, update: bool) -> Result<bool, String> {
             Some(Default::default()),
         )
         .map_err(|e| format!("{name}: {e}"))?;
-        let ours = pages(&preview.pdf_path)?;
-        let word = pages(&reference)?;
+        let ours = pages(
+            gpui_pdf::PdfData::from(Arc::new(preview.pdf.clone())),
+            &format!("{name} (docxide)"),
+        )?;
+        let reference_bytes = std::fs::read(&reference)
+            .map_err(|e| format!("{}: {e}", reference.display()))?;
+        let word = pages(reference_bytes.into(), &reference.display().to_string())?;
         let score = score(&ours, &word);
         let previous = baseline.get(&name).copied();
         let verdict = match previous {
@@ -133,9 +138,8 @@ fn read_baseline(path: &Path) -> BTreeMap<String, f64> {
 
 type Page = (u32, u32, Vec<u8>);
 
-fn pages(pdf: &Path) -> Result<Vec<Page>, String> {
-    let bytes = std::fs::read(pdf).map_err(|e| format!("{}: {e}", pdf.display()))?;
-    let doc = gpui_pdf::parse(Arc::new(bytes)).map_err(|e| format!("{}: {e:?}", pdf.display()))?;
+fn pages(pdf: gpui_pdf::PdfData, name: &str) -> Result<Vec<Page>, String> {
+    let doc = gpui_pdf::parse(pdf).map_err(|e| format!("{name}: {e:?}"))?;
     (0..doc.pages().len())
         .map(|i| gpui_pdf::page_luma(&doc, i, SCALE))
         .collect()

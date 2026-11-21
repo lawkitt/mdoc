@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mdoc_import::docx_preview::{self, AnchorRect, DocxPreview, LinkMark, RenderOptions};
+use mdoc_import::docx_preview::{self, AnchorRect, DocxFile, LinkMark, RenderOptions};
 
 use crate::CoreError;
 
@@ -70,7 +70,7 @@ pub struct CommentAnchor {
 /// A rendered DOCX original. Its PDF lives as long as the object.
 #[derive(uniffi::Object)]
 pub struct DocxOriginal {
-    preview: DocxPreview,
+    preview: DocxFile,
 }
 
 // One render at a time: two would hold two documents' layouts in memory.

@@ -211,6 +211,15 @@ impl ImportFlow {
         self.unlock.as_ref()
     }
 
+    /// A password typed on the Original's card opened the source:
+    /// `unlock` becomes the tab's, for its preview and every later run, as
+    /// one the card's conversion left would. A closed tab keeps nothing.
+    pub(crate) fn keep_unlock(&mut self, unlock: Unlock) {
+        if !self.cancelled() {
+            self.unlock = Some(unlock);
+        }
+    }
+
     /// A password typed on the card can be tried now: nothing else runs
     /// and the slot is free.
     pub(crate) fn can_unlock(&self) -> bool {

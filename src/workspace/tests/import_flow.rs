@@ -693,17 +693,18 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
 }
 
 /// A locked DOCX opened in a tab: its conversion card asks for the
-/// password, Enter with a wrong one asks again with the field emptied, and
-/// Unlock with the right one imports it. No preview renders the unlocked
-/// document, so its comments count in the left-out line, and nothing but
-/// the locked file is ever in its folder (#1007).
+/// password while the Original only points to it, Enter with a wrong one
+/// asks again with the field emptied, and Unlock with the right one imports
+/// it. Its Original renders in memory with its comments beside the page, so
+/// the left-out line doesn't count them, and nothing but the locked file is
+/// ever in its folder (#1007, #1024 item 3).
 #[gpui::test]
 fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("Locked comments.docx");
     let plain = std::fs::read(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/import/handmade-comments.docx"),
+            .join("tests/fixtures/docx-preview/comments.docx"),
     )
     .unwrap();
     let locked = craft_offcrypto::encrypt_with_spin_count(&plain, "fictional-pass", 1000).unwrap();
@@ -731,6 +732,14 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
     });
     assert!(cx.debug_bounds("document-password").is_some());
     assert!(cx.debug_bounds("primary-convert").is_none());
+    // One card asks; the Original waits for its answer.
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).preview.password(),
+            Some(crate::preview::OriginalPassword::Asking)
+        )
+    });
+    assert!(cx.debug_bounds("original-password-card").is_none());
 
     let field = cx.update(|_, cx| view.read(cx).password_field.clone());
     let type_password = |text: &str, cx: &mut VisualTestContext| {
@@ -765,12 +774,16 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
         let view = view.read(cx);
         assert!(!view.lifecycle.source_only());
         assert_eq!(view.import.password_prompt(), None);
-        assert!(view.editor.read(cx).text().contains("Intro with commented words here."));
-        assert_eq!(
-            view.preview.message().map(String::as_str),
-            Some("Password-protected DOCX files aren’t previewed, so no unlocked copy is written to disk.")
+        assert!(view.editor.read(cx).text().contains("First quoted paragraph."));
+        assert_eq!(view.preview.password(), None);
+        assert!(!view.preview.failed(), "{:?}", view.preview.message());
+        assert!(view.preview.pdf().unwrap().read(cx).is_loaded());
+        assert!(!view.preview.docx().unwrap().comments.is_empty());
+        assert!(
+            view.left_out().is_none_or(|line| !line.contains("not shown")),
+            "{:?}",
+            view.left_out()
         );
-        assert!(view.left_out().unwrap().contains("not shown"), "{:?}", view.left_out());
         assert_eq!(field.read(cx).value(), "");
     });
     let left: Vec<_> = std::fs::read_dir(dir.path())
@@ -782,28 +795,28 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
 
 /// A locked DOCX unlocked in a tab keeps its unlock as long as the tab
 /// (#1024 decision 6): the tab holds the unlocked bytes, not the password;
-/// reloading the preview takes those bytes, never the file, and never asks
-/// again (the Show hidden text redraw needs a rendering, item 3); the saved
-/// session holds neither the password
-/// nor the unlocked document, so the tab it restores opens its Markdown
-/// with no unlock; closing the tab drops the unlock. Nothing unlocked is
-/// written beside the file.
+/// reloading the Original and the Show hidden text redraw render those
+/// bytes in memory, never the file, and never ask again; the saved session
+/// holds neither the password nor the unlocked document, so the tab it
+/// restores opens its Markdown with no unlock and its Original asks for the
+/// password, then again after a wrong one, and the right one unlocks the
+/// tab; closing the tab drops the unlock. Nothing unlocked is written
+/// beside the file.
 #[gpui::test]
 fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     const PASSWORD: &str = "fictional-pass";
-    const REFUSED: &str =
-        "Password-protected DOCX files aren’t previewed, so no unlocked copy is written to disk.";
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("documents");
     std::fs::create_dir(&folder).unwrap();
     let source = folder.join("Locked comments.docx");
+    // Comments and one hidden passage, so the Original has both toggles.
     let plain = std::fs::read(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/import/handmade-comments.docx"),
+            .join("tests/fixtures/docx-preview/comments.docx"),
     )
     .unwrap();
     let locked = craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap();
-    std::fs::write(&source, locked).unwrap();
+    std::fs::write(&source, &locked).unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     tabs.update_in(cx, |tabs, window, cx| {
@@ -835,18 +848,28 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     });
 
     // The file now holds garbage of the same size and time: a preview that
-    // read it would call it damaged, so the refusal shows it read the
+    // read it would call it damaged, so a rendering shows it read the
     // tab's bytes.
     let modified = std::fs::metadata(&source).unwrap().modified().unwrap();
-    let size = std::fs::metadata(&source).unwrap().len() as usize;
-    std::fs::write(&source, vec![b'x'; size]).unwrap();
+    let length = std::fs::metadata(&source).unwrap().len() as usize;
+    std::fs::write(&source, vec![b'x'; length]).unwrap();
     std::fs::File::options()
         .write(true)
         .open(&source)
         .unwrap()
         .set_modified(modified)
         .unwrap();
-    // Reloading the preview renders the tab's bytes and never asks.
+    // Reloading the Original renders the tab's bytes and never asks.
+    let shown = |view: &Entity<DocumentView>, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            assert_eq!(view.import.password_prompt(), None);
+            assert_eq!(view.preview.password(), None);
+            assert!(!view.preview.failed(), "{:?}", view.preview.message());
+            assert!(view.preview.pdf().unwrap().read(cx).is_loaded());
+            view.preview.docx().unwrap().options.show_hidden_text
+        })
+    };
     for _ in 0..2 {
         tabs.update_in(cx, |_, window, cx| {
             view.update(cx, |view, cx| {
@@ -857,16 +880,25 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
             })
         });
         cx.run_until_parked();
+        draw(cx);
+        assert!(!shown(&view, cx));
         cx.update(|_, cx| {
             let view = view.read(cx);
-            assert_eq!(view.import.password_prompt(), None);
-            assert_eq!(view.preview.message().map(String::as_str), Some(REFUSED));
             let job = view
                 .unlocked_source(view.preview.source().unwrap())
                 .expect("the preview's job takes the tab's bytes");
             assert_eq!(job.bytes().as_ptr() as usize, held);
         });
     }
+    // Show hidden text draws the tab's bytes again, with the text shown.
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf().unwrap().clone());
+    let action = cx.update(|_, cx| pdf.read(cx).header_toggles()[1].action.clone());
+    cx.update(|window, cx| action(window, cx));
+    for _ in 0..3 {
+        cx.run_until_parked();
+        draw(cx);
+    }
+    assert!(shown(&view, cx), "drawn again with the hidden text");
 
     // Saved, the Markdown is the user's; the session saves nothing unlocked.
     let markdown = dir.path().join("Locked comments.md");
@@ -877,7 +909,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     assert!(
         std::fs::read_to_string(&markdown)
             .unwrap()
-            .contains("commented words")
+            .contains("quoted paragraph")
     );
     let session_path = dir.path().join("session.json");
     tabs.update_in(cx, |tabs, window, cx| {
@@ -889,7 +921,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     let text = String::from_utf8_lossy(&saved);
     assert!(text.contains("Locked comments.docx"), "{text}");
     assert!(!text.contains(PASSWORD), "{text}");
-    assert!(!text.contains("commented words"), "{text}");
+    assert!(!text.contains("quoted paragraph"), "{text}");
 
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.close_tab(tabs.tabs.active(), window, cx)
@@ -908,7 +940,9 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         .collect();
     assert_eq!(left, [source.file_name().unwrap()]);
 
-    // Reopened, the tab has its Markdown and no unlock.
+    // Reopened, the tab has its Markdown and no unlock; the file is locked
+    // again, as it was.
+    std::fs::write(&source, &locked).unwrap();
     // The session as it was saved before the tab closed.
     let kept = dir.path().join("kept-session.json");
     std::fs::write(&kept, &saved).unwrap();
@@ -922,11 +956,62 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         source.file_name()
     );
     let (tabs, cx) = boot(cx, restored);
+    cx.simulate_resize(size(px(1100.), px(760.)));
     cx.run_until_parked();
+    draw(cx);
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert!(view.editor.read(cx).text().contains("commented words"));
+        assert!(view.editor.read(cx).text().contains("quoted paragraph"));
         assert!(view.import.unlock().is_none());
+        // The Original asks again.
+        assert_eq!(
+            view.preview.password(),
+            Some(crate::preview::OriginalPassword::Asking)
+        );
+        assert!(view.preview.pdf().is_none());
     });
+    assert!(cx.debug_bounds("original-password-card").is_some());
+    let field = cx.update(|_, cx| view.read(cx).original_password_field.clone());
+    let type_password = |text: &str, cx: &mut VisualTestContext| {
+        field.update_in(cx, |field, window, cx| {
+            field.set_value(text.into(), cx);
+            field.move_to_end(cx);
+            window.focus(&field.focus_handle(cx), cx);
+        });
+    };
+    type_password("wrong-pass", cx);
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(
+            view.preview.password(),
+            Some(crate::preview::OriginalPassword::Wrong)
+        );
+        assert!(view.import.unlock().is_none());
+        assert_eq!(field.read(cx).value(), "", "the field never keeps a password");
+    });
+    type_password(PASSWORD, cx);
+    let unlock = cx.debug_bounds("unlock-original").unwrap();
+    cx.simulate_click(unlock.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(!shown(&view, cx));
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        let unlock = view.import.unlock().expect("the Original unlocked the tab");
+        assert!(unlock.password().is_none(), "never the password");
+        assert_eq!(
+            unlock.current_source().unwrap().bytes(),
+            plain.as_slice()
+        );
+        assert_eq!(field.read(cx).value(), "");
+    });
+    let left: Vec<_> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, [source.file_name().unwrap()]);
 }
