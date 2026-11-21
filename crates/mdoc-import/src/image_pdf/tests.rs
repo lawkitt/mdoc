@@ -79,7 +79,10 @@ fn through_import(name: &str, bytes: &[u8]) -> ImagePdf {
         other => panic!("{name}: {other:?}"),
     }
     let source = crate::import::Source::read(&path).unwrap();
-    let (pdf, frames_left_out) = source.image_pdf(DEFAULT_DPI).unwrap().unwrap();
+    let (pdf, frames_left_out) = source
+        .image_pdf(DEFAULT_DPI, &std::sync::atomic::AtomicBool::new(false))
+        .unwrap()
+        .unwrap();
     ImagePdf {
         pdf: pdf.bytes().to_vec(),
         pages: 1,

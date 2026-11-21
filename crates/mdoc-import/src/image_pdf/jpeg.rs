@@ -37,6 +37,7 @@ pub(super) fn passthrough(jpeg: &[u8]) -> Option<Page> {
         stream: Stream::Jpeg,
         data: segments.kept,
         orientation: segments.orientation,
+        bands: Vec::new(),
         resolution: None,
     })
 }
