@@ -45,6 +45,14 @@ if within 901 15; then fail "15m01s is not within 15"; fi
 within - 20 || fail "no samples hold"
 echo "ok: a median within its limit, unrounded"
 
+# The default limits: a core change's is 30 minutes (#1041).
+eq "$(
+  unset CI_STATS_CORE_MIN CI_STATS_DESKTOP_MIN CI_STATS_QUEUE_MIN CI_STATS_IOS_UI_MIN
+  CI_STATS_SOURCED=1 source scripts/ci/ci-stats.sh
+  echo "$core_min $desktop_min $queue_min $ios_ui_min"
+)" "30 15 25 15"
+echo "ok: the default limits"
+
 eq "$(printf 'pending 1000 Waiting: macos\nsuccess 1660 Passed: macos (hosted)\n' | queue_seconds 1000)" "660 1660"
 eq "$(printf 'pending 1000 Waiting\nfailure 1300 Failed: ios (hosted)\n' | queue_seconds 1000)" ""
 eq "$(printf 'pending 1000 Waiting\nfailure 1300 Failed: ios (hosted); passed: macos (hosted)\nfailure 1400 Failed: x (hosted)\n' | gate_failure)" \
@@ -372,7 +380,7 @@ since='since 1970-01-01T00:00:00Z'
 out=$(report 0 "$week" "$dir") && rc=0 || rc=$?
 eq "$rc" 1
 eq "$(sed -n 1p <<<"$out")" "classes  queue commits: 1 core, 1 desktop-only, 1 iOS-only, 2 other"
-eq "$(sed -n 2p <<<"$out")" "core     pass  core queue commits to green gate: 1, median 20.0 min, p90 20.0 min (target: median 20 or less; $since)"
+eq "$(sed -n 2p <<<"$out")" "core     pass  core queue commits to green gate: 1, median 20.0 min, p90 20.0 min (target: median 30 or less; $since)"
 eq "$(sed -n 3p <<<"$out")" "desktop  FAIL  desktop-only queue commits to green gate: 1, median 30.0 min, p90 30.0 min (target: median 15 or less; $since)"
 eq "$(sed -n 4p <<<"$out")" "queue    pass  every queue commit to green gate: 2, median 25.0 min, p90 30.0 min (target: median 25 or less; $since)"
 eq "$(sed -n 5p <<<"$out")" "ios-ui   FAIL  green iOS UI runs, the slower shard: 2, median 17.0 min, p90 20.0 min (target: median 15 or less; $since)"
@@ -400,7 +408,7 @@ eq "$(sed -n 6p <<<"$out")" "drops    FAIL  queue drops not caused by the PR: 1 
 # A window ending before a start holds with no samples.
 out=$(t_core=1970-01-05T00:00:00Z t_drops=1970-01-05T00:00:00Z report 0 "$day" "$dir") && rc=0 || rc=$?
 eq "$rc" 0
-eq "$(sed -n 2p <<<"$out")" "core     pass  core queue commits to green gate: 0, median - min, p90 - min (target: median 20 or less; since 1970-01-05T00:00:00Z)"
+eq "$(sed -n 2p <<<"$out")" "core     pass  core queue commits to green gate: 0, median - min, p90 - min (target: median 30 or less; since 1970-01-05T00:00:00Z)"
 grep -q '^drops    pass  queue drops not caused by the PR: 0 of 0 drops in 0.0 days' <<<"$out" || fail "drops before their start"
 echo "ok: each target from its start, and a pending one not judged"
 
@@ -412,7 +420,7 @@ eq "$(sed -n 5p <<<"$out")" "ios-ui   pass  green iOS UI runs, the slower shard:
 eq "$(sed -n 6p <<<"$out")" "drops    pass  queue drops not caused by the PR: 0 of 0 drops in 1.0 days (0 infrastructure, 0 quarantined test, 0 repeated test), 0.00 a week (target: 1 or fewer; $since)"
 out=$(core_min=19 report 0 "$day" "$dir") && rc=0 || rc=$?
 eq "$rc" 1
-eq "$(sed -n 2p <<<"$out")" "core     FAIL  core queue commits to green gate: 1, median 20.0 min, p90 20.0 min (target: median 19 or less; $since)"
+eq "$(sed -n 2p <<<"$out")" "core     FAIL  core queue commits to green gate: 1, median 20.0 min, p90 20.0 min (target: median 19 or less; $since); missing it reopens a self-hosted Mac (#1041)"
 out=$(queue_min=0 report 0 "$day" "$dir") && rc=0 || rc=$?
 eq "$rc" 1
 eq "$(sed -n 4p <<<"$out")" "queue    FAIL  every queue commit to green gate: 1, median 20.0 min, p90 20.0 min (target: median 0 or less; $since)"
