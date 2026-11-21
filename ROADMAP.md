@@ -385,10 +385,6 @@ to the maintainer, never a raised ceiling.
     refusal or scratch file; several picked photos stay one document.
     *Blocked by:* item 7. *Done when:* #1021's Android half and #1022 are
     fixed and camera JPEG import is no slower.
-11. **[Mobile] Password-protected PDFs on iOS and Android.** *From #1024.*
-    The phones' card for PDFs, the password through the bridge, no kept
-    pages. *Blocked by:* item 4. *Done when:* both apps build with it and
-    the core tests pass.
 12. **[Mobile] iOS renders DOCX in memory.** *From #1024.* The Original
     takes the unlocked bytes and reads comment marks from bytes; PDFKit
     opens the PDF from data. *Blocked by:* item 3. *Done when:* nothing
