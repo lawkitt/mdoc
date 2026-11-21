@@ -95,19 +95,19 @@ repeat_s=$((14 * 86400))
 # judge only data from after that change. `pending` (the change has not
 # merged): the line reports every sample and its verdict but never fails
 # the run; set the date when the change merges.
-#   core     items 27 (one rule pack), 28 (UI shards by time) and 31
-#            (detection on hosted Windows)
+#   core     items 32 (the iOS core once per run), 33 (iOS tests on
+#            `macos-26`) and 34 (three UI shards on `macos-26`)
 #   desktop  item 24 (detection only when its inputs change)
 #   queue    the queue-speed and quarantine rollout, the median it keeps
 #            as a floor
-#   ios-ui   item 28 (UI shards by time)
+#   ios-ui   items 33 and 34 (a UI shard's tests on `macos-26`)
 #   drops    the queue-speed and quarantine rollout
 target_start() { # target
   case "$1" in
-    core) echo 2026-11-13T12:57:58Z ;;
+    core) echo pending ;;
     desktop) echo 2026-11-13T07:07:50Z ;;
     queue) echo 2026-11-12T15:21:00Z ;;
-    ios-ui) echo 2026-11-13T12:57:58Z ;;
+    ios-ui) echo pending ;;
     drops) echo 2026-11-12T15:21:00Z ;;
     *) die "unknown target: $1" ;;
   esac
