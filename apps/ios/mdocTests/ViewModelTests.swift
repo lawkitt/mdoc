@@ -1,3 +1,4 @@
+import PDFKit
 import XCTest
 @testable import mdoc
 
@@ -278,6 +279,81 @@ final class DocumentViewModelTests: XCTestCase {
             let bytes = try Data(contentsOf: file)
             XCTAssertNil(bytes.range(of: Data("Petrov-2026".utf8)), file.lastPathComponent)
         }
+    }
+
+    /// A locked PDF asks for its password as a locked DOCX does, and the
+    /// password that imports it unlocks its Original in memory too. Opened
+    /// again, the Original's own card unlocks it. The password is in none of
+    /// the app's files afterwards.
+    func testALockedPdfAsksForItsPasswordUntilItUnlocks() async throws {
+        var storage: MdocStorage?
+        let model = try imported(
+            {
+                storage = $0
+                return try .file(Fixture.copy("tests/fixtures/pdf-source/comments-aes256.pdf", into: $0), .pdf)
+            },
+            title: "Locked")
+        await model.recognize()
+        XCTAssertEqual(model.passwordPrompt, .needed)
+        XCTAssertNil(model.errorMessage)
+        await model.unlock(password: "petrov-2026")
+        XCTAssertEqual(model.passwordPrompt, .wrong)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.unlockedOriginal)
+        await model.unlock(password: "Petrov-2026")
+        XCTAssertNil(model.passwordPrompt)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
+        XCTAssertFalse(model.snapshot.markdown.isEmpty)
+        let original = try XCTUnwrap(model.unlockedOriginal)
+        XCTAssertFalse(original.isLocked)
+        XCTAssertGreaterThan(original.pageCount, 0)
+        let reopened = DocumentViewModel(
+            session: model.session, jobs: LongJobRunner(background: NoBackgroundContinuation()),
+            storage: try XCTUnwrap(storage))
+        XCTAssertNil(reopened.unlockedOriginal)
+        XCTAssertFalse(reopened.unlockOriginal(password: "petrov-2026"))
+        XCTAssertNil(reopened.unlockedOriginal)
+        XCTAssertTrue(reopened.unlockOriginal(password: "Petrov-2026"))
+        XCTAssertEqual(reopened.unlockedOriginal?.isLocked, false)
+        let root = try XCTUnwrap(storage).root
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? []
+        for file in files where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            let bytes = try Data(contentsOf: file)
+            XCTAssertNil(bytes.range(of: Data("Petrov-2026".utf8)), file.lastPathComponent)
+        }
+    }
+
+    /// A PDF locked only against editing imports without the card and
+    /// shows as it is; encryption no password opens says so, with no card.
+    func testOnlyAPdfLockedAgainstOpeningAsksForItsPassword() async throws {
+        let ownerOnly = try imported(
+            { try .file(Fixture.copy("tests/fixtures/pdf-source/comments-owner-only.pdf", into: $0), .pdf) },
+            title: "Owner only")
+        await ownerOnly.recognize()
+        XCTAssertNil(ownerOnly.passwordPrompt)
+        XCTAssertNil(ownerOnly.errorMessage)
+        XCTAssertEqual(ownerOnly.snapshot.phase, .unscanned)
+        guard case .pdf(let url) = ownerOnly.snapshot.original else { return XCTFail("a PDF's Original") }
+        XCTAssertEqual(PDFDocument(url: url)?.isLocked, false)
+        let unknown = try imported(
+            {
+                // The AES-256 twin with a security handler no reader knows,
+                // the same length so every offset still holds.
+                let url = try Fixture.copy("tests/fixtures/pdf-source/comments-aes256.pdf", into: $0)
+                var bytes = try Data(contentsOf: url)
+                let at = try XCTUnwrap(bytes.range(of: Data("/Standard".utf8)))
+                bytes.replaceSubrange(at, with: Data("/Nonstand".utf8))
+                try bytes.write(to: url)
+                return .file(url, .pdf)
+            },
+            title: "Unknown")
+        await unknown.recognize()
+        XCTAssertNil(unknown.passwordPrompt)
+        XCTAssertEqual(
+            unknown.errorMessage,
+            "mdoc could not open this file: This PDF uses encryption mdoc can’t open. Import an unlocked copy.")
     }
 
     /// A cancelled recognition ends the job and offers it again. Resume,

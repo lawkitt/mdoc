@@ -1,4 +1,5 @@
 import MdocFFI
+import PDFKit
 import SwiftUI
 import UIKit
 
@@ -160,7 +161,10 @@ struct DocumentScreen: View {
                         onComments: { model.originalComments = $0 },
                         activeComment: model.commentSheet?.thread?.id,
                         onOpenComment: openComment,
-                        onDarkPageOn: darkPageToast)
+                        onDarkPageOn: darkPageToast,
+                        unlockedPDF: model.unlockedOriginal,
+                        importAsksPassword: model.passwordPrompt != nil,
+                        onUnlockPDF: { model.unlockOriginal(password: $0) })
                 }
             }
         } else {
@@ -183,7 +187,10 @@ struct DocumentScreen: View {
                         onComments: { model.originalComments = $0 },
                         activeComment: model.commentSheet?.thread?.id,
                         onOpenComment: openComment,
-                        onDarkPageOn: darkPageToast)
+                        onDarkPageOn: darkPageToast,
+                        unlockedPDF: model.unlockedOriginal,
+                        importAsksPassword: model.passwordPrompt != nil,
+                        onUnlockPDF: { model.unlockOriginal(password: $0) })
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)

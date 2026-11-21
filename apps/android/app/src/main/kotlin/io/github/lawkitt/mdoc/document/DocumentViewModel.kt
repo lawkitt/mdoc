@@ -63,7 +63,7 @@ data class DocumentState(
     val notice: Int? = null,
     /** Recognition or Find names needs a model that is not downloaded. */
     val needsSetup: JobKind? = null,
-    /** A locked DOCX waits for its password: the password card shows. */
+    /** A locked DOCX or PDF waits for its password: the password card shows. */
     val passwordPrompt: PasswordPrompt? = null,
 )
 

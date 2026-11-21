@@ -94,11 +94,24 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
 
 @Composable
 private fun PdfPages(file: File, modifier: Modifier) {
-    val renderer = remember(file) {
-        runCatching { PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)) }.getOrNull()
-    }
+    val opened = remember(file) { runCatching { open(file) } }
+    val renderer = opened.getOrNull()
     DisposableEffect(renderer) { onDispose { renderer?.close() } }
-    if (renderer == null) return
+    if (renderer == null) {
+        // A PDF locked against opening: Android's renderer takes no
+        // password here, so no unlocked copy is ever made of it.
+        if (opened.exceptionOrNull() is SecurityException) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.original_pdf_locked),
+                    modifier = Modifier.padding(32.dp),
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        return
+    }
     BoxWithConstraints(modifier) {
         val width = with(LocalDensity.current) { maxWidth.roundToPx() }
         LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -117,6 +130,17 @@ private fun PdfPages(file: File, modifier: Modifier) {
                 }
             }
         }
+    }
+}
+
+/** The PDF's renderer; its file closes with it, or at once if it can't open. */
+private fun open(file: File): PdfRenderer {
+    val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+    return try {
+        PdfRenderer(descriptor)
+    } catch (error: Exception) {
+        descriptor.close()
+        throw error
     }
 }
 

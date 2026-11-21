@@ -1,11 +1,20 @@
 import SwiftUI
 
-/// A locked DOCX's password, asked in place of the action bar. The
-/// password lives in this field until Unlock hands it to the one import
+/// A locked DOCX's or PDF's password, asked in place of the action bar,
+/// or in the Original pane for a locked PDF opened again. The password
+/// lives in this field until Unlock hands it to the one import or unlock
 /// that uses it; the field is emptied then, and after a wrong one.
 struct PasswordCard: View {
     let prompt: DocumentViewModel.PasswordPrompt
+    var purpose = Purpose.importing
     let unlock: @MainActor (String) async -> Void
+
+    enum Purpose {
+        /// The import asks, in place of the action bar.
+        case importing
+        /// A locked PDF's Original asks, in its pane.
+        case original
+    }
     @State private var password = ""
     @FocusState private var focused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -52,12 +61,12 @@ struct PasswordCard: View {
                     .padding(.horizontal, 12)
                     .frame(minHeight: Size.target)
                     .background(Palette.chipFill, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-                    .accessibilityIdentifier("document-password")
+                    .accessibilityIdentifier(purpose == .importing ? "document-password" : "original-password")
                 Button("Unlock", action: submit)
                     .primaryAction()
                     .fixedSize()
                     .disabled(password.isEmpty)
-                    .accessibilityIdentifier("unlock-document")
+                    .accessibilityIdentifier(purpose == .importing ? "unlock-document" : "unlock-original")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -71,10 +80,17 @@ struct PasswordCard: View {
     /// The privacy promise: always on the card, scrolled to at the largest
     /// sizes.
     private var promise: some View {
-        Text("Enter its password to import it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        Group {
+            switch purpose {
+            case .importing:
+                Text("Enter its password to import it. mdoc unlocks it in memory while this document is open and never saves the password or an unlocked copy.")
+            case .original:
+                Text("Enter its password to show the Original. mdoc unlocks it in memory while this document is open and never saves the password or an unlocked copy.")
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -104,5 +120,6 @@ struct PasswordCard: View {
     PreviewMatrix {
         PasswordCard(prompt: .needed) { _ in }
         PasswordCard(prompt: .wrong) { _ in }
+        PasswordCard(prompt: .needed, purpose: .original) { _ in }
     }
 }

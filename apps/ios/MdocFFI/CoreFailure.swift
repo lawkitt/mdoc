@@ -12,7 +12,7 @@ public enum CoreFailure: Error, Equatable, Sendable {
     /// A PDF has pages without a text layer; import again with OCR or with
     /// native text only. Pages are 1-based.
     case needsOcr(pages: [UInt32], pageCount: UInt32)
-    /// A locked DOCX and no password: ask for one.
+    /// A locked DOCX or PDF and no password: ask for one.
     case needsPassword
     /// The password given doesn't unlock the document: ask again.
     case wrongPassword

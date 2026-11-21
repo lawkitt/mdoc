@@ -593,7 +593,13 @@
     "Enough memory to find names on this device." : {
 
     },
-    "Enter its password to import it. mdoc unlocks it in memory and never keeps the password or an unlocked copy." : {
+    "Enter its password to import it. mdoc unlocks it in memory while this document is open and never saves the password or an unlocked copy." : {
+
+    },
+    "Enter its password to show the Original. mdoc unlocks it in memory while this document is open and never saves the password or an unlocked copy." : {
+
+    },
+    "Enter the document’s password to show the Original." : {
 
     },
     "Failed · %@" : {

@@ -38,8 +38,8 @@ import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.R
 
 /**
- * A locked DOCX's password, as on iOS. The password stays in this field
- * until Unlock hands it to the one import that uses it; the field is
+ * A locked DOCX's or PDF's password, as on iOS. The password stays in this
+ * field until Unlock hands it to the one import that uses it; the field is
  * emptied then, and after a wrong one. Not saved with the screen's state.
  * At large font scales the notices column it sits in scrolls; the field and
  * Unlock are brought into view above the keyboard whenever the field has
