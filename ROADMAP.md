@@ -751,6 +751,10 @@ Android takes what applies. Its clipboard finding is
   codes. *From #911.*
 - **[Import]** Secure keyboard entry while the desktop password field has
   focus (`EnableSecureEventInput` on macOS). *From #1010.*
+- **[Import]** A rendering for a password-protected file once it's unlocked,
+  as an unprotected DOCX or PDF has: today it shows none, because docxide
+  renders through a temporary PDF on disk (`docs/specs/originals.md`). Grill
+  it first. *From the 2026-11-21 Import gaps run (#1007).*
 - **[Import]** Dynamic XFA forms, which import as "Please wait…": first find
   at least 3 real legal XFA PDFs in public sources; only then spike
   pdfcraft's `xfa` layout in the pdf-inspector fork. *From the 2026-11-20
