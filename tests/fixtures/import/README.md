@@ -45,7 +45,7 @@ as inline bold, not a heading; the table's cell text is kept.
   and `hidden_doc` in its `tests/gen_fixtures.py`; expected Markdown is its
   snapshots without Insta metadata. Every hidden word is `SECRET-*`.
 - `hidden.{xlsx,xls,ods}` and `handmade-hidden.xlsb`: byte-for-byte from
-  the lawkitt/anydoc fork at `6f3ed99d06b1261d361f6b5610764f52dcddc94d`
+  the lawkitt/anydoc fork at `fde0128fc83ff98caca5b37129f650ffbd688f4b`
   (`tests/fixtures/{xlsx,xls,ods,xlsb}`). The first three are LibreOffice
   conversions of its `tests/fixture-src/hidden.fods`; the XLSB, which
   LibreOffice cannot write, is built by `hidden_xlsb` in its
