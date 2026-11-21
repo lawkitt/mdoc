@@ -163,7 +163,10 @@ struct DocumentScreen: View {
                         onOpenComment: openComment,
                         onDarkPageOn: darkPageToast,
                         unlockedPDF: model.unlockedOriginal,
-                        importAsksPassword: model.passwordPrompt != nil,
+                        importPrompt: model.passwordPrompt,
+                        // While the import runs, the pane waits for it.
+                        importCardInBar: !model.originalCoversText || model.runningJob != nil,
+                        onImportUnlock: { await model.unlock(password: $0) },
                         onUnlockPDF: { model.unlockOriginal(password: $0) })
                 }
             }
@@ -189,7 +192,10 @@ struct DocumentScreen: View {
                         onOpenComment: openComment,
                         onDarkPageOn: darkPageToast,
                         unlockedPDF: model.unlockedOriginal,
-                        importAsksPassword: model.passwordPrompt != nil,
+                        importPrompt: model.passwordPrompt,
+                        // While the import runs, the pane waits for it.
+                        importCardInBar: !model.originalCoversText || model.runningJob != nil,
+                        onImportUnlock: { await model.unlock(password: $0) },
                         onUnlockPDF: { model.unlockOriginal(password: $0) })
                 case .reply:
                     if let reply = model.snapshot.reply {

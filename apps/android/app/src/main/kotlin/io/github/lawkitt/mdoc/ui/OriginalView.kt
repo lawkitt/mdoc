@@ -98,8 +98,9 @@ private fun PdfPages(file: File, modifier: Modifier) {
     val renderer = opened.getOrNull()
     DisposableEffect(renderer) { onDispose { renderer?.close() } }
     if (renderer == null) {
-        // A PDF locked against opening: Android's renderer takes no
-        // password here, so no unlocked copy is ever made of it.
+        // A PDF locked against opening, or encrypted in a way the renderer
+        // can't read (it says the same for both): it takes no password
+        // here, so no unlocked copy is ever made of it.
         if (opened.exceptionOrNull() is SecurityException) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(

@@ -147,6 +147,9 @@ final class DocumentViewModel {
     /// document opens again. It lives as long as this model and is never
     /// saved, and the password is not kept (#1024 decision 6).
     private(set) var unlockedOriginal: PDFDocument?
+    /// Counts `closeOriginal`: an import that began before the document
+    /// was left doesn't unlock its Original when it ends.
+    @ObservationIgnored private var originalCloses = 0
 
     enum PasswordPrompt: Equatable {
         case needed
@@ -253,16 +256,28 @@ final class DocumentViewModel {
         return true
     }
 
+    /// The document left the screen: a locked PDF's Original locks again,
+    /// so it asks for the password once the document opens again
+    /// (#1024 decision 6), even while this model stays for a job's notice.
+    func closeOriginal() {
+        unlockedOriginal = nil
+        originalCloses += 1
+    }
+
     private func recognize(password: String?) async {
         waitingForSetup = nil
+        let closes = originalCloses
         let session = session
         let outcome = await jobs.run(.recognize, documentID: id, title: Self.recognizeTaskTitle) { observer in
             try session.recognize(observer: observer, password: password)
         }
         switch outcome {
         case .failed(CoreError.modelMissing):
-            // Scans, photos and text-less PDFs need OCR.
+            // Scans, photos and text-less PDFs need OCR. A locked one's
+            // password opened it: the setup card takes the password card's
+            // place, which asks again once the model is in.
             waitingForSetup = .recognize
+            passwordPrompt = nil
             return
         case .failed(CoreError.needsPassword):
             passwordPrompt = .needed
@@ -272,7 +287,7 @@ final class DocumentViewModel {
             return
         case .finished:
             passwordPrompt = nil
-            if let password {
+            if let password, closes == originalCloses {
                 unlockOriginal(password: password)
             }
         case .cancelled, .failed, .busy:

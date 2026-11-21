@@ -20,8 +20,13 @@ struct OriginalView: View {
     var onDarkPageOn: () -> Void = {}
     /// A locked PDF, unlocked in memory (`DocumentViewModel.unlockedOriginal`).
     var unlockedPDF: PDFDocument?
-    /// The import's password card asks, so the pane doesn't ask too.
-    var importAsksPassword = false
+    /// The import's password card asks (`DocumentViewModel.passwordPrompt`).
+    var importPrompt: DocumentViewModel.PasswordPrompt?
+    /// The bottom bar shows the import's card beside the pane, or the
+    /// import runs, so the pane doesn't ask too; over the text, the pane
+    /// shows that card itself.
+    var importCardInBar = true
+    var onImportUnlock: @MainActor (String) async -> Void = { _ in }
     /// The pane's own card unlocks a locked PDF; false for a wrong password.
     var onUnlockPDF: @MainActor (String) -> Bool = { _ in false }
     @State private var viewport = PageViewport()
@@ -77,8 +82,8 @@ struct OriginalView: View {
                 description: Text("Pasted text shows its text only."))
         case .pdf(let url):
             PDFOriginal(
-                url: url, unlocked: unlockedPDF, importAsks: importAsksPassword, unlock: onUnlockPDF,
-                viewport: viewport, darkPage: dark.isOn)
+                url: url, unlocked: unlockedPDF, importPrompt: importPrompt, importCardInBar: importCardInBar,
+                importUnlock: onImportUnlock, unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
         case .docx(let url):
             DocxOriginalView(
                 source: url, waits: jobRuns, darkPage: dark.isOn, onComments: onComments,
@@ -103,7 +108,9 @@ struct OriginalView: View {
 private struct PDFOriginal: View {
     let url: URL
     let unlocked: PDFDocument?
-    let importAsks: Bool
+    let importPrompt: DocumentViewModel.PasswordPrompt?
+    let importCardInBar: Bool
+    let importUnlock: @MainActor (String) async -> Void
     let unlock: @MainActor (String) -> Bool
     let viewport: PageViewport
     let darkPage: Bool
@@ -133,25 +140,33 @@ private struct PDFOriginal: View {
         }
     }
 
+    /// One card at a time: the import's while it asks, whose password
+    /// unlocks the Original too, else the pane's own.
     @ViewBuilder
     private var locked: some View {
-        if importAsks {
+        if let importPrompt, importCardInBar {
             ContentUnavailableView(
                 "This document is password-protected",
                 systemImage: "lock",
                 description: Text("Enter the document’s password to show the Original."))
+        } else if let importPrompt {
+            card(PasswordCard(prompt: importPrompt, unlock: importUnlock))
         } else {
-            ScrollView {
+            card(
                 PasswordCard(prompt: prompt, purpose: .original) { password in
                     if !unlock(password) {
                         prompt = .wrong
                     }
-                }
-                .padding()
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            .background(Color(uiColor: .secondarySystemBackground))
+                })
         }
+    }
+
+    private func card(_ card: PasswordCard) -> some View {
+        ScrollView {
+            card.padding()
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(Color(uiColor: .secondarySystemBackground))
     }
 }
 

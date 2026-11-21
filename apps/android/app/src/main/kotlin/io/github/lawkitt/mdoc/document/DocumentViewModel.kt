@@ -134,7 +134,12 @@ class DocumentViewModel(
             is AppError.NeedsPassword -> mutable.update { it.copy(passwordPrompt = PasswordPrompt.Needed) }
             is AppError.WrongPassword -> mutable.update { it.copy(passwordPrompt = PasswordPrompt.Wrong) }
             else -> {
-                if (outcome is JobOutcome.Finished) mutable.update { it.copy(passwordPrompt = null) }
+                // A locked scan its password opened can need the OCR model:
+                // the setup card takes the password card's place, which asks
+                // again once the model is in.
+                val opened = outcome is JobOutcome.Finished ||
+                    (outcome as? JobOutcome.Failed)?.error is AppError.ModelMissing
+                if (opened) mutable.update { it.copy(passwordPrompt = null) }
                 finish(JobKind.Recognize, outcome)
             }
         }

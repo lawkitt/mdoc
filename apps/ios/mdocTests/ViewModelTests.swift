@@ -282,9 +282,10 @@ final class DocumentViewModelTests: XCTestCase {
     }
 
     /// A locked PDF asks for its password as a locked DOCX does, and the
-    /// password that imports it unlocks its Original in memory too. Opened
-    /// again, the Original's own card unlocks it. The password is in none of
-    /// the app's files afterwards.
+    /// password that imports it unlocks its Original in memory too, until
+    /// the document is left. Opened again, the Original's own card unlocks
+    /// it, drawing its page with nothing written to the temporary folder.
+    /// The password is in none of the app's files afterwards.
     func testALockedPdfAsksForItsPasswordUntilItUnlocks() async throws {
         var storage: MdocStorage?
         let model = try imported(
@@ -308,14 +309,20 @@ final class DocumentViewModelTests: XCTestCase {
         let original = try XCTUnwrap(model.unlockedOriginal)
         XCTAssertFalse(original.isLocked)
         XCTAssertGreaterThan(original.pageCount, 0)
+        model.closeOriginal()
+        XCTAssertNil(model.unlockedOriginal)
         let reopened = DocumentViewModel(
             session: model.session, jobs: LongJobRunner(background: NoBackgroundContinuation()),
             storage: try XCTUnwrap(storage))
         XCTAssertNil(reopened.unlockedOriginal)
         XCTAssertFalse(reopened.unlockOriginal(password: "petrov-2026"))
         XCTAssertNil(reopened.unlockedOriginal)
+        let temporary = FileManager.default.temporaryDirectory
+        let before = Self.files(under: temporary)
         XCTAssertTrue(reopened.unlockOriginal(password: "Petrov-2026"))
-        XCTAssertEqual(reopened.unlockedOriginal?.isLocked, false)
+        let page = try XCTUnwrap(reopened.unlockedOriginal?.page(at: 0))
+        XCTAssertGreaterThan(page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox).size.width, 0)
+        XCTAssertEqual(Self.files(under: temporary), before)
         let root = try XCTUnwrap(storage).root
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
             .compactMap { $0 as? URL } ?? []
@@ -323,6 +330,27 @@ final class DocumentViewModelTests: XCTestCase {
             let bytes = try Data(contentsOf: file)
             XCTAssertNil(bytes.range(of: Data("Petrov-2026".utf8)), file.lastPathComponent)
         }
+    }
+
+    /// A locked scan its password opens still needs the OCR model: the
+    /// setup card takes the password card's place, and the password is
+    /// asked again once the model is in.
+    func testALockedScanAsksForTheModelOnceItsPasswordOpensIt() async throws {
+        let model = try imported(
+            { try .file(Fixture.copy("tests/fixtures/pdf-source/partly-scanned-aes256.pdf", into: $0), .pdf) },
+            title: "Locked scan")
+        await model.recognize()
+        XCTAssertEqual(model.passwordPrompt, .needed)
+        await model.unlock(password: "Petrov-2026")
+        XCTAssertNil(model.passwordPrompt)
+        XCTAssertEqual(model.waitingForSetup, .recognize)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    private static func files(under root: URL) -> Set<String> {
+        let found = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { ($0 as? URL)?.path } ?? []
+        return Set(found)
     }
 
     /// A PDF locked only against editing imports without the card and

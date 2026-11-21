@@ -166,6 +166,7 @@ final class AppModel {
         if let open = navigator.openDocument, destination != .document(open) {
             // Marked (IME) text is committed first: it is text, not empty.
             documents.model(for: open)?.typing.flush?()
+            documents.model(for: open)?.closeOriginal()
             if !discardIfEmpty(open) {
                 followFirstLine(of: open)
                 saveChanges(of: open)
