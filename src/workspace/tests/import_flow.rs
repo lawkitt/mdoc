@@ -779,3 +779,142 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
         .collect();
     assert_eq!(left, [source.file_name().unwrap()]);
 }
+
+/// A locked DOCX unlocked in a tab keeps its unlock as long as the tab
+/// (#1024 decision 6): the tab holds the unlocked bytes, not the password;
+/// reloading the preview and redrawing it for Show hidden text take those
+/// bytes, never asking again; the saved session holds neither the password
+/// nor the unlocked document, so the tab it restores opens its Markdown
+/// with no unlock; closing the tab drops the unlock. Nothing unlocked is
+/// written beside the file.
+#[gpui::test]
+fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "fictional-pass";
+    const REFUSED: &str =
+        "Password-protected DOCX files aren’t previewed, so no unlocked copy is written to disk.";
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("documents");
+    std::fs::create_dir(&folder).unwrap();
+    let source = folder.join("Locked comments.docx");
+    let plain = std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/import/handmade-comments.docx"),
+    )
+    .unwrap();
+    let locked = craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap();
+    std::fs::write(&source, locked).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    if cx.update(|_, cx| view.read(cx).import.password_prompt().is_none()) {
+        cx.dispatch_action(Import);
+        cx.run_until_parked();
+    }
+    draw(cx);
+    let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+    field.update_in(cx, |field, window, cx| {
+        field.set_value(PASSWORD.into(), cx);
+        field.move_to_end(cx);
+        window.focus(&field.focus_handle(cx), cx);
+    });
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let held = cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(!view.lifecycle.source_only());
+        let unlock = view.import.unlock().expect("the tab keeps its unlock");
+        assert!(unlock.password().is_none(), "never the password");
+        let unlocked = unlock.current_source().expect("the unlocked bytes");
+        assert_eq!(unlocked.bytes(), plain.as_slice());
+        unlocked.bytes().as_ptr() as usize
+    });
+
+    // Reloading the preview, and redrawing it as Show hidden text does,
+    // render the tab's bytes and never ask.
+    for _ in 0..2 {
+        tabs.update_in(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.toggle_preview(window, cx);
+                if !view.preview.visible() {
+                    view.toggle_preview(window, cx);
+                }
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            assert_eq!(view.import.password_prompt(), None);
+            assert_eq!(view.preview.message().map(String::as_str), Some(REFUSED));
+            let job = view
+                .unlocked_source(view.preview.source().unwrap())
+                .expect("the preview's job takes the tab's bytes");
+            assert_eq!(job.bytes().as_ptr() as usize, held);
+        });
+    }
+
+    // Saved, the Markdown is the user's; the session saves nothing unlocked.
+    let markdown = dir.path().join("Locked comments.md");
+    cx.dispatch_action(Save);
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(markdown.clone()));
+    cx.run_until_parked();
+    assert!(
+        std::fs::read_to_string(&markdown)
+            .unwrap()
+            .contains("commented words")
+    );
+    let session_path = dir.path().join("session.json");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.session_writer.set_path(Some(session_path.clone()));
+        tabs.checkpoint(window, cx);
+    });
+    cx.run_until_parked();
+    let saved = std::fs::read(&session_path).unwrap();
+    let text = String::from_utf8_lossy(&saved);
+    assert!(text.contains("Locked comments.docx"), "{text}");
+    assert!(!text.contains(PASSWORD), "{text}");
+    assert!(!text.contains("commented words"), "{text}");
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(tabs.tabs.active(), window, cx)
+    });
+    cx.run_until_parked();
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Don't Save");
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        assert!(view.read(cx).import.unlock().is_none(), "closing drops it");
+    });
+    let left: Vec<_> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, [source.file_name().unwrap()]);
+
+    // Reopened, the tab has its Markdown and no unlock.
+    // The session as it was saved before the tab closed.
+    let kept = dir.path().join("kept-session.json");
+    std::fs::write(&kept, &saved).unwrap();
+    let restored = session_store::load(&kept).unwrap();
+    assert_eq!(restored.tabs.len(), 1);
+    assert_eq!(
+        restored.tabs[0]
+            .attachment
+            .as_ref()
+            .and_then(|path| path.file_name()),
+        source.file_name()
+    );
+    let (tabs, cx) = boot(cx, restored);
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(view.editor.read(cx).text().contains("commented words"));
+        assert!(view.import.unlock().is_none());
+    });
+}
