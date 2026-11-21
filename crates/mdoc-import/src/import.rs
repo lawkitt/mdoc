@@ -130,11 +130,23 @@ pub struct Source {
 /// A document's bytes, shared rather than copied, and wiped when the last
 /// holder drops them: they may be a locked document's, unlocked.
 #[derive(Clone)]
-pub(crate) struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
+pub(crate) struct SharedBytes(Arc<Held>);
+
+enum Held {
+    Wiped(zeroize::Zeroizing<Vec<u8>>),
+    /// The PDF the image builder made of image files, which can't be
+    /// locked: nothing in it isn't in those files, and wiping a photo's
+    /// worth of bytes again would slow the phones' camera import
+    /// (#1024 decision 11).
+    Built(Vec<u8>),
+}
 
 impl AsRef<[u8]> for SharedBytes {
     fn as_ref(&self) -> &[u8] {
-        &self.0
+        match &*self.0 {
+            Held::Wiped(bytes) => bytes,
+            Held::Built(bytes) => bytes,
+        }
     }
 }
 
@@ -145,12 +157,13 @@ impl Source {
     pub fn read(path: &Path) -> Result<Self, ImportError> {
         let path = std::path::absolute(path).map_err(ImportError::Read)?;
         let file = std::fs::File::open(&path).map_err(ImportError::Read)?;
-        let stamp = file
-            .metadata()
-            .ok()
-            .map(|metadata| SourceStamp::from(&metadata));
+        let metadata = file.metadata().ok();
+        let stamp = metadata.as_ref().map(SourceStamp::from);
+        // Sized to the file: the bytes are wiped when dropped, spare
+        // capacity included, so a doubled buffer costs twice.
+        let size = metadata.map_or(0, |metadata| metadata.len().min(MAX_PDF_BYTES + 1));
         let mut file = file.take(MAX_PDF_BYTES + 1);
-        let mut bytes = Vec::new();
+        let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
         file.read_to_end(&mut bytes).map_err(ImportError::Io)?;
         if is_pdf(&bytes) {
             if bytes.len() as u64 > MAX_PDF_BYTES {
@@ -169,7 +182,18 @@ impl Source {
         Self {
             path,
             stamp,
-            bytes: SharedBytes(Arc::new(zeroize::Zeroizing::new(bytes))),
+            bytes: SharedBytes(Arc::new(Held::Wiped(zeroize::Zeroizing::new(bytes)))),
+            unlocked: false,
+        }
+    }
+
+    /// The PDF the image builder made of image files, said to come from
+    /// `path` as `stamp` stood: not wiped ([`Held::Built`]).
+    fn built_from_images(path: PathBuf, stamp: Option<SourceStamp>, pdf: Vec<u8>) -> Self {
+        Self {
+            path,
+            stamp,
+            bytes: SharedBytes(Arc::new(Held::Built(pdf))),
             unlocked: false,
         }
     }
@@ -253,7 +277,7 @@ pub(crate) fn images_pdf(images: &[Source], dpi: u16) -> Result<(Source, u64), I
     let bytes: Vec<&[u8]> = images.iter().map(Source::bytes).collect();
     let built = image_pdf::build(&bytes, dpi).map_err(ImportError::Image)?;
     Ok((
-        Source::new(first.path.clone(), first.stamp, built.pdf),
+        Source::built_from_images(first.path.clone(), first.stamp, built.pdf),
         built.frames_left_out,
     ))
 }
