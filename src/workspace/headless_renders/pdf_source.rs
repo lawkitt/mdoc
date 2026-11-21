@@ -16,7 +16,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source/comments.pdf");
     let read = mdoc_import::import::Source::read(&source).map_err(|e| e.to_string())?;
-    let annotations = mdoc_import::import::source_annotations(&read).unwrap_or_default();
+    let annotations = mdoc_import::import::source_annotations(&read, None).unwrap_or_default();
     let view = d.change(|w, window, cx| {
         w.new_tab(window, cx);
         let view = w.active_view().unwrap();
@@ -129,5 +129,43 @@ pub(super) fn encrypted(d: &mut Driver) -> Result<()> {
         })??;
         d.capture(name)?;
     }
+    d.resize(WIDTH, HEIGHT)
+}
+
+/// A locked PDF its tab unlocked (#1024 item 4): the Original opens the
+/// file with the tab's password, in memory, and the rail reads its
+/// annotations with it, so the page leaves them to the rail.
+pub(super) fn unlocked(d: &mut Driver) -> Result<()> {
+    d.resize(1500., 900.)?;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pdf-source/comments-aes256.pdf");
+    let view = d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        let view = w.active_view().unwrap();
+        view.update(cx, |v, cx| {
+            v.preview.set_split(0.4);
+            v.import
+                .show_unlock_fixture(mdoc_import::import::Unlock::Password {
+                    path: path.clone(),
+                    password: mdoc_import::import::Password::new(PASSWORD.into()),
+                });
+            v.open_pdf(path, window, cx);
+        });
+        view
+    })?;
+    d.settle()?;
+    d.change(|_, _, cx| {
+        let view = view.read(cx);
+        let pdf = view.preview.pdf().ok_or("the PDF opens")?.read(cx);
+        match (
+            pdf.is_loaded(),
+            pdf.is_locked(),
+            view.preview.comment_rail().is_some(),
+        ) {
+            (true, false, true) => Ok(()),
+            state => Err(format!("pdf-unlocked: loaded, locked, rail: {state:?}")),
+        }
+    })??;
+    d.capture("pdf-unlocked")?;
     d.resize(WIDTH, HEIGHT)
 }

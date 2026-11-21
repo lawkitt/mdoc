@@ -930,3 +930,130 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         assert!(view.import.unlock().is_none());
     });
 }
+
+/// A locked PDF (#1024 decisions 5 and 6) asks for its password on the
+/// card, says so when it's wrong, and imports with the right one. The tab
+/// keeps the password, never the decrypted bytes: its Original opens from
+/// memory with it, with the annotations' rail, and reloads never ask. The
+/// session and the folder hold neither, and closing the tab drops it.
+#[gpui::test]
+fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "Petrov-2026";
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("documents");
+    std::fs::create_dir(&folder).unwrap();
+    let source = folder.join("Locked agreement.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/comments-aes256.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    if cx.update(|_, cx| view.read(cx).import.password_prompt().is_none()) {
+        cx.dispatch_action(Import);
+        cx.run_until_parked();
+    }
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).import.password_prompt()),
+        Some(crate::document_view::PasswordPrompt::Asking)
+    );
+    let unlock = |password: &str, cx: &mut gpui::VisualTestContext| {
+        draw(cx);
+        let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+        field.update_in(cx, |field, window, cx| {
+            field.set_value(password.into(), cx);
+            field.move_to_end(cx);
+            window.focus(&field.focus_handle(cx), cx);
+        });
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+    };
+    unlock("petrov-2026", cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(
+            view.import.password_prompt(),
+            Some(crate::document_view::PasswordPrompt::Wrong)
+        );
+        assert!(view.import.unlock().is_none());
+    });
+    unlock(PASSWORD, cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(!view.lifecycle.source_only());
+        assert!(view.editor.read(cx).text().contains("agreement"));
+        let unlock = view.import.unlock().expect("the tab keeps the password");
+        assert_eq!(unlock.password().map(|p| p.expose()), Some(PASSWORD));
+        assert!(unlock.current_source().is_none(), "never the bytes");
+    });
+
+    // The Original opens with the tab's password, from memory, and so does
+    // every reload, with the annotations' rail.
+    for _ in 0..2 {
+        tabs.update_in(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                if view.preview.visible() {
+                    view.toggle_preview(window, cx);
+                }
+                view.toggle_preview(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            assert_eq!(view.import.password_prompt(), None);
+            assert_eq!(view.preview.message(), None);
+            let pdf = view.preview.pdf().expect("the Original").read(cx);
+            assert!(pdf.is_loaded() && !pdf.is_locked());
+            assert!(
+                view.preview.comment_rail().is_some(),
+                "the annotations' rail"
+            );
+        });
+    }
+
+    // Saved, the Markdown is the user's; the session saves no password.
+    let markdown = dir.path().join("Locked agreement.md");
+    cx.dispatch_action(Save);
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(markdown.clone()));
+    cx.run_until_parked();
+    assert!(
+        std::fs::read_to_string(&markdown)
+            .unwrap()
+            .contains("agreement")
+    );
+    let session_path = dir.path().join("session.json");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.session_writer.set_path(Some(session_path.clone()));
+        tabs.checkpoint(window, cx);
+    });
+    cx.run_until_parked();
+    let text = String::from_utf8_lossy(&std::fs::read(&session_path).unwrap()).into_owned();
+    assert!(text.contains("Locked agreement.pdf"), "{text}");
+    assert!(!text.contains(PASSWORD), "{text}");
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(tabs.tabs.active(), window, cx)
+    });
+    cx.run_until_parked();
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Don't Save");
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        assert!(view.read(cx).import.unlock().is_none(), "closing drops it");
+    });
+    let left: Vec<_> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, [source.file_name().unwrap()]);
+}

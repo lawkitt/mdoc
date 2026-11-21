@@ -75,6 +75,7 @@ pdf-comments-markers
 pdf-comments-hidden
 pdf-encrypted-twin
 pdf-encrypted
+pdf-unlocked
 docx-source
 shelf
 shelf-demos

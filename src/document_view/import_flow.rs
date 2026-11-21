@@ -334,6 +334,19 @@ impl ImportFlow {
         );
     }
 
+    /// The tab holds `unlock`, as after the card unlocked its source.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn show_unlock_fixture(&mut self, unlock: Unlock) {
+        self.unlock = Some(unlock);
+    }
+
     #[cfg(test)]
     pub(crate) fn job(&self) -> &ImportSession {
         &self.job

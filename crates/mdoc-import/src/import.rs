@@ -341,8 +341,9 @@ impl Unlock {
     }
 
     /// It opens the file at `path`.
-    fn opens(&self, path: &Path) -> bool {
-        std::path::absolute(self.path()).is_ok_and(|own| own == path)
+    pub fn opens(&self, path: &Path) -> bool {
+        std::path::absolute(self.path())
+            .is_ok_and(|own| std::path::absolute(path).is_ok_and(|path| own == path))
     }
 }
 
@@ -579,17 +580,24 @@ pub fn source_comments_not_shown(source: &Source) -> Option<String> {
 }
 
 /// The annotations of the PDF `source` that carry text, read by the same
-/// native pass its import makes: the Source's cards for a PDF this session
-/// did not import. `None` when the pass cannot read it (past the import's
-/// size limit, encrypted or damaged).
-pub fn source_annotations(source: &Source) -> Option<Vec<pdf_inspector::PdfAnnotation>> {
+/// native pass its import makes, opened with the tab's `password` when it
+/// is locked: the Source's cards for a PDF this session did not import.
+/// `None` when the pass cannot read it (past the import's size limit,
+/// locked without the right password, or damaged).
+pub fn source_annotations(
+    source: &Source,
+    password: Option<&Password>,
+) -> Option<Vec<pdf_inspector::PdfAnnotation>> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     if source.bytes().len() as u64 > MAX_PDF_BYTES {
         return None;
     }
-    process_pdf_with_ocr_mem(source.bytes(), OcrPdfOptions::new())
-        .ok()
-        .map(|native| native.annotations)
+    process_pdf_with_ocr_mem(
+        source.bytes(),
+        with_password(OcrPdfOptions::new(), password),
+    )
+    .ok()
+    .map(|native| native.annotations)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -606,8 +614,11 @@ pub enum ImportError {
     Io(std::io::Error),
     #[error("This PDF exceeds the 256 MiB import limit.")]
     PdfTooLarge,
-    #[error("This PDF is password-protected. Import an unlocked copy.")]
-    PdfEncrypted,
+    /// A locked PDF whose encryption no password opens here: a security
+    /// handler other than the standard one (public-key encryption among
+    /// them), or an algorithm it doesn't know.
+    #[error("This PDF uses encryption mdoc can’t open. Import an unlocked copy.")]
+    PdfEncryptionUnsupported,
     /// A password-protected file mdoc can't unlock: an ODT, or a DOC whose
     /// encryption no password opens here.
     #[error("This document is password-protected. Import an unlocked copy.")]
@@ -689,8 +700,8 @@ pub fn prepare(
 }
 
 /// Imports the file at `path`. `password` unlocks a password-protected
-/// DOCX, XLSX, PPTX or DOC in memory for this import only; without it such a
-/// file is `PasswordRequired`, and a wrong one `WrongPassword`.
+/// DOCX, XLSX, PPTX, DOC or PDF in memory for this import only; without it
+/// such a file is `PasswordRequired`, and a wrong one `WrongPassword`.
 pub fn prepare_cancellable(
     path: &Path,
     password: Option<&Password>,
@@ -708,10 +719,12 @@ pub fn prepare_cancellable(
 /// Imports the file at `path` with a tab's `unlock`, then leaves in it what
 /// opens the file from now on. Unlocked bytes of the file as it still is
 /// convert again without reading or decrypting it; a password unlocks it.
-/// Afterwards `unlock` holds a locked Office document's unlocked bytes, and
-/// nothing when the file isn't locked, the password was missing or wrong,
-/// or the file changed since it was unlocked (so the card asks again). An
-/// unlock of another file is ignored and dropped.
+/// Afterwards `unlock` holds a locked Office document's unlocked bytes, or
+/// a PDF's password, which every later call that opens the PDF takes (its
+/// decrypted bytes are never kept); nothing when the file isn't locked,
+/// the password was missing or wrong, the PDF's encryption is unsupported,
+/// or an Office file changed since it was unlocked (so the card asks
+/// again). An unlock of another file is ignored and dropped.
 pub fn prepare_unlocking(
     path: &Path,
     unlock: &mut Option<Unlock>,
@@ -722,26 +735,50 @@ pub fn prepare_unlocking(
     check_cancel(cancel)?;
     let path = std::path::absolute(path).map_err(ImportError::Read)?;
     let held = unlock.take().filter(|held| held.opens(&path));
+    let password = held.as_ref().and_then(Unlock::password).cloned();
     let source = match held.as_ref().and_then(Unlock::current_source) {
         Some(unlocked) => unlocked.clone(),
-        None => Source::read(&path)?.unlock(held.as_ref().and_then(Unlock::password))?,
+        None => Source::read(&path)?.unlock(password.as_ref())?,
     };
     drop(held);
-    *unlock = source.unlocked().then(|| Unlock::Unlocked(source.clone()));
+    let pdf = is_pdf(source.bytes());
+    *unlock = if source.unlocked() {
+        Some(Unlock::Unlocked(source.clone()))
+    } else if pdf {
+        password.clone().map(|password| Unlock::Password {
+            path: path.clone(),
+            password,
+        })
+    } else {
+        None
+    };
     check_cancel(cancel)?;
-    import_source(source, installed, skip_ocr, cancel)
+    let imported = import_source(source, password.as_ref(), installed, skip_ocr, cancel);
+    if pdf
+        && matches!(
+            imported,
+            Err(ImportError::PasswordRequired
+                | ImportError::WrongPassword
+                | ImportError::PdfEncryptionUnsupported)
+        )
+    {
+        *unlock = None;
+    }
+    imported
 }
 
 /// Imports `source`'s bytes: the one conversion every import makes after it
-/// has read them.
+/// has read them. `password` opens a locked PDF; other formats arrive
+/// unlocked already ([`Source::unlock`]).
 pub(crate) fn import_source(
     source: Source,
+    password: Option<&Password>,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     if is_pdf(source.bytes()) {
-        return convert_pdf(source, installed, skip_ocr, cancel);
+        return convert_pdf(source, password, installed, skip_ocr, cancel);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
@@ -891,13 +928,15 @@ pub(crate) fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
 
 fn convert_pdf(
     source: Source,
+    password: Option<&Password>,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     let bytes = pdf_bytes(&source)?;
-    let mut native = process_pdf_with_ocr_mem(bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let mut native = process_pdf_with_ocr_mem(bytes, with_password(OcrPdfOptions::new(), password))
+        .map_err(|error| pdf_error(error, bytes, password))?;
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
@@ -923,7 +962,7 @@ fn convert_pdf(
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
         crate::ocr::load_onnx_runtime(&installed.onnx)
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
-        match process_pdf_with_ocr_mem(bytes, installed.options()) {
+        match process_pdf_with_ocr_mem(bytes, with_password(installed.options(), password)) {
             Ok(result) => (result, true),
             Err(error) => {
                 return Err(ImportError::OcrFailed(OcrFailure::Engine(
@@ -1060,17 +1099,108 @@ pub(crate) fn join_notes<const N: usize>(lines: [Option<String>; N]) -> Option<S
     (!lines.is_empty()).then(|| lines.join(" "))
 }
 
-/// Why the native text pass could not read a PDF.
-pub(crate) fn pdf_error(error: pdf_inspector::vision::OcrPipelineError) -> ImportError {
+/// `options` opening the PDF with `password`, when there is one: every pass
+/// over a locked PDF (text, OCR's PDFium render, comment hiding) takes it.
+/// pdf-inspector keeps its own copy of the text for the pass.
+pub(crate) fn with_password(
+    options: pdf_inspector::vision::OcrPdfOptions,
+    password: Option<&Password>,
+) -> pdf_inspector::vision::OcrPdfOptions {
+    match password {
+        Some(password) => options.password(password.expose()),
+        None => options,
+    }
+}
+
+/// Why the native text pass could not read the PDF `bytes`, opened with
+/// `password`. A locked one is `PasswordRequired` without a password and
+/// `WrongPassword` with one, unless its encryption is one no password opens
+/// here (`PdfEncryptionUnsupported`). A PDF locked only against editing
+/// opens without a password, so it never gets here.
+pub(crate) fn pdf_error(
+    error: pdf_inspector::vision::OcrPipelineError,
+    bytes: &[u8],
+    password: Option<&Password>,
+) -> ImportError {
     use pdf_inspector::{PdfError, vision::OcrPipelineError};
     match error {
-        OcrPipelineError::Pdf(PdfError::Encrypted) => ImportError::PdfEncrypted,
+        OcrPipelineError::Pdf(PdfError::Encrypted) => locked_pdf_error(bytes, password),
         OcrPipelineError::Pdf(PdfError::Io(error)) => ImportError::Read(error),
         OcrPipelineError::Pdf(
             PdfError::Parse(_) | PdfError::InvalidStructure | PdfError::NotAPdf(_),
         ) => ImportError::Damaged,
         other => ImportError::Pdf(other.to_string()),
     }
+}
+
+/// What a locked PDF's import says: the card asks for its password, says the
+/// one given is wrong, or the PDF can't be opened at all.
+fn locked_pdf_error(bytes: &[u8], password: Option<&Password>) -> ImportError {
+    if unsupported_pdf_encryption(bytes, password) {
+        ImportError::PdfEncryptionUnsupported
+    } else if password.is_some() {
+        ImportError::WrongPassword
+    } else {
+        ImportError::PasswordRequired
+    }
+}
+
+/// The PDF `bytes`, which pdf-inspector refused as encrypted with
+/// `password`, use encryption no password opens here: a security handler
+/// other than the standard one, or a version, revision or algorithm it
+/// doesn't know. pdf-inspector reports those as it reports a missing or
+/// wrong password, so lopdf, which it reads with, tells them apart: the
+/// handler first, whatever was typed, then what the password meets. Only an
+/// import that already failed asks; a document lopdf opens is dropped at
+/// once, and nothing of it is kept or logged.
+fn unsupported_pdf_encryption(bytes: &[u8], password: Option<&Password>) -> bool {
+    use lopdf::{Error, LoadOptions, encryption::DecryptionError};
+    let unsupported = |error: &Error| {
+        matches!(
+            error,
+            Error::UnsupportedSecurityHandler(_)
+                | Error::Decryption(
+                    DecryptionError::UnsupportedEncryption
+                        | DecryptionError::UnsupportedVersion
+                        | DecryptionError::UnsupportedRevision,
+                )
+        )
+    };
+    let load = |options| lopdf::Document::load_mem_with_options(bytes, options);
+    match load(LoadOptions::default()) {
+        // Locked: a password can open it when its handler is the standard one.
+        Ok(document) if document.is_encrypted() => {
+            if !standard_security_handler(&document) {
+                return true;
+            }
+        }
+        // Opened where pdf-inspector's reader couldn't: no password it
+        // takes opens it.
+        Ok(_) => return true,
+        Err(error) => return unsupported(&error),
+    }
+    let Some(password) = password else {
+        return false;
+    };
+    match load(LoadOptions::with_password(password.expose())) {
+        Ok(document) => !document.is_encrypted(),
+        Err(error) => unsupported(&error),
+    }
+}
+
+/// The encrypted `document`'s `/Encrypt` dictionary names the standard
+/// (password) security handler, the one a password can open.
+fn standard_security_handler(document: &lopdf::Document) -> bool {
+    use lopdf::Object;
+    let dictionary = match document.trailer.get(b"Encrypt") {
+        Ok(Object::Reference(id)) => document.get_dictionary(*id).ok(),
+        Ok(Object::Dictionary(dictionary)) => Some(dictionary),
+        _ => None,
+    };
+    dictionary
+        .and_then(|dictionary| dictionary.get(b"Filter").ok())
+        .and_then(|filter| filter.as_name().ok())
+        == Some(b"Standard".as_slice())
 }
 
 const DAMAGED: &str =
@@ -1563,7 +1693,7 @@ mod tests {
                 None,
                 std::fs::read(fixture(name)).unwrap(),
             );
-            let imported = import_source(held, None, true, &AtomicBool::new(false)).unwrap();
+            let imported = import_source(held, None, None, true, &AtomicBool::new(false)).unwrap();
             assert_eq!(imported.markdown, from_file.markdown, "{name}");
             assert_eq!(imported.left_out, from_file.left_out, "{name}");
             assert_eq!(imported.comments, from_file.comments, "{name}");
@@ -2333,13 +2463,170 @@ EMC\n";
         let path = fixture("text_annotations.pdf");
         let imported = convert(&path).unwrap();
         assert_eq!(imported.annotations.len(), 8);
-        assert_eq!(source_annotations(&read(&path)), Some(imported.annotations));
-        assert_eq!(source_annotations(&damaged("damaged.pdf")), None);
-        assert_eq!(source_annotations(&read(&fixture("text.docx"))), None);
+        assert_eq!(
+            source_annotations(&read(&path), None),
+            Some(imported.annotations)
+        );
+        assert_eq!(source_annotations(&damaged("damaged.pdf"), None), None);
+        assert_eq!(source_annotations(&read(&fixture("text.docx")), None), None);
     }
 
     fn read(path: &Path) -> Source {
         Source::read(path).unwrap()
+    }
+
+    /// The PDF Source fixtures: `comments.pdf` and its encrypted twins.
+    fn pdf_source(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/pdf-source")
+            .join(name)
+    }
+
+    /// The encrypted twins' user password, a published test value.
+    const PDF_PASSWORD: &str = "Petrov-2026";
+
+    fn import_with(path: &Path, password: Option<&str>) -> Result<Imported, ImportError> {
+        let password = password.map(|text| Password::new(text.into()));
+        prepare_cancellable(path, password.as_ref(), None, true, &AtomicBool::new(false))
+    }
+
+    /// The AES-256 twin with its standard security handler swapped for one
+    /// no reader knows, the same length so every offset still holds.
+    fn unknown_handler(dir: &Path) -> PathBuf {
+        let mut bytes = std::fs::read(pdf_source("comments-aes256.pdf")).unwrap();
+        let at = bytes
+            .windows(9)
+            .position(|window| window == b"/Standard")
+            .expect("a standard security handler");
+        bytes[at..at + 9].copy_from_slice(b"/Nonstand");
+        let path = dir.join("unknown-handler.pdf");
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    /// A locked PDF (#1024 decision 5) imports with its password as its open
+    /// twin does: the same Markdown, counts and annotations. Without one the
+    /// card asks, a wrong one is refused, and encryption no password opens
+    /// says so whatever is typed. A PDF locked only against editing opens
+    /// with no password at all.
+    #[test]
+    fn a_locked_pdf_imports_only_with_its_password() {
+        let open = import_with(&pdf_source("comments.pdf"), None).unwrap();
+        for name in ["comments-aes128.pdf", "comments-aes256.pdf"] {
+            let path = pdf_source(name);
+            assert!(
+                matches!(import_with(&path, None), Err(ImportError::PasswordRequired)),
+                "{name}"
+            );
+            assert!(
+                matches!(
+                    import_with(&path, Some("petrov-2026")),
+                    Err(ImportError::WrongPassword)
+                ),
+                "{name}"
+            );
+            let imported = import_with(&path, Some(PDF_PASSWORD)).unwrap();
+            assert_eq!(imported.markdown, open.markdown, "{name}");
+            assert_eq!(imported.left_out, open.left_out, "{name}");
+            assert_eq!(imported.annotations, open.annotations, "{name}");
+            assert!(imported.is_pdf && !imported.decrypted, "{name}");
+        }
+        let owner_only = import_with(&pdf_source("comments-owner-only.pdf"), None).unwrap();
+        assert_eq!(owner_only.markdown, open.markdown);
+        assert_eq!(owner_only.annotations, open.annotations);
+        let dir = tempfile::tempdir().unwrap();
+        let unknown = unknown_handler(dir.path());
+        for password in [None, Some(PDF_PASSWORD), Some("wrong")] {
+            let error = import_with(&unknown, password).unwrap_err();
+            assert!(
+                matches!(error, ImportError::PdfEncryptionUnsupported),
+                "{password:?}: {error:?}"
+            );
+            assert_eq!(
+                error.to_string(),
+                "This PDF uses encryption mdoc can’t open. Import an unlocked copy."
+            );
+        }
+    }
+
+    /// A tab keeps a locked PDF's password, never its decrypted bytes, and
+    /// every later run opens the PDF with it: one stopped for OCR consent
+    /// too. A wrong password, unsupported encryption or another file leave
+    /// nothing, so the card asks again.
+    #[test]
+    fn a_tab_keeps_a_locked_pdf_s_password_for_every_later_run() {
+        let path = std::path::absolute(pdf_source("comments-aes256.pdf")).unwrap();
+        let expected = import_with(&pdf_source("comments.pdf"), None)
+            .unwrap()
+            .markdown;
+        let run = |unlock: &mut Option<Unlock>, path: &Path| {
+            prepare_unlocking(path, unlock, None, true, &AtomicBool::new(false))
+        };
+        let mut unlock = Some(Unlock::Password {
+            path: path.clone(),
+            password: Password::new(PDF_PASSWORD.into()),
+        });
+        for _ in 0..2 {
+            assert_eq!(run(&mut unlock, &path).unwrap().markdown, expected);
+            let held = unlock.as_ref().expect("the tab keeps the password");
+            assert_eq!(held.password().map(Password::expose), Some(PDF_PASSWORD));
+            assert!(held.current_source().is_none(), "never the bytes");
+            assert!(held.opens(&path));
+        }
+        // Stopped to ask for OCR consent, the run still leaves the password
+        // for the run that follows it.
+        let stopped = prepare_unlocking(&path, &mut unlock, None, false, &AtomicBool::new(false));
+        if let Err(ImportError::NeedsOcr(..)) = stopped {
+            assert!(unlock.is_some());
+        }
+        let cancelled = prepare_unlocking(&path, &mut unlock, None, true, &AtomicBool::new(true));
+        assert!(matches!(cancelled, Err(ImportError::Cancelled)));
+        assert!(unlock.is_some(), "a cancelled run keeps it");
+
+        let mut wrong = Some(Unlock::Password {
+            path: path.clone(),
+            password: Password::new("wrong".into()),
+        });
+        assert!(matches!(
+            run(&mut wrong, &path),
+            Err(ImportError::WrongPassword)
+        ));
+        assert!(wrong.is_none(), "a wrong password is dropped");
+        let dir = tempfile::tempdir().unwrap();
+        let unknown = unknown_handler(dir.path());
+        let mut unsupported = Some(Unlock::Password {
+            path: unknown.clone(),
+            password: Password::new(PDF_PASSWORD.into()),
+        });
+        assert!(run(&mut unsupported, &unknown).is_err());
+        assert!(unsupported.is_none());
+        let other = pdf_source("comments.pdf");
+        let mut elsewhere = unlock.clone();
+        assert_eq!(run(&mut elsewhere, &other).unwrap().markdown, expected);
+        assert!(elsewhere.is_none(), "another file drops it");
+        // A PDF that opens without one keeps none.
+        let mut none = None;
+        run(&mut none, &other).unwrap();
+        assert!(none.is_none());
+    }
+
+    /// A locked PDF's annotations read with the tab's password, as its
+    /// import reads them; without it, or with a wrong one, none.
+    #[test]
+    fn a_locked_pdf_s_annotations_read_with_its_password() {
+        let open = source_annotations(&read(&pdf_source("comments.pdf")), None).unwrap();
+        assert!(!open.is_empty());
+        for name in ["comments-aes128.pdf", "comments-aes256.pdf"] {
+            let locked = read(&pdf_source(name));
+            let password = Password::new(PDF_PASSWORD.into());
+            assert_eq!(
+                source_annotations(&locked, Some(&password)),
+                Some(open.clone())
+            );
+            assert_eq!(source_annotations(&locked, None), None, "{name}");
+            let wrong = Password::new("wrong".into());
+            assert_eq!(source_annotations(&locked, Some(&wrong)), None, "{name}");
+        }
     }
 
     /// Bytes no converter reads, named `name`.

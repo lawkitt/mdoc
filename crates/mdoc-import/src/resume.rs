@@ -14,7 +14,7 @@
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
     ImportError, Imported, LeftOut, OcrFailure, Password, Source, check_cancel, import_source,
-    is_pdf, pdf_bytes, pdf_error, pdf_warning, repeated_lines,
+    is_pdf, pdf_bytes, pdf_error, pdf_warning, repeated_lines, with_password,
 };
 use pdf_inspector::{MarkdownOptions, vision::OcrRepeatEvidence};
 use sha2::{Digest, Sha256};
@@ -216,6 +216,12 @@ fn digest(bytes: &[u8]) -> String {
 /// kept until the caller removes them through the [`Completed`] returned
 /// with the result. Without OCR, or for other formats, this is
 /// `prepare_cancellable`, and nothing is kept.
+///
+/// A PDF opened with `password` is locked: every pass takes the password,
+/// and its recognized pages are never kept (#1024 decision 7, until kept
+/// pages can be sealed with the case key). It is recognized page by page
+/// all the same, `recognized` hearing of each, and a cancelled or stopped
+/// run starts over; no [`Completed`] comes with it.
 pub fn prepare_resumable(
     path: &Path,
     password: Option<&Password>,
@@ -229,24 +235,31 @@ pub fn prepare_resumable(
     let source = Source::read(path)?.unlock(password)?;
     check_cancel(cancel)?;
     let Some(installed) = installed.filter(|_| !skip_ocr && is_pdf(source.bytes())) else {
-        return import_source(source, installed, skip_ocr, cancel).map(|imported| (imported, None));
+        return import_source(source, password, installed, skip_ocr, cancel)
+            .map(|imported| (imported, None));
     };
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     let bytes = pdf_bytes(&source)?;
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
-    let mut native = process_pdf_with_ocr_mem(bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let mut native = process_pdf_with_ocr_mem(bytes, with_password(OcrPdfOptions::new(), password))
+        .map_err(|error| pdf_error(error, bytes, password))?;
     let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
     let annotations = std::mem::take(&mut native.annotations);
     drop(native);
     check_cancel(cancel)?;
     let digest = digest(bytes);
-    let folder = kept.folder(&digest, &installed.config);
-    folder.open();
+    // A locked source's pages are never kept, nor read back.
+    let folder = password
+        .is_none()
+        .then(|| kept.folder(&digest, &installed.config));
+    if let Some(folder) = &folder {
+        folder.open();
+    }
     let markdown_options = installed.options().markdown;
     let mut permit = None;
     let reusable = |kept: &Page| reusable(kept, page_count, &markdown_options);
-    let mut pages = recognize_pages(page_count, &folder, cancel, reusable, |page| {
+    let mut pages = recognize_pages(page_count, folder.as_ref(), cancel, reusable, |page| {
         if permit.is_none() {
             permit = Some(
                 crate::model_work::Permit::acquire_for("text recognition")
@@ -255,10 +268,13 @@ pub fn prepare_resumable(
             crate::ocr::load_onnx_runtime(&installed.onnx)
                 .map_err(|e| ImportError::OcrFailed(e.into()))?;
         }
-        let options = installed
-            .options()
-            .retain_repeat_evidence(true)
-            .page_numbers([page]);
+        let options = with_password(
+            installed
+                .options()
+                .retain_repeat_evidence(true)
+                .page_numbers([page]),
+            password,
+        );
         let result = process_pdf_with_ocr_mem(bytes, options)
             .map_err(|error| ImportError::OcrFailed(OcrFailure::Engine(error.to_string())))?;
         let review = result.pages.iter().any(|fused| {
@@ -295,7 +311,7 @@ pub fn prepare_resumable(
             is_docx: false,
             decrypted: false,
         },
-        Some(Completed {
+        folder.map(|_| Completed {
             kept: kept.clone(),
             digest,
         }),
@@ -304,23 +320,29 @@ pub fn prepare_resumable(
 
 /// Pages 1 to `page_count`: the ones `folder` kept that are `reusable`, and
 /// the rest from `recognize`, each kept as it finishes. A cancel stops
-/// before the next page; the finished ones stay kept.
+/// before the next page; the finished ones stay kept. Without a folder
+/// nothing is read or kept.
 fn recognize_pages(
     page_count: u32,
-    folder: &Folder,
+    folder: Option<&Folder>,
     cancel: &AtomicBool,
     reusable: impl Fn(&Page) -> bool,
     mut recognize: impl FnMut(u32) -> Result<Page, ImportError>,
 ) -> Result<Vec<Page>, ImportError> {
     let mut pages = Vec::with_capacity(page_count as usize);
     for page in 1..=page_count {
-        if let Some(kept) = folder.load(page).filter(&reusable) {
+        if let Some(kept) = folder
+            .and_then(|folder| folder.load(page))
+            .filter(&reusable)
+        {
             pages.push(kept);
             continue;
         }
         check_cancel(cancel)?;
         let recognized = recognize(page)?;
-        folder.store(&recognized);
+        if let Some(folder) = folder {
+            folder.store(&recognized);
+        }
         pages.push(recognized);
     }
     check_cancel(cancel)?;
@@ -538,13 +560,13 @@ mod tests {
         folder.open();
         let never = AtomicBool::new(false);
         let uninterrupted =
-            recognize_pages(4, &folder, &never, |_| true, |n| Ok(only_repeats(n))).unwrap();
+            recognize_pages(4, Some(&folder), &never, |_| true, |n| Ok(only_repeats(n))).unwrap();
         std::fs::remove_file(folder.path(3)).unwrap();
         std::fs::remove_file(folder.path(4)).unwrap();
         let mut ran = Vec::new();
         let resumed = recognize_pages(
             4,
-            &folder,
+            Some(&folder),
             &never,
             |_| true,
             |n| {
@@ -622,7 +644,7 @@ mod tests {
         let mut ran = Vec::new();
         recognize_pages(
             2,
-            &folder,
+            Some(&folder),
             &AtomicBool::new(false),
             |kept| reusable(kept, 2, &options),
             |n| {
@@ -647,7 +669,7 @@ mod tests {
         let mut first = Vec::new();
         let result = recognize_pages(
             5,
-            &folder,
+            Some(&folder),
             &cancel,
             |_| true,
             |n| {
@@ -667,7 +689,7 @@ mod tests {
         let mut second = Vec::new();
         let resumed = recognize_pages(
             5,
-            &folder,
+            Some(&folder),
             &cancel,
             |_| true,
             |n| {
@@ -703,7 +725,7 @@ mod tests {
         let mut ran = Vec::new();
         recognize_pages(
             3,
-            &folder,
+            Some(&folder),
             &AtomicBool::new(false),
             |_| true,
             |n| {
@@ -780,7 +802,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let result = recognize_pages(
             3,
-            &folder,
+            Some(&folder),
             &cancel,
             |_| true,
             |n| {
@@ -852,6 +874,90 @@ mod tests {
         assert_eq!(native.warning, desktop.warning);
         assert_eq!(native.left_out, desktop.left_out);
         assert!(!dir.path().join("imports").exists());
+    }
+
+    /// A locked PDF keeps no recognized page (#1024 decision 7): opened with
+    /// its password, a run makes no folder for it and reads none back, while
+    /// its open twin's run makes one before its first page. The OCR runtime
+    /// here doesn't exist, so each run stops at its first page, after that
+    /// choice; a wrong password stops before any.
+    #[test]
+    fn a_locked_pdf_keeps_no_recognized_pages() {
+        let dir = tempfile::tempdir().unwrap();
+        let installed = crate::ocr::Installed {
+            config: config(),
+            models: dir.path().join("no-models"),
+            pdfium: dir.path().join("no-pdfium"),
+            onnx: dir.path().join("no-onnx-runtime"),
+        };
+        let fixtures =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/pdf-source");
+        let cancel = AtomicBool::new(false);
+        let run = |name: &str, password: Option<&str>, kept: &KeptPages| {
+            let password = password.map(|text| Password::new(text.into()));
+            let path = fixtures.join(name);
+            prepare_resumable(
+                &path,
+                password.as_ref(),
+                Some(&installed),
+                false,
+                &cancel,
+                kept,
+                &|_, _| {},
+            )
+        };
+        for name in ["comments-aes128.pdf", "comments-aes256.pdf"] {
+            let root = dir.path().join(format!("locked-{name}"));
+            let kept = KeptPages::new(root.clone());
+            let result = run(name, Some("Petrov-2026"), &kept);
+            assert!(matches!(result, Err(ImportError::OcrFailed(_))), "{name}");
+            assert!(!root.exists(), "{name}: nothing kept");
+            let wrong = run(name, Some("wrong"), &kept);
+            assert!(matches!(wrong, Err(ImportError::WrongPassword)), "{name}");
+            let none = run(name, None, &kept);
+            assert!(matches!(none, Err(ImportError::PasswordRequired)), "{name}");
+            assert!(!root.exists(), "{name}");
+        }
+        let root = dir.path().join("open");
+        let kept = KeptPages::new(root.clone());
+        assert!(matches!(
+            run("comments.pdf", None, &kept),
+            Err(ImportError::OcrFailed(_))
+        ));
+        assert_eq!(
+            std::fs::read_dir(&root).unwrap().count(),
+            1,
+            "the open twin's folder"
+        );
+    }
+
+    /// Without a folder, pages are recognized and none is read or kept.
+    #[test]
+    fn without_a_folder_nothing_is_read_or_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let kept = KeptPages::new(dir.path().into());
+        let folder = kept.folder("abc", &config());
+        folder.open();
+        folder.store(&page(1));
+        let recognized = std::cell::Cell::new(0);
+        let pages = recognize_pages(
+            2,
+            None,
+            &AtomicBool::new(false),
+            |_| true,
+            |n| {
+                recognized.set(recognized.get() + 1);
+                Ok(page(n))
+            },
+        )
+        .unwrap();
+        assert_eq!(pages.len(), 2);
+        assert_eq!(recognized.get(), 2, "the kept page 1 is not read");
+        assert_eq!(
+            std::fs::read_dir(&folder.0).unwrap().count(),
+            1,
+            "nothing new kept"
+        );
     }
 
     /// On the OCR fixtures, an uninterrupted run gives the desktop's
