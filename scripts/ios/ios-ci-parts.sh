@@ -7,11 +7,16 @@
 # base with origin/main (MDOC_MAIN_REF replaces it), the UI shards holding
 # the changed UI test classes (ios-ui-shards.sh --touched), and the unit
 # part when the change is under apps/ios/mdocTests or touches no UI shard.
-# A list (`unit,ui 2`; `ui2` too) names the parts. Bash 3.2 compatible.
+# A deleted Swift file there counts by its old copy: a test class touches
+# no shard, a helper (no class, such as Waits.swift) every one; a moved
+# file counts as deleted at its old path and added at its new one.
+# A list (`unit,ui 2`; `ui2` too) names the parts. One line only.
+# Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
 
 usage="usage: scripts/ios/ios-ci-parts.sh all | touched | <part>[,<part>...]"
 if [ "$#" -ne 1 ] || [ -z "$1" ]; then die "$usage"; fi
+case "$1" in *$'\n'* | *$'\r'*) die "parts is one line, not: $1" ;; esac
 
 count=$(bash scripts/ios/ios-ui-shards.sh --plan | grep -c '^shard ') || die "could not read the UI shards"
 unit='' ui=''
@@ -24,12 +29,22 @@ case "$1" in
   touched)
     main=${MDOC_MAIN_REF:-origin/main}
     base=$(git merge-base "$main" HEAD) || die "no merge base of HEAD and $main"
-    # No rename detection: a moved file counts at its new path, and git
-    # needs no file contents (CI's clone has none).
-    files=$(git diff --name-only --no-renames "$base" HEAD)
-    # shellcheck disable=SC2086 # split on lines, on purpose
-    ui=$(IFS=$'\n' && bash scripts/ios/ios-ui-shards.sh --touched $files)
-    if [ -z "$ui" ] || grep -q '^apps/ios/mdocTests/' <<<"$files"; then unit=1; fi
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    # NUL-separated, so no path is quoted; no rename detection, so git
+    # reads no file contents for the list (CI's clone has none).
+    git diff --name-only -z --no-renames --diff-filter=d "$base" HEAD >"$scratch/kept"
+    git diff --name-only -z --no-renames --diff-filter=D "$base" HEAD >"$scratch/deleted"
+    ui=$(xargs -0 bash scripts/ios/ios-ui-shards.sh --touched <"$scratch/kept")
+    while IFS= read -r -d '' path; do
+      case "$path" in apps/ios/mdocUITests/*.swift) ;; *) continue ;; esac
+      git show "$base:$path" >"$scratch/old.swift" || die "could not read $path at $base"
+      [ -n "$(bash scripts/ios/ios-ui-shards.sh --declared "$scratch/old.swift")" ] ||
+        ui=$(printf '%s\n' "$ui" && seq 1 "$count")
+    done <"$scratch/deleted"
+    ui=$(printf '%s\n' "$ui" | awk 'NF' | LC_ALL=C sort -nu)
+    # Not grep -q: its early exit fails the pipe (pipefail).
+    if [ -z "$ui" ] || cat "$scratch/kept" "$scratch/deleted" | tr '\0' '\n' | grep '^apps/ios/mdocTests/' >/dev/null; then unit=1; fi
     ;;
   *)
     IFS=, read -ra asked <<<"$1"

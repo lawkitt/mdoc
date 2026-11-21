@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-ui-shards.sh <shard> | --check | --plan | --classes
-#        scripts/ios/ios-ui-shards.sh --touched [<file>...]
+#        scripts/ios/ios-ui-shards.sh --touched [<file>...] | --declared <file>...
 # The UI test classes (mdocUITests) split over ci-ios.yml's UI parts,
 # `ci/ios (ui 1)`, `(ui 2)` and `(ui 3)`, by measured time: `<shard>` prints that
 # shard's classes as xcodebuild `-only-testing`
@@ -13,6 +13,8 @@
 # files under the folder declare; a file there that declares none (a helper
 # such as Waits.swift) touches every shard, and any other file none
 # (scripts/ios/ios-ci-parts.sh passes a branch's changed files).
+# `--declared` prints the test classes the given Swift files declare,
+# wherever they are (ios-ci-parts.sh reads a deleted file's old copy).
 #
 # The times are apps/ios/ui-class-times.tsv's (MDOC_UI_CLASS_TIMES replaces
 # it): `<class>\t<seconds>[\t<parts>]` lines and `#` comments, measured from
@@ -36,20 +38,21 @@ source "$(dirname "$0")/../lib.sh"
 count=${MDOC_UI_SHARDS:-3}
 dir=${MDOC_UI_TESTS_DIR:-apps/ios/mdocUITests}
 times=${MDOC_UI_CLASS_TIMES:-apps/ios/ui-class-times.tsv}
-usage="usage: scripts/ios/ios-ui-shards.sh <shard 1-$count> | --check | --plan | --classes | --touched [<file>...]"
+usage="usage: scripts/ios/ios-ui-shards.sh <shard 1-$count> | --check | --plan | --classes | --touched [<file>...] | --declared <file>..."
 
-touched=''
+touched=()
 case "${1:-}" in
   --check | --plan | --classes) want=$1 ;;
   [1-9])
     [ "$1" -le "$count" ] || die "no shard $1: there are $count"
     want=$1
     ;;
-  --touched)
+  --touched | --declared)
     want=$1
     shift
-    touched=$(printf '%s\n' "$@")
-    set -- --touched
+    [ "$want" = --touched ] || [ "$#" -gt 0 ] || die "$usage"
+    touched=("$@")
+    set -- "$want"
     ;;
   *) die "$usage" ;;
 esac
@@ -86,6 +89,11 @@ test_classes() {
   }
   END { scan(text) }' | LC_ALL=C sort
 }
+if [ "$want" = --declared ]; then
+  for file in "${touched[@]}"; do [ -f "$file" ] || die "no $file"; done
+  printf '%s\0' "${touched[@]}" | test_classes
+  exit 0
+fi
 found=$(find "$dir" -type f -name '*.swift' -print0 | test_classes)
 
 bad=0
@@ -161,7 +169,7 @@ case "$want" in
     exit 0
     ;;
   --touched)
-    while IFS= read -r file; do
+    for file in ${touched[@]+"${touched[@]}"}; do
       case "$file" in "$dir"/*.swift) ;; *) continue ;; esac
       # A deleted file holds no class to test.
       [ -f "$file" ] || continue
@@ -174,7 +182,7 @@ case "$want" in
       printf '%s\n' "$plan" | awk -v list="$declared" '
         BEGIN { n = split(list, c, "\n"); for (i = 1; i <= n; i++) want[c[i]] = 1 }
         $2 in want { print $1 }'
-    done <<<"$touched" | LC_ALL=C sort -nu
+    done | LC_ALL=C sort -nu
     exit 0
     ;;
 esac
