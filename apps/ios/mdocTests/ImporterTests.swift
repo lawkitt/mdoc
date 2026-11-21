@@ -181,7 +181,7 @@ final class ImporterTests: XCTestCase {
         var link = linkAt
         for page in 0..<2 {
             let strip = UInt64(out.count)
-            out += Data((0..<16).map { UInt8($0 * 15 + page * 40) })
+            out += Data((0..<16).map { UInt8(truncatingIfNeeded: $0 * 15 + page * 40) })
             let entries: [(UInt16, UInt16, UInt64)] = [
                 (256, 3, 4), (257, 3, 4), (258, 3, 8), (259, 3, 1), (262, 3, 1),
                 (273, 16, strip), (277, 3, 1), (278, 3, 4), (279, 16, 16),

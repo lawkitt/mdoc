@@ -285,15 +285,14 @@ impl Directory {
             return Err(Unreadable);
         }
         let jpeg_coded = compression == Some(JPEG);
-        if jpeg_coded {
-            if let Some(entry) = self
+        if jpeg_coded
+            && let Some(entry) = self
                 .entries
                 .iter_mut()
                 .find(|entry| entry.tag == JPEG_TABLES)
-            {
-                entry.value = jpeg::without_markers(&entry.value).ok_or(Unreadable)?;
-                entry.count = entry.value.len() as u32;
-            }
+        {
+            entry.value = jpeg::without_markers(&entry.value).ok_or(Unreadable)?;
+            entry.count = entry.value.len() as u32;
         }
         for (offsets, counts) in [
             (STRIP_OFFSETS, STRIP_BYTE_COUNTS),
