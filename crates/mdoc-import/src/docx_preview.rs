@@ -384,6 +384,9 @@ pub fn render_with_executable(
                 (_, Ok(Reply::Failed(error))) => return Err(error),
                 (true, Ok(Reply::Rendered(rendered))) => rendered,
                 (true, Err(error)) => return Err(error),
+                // A reply past the cap: the reader closed the pipe, so the
+                // worker failed its write. Retrying can't help.
+                (false, Err(error @ PreviewError::Rejected)) => return Err(error),
                 (false, _) => {
                     return Err(PreviewError::Render(format!("worker exited with {status}")));
                 }
@@ -463,9 +466,7 @@ fn read_reply(mut input: impl Read) -> Result<Reply, PreviewError> {
         REPLY_RENDERED => {
             let length = read_length(&mut input).map_err(broken)?;
             if length > MAX_METADATA_BYTES {
-                return Err(PreviewError::Render(
-                    "the worker's reply is too large".into(),
-                ));
+                return Err(PreviewError::Rejected);
             }
             let mut metadata = vec![0; length as usize];
             input.read_exact(&mut metadata).map_err(broken)?;

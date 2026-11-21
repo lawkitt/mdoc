@@ -151,6 +151,46 @@ fn crash_and_false_success_are_failures() {
     }
 }
 
+/// A worker whose PDF is past the cap: the supervisor refuses it from its
+/// length and closes the pipe, so the worker dies on its next write. The
+/// answer is the reader's, which another attempt can't change, not a failed
+/// worker with Retry.
+#[cfg(unix)]
+#[test]
+fn an_oversized_reply_is_rejected_not_retried() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let metadata = br#"{"anchors":[],"hidden":0,"warnings":[]}"#;
+    let mut header = b"mdoc-docx-reply 1\n+".to_vec();
+    header.extend((metadata.len() as u64).to_le_bytes());
+    header.extend(metadata);
+    header.extend(u64::MAX.to_le_bytes());
+    let reply = dir.path().join("reply");
+    std::fs::write(&reply, header).unwrap();
+    let executable = dir.path().join("worker");
+    // The header, then PDF bytes until the pipe closes.
+    std::fs::write(
+        &executable,
+        format!(
+            "#!/bin/sh\ncat > /dev/null\ncat '{}'\nexec yes\n",
+            reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let result = render_with_executable(
+        &unused(),
+        Arc::new(AtomicBool::new(false)),
+        &executable,
+        Duration::from_secs(10),
+        Default::default(),
+        None,
+    );
+    let error = result.err().unwrap();
+    assert!(matches!(error, PreviewError::Rejected), "{error}");
+    assert!(!error.retryable());
+}
+
 #[test]
 fn oversize_input_is_rejected_in_the_worker() {
     let dir = tempfile::tempdir().unwrap();

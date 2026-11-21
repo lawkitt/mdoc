@@ -1020,3 +1020,50 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         .collect();
     assert_eq!(left, [source.file_name().unwrap()]);
 }
+
+/// A DOCX job that found the file locked, ending after the tab unlocked it
+/// (the conversion card answered first): the Original renders the tab's
+/// bytes instead of asking again.
+#[gpui::test]
+fn a_job_that_found_the_file_locked_renders_once_the_tab_has_unlocked_it(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "fictional-pass";
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked comments.docx");
+    let plain = std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx"),
+    )
+    .unwrap();
+    let locked = craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap();
+    std::fs::write(&source, locked).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let view = active(&tabs, cx);
+    // The job starts while the tab holds no unlock, so it finds the file
+    // locked; the tab is unlocked before it ends.
+    tabs.update_in(cx, |_, window, cx| {
+        view.update(cx, |view, cx| {
+            let generation = view.begin_preview(source.clone());
+            view.run_docx(
+                source.clone(),
+                generation,
+                Arc::new(AtomicBool::new(false)),
+                window,
+                cx,
+            );
+            let unlocked = mdoc_import::import::Source::read(&source)
+                .unwrap()
+                .unlock(Some(&mdoc_import::import::Password::new(PASSWORD.into())))
+                .unwrap();
+            view.import
+                .keep_unlock(mdoc_import::import::Unlock::Unlocked(unlocked));
+        })
+    });
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.password(), None, "never asks again");
+        assert!(!view.preview.failed(), "{:?}", view.preview.message());
+        assert!(view.preview.pdf().unwrap().read(cx).is_loaded());
+        assert!(view.preview.docx().is_some());
+    });
+}

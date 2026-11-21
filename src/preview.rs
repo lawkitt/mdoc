@@ -1105,6 +1105,14 @@ impl DocumentView {
                         let path = this.preview.source.clone().unwrap_or_default();
                         this.load_docx(path, preview, window, cx)
                     }
+                    // The tab unlocked the file while this job ran (the
+                    // conversion card answered first): render its bytes.
+                    Ok(DocxJob::Locked)
+                        if let Some(path) = this.preview.source.clone()
+                            && this.unlocked_source(&path).is_some() =>
+                    {
+                        this.open_docx(path, window, cx);
+                    }
                     Ok(DocxJob::Locked) => {
                         this.preview.ask_password(generation, window, cx);
                     }
@@ -1140,7 +1148,12 @@ impl DocumentView {
     /// What it unlocks becomes the tab's unlock, which the rendering, its
     /// reloads and every later conversion take.
     pub(crate) fn unlock_original(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.preview.password.is_none() || self.lifecycle.prompting() {
+        // While a password is being tried, the field keeps what was typed.
+        if !matches!(
+            self.preview.password,
+            Some(OriginalPassword::Asking | OriginalPassword::Wrong)
+        ) || self.lifecycle.prompting()
+        {
             return;
         }
         let password = self
