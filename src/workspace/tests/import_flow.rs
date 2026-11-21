@@ -1119,6 +1119,10 @@ fn a_reopened_locked_pdf_s_original_asks_for_its_password(cx: &mut TestAppContex
             view.preview.comment_rail().is_some(),
             "read with the password"
         );
+        assert!(
+            pdf.options().hide_comment_annotations,
+            "the rail shows them, so the page doesn't draw them again"
+        );
         let unlock = view.import.unlock().expect("the tab keeps it");
         assert_eq!(unlock.password().map(|p| p.expose()), Some("Petrov-2026"));
         assert!(
@@ -1142,5 +1146,62 @@ fn a_reopened_locked_pdf_s_original_asks_for_its_password(cx: &mut TestAppContex
                 .pdf()
                 .is_some_and(|pdf| pdf.read(cx).is_loaded())
         );
+    });
+}
+
+/// A locked, partly scanned PDF (#1024 item 4): its password on the
+/// conversion card opens it, and though the import stops to ask for OCR
+/// consent, the Original that asked for the password opens with it and
+/// asks no more: one password per tab.
+#[gpui::test]
+fn a_locked_scan_s_original_opens_once_its_password_stops_for_ocr(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked scan.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/partly-scanned-aes256.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    if cx.update(|_, cx| view.read(cx).import.password_prompt().is_none()) {
+        cx.dispatch_action(Import);
+        cx.run_until_parked();
+    }
+    // The Original, open beside the card, waits for the password too.
+    tabs.update_in(cx, |_, window, cx| {
+        view.update(cx, |view, cx| {
+            if !view.preview.visible() {
+                view.open_pdf(source.clone(), window, cx);
+            }
+        })
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| view.read(cx).preview.locked().is_some()));
+    draw(cx);
+    let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+    field.update_in(cx, |field, window, cx| {
+        field.set_value("Petrov-2026".into(), cx);
+        field.move_to_end(cx);
+        window.focus(&field.focus_handle(cx), cx);
+    });
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(
+            view.import.ocr_required().is_some(),
+            "it stops for OCR consent"
+        );
+        assert!(view.import.unlock().is_some(), "with the password kept");
+        assert_eq!(view.preview.locked(), None, "the Original asks no more");
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
     });
 }

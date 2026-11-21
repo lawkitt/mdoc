@@ -93,6 +93,9 @@ pub(super) fn import_file(
             JobStage::Converting
         });
         let installed = installed.as_ref().filter(|_| ocr);
+        // Until the phones open locked PDFs (#1024 item 11), a PDF gets no
+        // password, so a locked one is always refused below.
+        let password = password.filter(|_| !starts_as_pdf(path));
         let imported = match kept {
             Some(kept) => mdoc_import::resume::prepare_resumable(
                 path,

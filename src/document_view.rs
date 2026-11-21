@@ -846,6 +846,15 @@ impl DocumentView {
             return;
         };
         self.carry_out_import(effects, window, cx);
+        // The run's password opened the locked PDF the Original asks for,
+        // though the import stopped short (OCR consent, a failed
+        // recognition): the Original opens with it, asking no more.
+        if self.preview.locked().is_some()
+            && let Some(path) = self.preview.source().cloned()
+            && self.pdf_password(&path).is_some()
+        {
+            self.open_pdf(path, window, cx);
+        }
         // A stale completion also clears the busy indicator.
         cx.notify();
     }

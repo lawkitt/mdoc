@@ -1363,7 +1363,8 @@ mod tests {
             )
         };
         for name in ["comments-aes128.pdf", "comments-aes256.pdf"] {
-            for password in [None, Some("petrov-2026")] {
+            // Even the right password: no phone opens a locked PDF yet.
+            for password in [None, Some("petrov-2026"), Some("Petrov-2026")] {
                 match import(pdf_source(name), password) {
                     Err(CoreError::Import { message }) => assert_eq!(
                         message, "This PDF is password-protected. Import an unlocked copy.",

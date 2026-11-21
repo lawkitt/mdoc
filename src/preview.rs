@@ -833,11 +833,6 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         let theme = self.theme.clone();
-        let hide = self
-            .preview
-            .unread_annotations
-            .as_ref()
-            .is_none_or(|(unread, _)| *unread != path);
         let with_password = matches!(
             source,
             PdfSource::Bytes {
@@ -845,6 +840,9 @@ impl DocumentView {
                 ..
             }
         );
+        // The page draws its comments itself only when this load's read of
+        // them, with or without its password, failed.
+        let hide = self.preview.unread_annotations != Some((path.clone(), with_password));
         let pdf = cx.new(|cx| {
             PdfView::with_options(
                 source,
@@ -883,7 +881,13 @@ impl DocumentView {
             if !this.preview.is_current(generation) {
                 return;
             }
-            if pdf.read(cx).load_error().is_some() {
+            if pdf.read(cx).is_unsupported_encryption() {
+                this.preview.fail(
+                    generation,
+                    "This PDF uses encryption mdoc can’t open, so it can’t be previewed.".into(),
+                    false,
+                );
+            } else if pdf.read(cx).load_error().is_some() {
                 let retryable = pdf.read(cx).load_error_retryable();
                 let message = if retryable {
                     UNREADABLE_SOURCE
@@ -1090,6 +1094,15 @@ impl DocumentView {
                     }
                     return;
                 };
+                // Read after all: the marker of an earlier failed read goes.
+                if this
+                    .preview
+                    .unread_annotations
+                    .as_ref()
+                    .is_some_and(|(unread, _)| *unread == path)
+                {
+                    this.preview.unread_annotations = None;
+                }
                 this.preview.annotations = Some((path, annotations));
                 let (theme, region) = (this.theme.clone(), this.comments_region.clone());
                 if this.preview.attach_pdf_comments(theme, region, window, cx) {

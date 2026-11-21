@@ -741,28 +741,23 @@ pub fn prepare_unlocking(
         None => Source::read(&path)?.unlock(password.as_ref())?,
     };
     drop(held);
-    let pdf = is_pdf(source.bytes());
-    *unlock = if source.unlocked() {
-        Some(Unlock::Unlocked(source.clone()))
-    } else if pdf {
-        password.clone().map(|password| Unlock::Password {
-            path: path.clone(),
-            password,
-        })
-    } else {
-        None
-    };
+    *unlock = source.unlocked().then(|| Unlock::Unlocked(source.clone()));
     check_cancel(cancel)?;
-    let imported = import_source(source, password.as_ref(), installed, skip_ocr, cancel);
-    if pdf
-        && matches!(
-            imported,
-            Err(ImportError::PasswordRequired
-                | ImportError::WrongPassword
-                | ImportError::PdfEncryptionUnsupported)
-        )
+    // A PDF's password stays only once it has opened the file: a typed one
+    // a cancel or a refusal stopped before then proves nothing.
+    let opened = std::cell::Cell::new(false);
+    let imported = import_opening(
+        source,
+        password.as_ref(),
+        installed,
+        skip_ocr,
+        cancel,
+        &opened,
+    );
+    if opened.get()
+        && let Some(password) = password
     {
-        *unlock = None;
+        *unlock = Some(Unlock::Password { path, password });
     }
     imported
 }
@@ -777,8 +772,23 @@ pub(crate) fn import_source(
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
+    let opened = std::cell::Cell::new(false);
+    import_opening(source, password, installed, skip_ocr, cancel, &opened)
+}
+
+/// [`import_source`], setting `opened` once a PDF's native pass has opened
+/// it with `password`: then the password is known to open the file, however
+/// the import ends.
+fn import_opening(
+    source: Source,
+    password: Option<&Password>,
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+    opened: &std::cell::Cell<bool>,
+) -> Result<Imported, ImportError> {
     if is_pdf(source.bytes()) {
-        return convert_pdf(source, password, installed, skip_ocr, cancel);
+        return convert_pdf(source, password, installed, skip_ocr, cancel, opened);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
@@ -932,11 +942,13 @@ fn convert_pdf(
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
+    opened: &std::cell::Cell<bool>,
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     let bytes = pdf_bytes(&source)?;
     let mut native = process_pdf_with_ocr_mem(bytes, with_password(OcrPdfOptions::new(), password))
         .map_err(|error| pdf_error(error, bytes, password))?;
+    opened.set(true);
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
@@ -1149,8 +1161,10 @@ fn locked_pdf_error(bytes: &[u8], password: Option<&Password>) -> ImportError {
 /// `password`, use encryption no password opens here: a security handler
 /// other than the standard one, or a version, revision or algorithm it
 /// doesn't know. pdf-inspector reports those as it reports a missing or
-/// wrong password, so lopdf, which it reads with, tells them apart: the
-/// handler first, whatever was typed, then what the password meets. Only an
+/// wrong password, so lopdf tells them apart (gpui-pdf's 0.47; pdf-inspector
+/// reads with 0.45, so a file this lopdf opens counts as one no password
+/// opens here): the handler first, whatever was typed, then what the
+/// password meets. Only an
 /// import that already failed asks; a document lopdf opens is dropped at
 /// once, and nothing of it is kept or logged.
 fn unsupported_pdf_encryption(bytes: &[u8], password: Option<&Password>) -> bool {
@@ -2573,12 +2587,6 @@ EMC\n";
             assert!(held.current_source().is_none(), "never the bytes");
             assert!(held.opens(&path));
         }
-        // Stopped to ask for OCR consent, the run still leaves the password
-        // for the run that follows it.
-        let stopped = prepare_unlocking(&path, &mut unlock, None, false, &AtomicBool::new(false));
-        if let Err(ImportError::NeedsOcr(..)) = stopped {
-            assert!(unlock.is_some());
-        }
         let cancelled = prepare_unlocking(&path, &mut unlock, None, true, &AtomicBool::new(true));
         assert!(matches!(cancelled, Err(ImportError::Cancelled)));
         assert!(unlock.is_some(), "a cancelled run keeps it");
@@ -2608,6 +2616,65 @@ EMC\n";
         let mut none = None;
         run(&mut none, &other).unwrap();
         assert!(none.is_none());
+    }
+
+    /// `bytes` encrypted with AES-256 (V5/R6) under `password`, as the
+    /// encrypted fixtures are (gpui-pdf's `encrypted_tests`).
+    fn encrypted(bytes: &[u8], password: &str) -> Vec<u8> {
+        use lopdf::encryption::crypt_filters::{Aes256CryptFilter, CryptFilter};
+        let mut document = lopdf::Document::load_mem(bytes).unwrap();
+        let filter: std::sync::Arc<dyn CryptFilter> = std::sync::Arc::new(Aes256CryptFilter);
+        // A fixed key: the copy protects nothing.
+        let key: Vec<u8> = (0u8..32).map(|i| i.wrapping_mul(37) ^ 0x5a).collect();
+        let state = lopdf::EncryptionState::try_from(lopdf::EncryptionVersion::V5 {
+            encrypt_metadata: true,
+            crypt_filters: std::collections::BTreeMap::from([(b"StdCF".to_vec(), filter)]),
+            file_encryption_key: &key,
+            stream_filter: b"StdCF".to_vec(),
+            string_filter: b"StdCF".to_vec(),
+            owner_password: "owner-2026",
+            user_password: password,
+            permissions: lopdf::Permissions::all(),
+        })
+        .unwrap();
+        document.encrypt(&state).unwrap();
+        let mut out = Vec::new();
+        document.save_to(&mut out).unwrap();
+        out
+    }
+
+    /// A locked, partly scanned PDF stops to ask for OCR consent with the
+    /// same pages as its open copy, and the tab keeps the password that
+    /// opened it for the OCR run that follows. A password typed for a run
+    /// that never opened the file isn't kept.
+    #[test]
+    fn a_locked_pdf_stopped_for_ocr_consent_keeps_its_password() {
+        let plain = std::fs::read(fixture("handmade-partly-scanned.pdf")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = std::path::absolute(dir.path().join("locked scan.pdf")).unwrap();
+        std::fs::write(&path, encrypted(&plain, PDF_PASSWORD)).unwrap();
+        let typed = |password: &str| {
+            Some(Unlock::Password {
+                path: path.clone(),
+                password: Password::new(password.into()),
+            })
+        };
+        let open = prepare(&fixture("handmade-partly-scanned.pdf"), None, false);
+        let Err(ImportError::NeedsOcr(_, open_pages, ..)) = open else {
+            panic!("the open copy asks for OCR");
+        };
+        let mut unlock = typed(PDF_PASSWORD);
+        let stopped = prepare_unlocking(&path, &mut unlock, None, false, &AtomicBool::new(false));
+        let Err(ImportError::NeedsOcr(_, pages, ..)) = stopped else {
+            panic!("the locked copy asks for OCR: {:?}", stopped.map(|_| ()));
+        };
+        assert_eq!(pages, open_pages);
+        let held = unlock.expect("the tab keeps the password for the OCR run");
+        assert_eq!(held.password().map(Password::expose), Some(PDF_PASSWORD));
+        let mut wrong = typed("wrong");
+        let refused = prepare_unlocking(&path, &mut wrong, None, false, &AtomicBool::new(false));
+        assert!(matches!(refused, Err(ImportError::WrongPassword)));
+        assert!(wrong.is_none());
     }
 
     /// A locked PDF's annotations read with the tab's password, as its
