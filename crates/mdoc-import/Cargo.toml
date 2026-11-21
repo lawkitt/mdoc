@@ -59,6 +59,16 @@ roxmltree = "0.21"
 [target.'cfg(windows)'.dependencies]
 # Recognition defaults read the keyboard layouts.
 windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+# HEIC through WIC (image_pdf::heic::wic): COM interfaces, which windows-sys
+# lacks. The same 0.62 as GPUI's; Win32_Graphics_Imaging is the one feature
+# it doesn't already enable (the PROPVARIANT pair reads the orientation).
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_Graphics_Imaging",
+] }
 
 [lints]
 workspace = true

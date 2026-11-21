@@ -18,11 +18,13 @@
 //! - A TIFF gives every page, each sized by its own resolution; CCITT fax
 //!   pages pass through as `CCITTFaxDecode` (see [`tiff`]).
 //!
+//! - HEIC and HEIF are decoded by the operating system ([`heic`]), then
+//!   stored like any photo.
+//!
 //! The seam for formats is [`ImageFormat`]: each format gives [`Page`]s in
-//! [`pages`]. HEIC (item 9) is decoded by the operating system to an
-//! upright JPEG without metadata, which then comes here as
-//! [`ImageFormat::Jpeg`].
+//! [`pages`].
 
+pub mod heic;
 mod jpeg;
 mod pdf;
 #[cfg(test)]
@@ -50,6 +52,8 @@ pub enum ImageFormat {
     WebP,
     Gif,
     Tiff,
+    /// HEIC or HEIF, decoded by the operating system.
+    Heic,
 }
 
 impl ImageFormat {
@@ -69,6 +73,8 @@ impl ImageFormat {
         {
             // Classic TIFF and BigTIFF, in either byte order.
             Some(Self::Tiff)
+        } else if heic::is_heic(bytes) {
+            Some(Self::Heic)
         } else {
             None
         }
@@ -82,6 +88,7 @@ impl ImageFormat {
             "webp" => Some(Self::WebP),
             "gif" => Some(Self::Gif),
             "tif" | "tiff" => Some(Self::Tiff),
+            "heic" | "heif" | "hif" => Some(Self::Heic),
             _ => None,
         }
     }
@@ -100,13 +107,13 @@ impl ImageFormat {
             Self::Png => Some(image::ImageFormat::Png),
             Self::WebP => Some(image::ImageFormat::WebP),
             Self::Gif => Some(image::ImageFormat::Gif),
-            Self::Tiff => None,
+            Self::Tiff | Self::Heic => None,
         }
     }
 
     /// A photo is stored as a JPEG again; a lossless source with Flate.
     fn is_photo(self) -> bool {
-        matches!(self, Self::Jpeg | Self::WebP)
+        matches!(self, Self::Jpeg | Self::WebP | Self::Heic)
     }
 }
 
@@ -119,6 +126,27 @@ pub enum ImageError {
     /// Not an image mdoc reads, damaged, or in a variant the decoder lacks.
     #[error("This image is damaged or in a form mdoc can't read.")]
     Unreadable,
+    /// A HEIC photo on a Windows PC without the extensions that decode it.
+    #[error("{}", missing_codec_message(.0))]
+    HeicCodecMissing(heic::MissingCodec),
+    /// A HEIC photo where no decoder for it is built in.
+    #[error("This computer can't decode HEIC photos. Save the photo as JPEG and import that.")]
+    HeicUnsupported,
+}
+
+/// The card's words for the Windows extensions a HEIC photo needs.
+fn missing_codec_message(missing: &heic::MissingCodec) -> &'static str {
+    match missing {
+        heic::MissingCodec::HeifExtension => {
+            "Opening HEIC photos on Windows needs Microsoft's free HEIF Image Extensions \
+             and HEVC Video Extensions. Install them from the Microsoft Store, then import \
+             the photo again."
+        }
+        heic::MissingCodec::HevcExtension => {
+            "Opening HEIC photos on Windows needs Microsoft's HEVC Video Extensions. \
+             Install them from the Microsoft Store, then import the photo again."
+        }
+    }
 }
 
 /// A PDF built from images, one page each.
@@ -212,6 +240,9 @@ struct Page {
 fn pages(format: ImageFormat, bytes: &[u8]) -> Result<Vec<Page>, ImageError> {
     if format == ImageFormat::Tiff {
         return tiff::pages(bytes);
+    }
+    if format == ImageFormat::Heic {
+        return Ok(vec![heic::page(bytes)?]);
     }
     if format == ImageFormat::Jpeg
         && let Some(page) = jpeg::passthrough(bytes)
@@ -340,7 +371,7 @@ fn later_frames(format: ImageFormat, bytes: &[u8]) -> u64 {
         ImageFormat::Gif => gif_frames(bytes),
         ImageFormat::WebP => webp_frames(bytes),
         // A TIFF's pages are all imported: none is a left-out frame.
-        ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::Tiff => 1,
+        ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::Tiff | ImageFormat::Heic => 1,
     };
     frames.saturating_sub(1)
 }

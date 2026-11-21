@@ -66,6 +66,8 @@ import-hidden-note
 import-photo
 import-animation
 import-fax
+import-heic
+import-heic-missing
 restored-reply
 comments-rail
 comments-resolved
