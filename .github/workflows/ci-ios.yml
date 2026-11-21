@@ -143,7 +143,7 @@ jobs:
 
   # The UI tests are sharded by test class, as one part took about 26
   # minutes after the sweep (#829), over ADR 0112's 20; three parts since
-  # each of two took 31 minutes on the xcode-27 image (#997).
+  # two took 19.6 and 21.8 minutes of tests on macos-26 (#1041).
   ios:
     name: ci/ios (${{ matrix.part }})
     needs: core
