@@ -16,10 +16,11 @@ name: CI iOS
 #                   (ADR 0113): a pass on the retry keeps the part green and
 #                   is named.
 # The merge queue calls it for a queue commit that touches the ios or core
-# area, and the nightly; both run every part. A dispatch on a branch runs
-# what the branch touched (`parts`, scripts/ios/ios-ci-parts.sh), one
+# area, and the nightly; both run every part. A dispatch of this workflow
+# runs what the branch touched (`parts`, scripts/ios/ios-ci-parts.sh), one
 # dispatch at a time, and its summary is `ci/ios only: <parts>` unless it
-# ran them all, so merge-gate, which reads `ci/ios`, never counts it. Every step is a recipe or a script, so `scripts/ios/ios-toolchain.sh`,
+# asked for all, so merge-gate, which reads `ci/ios`, never counts it.
+# Every step is a recipe or a script, so `scripts/ios/ios-toolchain.sh`,
 # `just ios-test "iPhone 17" mdocTests` (or `$(scripts/ios/ios-ui-shards.sh 1)`)
 # and `just ios-release` reproduce it on a Mac.
 on:
@@ -61,7 +62,7 @@ on:
         options: [tests, builds]
         default: tests
       parts:
-        description: "touched (the UI shards holding the UI test classes the branch changed against main, else the unit part), all, or a list such as `unit,ui 2`."
+        description: "touched (the UI shards holding the UI test classes the branch changed against main, else the unit part; also when blank), all, or a list such as `unit,ui 2`."
         type: string
         default: touched
 
@@ -70,9 +71,10 @@ permissions:
 
 # One dispatch at a time across branches, as macOS runners are few: a second
 # waits for the first, and a third replaces the waiting one (GitHub cancels
-# it). A call (no `parts`) has its own group.
+# it). A call has its own group: in a called workflow the github context is
+# the caller's, so a nightly started by hand is no dispatch of this one.
 concurrency:
-  group: ${{ inputs.parts != '' && 'ci-ios-dispatch' || format('ci-ios-call-{0}', github.run_id) }}
+  group: ${{ github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@') && 'ci-ios-dispatch' || format('ci-ios-call-{0}', github.run_id) }}
   cancel-in-progress: false
 
 env:
@@ -86,8 +88,10 @@ env:
 
 jobs:
   # The parts to test: every one for a call (the queue, the nightly), the
-  # `parts` input for a dispatch. The full history for `touched`'s merge
-  # base, without file contents.
+  # `parts` input for a dispatch (blank: touched), and every one when the
+  # commit predates scripts/ios/ios-ci-parts.sh. A dispatch fetches the
+  # full history for `touched`'s merge base, without file contents (a
+  # deleted file's old copy is fetched when read).
   plan:
     name: ci/ios (plan)
     if: ${{ !inputs.build-only }}
@@ -96,18 +100,33 @@ jobs:
     outputs:
       parts: ${{ steps.parts.outputs.parts }}
       label: ${{ steps.parts.outputs.label }}
+      # `true` when every part was asked for, which only then names the
+      # summary `ci/ios`.
+      full: ${{ steps.parts.outputs.full }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-          fetch-depth: ${{ inputs.parts != 'touched' && 1 || 0 }}
-          filter: ${{ inputs.parts == 'touched' && 'blob:none' || '' }}
+          fetch-depth: ${{ !(github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@')) && 1 || 0 }}
+          filter: ${{ github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@') && 'blob:none' || '' }}
       - id: parts
         env:
-          PARTS: ${{ inputs.parts || 'all' }}
+          DISPATCH: ${{ github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@') }}
+          PARTS: ${{ inputs.parts }}
         run: |
-          parts=$(scripts/ios/ios-ci-parts.sh "$PARTS")
+          if [ "$DISPATCH" != true ]; then
+            PARTS=all
+          elif [ -z "${PARTS//[[:space:]]/}" ]; then
+            PARTS=touched
+          fi
+          if [ -f scripts/ios/ios-ci-parts.sh ]; then
+            parts=$(scripts/ios/ios-ci-parts.sh "$PARTS")
+          else
+            echo "::warning title=iOS parts::this commit has no scripts/ios/ios-ci-parts.sh, so every part runs"
+            parts='["unit","ui 1","ui 2","ui 3"]'
+          fi
+          if [ "$PARTS" = all ]; then echo full=true >>"$GITHUB_OUTPUT"; fi
           echo "parts=$parts" >>"$GITHUB_OUTPUT"
           echo "label=$(jq -r 'join(", ")' <<<"$parts")" >>"$GITHUB_OUTPUT"
           echo "::notice title=iOS parts::$PARTS: $(jq -r 'join(", ")' <<<"$parts")"
@@ -329,15 +348,16 @@ jobs:
 
   # Green only when the plan, the core and every planned part ran and
   # passed, so a cancelled or skipped one never looks green (as
-  # ci/detection, ADR 0095). Named `ci/ios` only when every part was asked
-  # for: a dispatch of some parts reads `ci/ios only: <parts>`. A failure
+  # ci/detection, ADR 0095). Named `ci/ios` for a call, or a dispatch that
+  # asked for every part; any other dispatch reads `ci/ios only: <parts>`,
+  # even when its plan failed. A failure
   # annotates the core job, or each part that did not pass with its failing
   # tests (ADR 0113), which merge-gate's link to this job shows; green or
   # not, it warns of each UI test that passed on its retry.
   # scripts/ci/ci-stats.sh reads these annotations for ADR 0112's unrelated
   # failures.
   summary:
-    name: "${{ (inputs.parts == '' || inputs.parts == 'all') && 'ci/ios' || format('ci/ios only: {0}', needs.plan.outputs.label) }}"
+    name: "${{ (!(github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@')) || needs.plan.outputs.full == 'true') && 'ci/ios' || format('ci/ios only: {0}', needs.plan.outputs.label) }}"
     needs: [plan, core, ios]
     if: ${{ always() && !inputs.build-only }}
     runs-on: ubuntu-latest

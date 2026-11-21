@@ -167,6 +167,19 @@ touched "1 2" "$tmp/ui/Waits.swift"
 rm "$tmp/ui/Waits.swift"
 touched "" "$tmp/ui/GoneUITests.swift" "$tmp/ui/notes.md" "$tmp/BUITests.swift"
 touched ""
+# A path with a space and a non-ASCII letter counts as it is.
+printf 'import XCTest\n\nfinal class FUITests: XCTestCase {}\n' >"$tmp/ui/Spaced Ü.swift"
+expect 0 "$s" --plan
+want=$(awk '$2 == "FUITests" { print $1 }' "$tmp/out")
+touched "$want" "$tmp/ui/Spaced Ü.swift"
+rm "$tmp/ui/Spaced Ü.swift"
+# --declared: the classes of files anywhere; a helper declares none.
+printf 'func waitLong() {}\n' >"$tmp/Helper.swift"
+expect 0 "$s" --declared "$tmp/ui/BUITests.swift" "$tmp/Helper.swift"
+[ "$(cat "$tmp/out")" = BUITests ] || fail "--declared: $(cat "$tmp/out")"
+expect 1 "$s" --declared
+expect 1 "$s" --declared "$tmp/Gone.swift"
+grep -q "no $tmp/Gone.swift" "$tmp/out" || fail "--declared a missing file: $(cat "$tmp/out")"
 
 # The errors, each by name.
 classes AUITests BUITests
@@ -228,6 +241,8 @@ printf 'final class CoreTests {}\n' >"$pr/apps/ios/mdocTests/CoreTests.swift"
 printf 'AUITests\t100\nBUITests\t90\nCUITests\t60\n' >"$pr/apps/ios/ui-class-times.tsv"
 git -C "$pr" init -q -b main
 git -C "$pr" config core.autocrlf false
+# Quote as git does by default, whatever this machine says.
+git -C "$pr" config core.quotePath true
 commit() { # <message>
   git -C "$pr" add -A
   git -C "$pr" -c user.name=t -c user.email=t@example.com commit -q -m "$1"
@@ -272,6 +287,30 @@ git -C "$pr" rm -q apps/ios/mdocUITests/BUITests.swift
 echo '// app' >"$pr/apps/ios/App.swift"
 commit app
 parts '["unit"]' touched
+# A deleted helper touches every shard; a moved one too, at both paths.
+git -C "$pr" checkout -q -b helper-gone main
+git -C "$pr" rm -q apps/ios/mdocUITests/Waits.swift
+commit helper-gone
+parts '["ui 1","ui 2"]' touched
+git -C "$pr" checkout -q -b helper-moved main
+mkdir -p "$pr/apps/ios/mdocUITests/Support"
+git -C "$pr" mv apps/ios/mdocUITests/Waits.swift apps/ios/mdocUITests/Support/Waits.swift
+commit helper-moved
+parts '["ui 1","ui 2"]' touched
+# A moved class: its shard at the new path, none at the old.
+git -C "$pr" checkout -q -b class-moved main
+git -C "$pr" mv apps/ios/mdocUITests/CUITests.swift apps/ios/mdocUITests/Support.swift
+commit class-moved
+parts '["ui 2"]' touched
+# A path git would quote (a space, a non-ASCII letter) still counts.
+git -C "$pr" checkout -q -b quoted main
+printf 'import XCTest\n\nfinal class CUITests: XCTestCase {}\n' >"$pr/apps/ios/mdocUITests/CUITests.swift"
+git -C "$pr" mv apps/ios/mdocUITests/CUITests.swift "apps/ios/mdocUITests/Spaced Ü.swift"
+commit quoted
+parts '["ui 2"]' touched
+# One line only.
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" "$(printf 'unit\nui 2')"
+grep -q 'parts is one line' "$tmp/out" || fail "two lines: $(cat "$tmp/out")"
 expect 1 "$pr/scripts/ios/ios-ci-parts.sh" touched x
 MDOC_MAIN_REF=nowhere expect 1 "$pr/scripts/ios/ios-ci-parts.sh" touched
 grep -q 'no merge base of HEAD and nowhere' "$tmp/out" || fail "no main: $(cat "$tmp/out")"
