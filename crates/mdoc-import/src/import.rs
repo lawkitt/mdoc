@@ -326,6 +326,13 @@ pub struct LeftOut {
     /// included), or drawn in its background's colour or covered by a
     /// later fill or image.
     pub hidden_text: u64,
+    /// A spreadsheet's hidden worksheets (XLSX, XLSB, XLS, ODS), each
+    /// whether or not it holds anything.
+    pub hidden_sheets: u64,
+    /// Hidden rows of a spreadsheet's visible sheets that hold a value.
+    pub hidden_rows: u64,
+    /// Hidden columns of a spreadsheet's visible sheets that hold a value.
+    pub hidden_columns: u64,
     /// AcroForm field names; the fields' values stay.
     pub field_names: u64,
     /// Files attached to a PDF (its embedded files, a portfolio's files,
@@ -367,6 +374,9 @@ impl LeftOut {
             }),
             hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches)
                 + sum(&native.hidden_text_by_page, |page| page.stretches),
+            hidden_sheets: 0,
+            hidden_rows: 0,
+            hidden_columns: 0,
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
             attached_files: native.attached_files.len() as u64,
             repeated_lines: 0,
@@ -376,10 +386,13 @@ impl LeftOut {
     }
 
     /// The note's lines for the counts other than comments, in order.
-    fn counts(&self) -> [Option<String>; 5] {
+    fn counts(&self) -> [Option<String>; 8] {
         [
             pictures_note(self.pictures),
             hidden_text_note(self.hidden_text),
+            left_out_note(self.hidden_sheets, "hidden sheet", "hidden sheets"),
+            left_out_note(self.hidden_rows, "hidden row", "hidden rows"),
+            left_out_note(self.hidden_columns, "hidden column", "hidden columns"),
             left_out_note(self.field_names, "form field name", "form field names"),
             left_out_note(self.attached_files, "attached file", "attached files"),
             repeated_lines_note(self.repeated_lines),
@@ -390,11 +403,23 @@ impl LeftOut {
     /// count only where no rendering of the document shows them
     /// (`comments_shown` false); comments only counted always do.
     pub fn line(&self, comments_shown: bool) -> Option<String> {
-        let [pictures, hidden, field_names, attached, repeated] = self.counts();
+        let [
+            pictures,
+            hidden,
+            sheets,
+            rows,
+            columns,
+            field_names,
+            attached,
+            repeated,
+        ] = self.counts();
         let comments = self.comments_unread + if comments_shown { 0 } else { self.comments };
         join_notes([
             pictures,
             hidden,
+            sheets,
+            rows,
+            columns,
             field_names,
             attached,
             repeated,
@@ -414,7 +439,16 @@ impl Imported {
     /// they show the left-out line (ROADMAP Comments item 4): the order the
     /// note had before the split.
     pub fn note(&self) -> Option<String> {
-        let [pictures, hidden, field_names, attached, repeated] = self.left_out.counts();
+        let [
+            pictures,
+            hidden,
+            sheets,
+            rows,
+            columns,
+            field_names,
+            attached,
+            repeated,
+        ] = self.left_out.counts();
         join_notes([
             self.warning.clone(),
             left_out_note(
@@ -424,6 +458,9 @@ impl Imported {
             ),
             pictures,
             hidden,
+            sheets,
+            rows,
+            columns,
             field_names,
             attached,
             repeated,
@@ -629,6 +666,11 @@ pub(crate) fn import_source(
             // Nor does hidden-formatted text (DOCX, RTF and DOC; 0
             // elsewhere).
             hidden_text: u64::from(converted.hidden_text_left_out),
+            // Nor do a spreadsheet's hidden sheets, rows and columns
+            // (XLSX, XLSB, XLS and ODS; 0 elsewhere).
+            hidden_sheets: u64::from(converted.hidden_sheets_left_out),
+            hidden_rows: u64::from(converted.hidden_rows_left_out),
+            hidden_columns: u64::from(converted.hidden_columns_left_out),
             field_names: 0,
             attached_files: 0,
             repeated_lines: 0,
@@ -651,6 +693,9 @@ pub struct Converted {
     pub markdown: String,
     pub images_left_out: u32,
     pub hidden_text_left_out: u32,
+    pub hidden_sheets_left_out: u32,
+    pub hidden_rows_left_out: u32,
+    pub hidden_columns_left_out: u32,
     pub comments: Vec<Comment>,
     /// Total comments left out of the Markdown, including those read as data.
     pub comments_left_out: u32,
@@ -662,6 +707,9 @@ impl From<anydoc::Conversion> for Converted {
             markdown: converted.markdown,
             images_left_out: converted.images_left_out,
             hidden_text_left_out: converted.hidden_text_left_out,
+            hidden_sheets_left_out: converted.hidden_sheets_left_out,
+            hidden_rows_left_out: converted.hidden_rows_left_out,
+            hidden_columns_left_out: converted.hidden_columns_left_out,
             comments: converted.comments.into_iter().map(Comment::from).collect(),
             comments_left_out: converted.comments_left_out,
         }
@@ -997,6 +1045,10 @@ mod tests {
             "handmade-hidden.doc",
             "sheet.xls",
             "sheet.xlsx",
+            "hidden.xlsx",
+            "handmade-hidden.xlsb",
+            "hidden.xls",
+            "hidden.ods",
             "text.pdf",
             "handmade-partly-scanned.pdf",
         ] {
@@ -1024,6 +1076,10 @@ mod tests {
                 "handmade-hidden.docx" => Some("7 hidden passages not imported."),
                 "handmade-hidden.rtf" => Some("6 hidden passages not imported."),
                 "handmade-hidden.doc" => Some("3 hidden passages not imported."),
+                "hidden.xlsx" | "handmade-hidden.xlsb" | "hidden.xls" | "hidden.ods" => Some(
+                    "1 hidden sheet not imported. 1 hidden row not imported. \
+                     1 hidden column not imported.",
+                ),
                 _ => None,
             };
             assert_eq!(imported.note().as_deref(), expected_note, "{name}");
@@ -1353,6 +1409,52 @@ mod tests {
         assert_eq!(
             hidden_text_note(1).as_deref(),
             Some("1 hidden passage not imported.")
+        );
+    }
+
+    /// A workbook's hidden sheets, rows and columns never reach the Markdown,
+    /// and the note counts each kind in a sentence of its own (#1019), the
+    /// same for XLSX, XLSB, XLS and ODS; so does a renamed copy.
+    #[test]
+    fn the_note_counts_hidden_spreadsheet_content_left_out() {
+        for name in [
+            "hidden.xlsx",
+            "handmade-hidden.xlsb",
+            "hidden.xls",
+            "hidden.ods",
+        ] {
+            let imported = convert(&fixture(name)).unwrap();
+            assert!(!imported.markdown.contains("HIDDEN"), "{name}");
+            assert!(imported.markdown.contains("Cora Penhallow"), "{name}");
+            assert_eq!(
+                imported.note().as_deref(),
+                Some(
+                    "1 hidden sheet not imported. 1 hidden row not imported. \
+                     1 hidden column not imported."
+                ),
+                "{name}"
+            );
+            let dir = tempfile::tempdir().unwrap();
+            let renamed = dir.path().join("renamed.bin");
+            std::fs::copy(fixture(name), &renamed).unwrap();
+            assert_eq!(convert(&renamed).unwrap().left_out, imported.left_out);
+        }
+        // A workbook with nothing hidden counts nothing.
+        for name in ["sheet.xlsx", "sheet.xls"] {
+            assert_eq!(convert(&fixture(name)).unwrap().note(), None, "{name}");
+        }
+        let plural = LeftOut {
+            hidden_sheets: 1,
+            hidden_rows: 3,
+            hidden_columns: 2,
+            ..LeftOut::default()
+        };
+        assert_eq!(
+            plural.line(true).as_deref(),
+            Some(
+                "1 hidden sheet not imported. 3 hidden rows not imported. \
+                 2 hidden columns not imported."
+            )
         );
     }
 
@@ -2081,6 +2183,9 @@ EMC\n";
         let all = LeftOut {
             pictures: 1,
             hidden_text: 2,
+            hidden_sheets: 2,
+            hidden_rows: 3,
+            hidden_columns: 2,
             field_names: 3,
             attached_files: 5,
             repeated_lines: 4,
@@ -2091,6 +2196,8 @@ EMC\n";
             all.line(false).as_deref(),
             Some(
                 "1 picture not imported. 2 hidden passages not imported. \
+                 2 hidden sheets not imported. 3 hidden rows not imported. \
+                 2 hidden columns not imported. \
                  3 form field names not imported. 5 attached files not imported. \
                  4 repeated header and footer lines removed. 2 comments not shown."
             )
@@ -2112,7 +2219,9 @@ EMC\n";
             whole.note().as_deref(),
             Some(
                 "2 comments not imported. 1 picture not imported. \
-                 2 hidden passages not imported. 3 form field names not imported. \
+                 2 hidden passages not imported. 2 hidden sheets not imported. \
+                 3 hidden rows not imported. 2 hidden columns not imported. \
+                 3 form field names not imported. \
                  5 attached files not imported. 4 repeated header and footer lines removed."
             )
         );
