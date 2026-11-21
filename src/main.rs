@@ -93,20 +93,13 @@ fn main() {
         std::process::exit(1);
     }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-docx-worker") {
-        // The document comes on stdin.
-        let Some(output) = args.get(2) else {
-            eprintln!("missing DOCX worker output");
-            std::process::exit(2);
-        };
-        let output = PathBuf::from(output);
+        // The document comes on stdin; the PDF goes back on stdout.
         let options = docx_preview::RenderOptions {
             show_hidden_text: args
-                .get(3)
+                .get(2)
                 .is_some_and(|arg| arg == docx_preview::SHOW_HIDDEN_ARG),
         };
-        if docx_preview::run_worker_reporting(&output, preview::read_comment_marks, options)
-            .is_err()
-        {
+        if docx_preview::run_worker_reporting(preview::read_comment_marks, options).is_err() {
             std::process::exit(1);
         }
         return;

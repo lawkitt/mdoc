@@ -3,13 +3,13 @@
 //! before deleting its temporary DOCX backing file.
 use crate::{
     comment_rail::CommentRail,
-    document_view::{Background, DocumentView, PasswordPrompt},
+    document_view::{Background, DocumentView},
     markdown_search,
     style::Theme,
     workspace,
 };
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
-use gpui_pdf::{HeaderToggle, PdfSource, PdfView, ViewOptions};
+use gpui_pdf::{HeaderToggle, PdfData, PdfSource, PdfView, ViewOptions};
 use mdoc_import::{
     comments::Comment,
     docx_preview::{self, PreviewError},
@@ -33,10 +33,13 @@ actions!(mdoc, [RetryPreview]);
 pub(crate) const DOCX_NOTE: &str = "Approximate preview: the layout may differ from Word. The Markdown is converted from the file itself.";
 
 /// The DOCX worker's reader for the comment marks in the PDF it rendered
-/// (`docx_preview::MarkReader`): the anchors' rectangles, read through gpui-pdf.
-pub(crate) fn read_comment_marks(pdf: &Path) -> Result<Vec<docx_preview::LinkMark>, String> {
-    let bytes = std::fs::read(pdf).map_err(|e| e.to_string())?;
-    let doc = gpui_pdf::parse(Arc::new(bytes)).map_err(|e| format!("{e:?}"))?;
+/// (`docx_preview::MarkReader`): the anchors' rectangles, read through
+/// gpui-pdf from the PDF's bytes, shared without a copy.
+pub(crate) fn read_comment_marks(
+    pdf: &import::SharedBytes,
+) -> Result<Vec<docx_preview::LinkMark>, String> {
+    let doc =
+        gpui_pdf::parse(PdfData::from(Arc::new(pdf.clone()))).map_err(|e| format!("{e:?}"))?;
     Ok(gpui_pdf::link_marks(&doc)
         .into_iter()
         .map(|m| docx_preview::LinkMark {
@@ -115,6 +118,30 @@ pub(super) const UNREADABLE_SOURCE: &str =
 /// The preview pane's message for a format it can't show.
 pub(super) const NO_PREVIEW: &str = "No preview for this format. mdoc previews PDF and DOCX files.";
 
+/// Where the Original's password card stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OriginalPassword {
+    Asking,
+    /// The last password tried was wrong.
+    Wrong,
+    /// A password is being tried.
+    Unlocking,
+}
+
+/// Why a password typed on the Original's card opened nothing.
+enum UnlockFailure {
+    Wrong,
+    /// The pane's message, and whether another attempt can succeed.
+    Message(String, bool),
+}
+
+/// What a DOCX job ends with.
+enum DocxJob {
+    Rendered(docx_preview::DocxPreview),
+    /// The file is locked and the tab holds no unlock for it.
+    Locked,
+}
+
 #[derive(Default)]
 pub(super) struct PreviewState {
     split_ratio: Option<f32>,
@@ -141,9 +168,6 @@ pub(super) struct PreviewState {
     /// Reads a locked PDF's bytes for its page, which opens them in memory
     /// with the tab's password.
     locked_read: Option<gpui::Task<()>>,
-    /// The shown PDF is locked and the tab has no password that opens it:
-    /// the Original asks on its own card (#1024 decision 6).
-    locked: Option<PasswordPrompt>,
     /// A password typed on the Original's card, tried by the current load:
     /// the tab keeps it once the page opens with it.
     trial: Option<import::Password>,
@@ -158,6 +182,9 @@ pub(super) struct PreviewState {
     /// its comments.
     pdf_source: bool,
     message: Option<String>,
+    /// A locked DOCX the tab holds no unlock for (a reopened one): the pane
+    /// asks for its password (#1024 decision 6, "the Original asks again").
+    password: Option<OriginalPassword>,
     loading: bool,
     retryable: bool,
     /// The last request failed. Unlike `retryable`, this includes failures
@@ -221,9 +248,10 @@ impl PreviewState {
     }
 
     /// A rendering of the source shows its comments: a DOCX or a PDF whose
-    /// preview has not failed.
+    /// preview has not failed and isn't waiting for a password.
     pub(super) fn renders_comments(&self) -> bool {
         !self.failed
+            && self.password.is_none()
             && (self.pdf_source
                 || self
                     .source
@@ -252,7 +280,7 @@ impl PreviewState {
         }
         // Past its limit the preview refuses the file, so none are kept;
         // a locked file's unlocked bytes stay with the tab's unlock, their
-        // one holder.
+        // one holder, which the preview renders in memory.
         let docx = (source
             .path
             .extension()
@@ -380,16 +408,58 @@ impl PreviewState {
         self.message = Some(NO_PREVIEW.into());
     }
 
-    /// A locked DOCX this session unlocked: no preview renders it, since
-    /// that would write the unlocked document to a temporary file. It reads
-    /// as the locked file's own preview failure, so the left-out line
-    /// counts its comments.
-    pub(super) fn unlocked_docx(&mut self, path: PathBuf) {
-        self.attachment = Some(path.clone());
-        self.source = Some(path);
-        self.retryable = false;
-        self.failed = true;
-        self.message = Some(docx_message(&PreviewError::Encrypted).into());
+    /// The Original asks for the password of the locked DOCX the current
+    /// request found, and whether a wrong one was tried.
+    pub(super) fn password(&self) -> Option<OriginalPassword> {
+        self.password
+    }
+
+    /// The current request found a locked DOCX the tab holds no unlock for:
+    /// the pane asks for its password instead of a rendering. False when a
+    /// newer request replaced it.
+    fn ask_password(&mut self, generation: u64, window: &mut Window, cx: &mut App) -> bool {
+        if !self.is_current(generation) {
+            return false;
+        }
+        self.cancel_job();
+        self.pending = None;
+        self.release_loaded(window, cx);
+        self.loading = false;
+        self.queued = false;
+        self.attachment = self.source.clone();
+        self.password = Some(OriginalPassword::Asking);
+        true
+    }
+
+    /// The password typed on the Original's card is being tried: the
+    /// request it answers, and the file.
+    fn begin_unlock(&mut self) -> Option<(u64, PathBuf)> {
+        match self.password {
+            Some(OriginalPassword::Asking | OriginalPassword::Wrong) => {
+                self.password = Some(OriginalPassword::Unlocking);
+                Some((self.generation, self.source.clone()?))
+            }
+            _ => None,
+        }
+    }
+
+    /// The password tried for `generation` failed: the card asks again
+    /// after a wrong one, else the pane says why. False when a newer
+    /// request replaced it.
+    fn unlock_failed(&mut self, generation: u64, failure: UnlockFailure) -> bool {
+        if self.generation != generation || self.password != Some(OriginalPassword::Unlocking) {
+            return false;
+        }
+        match failure {
+            UnlockFailure::Wrong => self.password = Some(OriginalPassword::Wrong),
+            UnlockFailure::Message(message, retryable) => {
+                self.password = None;
+                self.retryable = retryable;
+                self.failed = true;
+                self.message = Some(message);
+            }
+        }
+        true
     }
 
     /// A source without a preview was checked for `generation`; it is
@@ -443,6 +513,22 @@ impl PreviewState {
         self.message = Some(message);
     }
 
+    /// Show `source` as a locked DOCX whose Original asks for its
+    /// password (again after a wrong one), for renders of that card.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn show_password(&mut self, source: PathBuf, wrong: bool) {
+        self.show_source(source);
+        self.password = Some(if wrong {
+            OriginalPassword::Wrong
+        } else {
+            OriginalPassword::Asking
+        });
+    }
+
     #[cfg(test)]
     pub(super) fn set_visible(&mut self, visible: bool) {
         self.visible = visible;
@@ -465,11 +551,11 @@ impl PreviewState {
         self.cancel_job();
         self.annotation_read = None;
         self.locked_read = None;
-        self.locked = None;
         self.trial = None;
         self.pending = None;
         self.generation = self.generation.wrapping_add(1);
         self.message = None;
+        self.password = None;
         self.retryable = false;
         self.failed = false;
         self.queued = false;
@@ -489,29 +575,6 @@ impl PreviewState {
 
     fn is_current(&self, generation: u64) -> bool {
         self.loading && self.generation == generation
-    }
-
-    /// The PDF is locked and the tab has no password that opens it: the
-    /// Original asks for one with `prompt`, first or after a wrong one.
-    fn lock(&mut self, generation: u64, prompt: PasswordPrompt) -> bool {
-        if !self.is_current(generation) {
-            return false;
-        }
-        self.cancel_job();
-        self.pending = None;
-        self.loading = false;
-        self.queued = false;
-        self.retryable = false;
-        self.failed = false;
-        self.message = None;
-        self.locked = Some(prompt);
-        self.trial = None;
-        true
-    }
-
-    /// The Original asks for the shown PDF's password.
-    pub(super) fn locked(&self) -> Option<PasswordPrompt> {
-        self.locked
     }
 
     /// Ends the current request with one plain `message`; Retry shows only
@@ -906,18 +969,18 @@ impl DocumentView {
                 this.open_locked_pdf(path.clone(), password, false, window, cx);
                 return;
             } else if pdf.read(cx).is_locked() {
-                // A password tried here and refused is a wrong one.
-                let prompt = if with_password {
-                    PasswordPrompt::Wrong
-                } else {
-                    PasswordPrompt::Asking
-                };
-                this.preview.lock(generation, prompt);
+                // The Original asks on its card (#1024 decision 6); a
+                // password tried here and refused is a wrong one.
+                this.preview.trial = None;
+                if this.preview.ask_password(generation, window, cx) && with_password {
+                    this.preview.password = Some(OriginalPassword::Wrong);
+                    this.focus_original_card = true;
+                }
             } else if pdf.read(cx).is_loaded() {
                 // A password typed on the Original's card opened it: the tab
                 // keeps it, as it keeps one its import was unlocked with.
                 if let Some(password) = this.preview.trial.take() {
-                    this.import.keep_password(import::Unlock::Password {
+                    this.import.keep_unlock(import::Unlock::Password {
                         path: path.clone(),
                         password,
                     });
@@ -945,6 +1008,22 @@ impl DocumentView {
         cx.notify();
     }
 
+    /// Show `preview`, the DOCX at `path` drawn in memory: the view opens the
+    /// PDF from its bytes, shared without a copy (#1024 decision 3).
+    pub(crate) fn load_docx(
+        &mut self,
+        path: PathBuf,
+        preview: docx_preview::DocxPreview,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let source = PdfSource::Bytes {
+            bytes: PdfData::from(Arc::new(preview.pdf.clone())),
+            password: None,
+        };
+        self.load_preview_source(path, source, Some(preview), window, cx);
+    }
+
     pub(super) fn open_pdf(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.begin_preview(path.clone());
         self.preview.pdf_source = true;
@@ -963,24 +1042,16 @@ impl DocumentView {
         unlock.opens(path).then(|| unlock.password().cloned())?
     }
 
-    /// Unlock on the Original's card: the field's text opens the locked PDF
-    /// shown, in memory, and is wiped from the field; the tab keeps it once
-    /// the page opens with it.
-    pub(crate) fn unlock_original(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(path) = self
-            .preview
-            .source
-            .clone()
-            .filter(|_| self.preview.locked().is_some())
-        else {
-            return;
-        };
-        let password = self
-            .password_field
-            .update(cx, |field, cx| field.take_secret(cx));
-        if password.is_empty() {
-            return;
-        }
+    /// [`Self::unlock_original`] of the locked PDF at `path`: `password`
+    /// opens its page in memory, and the tab keeps it once the page opens
+    /// with it.
+    fn unlock_original_pdf(
+        &mut self,
+        path: PathBuf,
+        password: import::Password,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Another password: annotations a wrong one couldn't read, it may.
         if self
             .preview
@@ -990,7 +1061,7 @@ impl DocumentView {
         {
             self.preview.unread_annotations = None;
         }
-        self.open_locked_pdf(path, import::Password::from(password), true, window, cx);
+        self.open_locked_pdf(path, password, true, window, cx);
     }
 
     /// [`Self::open_pdf`] of the locked PDF at `path` with `password`: the
@@ -1164,7 +1235,12 @@ impl DocumentView {
                 Some(source) => source,
                 None => docx_preview::read_source(&path)?,
             };
-            // Headless UI tests cannot launch the test harness as a worker.
+            // A reopened locked DOCX: the Original asks for its password.
+            if source.locked() {
+                return Ok(DocxJob::Locked);
+            }
+            // Every DOCX renders in memory (#1024 decision 3). Headless UI
+            // tests cannot launch the test harness as a worker.
             if cfg!(test) {
                 docx_preview::render_in_process(
                     &source,
@@ -1176,6 +1252,7 @@ impl DocumentView {
             } else {
                 docx_preview::render_with_cancel(&source, cancel, options, comments)
             }
+            .map(DocxJob::Rendered)
         });
         let task = cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
@@ -1191,8 +1268,20 @@ impl DocumentView {
                     return;
                 }
                 match result {
-                    Ok(preview) => {
-                        this.load_preview(preview.pdf_path.clone(), Some(preview), window, cx)
+                    Ok(DocxJob::Rendered(preview)) => {
+                        let path = this.preview.source.clone().unwrap_or_default();
+                        this.load_docx(path, preview, window, cx)
+                    }
+                    // The tab unlocked the file while this job ran (the
+                    // conversion card answered first): render its bytes.
+                    Ok(DocxJob::Locked)
+                        if let Some(path) = this.preview.source.clone()
+                            && this.unlocked_source(&path).is_some() =>
+                    {
+                        this.open_docx(path, window, cx);
+                    }
+                    Ok(DocxJob::Locked) => {
+                        this.preview.ask_password(generation, window, cx);
                     }
                     Err(error) => {
                         this.preview.fail(
@@ -1211,14 +1300,92 @@ impl DocumentView {
     }
 
     /// The tab's unlocked bytes of the locked file at `path`: a reload or a
-    /// redraw of its preview renders these, never asking again (#1024
-    /// decision 6). The render refuses them until it runs in memory.
+    /// redraw of its preview renders these in memory, never asking again
+    /// (#1024 decision 6).
     pub(crate) fn unlocked_source(&self, path: &Path) -> Option<Source> {
         let unlock = self.import.unlock()?;
         match unlock {
             import::Unlock::Unlocked(source) if source.path == path => Some(source.clone()),
             _ => None,
         }
+    }
+
+    /// Unlock on the Original's card: the field's text opens the locked
+    /// DOCX in memory, off the main thread, and is wiped from the field.
+    /// What it unlocks becomes the tab's unlock, which the rendering, its
+    /// reloads and every later conversion take.
+    pub(crate) fn unlock_original(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // While a password is being tried, the field keeps what was typed.
+        if !matches!(
+            self.preview.password,
+            Some(OriginalPassword::Asking | OriginalPassword::Wrong)
+        ) || self.lifecycle.prompting()
+        {
+            return;
+        }
+        let password = self
+            .original_password_field
+            .update(cx, |field, cx| field.take_secret(cx));
+        if password.is_empty() {
+            return;
+        }
+        let password = import::Password::from(password);
+        // A locked PDF: its page opens with the password, in memory.
+        if self.preview.pdf_source
+            && let Some(path) = self.preview.source.clone()
+        {
+            self.unlock_original_pdf(path, password, window, cx);
+            return;
+        }
+        let Some((generation, path)) = self.preview.begin_unlock() else {
+            return;
+        };
+        let task = cx.background_executor().spawn({
+            let path = path.clone();
+            async move {
+                let source = docx_preview::read_source(&path).map_err(|error| {
+                    UnlockFailure::Message(docx_message(&error).into(), error.retryable())
+                })?;
+                source.unlock(Some(&password)).map_err(|error| match error {
+                    import::ImportError::PasswordRequired | import::ImportError::WrongPassword => {
+                        UnlockFailure::Wrong
+                    }
+                    import::ImportError::EncryptionUnsupported(scheme) => UnlockFailure::Message(
+                        format!("This document uses {scheme} encryption, which mdoc can’t unlock."),
+                        false,
+                    ),
+                    error => UnlockFailure::Message(error.to_string(), false),
+                })
+            }
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(source) => {
+                        if this.preview.generation != generation
+                            || this.preview.source.as_ref() != Some(&path)
+                        {
+                            return;
+                        }
+                        if source.unlocked() {
+                            this.import.keep_unlock(import::Unlock::Unlocked(source));
+                        }
+                        this.open_docx(path, window, cx);
+                    }
+                    Err(failure) => {
+                        if this.preview.unlock_failed(generation, failure)
+                            && this.preview.password == Some(OriginalPassword::Wrong)
+                        {
+                            this.focus_original_card = true;
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
     }
 
     pub(super) fn retry_preview(
@@ -1243,10 +1410,10 @@ pub(crate) fn docx_message(error: &PreviewError) -> &'static str {
             "This DOCX is too large to preview. Previews take files up to 50 MB."
         }
         PreviewError::MacrosNotSupported => "DOCX files with macros can't be previewed.",
-        // The preview renders to a temporary file, which would hold the
-        // unlocked document.
+        // A locked DOCX asks for its password; this is a file in Word's
+        // older binary layout, or encrypted in a way mdoc can't open.
         PreviewError::Encrypted => {
-            "Password-protected DOCX files aren’t previewed, so no unlocked copy is written to disk."
+            "This DOCX is encrypted or isn’t a Word package mdoc can read, so it can't be previewed."
         }
         PreviewError::TrackedChangesNotSupported => {
             "DOCX files with tracked changes can't be previewed. Accept or reject the changes in Word first."

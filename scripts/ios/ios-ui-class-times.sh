@@ -2,7 +2,8 @@
 # Usage: scripts/ios/ios-ui-class-times.sh [--days N] [--from <folder>] [--dry-run]
 # The nightly's refresh of apps/ios/ui-class-times.tsv, the UI shards'
 # class times: the green UI parts' times of the last N days (14),
-# from their `ios-ui-times-*` artifacts (or the `.tsv` files in --from), as
+# from their `ios-ui-times-tests-*` artifacts, the tests pin's (macos-26:
+# the shards run there), or the `.tsv` files in --from, as
 # a new table of the classes under apps/ios/mdocUITests; a class measured
 # by fewer than 3 parts keeps its row, so one slow run moves nothing (a
 # class without a row takes even one measurement). When it would move

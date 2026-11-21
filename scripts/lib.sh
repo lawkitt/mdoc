@@ -140,11 +140,25 @@ fetch_sha256() {
   mv -f "$3.part" "$3"
 }
 
-# Loads scripts/tools.env into the environment.
+# Loads scripts/tools.env into the environment, with XCODE_VERSION,
+# IOS_SIM_RUNTIME and IOS_SIM_RUNTIME_BUILD the Xcode pin MDOC_XCODE names
+# (ADR 0124): `tests` (hosted macos-26), `builds` (hosted xcode-27), or
+# unset, a Mac's: the builds' Xcode on the tests' runtime.
 load_tools() {
   set -a
   # shellcheck source=tools.env
   source scripts/tools.env
+  # shellcheck disable=SC2034 # exported (set -a) for the iOS scripts
+  case "${MDOC_XCODE:-}" in
+    tests) ;;
+    builds)
+      XCODE_VERSION=$XCODE_BUILDS_VERSION
+      IOS_SIM_RUNTIME=$IOS_SIM_BUILDS_RUNTIME
+      IOS_SIM_RUNTIME_BUILD=$IOS_SIM_BUILDS_RUNTIME_BUILD
+      ;;
+    '') XCODE_VERSION=$XCODE_BUILDS_VERSION ;;
+    *) die "MDOC_XCODE is tests, builds or unset, not $MDOC_XCODE" ;;
+  esac
   set +a
 }
 

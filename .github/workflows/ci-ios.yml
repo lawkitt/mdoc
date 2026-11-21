@@ -1,20 +1,26 @@
 name: CI iOS
 
 # The iOS job on hosted runners (ADR 0095, ADR 0091, ADR 0100, ADR 0112):
-# four jobs in parallel, and `ci/ios`, which merge-gate reads, green only
-# when all four ran and passed.
-#   ci/ios (unit)   the core, the app, the unit and parity tests (mdocTests)
-#                   on the pinned Xcode and Simulator (scripts/tools.env),
-#                   then the core and the app in the Release configuration,
-#                   as an archive builds them, unsigned and without tests.
-#   ci/ios (ui 1)   the core, the app and a third of the UI test classes
+# the core, then four parts in parallel on it, and `ci/ios`, which
+# merge-gate reads, green only when all five ran and passed.
+#   ci/ios (core)   the iOS core, restored from main's cache or built, handed
+#                   to the parts as the `ios-core` artifact.
+#   ci/ios (unit)   the app, the unit and parity tests (mdocTests) on the
+#                   pinned Xcode and Simulator (scripts/tools.env), then the
+#                   app in the Release configuration, as an archive builds
+#                   it, unsigned and without tests.
+#   ci/ios (ui 1)   the app and a third of the UI test classes
 #   ci/ios (ui 2)   (mdocUITests) each, by time, as scripts/ios/ios-ui-shards.sh
 #   ci/ios (ui 3)   packs them (ADR 0113); the timing tests run only with
 #                   `timing` (the nightly). A failed UI test retries once
 #                   (ADR 0113): a pass on the retry keeps the part green and
 #                   is named.
 # The merge queue calls it for a queue commit that touches the ios or core
-# area. Every step is a recipe or a script, so `scripts/ios/ios-toolchain.sh`,
+# area, and the nightly; both run every part. A dispatch of this workflow
+# runs what the branch touched (`parts`, scripts/ios/ios-ci-parts.sh), one
+# dispatch at a time, and its summary is `ci/ios only: <parts>` unless it
+# asked for all, so merge-gate, which reads `ci/ios`, never counts it.
+# Every step is a recipe or a script, so `scripts/ios/ios-toolchain.sh`,
 # `just ios-test "iPhone 17" mdocTests` (or `$(scripts/ios/ios-ui-shards.sh 1)`)
 # and `just ios-release` reproduce it on a Mac.
 on:
@@ -25,13 +31,17 @@ on:
         type: string
         default: ""
       build-only:
-        description: Build the iOS core only, which saves it and its cargo cache on main (main-caches.yml).
+        description: The core job only, which saves the built core and its cargo cache on main (main-caches.yml).
         type: boolean
         default: false
       timing:
         description: Run the timing tests too (LivePreviewUITests' typing and Return times, CoreWiringTests' review tap), as the nightly does.
         type: boolean
         default: false
+      xcode:
+        description: "The Xcode pin (scripts/tools.env, ADR 0124): tests, Xcode 26 on macos-26 (the queue, branches, main's caches); builds, Xcode 27 on xcode-27 (the nightly)."
+        type: string
+        default: tests
   workflow_dispatch:
     inputs:
       ref:
@@ -39,18 +49,37 @@ on:
         type: string
         default: ""
       build-only:
-        description: Build the iOS core only.
+        description: The core job only.
         type: boolean
         default: false
       timing:
         description: Run the timing tests too.
         type: boolean
         default: false
+      xcode:
+        description: The Xcode pin.
+        type: choice
+        options: [tests, builds]
+        default: tests
+      parts:
+        description: "touched (the UI shards holding the UI test classes the branch changed against main, else the unit part; also when blank), all, or a list such as `unit,ui 2`."
+        type: string
+        default: touched
 
 permissions:
   contents: read
 
+# One dispatch at a time across branches, as macOS runners are few: a second
+# waits for the first, and a third replaces the waiting one (GitHub cancels
+# it). A call has its own group: in a called workflow the github context is
+# the caller's, so a nightly started by hand is no dispatch of this one.
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@') && 'ci-ios-dispatch' || format('ci-ios-call-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 env:
+  # The Xcode pin every iOS script reads (load_tools, scripts/lib.sh).
+  MDOC_XCODE: ${{ inputs.xcode }}
   # The tests' switch for parallel testing: the number of Simulator clones
   # `just ios-test` runs them on; empty runs them on the one device. Off:
   # on 2 clones (PR #617's trial, 3 runs) testing took 16-17 minutes, not
@@ -58,30 +87,138 @@ env:
   MDOC_IOS_TEST_WORKERS: ""
 
 jobs:
-  # The job id stays `ios`: main-caches.yml's build-only call saves the
-  # cargo cache under it, and every part restores it (`cache-key: ios`).
-  # That call, which runs the unit part alone, also saves the built core,
-  # which every part restores too. The UI tests are sharded by test class,
-  # as one part took about 26 minutes after the sweep (#829), over ADR
-  # 0112's 20; three parts since each of two took 31 minutes on the xcode-27
-  # image (#997). Each builds the app itself.
+  # The parts to test: every one for a call (the queue, the nightly), the
+  # `parts` input for a dispatch (blank: touched), and every one when the
+  # commit predates scripts/ios/ios-ci-parts.sh. A dispatch fetches the
+  # full history for `touched`'s merge base, without file contents (a
+  # deleted file's old copy is fetched when read).
+  plan:
+    name: ci/ios (plan)
+    if: ${{ !inputs.build-only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      parts: ${{ steps.parts.outputs.parts }}
+      label: ${{ steps.parts.outputs.label }}
+      # `true` when every part was asked for, which only then names the
+      # summary `ci/ios`.
+      full: ${{ steps.parts.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          fetch-depth: ${{ !(github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@')) && 1 || 0 }}
+          filter: ${{ github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@') && 'blob:none' || '' }}
+      - id: parts
+        env:
+          DISPATCH: ${{ github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@') }}
+          PARTS: ${{ inputs.parts }}
+        run: |
+          if [ "$DISPATCH" != true ]; then
+            PARTS=all
+          elif [ -z "${PARTS//[[:space:]]/}" ]; then
+            PARTS=touched
+          fi
+          if [ -f scripts/ios/ios-ci-parts.sh ]; then
+            parts=$(scripts/ios/ios-ci-parts.sh "$PARTS")
+          else
+            echo "::warning title=iOS parts::this commit has no scripts/ios/ios-ci-parts.sh, so every part runs"
+            parts='["unit","ui 1","ui 2","ui 3"]'
+          fi
+          if [ "$PARTS" = all ]; then echo full=true >>"$GITHUB_OUTPUT"; fi
+          echo "parts=$parts" >>"$GITHUB_OUTPUT"
+          echo "label=$(jq -r 'join(", ")' <<<"$parts")" >>"$GITHUB_OUTPUT"
+          echo "::notice title=iOS parts::$PARTS: $(jq -r 'join(", ")' <<<"$parts")"
+
+  # Once per run, so a change to the core builds it in one job, not in each
+  # part. Main's build-only run (main-caches.yml) saves the built core and
+  # the cargo cache (`cache-key: ios`) that a miss restores.
+  core:
+    name: ci/ios (core)
+    # Xcode 26.2 on macos-26 (ADR 0124); Xcode 27 is only on the xcode-27
+    # preview image (actions/runner-images#14404), whose tests ran two to
+    # three times slower (#1041).
+    runs-on: ${{ inputs.xcode == 'builds' && 'xcode-27' || 'macos-26' }}
+    # A change to crates/ or Cargo.lock misses the built-core cache, and with
+    # a new Cargo.lock the cargo cache too: the core then took 17-20 minutes
+    # cold (#879, #1041).
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # The pinned Xcode, which builds the core and so is in its key.
+      - run: scripts/ios/ios-toolchain.sh --no-simulator >>"$GITHUB_ENV"
+
+      # The built core from main (#631): an exact hit on the hash of its
+      # inputs (scripts/ios/ios-core-cache.sh) skips its build, and the
+      # cargo toolchain and cache it needs. A miss builds it and checks that
+      # the key hashes every file the build read.
+      - id: core-key
+        run: scripts/ios/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
+      - id: core
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup
+        with:
+          cache-key: ios
+          # Main's cargo cache is the tests pin's (main-caches.yml): another
+          # image's would evict it (scripts/ci/ci-cache-cleanup.sh).
+          cache-save: ${{ inputs.xcode == 'tests' }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: just ios-core && scripts/ios/ios-core-cache.sh check
+
+      # Only main saves (main-caches.yml's build-only run), as for the cargo
+      # cache: a branch restores only its own caches and main's, so a queue
+      # commit's or a PR's copy would only fill the 10 GB.
+      - if: steps.core.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+
+      # One tar, as an artifact keeps no file modes and PDFium's framework
+      # binary is executable. Build.xcconfig names the commit, so each part
+      # writes its own.
+      - if: ${{ !inputs.build-only }}
+        env:
+          PATHS: ${{ steps.core-key.outputs.paths }}
+        run: |
+          # shellcheck disable=SC2086 # PATHS: one path a line, no spaces
+          tar -cf ios-core.tar $PATHS
+      - if: ${{ !inputs.build-only }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-core
+          path: ios-core.tar
+          # A re-run of this job replaces it.
+          overwrite: true
+          retention-days: 3
+
+  # The UI tests are sharded by test class, as one part took about 26
+  # minutes after the sweep (#829), over ADR 0112's 20; three parts since
+  # two took 19.6 and 21.8 minutes of tests on macos-26 (#1041).
   ios:
     name: ci/ios (${{ matrix.part }})
-    # The only hosted image with Xcode 27 (ITMS-90725: App Store uploads need
-    # the iOS 27 SDK from April 2027), a preview (actions/runner-images#14404).
-    runs-on: xcode-27
-    # Job limits (ADR 0095, ADR 0112): the one job took 29 to 46 minutes
-    # with every test (2026-11-11); the unit part took 10 minutes and the
-    # one UI part 26 on #829, so a UI shard should take about 17. A change
-    # to crates/ or Cargo.lock misses the built-core cache, and with a new
-    # Cargo.lock the cargo cache too: the core then took 19 minutes cold
-    # before a UI shard's 15-20 (#879), so 55 leaves room for that.
-    timeout-minutes: 55
+    needs: [plan, core]
+    if: ${{ !inputs.build-only }}
+    # The core job's image.
+    runs-on: ${{ inputs.xcode == 'builds' && 'xcode-27' || 'macos-26' }}
+    # Job limits (ADR 0095, ADR 0112): the unit part took 10 minutes and the
+    # one UI part 26 on #829; a UI shard's tests took 21-34 minutes on the
+    # xcode-27 image (#997), after the app's build.
+    timeout-minutes: 45
     strategy:
       # A cancelled part would read as a capacity cancel to merge-gate.
       fail-fast: false
       matrix:
-        part: ${{ fromJSON(inputs.build-only && '["unit"]' || '["unit", "ui 1", "ui 2", "ui 3"]') }}
+        part: ${{ fromJSON(needs.plan.outputs.parts) }}
     # Each part's own result (`unit`, `ui1`, `ui2`, `ui3`), failing tests
     # (`unit_tests`, ...) and tests that passed on their retry
     # (`ui1_retried`, ...), which `ci/ios` names: a matrix job's
@@ -115,7 +252,7 @@ jobs:
           persist-credentials: false
 
       # What `just ios-test` runs: the unit and parity tests, or a UI
-      # shard's classes. Before anything is built, so a UI test class in no
+      # shard's classes. Before the app is built, so a UI test class in no
       # shard or in two fails in seconds (as it fails `lint (ubuntu)`).
       - name: What to test
         id: part
@@ -128,74 +265,55 @@ jobs:
           esac
           echo "ONLY=$only" >>"$GITHUB_ENV"
 
+      # just; no Rust, as the core job built it.
       - uses: ./.github/actions/setup
         with:
-          cache-key: ios
+          rust: false
 
       # The pinned Xcode for every later step. The pinned Simulator runtime,
       # when the image lacks it, downloads in the background while the core
-      # builds. Xcode finds no Simulator destination, generic or not, without
-      # it, so even the Release build needs it.
-      - run: scripts/ios/ios-toolchain.sh ${{ inputs.build-only && '--no-simulator' || '--start' }} >>"$GITHUB_ENV"
+      # downloads. Xcode finds no Simulator destination, generic or not,
+      # without it, so even the Release build needs it.
+      - run: scripts/ios/ios-toolchain.sh --start >>"$GITHUB_ENV"
 
-      # The built core from main (#631): an exact hit on the hash of its
-      # inputs (scripts/ios/ios-core-cache.sh) skips its build, and the app
-      # links the restored xcframeworks; Build.xcconfig names this commit.
-      # A miss builds it and checks that the key hashes every file the build
-      # read.
-      - id: core-key
-        run: scripts/ios/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
-      - id: core
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The core job's build; the app links its xcframeworks, and
+      # Build.xcconfig names this commit.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: ${{ steps.core-key.outputs.paths }}
-          key: ${{ steps.core-key.outputs.key }}
-      - if: steps.core.outputs.cache-hit != 'true'
-        run: just ios-core && scripts/ios/ios-core-cache.sh check
-      - if: steps.core.outputs.cache-hit == 'true'
-        run: scripts/ios/ios-build-info.sh
+          name: ios-core
+      - run: tar -xf ios-core.tar && rm ios-core.tar && scripts/ios/ios-build-info.sh
 
-      # Only main's unit part saves (main-caches.yml's build-only run), as
-      # for the cargo cache: a branch restores only its own caches and
-      # main's, so a queue commit's or a PR's copy would only fill the 10 GB.
-      - if: steps.core.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && matrix.part == 'unit'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.core-key.outputs.paths }}
-          key: ${{ steps.core-key.outputs.key }}
-
-      - if: ${{ !inputs.build-only }}
-        run: scripts/ios/ios-toolchain.sh --finish >/dev/null
+      - run: scripts/ios/ios-toolchain.sh --finish >/dev/null
 
       # `just mobile --ios` for one test target or shard, without its area
       # check (the caller decided) and its Simulator shutdown (the runner is
       # thrown away); --no-deps, as the core is built.
       - name: Tests
-        if: ${{ !inputs.build-only }}
         run: |
           # shellcheck disable=SC2086 # ONLY: identifiers, split on purpose
           just --no-deps ios-app ios-test "iPhone 17" $ONLY
 
       # A green UI part's class times (ADR 0113), without the timing tests:
       # a few hundred bytes, from which the nightly refreshes
-      # apps/ios/ui-class-times.tsv, the shards' times. A failure here only
-      # loses one measurement, never the part.
+      # apps/ios/ui-class-times.tsv, the shards' times, with the tests pin's
+      # only (its name holds the pin). A failure here only loses one
+      # measurement, never the part.
       - name: Class times
         id: times
-        if: ${{ !inputs.build-only && !inputs.timing && startsWith(matrix.part, 'ui ') }}
+        if: ${{ !inputs.timing && startsWith(matrix.part, 'ui ') }}
         continue-on-error: true
         run: python3 scripts/ios/ios-ui-class-times.py collect target/ios/DerivedData/Logs/Test >ui-class-times.tsv
       - if: steps.times.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ios-ui-times-${{ steps.part.outputs.key }}-${{ github.run_attempt }}
+          name: ios-ui-times-${{ inputs.xcode }}-${{ steps.part.outputs.key }}-${{ github.run_attempt }}
           path: ui-class-times.tsv
           retention-days: 15
 
       # What an archive compiles, after the unit tests: it fits under the
       # UI parts, so it takes no runner of its own (ADR 0112).
-      - if: ${{ !inputs.build-only && matrix.part == 'unit' }}
+      - if: matrix.part == 'unit'
         run: just --no-deps ios-release
 
       # The failing tests by name (ADR 0113), from the xcresult while Xcode
@@ -203,7 +321,7 @@ jobs:
       # green UI part's tests that passed on their retry, as warnings.
       - name: Failing tests
         id: failed
-        if: steps.part.outputs.key != '' && (failure() || (success() && !inputs.build-only && startsWith(matrix.part, 'ui ')))
+        if: steps.part.outputs.key != '' && (failure() || (success() && startsWith(matrix.part, 'ui ')))
         env:
           STATUS: ${{ job.status }}
         run: python3 scripts/ios/ios-failed-tests.py part "$PART" "$STATUS" target/ios/DerivedData/Logs/Test
@@ -228,15 +346,19 @@ jobs:
           STATUS: ${{ job.status }}
         run: '[ -z "$KEY" ] || echo "$KEY=$STATUS" >>"$GITHUB_OUTPUT"'
 
-  # Green only when every part ran and passed, so a cancelled or skipped one
-  # never looks green (as ci/detection, ADR 0095). A failure annotates each
-  # part that did not pass with its failing tests (ADR 0113), which
-  # merge-gate's link to this job shows; green or not, it warns of each UI
-  # test that passed on its retry. scripts/ci/ci-stats.sh reads these
-  # annotations for ADR 0112's unrelated failures.
+  # Green only when the plan, the core and every planned part ran and
+  # passed, so a cancelled or skipped one never looks green (as
+  # ci/detection, ADR 0095). Named `ci/ios` for a call, or a dispatch that
+  # asked for every part; any other dispatch reads `ci/ios only: <parts>`,
+  # even when its plan failed. A failure
+  # annotates the core job, or each part that did not pass with its failing
+  # tests (ADR 0113), which merge-gate's link to this job shows; green or
+  # not, it warns of each UI test that passed on its retry.
+  # scripts/ci/ci-stats.sh reads these annotations for ADR 0112's unrelated
+  # failures.
   summary:
-    name: ci/ios
-    needs: [ios]
+    name: "${{ (!(github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/ci-ios.yml@')) || needs.plan.outputs.full == 'true') && 'ci/ios' || format('ci/ios only: {0}', needs.plan.outputs.label) }}"
+    needs: [plan, core, ios]
     if: ${{ always() && !inputs.build-only }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -249,5 +371,14 @@ jobs:
           sparse-checkout-cone-mode: false
       - env:
           RESULT: ${{ needs.ios.result }}
+          CORE_RESULT: ${{ needs.core.result }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          PARTS: ${{ needs.plan.outputs.parts }}
           IOS_OUTPUTS: ${{ toJSON(needs.ios.outputs) }}
-        run: python3 scripts/ios/ios-failed-tests.py summary "$RESULT" unit "ui 1" "ui 2" "ui 3"
+        run: |
+          if [ "$PLAN_RESULT" != success ] || [ -z "$PARTS" ]; then
+            echo "::error::ci/ios (plan): ${PLAN_RESULT}, so no part ran"
+            exit 1
+          fi
+          readarray -t parts < <(jq -r '.[]' <<<"$PARTS")
+          python3 scripts/ios/ios-failed-tests.py summary "$RESULT" "${parts[@]}"

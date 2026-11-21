@@ -214,16 +214,17 @@ impl ImportFlow {
         self.unlock.as_ref()
     }
 
-    /// A locked PDF's password that opened its Original (#1024 decision 6):
-    /// the tab keeps it, as it keeps the one an import unlocked with, unless
-    /// a run is under way, which leaves its own, or the tab is closing.
-    pub(crate) fn keep_password(&mut self, unlock: Unlock) {
+    /// A password typed on the Original's card opened the source:
+    /// `unlock` becomes the tab's, for its preview and every later run, as
+    /// one the card's conversion left would: a locked Office document's
+    /// unlocked bytes, or a locked PDF's password. A closed tab keeps
+    /// nothing. A run under way started without it: when it ends wanting a
+    /// password, it runs again with this one instead of asking.
+    pub(crate) fn keep_unlock(&mut self, unlock: Unlock) {
         if self.cancelled() {
             return;
         }
         self.unlock = Some(unlock);
-        // A run under way started without it: when it ends wanting a
-        // password, it runs again with this one instead of asking.
         self.kept_meanwhile |= self.busy();
     }
 
@@ -519,15 +520,18 @@ impl ImportFlow {
             };
             // What opens the source from now on: the run's unlock, or
             // nothing (not locked, a wrong password, a changed file). A
-            // cancelled run proved nothing, so the tab keeps what it had;
-            // nor does a run that found nothing undo a password the
-            // Original's card proved meanwhile.
+            // cancelled run proved nothing, so the tab keeps what it had. A
+            // run that carried none keeps an unlock the Original's card made
+            // meanwhile: an Office document's unlocked bytes while they
+            // still open the file as it is, or a PDF's password.
             if let Some((finished, unlock)) = finished_unlock
                 && finished == generation
                 && !matches!(result, Err(ImportError::Cancelled))
-                && (unlock.is_some() || !kept_meanwhile)
             {
-                self.unlock = unlock;
+                let kept = self.unlock.take().filter(|kept| {
+                    kept.current_source().is_some() || kept_meanwhile && kept.password().is_some()
+                });
+                self.unlock = unlock.or(kept);
             }
             self.password_prompt = None;
             // The run wanted a password the Original's card proved while
@@ -991,7 +995,7 @@ mod tests {
     fn a_password_proved_on_the_original_during_a_run_answers_it() {
         let (mut flow, _slot) = new_flow();
         start(&mut flow, "/in/locked.pdf", None);
-        flow.keep_password(Unlock::Password {
+        flow.keep_unlock(Unlock::Password {
             path: "/in/locked.pdf".into(),
             password: Password::new("right".into()),
         });
@@ -1033,7 +1037,7 @@ mod tests {
             path: "/in/locked.pdf".into(),
             password: Password::new("proved".into()),
         };
-        flow.keep_password(proved.clone());
+        flow.keep_unlock(proved.clone());
         start(&mut flow, "/in/locked.pdf", None);
         flow.stop();
         flow.complete(1, Err(ImportError::Cancelled), None);
@@ -1055,6 +1059,30 @@ mod tests {
             .as_ref()
             .and_then(Unlock::password)
             .map(|password| password.expose().to_owned())
+    }
+
+    /// An unlock the Original's card made while a conversion ran outlives
+    /// that run, which carried none, while the file is unchanged; once the
+    /// file changes, the next such run drops it.
+    #[test]
+    fn an_unlock_made_during_a_run_outlives_it_while_the_file_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("locked.docx");
+        std::fs::write(&path, b"a locked document").unwrap();
+        let name = path.to_str().unwrap();
+        let (mut flow, _) = new_flow();
+        start(&mut flow, name, None);
+        flow.keep_unlock(Unlock::Unlocked(
+            mdoc_import::import::Source::read(&path).unwrap(),
+        ));
+        flow.complete(1, Ok(crate::test_support::converted(path.clone())), None);
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_some(), "the run carried none");
+        start(&mut flow, name, None);
+        std::fs::write(&path, b"another, longer document").unwrap();
+        flow.complete(1, Ok(crate::test_support::converted(path.clone())), None);
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_none(), "the file changed");
     }
 
     /// The tab keeps what unlocked its source (#1024 decision 6): OCR

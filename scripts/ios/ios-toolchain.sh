@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-toolchain.sh [--no-simulator | --start | --finish]
-# Readies the iOS job's pinned toolchain (scripts/tools.env) and
+# Readies the iOS toolchain of the Xcode pin MDOC_XCODE names (scripts/tools.env,
+# load_tools: tests, builds, or unset on a Mac; ADR 0124) and
 # prints `DEVELOPER_DIR=<its Developer folder>` on stdout, which ci-ios.yml
 # appends to $GITHUB_ENV. Finds the Xcode whose `xcodebuild
 # -version` is XCODE_VERSION (the selected one, or /Applications/Xcode_<v>.app
@@ -46,9 +47,9 @@ for app in "$(xcode-select -p 2>/dev/null)" /Applications/Xcode_"$XCODE_VERSION"
   fi
 done
 [ -n "$developer" ] ||
-  die "the iOS job needs Xcode $XCODE_VERSION (scripts/tools.env); found: ${found[*]:-none}. Install it, or pin another in its own PR"
+  die "the ${MDOC_XCODE:-Mac} pin needs Xcode $XCODE_VERSION (scripts/tools.env); found: ${found[*]:-none}. Install it, or pin another in its own PR"
 export DEVELOPER_DIR=$developer
-echo "ios-toolchain: Xcode $XCODE_VERSION at ${developer%/Contents/Developer}" >&2
+echo "ios-toolchain: Xcode $XCODE_VERSION (${MDOC_XCODE:-Mac} pin) at ${developer%/Contents/Developer}" >&2
 if [ "$mode" = --no-simulator ]; then
   echo "DEVELOPER_DIR=$developer"
   exit 0

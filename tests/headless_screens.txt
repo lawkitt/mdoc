@@ -61,6 +61,9 @@ conversion-cancelled
 ocr-consent
 import-password
 import-password-wrong
+original-unlocked
+original-password
+original-password-wrong
 import-comments-note
 import-hidden-note
 restored-reply

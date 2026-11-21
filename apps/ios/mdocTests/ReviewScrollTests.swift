@@ -178,15 +178,20 @@ final class ReviewScrollTests: XCTestCase {
         /// offset has held for 0.1 s since the coordinator last owed a
         /// reveal, ran a scroll or had a landing to check (a landed
         /// scroll's correction animates without a flag, a few frames
-        /// later), or for 0.3 s whatever the coordinator says. Each turn
-        /// lays the view out, as the screen's display cycle does in the
-        /// app: this window has no scene, so nothing else does, and a
-        /// landed scroll's check waited for the next measurement. A fixed
+        /// later). Not 0.3 s of a still offset whatever the coordinator
+        /// says: on a slow runner a reveal's scroll began later than that,
+        /// and the step measured a name the text had not come to yet
+        /// (#1052's shadow run on hosted macos-26, where this class took
+        /// 30 s against a Mac's 11). The cap only ends a wait that never
+        /// settles. Each turn lays the view out, as the screen's display
+        /// cycle does in the app: this window has no scene, so nothing
+        /// else does, and a landed scroll's check waited for the next
+        /// measurement. A fixed
         /// 0.3 s after every step, a landing never checked, made this suite
         /// take three minutes on hosted runners (ADR 0112: a slow unit test
         /// is a bug).
-        func settle() {
-            let deadline = Date().addingTimeInterval(4)
+        func settle(timeout: TimeInterval = 10) {
+            let deadline = Date().addingTimeInterval(timeout)
             var last = view.contentOffset
             var still = Date()
             var idleSince: Date?
@@ -203,8 +208,7 @@ final class ReviewScrollTests: XCTestCase {
                 } else if idleSince == nil {
                     idleSince = now
                 }
-                let quiet = idleSince.map { now.timeIntervalSince(max(still, $0)) > 0.1 } ?? false
-                if quiet || now.timeIntervalSince(still) > 0.3 { return }
+                if let since = idleSince, now.timeIntervalSince(max(still, since)) > 0.1 { return }
             }
         }
 
@@ -295,8 +299,8 @@ final class ReviewScrollTests: XCTestCase {
         /// Runs the run loop until the reveal the last steps owe has run
         /// and its scroll has landed: the coordinator owes and runs nothing,
         /// the name under review shows whole, and the offset has held for
-        /// 0.1 s since. Not `settle()`'s 0.3 s of a still offset whatever
-        /// the coordinator says: on a loaded runner the owed reveal or its
+        /// 0.1 s since. Not 0.3 s of a still offset whatever the
+        /// coordinator says: on a loaded runner the owed reveal or its
         /// scroll's first frames came later than that, and the name was
         /// measured before it moved (#851's queue drop). The cap only ends
         /// a wait for a name that never comes into view.

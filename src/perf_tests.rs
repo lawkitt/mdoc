@@ -302,7 +302,7 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
             (
                 preview.pdf().unwrap().downgrade(),
                 preview.comment_rail().map(Entity::downgrade),
-                preview.docx().map(|docx| docx.pdf_path.clone()),
+                preview.docx().map(|docx| docx.pdf.clone()),
             )
         });
         cx.dispatch_action(FindMarkdown);
@@ -320,8 +320,8 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
             "old comments retained"
         );
         assert!(
-            old_temp.is_none_or(|path| !path.exists()),
-            "temporary PDF retained"
+            old_temp.is_none_or(|pdf| pdf.holders() == 1),
+            "DOCX preview PDF retained"
         );
         eprintln!("HOST_PERF switch_cycle={cycle} rss_kib={:?}", rss_kib());
     }
@@ -363,14 +363,14 @@ fn local_preview_performance(cx: &mut TestAppContext) {
             );
             (
                 preview.pdf().unwrap().downgrade(),
-                preview.docx().map(|docx| docx.pdf_path.clone()),
+                preview.docx().map(|docx| docx.pdf.clone()),
             )
         });
         app.update_in(cx, |app, window, cx| app.close_preview(window, cx));
         cx.run_until_parked();
         draw(cx);
         assert!(pdf.upgrade().is_none());
-        assert!(backing.is_none_or(|path| !path.exists()));
+        assert!(backing.is_none_or(|pdf| pdf.holders() == 1));
         eprintln!(
             "HOST_PERF local_preview cycle={cycle} rss_kib={:?}",
             rss_kib()

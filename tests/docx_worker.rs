@@ -1,7 +1,9 @@
 // Exercise the shipping worker rather than the headless UI test adapter.
 use mdoc_import::{
-    docx_preview::{PreviewError, read_source, render_with_executable},
-    import::Source,
+    docx_preview::{
+        DocxPreview, LinkMark, PreviewError, read_source, render_in_process, render_with_executable,
+    },
+    import::{Password, SharedBytes, Source},
 };
 use std::{
     path::Path,
@@ -23,18 +25,11 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
         None,
     )
     .unwrap();
-    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    let pdf = parsed(&preview);
     assert!(!pdf.pages().is_empty());
     let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap().text();
     assert!(!text.trim().is_empty());
     assert_eq!(std::fs::read(&source).unwrap(), original);
-    let artifact = preview.pdf_path.clone();
-    drop(preview);
-    let cleanup_started = std::time::Instant::now();
-    while artifact.exists() {
-        assert!(cleanup_started.elapsed() < Duration::from_secs(5));
-        std::thread::sleep(Duration::from_millis(5));
-    }
 
     let result = read_source(Path::new("missing.docx"));
     assert!(matches!(result, Err(PreviewError::Read(_))));
@@ -54,13 +49,14 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
     let error = result.err().unwrap();
     assert!(matches!(error, PreviewError::Package(_)), "{error}");
     assert!(!error.retryable());
-    assert!(
-        !std::process::Command::new(executable)
-            .arg("--mdoc-docx-worker")
-            .status()
-            .unwrap()
-            .success()
-    );
+    // No document on stdin: the worker answers with the error and fails.
+    let empty = std::process::Command::new(executable)
+        .arg("--mdoc-docx-worker")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!empty.status.success());
+    assert!(empty.stdout.starts_with(b"mdoc-docx-reply 1\n-"));
 }
 
 #[cfg(unix)]
@@ -155,6 +151,46 @@ fn crash_and_false_success_are_failures() {
     }
 }
 
+/// A worker whose PDF is past the cap: the supervisor refuses it from its
+/// length and closes the pipe, so the worker dies on its next write. The
+/// answer is the reader's, which another attempt can't change, not a failed
+/// worker with Retry.
+#[cfg(unix)]
+#[test]
+fn an_oversized_reply_is_rejected_not_retried() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let metadata = br#"{"anchors":[],"hidden":0,"warnings":[]}"#;
+    let mut header = b"mdoc-docx-reply 1\n+".to_vec();
+    header.extend((metadata.len() as u64).to_le_bytes());
+    header.extend(metadata);
+    header.extend(u64::MAX.to_le_bytes());
+    let reply = dir.path().join("reply");
+    std::fs::write(&reply, header).unwrap();
+    let executable = dir.path().join("worker");
+    // The header, then PDF bytes until the pipe closes.
+    std::fs::write(
+        &executable,
+        format!(
+            "#!/bin/sh\ncat > /dev/null\ncat '{}'\nexec yes\n",
+            reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let result = render_with_executable(
+        &unused(),
+        Arc::new(AtomicBool::new(false)),
+        &executable,
+        Duration::from_secs(10),
+        Default::default(),
+        None,
+    );
+    let error = result.err().unwrap();
+    assert!(matches!(error, PreviewError::Rejected), "{error}");
+    assert!(!error.retryable());
+}
+
 #[test]
 fn oversize_input_is_rejected_in_the_worker() {
     let dir = tempfile::tempdir().unwrap();
@@ -189,7 +225,7 @@ fn coverage_corpus_preserves_text_links_and_landscape() {
     )
     .unwrap();
     let conversion = started.elapsed();
-    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    let pdf = parsed(&preview);
     let first_page = gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).unwrap();
     assert!(
         first_page
@@ -259,7 +295,7 @@ fn legal_opinion_justified_heading_preserves_word_spaces() {
         None,
     )
     .unwrap();
-    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    let pdf = parsed(&preview);
     let page = gpui_pdf::extract_page_text(&pdf, 0).unwrap();
     // Text alone is insufficient: invisible space glyphs can make extraction
     // correct even when the visible words touch. Check the glyph outlines too.
@@ -333,7 +369,7 @@ fn worker_preserves_comments_and_source() {
             .iter()
             .any(|w| w.contains("Comments are omitted"))
     );
-    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    let pdf = parsed(&preview);
     assert!(gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).is_ok());
     let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap().text();
     assert!(text.contains("First"));
@@ -354,7 +390,7 @@ fn worker_preserves_comments_and_source() {
     .unwrap();
     assert_eq!(shown.hidden_text, 1);
     assert!(shown.options.show_hidden_text);
-    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&shown.pdf_path).unwrap())).unwrap();
+    let pdf = parsed(&shown);
     let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap().text();
     assert!(text.contains("drafting note"), "{text}");
     assert_eq!(std::fs::read(path).unwrap(), original);
@@ -411,7 +447,7 @@ fn uploaded_comments_preserved() {
                 node.attribute((ns, "author")).unwrap_or_default()
             );
         }
-        let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+        let pdf = parsed(&preview);
         assert!(gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).is_ok());
     }
 }
@@ -437,7 +473,7 @@ fn worker_renders_held_bytes_without_their_file() {
     )
     .unwrap();
     assert_eq!(preview.comments.len(), 6);
-    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    let pdf = parsed(&preview);
     assert!(
         gpui_pdf::extract_page_text(&pdf, 0)
             .unwrap()
@@ -445,6 +481,34 @@ fn worker_renders_held_bytes_without_their_file() {
             .contains("First")
     );
 }
+
+/// The PDF a preview drew, parsed from its bytes.
+fn parsed(preview: &DocxPreview) -> Arc<gpui_pdf::Document> {
+    gpui_pdf::parse(gpui_pdf::PdfData::from(Arc::new(preview.pdf.clone()))).unwrap()
+}
+
+/// The app's comment-mark reader (`preview::read_comment_marks`), for the
+/// renders in process.
+fn marks(pdf: &SharedBytes) -> Result<Vec<LinkMark>, String> {
+    let doc = gpui_pdf::parse(gpui_pdf::PdfData::from(Arc::new(pdf.clone())))
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(gpui_pdf::link_marks(&doc)
+        .into_iter()
+        .map(|m| LinkMark {
+            page: m.page,
+            rect: mdoc_import::docx_preview::AnchorRect {
+                x: m.x,
+                y: m.y,
+                w: m.w,
+                h: m.h,
+            },
+            target: m.target,
+        })
+        .collect())
+}
+
+/// The password of every locked fixture (`tests/fixtures/locked-office`).
+const FIXTURE_PASSWORD: &str = "Petrov-2026";
 
 /// The bytes of the file at `path`, as an import holds them.
 fn held(path: &Path) -> Source {
@@ -474,7 +538,7 @@ fn render_parsed(
         None,
     )
     .unwrap();
-    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    let pdf = parsed(&preview);
     (preview, pdf)
 }
 
@@ -662,7 +726,7 @@ fn bundled_fonts_rank_below_installed_ones() {
             in_font(n, x, font)
         });
         let (preview, _) = render_parsed(&copy);
-        let pdf = std::fs::read(&preview.pdf_path).unwrap();
+        let pdf = preview.pdf.as_ref().to_vec();
         // The fonts' ToUnicode maps, outside the compressed object streams.
         let key = b"/CMapName /";
         let mut names: Vec<String> = pdf
@@ -715,4 +779,108 @@ fn mac_has_font(stem: &str) -> bool {
             .to_lowercase()
             .starts_with(stem)
     })
+}
+
+/// Seam 2's no-disk test (#1024): with the temporary folder pointed at an
+/// empty directory, rendering a locked DOCX, unlocked in memory, leaves it
+/// empty, in the worker and in process alike. The test runs itself again as
+/// a child process whose temporary folder is that directory, so the worker
+/// it starts inherits it too.
+#[test]
+fn rendering_a_locked_docx_writes_nothing_to_the_temporary_folder() {
+    const CHILD: &str = "MDOC_NO_DISK_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        render_locked_documents();
+        return;
+    }
+    let temporary = tempfile::tempdir().unwrap();
+    let empty = temporary.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "rendering_a_locked_docx_writes_nothing_to_the_temporary_folder",
+            "--exact",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .env("TMPDIR", &empty)
+        .env("TMP", &empty)
+        .env("TEMP", &empty)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // The child ran the renders, not a filtered-out nothing.
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("rendered 4 locked documents"),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let left: Vec<_> = std::fs::read_dir(&empty)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert!(left.is_empty(), "left in the temporary folder: {left:?}");
+}
+
+/// The child half: Word's own locked DOCX, and the comments fixture locked
+/// here so the marks are read from the PDF too, each rendered by the worker
+/// and in process.
+fn render_locked_documents() {
+    assert_eq!(
+        std::env::temp_dir(),
+        Path::new(&std::env::var_os("TMPDIR").unwrap())
+    );
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let comments = std::fs::read(fixtures.join("docx-preview/comments.docx")).unwrap();
+    let locked_comments =
+        craft_offcrypto::encrypt_with_spin_count(&comments, FIXTURE_PASSWORD, 1000).unwrap();
+    let word = std::fs::read(fixtures.join("locked-office/word-locked.docx")).unwrap();
+    let mut rendered = 0;
+    for (name, locked, text) in [
+        ("Locked comments.docx", locked_comments, "First"),
+        ("Engagement letter.docx", word, "Engagement letter"),
+    ] {
+        let source = Source::new(name.into(), None, locked)
+            .unlock(Some(&Password::new(FIXTURE_PASSWORD.into())))
+            .unwrap();
+        assert!(source.unlocked(), "{name}");
+        for preview in [
+            render_with_executable(
+                &source,
+                Arc::new(AtomicBool::new(false)),
+                Path::new(env!("CARGO_BIN_EXE_mdoc")),
+                Duration::from_secs(30),
+                Default::default(),
+                None,
+            )
+            .unwrap(),
+            render_in_process(
+                &source,
+                Arc::new(AtomicBool::new(false)),
+                marks,
+                Default::default(),
+                None,
+            )
+            .unwrap(),
+        ] {
+            if name == "Locked comments.docx" {
+                assert!(!preview.anchors.is_empty(), "the marks were read");
+            }
+            let pdf = parsed(&preview);
+            assert!(
+                gpui_pdf::extract_page_text(&pdf, 0)
+                    .unwrap()
+                    .text()
+                    .contains(text),
+                "{name}"
+            );
+            rendered += 1;
+        }
+    }
+    println!("rendered {rendered} locked documents");
 }

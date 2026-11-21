@@ -698,19 +698,19 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
             let view = view.read(cx);
             (
                 view.preview.pdf().unwrap().downgrade(),
-                view.preview.docx().unwrap().pdf_path.clone(),
+                view.preview.docx().unwrap().pdf.clone(),
             )
         });
         tabs.update_in(cx, |tabs, window, cx| tabs.remove(id, window, cx));
         cx.run_until_parked();
         assert!(weak.upgrade().is_none());
-        assert!(crate::test_support::removed(&backing));
+        assert_eq!(backing.holders(), 1, "the closed tab let go of its PDF");
         eprintln!(
             "TABS_PERF close_cycle={cycle} rss_kib={:?}",
             crate::perf_tests::rss_kib()
         );
     }
-    eprintln!("TABS_PERF close_cycles=5 all_viewers_and_docx_files_released=true");
+    eprintln!("TABS_PERF close_cycles=5 all_viewers_and_docx_pdfs_released=true");
 }
 
 #[gpui::test]

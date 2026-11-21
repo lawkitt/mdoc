@@ -40,6 +40,7 @@ mod document_lifecycle;
 use document_lifecycle::LifecycleEffect;
 mod import_flow;
 use import_flow::ImportEffect;
+#[cfg(test)]
 pub(crate) use import_flow::PasswordPrompt;
 pub(crate) mod save_prompt;
 #[cfg(test)]
@@ -196,6 +197,12 @@ pub(crate) struct DocumentView {
     /// The conversion card's field for a locked document's password: what
     /// it holds goes to one conversion on Unlock and is wiped.
     pub(crate) password_field: Entity<markdown_search::SearchInput>,
+    /// The Original's field for a reopened locked DOCX's password: what it
+    /// holds unlocks the tab's source on Unlock and is wiped.
+    pub(crate) original_password_field: Entity<markdown_search::SearchInput>,
+    /// The Original's password field takes focus once, after a wrong
+    /// password.
+    pub(crate) focus_original_card: bool,
     /// The Replace row's field; its text stays with the tab.
     pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
     pub(crate) search: search_session::SearchSession,
@@ -276,6 +283,13 @@ impl DocumentView {
                 .with_placeholder("Replace with")
         });
         let password_field = cx.new(|cx| {
+            markdown_search::SearchInput::new(cx)
+                .with_theme(dependencies.theme.clone())
+                .with_key_context("DocumentPassword")
+                .with_placeholder("Password")
+                .secure()
+        });
+        let original_password_field = cx.new(|cx| {
             markdown_search::SearchInput::new(cx)
                 .with_theme(dependencies.theme.clone())
                 .with_key_context("DocumentPassword")
@@ -409,6 +423,8 @@ impl DocumentView {
             ),
             markdown_search,
             password_field,
+            original_password_field,
+            focus_original_card: false,
             markdown_replace,
             search: search_session::SearchSession::default(),
             ocr_setup_subscription: None,
@@ -732,8 +748,6 @@ impl DocumentView {
                     self.preview.show();
                 } else if imported.is_pdf {
                     self.open_pdf(imported.source.path, window, cx);
-                } else if imported.is_docx && imported.decrypted {
-                    self.preview.unlocked_docx(imported.source.path);
                 } else if imported.is_docx {
                     self.open_docx(imported.source.path, window, cx);
                 } else {
@@ -849,7 +863,7 @@ impl DocumentView {
         // The run's password opened the locked PDF the Original asks for,
         // though the import stopped short (OCR consent, a failed
         // recognition): the Original opens with it, asking no more.
-        if self.preview.locked().is_some()
+        if self.preview.password().is_some()
             && let Some(path) = self.preview.source().cloned()
             && self.pdf_password(&path).is_some()
         {
@@ -1081,44 +1095,112 @@ impl DocumentView {
         self.error.as_deref() == Some(&*mdoc_import::import::ImportError::Cancelled.to_string())
     }
 
-    /// The card for a locked document: its password, asked for first or
-    /// again after a wrong one. On the conversion card, unlocking converts
-    /// it in memory; on the Original's, of a locked PDF a reopened tab has
-    /// no password for (#1024 decision 6), it opens its page in memory.
+    /// The conversion card for a locked document: its password, asked for
+    /// first or again after a wrong one. Unlocking converts it in memory.
     fn password_card(
         &mut self,
         card: gpui::Stateful<gpui::Div>,
         prompt: import_flow::PasswordPrompt,
-        original: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let theme = self.theme.get();
         let field_focus = self.password_field.read(cx).focus_handle(cx);
         if std::mem::take(&mut self.focus_card)
             && (self.focus.contains_focused(window, cx) || window.focused(cx).is_none())
         {
-            let focus = field_focus.clone();
-            window.defer(cx, move |window, cx| window.focus(&focus, cx));
+            window.defer(cx, move |window, cx| window.focus(&field_focus, cx));
         }
-        let can_unlock = original || self.import.can_unlock();
-        let unlock = move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
-            if original {
-                this.unlock_original(window, cx);
-            } else {
-                this.unlock_document(window, cx);
-            }
-        };
-        card.child(ui::card_title("This document is password-protected"))
-            .child(ui::card_text(
-                if original {
-                    "Enter its password to see it here. mdoc opens it in memory while this tab is open and never saves the password or an unlocked copy."
-                } else {
-                    "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy."
-                },
-                theme,
+        self.password_form(
+            card,
+            "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+            prompt == import_flow::PasswordPrompt::Wrong,
+            self.password_field.clone(),
+            ("document-password", "unlock-document"),
+            self.import.can_unlock(),
+            Self::unlock_document,
+            cx,
+        )
+    }
+
+    /// The Original's card for a locked DOCX this tab holds no unlock for,
+    /// a reopened one (#1024 decision 6): its password shows the Original,
+    /// and the unlock stays with the tab. While the conversion card asks for
+    /// the same password, the Original only points to it.
+    fn original_password_card(
+        &mut self,
+        password: crate::preview::OriginalPassword,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        if self.lifecycle.source_only() && self.import.password_prompt().is_some() {
+            return div()
+                .id("original-password-pending")
+                .max_w(px(360.))
+                .px_6()
+                .text_center()
+                .text_size(px(14.))
+                .child("Enter the document’s password to show the Original.")
+                .into_any_element();
+        }
+        let field_focus = self.original_password_field.read(cx).focus_handle(cx);
+        if std::mem::take(&mut self.focus_original_card) {
+            window.defer(cx, move |window, cx| window.focus(&field_focus, cx));
+        }
+        let card = ui::state_card("original-password-card", theme)
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "original-password-card".into())
+            })
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(theme.pdf_style().header_muted)
+                    .text_ellipsis()
+                    .child(
+                        self.preview
+                            .source()
+                            .and_then(|path| path.file_name())
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    ),
+            );
+        div()
+            .w_full()
+            .px_6()
+            .flex()
+            .justify_center()
+            .child(self.password_form(
+                card,
+                "Enter its password to show the Original. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+                password == crate::preview::OriginalPassword::Wrong,
+                self.original_password_field.clone(),
+                ("original-password", "unlock-original"),
+                password != crate::preview::OriginalPassword::Unlocking,
+                Self::unlock_original,
+                cx,
             ))
-            .when(prompt == import_flow::PasswordPrompt::Wrong, |v| {
+            .into_any_element()
+    }
+
+    /// A locked document's password card: `body`, the wrong-password line,
+    /// and `field` with an Unlock button (`ids`); Enter unlocks too.
+    #[allow(clippy::too_many_arguments)]
+    fn password_form(
+        &self,
+        card: gpui::Stateful<gpui::Div>,
+        body: &'static str,
+        wrong: bool,
+        field: Entity<markdown_search::SearchInput>,
+        ids: (&'static str, &'static str),
+        enabled: bool,
+        unlock: fn(&mut Self, &mut Window, &mut Context<Self>),
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let (field_id, button_id) = ids;
+        card.child(ui::card_title("This document is password-protected"))
+            .child(ui::card_text(body, theme))
+            .when(wrong, |v| {
                 v.child(ui::card_error(
                     mdoc_import::import::ImportError::WrongPassword.to_string(),
                     theme,
@@ -1129,10 +1211,8 @@ impl DocumentView {
                     .flex_nowrap()
                     .child(
                         div()
-                            .id("document-password")
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "document-password".into())
-                            })
+                            .id(field_id)
+                            .when(cfg!(test), |v| v.debug_selector(move || field_id.into()))
                             .flex_1()
                             .min_w_0()
                             .border_1()
@@ -1142,30 +1222,23 @@ impl DocumentView {
                             .px_2()
                             .py_1()
                             // Enter unlocks, as the button does.
-                            .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, window, cx| {
-                                let keystroke = &event.keystroke;
-                                if keystroke.key == "enter" && !keystroke.modifiers.modified() {
-                                    cx.stop_propagation();
-                                    unlock(this, window, cx);
-                                }
-                            }))
-                            .child(self.password_field.clone()),
+                            .on_key_down(cx.listener(
+                                move |this, event: &gpui::KeyDownEvent, window, cx| {
+                                    let keystroke = &event.keystroke;
+                                    if keystroke.key == "enter" && !keystroke.modifiers.modified() {
+                                        cx.stop_propagation();
+                                        unlock(this, window, cx);
+                                    }
+                                },
+                            ))
+                            .child(field),
                     )
                     .child(
-                        ui::primary_button(
-                            if original { "unlock-original" } else { "unlock-document" },
-                            "Unlock",
-                            theme,
-                            can_unlock,
-                        )
-                        .when(cfg!(test), move |v| {
-                            v.debug_selector(move || {
-                                if original { "unlock-original" } else { "unlock-document" }.into()
-                            })
-                        })
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            unlock(this, window, cx);
-                        })),
+                        ui::primary_button(button_id, "Unlock", theme, enabled)
+                            .when(cfg!(test), |v| v.debug_selector(move || button_id.into()))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                unlock(this, window, cx);
+                            })),
                     ),
             )
             .into_any_element()
@@ -1205,7 +1278,7 @@ impl DocumentView {
             .password_prompt()
             .filter(|_| !self.import.busy())
         {
-            return self.password_card(card, prompt, false, window, cx);
+            return self.password_card(card, prompt, window, cx);
         }
         let Some(pages) = self.import.ocr_required().map(<[u32]>::to_vec) else {
             let cancelled = self.conversion_cancelled();
@@ -1542,33 +1615,6 @@ impl DocumentView {
 
     /// The preview pane without a page: progress, or one plain message with
     /// Retry only when another attempt can succeed.
-    /// The Original pane without a page: a locked PDF's password card, or
-    /// its status. While the conversion card asks for the password, the
-    /// Original only points there: one card asks at a time.
-    fn original_status(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = self.theme.get();
-        match self.preview.locked() {
-            Some(_) if self.import.password_prompt().is_some() || self.import.busy() => div()
-                .id("preview-status")
-                .max_w(px(360.))
-                .px_6()
-                .text_center()
-                .text_size(px(14.))
-                .child("Enter the document’s password on its card to see it here.")
-                .into_any_element(),
-            Some(prompt) => {
-                let card = ui::state_card("original-card", theme)
-                    .when(cfg!(test), |v| v.debug_selector(|| "original-card".into()))
-                    .max_w(px(420.));
-                div()
-                    .p_6()
-                    .child(self.password_card(card, prompt, true, window, cx))
-                    .into_any_element()
-            }
-            None => self.preview_status(theme),
-        }
-    }
-
     fn preview_status(&self, theme: Theme) -> gpui::AnyElement {
         if self.preview.loading() {
             return ui::activity("preview-activity", "Preparing preview…", theme)
@@ -2345,8 +2391,6 @@ impl Render for DocumentView {
         let show_original = self.preview.visible() && (!narrow_preview || self.original_selected);
         let show_markdown = !narrow_preview || !self.original_selected;
         self.panes_drawn.set((show_markdown, show_original));
-        let original_status = (show_original && self.preview.pdf().is_none())
-            .then(|| self.original_status(window, cx));
         // The conversion card states a conversion error itself, and the OCR
         // card its recognition error; a notice would only repeat it.
         let card_shows_error = self.lifecycle.source_only()
@@ -2453,7 +2497,7 @@ impl Render for DocumentView {
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
                 .when(show_original && self.preview.pdf().is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
-                    .children(original_status)))
+                    .child(match self.preview.password() { Some(password) => self.original_password_card(password, window, cx), None => self.preview_status(theme) })))
                 .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).on_action(cx.listener(Self::next_comment)).on_action(cx.listener(Self::previous_comment)).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Enter its password to see it here.").into_any_element() } else { pdf.into_any_element() }))
                     .children(preview_notice)))

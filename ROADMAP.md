@@ -324,14 +324,12 @@ items 8–15: [ADR 0100](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c
 
 ## CI speed
 
-The queue's long jobs get shorter and its unrelated drops stop needing the
-maintainer ([ADR 0112](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0112-ci-speed-after-the-first-fortnight.md),
-[CI speed grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-speed-grill-2026-11-12.md)) and the
-[second grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/ci-grill-2-2026-11-13.md)
-([ADR 0113](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/adr/0113-ci-targets-by-commit-and-detection-off-macos.md)).
-Items 16–31 have shipped; item 22 (the PC's slow bursts) closed as not
-needed, and item 30 (a prebuilt library for UI test launches) was measured
-and dropped (#857).
+Items 16–31 shipped (ADR 0112 and 0113, retired; item 30 dropped, #857).
+Items 32–37 come from the third grill, #1041: a core change's queue time
+went from a median of 32 minutes to 51 when iOS moved to the `xcode-27`
+image, and every iOS part builds the core itself. Items 32 (#1044), 33
+(#1052), 34 (#1053; its shards take about 17 minutes of tests, accepted
+over a test sweep), 35 (#1050), 36 (#1046) and 37 (#1045) have shipped.
 
 ## Desktop GPUI
 
@@ -365,15 +363,6 @@ green and ride the next RC. Every item that touches opening, importing or
 the preview posts before-and-after `just perf` numbers; a regression goes
 to the maintainer, never a raised ceiling.
 
-1. **[Import] A tab keeps its unlock in memory.** *From #1024.* The
-   unlocked bytes (Office) or the password (PDF) live as long as the tab,
-   wiped on close, never in the session, so OCR, reloads and the
-   hidden-text toggle don't ask again; reopening asks. *Done when:* tests
-   show each of those reuses the unlock and none persists it.
-2. **[Desktop] gpui-pdf opens a PDF from bytes, with a password.** *From
-   #1024.* Form fields and the display fix-up read encrypted files, and
-   comment annotations stay hidden on them. *Done when:* an encrypted
-   fixture renders like its open twin, light and dark.
 3. **[Desktop] Every DOCX renders in memory.** *From #1024.* The worker
    takes bytes on stdin and returns the PDF and anchors on stdout; the path
    functions go, and an unlocked DOCX shows its Original. *Blocked by:*
@@ -837,6 +826,11 @@ Android takes what applies. Its clipboard finding is
 - **Dev-build profile override:** debug builds read `MDOC_PROFILE_DIR`, so GUI
   checks run on a scratch profile instead of moving the user's
   `session.json` and `recents.json` aside. *From the 0.3.0 away hub.*
+- **`build.rs` declares what it reads:** it prints no `rerun-if-changed`, so
+  cargo reruns it, and rebuilds the `mdoc` crate, whenever any file under the
+  repository root changes (a log, a render, a scratch file). One `just perf`
+  run spent about 2 hours rebuilding. Declare `build.rs`, `resources/icon.rc`
+  and the icon it names. *From the #1024 Mac hub.*
 
 ## Deferred
 

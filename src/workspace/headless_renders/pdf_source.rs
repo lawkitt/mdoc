@@ -218,7 +218,7 @@ pub(super) fn locked(d: &mut Driver) -> Result<()> {
         if let Some(typed) = typed {
             d.change(|_, window, cx| {
                 view.update(cx, |v, cx| {
-                    v.password_field
+                    v.original_password_field
                         .update(cx, |field, cx| field.set_value(typed.into(), cx));
                     v.unlock_original(window, cx);
                 })
@@ -227,18 +227,18 @@ pub(super) fn locked(d: &mut Driver) -> Result<()> {
         }
         d.change(|_, _, cx| {
             view.update(cx, |v, cx| {
-                v.password_field.update(cx, |field, cx| {
+                v.original_password_field.update(cx, |field, cx| {
                     field.set_value("fictional-pass".into(), cx);
                     field.move_to_end(cx);
                 });
             })
         })?;
         let expected = if typed.is_some() {
-            crate::document_view::PasswordPrompt::Wrong
+            crate::preview::OriginalPassword::Wrong
         } else {
-            crate::document_view::PasswordPrompt::Asking
+            crate::preview::OriginalPassword::Asking
         };
-        d.change(|_, _, cx| match view.read(cx).preview.locked() {
+        d.change(|_, _, cx| match view.read(cx).preview.password() {
             Some(prompt) if prompt == expected => Ok(()),
             state => Err(format!("{name}: the Original asks: {state:?}")),
         })??;

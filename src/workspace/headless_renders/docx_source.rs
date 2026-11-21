@@ -18,8 +18,8 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         w.new_tab(window, cx);
         let view = w.active_view().unwrap();
         view.update(cx, |v, cx| {
-            v.begin_preview(source);
-            v.load_preview(preview.pdf_path.clone(), Some(preview), window, cx);
+            v.begin_preview(source.clone());
+            v.load_docx(source, preview, window, cx);
         });
     })?;
     d.capture("docx-source")
