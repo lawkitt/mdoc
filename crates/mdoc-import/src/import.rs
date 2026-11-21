@@ -131,6 +131,22 @@ impl AsRef<[u8]> for SharedBytes {
     }
 }
 
+impl SharedBytes {
+    /// How many hold the bytes now: a test's check that a closed view let
+    /// go of them, so they were wiped.
+    pub fn holders(&self) -> usize {
+        Arc::strong_count(&self.0)
+    }
+}
+
+/// Takes `bytes` without copying them: they are wiped when the last holder
+/// drops them.
+impl From<zeroize::Zeroizing<Vec<u8>>> for SharedBytes {
+    fn from(bytes: zeroize::Zeroizing<Vec<u8>>) -> Self {
+        Self(Arc::new(bytes))
+    }
+}
+
 impl Source {
     /// The file at `path`, read as an import reads it: a PDF (by its header,
     /// so a renamed one counts) within the import limit, anything else
@@ -178,10 +194,18 @@ impl Source {
     }
 
     /// The bytes are a password-protected file's, unlocked in memory: no
-    /// copy of them may be written, so the DOCX preview, which renders to a
-    /// temporary file, leaves them alone.
+    /// copy of them may be written. The desktop's DOCX preview renders them
+    /// in memory; iOS's, which renders to a file, leaves them alone.
     pub fn unlocked(&self) -> bool {
         self.unlocked
+    }
+
+    /// The bytes are a password-protected DOCX, XLSX, PPTX or DOC, still
+    /// locked: [`Source::unlock`] opens them with the password.
+    pub fn locked(&self) -> bool {
+        !self.unlocked
+            && (craft_offcrypto::is_encrypted(self.bytes())
+                || craft_doc_binary::is_encrypted(self.bytes()))
     }
 
     /// The file at `path` is still the one these bytes were read from: its
@@ -367,8 +391,8 @@ pub(crate) fn is_pdf(bytes: &[u8]) -> bool {
         .any(|window| window == b"%PDF-")
 }
 
-/// The largest PDF an import reads.
-const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
+/// The largest PDF mdoc opens: an import's, and a DOCX preview's rendering.
+pub const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
 
 /// A file's size and modification time: a later reading of the same path
 /// is taken to be of the same bytes while its stamp matches.

@@ -1,17 +1,25 @@
+//! The DOCX preview: docxide draws a document's bytes as a PDF, in memory.
+//!
+//! On desktop a supervised worker (this executable in its DOCX worker mode)
+//! reads the document on stdin and sends the PDF, its comment anchors and
+//! warnings back on stdout, so nothing of the document, locked or not, is
+//! written anywhere (#1024 decision 3). iOS still renders into a folder it
+//! names ([`render_in`]) until #1024 item 12.
 use std::{
+    borrow::Cow,
     fs,
-    io::{Cursor, Read},
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, atomic::AtomicBool},
-};
-use std::{
     process::{Command, Stdio},
-    sync::atomic::Ordering,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
 
-use tempfile::{TempDir, tempdir};
+use tempfile::TempDir;
 use zip::ZipArchive;
 
 mod comments;
@@ -19,7 +27,10 @@ mod fonts;
 mod glyph_fallback;
 pub use comments::{AnchorRect, COMMENT_SCHEME, CommentAnchor, LinkMark};
 
-use crate::{comments::Comment, import::Source};
+use crate::{
+    comments::Comment,
+    import::{SharedBytes, Source},
+};
 
 /// The comments a preview's cards show: `known`, an import's of the same
 /// source, else AnyDoc's reading of it as an import reads it. The worker
@@ -32,9 +43,13 @@ fn cards(
     known.unwrap_or_else(|| Arc::new(crate::import::source_comments_cancellable(source, cancel)))
 }
 
-/// Reads the `/Link` annotations whose URI starts with [`COMMENT_SCHEME`] from
-/// a rendered PDF. The app passes gpui-pdf's reader: this crate parses no PDF.
-pub type MarkReader = fn(&Path) -> Result<Vec<LinkMark>, String>;
+/// Reads the `/Link` annotations whose URI starts with [`COMMENT_SCHEME`]
+/// from a rendered PDF's bytes. The app passes gpui-pdf's reader: this crate
+/// parses no PDF.
+pub type MarkReader = fn(&SharedBytes) -> Result<Vec<LinkMark>, String>;
+
+/// [`MarkReader`] for iOS's [`render_in`], which reads the PDF's file.
+pub type FileMarkReader = fn(&Path) -> Result<Vec<LinkMark>, String>;
 
 /// How the worker draws a document.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -49,13 +64,36 @@ pub const SHOW_HIDDEN_ARG: &str = "--show-hidden";
 
 /// The largest document the preview renders.
 pub const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
+/// The largest PDF the worker may send back: the largest PDF mdoc opens.
+const MAX_OUTPUT_BYTES: u64 = crate::import::MAX_PDF_BYTES;
+/// The largest anchors and warnings the worker may send back.
+const MAX_METADATA_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
 const MAX_PART_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_TOTAL_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_CONVERSION_TIME: Duration = Duration::from_secs(30);
 
-/// The temporary PDF and its directory must live as long as the PDF view.
+/// A DOCX drawn as a PDF in memory: nothing of it is on disk.
 pub struct DocxPreview {
+    /// The PDF, shared without copying (a view opens it from these bytes)
+    /// and wiped when its last holder drops it.
+    pub pdf: SharedBytes,
+    pub warnings: Vec<String>,
+    /// The comments its cards show (AnyDoc's; see `cards`).
+    pub comments: Arc<Vec<Comment>>,
+    /// Where the comments sit on the rendered pages, in document order, by
+    /// comment id.
+    pub anchors: Arc<Vec<CommentAnchor>>,
+    /// Passages of hidden text in the document, drawn or not.
+    pub hidden_text: usize,
+    /// The options it was drawn with.
+    pub options: RenderOptions,
+}
+
+/// iOS's DOCX preview ([`render_in`]): the PDF in a folder of its own, which
+/// must live as long as the PDF view. #1024 item 12 replaces it with
+/// [`DocxPreview`].
+pub struct DocxFile {
     pub pdf_path: PathBuf,
     pub warnings: Vec<String>,
     /// The comments its cards show (AnyDoc's; see `cards`).
@@ -70,7 +108,7 @@ pub struct DocxPreview {
     directory: Option<TempDir>,
 }
 
-impl Drop for DocxPreview {
+impl Drop for DocxFile {
     fn drop(&mut self) {
         if let Some(directory) = self.directory.take() {
             CLEANUPS.fetch_add(1, Ordering::Relaxed);
@@ -226,7 +264,9 @@ pub fn render_in_process(
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
     check_cancel(&cancelled)?;
-    render_direct(source, read_marks, options, comments)
+    let rendered = render_marked(source.bytes(), read_marks, options)?;
+    let comments = cards(source, comments, &cancelled);
+    Ok(rendered.preview(comments, options))
 }
 
 /// Render in a supervised worker: this executable, run as the DOCX worker.
@@ -247,10 +287,9 @@ pub fn render_with_cancel(
     )
 }
 
-/// A locked document's bytes, unlocked in memory, are refused: the render
-/// writes a temporary PDF, which would be an unlocked copy on disk (#1024
-/// decision 6). A tab hands them over so that rendering in memory can take
-/// them (#1024 item 3).
+/// iOS's renders refuse a locked document's bytes, unlocked in memory: they
+/// write the PDF to a file, which would be an unlocked copy on disk (#1024
+/// decision 6). Item 12 renders them in memory there too.
 fn refuse_unlocked(source: &Source) -> Result<(), PreviewError> {
     if source.unlocked() {
         Err(PreviewError::Encrypted)
@@ -268,7 +307,8 @@ fn check_cancel(cancelled: &AtomicBool) -> Result<(), PreviewError> {
 }
 
 /// Renders `source` in `executable`'s DOCX worker mode, which reads the
-/// document's bytes from stdin: the worker never opens the user's file.
+/// document's bytes from stdin and answers on stdout: the worker never opens
+/// the user's file, and neither side writes anything to disk.
 pub fn render_with_executable(
     source: &Source,
     cancelled: Arc<AtomicBool>,
@@ -277,7 +317,6 @@ pub fn render_with_executable(
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
-    refuse_unlocked(source)?;
     let _lock = loop {
         check_cancel(&cancelled)?;
         if let Ok(lock) = WORKER.try_lock() {
@@ -285,16 +324,13 @@ pub fn render_with_executable(
         }
         thread::sleep(Duration::from_millis(10));
     };
-    let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
-    let pdf_path = directory.path().join("preview.pdf");
     let started = Instant::now();
     let mut command = Command::new(executable);
     command
         .arg("--mdoc-docx-worker")
-        .arg(&pdf_path)
         .args(options.show_hidden_text.then_some(SHOW_HIDDEN_ARG))
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null());
     // docxide refuses to convert while a variable with its old prefix is set.
     for (key, _) in std::env::vars_os() {
@@ -323,74 +359,147 @@ pub fn render_with_executable(
             }
         })
         .map_err(|e| PreviewError::Render(format!("no thread to feed the worker: {e}")))?;
+    // Read on a thread of its own too, under the output cap: a reply past it
+    // closes the pipe, so the worker fails its write and exits.
+    let stdout = child.0.stdout.take();
+    let reply = thread::Builder::new()
+        .spawn(move || match stdout {
+            Some(stdout) => read_reply(stdout),
+            None => Err(PreviewError::Render("no worker output".into())),
+        })
+        .map_err(|e| PreviewError::Render(format!("no thread to read the worker: {e}")))?;
     loop {
         check_cancel(&cancelled)?;
         if started.elapsed() >= timeout {
             return Err(PreviewError::Timeout);
         }
         if let Some(status) = child.0.try_wait()? {
-            if !status.success() {
-                return Err(match fs::read_to_string(pdf_path.with_extension("error")) {
-                    Ok(report) => PreviewError::from_report(&report),
-                    Err(_) => PreviewError::Render(format!("worker exited with {status}")),
-                });
-            }
-            if !pdf_path.is_file() {
-                return Err(PreviewError::Render("worker produced no PDF".into()));
-            }
-            let warnings = fs::read_to_string(pdf_path.with_extension("warnings"))?
-                .lines()
-                .map(str::to_owned)
-                .collect();
-            let metadata = read_metadata(&pdf_path)?;
+            // The worker is gone, so its end of the pipe is closed.
+            let reply = reply.join().unwrap_or_else(|_| {
+                Err(PreviewError::Render(
+                    "the worker's reply was unreadable".into(),
+                ))
+            });
+            let rendered = match (status.success(), reply) {
+                (_, Ok(Reply::Failed(error))) => return Err(error),
+                (true, Ok(Reply::Rendered(rendered))) => rendered,
+                (true, Err(error)) => return Err(error),
+                // A reply past the cap: the reader closed the pipe, so the
+                // worker failed its write. Retrying can't help.
+                (false, Err(error @ PreviewError::Rejected)) => return Err(error),
+                (false, _) => {
+                    return Err(PreviewError::Render(format!("worker exited with {status}")));
+                }
+            };
             let comments = cards(source, comments, &cancelled);
             check_cancel(&cancelled)?;
-            return Ok(DocxPreview {
-                comments,
-                anchors: Arc::new(metadata.anchors),
-                hidden_text: metadata.hidden,
-                options,
-                pdf_path,
-                warnings,
-                directory: Some(directory),
-            });
+            return Ok(rendered.preview(comments, options));
         }
         thread::sleep(Duration::from_millis(10));
     }
 }
 
-/// A reader for tests in this crate, which cannot parse the PDF: no anchors.
-#[cfg(test)]
-pub fn render_for_test(path: &Path) -> Result<DocxPreview, PreviewError> {
-    render_direct(
-        &read_source(path)?,
-        |_| Ok(Vec::new()),
-        RenderOptions::default(),
-        None,
-    )
-}
-
-fn run_worker(
-    input: &[u8],
-    output: &Path,
-    read_marks: MarkReader,
-    options: RenderOptions,
-) -> Result<(), PreviewError> {
-    render_direct_to(input, output, read_marks, options)
-}
-
-/// The DOCX worker mode: renders the document on stdin to `output` and, on
-/// failure, leaves the error report beside it for `render_with_executable`.
+/// The DOCX worker mode: renders the document on stdin and answers on
+/// stdout with the PDF and what it learned besides, or the error, for
+/// `render_with_executable`.
 pub fn run_worker_reporting(
-    output: &Path,
     read_marks: MarkReader,
     options: RenderOptions,
 ) -> Result<(), PreviewError> {
-    read_within_limit(std::io::stdin().lock())
-        .and_then(|input| run_worker(&input, output, read_marks, options))
-        .inspect_err(|error| {
-            let _ = fs::write(output.with_extension("error"), error.report());
-        })
+    let result = read_within_limit(std::io::stdin().lock())
+        .and_then(|input| render_marked(&input, read_marks, options));
+    let written = write_reply(&mut std::io::stdout().lock(), &result);
+    result?;
+    written.map_err(PreviewError::Read)
+}
+
+/// The worker's answer starts with this line, so anything else on its
+/// stdout is a failed worker, not a document.
+const REPLY_MAGIC: &[u8] = b"mdoc-docx-reply 1\n";
+const REPLY_RENDERED: u8 = b'+';
+const REPLY_FAILED: u8 = b'-';
+
+/// The worker's answer: the magic line, then `+`, the metadata's length
+/// (u64, little-endian), the metadata as JSON, the PDF's length and the
+/// PDF; or `-` and the error's report.
+fn write_reply(
+    out: &mut impl Write,
+    result: &Result<Rendered, PreviewError>,
+) -> std::io::Result<()> {
+    out.write_all(REPLY_MAGIC)?;
+    match result {
+        Ok(rendered) => {
+            let metadata = serde_json::to_vec(&rendered.metadata)?;
+            out.write_all(&[REPLY_RENDERED])?;
+            out.write_all(&(metadata.len() as u64).to_le_bytes())?;
+            out.write_all(&metadata)?;
+            out.write_all(&(rendered.pdf.as_ref().len() as u64).to_le_bytes())?;
+            out.write_all(rendered.pdf.as_ref())?;
+        }
+        Err(error) => {
+            out.write_all(&[REPLY_FAILED])?;
+            out.write_all(error.report().as_bytes())?;
+        }
+    }
+    out.flush()
+}
+
+/// What the worker answered.
+enum Reply {
+    Rendered(Rendered),
+    Failed(PreviewError),
+}
+
+/// Reads `write_reply`'s answer, refusing a PDF past [`MAX_OUTPUT_BYTES`]
+/// before reading it: the buffer is the PDF's size, never more.
+fn read_reply(mut input: impl Read) -> Result<Reply, PreviewError> {
+    let mut magic = [0; REPLY_MAGIC.len()];
+    let mut kind = [0];
+    if input.read_exact(&mut magic).is_err()
+        || magic != REPLY_MAGIC
+        || input.read_exact(&mut kind).is_err()
+    {
+        return Err(PreviewError::Render("worker produced no PDF".into()));
+    }
+    let broken = |_| PreviewError::Render("the worker's reply was cut short".into());
+    match kind[0] {
+        REPLY_RENDERED => {
+            let length = read_length(&mut input).map_err(broken)?;
+            if length > MAX_METADATA_BYTES {
+                return Err(PreviewError::Rejected);
+            }
+            let mut metadata = vec![0; length as usize];
+            input.read_exact(&mut metadata).map_err(broken)?;
+            let metadata: Metadata = serde_json::from_slice(&metadata)
+                .map_err(|e| PreviewError::Render(format!("invalid comment metadata: {e}")))?;
+            let length = read_length(&mut input).map_err(broken)?;
+            if length > MAX_OUTPUT_BYTES {
+                return Err(PreviewError::Rejected);
+            }
+            // Wiped even if the reply stops halfway.
+            let mut pdf = zeroize::Zeroizing::new(vec![0; length as usize]);
+            input.read_exact(&mut pdf).map_err(broken)?;
+            Ok(Reply::Rendered(Rendered {
+                pdf: SharedBytes::from(pdf),
+                metadata,
+            }))
+        }
+        REPLY_FAILED => {
+            let mut report = String::new();
+            input
+                .take(64 * 1024)
+                .read_to_string(&mut report)
+                .map_err(broken)?;
+            Ok(Reply::Failed(PreviewError::from_report(&report)))
+        }
+        _ => Err(PreviewError::Render("worker produced no PDF".into())),
+    }
+}
+
+fn read_length(input: &mut impl Read) -> std::io::Result<u64> {
+    let mut length = [0; 8];
+    input.read_exact(&mut length)?;
+    Ok(u64::from_le_bytes(length))
 }
 
 /// Render in this process into a new folder under `parent`, for the iOS app,
@@ -398,108 +507,149 @@ pub fn run_worker_reporting(
 /// deadline, because nothing can stop the renderer mid-document. A renderer
 /// panic is a failed render, not a crash. `parent` decides the PDF's file
 /// protection. The cards are AnyDoc's, read again as the import read them.
+/// A locked document's unlocked bytes are refused until #1024 item 12.
 pub fn render_in(
     parent: &Path,
     source: &Source,
-    read_marks: MarkReader,
+    read_marks: FileMarkReader,
     options: RenderOptions,
-) -> Result<DocxPreview, PreviewError> {
+) -> Result<DocxFile, PreviewError> {
     refuse_unlocked(source)?;
     let directory = tempfile::tempdir_in(parent)
         .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
-    std::panic::catch_unwind(|| run_worker(source.bytes(), &pdf_path, read_marks, options))
-        .unwrap_or_else(|_| Err(PreviewError::Render("the renderer stopped".into())))?;
-    finish(directory, pdf_path, source, options, None)
-}
-
-fn render_direct(
-    source: &Source,
-    read_marks: MarkReader,
-    options: RenderOptions,
-    comments: Option<Arc<Vec<Comment>>>,
-) -> Result<DocxPreview, PreviewError> {
-    refuse_unlocked(source)?;
-    let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
-    let pdf_path = directory.path().join("preview.pdf");
-    run_worker(source.bytes(), &pdf_path, read_marks, options)?;
-    finish(directory, pdf_path, source, options, comments)
-}
-
-/// The preview of the PDF and metadata the worker steps left in `directory`,
-/// with `source`'s cards: `comments` if the caller has them.
-fn finish(
-    directory: TempDir,
-    pdf_path: PathBuf,
-    source: &Source,
-    options: RenderOptions,
-    comments: Option<Arc<Vec<Comment>>>,
-) -> Result<DocxPreview, PreviewError> {
-    let warnings = fs::read_to_string(pdf_path.with_extension("warnings"))?
-        .lines()
-        .map(str::to_owned)
-        .collect();
-    let metadata = read_metadata(&pdf_path)?;
-    Ok(DocxPreview {
-        comments: cards(source, comments, &AtomicBool::new(false)),
-        anchors: Arc::new(metadata.anchors),
-        hidden_text: metadata.hidden,
+    let (drawn, anchors) = std::panic::catch_unwind(|| {
+        let drawn = draw(source.bytes(), options)?;
+        fs::write(&pdf_path, &*drawn.pdf)
+            .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
+        let anchors = drawn.placing.anchors(|| read_marks(&pdf_path))?;
+        Ok((drawn, anchors))
+    })
+    .unwrap_or_else(|_| Err(PreviewError::Render("the renderer stopped".into())))?;
+    Ok(DocxFile {
+        comments: cards(source, None, &AtomicBool::new(false)),
+        anchors: Arc::new(anchors),
+        hidden_text: drawn.hidden,
         options,
         pdf_path,
-        warnings,
+        warnings: drawn.warnings,
         directory: Some(directory),
     })
 }
 
-// Validation and rendering share one bounded snapshot inside the terminable
-// worker. The deadline therefore includes package inflation and validation.
-fn render_direct_to(
+/// A document drawn and its comments placed, in memory: what the worker
+/// sends back.
+struct Rendered {
+    pdf: SharedBytes,
+    metadata: Metadata,
+}
+
+impl Rendered {
+    fn preview(self, comments: Arc<Vec<Comment>>, options: RenderOptions) -> DocxPreview {
+        DocxPreview {
+            pdf: self.pdf,
+            warnings: self.metadata.warnings,
+            comments,
+            anchors: Arc::new(self.metadata.anchors),
+            hidden_text: self.metadata.hidden,
+            options,
+        }
+    }
+}
+
+/// What the worker learns about a document besides its pages: where
+/// comments sit, by id, never what they say.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Metadata {
+    anchors: Vec<CommentAnchor>,
+    hidden: usize,
+    warnings: Vec<String>,
+}
+
+/// `bytes` drawn, with its comments placed by `read_marks` reading the PDF.
+fn render_marked(
     bytes: &[u8],
-    output: &Path,
     read_marks: MarkReader,
     options: RenderOptions,
-) -> Result<(), PreviewError> {
+) -> Result<Rendered, PreviewError> {
+    let Drawn {
+        pdf,
+        warnings,
+        hidden,
+        placing,
+    } = draw(bytes, options)?;
+    let pdf = SharedBytes::from(pdf);
+    let anchors = placing.anchors(|| read_marks(&pdf))?;
+    Ok(Rendered {
+        pdf,
+        metadata: Metadata {
+            anchors,
+            hidden,
+            warnings,
+        },
+    })
+}
+
+/// A document drawn as a PDF, before its comments are placed.
+struct Drawn {
+    pdf: zeroize::Zeroizing<Vec<u8>>,
+    warnings: Vec<String>,
+    hidden: usize,
+    placing: Placing,
+}
+
+/// The comment markers the render copy carries, by comment id.
+struct Placing {
+    ids: Vec<String>,
+    markers: Vec<comments::Marker>,
+}
+
+impl Placing {
+    /// The comments' anchors, from the marks `read` finds in the PDF; it
+    /// isn't called for a document without comments.
+    fn anchors(
+        &self,
+        read: impl FnOnce() -> Result<Vec<LinkMark>, String>,
+    ) -> Result<Vec<CommentAnchor>, PreviewError> {
+        if self.markers.is_empty() {
+            return Ok(Vec::new());
+        }
+        let marks = read().map_err(PreviewError::Render)?;
+        Ok(comments::anchors(&marks, &self.markers, &self.ids))
+    }
+}
+
+// Validation and rendering share one bounded snapshot inside the terminable
+// worker. The deadline therefore includes package inflation and validation.
+fn draw(bytes: &[u8], options: RenderOptions) -> Result<Drawn, PreviewError> {
     if bytes.len() as u64 > MAX_INPUT_BYTES {
         return Err(PreviewError::InputTooLarge);
     }
     let warnings = inspect_package(bytes)?;
     let comments::Prepared {
-        render: render_input,
+        render,
         ids,
         markers,
         hidden,
     } = comments::prepare(bytes, options.show_hidden_text)?;
-    let mut render_input = render_input.unwrap_or_else(|| bytes.to_vec());
+    let mut render_input = render.map_or(Cow::Borrowed(bytes), Cow::Owned);
     if let Some(fallback) = glyph_fallback::platform_fallback()
         && let Some(copy) = glyph_fallback::prepare(&render_input, fallback)?
     {
-        render_input = copy;
+        render_input = Cow::Owned(copy);
     }
-    render_bytes(&render_input, output)?;
-    let anchors = if markers.is_empty() {
-        Vec::new()
-    } else {
-        let marks = read_marks(output).map_err(PreviewError::Render)?;
-        comments::anchors(&marks, &markers, &ids)
-    };
-    fs::write(
-        output.with_extension("comments.json"),
-        serde_json::to_vec(&Metadata { anchors, hidden })
-            .map_err(|e| PreviewError::Render(e.to_string()))?,
-    )?;
-    fs::write(output.with_extension("warnings"), warnings.join("\n"))?;
-    Ok(())
-}
-
-fn render_bytes(bytes: &[u8], output: &Path) -> Result<(), PreviewError> {
-    docxide_pdf::convert_docx_bytes_to_pdf_with(bytes, output, &fonts::options()).map_err(
-        |error| match error {
-            // Writing the PDF failed, not the document: storage can recover.
-            docxide_pdf::Error::Io(error) => PreviewError::TemporaryStorage(error.to_string()),
-            _ => PreviewError::Rejected,
-        },
-    )?;
-    Ok(())
+    let pdf = docxide_pdf::convert_docx_bytes_to_pdf_bytes_with(&render_input, &fonts::options())
+        .map_err(|error| match error {
+        // Nothing is written, so an I/O error is the renderer's own.
+        docxide_pdf::Error::Io(error) => PreviewError::Render(error.to_string()),
+        _ => PreviewError::Rejected,
+    })?;
+    Ok(Drawn {
+        pdf: zeroize::Zeroizing::new(pdf),
+        warnings,
+        hidden,
+        placing: Placing { ids, markers },
+    })
 }
 
 fn word(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
@@ -715,19 +865,6 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
     Ok(warnings)
 }
 
-/// What the worker learns about a document besides its pages, written
-/// beside the PDF: where comments sit, by id, never what they say.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Metadata {
-    anchors: Vec<CommentAnchor>,
-    hidden: usize,
-}
-
-fn read_metadata(pdf: &Path) -> Result<Metadata, PreviewError> {
-    serde_json::from_slice(&fs::read(pdf.with_extension("comments.json"))?)
-        .map_err(|e| PreviewError::Render(format!("invalid comment metadata: {e}")))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -789,12 +926,15 @@ mod tests {
         assert!(matches!(result, Err(PreviewError::Cancelled)));
     }
 
-    /// A tab's unlocked DOCX reaches no render, each of which would write it
-    /// to a temporary PDF (#1024 decision 6): in process, in the worker, or
-    /// into the phones' folder.
+    /// A locked DOCX, unlocked in memory: the desktop renders it in memory
+    /// and writes nothing; iOS's render, which writes its PDF to a folder,
+    /// still refuses it (#1024 item 12).
     #[test]
-    fn unlocked_bytes_are_never_rendered_to_a_temporary_file() {
-        let plain = package(&[("word/document.xml", b"<w:document/>")]);
+    fn unlocked_bytes_render_in_memory_and_never_into_a_folder() {
+        let plain = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/import/text.docx"),
+        )
+        .unwrap();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("locked.docx");
         std::fs::write(
@@ -802,28 +942,21 @@ mod tests {
             craft_offcrypto::encrypt_with_spin_count(&plain, "fictional-pass", 1000).unwrap(),
         )
         .unwrap();
-        let unlocked = Source::read(&path)
-            .unwrap()
+        let locked = Source::read(&path).unwrap();
+        assert!(locked.locked());
+        let unlocked = locked
             .unlock(Some(&crate::import::Password::new("fictional-pass".into())))
             .unwrap();
-        assert!(unlocked.unlocked());
-        let in_process = render_in_process(
+        assert!(unlocked.unlocked() && !unlocked.locked());
+        let preview = render_in_process(
             &unlocked,
             Arc::new(AtomicBool::new(false)),
-            |_| panic!("no PDF is read"),
+            |_| Ok(Vec::new()),
             RenderOptions::default(),
             None,
-        );
-        assert!(matches!(in_process, Err(PreviewError::Encrypted)));
-        let worker = render_with_executable(
-            &unlocked,
-            Arc::new(AtomicBool::new(false)),
-            Path::new("no-such-executable"),
-            MAX_CONVERSION_TIME,
-            RenderOptions::default(),
-            None,
-        );
-        assert!(matches!(worker, Err(PreviewError::Encrypted)));
+        )
+        .unwrap();
+        assert!(preview.pdf.as_ref().starts_with(b"%PDF-"));
         let phones = render_in(
             dir.path(),
             &unlocked,
@@ -832,6 +965,90 @@ mod tests {
         );
         assert!(matches!(phones, Err(PreviewError::Encrypted)));
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    /// The worker's answer reads back as it was written: the PDF and what
+    /// it learned, or the error with its kind.
+    #[test]
+    fn the_worker_s_reply_reads_back() {
+        let rendered = Rendered {
+            pdf: SharedBytes::from(zeroize::Zeroizing::new(b"%PDF-1.7 pages".to_vec())),
+            metadata: Metadata {
+                anchors: vec![CommentAnchor {
+                    id: "0".into(),
+                    page: 1,
+                    rects: vec![AnchorRect {
+                        x: 0.1,
+                        y: 0.2,
+                        w: 0.3,
+                        h: 0.04,
+                    }],
+                    point: false,
+                }],
+                hidden: 2,
+                warnings: vec!["Embedded objects were omitted.".into()],
+            },
+        };
+        let mut reply = Vec::new();
+        write_reply(&mut reply, &Ok(rendered)).unwrap();
+        let Ok(Reply::Rendered(back)) = read_reply(reply.as_slice()) else {
+            panic!("a rendering");
+        };
+        assert_eq!(back.pdf.as_ref(), b"%PDF-1.7 pages");
+        let preview = back.preview(Arc::new(Vec::new()), RenderOptions::default());
+        assert_eq!(preview.anchors[0].id, "0");
+        assert_eq!(preview.anchors[0].rects[0].w, 0.3);
+        assert_eq!(preview.hidden_text, 2);
+        assert_eq!(preview.warnings, ["Embedded objects were omitted."]);
+
+        let mut reply = Vec::new();
+        write_reply(&mut reply, &Err(PreviewError::TrackedChangesNotSupported)).unwrap();
+        assert!(matches!(
+            read_reply(reply.as_slice()),
+            Ok(Reply::Failed(PreviewError::TrackedChangesNotSupported))
+        ));
+    }
+
+    /// A reply that isn't one, or is cut short, is a failed worker; a PDF
+    /// past the cap is refused from its length, before any of it is read.
+    #[test]
+    fn a_broken_or_oversized_reply_is_refused() {
+        for reply in [
+            &b""[..],
+            b"%PDF-1.7",
+            b"mdoc-docx-reply 1\n",
+            b"mdoc-docx-reply 1\n?",
+        ] {
+            assert!(matches!(read_reply(reply), Err(PreviewError::Render(_))));
+        }
+        let mut cut = Vec::new();
+        write_reply(
+            &mut cut,
+            &Ok(Rendered {
+                pdf: SharedBytes::from(zeroize::Zeroizing::new(vec![b'x'; 100])),
+                metadata: Metadata {
+                    anchors: Vec::new(),
+                    hidden: 0,
+                    warnings: Vec::new(),
+                },
+            }),
+        )
+        .unwrap();
+        cut.truncate(cut.len() - 1);
+        assert!(matches!(
+            read_reply(cut.as_slice()),
+            Err(PreviewError::Render(_))
+        ));
+        let metadata = br#"{"anchors":[],"hidden":0,"warnings":[]}"#;
+        let mut oversized = REPLY_MAGIC.to_vec();
+        oversized.push(REPLY_RENDERED);
+        oversized.extend((metadata.len() as u64).to_le_bytes());
+        oversized.extend(metadata);
+        oversized.extend((MAX_OUTPUT_BYTES + 1).to_le_bytes());
+        assert!(matches!(
+            read_reply(oversized.as_slice()),
+            Err(PreviewError::Rejected)
+        ));
     }
 
     #[test]
@@ -1012,11 +1229,22 @@ mod tests {
     }
 
     #[test]
-    fn renders_representative_docx_to_a_owned_pdf() {
+    fn renders_representative_docx_to_a_pdf_in_memory() {
         let source =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/import/text.docx");
         let preview = render_for_test(&source).unwrap();
-        assert!(preview.pdf_path.is_file());
-        assert!(std::fs::metadata(&preview.pdf_path).unwrap().len() > 0);
+        assert!(preview.pdf.as_ref().starts_with(b"%PDF-"));
+    }
+
+    /// The file at `path`, rendered in process; this crate can't read the
+    /// marks, so no anchors.
+    pub(super) fn render_for_test(path: &Path) -> Result<DocxPreview, PreviewError> {
+        render_in_process(
+            &read_source(path)?,
+            Arc::new(AtomicBool::new(false)),
+            |_| Ok(Vec::new()),
+            RenderOptions::default(),
+            None,
+        )
     }
 }

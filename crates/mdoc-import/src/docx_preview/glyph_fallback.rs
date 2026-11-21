@@ -317,8 +317,8 @@ mod tests {
     fn the_russian_demo_renders_its_ruble_signs_in_pt_sans() {
         let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../docs/product-media/Соглашение об урегулировании.docx");
-        let preview = super::super::render_for_test(&source).unwrap();
-        let pdf = std::fs::read(&preview.pdf_path).unwrap();
+        let preview = super::super::tests::render_for_test(&source).unwrap();
+        let pdf = preview.pdf.as_ref();
         let has = |needle: &[u8]| pdf.windows(needle.len()).any(|w| w == needle);
         // The font's ToUnicode map, outside the compressed object streams.
         assert!(has(b"/CMapName /PTSans-UTF16"));
