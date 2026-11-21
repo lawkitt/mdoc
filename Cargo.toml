@@ -47,6 +47,11 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3.12", features = 
 # storytold's craft-libs is not on crates.io and churns (ADR 0001). The app's
 # tests lock fixtures with it.
 craft-offcrypto = { git = "https://github.com/storytold/craft-libs.git", rev = "712b35379b17e442921c03855d4a5c2a2699968e" }
+# Exact, the same revision as craft-offcrypto: unlocks password-protected DOC
+# (RC4 and RC4 CryptoAPI) in memory (#1007, ADR 0001).
+craft-doc-binary = { git = "https://github.com/storytold/craft-libs.git", rev = "712b35379b17e442921c03855d4a5c2a2699968e" }
+# Exact, the same revision: rewrites an unlocked DOC's compound file in memory.
+craft-cfb = { git = "https://github.com/storytold/craft-libs.git", rev = "712b35379b17e442921c03855d4a5c2a2699968e" }
 
 [dependencies]
 regex = "1"

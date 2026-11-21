@@ -184,12 +184,23 @@ impl Source {
     }
 
     /// The bytes as an import converts them: a password-protected DOCX,
-    /// XLSX or PPTX unlocked in memory with `password`, anything else as it
-    /// is (a password it doesn't need is ignored). Without a password a
-    /// locked file is `PasswordRequired`, so the caller knows to ask; a
-    /// scheme no password opens here is `EncryptionUnsupported`.
+    /// XLSX, PPTX or DOC unlocked in memory with `password`, anything else
+    /// as it is (a password it doesn't need is ignored). Without a password
+    /// a locked file is `PasswordRequired`, so the caller knows to ask; a
+    /// scheme no password opens here is `EncryptionUnsupported` (DOCX, XLSX,
+    /// PPTX) or `Encrypted` (DOC).
     pub fn unlock(self, password: Option<&Password>) -> Result<Self, ImportError> {
-        if self.unlocked || !craft_offcrypto::is_encrypted(self.bytes()) {
+        if self.unlocked {
+            return Ok(self);
+        }
+        if craft_doc_binary::is_encrypted(self.bytes()) {
+            let document = unlock_doc(self.bytes(), password.map(Password::expose))?;
+            return Ok(Self {
+                unlocked: true,
+                ..Self::new(self.path, self.stamp, document)
+            });
+        }
+        if !craft_offcrypto::is_encrypted(self.bytes()) {
             return Ok(self);
         }
         let package = craft_offcrypto::decrypt(self.bytes(), password.map(Password::expose))
@@ -225,6 +236,17 @@ impl std::fmt::Debug for Source {
             .field("unlocked", &self.unlocked)
             .finish()
     }
+}
+
+/// A password-protected DOC (XOR obfuscation, RC4 or RC4 CryptoAPI)
+/// unlocked in memory with `password`, as the file AnyDoc converts: its
+/// scheme is checked first, so a file no password opens here is `Encrypted`
+/// before any password is asked for; then a missing password is
+/// `PasswordRequired` and one that fails the file's verifier `WrongPassword`.
+/// The unlocked bytes go straight into the source, whose wiping covers them.
+fn unlock_doc(bytes: &[u8], password: Option<&str>) -> Result<Vec<u8>, ImportError> {
+    let mut unlocked = crate::doc_crypt::decrypt(bytes, password)?;
+    Ok(std::mem::take(&mut *unlocked))
 }
 
 /// The password for one import of a password-protected document. It lives
@@ -468,10 +490,12 @@ pub enum ImportError {
     PdfTooLarge,
     #[error("This PDF is password-protected. Import an unlocked copy.")]
     PdfEncrypted,
-    /// A password-protected format mdoc can't unlock (ODT, DOC).
+    /// A password-protected file mdoc can't unlock: an ODT, or a DOC whose
+    /// encryption no password opens here.
     #[error("This document is password-protected. Import an unlocked copy.")]
     Encrypted,
-    /// A locked DOCX, XLSX or PPTX and no password: the app asks for one.
+    /// A locked DOCX, XLSX, PPTX or DOC and no password: the app asks for
+    /// one.
     #[error("This document is password-protected. Enter its password to import it.")]
     PasswordRequired,
     #[error("The password is incorrect. Check it and try again.")]
@@ -547,7 +571,7 @@ pub fn prepare(
 }
 
 /// Imports the file at `path`. `password` unlocks a password-protected
-/// DOCX, XLSX or PPTX in memory for this import only; without it such a
+/// DOCX, XLSX, PPTX or DOC in memory for this import only; without it such a
 /// file is `PasswordRequired`, and a wrong one `WrongPassword`.
 pub fn prepare_cancellable(
     path: &Path,
@@ -1097,7 +1121,8 @@ mod tests {
     /// Files locked by real Word, Excel, PowerPoint (agile encryption) and
     /// LibreOffice (standard encryption) import only with their password,
     /// as their unlocked twins do, and the folder never gains a file. Their
-    /// DOCs (RC4) still ask for an unlocked copy until item 5 (#1007).
+    /// DOCs (RC4 CryptoAPI from Word, RC4 from LibreOffice) ask for the
+    /// password and refuse a wrong one (#1007 item 5).
     #[test]
     fn office_files_locked_by_word_excel_powerpoint_and_libreoffice_import() {
         // The fixtures' published test password (their README).
@@ -1154,13 +1179,29 @@ mod tests {
             assert_eq!(imported.markdown, open.markdown, "{locked}");
             assert_eq!(imported.left_out, open.left_out, "{locked}");
         }
-        for doc in ["word-locked.doc", "libreoffice-locked.doc"] {
-            for password in [None, Some(PASSWORD)] {
-                assert!(
-                    matches!(import(doc, password), Err(ImportError::Encrypted)),
-                    "{doc}"
-                );
-            }
+        for app in ["word", "libreoffice"] {
+            let doc = format!("{app}-locked.doc");
+            assert!(
+                matches!(import(&doc, None), Err(ImportError::PasswordRequired)),
+                "{doc}"
+            );
+            assert!(
+                matches!(
+                    import(&doc, Some("petrov-2026")),
+                    Err(ImportError::WrongPassword)
+                ),
+                "{doc}"
+            );
+            let imported = import(&doc, Some(PASSWORD)).unwrap();
+            let open = import(&format!("{app}-open.doc"), None).unwrap();
+            assert!(imported.decrypted && !open.decrypted, "{doc}");
+            assert!(
+                imported.markdown.contains("Petrov"),
+                "{doc}: {}",
+                imported.markdown
+            );
+            assert_eq!(imported.markdown, open.markdown, "{doc}");
+            assert_eq!(imported.left_out, open.left_out, "{doc}");
         }
         assert_eq!(files(), before);
     }

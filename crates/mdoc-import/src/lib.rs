@@ -8,6 +8,7 @@
 pub mod comments;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod conversion_worker;
+mod doc_crypt;
 #[cfg(not(target_os = "android"))]
 pub mod docx_preview;
 pub mod import;
