@@ -239,39 +239,14 @@ impl std::fmt::Debug for Source {
 }
 
 /// A password-protected DOC (XOR obfuscation, RC4 or RC4 CryptoAPI)
-/// unlocked in memory with `password`. Its scheme is checked first, so a
-/// file no password opens here is `Encrypted` before any password is asked
-/// for; then a missing password is `PasswordRequired` and one that fails the
-/// file's verifier `WrongPassword`.
+/// unlocked in memory with `password`, as the file AnyDoc converts: its
+/// scheme is checked first, so a file no password opens here is `Encrypted`
+/// before any password is asked for; then a missing password is
+/// `PasswordRequired` and one that fails the file's verifier `WrongPassword`.
+/// The unlocked bytes go straight into the source, whose wiping covers them.
 fn unlock_doc(bytes: &[u8], password: Option<&str>) -> Result<Vec<u8>, ImportError> {
-    use craft_doc_binary::DocbinError;
-    // The scheme is read before the verifier is checked: an empty password,
-    // which Word never encrypts with, tells a scheme mdoc can't open from
-    // one that only needs the real password.
-    let checked = |password: &str| match craft_doc_binary::read_with_password(bytes, Some(password))
-    {
-        Err(DocbinError::WrongPassword) => Err(ImportError::WrongPassword),
-        Err(DocbinError::PasswordRequired) => Err(ImportError::PasswordRequired),
-        Err(DocbinError::Encryption(_)) => Err(ImportError::Encrypted),
-        // The password opened the file; what craft-doc-binary makes of its
-        // contents doesn't decide the import, AnyDoc's conversion does.
-        Ok(_) | Err(_) => Ok(()),
-    };
-    let Some(password) = password else {
-        return match checked("") {
-            Err(ImportError::Encrypted) => Err(ImportError::Encrypted),
-            _ => Err(ImportError::PasswordRequired),
-        };
-    };
-    checked(password)?;
-    decrypt_doc(bytes, password)
-}
-
-/// A DOC whose `password` was verified, as the unlocked file AnyDoc
-/// converts. Pending the choice of how (#1007 item 5): until then a locked
-/// DOC still asks for an unlocked copy once its password is right.
-fn decrypt_doc(_bytes: &[u8], _password: &str) -> Result<Vec<u8>, ImportError> {
-    Err(ImportError::Encrypted)
+    let mut unlocked = crate::doc_crypt::decrypt(bytes, password)?;
+    Ok(std::mem::take(&mut *unlocked))
 }
 
 /// The password for one import of a password-protected document. It lives
@@ -1204,18 +1179,29 @@ mod tests {
             assert_eq!(imported.markdown, open.markdown, "{locked}");
             assert_eq!(imported.left_out, open.left_out, "{locked}");
         }
-        for doc in ["word-locked.doc", "libreoffice-locked.doc"] {
+        for app in ["word", "libreoffice"] {
+            let doc = format!("{app}-locked.doc");
             assert!(
-                matches!(import(doc, None), Err(ImportError::PasswordRequired)),
+                matches!(import(&doc, None), Err(ImportError::PasswordRequired)),
                 "{doc}"
             );
             assert!(
                 matches!(
-                    import(doc, Some("petrov-2026")),
+                    import(&doc, Some("petrov-2026")),
                     Err(ImportError::WrongPassword)
                 ),
                 "{doc}"
             );
+            let imported = import(&doc, Some(PASSWORD)).unwrap();
+            let open = import(&format!("{app}-open.doc"), None).unwrap();
+            assert!(imported.decrypted && !open.decrypted, "{doc}");
+            assert!(
+                imported.markdown.contains("Petrov"),
+                "{doc}: {}",
+                imported.markdown
+            );
+            assert_eq!(imported.markdown, open.markdown, "{doc}");
+            assert_eq!(imported.left_out, open.left_out, "{doc}");
         }
         assert_eq!(files(), before);
     }

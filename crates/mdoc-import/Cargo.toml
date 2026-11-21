@@ -26,6 +26,9 @@ url = "2"
 craft-offcrypto = { workspace = true }
 # Unlocks password-protected DOC in memory; pinned in the workspace manifest.
 craft-doc-binary = { workspace = true }
+# The unlocked DOC's compound file, and the RC4 CryptoAPI key derivation.
+craft-cfb = { workspace = true }
+sha1 = "0.11"
 # The password and an unlocked document's bytes are wiped when dropped.
 zeroize = "1"
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for

@@ -4691,6 +4691,7 @@ name = "mdoc-import"
 version = "0.1.0"
 dependencies = [
  "anydoc",
+ "craft-cfb",
  "craft-doc-binary",
  "craft-offcrypto",
  "docxide-pdf",
@@ -4702,6 +4703,7 @@ dependencies = [
  "roxmltree 0.21.2",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.0",
  "tar",
  "tempfile",
