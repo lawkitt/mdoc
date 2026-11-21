@@ -10,15 +10,20 @@ final class DarkPageUITests: XCTestCase {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "an iPad shows the Original beside the text")
     }
 
-    override func tearDown() {
-        XCUIDevice.shared.appearance = .light
-    }
-
     @MainActor
     func testTheHintAndTheMenuTurnThePageDark() throws {
         let app = MdocUITest.launch(showsTips: true)
-        // Set once the app runs, as the other dark checks do.
-        XCUIDevice.shared.appearance = .dark
+        // The app's own theme: the device's appearance, set from a test, did
+        // not reach the app on the hosted runner.
+        MdocUITest.revealSidebar(app)
+        let settings = app.buttons["settings-button"].firstMatch
+        XCTAssertTrue(settings.waitUntilHittable(timeout: MdocUITest.timeout))
+        settings.tap()
+        let theme = app.descendants(matching: .any)["settings-theme"].firstMatch
+        XCTAssertTrue(theme.waitForExistence(timeout: MdocUITest.timeout))
+        theme.buttons["Dark"].tap()
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(theme.waitForNonExistence(timeout: MdocUITest.timeout))
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
