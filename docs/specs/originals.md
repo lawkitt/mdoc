@@ -44,6 +44,9 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
   shown is the page read. It is built and drawn in memory, never written.
 - The EXIF orientation turns the page through its content matrix; a JPEG of
   4,500 pixels or less is embedded as it is, without its metadata segments.
+- A TIFF shows every page, each at its own resolution (a fax in normal
+  mode keeps its shape); Group 3 and Group 4 fax pages are embedded as the
+  fax coded them, so the page shown and the page OCR reads are the fax's.
 - Metadata (EXIF, GPS, XMP, camera, dates, ICC profiles, comments) never
   reaches the PDF, so it never reaches the Markdown and isn't counted.
 

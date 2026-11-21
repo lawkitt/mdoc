@@ -34,6 +34,9 @@ zeroize = "1"
 # The image builder (image_pdf): decoding within limits, EXIF orientation,
 # and photos re-encoded as JPEG. Already in the tree through pdf-inspector.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# TIFF pages (image_pdf::tiff): every directory, and CCITT strips read raw for
+# passthrough. Already in the tree through image.
+tiff = "0.11"
 # Only on a locked PDF's refusal: tells encryption no password opens
 # (an unknown handler or algorithm) from a missing or wrong password, which
 # pdf-inspector reports alike. The version pdf-inspector reads with.
@@ -58,6 +61,9 @@ roxmltree = "0.21"
 # are already in the tree (pdf-inspector, docxide-pdf).
 lopdf = { version = "0.45", default-features = false }
 ttf-parser = "0.25"
+# The TIFF tests' decoded twin of a fax page (image_pdf::tiff), a CCITT
+# decoder independent of PDFium. Already in the tree through gpui-pdf's hayro.
+hayro-ccitt = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 # Recognition defaults read the keyboard layouts.
@@ -65,3 +71,4 @@ windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"]
 
 [lints]
 workspace = true
+

@@ -79,7 +79,10 @@ fn through_import(name: &str, bytes: &[u8]) -> ImagePdf {
         other => panic!("{name}: {other:?}"),
     }
     let source = crate::import::Source::read(&path).unwrap();
-    let (pdf, frames_left_out) = source.image_pdf(DEFAULT_DPI).unwrap().unwrap();
+    let (pdf, frames_left_out) = source
+        .image_pdf(DEFAULT_DPI, &std::sync::atomic::AtomicBool::new(false))
+        .unwrap()
+        .unwrap();
     ImagePdf {
         pdf: pdf.bytes().to_vec(),
         pages: 1,
@@ -688,6 +691,10 @@ fn formats_are_known_by_content_and_extension() {
     ] {
         assert_eq!(ImageFormat::from_extension(extension), Some(format));
     }
+    assert_eq!(ImageFormat::from_extension("tif"), Some(ImageFormat::Tiff));
+    for magic in [b"II*\0".as_slice(), b"MM\0*", b"II+\0", b"MM\0+"] {
+        assert_eq!(ImageFormat::from_bytes(magic), Some(ImageFormat::Tiff));
+    }
     assert_eq!(ImageFormat::from_extension("heic"), None);
 }
 
@@ -767,10 +774,8 @@ mod import_seam {
         for name in ["a.jpg", "a.JPEG", "a.png", "a.webp", "a.gif"] {
             assert!(supported_extension(Path::new(name)), "{name}");
         }
-        // TIFF and HEIC come with #1024 items 8 and 9.
-        for name in ["a.tiff", "a.heic"] {
-            assert!(!supported_extension(Path::new(name)), "{name}");
-        }
+        // HEIC comes with #1024 item 9.
+        assert!(!supported_extension(Path::new("a.heic")));
     }
 
     #[test]

@@ -272,18 +272,26 @@ impl Source {
 
     /// An image source as the PDF the image builder makes of it, sized for
     /// `dpi`, with the frames of an animation it leaves out; `None` for any
-    /// other source. The path and stamp stay the image file's.
-    pub(crate) fn image_pdf(&self, dpi: u16) -> Option<Result<(Self, u64), ImportError>> {
+    /// other source. The builder stops between pages once `cancel` is set.
+    /// The path and stamp stay the image file's.
+    pub(crate) fn image_pdf(
+        &self,
+        dpi: u16,
+        cancel: &AtomicBool,
+    ) -> Option<Result<(Self, u64), ImportError>> {
         ImageFormat::from_bytes(self.bytes())?;
         Some(
-            image_pdf::build(&[self.bytes()], dpi)
+            image_pdf::build_cancellable(&[self.bytes()], dpi, &|| cancel.load(Ordering::Relaxed))
                 .map(|built| {
                     (
                         Self::new(self.path.clone(), self.stamp, built.pdf),
                         built.frames_left_out,
                     )
                 })
-                .map_err(ImportError::Image),
+                .map_err(|error| match error {
+                    image_pdf::ImageError::Cancelled => ImportError::Cancelled,
+                    error => ImportError::Image(error),
+                }),
         )
     }
 }
@@ -880,7 +888,7 @@ fn import_opening(
     // An image becomes a PDF in memory, which OCR reads like a scanned
     // page; the page is sized for OCR's render resolution.
     let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
-    if let Some(built) = source.image_pdf(dpi) {
+    if let Some(built) = source.image_pdf(dpi, cancel) {
         let (pdf, frames) = built?;
         check_cancel(cancel)?;
         // The built PDF is never locked, whatever the image was.

@@ -15,17 +15,19 @@
 //!   reaches the PDF, so it can't reach the Markdown either (decision 14).
 //! - An animated GIF or WebP gives its first frame; the later frames are
 //!   counted for the import note.
+//! - A TIFF gives every page, each sized by its own resolution; CCITT fax
+//!   pages pass through as `CCITTFaxDecode` (see [`tiff`]).
 //!
-//! The seam for later formats is [`ImageFormat`]: each format decodes to
-//! [`Page`]s in [`pages`]. Multi-page TIFF (item 8) adds a variant whose
-//! arm yields one page per directory (CCITT strips as their own stream
-//! kind); HEIC (item 9) is decoded by the operating system to an upright
-//! JPEG without metadata, which then comes here as [`ImageFormat::Jpeg`].
+//! The seam for formats is [`ImageFormat`]: each format gives [`Page`]s in
+//! [`pages`]. HEIC (item 9) is decoded by the operating system to an
+//! upright JPEG without metadata, which then comes here as
+//! [`ImageFormat::Jpeg`].
 
 mod jpeg;
 mod pdf;
 #[cfg(test)]
 pub(crate) mod tests;
+mod tiff;
 
 use std::{io::Cursor, path::Path};
 
@@ -47,6 +49,7 @@ pub enum ImageFormat {
     Png,
     WebP,
     Gif,
+    Tiff,
 }
 
 impl ImageFormat {
@@ -60,6 +63,12 @@ impl ImageFormat {
             Some(Self::Gif)
         } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
             Some(Self::WebP)
+        } else if [b"II*\0", b"MM\0*", b"II+\0", b"MM\0+"]
+            .iter()
+            .any(|magic| bytes.starts_with(*magic))
+        {
+            // Classic TIFF and BigTIFF, in either byte order.
+            Some(Self::Tiff)
         } else {
             None
         }
@@ -72,6 +81,7 @@ impl ImageFormat {
             "png" => Some(Self::Png),
             "webp" => Some(Self::WebP),
             "gif" => Some(Self::Gif),
+            "tif" | "tiff" => Some(Self::Tiff),
             _ => None,
         }
     }
@@ -83,12 +93,14 @@ impl ImageFormat {
             .and_then(Self::from_extension)
     }
 
-    fn image_format(self) -> image::ImageFormat {
+    /// The `image` decoder's format; TIFF has its own reader ([`tiff`]).
+    fn image_format(self) -> Option<image::ImageFormat> {
         match self {
-            Self::Jpeg => image::ImageFormat::Jpeg,
-            Self::Png => image::ImageFormat::Png,
-            Self::WebP => image::ImageFormat::WebP,
-            Self::Gif => image::ImageFormat::Gif,
+            Self::Jpeg => Some(image::ImageFormat::Jpeg),
+            Self::Png => Some(image::ImageFormat::Png),
+            Self::WebP => Some(image::ImageFormat::WebP),
+            Self::Gif => Some(image::ImageFormat::Gif),
+            Self::Tiff => None,
         }
     }
 
@@ -107,6 +119,9 @@ pub enum ImageError {
     /// Not an image mdoc reads, damaged, or in a variant the decoder lacks.
     #[error("This image is damaged or in a form mdoc can't read.")]
     Unreadable,
+    /// The import was cancelled while the PDF was being built.
+    #[error("Import cancelled")]
+    Cancelled,
 }
 
 /// A PDF built from images, one page each.
@@ -124,13 +139,25 @@ pub struct ImagePdf {
 /// resolution). The images are read from memory and the PDF is built in
 /// memory.
 pub fn build(images: &[&[u8]], dpi: u16) -> Result<ImagePdf, ImageError> {
+    build_cancellable(images, dpi, &|| false)
+}
+
+/// [`build`], stopping with [`ImageError::Cancelled`] between pages, and
+/// before the PDF is written, once `cancelled` says so.
+pub fn build_cancellable(
+    images: &[&[u8]],
+    dpi: u16,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ImagePdf, ImageError> {
+    let mut budget = Budget::new(MAX_DOCUMENT, cancelled);
     let mut built = Vec::with_capacity(images.len());
     let mut frames_left_out = 0u64;
     for bytes in images {
         let format = ImageFormat::from_bytes(bytes).ok_or(ImageError::Unreadable)?;
         frames_left_out += later_frames(format, bytes);
-        built.extend(pages(format, bytes)?);
+        built.extend(pages(format, bytes, &mut budget)?);
     }
+    budget.check()?;
     let pages = u32::try_from(built.len()).unwrap_or(u32::MAX);
     Ok(ImagePdf {
         pdf: pdf::write(&built, dpi),
@@ -155,13 +182,68 @@ const MAX_DIMENSION: u32 = 30_000;
 /// The memory a decode may allocate: a 100-megapixel RGBA image.
 const MAX_ALLOC: u64 = 512 * 1024 * 1024;
 
+/// The page data a PDF may hold, all its pages together: with the PDF's
+/// copy of it, a build stays within [`MAX_ALLOC`], however many pages under
+/// the per-page limits a file has (a TIFF's directories may even share one
+/// strip).
+const MAX_DOCUMENT: u64 = MAX_ALLOC / 2;
+
+/// What a build may still hold, and whether to stop: a page's data is
+/// charged before it is copied or kept, and a cancelled import stops
+/// between pages.
+struct Budget<'a> {
+    left: u64,
+    cancelled: &'a dyn Fn() -> bool,
+}
+
+impl<'a> Budget<'a> {
+    fn new(left: u64, cancelled: &'a dyn Fn() -> bool) -> Self {
+        Self { left, cancelled }
+    }
+
+    /// Charges `bytes` of page data: `TooLarge` when they don't fit in what
+    /// is left.
+    fn charge(&mut self, bytes: u64) -> Result<(), ImageError> {
+        self.left = self.left.checked_sub(bytes).ok_or(ImageError::TooLarge)?;
+        Ok(())
+    }
+
+    /// `page`, its data charged.
+    fn keep(&mut self, page: Page) -> Result<Page, ImageError> {
+        self.charge(page.data.len() as u64)?;
+        Ok(page)
+    }
+
+    /// `Cancelled` once the import is.
+    fn check(&self) -> Result<(), ImageError> {
+        if (self.cancelled)() {
+            Err(ImageError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// How a page's pixels are stored in the PDF.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stream {
     /// A JPEG, decoded by the reader (`DCTDecode`).
     Jpeg,
-    /// Raw 8-bit samples, zlib-compressed (`FlateDecode`).
+    /// Raw samples, zlib-compressed (`FlateDecode`).
     Flate,
+    /// CCITT fax data as the file holds it (`CCITTFaxDecode`).
+    Ccitt(Ccitt),
+}
+
+/// A CCITT stream's decoding parameters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ccitt {
+    /// 0 for Group 3 1D, positive for Group 3 2D, -1 for Group 4.
+    k: i32,
+    /// Black pixels are the coded 1 bits (a min-is-black TIFF).
+    black_is_1: bool,
+    /// Each coded row starts on a byte boundary.
+    byte_align: bool,
 }
 
 /// One page: an image and how to show it upright.
@@ -172,21 +254,60 @@ struct Page {
     height: u32,
     /// One component (gray) or three (RGB).
     gray: bool,
+    /// Bits per sample: 8, or 1 for a bilevel (fax) page.
+    bits: u8,
     stream: Stream,
     data: Vec<u8>,
     /// EXIF orientation, 1 to 8.
     orientation: u8,
+    /// The page's own horizontal and vertical resolution, in dots per inch,
+    /// when it states one (a TIFF); else the PDF's.
+    resolution: Option<(f64, f64)>,
+    /// The page as bands of rows, top to bottom, each its own image of
+    /// `data` in order (a fax's CCITT strips, each coded on its own);
+    /// empty for a page that is one image.
+    bands: Vec<Band>,
 }
 
-/// The pages `bytes` give as `format`. The seam later formats plug into.
-fn pages(format: ImageFormat, bytes: &[u8]) -> Result<Vec<Page>, ImageError> {
+/// One band of a page: its rows, and its bytes in the page's `data`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Band {
+    rows: u32,
+    bytes: usize,
+}
+
+impl Page {
+    /// The page's bands, a single one for a page that is one image.
+    fn bands(&self) -> Vec<Band> {
+        if self.bands.is_empty() {
+            vec![Band {
+                rows: self.height,
+                bytes: self.data.len(),
+            }]
+        } else {
+            self.bands.clone()
+        }
+    }
+}
+
+/// The pages `bytes` give as `format`, charged to `budget`: the seam
+/// formats plug into.
+fn pages(format: ImageFormat, bytes: &[u8], budget: &mut Budget) -> Result<Vec<Page>, ImageError> {
+    budget.check()?;
+    if format == ImageFormat::Tiff {
+        return tiff::pages(bytes, budget);
+    }
     if format == ImageFormat::Jpeg
         && let Some(page) = jpeg::passthrough(bytes)
     {
-        return Ok(vec![page]);
+        return Ok(vec![budget.keep(page)?]);
     }
     let (image, orientation) = decode(format, bytes, later_frames(format, bytes) > 0)?;
-    Ok(vec![encode(image, orientation, format.is_photo())?])
+    Ok(vec![budget.keep(encode(
+        image,
+        orientation,
+        format.is_photo(),
+    )?)?])
 }
 
 /// The first frame of `bytes`, within [`limits`], and its EXIF orientation.
@@ -198,7 +319,8 @@ fn decode(
     animated: bool,
 ) -> Result<(image::DynamicImage, u8), ImageError> {
     use image::ImageDecoder;
-    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format.image_format());
+    let format = format.image_format().ok_or(ImageError::Unreadable)?;
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
     reader.limits(limits());
     let mut decoder = reader.into_decoder().map_err(error)?;
     // Not every decoder charges its output buffer to the limits, so the
@@ -243,9 +365,12 @@ fn encode(image: image::DynamicImage, orientation: u8, photo: bool) -> Result<Pa
         width,
         height,
         gray,
+        bits: 8,
         stream,
         data,
         orientation,
+        bands: Vec::new(),
+        resolution: None,
     })
 }
 
@@ -310,7 +435,8 @@ fn later_frames(format: ImageFormat, bytes: &[u8]) -> u64 {
     let frames = match format {
         ImageFormat::Gif => gif_frames(bytes),
         ImageFormat::WebP => webp_frames(bytes),
-        ImageFormat::Jpeg | ImageFormat::Png => 1,
+        // A TIFF's pages are all imported: none is a left-out frame.
+        ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::Tiff => 1,
     };
     frames.saturating_sub(1)
 }

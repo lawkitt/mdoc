@@ -68,6 +68,7 @@ import-comments-note
 import-hidden-note
 import-photo
 import-animation
+import-fax
 restored-reply
 comments-rail
 comments-resolved

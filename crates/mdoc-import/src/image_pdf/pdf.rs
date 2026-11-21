@@ -1,31 +1,48 @@
-//! The PDF around the pages: one image XObject per page, drawn upright by
-//! the page's content matrix.
+//! The PDF around the pages: one image XObject per page, or one per band
+//! of rows when a page comes in bands (a fax's CCITT strips), drawn upright
+//! by the page's content matrix.
 
-use super::{Page, Stream};
+use super::{MAX_LONG_SIDE, Page, Stream};
 
-/// A PDF with `pages` in order, each sized so that an image pixel is a page
-/// pixel at `dpi`.
+/// A PDF with `pages` in order, each sized by its own resolution when it
+/// states one, else so that an image pixel is a page pixel at `dpi`; none
+/// longer than [`MAX_LONG_SIDE`] pixels at `dpi`.
 pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
     let mut pdf = Pdf::default();
     let count = pages.len();
-    // 1: catalog, 2: page tree, then three objects per page: the page, its
-    // image and its content stream.
+    // 1: catalog, 2: page tree, then for each page: the page, its content
+    // stream, and its images.
+    let mut first_ids = Vec::with_capacity(count);
+    let mut next = 3;
+    for page in pages {
+        first_ids.push(next);
+        next += 2 + page.bands().len();
+    }
     pdf.object("<< /Type /Catalog /Pages 2 0 R >>", None);
-    let kids = (0..count)
-        .map(|index| format!("{} 0 R", 3 + 3 * index))
+    let kids = first_ids
+        .iter()
+        .map(|id| format!("{id} 0 R"))
         .collect::<Vec<_>>()
         .join(" ");
     pdf.object(
         &format!("<< /Type /Pages /Kids [{kids}] /Count {count} >>"),
         None,
     );
-    for (index, page) in pages.iter().enumerate() {
-        let first = 3 + 3 * index;
-        let scale = 72. / f64::from(dpi.max(1));
+    for (page, &first) in pages.iter().zip(&first_ids) {
+        // A page that states its resolution (a TIFF) has its own physical
+        // size; any other is its pixels at the PDF's resolution. Either is
+        // at most MAX_LONG_SIDE pixels long when rendered at `dpi`: a large
+        // sheet is made smaller rather than have OCR render more pixels
+        // than the page holds (decision 10's bound).
+        let fallback = f64::from(dpi.max(1));
+        let (x_dpi, y_dpi) = page.resolution.unwrap_or((fallback, fallback));
         let (width, height) = (
-            f64::from(page.width) * scale,
-            f64::from(page.height) * scale,
+            f64::from(page.width) * 72. / x_dpi,
+            f64::from(page.height) * 72. / y_dpi,
         );
+        let rendered = width.max(height) / 72. * fallback;
+        let fit = (f64::from(MAX_LONG_SIDE) / rendered).min(1.);
+        let (width, height) = (width * fit, height * fit);
         let [a, b, c, d, e, f] = upright(page.orientation, width, height);
         // Orientations 5 to 8 turn the image a quarter, swapping its sides.
         let (page_width, page_height) = if page.orientation >= 5 {
@@ -33,49 +50,83 @@ pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
         } else {
             (width, height)
         };
+        let bands = page.bands();
+        let images = (0..bands.len())
+            .map(|index| format!("/Im{index} {} 0 R", first + 2 + index))
+            .collect::<Vec<_>>()
+            .join(" ");
         pdf.object(
             &format!(
                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] \
-                 /Resources << /XObject << /Im0 {} 0 R >> >> /Contents {} 0 R >>",
+                 /Resources << /XObject << {images} >> >> /Contents {} 0 R >>",
                 number(page_width),
                 number(page_height),
-                first + 1,
-                first + 2
+                first + 1
             ),
             None,
         );
-        let filter = match page.stream {
-            Stream::Jpeg => "/DCTDecode",
-            Stream::Flate => "/FlateDecode",
-        };
+        // Each band fills its rows of the image's unit square, the first
+        // band at the top. Its matrix is that place composed with the
+        // upright matrix here, so that its edges are plain numbers of
+        // points: PDFium draws an image over the outer pixels of its edges,
+        // and a band placed by a rounded share stretched by a pixel, its
+        // rows moved.
+        let rows = f64::from(page.height);
+        let mut below = page.height;
+        let content = bands
+            .iter()
+            .enumerate()
+            .map(|(index, band)| {
+                below -= band.rows;
+                let (share, bottom) = (f64::from(band.rows), f64::from(below));
+                let matrix = [
+                    a,
+                    b,
+                    c * share / rows,
+                    d * share / rows,
+                    c * bottom / rows + e,
+                    d * bottom / rows + f,
+                ]
+                .map(number)
+                .join(" ");
+                format!("q {matrix} cm /Im{index} Do Q")
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        pdf.object(
+            &format!("<< /Length {} >>", content.len()),
+            Some(content.as_bytes()),
+        );
         let color = if page.gray {
             "/DeviceGray"
         } else {
             "/DeviceRGB"
         };
-        pdf.object(
-            &format!(
-                "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {color} \
-                 /BitsPerComponent 8 /Filter {filter} /Length {} >>",
-                page.width,
-                page.height,
-                page.data.len()
-            ),
-            Some(&page.data),
-        );
-        let content = format!(
-            "q {} {} {} {} {} {} cm /Im0 Do Q",
-            number(a),
-            number(b),
-            number(c),
-            number(d),
-            number(e),
-            number(f)
-        );
-        pdf.object(
-            &format!("<< /Length {} >>", content.len()),
-            Some(content.as_bytes()),
-        );
+        let mut at = 0;
+        for band in &bands {
+            let data = &page.data[at..at + band.bytes];
+            at += band.bytes;
+            let filter = match &page.stream {
+                Stream::Jpeg => "/DCTDecode".to_owned(),
+                Stream::Flate => "/FlateDecode".to_owned(),
+                Stream::Ccitt(ccitt) => format!(
+                    "/CCITTFaxDecode /DecodeParms << /K {} /Columns {} /Rows {} /BlackIs1 {} \
+                     /EncodedByteAlign {} /EndOfBlock false >>",
+                    ccitt.k, page.width, band.rows, ccitt.black_is_1, ccitt.byte_align
+                ),
+            };
+            pdf.object(
+                &format!(
+                    "<< /Type /XObject /Subtype /Image /Width {} /Height {} \
+                     /ColorSpace {color} /BitsPerComponent {} /Filter {filter} /Length {} >>",
+                    page.width,
+                    band.rows,
+                    page.bits,
+                    data.len()
+                ),
+                Some(data),
+            );
+        }
     }
     pdf.finish()
 }
