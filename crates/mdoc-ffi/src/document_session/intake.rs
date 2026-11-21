@@ -89,15 +89,11 @@ pub(super) fn import_file(
             JobStage::Converting
         });
         let installed = installed.as_ref().filter(|_| ocr);
-        // One reading decides and converts: until the phones open locked
-        // PDFs (#1024 item 11), a PDF gets no password, so a locked one is
-        // always refused below.
-        let source = mdoc_import::import::Source::read(path)?;
-        let pdf = source.is_pdf();
-        let password = password.filter(|_| !pdf);
-        let imported = match kept {
-            Some(kept) => mdoc_import::resume::prepare_resumable_source(
-                source,
+        // A locked PDF opens with its password as a locked DOCX does; its
+        // recognized pages are never kept (#1024 decision 7).
+        match kept {
+            Some(kept) => mdoc_import::resume::prepare_resumable(
+                path,
                 password,
                 installed,
                 options.native_text_only,
@@ -110,17 +106,18 @@ pub(super) fn import_file(
                         progress.advanced(u64::from(page), u64::from(pages));
                     }
                 },
+            )?,
+            None => (
+                mdoc_import::import::prepare_cancellable(
+                    path,
+                    password,
+                    installed,
+                    options.native_text_only,
+                    cancel,
+                )?,
+                None,
             ),
-            None => mdoc_import::import::prepare_source(
-                source,
-                password,
-                installed,
-                options.native_text_only,
-                cancel,
-            )
-            .map(|imported| (imported, None)),
-        };
-        imported.map_err(|error| refuse_locked_pdf(pdf, error))?
+        }
     };
     if cancel.load(Ordering::Relaxed) {
         return Err(CoreError::Cancelled);
@@ -131,29 +128,6 @@ pub(super) fn import_file(
         markdown: imported.markdown,
         kept: completed,
     })
-}
-
-/// The phones refuse a locked PDF as they did before the desktop opened one
-/// (#1024 item 4), so none shows a password card it can't finish: their
-/// Original can't draw it yet. #1024 item 11 removes this.
-const LOCKED_PDF: &str = "This PDF is password-protected. Import an unlocked copy.";
-
-/// `error`, or for a locked PDF (`pdf`, read from the bytes converted) the
-/// phones' refusal of it.
-fn refuse_locked_pdf(pdf: bool, error: mdoc_import::import::ImportError) -> CoreError {
-    use mdoc_import::import::ImportError;
-    match error {
-        ImportError::PasswordRequired
-        | ImportError::WrongPassword
-        | ImportError::PdfEncryptionUnsupported
-            if pdf =>
-        {
-            CoreError::Import {
-                message: LOCKED_PDF.into(),
-            }
-        }
-        error => error.into(),
-    }
 }
 
 impl ImportNote {

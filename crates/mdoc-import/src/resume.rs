@@ -233,25 +233,7 @@ pub fn prepare_resumable(
     recognized: &dyn Fn(u32, u32),
 ) -> Result<(Imported, Option<Completed>), ImportError> {
     check_cancel(cancel)?;
-    let source = Source::read(path)?;
-    prepare_resumable_source(
-        source, password, installed, skip_ocr, cancel, kept, recognized,
-    )
-}
-
-/// [`prepare_resumable`] of `source`, already read: a caller that decides
-/// something from the bytes (a format's policy) converts those same bytes.
-pub fn prepare_resumable_source(
-    source: Source,
-    password: Option<&Password>,
-    installed: Option<&crate::ocr::Installed>,
-    skip_ocr: bool,
-    cancel: &AtomicBool,
-    kept: &KeptPages,
-    recognized: &dyn Fn(u32, u32),
-) -> Result<(Imported, Option<Completed>), ImportError> {
-    check_cancel(cancel)?;
-    let source = source.unlock(password)?;
+    let source = Source::read(path)?.unlock(password)?;
     check_cancel(cancel)?;
     let image = ImageFormat::from_bytes(source.bytes()).is_some();
     let Some(installed) = installed.filter(|_| !skip_ocr && (image || is_pdf(source.bytes())))

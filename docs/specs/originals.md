@@ -51,3 +51,7 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 - Android follows iOS as it reaches the Original pane; TalkBack reaches each
   comment marker right after its line.
+- On iOS a locked PDF's Original unlocks in memory with the password that
+  imported it, and asks in its pane once the document opens again. Android
+  shows no locked PDF's pages, because its renderer takes a password only
+  from Android 15.
