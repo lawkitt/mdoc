@@ -211,6 +211,15 @@ impl ImportFlow {
         self.unlock.as_ref()
     }
 
+    /// A locked PDF's password that opened its Original (#1024 decision 6):
+    /// the tab keeps it, as it keeps the one an import unlocked with, unless
+    /// a run is under way, which leaves its own, or the tab is closing.
+    pub(crate) fn keep_password(&mut self, unlock: Unlock) {
+        if !self.busy() && !self.cancelled() {
+            self.unlock = Some(unlock);
+        }
+    }
+
     /// A password typed on the card can be tried now: nothing else runs
     /// and the slot is free.
     pub(crate) fn can_unlock(&self) -> bool {
@@ -332,6 +341,19 @@ impl ImportFlow {
                 ImportError::PasswordRequired
             }),
         );
+    }
+
+    /// The tab holds `unlock`, as after the card unlocked its source.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn show_unlock_fixture(&mut self, unlock: Unlock) {
+        self.unlock = Some(unlock);
     }
 
     #[cfg(test)]

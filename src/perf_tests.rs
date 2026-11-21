@@ -379,6 +379,63 @@ fn local_preview_performance(cx: &mut TestAppContext) {
     report("local_preview open", &mut times);
 }
 
+/// A locked PDF's Original against its open twin (#1024 item 4): the time
+/// from opening the Original to its first page drawn, through the app's own
+/// path, the locked one read and opened in memory with the tab's password.
+/// Rounds alternate the two; each prints min, median and max.
+#[gpui::test]
+#[ignore = "encrypted PDF open-to-first-page timing; run serially on an idle machine"]
+fn locked_preview_performance(cx: &mut TestAppContext) {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source");
+    let locked = dir.join("comments-aes256.pdf");
+    let (app, cx) = boot(cx);
+    cx.simulate_resize(gpui::size(px(1332.), px(750.)));
+    // The tab's unlock of the locked file; the twin opens without it.
+    app.update(cx, |app, _| {
+        app.import
+            .show_unlock_fixture(mdoc_import::import::Unlock::Password {
+                path: locked.clone(),
+                password: mdoc_import::import::Password::new("Petrov-2026".into()),
+            })
+    });
+    let rounds = std::env::var("MDOC_PERF_ROUNDS")
+        .ok()
+        .and_then(|rounds| rounds.parse().ok())
+        .unwrap_or(9);
+    let mut times = [Vec::new(), Vec::new()];
+    for _ in 0..rounds {
+        for (slot, path) in [dir.join("comments.pdf"), locked.clone()]
+            .into_iter()
+            .enumerate()
+        {
+            let started = Instant::now();
+            app.update_in(cx, |app, window, cx| app.open_pdf(path.clone(), window, cx));
+            cx.run_until_parked();
+            draw(cx);
+            times[slot].push(started.elapsed().as_secs_f64() * 1000.);
+            cx.update(|_, cx| {
+                let pdf = app.read(cx).preview.pdf().expect("the Original").read(cx);
+                assert!(pdf.is_loaded() && !pdf.is_locked(), "{}", path.display());
+            });
+            app.update_in(cx, |app, window, cx| app.close_preview(window, cx));
+            cx.run_until_parked();
+        }
+    }
+    for (label, values) in ["open twin", "locked with password"]
+        .into_iter()
+        .zip(&mut times)
+    {
+        values.sort_by(f64::total_cmp);
+        eprintln!(
+            "HOST_PERF locked_preview {label} min_ms={:.1} median_ms={:.1} max_ms={:.1} n={}",
+            values[0],
+            values[values.len() / 2],
+            values[values.len() - 1],
+            values.len()
+        );
+    }
+}
+
 #[gpui::test]
 #[ignore = "2 MiB / 20,000 annotation CPU matrix; run serially on an idle machine"]
 fn pii_annotation_geometry_matrix(cx: &mut TestAppContext) {

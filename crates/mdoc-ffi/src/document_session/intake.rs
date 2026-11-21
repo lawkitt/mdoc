@@ -93,7 +93,10 @@ pub(super) fn import_file(
             JobStage::Converting
         });
         let installed = installed.as_ref().filter(|_| ocr);
-        match kept {
+        // Until the phones open locked PDFs (#1024 item 11), a PDF gets no
+        // password, so a locked one is always refused below.
+        let password = password.filter(|_| !starts_as_pdf(path));
+        let imported = match kept {
             Some(kept) => mdoc_import::resume::prepare_resumable(
                 path,
                 password,
@@ -108,18 +111,17 @@ pub(super) fn import_file(
                         progress.advanced(u64::from(page), u64::from(pages));
                     }
                 },
-            )?,
-            None => (
-                mdoc_import::import::prepare_cancellable(
-                    path,
-                    password,
-                    installed,
-                    options.native_text_only,
-                    cancel,
-                )?,
-                None,
             ),
-        }
+            None => mdoc_import::import::prepare_cancellable(
+                path,
+                password,
+                installed,
+                options.native_text_only,
+                cancel,
+            )
+            .map(|imported| (imported, None)),
+        };
+        imported.map_err(|error| refuse_locked_pdf(path, error))?
     };
     if cancel.load(Ordering::Relaxed) {
         return Err(CoreError::Cancelled);
@@ -130,6 +132,38 @@ pub(super) fn import_file(
         markdown: imported.markdown,
         kept: completed,
     })
+}
+
+/// The phones refuse a locked PDF as they did before the desktop opened one
+/// (#1024 item 4), so none shows a password card it can't finish: their
+/// Original can't draw it yet. #1024 item 11 removes this.
+const LOCKED_PDF: &str = "This PDF is password-protected. Import an unlocked copy.";
+
+/// `error`, or for a locked PDF at `path` the phones' refusal of it.
+fn refuse_locked_pdf(path: &Path, error: mdoc_import::import::ImportError) -> CoreError {
+    use mdoc_import::import::ImportError;
+    match error {
+        ImportError::PasswordRequired
+        | ImportError::WrongPassword
+        | ImportError::PdfEncryptionUnsupported
+            if starts_as_pdf(path) =>
+        {
+            CoreError::Import {
+                message: LOCKED_PDF.into(),
+            }
+        }
+        error => error.into(),
+    }
+}
+
+/// The file at `path` is a PDF, by the window the import detects one in.
+fn starts_as_pdf(path: &Path) -> bool {
+    use std::io::Read;
+    let mut head = Vec::with_capacity(1024);
+    std::fs::File::open(path)
+        .and_then(|file| file.take(1024).read_to_end(&mut head))
+        .is_ok()
+        && head.windows(5).any(|window| window == b"%PDF-")
 }
 
 impl ImportNote {

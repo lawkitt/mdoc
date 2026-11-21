@@ -930,3 +930,278 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         assert!(view.import.unlock().is_none());
     });
 }
+
+/// A locked PDF (#1024 decisions 5 and 6) asks for its password on the
+/// card, says so when it's wrong, and imports with the right one. The tab
+/// keeps the password, never the decrypted bytes: its Original opens from
+/// memory with it, with the annotations' rail, and reloads never ask. The
+/// session and the folder hold neither, and closing the tab drops it.
+#[gpui::test]
+fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "Petrov-2026";
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("documents");
+    std::fs::create_dir(&folder).unwrap();
+    let source = folder.join("Locked agreement.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/comments-aes256.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    if cx.update(|_, cx| view.read(cx).import.password_prompt().is_none()) {
+        cx.dispatch_action(Import);
+        cx.run_until_parked();
+    }
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).import.password_prompt()),
+        Some(crate::document_view::PasswordPrompt::Asking)
+    );
+    let unlock = |password: &str, cx: &mut gpui::VisualTestContext| {
+        draw(cx);
+        let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+        field.update_in(cx, |field, window, cx| {
+            field.set_value(password.into(), cx);
+            field.move_to_end(cx);
+            window.focus(&field.focus_handle(cx), cx);
+        });
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+    };
+    unlock("petrov-2026", cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(
+            view.import.password_prompt(),
+            Some(crate::document_view::PasswordPrompt::Wrong)
+        );
+        assert!(view.import.unlock().is_none());
+    });
+    unlock(PASSWORD, cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(!view.lifecycle.source_only());
+        assert!(view.editor.read(cx).text().contains("agreement"));
+        let unlock = view.import.unlock().expect("the tab keeps the password");
+        assert_eq!(unlock.password().map(|p| p.expose()), Some(PASSWORD));
+        assert!(unlock.current_source().is_none(), "never the bytes");
+    });
+
+    // The import reopened the Original with the tab's password, from
+    // memory, and every reload does, with the annotations' rail.
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None);
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
+    });
+    for _ in 0..2 {
+        tabs.update_in(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                if view.preview.visible() {
+                    view.toggle_preview(window, cx);
+                }
+                view.toggle_preview(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            assert_eq!(view.import.password_prompt(), None);
+            assert_eq!(view.preview.message(), None);
+            let pdf = view.preview.pdf().expect("the Original").read(cx);
+            assert!(pdf.is_loaded() && !pdf.is_locked());
+            assert!(
+                view.preview.comment_rail().is_some(),
+                "the annotations' rail"
+            );
+        });
+    }
+
+    // Saved, the Markdown is the user's; the session saves no password.
+    let markdown = dir.path().join("Locked agreement.md");
+    cx.dispatch_action(Save);
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(markdown.clone()));
+    cx.run_until_parked();
+    assert!(
+        std::fs::read_to_string(&markdown)
+            .unwrap()
+            .contains("agreement")
+    );
+    let session_path = dir.path().join("session.json");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.session_writer.set_path(Some(session_path.clone()));
+        tabs.checkpoint(window, cx);
+    });
+    cx.run_until_parked();
+    let text = String::from_utf8_lossy(&std::fs::read(&session_path).unwrap()).into_owned();
+    assert!(text.contains("Locked agreement.pdf"), "{text}");
+    assert!(!text.contains(PASSWORD), "{text}");
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(tabs.tabs.active(), window, cx)
+    });
+    cx.run_until_parked();
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Don't Save");
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        assert!(view.read(cx).import.unlock().is_none(), "closing drops it");
+    });
+    let left: Vec<_> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, [source.file_name().unwrap()]);
+}
+
+/// A reopened tab has a locked PDF's Markdown and no password (#1024
+/// decision 6): its Original asks on its own card, says when a password is
+/// wrong, and opens in memory with the right one, which the tab then keeps
+/// for every later call.
+#[gpui::test]
+fn a_reopened_locked_pdf_s_original_asks_for_its_password(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked agreement.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/comments-aes128.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let view = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        let view = tabs.active_view().unwrap();
+        view.update(cx, |view, cx| view.open_pdf(source.clone(), window, cx));
+        view
+    });
+    cx.run_until_parked();
+    draw(cx);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).preview.locked()),
+        Some(crate::document_view::PasswordPrompt::Asking)
+    );
+    assert!(cx.debug_bounds("original-card").is_some());
+    let unlock = |password: &str, cx: &mut gpui::VisualTestContext| {
+        let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+        field.update_in(cx, |field, _, cx| field.set_value(password.into(), cx));
+        view.update_in(cx, |view, window, cx| view.unlock_original(window, cx));
+        cx.run_until_parked();
+        draw(cx);
+    };
+    unlock("petrov-2026", cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(
+            view.preview.locked(),
+            Some(crate::document_view::PasswordPrompt::Wrong)
+        );
+        assert!(view.import.unlock().is_none());
+    });
+    unlock("Petrov-2026", cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None);
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
+        assert!(
+            view.preview.comment_rail().is_some(),
+            "read with the password"
+        );
+        assert!(
+            pdf.options().hide_comment_annotations,
+            "the rail shows them, so the page doesn't draw them again"
+        );
+        let unlock = view.import.unlock().expect("the tab keeps it");
+        assert_eq!(unlock.password().map(|p| p.expose()), Some("Petrov-2026"));
+        assert!(
+            view.password_field.read(cx).value().is_empty(),
+            "the field is wiped"
+        );
+    });
+    // A reload opens it with the kept password, without asking.
+    tabs.update_in(cx, |_, window, cx| {
+        view.update(cx, |view, cx| {
+            view.toggle_preview(window, cx);
+            view.toggle_preview(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None);
+        assert!(
+            view.preview
+                .pdf()
+                .is_some_and(|pdf| pdf.read(cx).is_loaded())
+        );
+    });
+}
+
+/// A locked, partly scanned PDF (#1024 item 4): its password on the
+/// conversion card opens it, and though the import stops to ask for OCR
+/// consent, the Original that asked for the password opens with it and
+/// asks no more: one password per tab.
+#[gpui::test]
+fn a_locked_scan_s_original_opens_once_its_password_stops_for_ocr(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked scan.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/partly-scanned-aes256.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    if cx.update(|_, cx| view.read(cx).import.password_prompt().is_none()) {
+        cx.dispatch_action(Import);
+        cx.run_until_parked();
+    }
+    // The Original, open beside the card, waits for the password too.
+    tabs.update_in(cx, |_, window, cx| {
+        view.update(cx, |view, cx| {
+            if !view.preview.visible() {
+                view.open_pdf(source.clone(), window, cx);
+            }
+        })
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| view.read(cx).preview.locked().is_some()));
+    draw(cx);
+    let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+    field.update_in(cx, |field, window, cx| {
+        field.set_value("Petrov-2026".into(), cx);
+        field.move_to_end(cx);
+        window.focus(&field.focus_handle(cx), cx);
+    });
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(
+            view.import.ocr_required().is_some(),
+            "it stops for OCR consent"
+        );
+        assert!(view.import.unlock().is_some(), "with the password kept");
+        assert_eq!(view.preview.locked(), None, "the Original asks no more");
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
+    });
+}
