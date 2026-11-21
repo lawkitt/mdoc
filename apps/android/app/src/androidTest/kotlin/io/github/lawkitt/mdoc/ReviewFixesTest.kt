@@ -3,7 +3,6 @@ package io.github.lawkitt.mdoc
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.text.Spanned
 import android.view.accessibility.AccessibilityNodeInfo
@@ -16,8 +15,6 @@ import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
-import io.github.lawkitt.mdoc.core.Originals
-import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.core.SourceRange
 import io.github.lawkitt.mdoc.document.shareIntent
 import io.github.lawkitt.mdoc.jobs.JobKind
@@ -26,7 +23,6 @@ import io.github.lawkitt.mdoc.ui.CandidateSpan
 import io.github.lawkitt.mdoc.ui.NoCopyTextView
 import io.github.lawkitt.mdoc.ui.ReviewColours
 import io.github.lawkitt.mdoc.ui.styledReviewText
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -113,17 +109,6 @@ class ReviewFixesTest {
             span.onClick(NoCopyTextView(context))
         }
         assertEquals(snapshot.candidates.single().id, opened)
-    }
-
-    @Test
-    fun aSinglePngBecomesAJpeg() {
-        val folder = File(app.core.storage.dir(io.github.lawkitt.mdoc.storage.MdocStorage.Area.Originals), "png-test").apply { mkdirs() }
-        val png = File(folder, "photo.png")
-        png.outputStream().use { Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
-        val prepared = Originals(app.core.storage).prepare(ImportSource.File(png, SourceKind.Image), "Photo")
-        assertEquals("jpg", prepared.file?.extension)
-        assertTrue(prepared.file!!.length() > 0)
-        folder.deleteRecursively()
     }
 
     @Test

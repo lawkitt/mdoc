@@ -57,3 +57,14 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
   imported it, and asks in its pane once the document opens again. Android
   shows no locked PDF's pages, because its renderer takes a password only
   from Android 15.
+- A photo's or camera page's Original is the image itself, drawn natively
+  and upright. The copy kept is the core's `without_metadata` rewrite
+  (JPEG, PNG, WebP, GIF: same pixels, only the orientation left) or, for
+  HEIC and what the core doesn't read, the phone's own upright JPEG.
+  On Android, camera output and picked photo bytes are sanitized in memory
+  before mdoc writes the kept copies. Cancelling Add deletes the staged
+  copies. On restart only saved documents and pending imports keep their
+  staged files.
+- Photos picked together are one document. The core appends one photo at a
+  time to an in-memory PDF and applies the 256 MiB import limit to the
+  combined image files and the resulting PDF.

@@ -64,7 +64,13 @@
             </intent-filter>
         </activity>
 
-        <!-- Camera pages into originals/, and Share as Markdown file from the cache. -->
+        <provider
+            android:name=".core.CameraCapture"
+            android:authorities="${applicationId}.capture"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <!-- Share as Markdown file from the cache. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

@@ -126,16 +126,27 @@ pub struct Source {
     unlocked: bool,
 }
 
-/// A document's bytes, shared rather than copied, and wiped when the last
-/// holder drops them: they may be a locked document's, unlocked. A view that
-/// opens them from memory takes a clone as `Arc<dyn AsRef<[u8]> + Send +
-/// Sync>`, with no copy.
+/// A document's bytes, which views can share without copying. The last
+/// holder wipes source bytes and unlocked documents. PDFs built from images
+/// use an ordinary buffer.
 #[derive(Clone)]
-pub struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
+pub struct SharedBytes(Arc<Held>);
+
+enum Held {
+    Wiped(zeroize::Zeroizing<Vec<u8>>),
+    /// The PDF the image builder made of image files, which can't be
+    /// locked: nothing in it isn't in those files, and wiping a photo's
+    /// worth of bytes again would slow the phones' camera import
+    /// (#1024 decision 11).
+    Built(Vec<u8>),
+}
 
 impl AsRef<[u8]> for SharedBytes {
     fn as_ref(&self) -> &[u8] {
-        &self.0
+        match &*self.0 {
+            Held::Wiped(bytes) => bytes,
+            Held::Built(bytes) => bytes,
+        }
     }
 }
 
@@ -151,7 +162,7 @@ impl SharedBytes {
 /// drops them.
 impl From<zeroize::Zeroizing<Vec<u8>>> for SharedBytes {
     fn from(bytes: zeroize::Zeroizing<Vec<u8>>) -> Self {
-        Self(Arc::new(bytes))
+        Self(Arc::new(Held::Wiped(bytes)))
     }
 }
 
@@ -160,17 +171,26 @@ impl Source {
     /// so a renamed one counts) within the import limit, anything else
     /// whole, since AnyDoc applies its own limits.
     pub fn read(path: &Path) -> Result<Self, ImportError> {
+        Self::read_file(path, None)
+    }
+
+    fn read_file(path: &Path, image_limit: Option<u64>) -> Result<Self, ImportError> {
         let path = std::path::absolute(path).map_err(ImportError::Read)?;
         let file = std::fs::File::open(&path).map_err(ImportError::Read)?;
-        let stamp = file
-            .metadata()
-            .ok()
-            .map(|metadata| SourceStamp::from(&metadata));
-        let mut file = file.take(MAX_PDF_BYTES + 1);
-        let mut bytes = Vec::new();
+        let metadata = file.metadata().ok();
+        let stamp = metadata.as_ref().map(SourceStamp::from);
+        // Sized to the file: the bytes are wiped when dropped, spare
+        // capacity included, so a doubled buffer costs twice.
+        let limit = image_limit.unwrap_or(MAX_PDF_BYTES);
+        let size = metadata.map_or(0, |metadata| metadata.len());
+        if image_limit.is_some() && size > limit {
+            return Err(ImportError::PdfTooLarge);
+        }
+        let mut file = file.take(limit + 1);
+        let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(size.min(limit + 1) as usize));
         file.read_to_end(&mut bytes).map_err(ImportError::Io)?;
-        if is_pdf(&bytes) {
-            if bytes.len() as u64 > MAX_PDF_BYTES {
+        if image_limit.is_some() || is_pdf(&bytes) {
+            if bytes.len() as u64 > limit {
                 return Err(ImportError::PdfTooLarge);
             }
         } else if image_pdf::heic::is_heif_container(&bytes) {
@@ -186,7 +206,7 @@ impl Source {
                 .read_to_end(&mut bytes)
                 .map_err(ImportError::Io)?;
         }
-        Ok(Self::new(path, stamp, bytes))
+        Ok(Self::new(path, stamp, std::mem::take(&mut *bytes)))
     }
 
     /// `bytes`, said to come from `path` as `stamp` stood.
@@ -194,7 +214,18 @@ impl Source {
         Self {
             path,
             stamp,
-            bytes: SharedBytes(Arc::new(zeroize::Zeroizing::new(bytes))),
+            bytes: zeroize::Zeroizing::new(bytes).into(),
+            unlocked: false,
+        }
+    }
+
+    /// The PDF the image builder made of image files, said to come from
+    /// `path` as `stamp` stood: not wiped ([`Held::Built`]).
+    fn built_from_images(path: PathBuf, stamp: Option<SourceStamp>, pdf: Vec<u8>) -> Self {
+        Self {
+            path,
+            stamp,
+            bytes: SharedBytes(Arc::new(Held::Built(pdf))),
             unlocked: false,
         }
     }
@@ -286,20 +317,75 @@ impl Source {
         cancel: &AtomicBool,
     ) -> Option<Result<(Self, u64), ImportError>> {
         ImageFormat::from_bytes(self.bytes())?;
-        Some(
-            image_pdf::build_cancellable(&[self.bytes()], dpi, &|| cancel.load(Ordering::Relaxed))
-                .map(|built| {
-                    (
-                        Self::new(self.path.clone(), self.stamp, built.pdf),
-                        built.frames_left_out,
-                    )
-                })
-                .map_err(|error| match error {
-                    image_pdf::ImageError::Cancelled => ImportError::Cancelled,
-                    error => ImportError::Image(error),
-                }),
-        )
+        Some(build_image_pdf(self, dpi, cancel))
     }
+}
+
+/// The import's error for the image builder's.
+fn image_pdf_error(error: image_pdf::ImageError) -> ImportError {
+    match error {
+        image_pdf::ImageError::Cancelled => ImportError::Cancelled,
+        other => ImportError::Image(other),
+    }
+}
+
+/// Too much to import together: photos, not a PDF the user never chose.
+fn images_too_large() -> ImportError {
+    ImportError::Image(image_pdf::ImageError::PdfTooLarge)
+}
+
+fn build_image_pdf(
+    image: &Source,
+    dpi: u16,
+    cancel: &AtomicBool,
+) -> Result<(Source, u64), ImportError> {
+    let built =
+        image_pdf::build_cancellable(&[image.bytes()], dpi, &|| cancel.load(Ordering::Relaxed))
+            .map_err(image_pdf_error)?;
+    Ok((
+        Source::built_from_images(image.path.clone(), image.stamp, built.pdf),
+        built.frames_left_out,
+    ))
+}
+
+/// Imports the image files into one in-memory PDF without holding more
+/// than one source or encoded page alongside the PDF. `visit` sees each
+/// file's bytes in order so resumable OCR can hash them on the same read.
+pub(crate) fn build_images_pdf(
+    paths: &[PathBuf],
+    dpi: u16,
+    cancel: &AtomicBool,
+    mut visit: impl FnMut(&[u8]),
+) -> Result<(Source, u64), ImportError> {
+    let mut remaining = MAX_PDF_BYTES;
+    for path in paths {
+        check_cancel(cancel)?;
+        let size = path.metadata().map_err(ImportError::Read)?.len();
+        remaining = remaining.checked_sub(size).ok_or_else(images_too_large)?;
+    }
+    let cancelled = || cancel.load(Ordering::Relaxed);
+    let mut builder = image_pdf::Builder::new(dpi, MAX_PDF_BYTES as usize, &cancelled)
+        .map_err(image_pdf_error)?;
+    let mut first = None;
+    let mut remaining = MAX_PDF_BYTES;
+    for path in paths {
+        check_cancel(cancel)?;
+        let image = Source::read_file(path, Some(remaining)).map_err(|error| match error {
+            ImportError::PdfTooLarge => images_too_large(),
+            error => error,
+        })?;
+        remaining -= image.bytes().len() as u64;
+        visit(image.bytes());
+        check_cancel(cancel)?;
+        builder.push(image.bytes()).map_err(image_pdf_error)?;
+        first.get_or_insert_with(|| (image.path.clone(), image.stamp));
+    }
+    let (path, stamp) = first.ok_or(ImportError::Image(image_pdf::ImageError::Unreadable))?;
+    let built = builder.finish().map_err(image_pdf_error)?;
+    Ok((
+        Source::built_from_images(path, stamp, built.pdf),
+        built.frames_left_out,
+    ))
 }
 
 /// Never the bytes: they are the user's document.
@@ -441,7 +527,7 @@ pub(crate) fn is_pdf(bytes: &[u8]) -> bool {
         .any(|window| window == b"%PDF-")
 }
 
-/// The largest PDF mdoc opens: an import's, and a DOCX preview's rendering.
+/// The largest PDF mdoc opens, including built image PDFs and DOCX previews.
 pub const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
 
 /// A file's size and modification time: a later reading of the same path
@@ -847,6 +933,39 @@ pub fn prepare_unlocking(
     imported
 }
 
+/// Imports the images at `paths` as one document, a page each in order:
+/// photos or camera pages picked together on a phone (#1024 decision 15).
+/// They become one PDF in memory, which imports like a scanned PDF; the
+/// import's source path is the first image's.
+pub fn prepare_images_cancellable(
+    paths: &[PathBuf],
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
+    let built = build_images_pdf(paths, dpi, cancel, |_| {})?;
+    import_image_pdf(built, installed, skip_ocr, cancel)
+}
+
+/// Imports the PDF the image builder made, with the animation frames it
+/// left out, as an image's import: its warning names the image.
+fn import_image_pdf(
+    (pdf, frames): (Source, u64),
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    check_cancel(cancel)?;
+    // The built PDF is never locked, whatever the images were.
+    let opened = std::cell::Cell::new(false);
+    let mut imported = convert_pdf(pdf, None, installed, skip_ocr, cancel, &opened)?;
+    imported.left_out.animation_frames = frames;
+    imported.warning = image_warning(imported.warning);
+    imported.is_image = true;
+    Ok(imported)
+}
+
 /// Imports `source`'s bytes: the one conversion every import makes after it
 /// has read them. `password` opens a locked PDF; other formats arrive
 /// unlocked already ([`Source::unlock`]).
@@ -879,14 +998,7 @@ fn import_opening(
     // page; the page is sized for OCR's render resolution.
     let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
     if let Some(built) = source.image_pdf(dpi, cancel) {
-        let (pdf, frames) = built?;
-        check_cancel(cancel)?;
-        // The built PDF is never locked, whatever the image was.
-        let mut imported = convert_pdf(pdf, None, installed, skip_ocr, cancel, opened)?;
-        imported.left_out.animation_frames = frames;
-        imported.warning = image_warning(imported.warning);
-        imported.is_image = true;
-        return Ok(imported);
+        return import_image_pdf(built?, installed, skip_ocr, cancel);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;

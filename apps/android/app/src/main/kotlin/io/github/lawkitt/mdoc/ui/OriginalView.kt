@@ -1,8 +1,8 @@
 package io.github.lawkitt.mdoc.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
+import android.graphics.ImageDecoder
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
@@ -46,9 +46,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The page a document came from: a PDF's pages, drawn by
- * Android's own renderer (PDFium stays in the core for reading text), or a
- * photo, both zoomable with two fingers. DOCX and pasted text have none.
+ * The pages a document came from: a PDF's pages, drawn by
+ * Android's own renderer (PDFium stays in the core for reading text), or
+ * photos and camera pages, drawn upright, all zoomable with two fingers.
+ * DOCX and pasted text have none.
  */
 @Composable
 fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
@@ -76,8 +77,9 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            is OriginalSource.Image -> {
-                val bitmap by produceState<Bitmap?>(null, original.file) { value = withContext(Dispatchers.IO) { decode(original.file) } }
+            is OriginalSource.Images -> if (original.files.size == 1) {
+                val file = original.files.single()
+                val bitmap by produceState<Bitmap?>(null, file) { value = withContext(Dispatchers.IO) { decode(file) } }
                 bitmap?.let {
                     Image(
                         it.asImageBitmap(),
@@ -86,6 +88,8 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
                         modifier = Modifier.fillMaxSize().then(zoomed),
                     )
                 }
+            } else {
+                ImagePages(original.files, Modifier.fillMaxSize().then(zoomed))
             }
             is OriginalSource.Pdf -> PdfPages(original.file, Modifier.fillMaxSize().then(zoomed))
         }
@@ -145,6 +149,25 @@ private fun open(file: File): PdfRenderer {
     }
 }
 
+/** Photos or camera pages one under another, as a PDF's pages are. */
+@Composable
+private fun ImagePages(files: List<File>, modifier: Modifier) {
+    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(files.size) { index ->
+            val file = files[index]
+            val page by produceState<Bitmap?>(null, file) { value = withContext(Dispatchers.IO) { decode(file) } }
+            page?.let {
+                Image(
+                    it.asImageBitmap(),
+                    contentDescription = stringResource(R.string.original_page, index + 1, files.size),
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
 private fun render(renderer: PdfRenderer, index: Int, width: Int): Bitmap = renderer.openPage(index).use { page ->
     val height = (width.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
     Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
@@ -153,11 +176,12 @@ private fun render(renderer: PdfRenderer, index: Int, width: Int): Bitmap = rend
     }
 }
 
-/** A photo, scaled down to at most about 2,500 px on its long side. */
-private fun decode(file: File): Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.path, bounds)
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2500) sample *= 2
-    return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
-}
+/** A photo, upright by its EXIF orientation, scaled down to at most about 2,500 px on its long side. */
+private fun decode(file: File): Bitmap? = runCatching {
+    ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+        var sample = 1
+        while (maxOf(info.size.width, info.size.height) / sample > 2500) sample *= 2
+        decoder.setTargetSampleSize(sample)
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+    }
+}.getOrNull()

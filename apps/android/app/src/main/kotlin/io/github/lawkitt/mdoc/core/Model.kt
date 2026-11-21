@@ -144,20 +144,26 @@ data class RestoreResult(
         }
 }
 
-/** The page a document came from, for the Original view: a PDF or a photo; DOCX and text have none. */
+/** The pages a document came from, for the Original view: a PDF, or photos and camera pages; DOCX and text have none. */
 sealed interface OriginalSource {
     data object None : OriginalSource
 
     data class Pdf(val file: java.io.File) : OriginalSource
 
-    data class Image(val file: java.io.File) : OriginalSource
+    /** Photos or camera pages, a page each, in order. */
+    data class Images(val files: List<java.io.File>) : OriginalSource
 
     companion object {
-        fun of(file: java.io.File?): OriginalSource = when (file?.extension?.lowercase()) {
-            null -> None
-            "pdf" -> if (file.exists()) Pdf(file) else None
-            "jpg", "jpeg", "png", "webp" -> if (file.exists()) Image(file) else None
-            else -> None
+        private val images = setOf("jpg", "jpeg", "png", "webp", "gif", "heic", "heif")
+
+        fun of(files: List<java.io.File>): OriginalSource {
+            val shown = files.filter { it.exists() }
+            val first = shown.firstOrNull() ?: return None
+            return when {
+                first.extension.lowercase() == "pdf" -> Pdf(first)
+                shown.all { it.extension.lowercase() in images } -> Images(shown)
+                else -> None
+            }
         }
     }
 }

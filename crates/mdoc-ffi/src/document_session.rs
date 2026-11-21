@@ -276,6 +276,32 @@ impl DocumentSession {
         self.open(imported, &cancel, None)
     }
 
+    /// Photos or camera pages picked together, as one document titled
+    /// `title`, a page each in the order given: JPEG, PNG, WebP or GIF,
+    /// each wrapped in memory as `import_file` wraps one. OCR keeps its
+    /// finished pages under `library`'s root as `import_file_in` does;
+    /// `Library::discard_images` removes them for the same images.
+    pub fn import_images_in(
+        &self,
+        library: Arc<Library>,
+        images: Vec<String>,
+        title: String,
+        options: ImportOptions,
+        progress: Option<Box<dyn JobProgress>>,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        let cancel = self.start_job();
+        let images: Vec<PathBuf> = images.into_iter().map(PathBuf::from).collect();
+        let imported = intake::import_images(
+            &images,
+            title,
+            &options,
+            &cancel,
+            progress.as_deref(),
+            Some(&library.kept_pages()),
+        )?;
+        self.open(imported, &cancel, None)
+    }
+
     /// Pasted or shared text, taken as Markdown.
     pub fn import_text(&self, text: String, title: String) -> Result<ReviewSnapshot, CoreError> {
         self.import_text_as(text, title, DocumentOrigin::Ordinary)
@@ -1763,6 +1789,35 @@ mod tests {
         library
             .discard_import(fixture("import/handmade-partly-scanned.pdf"))
             .unwrap();
+    }
+
+    /// Photos picked together import into a library as one document of a
+    /// page each; without OCR it asks for it, keeping nothing, and
+    /// discarding them is a no-op.
+    #[test]
+    fn photos_picked_together_import_as_one_document() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let photos = vec![
+            fixture("images/gps-rotated.jpg"),
+            fixture("images/gps-rotated.jpg"),
+        ];
+        let result = DocumentSession::new().import_images_in(
+            library.clone(),
+            photos.clone(),
+            "Lease".into(),
+            ImportOptions::default(),
+            None,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(CoreError::NeedsOcr { ref pages, page_count: 2 }) if pages == &[1, 2]
+            ),
+            "{result:?}"
+        );
+        assert!(!scratch.path().join("imports").exists());
+        library.discard_images(photos).unwrap();
     }
 
     /// A partial import's notice belongs to the import: a saved document
