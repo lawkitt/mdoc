@@ -8,7 +8,6 @@ final class DarkPageUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "an iPad shows the Original beside the text")
-        XCUIDevice.shared.appearance = .dark
     }
 
     override func tearDown() {
@@ -18,6 +17,8 @@ final class DarkPageUITests: XCTestCase {
     @MainActor
     func testTheHintAndTheMenuTurnThePageDark() throws {
         let app = MdocUITest.launch(showsTips: true)
+        // Set once the app runs, as the other dark checks do.
+        XCUIDevice.shared.appearance = .dark
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
