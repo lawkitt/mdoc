@@ -42,6 +42,11 @@ class ScanSession(
         val returned: Boolean = false,
         /** Why the last shot was not kept, until Home shows it. */
         val refused: String? = null,
+        /**
+         * Counts every change: the record and Home's saved state each say
+         * which change they hold, and a restore takes the later one.
+         */
+        val sequence: Long = 0,
     ) {
         val empty: Boolean get() = pages.isEmpty() && capture == null
     }
@@ -60,15 +65,17 @@ class ScanSession(
      */
     fun restore(saved: State, originals: () -> Originals) {
         if (!mutable.value.empty) return
-        val restored = if (saved.empty) null else readRecord() ?: saved
-        if (restored == null) {
+        if (saved.empty) {
             record?.delete()
             return
         }
+        // The later of the two: a record a failed write left behind is
+        // older than the saved state that followed it.
+        val restored = readRecord()?.takeIf { it.sequence >= saved.sequence } ?: saved
         val pages = restored.pages.filter { it.isFile }
         val capture = restored.capture?.takeIf { it.isFile }
-        mutable.value = State(pages, capture, returned = false)
-        persist(mutable.value)
+        mutable.value = State(pages, capture, returned = false, sequence = restored.sequence)
+        commit(mutable.value)
         if (capture != null && restored.returned) clean(true, originals)
     }
 
@@ -119,7 +126,7 @@ class ScanSession(
             }
             val page = result.getOrNull()
             if (page == null) stage?.deleteRecursively()
-            commit(
+            val recorded = commit(
                 mutable.value.copy(
                     pages = if (page != null) previous + page else previous,
                     capture = null,
@@ -128,7 +135,13 @@ class ScanSession(
                         ?: mutable.value.refused,
                 ),
             )
-            raw.delete()
+            if (recorded) {
+                raw.delete()
+            } else {
+                // The raw shot stays (outside `originals/`, swept at the next
+                // start) while nothing on disk says its page was kept.
+                mutable.update { it.copy(refused = NOT_RECORDED) }
+            }
         }
     }
 
@@ -141,28 +154,28 @@ class ScanSession(
         return pages
     }
 
-    /** `next` recorded, then shown. */
-    private fun commit(next: State) {
-        persist(next)
-        mutable.value = next
+    /** `next`, one change later, recorded and then shown; whether the record holds it. */
+    private fun commit(next: State): Boolean {
+        val numbered = next.copy(sequence = mutable.value.sequence.coerceAtLeast(next.sequence) + 1)
+        val recorded = persist(numbered)
+        mutable.value = numbered
+        return recorded
     }
 
-    private fun persist(state: State) {
-        val record = record ?: return
-        if (state.empty) {
-            record.delete()
-            return
-        }
+    private fun persist(state: State): Boolean {
+        val record = record ?: return true
+        if (state.empty) return !record.exists() || record.delete()
         val json = JSONObject()
             .put("pages", JSONArray().apply { state.pages.forEach { put(it.path) } })
             .put("capture", state.capture?.path)
             .put("returned", state.returned)
-        runCatching {
+            .put("sequence", state.sequence)
+        return runCatching {
             Originals.writeAtomically(record) {
                 it.write(json.toString().toByteArray())
                 true
             }
-        }
+        }.isSuccess
     }
 
     private fun readRecord(): State? = record?.takeIf { it.isFile }?.let { file ->
@@ -173,11 +186,13 @@ class ScanSession(
                 pages = (0 until pages.length()).map { File(pages.getString(it)) },
                 capture = json.optString("capture").takeIf { it.isNotEmpty() && it != "null" }?.let(::File),
                 returned = json.optBoolean("returned"),
+                sequence = json.optLong("sequence"),
             )
         }.getOrNull()
     }
 
     private companion object {
         const val MAX_IMAGE_BYTES = 256L * 1024 * 1024
+        const val NOT_RECORDED = "mdoc could not save this page. Take it again."
     }
 }

@@ -121,8 +121,18 @@ pub(crate) fn without_metadata(bytes: &[u8], budget: usize) -> Result<Vec<u8>, R
 struct Output {
     bytes: Vec<u8>,
     budget: usize,
-    /// (source offset, size, written at, written size) of copied data.
-    copied: Vec<(usize, usize, u32, u32)>,
+    copied: Vec<Copied>,
+}
+
+/// Image data written once: where it came from, how it was cleaned, and
+/// where it went.
+struct Copied {
+    offset: usize,
+    size: usize,
+    /// Cleaned as a JPEG stream (a JPEG-compressed page's).
+    jpeg: bool,
+    at: u32,
+    written: u32,
 }
 
 impl Output {
@@ -312,28 +322,39 @@ impl Directory {
             let mut moved_sizes = Vec::with_capacity(old.len());
             for (offset, size) in old.into_iter().zip(sizes) {
                 let (offset, size) = (offset as usize, size as usize);
-                if let Some(&(_, _, at, written)) = out
-                    .copied
-                    .iter()
-                    .find(|(from, length, _, _)| (*from, *length) == (offset, size))
-                {
-                    moved.push(at);
-                    moved_sizes.push(written);
-                    continue;
-                }
                 let data = bytes
                     .get(offset..offset.checked_add(size).ok_or(Unreadable)?)
                     .ok_or(Unreadable)?;
-                let at = out.at()?;
-                if jpeg_coded {
-                    let stripped = jpeg::without_markers(data).ok_or(Unreadable)?;
-                    out.push(&stripped)?;
+                // Cleaned as this page's compression says first; then shared
+                // only with an identical copy made the same way.
+                let cleaned = if jpeg_coded {
+                    std::borrow::Cow::Owned(jpeg::without_markers(data).ok_or(Unreadable)?)
                 } else {
-                    out.push(data)?;
+                    std::borrow::Cow::Borrowed(data)
+                };
+                let shared = out.copied.iter().find(|copy| {
+                    (copy.offset, copy.size, copy.jpeg) == (offset, size, jpeg_coded)
+                        && out
+                            .bytes
+                            .get(copy.at as usize..(copy.at + copy.written) as usize)
+                            == Some(&*cleaned)
+                });
+                if let Some(copy) = shared {
+                    moved.push(copy.at);
+                    moved_sizes.push(copy.written);
+                    continue;
                 }
+                let at = out.at()?;
+                out.push(&cleaned)?;
                 let written = out.at()? - at;
                 out.align()?;
-                out.copied.push((offset, size, at, written));
+                out.copied.push(Copied {
+                    offset,
+                    size,
+                    jpeg: jpeg_coded,
+                    at,
+                    written,
+                });
                 moved.push(at);
                 moved_sizes.push(written);
             }

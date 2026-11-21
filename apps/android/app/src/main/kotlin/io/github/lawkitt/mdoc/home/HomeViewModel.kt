@@ -88,6 +88,7 @@ class HomeViewModel(
                 pages = saved.get<ArrayList<String>>(SCAN_PAGES).orEmpty().map(::File),
                 capture = saved.get<String>(SCAN_CAPTURE)?.let(::File),
                 returned = saved.get<Boolean>(SCAN_RETURNED) == true,
+                sequence = saved.get<Long>(SCAN_SEQUENCE) ?: 0,
             ),
         ) { Originals(core().storage) }
         scan.sweep()
@@ -102,6 +103,7 @@ class HomeViewModel(
                 saved[SCAN_PAGES] = ArrayList(scanned.pages.map { it.path })
                 saved[SCAN_CAPTURE] = scanned.capture?.path
                 saved[SCAN_RETURNED] = scanned.returned
+                saved[SCAN_SEQUENCE] = scanned.sequence
                 val count = if (scanned.capture == null) scanned.pages.size else 0
                 mutable.update { it.copy(scanPageCount = count, refused = scanned.refused ?: it.refused) }
                 if (scanned.refused != null) scan.refusalShown()
@@ -320,6 +322,7 @@ class HomeViewModel(
         private const val SCAN_PAGES = "scan.pages"
         private const val SCAN_CAPTURE = "scan.capture"
         private const val SCAN_RETURNED = "scan.returned"
+        private const val SCAN_SEQUENCE = "scan.sequence"
 
         /**
          * An image's bytes in one array of exactly its size: no growing

@@ -346,6 +346,67 @@ class PhotoImportTest {
         withContext(Dispatchers.Main) { restored.cancelAdd() }
     }
 
+    /**
+     * When the scan's record can't be written, the raw shot stays (outside
+     * `originals/`, swept later) and Home says the page wasn't saved.
+     */
+    @Test
+    fun aShotStaysWhenItsPageCantBeRecorded() = runBlocking {
+        val scan = ScanSession(CameraCapture.dir(core.app))
+        val home = withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, scan, SavedStateHandle()) }
+        val shot = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
+        writePhoto(shot, taggedJpeg(1))
+        val noBackup = CameraCapture.dir(core.app).parentFile!!
+        try {
+            assertTrue(noBackup.setWritable(false, false))
+            withContext(Dispatchers.Main) { home.cameraResult(true) }
+            withTimeout(15_000) { home.state.first { it.refused != null } }
+            assertEquals("mdoc could not save this page. Take it again.", home.state.value.refused)
+            assertNotNull(CameraCapture.file(core.app, shot))
+        } finally {
+            noBackup.setWritable(true, false)
+            discard(shot)
+        }
+    }
+
+    /**
+     * A record a failed write left behind is older than the saved state
+     * after it: a restore takes the saved state's newer shot and doesn't
+     * sweep it.
+     */
+    @Test
+    fun aStaleRecordDoesNotHideANewerShot() = runBlocking {
+        val scan = ScanSession(CameraCapture.dir(core.app))
+        val saved = SavedStateHandle()
+        val home = withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, scan, saved) }
+        val first = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
+        writePhoto(first, taggedJpeg(1))
+        withContext(Dispatchers.Main) { home.cameraResult(true) }
+        withTimeout(15_000) { scan.state.first { it.pages.size == 1 && it.capture == null } }
+        val noBackup = CameraCapture.dir(core.app).parentFile!!
+        val second: Uri
+        val snapshot: Map<String, Any?>
+        try {
+            // The record keeps the first page; recording the next shot fails.
+            assertTrue(noBackup.setWritable(false, false))
+            second = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
+            writePhoto(second, taggedJpeg(3))
+            snapshot = withContext(Dispatchers.Main) { saved.keys().associateWith { saved.get<Any?>(it) } }
+        } finally {
+            noBackup.setWritable(true, false)
+        }
+        val restored = withContext(Dispatchers.Main) {
+            HomeViewModel({ core.app.core }, null, ScanSession(CameraCapture.dir(core.app)), SavedStateHandle(snapshot))
+        }
+        assertNotNull(CameraCapture.file(core.app, second))
+        withContext(Dispatchers.Main) { restored.cameraResult(true) }
+        withTimeout(15_000) { restored.state.first { it.scanPageCount == 2 } }
+        withContext(Dispatchers.Main) {
+            restored.finishScan("Scan")
+            restored.cancelAdd()
+        }
+    }
+
     /** A BigTIFF isn't taken: the core can't yet keep it without its metadata. */
     @Test
     fun aBigTiffIsRefused() {

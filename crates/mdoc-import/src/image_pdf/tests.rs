@@ -1742,4 +1742,97 @@ mod kept_copy {
             without_metadata(&tagged_tiff())
         );
     }
+
+    /// Each page's first strip, in page order.
+    fn page_strips(bytes: &[u8]) -> Vec<Vec<u8>> {
+        use ::tiff::tags::Tag;
+        let mut decoder = ::tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut strips = Vec::new();
+        loop {
+            let offset = decoder.get_tag_u32(Tag::StripOffsets).unwrap() as usize;
+            let size = decoder.get_tag_u32(Tag::StripByteCounts).unwrap() as usize;
+            strips.push(bytes[offset..offset + size].to_vec());
+            if !decoder.more_images() {
+                return strips;
+            }
+            decoder.next_image().unwrap();
+        }
+    }
+
+    /// An uncompressed page and a JPEG page sharing one strip, in either
+    /// order: the JPEG page's stream loses its EXIF and comment, and the
+    /// uncompressed page keeps every byte of its pixels. Each page's strip
+    /// is cleaned as its own compression says before anything is shared.
+    #[test]
+    fn a_strip_shared_by_pages_of_different_compression_is_cleaned_per_page() {
+        let comment = segment(0xfe, b"A fictional comment");
+        let strip = with_segments(&jpeg(16, 8, [90, 160, 60]), &[app1_exif(Some(1)), comment]);
+        let raw = |at: u32| {
+            vec![
+                (256, 4, long(strip.len() as u32)),
+                (257, 4, long(1)),
+                (258, 3, short(8)),
+                (259, 3, short(1)),
+                (262, 3, short(1)),
+                (273, 4, long(at)),
+                (277, 3, short(1)),
+                (278, 4, long(1)),
+                (279, 4, long(strip.len() as u32)),
+            ]
+        };
+        let coded = |at: u32| {
+            vec![
+                (256, 4, long(16)),
+                (257, 4, long(8)),
+                (258, 3, [short(8), short(8), short(8)].concat()),
+                (259, 3, short(7)),
+                (262, 3, short(2)),
+                (273, 4, long(at)),
+                (277, 3, short(3)),
+                (278, 4, long(8)),
+                (279, 4, long(strip.len() as u32)),
+            ]
+        };
+        for raw_first in [true, false] {
+            let mut out = b"II*\0".to_vec();
+            out.extend_from_slice(&[0; 4]);
+            let at = out.len() as u32;
+            out.extend_from_slice(&strip);
+            if out.len() % 2 == 1 {
+                out.push(0);
+            }
+            let pages = if raw_first {
+                [raw(at), coded(at)]
+            } else {
+                [coded(at), raw(at)]
+            };
+            let mut link = 4;
+            for entries in &pages {
+                let (ifd, next) = write_ifd(&mut out, entries);
+                out[link..link + 4].copy_from_slice(&ifd.to_le_bytes());
+                link = next;
+            }
+            let kept = without_metadata(&out).unwrap();
+            let strips = page_strips(&kept);
+            let (raw_strip, coded_strip) = if raw_first {
+                (&strips[0], &strips[1])
+            } else {
+                (&strips[1], &strips[0])
+            };
+            assert_eq!(raw_strip, &strip, "raw first: {raw_first}");
+            assert!(
+                !contains(coded_strip, b"Exif\0\0"),
+                "raw first: {raw_first}"
+            );
+            assert!(
+                !contains(coded_strip, b"A fictional comment"),
+                "raw first: {raw_first}"
+            );
+            assert_eq!(
+                pixels(coded_strip),
+                pixels(&strip),
+                "raw first: {raw_first}"
+            );
+        }
+    }
 }

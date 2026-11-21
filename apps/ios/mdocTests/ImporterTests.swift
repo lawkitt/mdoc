@@ -204,6 +204,17 @@ final class ImporterTests: XCTestCase {
         let big = bigTIFF()
         let source = try XCTUnwrap(CGImageSourceCreateWithData(big as CFData, nil))
         XCTAssertEqual(CGImageSourceGetCount(source), 2)
-        XCTAssertNil(try Importer(storage: storage).images([big], scanned: false))
+        XCTAssertThrowsError(try Importer(storage: storage).images([big], scanned: false))
+    }
+
+    /// A batch with a page that can't be kept is refused whole, with the
+    /// formats mdoc opens: no page goes missing without a word.
+    func testAMixedBatchWithAPageItCantKeepIsRefusedWhole() throws {
+        let jpeg = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).jpegData(withCompressionQuality: 0.9) { _ in })
+        XCTAssertThrowsError(try Importer(storage: storage).images([jpeg, bigTIFF()], scanned: false)) { error in
+            XCTAssertEqual(error.localizedDescription, "mdoc opens PDF, DOCX and image files.")
+        }
+        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        XCTAssertTrue(left.isEmpty, "\(left)")
     }
 }

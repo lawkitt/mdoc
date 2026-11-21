@@ -60,20 +60,24 @@ struct Importer {
     }
 
     /// Page images from the document camera or Photos, picked together as
-    /// one document, each kept as `page` keeps it. Nil when no page could be
-    /// read.
+    /// one document, each kept as `page` keeps it. A page that can't be
+    /// kept refuses the whole batch (`Failure.unsupported`): no page is
+    /// left out without a word.
     func images(_ images: [Data], scanned: Bool, title: String? = nil) throws -> PendingImport? {
+        guard !images.isEmpty else { return nil }
         let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let urls = try images.enumerated().compactMap { index, data -> URL? in
-            guard let (page, format) = try Self.page(data) else { return nil }
-            let url = folder.appendingPathComponent("page-\(index + 1).\(format)")
-            try page.write(to: url, options: [.atomic, .completeFileProtection])
-            return url
-        }
-        guard !urls.isEmpty else {
+        let urls: [URL]
+        do {
+            urls = try images.enumerated().map { index, data -> URL in
+                guard let (page, format) = try Self.page(data) else { throw Failure.unsupported }
+                let url = folder.appendingPathComponent("page-\(index + 1).\(format)")
+                try page.write(to: url, options: [.atomic, .completeFileProtection])
+                return url
+            }
+        } catch {
             try? FileManager.default.removeItem(at: folder)
-            return nil
+            throw error
         }
         let kind = scanned ? String(localized: "Scan") : String(localized: "Photo")
         return PendingImport(
