@@ -28,9 +28,11 @@ pub(super) fn passthrough(jpeg: &[u8]) -> Option<Page> {
         width: u32::from(frame.width),
         height: u32::from(frame.height),
         gray: frame.components == 1,
+        bits: 8,
         stream: Stream::Jpeg,
         data: segments.kept,
         orientation: segments.orientation,
+        resolution: None,
     })
 }
 

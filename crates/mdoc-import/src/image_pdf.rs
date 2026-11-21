@@ -15,17 +15,19 @@
 //!   reaches the PDF, so it can't reach the Markdown either (decision 14).
 //! - An animated GIF or WebP gives its first frame; the later frames are
 //!   counted for the import note.
+//! - A TIFF gives every page, each sized by its own resolution; CCITT fax
+//!   pages pass through as `CCITTFaxDecode` (see [`tiff`]).
 //!
-//! The seam for later formats is [`ImageFormat`]: each format decodes to
-//! [`Page`]s in [`pages`]. Multi-page TIFF (item 8) adds a variant whose
-//! arm yields one page per directory (CCITT strips as their own stream
-//! kind); HEIC (item 9) is decoded by the operating system to an upright
-//! JPEG without metadata, which then comes here as [`ImageFormat::Jpeg`].
+//! The seam for formats is [`ImageFormat`]: each format gives [`Page`]s in
+//! [`pages`]. HEIC (item 9) is decoded by the operating system to an
+//! upright JPEG without metadata, which then comes here as
+//! [`ImageFormat::Jpeg`].
 
 mod jpeg;
 mod pdf;
 #[cfg(test)]
 pub(crate) mod tests;
+mod tiff;
 
 use std::{io::Cursor, path::Path};
 
@@ -47,6 +49,7 @@ pub enum ImageFormat {
     Png,
     WebP,
     Gif,
+    Tiff,
 }
 
 impl ImageFormat {
@@ -60,6 +63,12 @@ impl ImageFormat {
             Some(Self::Gif)
         } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
             Some(Self::WebP)
+        } else if [b"II*\0", b"MM\0*", b"II+\0", b"MM\0+"]
+            .iter()
+            .any(|magic| bytes.starts_with(*magic))
+        {
+            // Classic TIFF and BigTIFF, in either byte order.
+            Some(Self::Tiff)
         } else {
             None
         }
@@ -72,6 +81,7 @@ impl ImageFormat {
             "png" => Some(Self::Png),
             "webp" => Some(Self::WebP),
             "gif" => Some(Self::Gif),
+            "tif" | "tiff" => Some(Self::Tiff),
             _ => None,
         }
     }
@@ -83,12 +93,14 @@ impl ImageFormat {
             .and_then(Self::from_extension)
     }
 
-    fn image_format(self) -> image::ImageFormat {
+    /// The `image` decoder's format; TIFF has its own reader ([`tiff`]).
+    fn image_format(self) -> Option<image::ImageFormat> {
         match self {
-            Self::Jpeg => image::ImageFormat::Jpeg,
-            Self::Png => image::ImageFormat::Png,
-            Self::WebP => image::ImageFormat::WebP,
-            Self::Gif => image::ImageFormat::Gif,
+            Self::Jpeg => Some(image::ImageFormat::Jpeg),
+            Self::Png => Some(image::ImageFormat::Png),
+            Self::WebP => Some(image::ImageFormat::WebP),
+            Self::Gif => Some(image::ImageFormat::Gif),
+            Self::Tiff => None,
         }
     }
 
@@ -160,8 +172,21 @@ const MAX_ALLOC: u64 = 512 * 1024 * 1024;
 enum Stream {
     /// A JPEG, decoded by the reader (`DCTDecode`).
     Jpeg,
-    /// Raw 8-bit samples, zlib-compressed (`FlateDecode`).
+    /// Raw samples, zlib-compressed (`FlateDecode`).
     Flate,
+    /// CCITT fax data as the file holds it (`CCITTFaxDecode`).
+    Ccitt(Ccitt),
+}
+
+/// A CCITT stream's decoding parameters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ccitt {
+    /// 0 for Group 3 1D, positive for Group 3 2D, -1 for Group 4.
+    k: i32,
+    /// Black pixels are the coded 1 bits (a min-is-black TIFF).
+    black_is_1: bool,
+    /// Each coded row starts on a byte boundary.
+    byte_align: bool,
 }
 
 /// One page: an image and how to show it upright.
@@ -172,14 +197,22 @@ struct Page {
     height: u32,
     /// One component (gray) or three (RGB).
     gray: bool,
+    /// Bits per sample: 8, or 1 for a bilevel (fax) page.
+    bits: u8,
     stream: Stream,
     data: Vec<u8>,
     /// EXIF orientation, 1 to 8.
     orientation: u8,
+    /// The page's own horizontal and vertical resolution, in dots per inch,
+    /// when it states one (a TIFF); else the PDF's.
+    resolution: Option<(f64, f64)>,
 }
 
-/// The pages `bytes` give as `format`. The seam later formats plug into.
+/// The pages `bytes` give as `format`: the seam formats plug into.
 fn pages(format: ImageFormat, bytes: &[u8]) -> Result<Vec<Page>, ImageError> {
+    if format == ImageFormat::Tiff {
+        return tiff::pages(bytes);
+    }
     if format == ImageFormat::Jpeg
         && let Some(page) = jpeg::passthrough(bytes)
     {
@@ -192,7 +225,8 @@ fn pages(format: ImageFormat, bytes: &[u8]) -> Result<Vec<Page>, ImageError> {
 /// The first frame of `bytes`, within [`limits`], and its EXIF orientation.
 fn decode(format: ImageFormat, bytes: &[u8]) -> Result<(image::DynamicImage, u8), ImageError> {
     use image::ImageDecoder;
-    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format.image_format());
+    let format = format.image_format().ok_or(ImageError::Unreadable)?;
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
     reader.limits(limits());
     let mut decoder = reader.into_decoder().map_err(error)?;
     // Not every decoder charges its output buffer to the limits, so the
@@ -236,9 +270,11 @@ fn encode(image: image::DynamicImage, orientation: u8, photo: bool) -> Result<Pa
         width,
         height,
         gray,
+        bits: 8,
         stream,
         data,
         orientation,
+        resolution: None,
     })
 }
 
@@ -303,7 +339,8 @@ fn later_frames(format: ImageFormat, bytes: &[u8]) -> u64 {
     let frames = match format {
         ImageFormat::Gif => gif_frames(bytes),
         ImageFormat::WebP => webp_frames(bytes),
-        ImageFormat::Jpeg | ImageFormat::Png => 1,
+        // A TIFF's pages are all imported: none is a left-out frame.
+        ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::Tiff => 1,
     };
     frames.saturating_sub(1)
 }
