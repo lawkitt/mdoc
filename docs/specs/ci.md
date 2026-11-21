@@ -11,8 +11,7 @@ How a PR reaches `main`. The machinery and the PC's runners:
   and break-glass reverts only.
 - Nothing posts a waiver or a partial result as green.
 - Enqueue a green, reviewed PR with `gh pr merge <N> --auto`, and
-  independent PRs off `main` together so they batch. The queue takes only
-  PRs based on `main`, so a stack goes one PR at a time.
+  independent PRs off `main` together so they batch.
 - Merge `main` into a PR only when GitHub reports it `CONFLICTING`, because
   each new head reruns its checks.
 
@@ -35,8 +34,7 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - A pass on the hosted iOS UI tests' one retry counts as an unrelated
   failure.
 - After a test's second unrelated failure, the hub quarantines it in
-  `.config/quarantine.txt` (its header has the format) by PR, without
-  asking.
+  `.config/quarantine.txt` by PR, without asking.
 - Tests that measure speed, take screenshots or survey layouts stay off the
   queue.
 
@@ -60,12 +58,14 @@ How a PR reaches `main`. The machinery and the PC's runners:
   Delete both branches afterwards.
 - If a merged gate change blocks the queue, the maintainer pushes its revert
   straight to `main`.
-- The iOS core builds once per run, in `ci/ios (core)`, and its cache key
-  hashes the Xcode that builds it.
 
 ## iOS tests on the Mac
 
 - Run only the test classes you touched
   (`just ios-test "iPhone 17" mdocUITests/<Class>`), one heavy build at a
-  time after checking `uptime`, because the full suite takes 25 to 30
+  time after checking `uptime`, because the full suite takes 25–30
   minutes on the fanless Air and parallel runs overheat it.
+- The queue tests with Xcode 26.2 on iOS 26.2, the nightly with Xcode 27.2 on
+  iOS 27.2 (ADR 0124); a test passes on both. Reproduce a queue failure with
+  Xcode 27.2 on the iOS 26.2 Simulator runtime: Xcode 26.2's test runner hangs
+  on macOS 27.

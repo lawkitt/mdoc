@@ -11,7 +11,8 @@ just ios-test
 just ios-test "iPhone 17" mdocUITests/LivePreviewUITests   # only these
 ```
 
-They need the Xcode and Simulator runtime pinned in `scripts/tools.env`.
+They need the Xcode and Simulator runtime pinned in `scripts/tools.env`: on a
+Mac, the builds pin's Xcode on the tests pin's runtime (ADR 0124).
 Builds are unsigned, arm64 only. A TestFlight build is a tagged `main` commit
 ([iOS betas](../../docs/specs/release.md#ios-betas)) built from full history,
 since the build number is the commit count.
@@ -58,7 +59,8 @@ committed as Xcode writes them.
 
 Check a change in the `#Preview`s (light, dark, AX5, iPad), then run the
 snapshot tests. An intended change re-records them with
-`TEST_RUNNER_MDOC_RECORD_SNAPSHOTS=1` and commits the PNGs.
+`TEST_RUNNER_MDOC_RECORD_SNAPSHOTS=1` and commits the PNGs; a component iOS
+27 draws differently has its own `-ios27` reference (`Snapshot.swift`).
 
 ## Rules
 

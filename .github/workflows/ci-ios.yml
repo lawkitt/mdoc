@@ -34,6 +34,10 @@ on:
         description: Run the timing tests too (LivePreviewUITests' typing and Return times, CoreWiringTests' review tap), as the nightly does.
         type: boolean
         default: false
+      xcode:
+        description: "The Xcode pin (scripts/tools.env, ADR 0124): tests, Xcode 26 on macos-26 (the queue, branches, main's caches); builds, Xcode 27 on xcode-27 (the nightly)."
+        type: string
+        default: tests
   workflow_dispatch:
     inputs:
       ref:
@@ -48,11 +52,18 @@ on:
         description: Run the timing tests too.
         type: boolean
         default: false
+      xcode:
+        description: The Xcode pin.
+        type: choice
+        options: [tests, builds]
+        default: tests
 
 permissions:
   contents: read
 
 env:
+  # The Xcode pin every iOS script reads (load_tools, scripts/lib.sh).
+  MDOC_XCODE: ${{ inputs.xcode }}
   # The tests' switch for parallel testing: the number of Simulator clones
   # `just ios-test` runs them on; empty runs them on the one device. Off:
   # on 2 clones (PR #617's trial, 3 runs) testing took 16-17 minutes, not
@@ -65,9 +76,10 @@ jobs:
   # the cargo cache (`cache-key: ios`) that a miss restores.
   core:
     name: ci/ios (core)
-    # The only hosted image with Xcode 27 (ITMS-90725: App Store uploads need
-    # the iOS 27 SDK from April 2027), a preview (actions/runner-images#14404).
-    runs-on: xcode-27
+    # Xcode 26.2 on macos-26 (ADR 0124); Xcode 27 is only on the xcode-27
+    # preview image (actions/runner-images#14404), whose tests ran two to
+    # three times slower (#1041).
+    runs-on: ${{ inputs.xcode == 'builds' && 'xcode-27' || 'macos-26' }}
     # A change to crates/ or Cargo.lock misses the built-core cache, and with
     # a new Cargo.lock the cargo cache too: the core then took 17-20 minutes
     # cold (#879, #1041).
@@ -96,6 +108,9 @@ jobs:
         uses: ./.github/actions/setup
         with:
           cache-key: ios
+          # Main's cargo cache is the tests pin's (main-caches.yml): another
+          # image's would evict it (scripts/ci/ci-cache-cleanup.sh).
+          cache-save: ${{ inputs.xcode == 'tests' }}
       - if: steps.core.outputs.cache-hit != 'true'
         run: just ios-core && scripts/ios/ios-core-cache.sh check
 
@@ -133,9 +148,8 @@ jobs:
     name: ci/ios (${{ matrix.part }})
     needs: core
     if: ${{ !inputs.build-only }}
-    # The only hosted image with Xcode 27 (ITMS-90725: App Store uploads need
-    # the iOS 27 SDK from April 2027), a preview (actions/runner-images#14404).
-    runs-on: xcode-27
+    # The core job's image.
+    runs-on: ${{ inputs.xcode == 'builds' && 'xcode-27' || 'macos-26' }}
     # Job limits (ADR 0095, ADR 0112): the unit part took 10 minutes and the
     # one UI part 26 on #829; a UI shard's tests took 21-34 minutes on the
     # xcode-27 image (#997), after the app's build.

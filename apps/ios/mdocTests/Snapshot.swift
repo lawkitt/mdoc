@@ -9,8 +9,10 @@ import XCTest
 /// A missing reference is recorded and the test fails once, so a new
 /// snapshot is a deliberate commit. `TEST_RUNNER_MDOC_RECORD_SNAPSHOTS=1` (xcodebuild passes it on as `MDOC_RECORD_SNAPSHOTS`)
 /// re-records every reference after an intended change. References come
-/// from the pinned Xcode and Simulator runtime (scripts/tools.env), as the
-/// iOS job uses.
+/// from the tests pin's Simulator runtime (scripts/tools.env, ADR 0124), iOS
+/// 26, which the queue tests on. Where another iOS draws a component
+/// differently (the nightly's iOS 27), `<name>-<appearance>-ios<major>.png`
+/// is that iOS's reference, and recording on it writes there.
 enum Snapshot {
     enum Appearance: String, CaseIterable {
         case light, dark
@@ -22,6 +24,22 @@ enum Snapshot {
     }
 
     static let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Snapshots")
+
+    /// The tests pin's iOS (scripts/tools.env), whose references have no
+    /// suffix.
+    static let baseIOS = 26
+
+    /// The reference for `base` (`<name>-<appearance>`) on the running iOS:
+    /// its own, `<base>-ios<major>.png`, when it has one or records one;
+    /// otherwise the tests pin's.
+    static func reference(_ base: String) -> URL {
+        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        let own = folder.appendingPathComponent("\(base)-ios\(major).png")
+        if major != baseIOS && (recording || FileManager.default.fileExists(atPath: own.path)) {
+            return own
+        }
+        return folder.appendingPathComponent("\(base).png")
+    }
 
     @MainActor
     static func assert(
@@ -45,13 +63,13 @@ enum Snapshot {
             XCTFail("\(name): nothing rendered", file: file, line: line)
             return
         }
-        let reference = folder.appendingPathComponent("\(name)-\(appearance.rawValue).png")
+        let reference = Snapshot.reference("\(name)-\(appearance.rawValue)")
         guard !recording, let expected = UIImage(contentsOfFile: reference.path) else {
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try? png.write(to: reference)
             // Attached too, so a reference recorded on a hosted runner can
             // be taken from its xcresult.
-            add(png, named: "\(name)-\(appearance.rawValue)-recorded")
+            add(png, named: "\(reference.deletingPathExtension().lastPathComponent)-recorded")
             XCTFail("\(name): recorded \(reference.lastPathComponent); run again to compare", file: file, line: line)
             return
         }
