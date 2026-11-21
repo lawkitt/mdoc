@@ -72,8 +72,8 @@ fn run(dir: &Path, update: bool) -> Result<bool, String> {
             gpui_pdf::PdfData::from(Arc::new(preview.pdf.clone())),
             &format!("{name} (docxide)"),
         )?;
-        let reference_bytes = std::fs::read(&reference)
-            .map_err(|e| format!("{}: {e}", reference.display()))?;
+        let reference_bytes =
+            std::fs::read(&reference).map_err(|e| format!("{}: {e}", reference.display()))?;
         let word = pages(reference_bytes.into(), &reference.display().to_string())?;
         let score = score(&ours, &word);
         let previous = baseline.get(&name).copied();

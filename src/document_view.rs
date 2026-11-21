@@ -1139,7 +1139,9 @@ impl DocumentView {
             window.defer(cx, move |window, cx| window.focus(&field_focus, cx));
         }
         let card = ui::state_card("original-password-card", theme)
-            .when(cfg!(test), |v| v.debug_selector(|| "original-password-card".into()))
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "original-password-card".into())
+            })
             .child(
                 div()
                     .text_size(px(12.))
@@ -1211,13 +1213,15 @@ impl DocumentView {
                             .px_2()
                             .py_1()
                             // Enter unlocks, as the button does.
-                            .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, window, cx| {
-                                let keystroke = &event.keystroke;
-                                if keystroke.key == "enter" && !keystroke.modifiers.modified() {
-                                    cx.stop_propagation();
-                                    unlock(this, window, cx);
-                                }
-                            }))
+                            .on_key_down(cx.listener(
+                                move |this, event: &gpui::KeyDownEvent, window, cx| {
+                                    let keystroke = &event.keystroke;
+                                    if keystroke.key == "enter" && !keystroke.modifiers.modified() {
+                                        cx.stop_propagation();
+                                        unlock(this, window, cx);
+                                    }
+                                },
+                            ))
                             .child(field),
                     )
                     .child(

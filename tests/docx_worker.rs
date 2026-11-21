@@ -1,8 +1,7 @@
 // Exercise the shipping worker rather than the headless UI test adapter.
 use mdoc_import::{
     docx_preview::{
-        DocxPreview, LinkMark, PreviewError, read_source, render_in_process,
-        render_with_executable,
+        DocxPreview, LinkMark, PreviewError, read_source, render_in_process, render_with_executable,
     },
     import::{Password, SharedBytes, Source},
 };
@@ -792,7 +791,10 @@ fn rendering_a_locked_docx_writes_nothing_to_the_temporary_folder() {
 /// here so the marks are read from the PDF too, each rendered by the worker
 /// and in process.
 fn render_locked_documents() {
-    assert_eq!(std::env::temp_dir(), Path::new(&std::env::var_os("TMPDIR").unwrap()));
+    assert_eq!(
+        std::env::temp_dir(),
+        Path::new(&std::env::var_os("TMPDIR").unwrap())
+    );
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let comments = std::fs::read(fixtures.join("docx-preview/comments.docx")).unwrap();
     let locked_comments =

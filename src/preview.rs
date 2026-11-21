@@ -38,7 +38,8 @@ pub(crate) const DOCX_NOTE: &str = "Approximate preview: the layout may differ f
 pub(crate) fn read_comment_marks(
     pdf: &import::SharedBytes,
 ) -> Result<Vec<docx_preview::LinkMark>, String> {
-    let doc = gpui_pdf::parse(PdfData::from(Arc::new(pdf.clone()))).map_err(|e| format!("{e:?}"))?;
+    let doc =
+        gpui_pdf::parse(PdfData::from(Arc::new(pdf.clone()))).map_err(|e| format!("{e:?}"))?;
     Ok(gpui_pdf::link_marks(&doc)
         .into_iter()
         .map(|m| docx_preview::LinkMark {
@@ -1155,10 +1156,9 @@ impl DocumentView {
         let task = cx.background_executor().spawn({
             let path = path.clone();
             async move {
-                let source = docx_preview::read_source(&path)
-                    .map_err(|error| {
-                        UnlockFailure::Message(docx_message(&error).into(), error.retryable())
-                    })?;
+                let source = docx_preview::read_source(&path).map_err(|error| {
+                    UnlockFailure::Message(docx_message(&error).into(), error.retryable())
+                })?;
                 source.unlock(Some(&password)).map_err(|error| match error {
                     import::ImportError::PasswordRequired | import::ImportError::WrongPassword => {
                         UnlockFailure::Wrong

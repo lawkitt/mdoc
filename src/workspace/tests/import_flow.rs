@@ -703,8 +703,7 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("Locked comments.docx");
     let plain = std::fs::read(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/docx-preview/comments.docx"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx"),
     )
     .unwrap();
     let locked = craft_offcrypto::encrypt_with_spin_count(&plain, "fictional-pass", 1000).unwrap();
@@ -774,13 +773,19 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
         let view = view.read(cx);
         assert!(!view.lifecycle.source_only());
         assert_eq!(view.import.password_prompt(), None);
-        assert!(view.editor.read(cx).text().contains("First quoted paragraph."));
+        assert!(
+            view.editor
+                .read(cx)
+                .text()
+                .contains("First quoted paragraph.")
+        );
         assert_eq!(view.preview.password(), None);
         assert!(!view.preview.failed(), "{:?}", view.preview.message());
         assert!(view.preview.pdf().unwrap().read(cx).is_loaded());
         assert!(!view.preview.docx().unwrap().comments.is_empty());
         assert!(
-            view.left_out().is_none_or(|line| !line.contains("not shown")),
+            view.left_out()
+                .is_none_or(|line| !line.contains("not shown")),
             "{:?}",
             view.left_out()
         );
@@ -811,8 +816,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     let source = folder.join("Locked comments.docx");
     // Comments and one hidden passage, so the Original has both toggles.
     let plain = std::fs::read(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/docx-preview/comments.docx"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx"),
     )
     .unwrap();
     let locked = craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap();
@@ -991,7 +995,11 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
             Some(crate::preview::OriginalPassword::Wrong)
         );
         assert!(view.import.unlock().is_none());
-        assert_eq!(field.read(cx).value(), "", "the field never keeps a password");
+        assert_eq!(
+            field.read(cx).value(),
+            "",
+            "the field never keeps a password"
+        );
     });
     type_password(PASSWORD, cx);
     let unlock = cx.debug_bounds("unlock-original").unwrap();
@@ -1003,10 +1011,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         let view = view.read(cx);
         let unlock = view.import.unlock().expect("the Original unlocked the tab");
         assert!(unlock.password().is_none(), "never the password");
-        assert_eq!(
-            unlock.current_source().unwrap().bytes(),
-            plain.as_slice()
-        );
+        assert_eq!(unlock.current_source().unwrap().bytes(), plain.as_slice());
         assert_eq!(field.read(cx).value(), "");
     });
     let left: Vec<_> = std::fs::read_dir(&folder)

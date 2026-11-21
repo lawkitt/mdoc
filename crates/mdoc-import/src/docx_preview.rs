@@ -376,7 +376,9 @@ pub fn render_with_executable(
         if let Some(status) = child.0.try_wait()? {
             // The worker is gone, so its end of the pipe is closed.
             let reply = reply.join().unwrap_or_else(|_| {
-                Err(PreviewError::Render("the worker's reply was unreadable".into()))
+                Err(PreviewError::Render(
+                    "the worker's reply was unreadable".into(),
+                ))
             });
             let rendered = match (status.success(), reply) {
                 (_, Ok(Reply::Failed(error))) => return Err(error),
@@ -417,7 +419,10 @@ const REPLY_FAILED: u8 = b'-';
 /// The worker's answer: the magic line, then `+`, the metadata's length
 /// (u64, little-endian), the metadata as JSON, the PDF's length and the
 /// PDF; or `-` and the error's report.
-fn write_reply(out: &mut impl Write, result: &Result<Rendered, PreviewError>) -> std::io::Result<()> {
+fn write_reply(
+    out: &mut impl Write,
+    result: &Result<Rendered, PreviewError>,
+) -> std::io::Result<()> {
     out.write_all(REPLY_MAGIC)?;
     match result {
         Ok(rendered) => {
@@ -458,7 +463,9 @@ fn read_reply(mut input: impl Read) -> Result<Reply, PreviewError> {
         REPLY_RENDERED => {
             let length = read_length(&mut input).map_err(broken)?;
             if length > MAX_METADATA_BYTES {
-                return Err(PreviewError::Render("the worker's reply is too large".into()));
+                return Err(PreviewError::Render(
+                    "the worker's reply is too large".into(),
+                ));
             }
             let mut metadata = vec![0; length as usize];
             input.read_exact(&mut metadata).map_err(broken)?;
@@ -632,10 +639,10 @@ fn draw(bytes: &[u8], options: RenderOptions) -> Result<Drawn, PreviewError> {
     }
     let pdf = docxide_pdf::convert_docx_bytes_to_pdf_bytes_with(&render_input, &fonts::options())
         .map_err(|error| match error {
-            // Nothing is written, so an I/O error is the renderer's own.
-            docxide_pdf::Error::Io(error) => PreviewError::Render(error.to_string()),
-            _ => PreviewError::Rejected,
-        })?;
+        // Nothing is written, so an I/O error is the renderer's own.
+        docxide_pdf::Error::Io(error) => PreviewError::Render(error.to_string()),
+        _ => PreviewError::Rejected,
+    })?;
     Ok(Drawn {
         pdf: zeroize::Zeroizing::new(pdf),
         warnings,
@@ -1005,7 +1012,12 @@ mod tests {
     /// past the cap is refused from its length, before any of it is read.
     #[test]
     fn a_broken_or_oversized_reply_is_refused() {
-        for reply in [&b""[..], b"%PDF-1.7", b"mdoc-docx-reply 1\n", b"mdoc-docx-reply 1\n?"] {
+        for reply in [
+            &b""[..],
+            b"%PDF-1.7",
+            b"mdoc-docx-reply 1\n",
+            b"mdoc-docx-reply 1\n?",
+        ] {
             assert!(matches!(read_reply(reply), Err(PreviewError::Render(_))));
         }
         let mut cut = Vec::new();
@@ -1022,7 +1034,10 @@ mod tests {
         )
         .unwrap();
         cut.truncate(cut.len() - 1);
-        assert!(matches!(read_reply(cut.as_slice()), Err(PreviewError::Render(_))));
+        assert!(matches!(
+            read_reply(cut.as_slice()),
+            Err(PreviewError::Render(_))
+        ));
         let metadata = br#"{"anchors":[],"hidden":0,"warnings":[]}"#;
         let mut oversized = REPLY_MAGIC.to_vec();
         oversized.push(REPLY_RENDERED);
