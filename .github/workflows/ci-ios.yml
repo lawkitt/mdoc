@@ -16,7 +16,10 @@ name: CI iOS
 #                   (ADR 0113): a pass on the retry keeps the part green and
 #                   is named.
 # The merge queue calls it for a queue commit that touches the ios or core
-# area. Every step is a recipe or a script, so `scripts/ios/ios-toolchain.sh`,
+# area, and the nightly; both run every part. A dispatch on a branch runs
+# what the branch touched (`parts`, scripts/ios/ios-ci-parts.sh), one
+# dispatch at a time, and its summary is `ci/ios only: <parts>` unless it
+# ran them all, so merge-gate, which reads `ci/ios`, never counts it. Every step is a recipe or a script, so `scripts/ios/ios-toolchain.sh`,
 # `just ios-test "iPhone 17" mdocTests` (or `$(scripts/ios/ios-ui-shards.sh 1)`)
 # and `just ios-release` reproduce it on a Mac.
 on:
@@ -57,9 +60,20 @@ on:
         type: choice
         options: [tests, builds]
         default: tests
+      parts:
+        description: "touched (the UI shards holding the UI test classes the branch changed against main, else the unit part), all, or a list such as `unit,ui 2`."
+        type: string
+        default: touched
 
 permissions:
   contents: read
+
+# One dispatch at a time across branches, as macOS runners are few: a second
+# waits for the first, and a third replaces the waiting one (GitHub cancels
+# it). A call (no `parts`) has its own group.
+concurrency:
+  group: ${{ inputs.parts != '' && 'ci-ios-dispatch' || format('ci-ios-call-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 env:
   # The Xcode pin every iOS script reads (load_tools, scripts/lib.sh).
@@ -71,6 +85,33 @@ env:
   MDOC_IOS_TEST_WORKERS: ""
 
 jobs:
+  # The parts to test: every one for a call (the queue, the nightly), the
+  # `parts` input for a dispatch. The full history for `touched`'s merge
+  # base, without file contents.
+  plan:
+    name: ci/ios (plan)
+    if: ${{ !inputs.build-only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      parts: ${{ steps.parts.outputs.parts }}
+      label: ${{ steps.parts.outputs.label }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          fetch-depth: ${{ inputs.parts != 'touched' && 1 || 0 }}
+          filter: ${{ inputs.parts == 'touched' && 'blob:none' || '' }}
+      - id: parts
+        env:
+          PARTS: ${{ inputs.parts || 'all' }}
+        run: |
+          parts=$(scripts/ios/ios-ci-parts.sh "$PARTS")
+          echo "parts=$parts" >>"$GITHUB_OUTPUT"
+          echo "label=$(jq -r 'join(", ")' <<<"$parts")" >>"$GITHUB_OUTPUT"
+          echo "::notice title=iOS parts::$PARTS: $(jq -r 'join(", ")' <<<"$parts")"
+
   # Once per run, so a change to the core builds it in one job, not in each
   # part. Main's build-only run (main-caches.yml) saves the built core and
   # the cargo cache (`cache-key: ios`) that a miss restores.
@@ -146,7 +187,7 @@ jobs:
   # two took 19.6 and 21.8 minutes of tests on macos-26 (#1041).
   ios:
     name: ci/ios (${{ matrix.part }})
-    needs: core
+    needs: [plan, core]
     if: ${{ !inputs.build-only }}
     # The core job's image.
     runs-on: ${{ inputs.xcode == 'builds' && 'xcode-27' || 'macos-26' }}
@@ -158,7 +199,7 @@ jobs:
       # A cancelled part would read as a capacity cancel to merge-gate.
       fail-fast: false
       matrix:
-        part: ["unit", "ui 1", "ui 2", "ui 3"]
+        part: ${{ fromJSON(needs.plan.outputs.parts) }}
     # Each part's own result (`unit`, `ui1`, `ui2`, `ui3`), failing tests
     # (`unit_tests`, ...) and tests that passed on their retry
     # (`ui1_retried`, ...), which `ci/ios` names: a matrix job's
@@ -286,16 +327,18 @@ jobs:
           STATUS: ${{ job.status }}
         run: '[ -z "$KEY" ] || echo "$KEY=$STATUS" >>"$GITHUB_OUTPUT"'
 
-  # Green only when the core and every part ran and passed, so a cancelled
-  # or skipped one never looks green (as ci/detection, ADR 0095). A failure
+  # Green only when the plan, the core and every planned part ran and
+  # passed, so a cancelled or skipped one never looks green (as
+  # ci/detection, ADR 0095). Named `ci/ios` only when every part was asked
+  # for: a dispatch of some parts reads `ci/ios only: <parts>`. A failure
   # annotates the core job, or each part that did not pass with its failing
   # tests (ADR 0113), which merge-gate's link to this job shows; green or
   # not, it warns of each UI test that passed on its retry.
   # scripts/ci/ci-stats.sh reads these annotations for ADR 0112's unrelated
   # failures.
   summary:
-    name: ci/ios
-    needs: [core, ios]
+    name: "${{ (inputs.parts == '' || inputs.parts == 'all') && 'ci/ios' || format('ci/ios only: {0}', needs.plan.outputs.label) }}"
+    needs: [plan, core, ios]
     if: ${{ always() && !inputs.build-only }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -309,5 +352,13 @@ jobs:
       - env:
           RESULT: ${{ needs.ios.result }}
           CORE_RESULT: ${{ needs.core.result }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          PARTS: ${{ needs.plan.outputs.parts }}
           IOS_OUTPUTS: ${{ toJSON(needs.ios.outputs) }}
-        run: python3 scripts/ios/ios-failed-tests.py summary "$RESULT" unit "ui 1" "ui 2" "ui 3"
+        run: |
+          if [ "$PLAN_RESULT" != success ] || [ -z "$PARTS" ]; then
+            echo "::error::ci/ios (plan): ${PLAN_RESULT}, so no part ran"
+            exit 1
+          fi
+          readarray -t parts < <(jq -r '.[]' <<<"$PARTS")
+          python3 scripts/ios/ios-failed-tests.py summary "$RESULT" "${parts[@]}"
