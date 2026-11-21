@@ -40,6 +40,8 @@ pub(crate) fn kept_copy_within(bytes: &[u8], budget: usize) -> Result<Option<Vec
             Err(tags::Rewrite::TooLarge) => return Err(ImageError::TooLarge),
             Err(tags::Rewrite::Unreadable) => None,
         },
+        // The phone's operating system draws a HEIC as an upright JPEG.
+        ImageFormat::Heic => None,
     })
 }
 
