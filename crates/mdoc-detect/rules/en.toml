@@ -2287,6 +2287,19 @@ parts.mark = 'N[1-9]\d{0,4}[A-HJ-NP-Z]{0,2}|(?:[A-Z]{1,2}|[2-9][A-Z]|[A-Z][2-9])
 #   a plural type too ("Tolliver and Mill Roads Ashby Falls, AL 35999"): a form of
 #   this entry, so its city is not an address of its own as well.
 #
+# The follow-ups of #498's third round:
+# - A floor named without a number ("Upper Ground", "Mezzanine",
+#   "Basement") opens the address like any floor.
+# - A building and its street with only a space between ("Pellow Haus
+#   Kestrel Highway", Bislama's "Haus" and its misspelling "Hous"; or
+#   "Larch Building</u> <u>Pellow Lane", which the view reads with a
+#   space) are one address that runs to its town or postcode.
+# - A Washington street with no type before its quadrant ("1999 Kestrel,
+#   NW, Washington, DC 20999") opens at its number.
+# - A Hong Kong district may follow the road with no comma, a Malaysian
+#   address may open with a list of lot numbers and hold an "Off Jalan"
+#   street, a Brazilian farm may have a house number and "Cep".
+#
 # Foreign addresses English documents quote (#551), each from its first
 # element to its postcode or city, the country after it outside:
 # - Canadian: a compass word after the street type, a province and an
@@ -2323,7 +2336,10 @@ pattern = [
     '(?:{building}(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?)?(?:{flat}(?:{sep}|{nl})){0,2}{box}{after}',
     '{named}{after_zip}',
     '{street}(?:{nl}|[\p{Zs}\t]+){street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}{after_zip}',
-    '\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?{after_zip}',
+    # A Washington street with no type before its quadrant (#498): "1999
+    # Kestrel, NW, Washington, DC 20999"; a lettered one only with its
+    # quadrant ("1999 K, NW, …"), so "Page 12 A, St. Louis, …" is none.
+    '\b\d+[A-Za-z]?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|(?:[NS]\.[EW]\.|[NS][EW]\b))|\p{Uppercase},[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b)){after_zip}',
     '{street_core},?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b)',
     '\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners}),?[\p{Zs}\t]+(?:(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)?[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2},[\p{Zs}\t]*[A-Z]{2}[\p{Zs}\t]+{zip}\b',
     # A Taiwanese "No." street (#551): after a floor, unit, lot or a house
@@ -2334,6 +2350,9 @@ pattern = [
     '(?:(?:{flat}|{fbuilding})(?:{sep}|{nl})){1,3}{numbered}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
     '(?:(?:{flat}|{fbuilding})(?:{sep}|{nl})){1,3}{numbered}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}(?:{after})?',
     '{numbered}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
+    # A Malaysian list of lot or unit numbers before the building opens
+    # the address (#498): "12-1, 12-2, Wisma Larch, Jalan Pellow, …".
+    '{lots}{fbuilding}(?:{sep}|{nl})(?:(?:{flat}|{house_no})(?:{sep}|{nl})){0,2}(?:{fstreet}|{ftype}{fword})(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
     # A street whose type comes first, or a German one (#551): after a
     # floor, unit, lot, house or building named type first or "No.", or
     # with its town after it.
@@ -2342,7 +2361,8 @@ pattern = [
     '{fstreet}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{beyond}',
     '{fstreet}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}{after}',
     # A named house or farm with its postcode and town, no street (#551).
-    '{fbuilding}(?:(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|{sep}{village}[\p{Zs}\t]+\d{4}\b|(?:{sep}{village}){1,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep})',
+    # A house number may come before the farm (#498): "3 Fazenda …".
+    '(?:\b\d{1,5}[A-Za-z]?[\p{Zs}\t]+)?{fbuilding}(?:(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|{sep}{village}[\p{Zs}\t]+\d{4}\b|(?:{sep}{village}){1,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep})',
     # A named private house is an address alone (guide rule 3, #551):
     # "Chalet Les Ostrands". A venue or a business so named is none
     # (`skip`). After the forms with a street, which win where it opens one.
@@ -2354,6 +2374,15 @@ pattern = [
     # line above its address ("Brindle Medical Center", then "3939 …") is
     # the organization's (#498).
     '{commercial},[\p{Zs}\t]*{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}{after}',
+    # A building and its street with only a space between, as Bislama
+    # writes it or as markup that closes and reopens between them leaves it
+    # ("Pellow Haus Kestrel Highway, Port Vila", "Larch Building</u>
+    # <u>Pellow Lane, London, EC9 9ZZ"; #498): with its town or postcode
+    # after it only.
+    '(?:{flat}(?:{sep}|{nl})){0,2}{building}[\p{Zs}\t]+{named}(?:(?:{sep}|{nl}){flat}){0,3}{after}',
+    # A floor and a building with no street before a Pacific capital
+    # (#498): "2nd Floor, Pellow Hous, Port Vila".
+    '(?:{flat}(?:{sep}|{nl})){1,2}{building}{sep}(?:{pacific})\b',
     # A Hong Kong unit and floor in a named commercial building before its
     # street (#551).
     '(?:{flat}(?:{sep}|{nl})){1,3}{place}(?:{sep}|{nl})(?:{street}|{named})(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,2}(?:{after})?',
@@ -2365,6 +2394,12 @@ pattern = [
     # A Canadian city, province and postal code with no street (#551).
     '\b(?:{town}|{caps_town})(?:,[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\({province}\)|{province})(?:,?[\p{Zs}\t]+|,|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*){postcode_ca}',
 ]
+# A Malaysian list of lot or unit numbers before a building, each with
+# its comma: "12-1, 12-2, 12-3, " (#498).
+parts.lots = '\b\d{1,4}-\d{1,4}[A-Za-z]?(?:,[\p{Zs}\t]*\d{1,4}-\d{1,4}[A-Za-z]?){0,7},[\p{Zs}\t]*'
+# The Pacific capitals that end an address with no street after its
+# building (#498).
+parts.pacific = 'Port[\p{Zs}\t]+Vila|Luganville|Port[\p{Zs}\t]+Moresby|Honiara'
 # A public body's head noun before "of" or "for" (#502).
 parts.body_head = 'agency|administration|authority|board|bureau|commission|committee|council|department|dept\.|division|office|ministry'
 # A corner's street, without a house number: the corner needs its city
@@ -2376,15 +2411,15 @@ parts.corner = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?
 parts.corners = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,2}and[\p{Zs}\t]+(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,2}(?:Streets|Avenues|Roads|Sts\.?|Aves\.?|Rds\.?)'
 # A Hong Kong district before its territory, which ends the address with
 # no postcode: "33 Pellow Road, Wan Chai, Hong Kong" (#551).
-parts.after = '{after_zip}|[\p{Zs}\t]+(?:\p{Uppercase}[\p{Ll}\x27’-]+[\p{Zs}\t]+){1,2}Township\b|{sep}[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2}{sep}(?:Hong[\p{Zs}\t]+Kong|HONG[\p{Zs}\t]+KONG|Kowloon|KOWLOON|New[\p{Zs}\t]+Territories|NEW[\p{Zs}\t]+TERRITORIES)\b|{sep}{town}'
+parts.after = '{after_zip}|[\p{Zs}\t]+(?:\p{Uppercase}[\p{Ll}\x27’-]+[\p{Zs}\t]+){1,2}Township\b|(?:{sep}|[\p{Zs}\t]+)[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2}{sep}(?:Hong[\p{Zs}\t]+Kong|HONG[\p{Zs}\t]+KONG|(?:Kowloon|KOWLOON|New[\p{Zs}\t]+Territories|NEW[\p{Zs}\t]+TERRITORIES)(?:{sep}(?:Hong[\p{Zs}\t]+Kong|HONG[\p{Zs}\t]+KONG))?)\b|{sep}{town}'
 # The foreign ends that need a postcode, a state, a district or a city's
 # word: "Taman Larkspur, 50999 Kuala Lumpur" (an estate, then the postcode
 # and city), "CH-1299 Brindlex", a town before its postcode as some
 # Swiss letters write it ("Brindlex 1999"), "São Paulo - SP, CEP 01999-000",
 # "Zhongshan District, Taipei City 10499", "Taipei City".
-parts.beyond = '(?:{sep}{estate})?(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|{sep}{village}[\p{Zs}\t]+(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4}\b|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){0,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep}|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){1,2}[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf}|{sep}(?:[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\x27’-]*[\p{Zs}\t]+){1,2}(?:District|Dist\.|Township|Twp\.)(?:{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?{village}(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?)?|{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?(?:[A-Z][a-z]+[\p{Zs}\t]+){1,2}(?:City|County)\b(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?'
+parts.beyond = '(?:{sep}{estate})?(?:{sep}(?:Off|OFF|off)[\p{Zs}\t]+{ftype}{fword})?(?:{sep}|{nl})(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4,5}[\p{Zs}\t]+{village}|{sep}{village}[\p{Zs}\t]+(?:(?:CH|FL|D|F|A|I|L|B)[-–][\p{Zs}\t]*)?\d{4}\b|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){0,2}(?:[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf})?(?:{sep}|[\p{Zs}\t]+){cep}|(?:{sep}(?:Bairro[\p{Zs}\t]+)?{village}){1,2}[\p{Zs}\t]*[-–/][\p{Zs}\t]*{uf}|{sep}(?:[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\x27’-]*[\p{Zs}\t]+){1,2}(?:District|Dist\.|Township|Twp\.)(?:{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?{village}(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?)?|{sep}(?:\d{3}(?:\d{2,3})?[\p{Zs}\t]+)?(?:[A-Z][a-z]+[\p{Zs}\t]+){1,2}(?:City|County)\b(?:[\p{Zs}\t]+\d{3}(?:\d{2,3})?\b)?'
 # A Brazilian postcode, "CEP" before it or not.
-parts.cep = '\b(?:CEP:?[\p{Zs}\t]*\d{5}-?\d{3}|\d{5}-\d{3})\b'
+parts.cep = '\b(?:(?:CEP|Cep|cep):?[\p{Zs}\t]*\d{5}-?\d{3}|\d{5}-\d{3})\b'
 # A Malaysian estate or a Brazilian district before the postcode.
 parts.estate = '\b(?:Taman|Tmn\.|Bandar|Kampung|Kg\.|Desa|Bairro)[\p{Zs}\t]+(?:[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\x27’-]*|\d+)(?:[\p{Zs}\t]+(?:[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\x27’-]*|\d+)){0,2}'
 # A named house, farm or building whose type comes first: "Chalet Les
@@ -2436,8 +2471,8 @@ parts.after_zip = '(?:{sep}|\s+){postcode}|(?:{sep}|{nl}|[\p{Zs}\t]+)(?:\d{1,2}[
 parts.box = '\b(?i:P\.?[\p{Zs}\t]*O\.?[\p{Zs}\t]+Box)[\p{Zs}\t]+\d+[A-Za-z]?\b'
 # A level or a lot (#551) opens a Hong Kong or Malaysian address as a unit
 # does: "Level 12, …", "Lot 8-2, …".
-parts.flat = '\b(?:(?:Flat|Unit|Apartment|Suite|Room|Floor|Building|Level|Lot|FLAT|UNIT|APARTMENT|SUITE|ROOM|FLOOR|BUILDING|LEVEL|LOT|Apt\.?|APT\.?|Ste\.?|STE\.?|Rm\.?|RM\.?|Fl\.|FL\.|Bldg\.?|BLDG\.?|Mail[\p{Zs}\t]?Stop|MAIL[\p{Zs}\t]?STOP)(?:[\p{Zs}\t]*#[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\d+[A-Za-z]?(?:[-.][\dA-Za-z]+)?|[A-Z])\b|\d+(?:st|nd|rd|th)[\p{Zs}\t]+(?:Floor\b|FLOOR\b|Fl\.|FL\.|Fl\b|FL\b)|(?:(?:Lower|Upper|LOWER|UPPER)[\p{Zs}\t]+)?(?:Ground|First|Second|Third|Lower|Upper|GROUND|FIRST|SECOND|THIRD|LOWER|UPPER)[\p{Zs}\t]+(?:Floor|FLOOR)\b|\d{1,2}/?F\b)|\#[\p{Zs}\t]*\d+[A-Za-z]?\b'
-parts.building = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:House|Building|Buildings|Tower|Towers|Mansions|HOUSE|BUILDING|BUILDINGS|TOWER|TOWERS|MANSIONS)\b|\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?\b'
+parts.flat = '\b(?:(?:Flat|Unit|Apartment|Suite|Room|Floor|Building|Level|Lot|FLAT|UNIT|APARTMENT|SUITE|ROOM|FLOOR|BUILDING|LEVEL|LOT|Apt\.?|APT\.?|Ste\.?|STE\.?|Rm\.?|RM\.?|Fl\.|FL\.|Bldg\.?|BLDG\.?|Mail[\p{Zs}\t]?Stop|MAIL[\p{Zs}\t]?STOP)(?:[\p{Zs}\t]*#[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\d+[A-Za-z]?(?:[-.][\dA-Za-z]+)?|[A-Z])\b|\d+(?:st|nd|rd|th)[\p{Zs}\t]+(?:Floor\b|FLOOR\b|Fl\.|FL\.|Fl\b|FL\b)|(?:(?:Lower|Upper|LOWER|UPPER)[\p{Zs}\t]+)?(?:Ground|First|Second|Third|Lower|Upper|GROUND|FIRST|SECOND|THIRD|LOWER|UPPER)[\p{Zs}\t]+(?:Floor|FLOOR)\b|(?:(?:Lower|Upper)[\p{Zs}\t]+Ground|(?:LOWER|UPPER)[\p{Zs}\t]+GROUND|Mezzanine|MEZZANINE|Basement|BASEMENT)(?:[\p{Zs}\t]+(?:Floor|FLOOR|Level|LEVEL))?\b|\d{1,2}/?F\b)|\#[\p{Zs}\t]*\d+[A-Za-z]?\b'
+parts.building = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:House|Building|Buildings|Tower|Towers|Mansions|Haus|Hous|HOUSE|BUILDING|BUILDINGS|TOWER|TOWERS|MANSIONS|HAUS)\b|\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?\b'
 parts.street = '{street_core}(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NSEW]\.|(?:[NS][EW]|[NSEW]|North|South|East|West)\b))?'
 # A street without its compass part after its type.
 parts.street_core = '\b(?:\d+[A-Za-z]?(?:[-–]\d+[A-Za-z]?)?[\p{Zs}\t]+|(?:One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)[\p{Zs}\t]+|\d+(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)(?:(?:[NSEW]\.?[\p{Zs}\t]+\d+[\p{Zs}\t]+)|(?:(?:[NS]\.[EW]\.|\p{Uppercase}[\p{Alphabetic}\x27’-]*\.?|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,4})(?:(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Boulevard|Parkway|Highway|Freeway|Expressway|Plaza|Circle|Trail|Quay|Wharf|Vale|Pike|Turnpike|Embankment|ROAD|STREET|LANE|AVENUE|MEWS|CLOSE|COURT|DRIVE|WAY|PLACE|SQUARE|CRESCENT|GARDENS|TERRACE|YARD|ROW|HILL|GROVE|WALK|PARADE|BOULEVARD|PARKWAY|HIGHWAY|FREEWAY|EXPRESSWAY|PLAZA|CIRCLE|TRAIL|QUAY|WHARF|VALE|PIKE|TURNPIKE|EMBANKMENT)\b|\b(?:Rd|St|Ave|Blvd|Ln|Dr|Pkwy|Hwy|Fwy|Expy|Pl|Ct|Cir|Sq|Ter|Trl|RD|ST|AVE|BLVD|LN|DR|PKWY|HWY|FWY|EXPY|PL|CT|CIR|SQ|TER|TRL)\b\.?)'
@@ -2465,7 +2500,7 @@ parts.zip = '(?:\d{5}|[OoIliB]\d{4}|\d[OoIliB]\d{3}|\d{2}[OoIliB]\d{2}|\d{3}[OoI
 # item 2). So is a model's company or person that is the whole of a named
 # private house alone, an address by guide rule 3 ("Chalet Les Ostrands"),
 # or a building that ends a match.
-absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)|{building}|{fbuilding}|{commercial})(?:[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?)?(?:(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box}|{named}|{fstreet}|{ftype}|No\.|{village}(?:{sep}{village})?(?:{sep}|[\p{Zs}\t]+){cep})|\z)'
+absorbs.ORG = '(?P<span>(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:Plaza|PLAZA)|{building}|{fbuilding}|{commercial})(?:[\p{Zs}\t]+(?:No\.?|NO\.?|#)[\p{Zs}\t]*\d+[A-Za-z]?)?(?:(?:{sep}|{nl}|[\p{Zs}\t]+[–—-][\p{Zs}\t]+)(?:(?:\p{Uppercase}\p{Ll}+[\p{Zs}\t]+)?{flat}(?:{sep}|{nl})){0,3}(?:\d|{box}|{named}|{fstreet}|{ftype}|No\.|{village}(?:{sep}{village})?(?:{sep}|[\p{Zs}\t]+){cep})|[\p{Zs}\t]+{named}|{sep}(?:{pacific})\b|\z)'
 absorbs.PERSON = '(?P<span>{fhouse})\z'
 # The street/units, box, stray-comma street or corner are definite
 # components; the guessed town after them is not allowed to absorb a model
@@ -2494,17 +2529,23 @@ absorbs.PERSON = '(?P<span>{fhouse})\z'
 # a word on a name, or after a body's name the pattern's `lead` holds,
 # stands though a model name runs into it: the name ends before the city
 # (in code).
+# "International" ends a guessed town wherever it stands, after a comma
+# too: a union's or a body's name ends so ("Pilots Union, International
+# Slocombe, VA 20999" is "Slocombe, VA 20999"), and "International Falls"
+# is the only city it opens, the `place` group. An inspectorate's or a
+# standards office's last word is a body's ("Rail Inspectorate", "Office
+# of Larch Standards Washington, D.C. 20999"; #498).
 # A foreign street (#551) is definite too: a Taiwanese "No." street, a
 # street whose type comes first or a German one, a bare one after the
 # unit, house or "No." before it ("No. 8, Jalan Kestrel"). A model's
 # person on a street named after one ("Rua Ana Pellow, 412") stays the
 # address's. A house or farm with only its postcode and town after it is
 # guessed whole, as a city is.
-continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}|\b\d+[A-Za-z]?[\p{Zs}\t]+\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners})|{numbered}|{fstreet}|(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl}){ftype}{fword}(?:[\p{Zs}\t]+\d{1,5}[A-Za-z]?(?:[-/]\d{1,4}[A-Za-z]?)?\b)?'
+continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}|\b\d+[A-Za-z]?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+,[\p{Zs}\t]+(?:(?:Avenue|Street|Road|Boulevard|Ave|St|Rd|Blvd)\b\.?(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))?|(?:[NS]\.[EW]\.|[NS][EW]\b))|\p{Uppercase},[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NS][EW]\b))|\b\d{1,5}[A-Za-z]?[\p{Zs}\t]+{fbuilding}|(?:{flat}(?:{sep}|{nl})){1,2}{building}{sep}(?:{pacific})\b|\b(?:{corner}[\p{Zs}\t]+and[\p{Zs}\t]+{corner}|{corners})|{numbered}|{fstreet}|(?:{flat}|{fbuilding}|{house_no})(?:{sep}|{nl}){ftype}{fword}(?:[\p{Zs}\t]+\d{1,5}[A-Za-z]?(?:[-/]\d{1,4}[A-Za-z]?)?\b)?'
 # A country after a comma ends a foreign address's guessed town, outside
 # it: "Rua das Acácias, 412, São Paulo, Brazil" ends at "São Paulo"
 # (guide rule 3, #551). Hong Kong is a territory that ends an address.
-continuation_stop = '(?P<recipient>\b(?i:attn|attention|c/o)\b)|\b(?i:contact|email|e-mail|phone|telephone|tel|fax)\b|\bTo\b|(?P<place>\b(?i:council[\p{Zs}\t]+bluffs|safety[\p{Zs}\t]+harbor|international[\p{Zs}\t]+falls)\b)|(?P<body>\b(?i:agency|administration|association|authority|board|bureau|commission|committee|company|corporation|corp|council|department|dept|division|foundation|group|inc|international|llc|llp|ltd|office|police|protection|safety|services)\b)|,[\p{Zs}\t]*(?:Switzerland|Canada|Brazil|Brasil|Taiwan|Malaysia|Vanuatu|Singapore|Indonesia|Philippines)\b'
+continuation_stop = '(?P<recipient>\b(?i:attn|attention|c/o)\b)|\b(?i:contact|email|e-mail|phone|telephone|tel|fax)\b|\bTo\b|(?P<place>\b(?i:council[\p{Zs}\t]+bluffs|safety[\p{Zs}\t]+harbor|international[\p{Zs}\t]+falls)\b)|\b(?i:international)\b|(?P<body>\b(?i:agency|administration|association|authority|board|bureau|commission|committee|company|corporation|corp|council|department|dept|division|foundation|group|inc|inspectorate|llc|llp|ltd|office|police|protection|safety|services|standards)\b)|,[\p{Zs}\t]*(?:Switzerland|Canada|Brazil|Brasil|Taiwan|Malaysia|Vanuatu|Singapore|Indonesia|Philippines)\b'
 # A field's label and its value are no city, state and ZIP: "Account ID
 # 12345", "Claim No CA 90999", "Policy Form New York 10999" (a word that
 # names a field, then "No", "Number" or a second such word and a state, or
@@ -2552,6 +2593,30 @@ forbid = ['^[\s\p{P}]*(?:(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|n
 forbid_unless = ['^[\s\p{P}]*(?i:one|two|three|four|five|six|seven|eight|nine|ten)[\p{Zs}\t]+']
 forbid_unless_after = ['(?i)\b(?:home|house|residence|cottage|chalet)[\p{Zs}\t]+(?:(?:is|was)[\p{Zs}\t]+)?(?:called|named)[\p{Zs}\t]+["“‘*_]*\z']
 
+# A city, or a county named "County of …", and its state with no street,
+# house or ZIP are no address, a model's guess included (guide rule 3,
+# #386): "Kestrel Bay, NY", "County of Larch, Nevada". With a ZIP they are
+# one (#506 item 6).
+[[shape]]
+category = "ADDRESS"
+forbid = ['^[\s\p{P}]*(?:(?:St|Ft|Mt)\.?[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+(?:of[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]*){0,3},?[\p{Zs}\t]+(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|GU|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|PR|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY]|[A-Z]\.[A-Z]\.|(?i:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new[\p{Zs}\t]+hampshire|new[\p{Zs}\t]+jersey|new[\p{Zs}\t]+mexico|new[\p{Zs}\t]+york|north[\p{Zs}\t]+carolina|north[\p{Zs}\t]+dakota|ohio|oklahoma|oregon|pennsylvania|rhode[\p{Zs}\t]+island|south[\p{Zs}\t]+carolina|south[\p{Zs}\t]+dakota|tennessee|texas|utah|vermont|virginia|washington|west[\p{Zs}\t]+virginia|wisconsin|wyoming))[\s\p{P}]*$']
+
+# A plant's locations and equipment are no address, a model's guess
+# included (guide rule 3, #792): a fire area or zone ("Fire Area 9, Cable
+# Vault"), an elevation ("Turbine Building Elevation 580"), a voltage
+# before a board, bus or panel ("480 V Pump Board 2B"), a cable vault,
+# a switchgear or control room and a parking lot ("the 41st Street
+# parking lot"). A street with a voltage-like letter stays ("1100 V
+# Street NW").
+[[shape]]
+category = "ADDRESS"
+forbid = [
+    '^[\s\p{P}]*(?i:the[\p{Zs}\t]+)?(?i:fire)[\p{Zs}\t]+(?i:area|zone)\b',
+    '\b(?i:elevation|elev\.)[\p{Zs}\t]*\d',
+    '\b\d+(?:\.\d+)?[\p{Zs}\t]?(?:V|kV|KV)[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}]*[\p{Zs}\t]+){0,3}(?i:board|bus|panel|switchgear|switchboard|transformer|breaker|mcc)\b',
+    '\b(?i:cable[\p{Zs}\t]+vault|cable[\p{Zs}\t]+spreading[\p{Zs}\t]+room|switchgear[\p{Zs}\t]+room|control[\p{Zs}\t]+room|parking[\p{Zs}\t]+(?:lot|garage|deck|structure))\b',
+]
+
 # A country or the word "address" at the edge of a model's address is no
 # part of it: "… OX2 0EL\nUK" ends at the postcode, "… Street address" at
 # the street (guide rule 3, #498). A country of several words goes word by
@@ -2576,21 +2641,22 @@ forbid = ['(?i)^\s*(?:alberta|british\s+columbia|manitoba|new\s+brunswick|newfou
 
 # A building, floor, room or mail-stop part of an address alone is no
 # company: "Bldg 499", "10th Floor", "Suite 210, 3rd Floor", "Mail Stop
-# K9-24", "Lower Ground Floor", "27th Fl.", "Unit 7, 2F" (#498), and nor is
+# K9-24", "Lower Ground Floor", "27th Fl.", "Unit 7, 2F", "Upper Ground",
+# "Mezzanine", "Basement" (#498), and nor is
 # a Plaza with its number ("Kestrel Plaza No. 15"), a building no company
 # owns by that name. A company named with one of the words stays ("Harrow
 # Floor Services", "Brindle Building Society"). A level or a lot is such a
 # part too ("Level 12", "Lot 8-2", #551).
 [[shape]]
 category = "ORG"
-forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b))*\s*$', '(?i)^\s*(?:[\p{Alphabetic}\x27’-]+\s+){1,3}plaza\s+(?:no\.?|#)\s*\d+[a-z]?\s*$']
+forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|(?:(?:lower|upper)\s+ground|mezzanine|basement)(?:\s+(?:floor|level))?|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|(?:(?:lower|upper)\s+ground|mezzanine|basement)(?:\s+(?:floor|level))?|\d{1,2}/?f\b))*\s*$', '(?i)^\s*(?:[\p{Alphabetic}\x27’-]+\s+){1,3}plaza\s+(?:no\.?|#)\s*\d+[a-z]?\s*$']
 
 # Nor is a floor, unit or other such part of an address a person: the model
 # may read "Lower Ground Floor" or "3rd Floor" as a name, which would cut
 # the address that opens with it (#498).
 [[shape]]
 category = "PERSON"
-forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|\d{1,2}/?f\b))*\s*$']
+forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|(?:(?:lower|upper)\s+ground|mezzanine|basement)(?:\s+(?:floor|level))?|\d{1,2}/?f\b)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat|level|lot)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+(?:floor|fl\.?)|(?:(?:lower|upper)\s+)?(?:ground|first|second|third|lower|upper)\s+floor|(?:(?:lower|upper)\s+ground|mezzanine|basement)(?:\s+(?:floor|level))?|\d{1,2}/?f\b))*\s*$']
 
 # Nor is such a part, anywhere in the span, a bank account or an identity
 # document: "Room 2.104", "Building 179A", "Mail Stop K9-24".

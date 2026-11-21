@@ -355,8 +355,10 @@ pub(super) struct InlineMarkup {
 
 /// PDF imports often close and reopen emphasis between a value's words.
 /// Spaces, tabs and NBSP between matching runs read as one space; outer
-/// emphasis stays as written. Mixed `*`/`_` runs and other inline HTML
-/// (`<u>`, `<i>`, `<b>`, `<span>`, or tags with attributes) are out of scope.
+/// emphasis stays as written. So do an underline's closing and reopening
+/// tags (`Larch Building</u> <u>Pellow Lane`, #498), as the importer writes
+/// an underline. Mixed `*`/`_` runs and other inline HTML (`<i>`, `<b>`,
+/// `<span>`, or tags with attributes) are out of scope.
 /// Bare superscripts/subscripts keep their text: ordinal suffixes after a
 /// digit glue to it, while footnotes and other text start a separate word.
 /// Code, escaped syntax, HTML blocks/attributes and link targets keep theirs.
@@ -408,6 +410,18 @@ fn inline_markup_with(source: &str, check_roles: bool) -> Vec<InlineMarkup> {
                 at = end;
                 continue;
             }
+        } else if c == '<'
+            && !escaped(at)
+            && let Some(end) = underline_gap(source, at)
+        {
+            out.push(InlineMarkup {
+                range: at..end,
+                inner: None,
+                ordinal: false,
+                edits: vec![(at..end, " ".into())],
+            });
+            at = end;
+            continue;
         } else if c == '<'
             && !escaped(at)
             && let Some(tag) = rest.get(..5)
@@ -477,7 +491,7 @@ fn inline_markup_with(source: &str, check_roles: bool) -> Vec<InlineMarkup> {
         }
         let opaque = match node {
             Node::Code(_) | Node::InlineCode(_) => true,
-            Node::Html(html) => !["<sup>", "</sup>", "<sub>", "</sub>"]
+            Node::Html(html) => !["<sup>", "</sup>", "<sub>", "</sub>", "<u>", "</u>"]
                 .iter()
                 .any(|tag| html.value.eq_ignore_ascii_case(tag)),
             _ => false,
@@ -507,6 +521,24 @@ fn inline_markup_with(source: &str, check_roles: bool) -> Vec<InlineMarkup> {
             })
     });
     out
+}
+
+/// Where an underline's closing tag, spaces and its reopening tag at `at`
+/// of `source` end (`</u> <u>`), with text on both sides: one underline
+/// that a PDF import closed and reopened between a value's words.
+fn underline_gap(source: &str, at: usize) -> Option<usize> {
+    let rest = &source[at..];
+    let close = rest
+        .get(..4)
+        .filter(|tag| tag.eq_ignore_ascii_case("</u>"))?;
+    let after = rest[close.len()..].trim_start_matches([' ', '\t', '\u{a0}']);
+    let gap = rest.len() - close.len() - after.len();
+    let open = after
+        .get(..3)
+        .filter(|tag| tag.eq_ignore_ascii_case("<u>"))?;
+    let text = |c: Option<char>| c.is_some_and(|c| !c.is_whitespace() && c != '<' && c != '>');
+    (gap > 0 && text(source[..at].chars().next_back()) && text(after[open.len()..].chars().next()))
+        .then_some(at + close.len() + gap + open.len())
 }
 
 /// Decode references in a suffix without recursively inspecting markup.
@@ -1564,6 +1596,28 @@ mod tests {
         let at = view.text.find("th").unwrap();
         assert_eq!(&source[view.source_range(at..at + 1)], "t");
         assert_eq!(&source[view.source_range(at + 1..at + 2)], "h");
+    }
+
+    /// #498: an underline the importer closed and reopened between a
+    /// value's words reads as one value with a space; tags with no text on
+    /// one side, or other tags, stay as written.
+    #[test]
+    fn an_underline_closed_and_reopened_reads_as_one_value() {
+        let source = "<u>Larch Building</u> <u>Pellow Lane, London</u>";
+        let view = View::new(source);
+        assert_eq!(view.text, "<u>Larch Building Pellow Lane, London</u>");
+        let value = "Larch Building Pellow Lane";
+        let start = view.text.find(value).unwrap();
+        let range = view.source_range(start..start + value.len());
+        assert_eq!(&source[range], "Larch Building</u> <u>Pellow Lane");
+        for source in [
+            "<u>Larch Building</u> <i>Pellow Lane</i>",
+            "<u>Larch Building</u><u>Pellow Lane</u>",
+            "<u>Larch Building </u> <u>Pellow Lane</u>",
+            "`<u>Larch</u> <u>Pellow</u>`",
+        ] {
+            assert_eq!(View::new(source).text, source, "{source}");
+        }
     }
 
     #[test]
