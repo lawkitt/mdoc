@@ -37,6 +37,10 @@ and its packages carry only this folder, `resources/fonts`, not `fonts-ios`.
   Its Chinese lists name the SC face, and its Japanese and Korean lists name
   only the JP and KR faces, so the aliases let kana and Hangul fall back too.
   Kanji draw in Chinese-style shapes, an accepted cost.
+- **A document's own face wins.** docxide prefers an installed face to a
+  document's embedded copy of the same name. So when a document embeds a face
+  under one of these three names, mdoc leaves `fonts-ios` out of that render,
+  and the document's fuller copy draws characters the subset lacks.
 - **What it drops.** It is Regular only, because docxide fakes bold. It has no
   OpenType layout tables: docxide draws CJK text by cmap alone.
 - **Rendering.** docxide embeds the CFF outlines under a TrueType font entry,
@@ -51,7 +55,9 @@ checks against the SHA-256 above, and gives the same bytes each run:
 scripts/dev/subset-cjk-font.py NotoSansCJKsc-Regular.otf resources/fonts-ios
 ```
 
-The script runs through `uv`, which installs its pinned fonttools.
+The script runs through `uv`, which installs its pinned fonttools. With
+`--fixture` it writes the embedded-face test fixture instead
+([fixtures](../../tests/fixtures/docx-preview/README.md#embedded-cjk-face)).
 
 SHA-256:
 

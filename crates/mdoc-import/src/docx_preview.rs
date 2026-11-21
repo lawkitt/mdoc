@@ -477,7 +477,7 @@ fn render_direct_to(
 }
 
 fn render_bytes(bytes: &[u8], output: &Path) -> Result<(), PreviewError> {
-    docxide_pdf::convert_docx_bytes_to_pdf_with(bytes, output, &fonts::options()).map_err(
+    docxide_pdf::convert_docx_bytes_to_pdf_with(bytes, output, &fonts::options(bytes)).map_err(
         |error| match error {
             // Writing the PDF failed, not the document: storage can recover.
             docxide_pdf::Error::Io(error) => PreviewError::TemporaryStorage(error.to_string()),

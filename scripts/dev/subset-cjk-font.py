@@ -8,6 +8,12 @@ app's Chinese, Japanese and Korean face for DOCX Originals (#1036).
 
 Usage:
   scripts/dev/subset-cjk-font.py <NotoSansCJKsc-Regular.otf> <output folder>
+  scripts/dev/subset-cjk-font.py --fixture <NotoSansCJKsc-Regular.otf> <output folder>
+
+--fixture writes tests/fixtures/docx-preview/NotoSansCJKsc-Embedded.otf
+instead: the same face cut to FIXTURE_TEXT under its own family name only, the
+copy a DOCX embeds in mdoc-import's test that an embedded face wins over the
+app's (#1039). Its 髙 is one the app's subset lacks.
 
 The source is noto-cjk's Sans2.004 NotoSansCJKsc-Regular.otf; its SHA-256 is
 checked first, so the same input always gives the same bytes. The subset keeps:
@@ -93,16 +99,26 @@ def unicodes() -> set[int]:
     return chars
 
 
+# The embedded-font test's characters: 髙 is outside the app's subset.
+FIXTURE_TEXT = "髙橋一郎"
+FIXTURE_OUTPUT = "NotoSansCJKsc-Embedded.otf"
+
+
 def main() -> None:
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    fixture = args[:1] == ["--fixture"]
+    args = args[1:] if fixture else args
+    if len(args) != 2:
         sys.exit(__doc__.split("\n\n")[1])
-    source, folder = Path(sys.argv[1]), Path(sys.argv[2])
+    source, folder = Path(args[0]), Path(args[1])
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     if digest != SOURCE_SHA256:
         sys.exit(f"{source}: SHA-256 {digest}, expected {SOURCE_SHA256} (noto-cjk Sans2.004)")
 
     font = TTFont(source, recalcTimestamp=False)
-    wanted = unicodes()
+    wanted = {ord(c) for c in FIXTURE_TEXT} if fixture else unicodes()
+    if fixture and ord("髙") in unicodes():
+        sys.exit("髙 is in the app's subset: pick a fixture character outside it")
     cmap = font.getBestCmap()
     absent = {c for c in (ord(c) for c in EXTRAS) if c not in cmap}
     if absent:
@@ -118,14 +134,16 @@ def main() -> None:
     name = font["name"]
     if name.getDebugName(1) != FAMILY:
         sys.exit(f"family is {name.getDebugName(1)!r}, expected {FAMILY!r}")
-    for lang, alias in ALIASES.items():
-        name.setName(alias, 1, 3, 1, lang)
+    if not fixture:
+        for lang, alias in ALIASES.items():
+            name.setName(alias, 1, 3, 1, lang)
 
-    out = folder / OUTPUT
+    output = FIXTURE_OUTPUT if fixture else OUTPUT
+    out = folder / output
     font.save(out)
     kept = len(set(font.getBestCmap()))
     print(f"{out}: {out.stat().st_size} bytes, {kept} characters, {len(font.getGlyphOrder())} glyphs")
-    print(f"{hashlib.sha256(out.read_bytes()).hexdigest()}  {OUTPUT}")
+    print(f"{hashlib.sha256(out.read_bytes()).hexdigest()}  {output}")
 
 
 if __name__ == "__main__":
