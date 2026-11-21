@@ -52,6 +52,21 @@ class ImageIntakeTest {
         }
     }
 
+    /** Spills an older version left named in the temporary folder go at start. */
+    @Test
+    fun leftoverSpillsAreSwept() {
+        val folder = Files.createTempDirectory("spills").toFile()
+        try {
+            val spill = File(folder, "intake-123.image").apply { writeText("a photo") }
+            val other = File(folder, "other.tmp").apply { writeText("x") }
+            HomeViewModel.sweepSpills(folder)
+            assertEquals(false, spill.exists())
+            assertEquals(true, other.exists())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
     @Test
     fun aProviderThatDeclaredTooLittleIsRefused() {
         assertThrows(IllegalStateException::class.java) {

@@ -317,6 +317,48 @@ class PhotoImportTest {
         assertNull(CameraCapture.file(core.app, shot))
     }
 
+    /**
+     * A stopped activity's saved state isn't written again: a page cleaned
+     * after it was taken is found in the scan's own record when that
+     * snapshot is restored in a new process.
+     */
+    @Test
+    fun aPageCleanedAfterTheSnapshotIsRestored() = runBlocking {
+        val scan = ScanSession(CameraCapture.dir(core.app))
+        val saved = SavedStateHandle()
+        val home = withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, scan, saved) }
+        val shot = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
+        writePhoto(shot, taggedJpeg(6))
+        // The activity stops: this is the snapshot the system keeps.
+        val snapshot = withContext(Dispatchers.Main) { saved.keys().associateWith { saved.get<Any?>(it) } }
+        withContext(Dispatchers.Main) { home.cameraResult(true) }
+        withTimeout(15_000) { scan.state.first { it.pages.size == 1 && it.capture == null } }
+        assertNull(CameraCapture.file(core.app, shot))
+        // A new process restores the stopped activity's snapshot.
+        val restored = withContext(Dispatchers.Main) {
+            HomeViewModel({ core.app.core }, null, ScanSession(CameraCapture.dir(core.app)), SavedStateHandle(snapshot))
+        }
+        assertEquals(1, restored.state.value.scanPageCount)
+        withContext(Dispatchers.Main) { restored.finishScan("Scan") }
+        val pages = ((restored.state.value.adding as PendingAdd.Received).source as ImportSource.Pages).pages
+        assertEquals(1, pages.size)
+        assertClean(pages.single())
+        withContext(Dispatchers.Main) { restored.cancelAdd() }
+    }
+
+    /** A BigTIFF isn't taken: the core can't yet keep it without its metadata. */
+    @Test
+    fun aBigTiffIsRefused() {
+        val originals = Originals(core.storage)
+        val folder = originals.newStage()
+        val bigTiff = byteArrayOf(0x49, 0x49, 0x2b, 0, 8, 0, 0, 0) + ByteArray(32)
+        val error = assertThrows(IllegalStateException::class.java) {
+            originals.stageImage(File(folder, "scan.tif"), bigTiff)
+        }
+        assertEquals("BigTIFF images can't be imported.", error.message)
+        assertTrue(folder.listFiles()!!.isEmpty())
+    }
+
     /** Shots no scan waits for go when a process starts. */
     @Test
     fun leftoverShotsAreSweptAtStart() = runBlocking {
@@ -395,6 +437,25 @@ class PhotoImportTest {
             assertTrue("restart ${it + 1}", page.isFile)
         }
         assertTrue(File(core.storage.root, "pending.json.corrupt").isFile)
+    }
+
+    /**
+     * A damaged pending list that can't even be moved aside still clears
+     * no stage: the failed read itself decides.
+     */
+    @Test
+    fun aDamagedListThatCantBeMovedAsideClearsNothing() {
+        val originals = Originals(core.storage)
+        val stage = originals.newStage()
+        val page = originals.stageImage(File(stage, "page-1.jpg"), taggedJpeg(1))
+        core.app.core.documents.importDocument(ImportSource.Pages(listOf(page), SourceKind.Scan), "Scan", CaseChoice.New("Scans"))
+        File(core.storage.root, "pending.json").writeText("{ not json")
+        // The quarantine's place is taken by a folder that can't be replaced.
+        File(core.storage.root, "pending.json.corrupt").apply { mkdirs() }.resolve("keep").writeText("x")
+        core.app.reopenCore()
+        core.app.core.documents
+        assertTrue(page.isFile)
+        assertTrue(File(core.storage.root, "pending.json").isFile)
     }
 
     /** A damaged pending list is set aside: imports go on, and no stage is cleared on its word. */

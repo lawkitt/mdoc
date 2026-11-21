@@ -96,6 +96,9 @@ class Originals(private val storage: MdocStorage) {
      */
     fun stageImage(file: File, bytes: ByteArray): File {
         try {
+            // BigTIFF: the core reads it but can't yet keep it without its
+            // metadata, and Android can't draw it, so it isn't taken.
+            check(!isBigTiff(bytes)) { "BigTIFF images can't be imported." }
             imageWithoutMetadata(bytes)?.let { clean ->
                 val target = imageFile(file, checkNotNull(imageExtension(clean)))
                 writeAtomically(target) {
@@ -233,6 +236,12 @@ class Originals(private val storage: MdocStorage) {
 
         /** Written once the unowned intake folders of older versions were swept. */
         private const val SWEPT_MARKER = ".originals-swept"
+
+        internal fun isBigTiff(bytes: ByteArray): Boolean {
+            if (bytes.size < 4) return false
+            val head = bytes.copyOfRange(0, 4).map { it.toInt() and 0xff }
+            return head == listOf(0x49, 0x49, 0x2b, 0) || head == listOf(0x4d, 0x4d, 0, 0x2b)
+        }
 
         private fun isUuid(name: String) = runCatching { UUID.fromString(name).toString() == name }.getOrDefault(false)
 

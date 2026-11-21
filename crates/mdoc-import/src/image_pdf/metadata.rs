@@ -4,9 +4,9 @@
 //! the one tag of a minimal EXIF block, so a viewer and the image builder
 //! still draw the image upright.
 
-mod tags;
+pub(super) mod tags;
 
-use super::{ImageFormat, jpeg};
+use super::{ImageError, ImageFormat, jpeg};
 
 /// `bytes` without metadata, in their own format: EXIF (GPS, camera,
 /// dates), XMP, ICC profiles, text chunks, comments and appended data go;
@@ -16,13 +16,31 @@ use super::{ImageFormat, jpeg};
 /// phone then has its operating system draw as an upright JPEG instead, or
 /// refuses.
 pub fn without_metadata(bytes: &[u8]) -> Option<Vec<u8>> {
-    match ImageFormat::from_bytes(bytes)? {
+    kept_copy(bytes).ok().flatten()
+}
+
+/// [`without_metadata`], saying when an image is too large to keep: a TIFF
+/// whose rewrite would outgrow the import limit.
+pub fn kept_copy(bytes: &[u8]) -> Result<Option<Vec<u8>>, ImageError> {
+    kept_copy_within(bytes, crate::import::MAX_PDF_BYTES as usize)
+}
+
+/// [`kept_copy`], a TIFF's rewrite writing `budget` bytes at most.
+pub(crate) fn kept_copy_within(bytes: &[u8], budget: usize) -> Result<Option<Vec<u8>>, ImageError> {
+    let Some(format) = ImageFormat::from_bytes(bytes) else {
+        return Ok(None);
+    };
+    Ok(match format {
         ImageFormat::Jpeg => jpeg_without_metadata(bytes),
         ImageFormat::Png => png_without_metadata(bytes),
         ImageFormat::WebP => webp_without_metadata(bytes),
         ImageFormat::Gif => gif_without_metadata(bytes),
-        ImageFormat::Tiff => tags::without_metadata(bytes),
-    }
+        ImageFormat::Tiff => match tags::without_metadata(bytes, budget) {
+            Ok(kept) => Some(kept),
+            Err(tags::Rewrite::TooLarge) => return Err(ImageError::TooLarge),
+            Err(tags::Rewrite::Unreadable) => None,
+        },
+    })
 }
 
 /// A big-endian TIFF block holding only `orientation` (tag 0x0112), as

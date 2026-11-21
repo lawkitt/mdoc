@@ -1138,6 +1138,7 @@ fn a_large_animation_is_refused_before_decoding() {
 /// orientation kept as the one tag left.
 mod kept_copy {
     use super::*;
+    use crate::image_pdf::metadata::{kept_copy_within, tags};
 
     const XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/\x00<x:xmpmeta>Fictional Studio</x:xmpmeta>";
 
@@ -1564,5 +1565,181 @@ mod kept_copy {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tiff/tagged-gps.tif");
         std::fs::write(path, tagged_tiff()).unwrap();
+    }
+
+    /// Writes a little-endian directory of `entries` (tag, type, value) at
+    /// the end of `out`, its long values first; gives its offset and where
+    /// its next-directory link is.
+    fn write_ifd(out: &mut Vec<u8>, entries: &[(u16, u16, Vec<u8>)]) -> (u32, usize) {
+        let size = |kind: u16| match kind {
+            3 => 2,
+            4 => 4,
+            5 => 8,
+            _ => 1,
+        };
+        let mut placed = Vec::new();
+        for (_, _, value) in entries {
+            if value.len() > 4 {
+                placed.push(Some(out.len() as u32));
+                out.extend_from_slice(value);
+                if out.len() % 2 == 1 {
+                    out.push(0);
+                }
+            } else {
+                placed.push(None);
+            }
+        }
+        let at = out.len() as u32;
+        out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        for ((tag, kind, value), place) in entries.iter().zip(placed) {
+            out.extend_from_slice(&tag.to_le_bytes());
+            out.extend_from_slice(&kind.to_le_bytes());
+            out.extend_from_slice(&((value.len() / size(*kind)) as u32).to_le_bytes());
+            match place {
+                Some(offset) => out.extend_from_slice(&offset.to_le_bytes()),
+                None => {
+                    let mut inline = [0u8; 4];
+                    inline[..value.len()].copy_from_slice(value);
+                    out.extend_from_slice(&inline);
+                }
+            }
+        }
+        let link = out.len();
+        out.extend_from_slice(&[0; 4]);
+        (at, link)
+    }
+
+    fn long(value: u32) -> Vec<u8> {
+        value.to_le_bytes().to_vec()
+    }
+
+    fn short(value: u16) -> Vec<u8> {
+        value.to_le_bytes().to_vec()
+    }
+
+    /// A strip's bytes in a rewritten little-endian TIFF's first page.
+    fn first_strip(bytes: &[u8]) -> Vec<u8> {
+        use ::tiff::tags::Tag;
+        let mut decoder = ::tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
+        let offset = decoder.get_tag_u32(Tag::StripOffsets).unwrap() as usize;
+        let size = decoder.get_tag_u32(Tag::StripByteCounts).unwrap() as usize;
+        bytes[offset..offset + size].to_vec()
+    }
+
+    /// A JPEG-compressed TIFF keeps its JPEG data and coding tables, but
+    /// not the EXIF (with GPS) or comments that its strip and its
+    /// `JPEGTables` hold (#1021).
+    #[test]
+    fn a_jpeg_tiff_loses_the_metadata_inside_its_jpeg_streams() {
+        let comment = segment(0xfe, b"A fictional comment");
+        let strip = with_segments(
+            &jpeg(16, 8, [90, 160, 60]),
+            &[app1_exif(Some(1)), comment.clone()],
+        );
+        // The tables: the strip's own quantization table, with metadata.
+        let dqt_at = find(&strip, &[0xff, 0xdb]).unwrap();
+        let dqt_length = usize::from(u16::from_be_bytes([strip[dqt_at + 2], strip[dqt_at + 3]]));
+        let tables = [
+            &[0xff, 0xd8][..],
+            &app1_exif(None),
+            &comment,
+            &strip[dqt_at..dqt_at + 2 + dqt_length],
+            &[0xff, 0xd9],
+        ]
+        .concat();
+        let mut out = b"II*\0".to_vec();
+        out.extend_from_slice(&[0; 4]);
+        let at = out.len() as u32;
+        out.extend_from_slice(&strip);
+        if out.len() % 2 == 1 {
+            out.push(0);
+        }
+        let (ifd, _) = write_ifd(
+            &mut out,
+            &[
+                (256, 4, long(16)),
+                (257, 4, long(8)),
+                (258, 3, [short(8), short(8), short(8)].concat()),
+                (259, 3, short(7)),
+                (262, 3, short(2)),
+                (273, 4, long(at)),
+                (277, 3, short(3)),
+                (278, 4, long(8)),
+                (279, 4, long(strip.len() as u32)),
+                (347, 7, tables),
+            ],
+        );
+        out[4..8].copy_from_slice(&ifd.to_le_bytes());
+        assert!(contains(&out, LATITUDE.as_slice()) && contains(&out, b"A fictional comment"));
+        let kept = without_metadata(&out).unwrap();
+        assert_no_metadata(&kept);
+        assert!(!contains(&kept, b"Exif\0\0"));
+        // The strip is still the same picture, its scan data unchanged.
+        let kept_strip = first_strip(&kept);
+        let scan = &strip[find(&strip, &[0xff, 0xda]).unwrap()..];
+        assert!(kept_strip.ends_with(scan));
+        assert_eq!(pixels(&kept_strip), pixels(&strip));
+        // The tables keep their quantization table.
+        assert!(contains(&kept, &strip[dqt_at..dqt_at + 2 + dqt_length]));
+    }
+
+    /// Directories sharing one strip get one copy of it, charged to the
+    /// budget before it is written; a loop of directories is refused.
+    #[test]
+    fn shared_strips_are_copied_once_and_loops_refused() {
+        let strip: Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
+        let mut out = b"II*\0".to_vec();
+        out.extend_from_slice(&[0; 4]);
+        let at = out.len() as u32;
+        out.extend_from_slice(&strip);
+        let page = |out: &mut Vec<u8>| {
+            write_ifd(
+                out,
+                &[
+                    (256, 4, long(100)),
+                    (257, 4, long(10)),
+                    (258, 3, short(8)),
+                    (259, 3, short(1)),
+                    (262, 3, short(1)),
+                    (273, 4, long(at)),
+                    (277, 3, short(1)),
+                    (278, 4, long(10)),
+                    (279, 4, long(1000)),
+                ],
+            )
+        };
+        let mut link = 4;
+        for _ in 0..3 {
+            let (ifd, next) = page(&mut out);
+            out[link..link + 4].copy_from_slice(&ifd.to_le_bytes());
+            link = next;
+        }
+        let kept = tags::without_metadata(&out, 2_000).unwrap();
+        assert!(kept.len() < 1_500, "{}", kept.len());
+        assert_eq!(tiff_pages(&kept).len(), 3);
+        assert_eq!(
+            tags::without_metadata(&out, 800),
+            Err(tags::Rewrite::TooLarge)
+        );
+        // The last directory points back at the first: a loop.
+        let first = u32::from_le_bytes(out[4..8].try_into().unwrap());
+        out[link..link + 4].copy_from_slice(&first.to_le_bytes());
+        assert_eq!(
+            tags::without_metadata(&out, usize::MAX),
+            Err(tags::Rewrite::Unreadable)
+        );
+    }
+
+    /// The phones' kept copy says when a TIFF is too large to keep.
+    #[test]
+    fn a_tiff_too_large_to_keep_is_an_error() {
+        assert!(matches!(
+            kept_copy_within(&tagged_tiff(), 100),
+            Err(ImageError::TooLarge)
+        ));
+        assert_eq!(
+            kept_copy_within(&tagged_tiff(), usize::MAX).unwrap(),
+            without_metadata(&tagged_tiff())
+        );
     }
 }

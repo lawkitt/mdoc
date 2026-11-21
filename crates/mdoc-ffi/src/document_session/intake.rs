@@ -18,10 +18,14 @@ use std::{
 /// without metadata (EXIF with its GPS position, camera and dates, XMP,
 /// profiles, comments), its orientation kept. `None` for a format the core
 /// doesn't rewrite (HEIC, TIFF) or a file it can't parse, which the phone's
-/// operating system then draws as an upright JPEG without metadata.
+/// operating system then draws as an upright JPEG without metadata. An image
+/// too large to keep (a TIFF whose rewrite outgrows the import limit) is
+/// `CoreError::Import`, in words the phone shows.
 #[uniffi::export]
-pub fn image_without_metadata(image: Vec<u8>) -> Option<Vec<u8>> {
-    mdoc_import::image_pdf::without_metadata(&image)
+pub fn image_without_metadata(image: Vec<u8>) -> Result<Option<Vec<u8>>, CoreError> {
+    mdoc_import::image_pdf::kept_copy(&image).map_err(|error| CoreError::Import {
+        message: error.to_string(),
+    })
 }
 
 pub(super) struct Imported {
@@ -418,12 +422,12 @@ mod tests {
     #[test]
     fn the_kept_copy_has_no_metadata() {
         let photo = std::fs::read(fixture("images/gps-rotated.jpg")).unwrap();
-        let kept = image_without_metadata(photo.clone()).unwrap();
+        let kept = image_without_metadata(photo.clone()).unwrap().unwrap();
         assert!(kept.len() < photo.len());
         let contains = |needle: &[u8]| kept.windows(needle.len()).any(|w| w == needle);
         assert!(contains(b"Exif\0\0"));
         assert!(!contains(b"FictionalCam"));
         let heic = std::fs::read(fixture("heic/page-gps.heic")).unwrap();
-        assert_eq!(image_without_metadata(heic), None);
+        assert_eq!(image_without_metadata(heic).unwrap(), None);
     }
 }

@@ -14,9 +14,14 @@ struct Importer {
     enum Failure: LocalizedError {
         /// Not a PDF, DOCX or image, or an image that cannot be read.
         case unsupported
+        /// The core refused the image, in its words (too large to keep).
+        case refused(String)
 
         var errorDescription: String? {
-            String(localized: "mdoc opens PDF, DOCX and image files.")
+            switch self {
+            case .unsupported: String(localized: "mdoc opens PDF, DOCX and image files.")
+            case .refused(let message): message
+            }
         }
     }
 
@@ -61,7 +66,7 @@ struct Importer {
         let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let urls = try images.enumerated().compactMap { index, data -> URL? in
-            guard let (page, format) = Self.page(data) else { return nil }
+            guard let (page, format) = try Self.page(data) else { return nil }
             let url = folder.appendingPathComponent("page-\(index + 1).\(format)")
             try page.write(to: url, options: [.atomic, .completeFileProtection])
             return url
@@ -96,10 +101,20 @@ struct Importer {
     /// position, camera, dates), the pixels and orientation as they were; HEIC and anything else iOS
     /// reads is drawn upright as a JPEG without metadata. Nil when neither
     /// can read it.
-    static func page(_ data: Data) -> (Data, String)? {
-        if let kept = imageWithoutMetadata(image: data), let format = coreFormat(kept) {
+    static func page(_ data: Data) throws -> (Data, String)? {
+        let kept: Data?
+        do {
+            kept = try imageWithoutMetadata(image: data)
+        } catch {
+            if case .importFailed(let message) = CoreFailure(error) { throw Failure.refused(message) }
+            throw error
+        }
+        if let kept, let format = coreFormat(kept) {
             return (kept, format)
         }
+        // A TIFF the core can't keep without its metadata (BigTIFF) isn't
+        // taken: iOS would draw only its first page.
+        if isTIFF(data) { return nil }
         return uprightJPEG(data).map { ($0, "jpg") }
     }
 
@@ -124,12 +139,15 @@ struct Importer {
     }
 
     /// What a file named as `named` is by its first bytes, `header`, or nil
-    /// when they disagree: a PDF has its header, a DOCX is a ZIP package,
-    /// and an image starts with a signature mdoc or iOS reads.
+    /// when they disagree: a PDF has its header, a DOCX is a ZIP package
+    /// (or, locked, an OLE compound file), and an image starts with a
+    /// signature mdoc or iOS reads.
     static func kind(_ named: SourceKind, header: Data) -> SourceKind? {
         let bytes = [UInt8](header)
         let pdf = header.range(of: Data("%PDF-".utf8)) != nil
         let zip = bytes.starts(with: [0x50, 0x4b, 0x03, 0x04])
+        // A password-protected Office file is an OLE compound file.
+        let compound = bytes.starts(with: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
         let image = coreFormat(header) != nil || isTIFF(header)
             || (bytes.count >= 12 && Array(bytes[4..<8]) == Array("ftyp".utf8))
         // An image's signature wins: a photo with `%PDF-` in an early
@@ -137,7 +155,7 @@ struct Importer {
         if image { return named == .image ? .image : nil }
         switch named {
         case .pdf: return pdf ? .pdf : nil
-        case .docx: return zip ? .docx : nil
+        case .docx: return zip || compound ? .docx : nil
         case .image:
             // Other formats iOS reads (BMP, ICO, …), if their bytes say so.
             guard !pdf, !zip, let source = CGImageSourceCreateWithData(header as CFData, nil),

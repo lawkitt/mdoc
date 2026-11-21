@@ -249,6 +249,27 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(comments.snapshot.leftOut)
     }
 
+    /// A locked DOCX opened from Files (an OLE compound file, not a ZIP)
+    /// reaches the password card through the importer's format check.
+    func testALockedDocxFromFilesAsksForItsPassword() async throws {
+        let model = try imported(
+            { storage in
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let url = folder.appendingPathComponent("word-locked.docx")
+                try FileManager.default.copyItem(
+                    at: Fixture.repository.appendingPathComponent("tests/fixtures/locked-office/word-locked.docx"), to: url)
+                return try XCTUnwrap(try Importer(storage: storage).file(url)).source
+            },
+            title: "Locked")
+        await model.recognize()
+        XCTAssertEqual(model.passwordPrompt, .needed)
+        XCTAssertNil(model.errorMessage)
+        await model.unlock(password: "Petrov-2026")
+        XCTAssertNil(model.passwordPrompt)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
+    }
+
     /// A locked DOCX asks for its password in place of an error, asks again
     /// after a wrong one, and imports with the right one. The password is
     /// in none of the app's files afterwards.

@@ -27,6 +27,8 @@ import io.github.lawkitt.mdoc.jobs.CancelReason
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
+import java.io.FileInputStream
+import java.io.RandomAccessFile
 import java.io.InputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -89,13 +91,17 @@ class HomeViewModel(
             ),
         ) { Originals(core().storage) }
         scan.sweep()
-        // Each change of the scan is saved, then its spent raw shots go.
+        if (!spillsSwept) {
+            spillsSwept = true
+            sweepSpills()
+        }
+        // Each change of the scan is saved: whether a scan is under way is
+        // what a restored activity asks; the scan's record says the rest.
         viewModelScope.launch {
             scan.state.collect { scanned ->
                 saved[SCAN_PAGES] = ArrayList(scanned.pages.map { it.path })
                 saved[SCAN_CAPTURE] = scanned.capture?.path
                 saved[SCAN_RETURNED] = scanned.returned
-                scan.saved()
                 val count = if (scanned.capture == null) scanned.pages.size else 0
                 mutable.update { it.copy(scanPageCount = count, refused = scanned.refused ?: it.refused) }
                 if (scanned.refused != null) scan.refusalShown()
@@ -331,22 +337,23 @@ class HomeViewModel(
             free: () -> Long = ::freeMemory,
         ): ByteArray {
             if (declared < 0) {
-                val spill = File.createTempFile("intake-", ".image")
-                try {
-                    spill.outputStream().use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var total = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            total += read
-                            check(total <= limit) { TOO_LARGE }
-                            output.write(buffer, 0, read)
-                        }
+                // Unknown size: spilled to a file unlinked before any byte is
+                // written, read back through its open descriptor, so nothing
+                // of the image is left on disk however the process ends.
+                val spill = File.createTempFile(SPILL_PREFIX, ".image")
+                return RandomAccessFile(spill, "rw").use { file ->
+                    check(spill.delete()) { "mdoc could not read the image." }
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        check(total <= limit) { TOO_LARGE }
+                        file.write(buffer, 0, read)
                     }
-                    return spill.inputStream().use { readImage(it, spill.length(), limit, free) }
-                } finally {
-                    spill.delete()
+                    file.seek(0)
+                    readImage(FileInputStream(file.fd), total, limit, free)
                 }
             }
             check(declared <= limit) { TOO_LARGE }
@@ -361,6 +368,18 @@ class HomeViewModel(
             // A provider that declared less than it has: refused, not grown.
             check(input.read() < 0) { TOO_LARGE }
             return if (at == bytes.size) bytes else bytes.copyOf(at)
+        }
+
+        private const val SPILL_PREFIX = "intake-"
+        private var spillsSwept = false
+
+        /**
+         * Deletes the intake spills an older process left in the temporary
+         * folder, once a process (they are unlinked at once now; a version
+         * before that left them named).
+         */
+        internal fun sweepSpills(folder: File = File(System.getProperty("java.io.tmpdir"))) {
+            folder.listFiles()?.forEach { if (it.name.startsWith(SPILL_PREFIX)) it.delete() }
         }
 
         /** What this process may still allocate on its heap. */

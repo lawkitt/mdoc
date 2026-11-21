@@ -171,4 +171,39 @@ final class ImporterTests: XCTestCase {
             XCTAssertEqual(CoreFailure(error), .needsOcr(pages: [1, 2], pageCount: 2))
         }
     }
+    /// A two-page 8-bit gray BigTIFF, 4 × 4 pixels a page, little-endian.
+    private func bigTIFF() -> Data {
+        var out = Data([0x49, 0x49, 0x2b, 0x00, 0x08, 0x00, 0x00, 0x00])
+        func u16(_ value: UInt16) -> Data { withUnsafeBytes(of: value.littleEndian) { Data($0) } }
+        func u64(_ value: UInt64) -> Data { withUnsafeBytes(of: value.littleEndian) { Data($0) } }
+        let linkAt = out.count
+        out += u64(0)
+        var link = linkAt
+        for page in 0..<2 {
+            let strip = UInt64(out.count)
+            out += Data((0..<16).map { UInt8($0 * 15 + page * 40) })
+            let entries: [(UInt16, UInt16, UInt64)] = [
+                (256, 3, 4), (257, 3, 4), (258, 3, 8), (259, 3, 1), (262, 3, 1),
+                (273, 16, strip), (277, 3, 1), (278, 3, 4), (279, 16, 16),
+            ]
+            let at = UInt64(out.count)
+            out.replaceSubrange(link..<link + 8, with: u64(at))
+            out += u64(UInt64(entries.count))
+            for (tag, kind, value) in entries {
+                out += u16(tag) + u16(kind) + u64(1) + u64(value)
+            }
+            link = out.count
+            out += u64(0)
+        }
+        return out
+    }
+
+    /// A BigTIFF isn't taken: the core can't yet keep it without its
+    /// metadata, and iOS would draw only its first page.
+    func testABigTIFFIsRefused() throws {
+        let big = bigTIFF()
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(big as CFData, nil))
+        XCTAssertEqual(CGImageSourceGetCount(source), 2)
+        XCTAssertNil(try Importer(storage: storage).images([big], scanned: false))
+    }
 }
