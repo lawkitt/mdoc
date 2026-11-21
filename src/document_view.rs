@@ -731,6 +731,11 @@ impl DocumentView {
                 }
                 if retain_preview {
                     self.preview.show();
+                } else if imported.is_image {
+                    // The import's own PDF of the image is its Original.
+                    let path = imported.source.path.clone();
+                    self.begin_preview(path.clone());
+                    self.show_image_pdf(path, imported.source.bytes().to_vec(), window, cx);
                 } else if imported.is_pdf {
                     self.open_pdf(imported.source.path, window, cx);
                 } else if imported.is_docx && imported.decrypted {
@@ -1656,6 +1661,10 @@ impl DocumentView {
             .is_some_and(|s| s.eq_ignore_ascii_case("pdf"))
         {
             self.open_pdf(path, window, cx);
+            self.error = None;
+            cx.notify();
+        } else if mdoc_import::image_pdf::ImageFormat::from_path(&path).is_some() {
+            self.open_image(path, window, cx);
             self.error = None;
             cx.notify();
         } else if path
