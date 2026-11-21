@@ -385,12 +385,6 @@ to the maintainer, never a raised ceiling.
    errors (none, wrong, unsupported), no card for owner-only locks.
    *Blocked by:* items 1, 2. *Done when:* each case passes at the import and
    preview seams.
-5. **[Import] Hidden spreadsheet content is counted.** *From #1019.* AnyDoc
-   fork change and pin bump. *Done when:* XLSX, XLSB, XLS and ODS fixtures
-   count their hidden sheets, rows and columns.
-6. **[Import] Cyrillic CSVs import correctly.** *From #1023.* `chardetng`
-   in the fork; its pin bump rebases on item 5's. *Done when:* 1251, KOI8-R,
-   1252 and UTF-8 fixtures match their UTF-8 twins.
 7. **[Import] Desktop imports images.** *From #1024.* The shared
    image-to-PDF builder (JPEG passthrough, metadata stripped, orientation,
    alpha, 16-bit and CMYK, first frames, limits, resume by digest); the
