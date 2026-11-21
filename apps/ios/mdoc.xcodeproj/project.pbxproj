@@ -16,6 +16,7 @@
 		AA0000000000000000000155 /* MdocFFI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000120 /* MdocFFI.framework */; };
 		AA0000000000000000000156 /* MdocFFI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000120 /* MdocFFI.framework */; };
 		AA0000000000000000000202 /* fonts in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000201 /* fonts */; };
+		AA0000000000000000000204 /* fonts-ios in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000203 /* fonts-ios */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +95,7 @@
 		AA0000000000000000000127 /* pdfium.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = pdfium.xcframework; path = ../../target/ios/pdfium.xcframework; sourceTree = SOURCE_ROOT; };
 		AA0000000000000000000200 /* Build.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Build.xcconfig; path = Config/Build.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000201 /* fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = fonts; path = ../../resources/fonts; sourceTree = SOURCE_ROOT; };
+		AA0000000000000000000203 /* fonts-ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "fonts-ios"; path = "../../resources/fonts-ios"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -207,6 +209,7 @@
 				AA0000000000000000000126 /* MdocCore.xcframework */,
 				AA0000000000000000000127 /* pdfium.xcframework */,
 				AA0000000000000000000201 /* fonts */,
+				AA0000000000000000000203 /* fonts-ios */,
 			);
 			name = Core;
 			sourceTree = "<group>";
@@ -391,6 +394,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000000000000000000202 /* fonts in Resources */,
+				AA0000000000000000000204 /* fonts-ios in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
