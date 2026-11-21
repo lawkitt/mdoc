@@ -139,9 +139,9 @@ final class ReviewScrollTests: XCTestCase {
         var state: ReviewState
         var snapshot: DocumentSnapshot
 
-        init() throws {
+        init(text: String = ReviewScrollTests.form) throws {
             let (core, _) = try Fixture.core()
-            session = try core.library.importDocument(.text(ReviewScrollTests.form), title: "Form", into: .newCase(name: "Form"))
+            session = try core.library.importDocument(.text(text), title: "Form", into: .newCase(name: "Form"))
             _ = try session.recognize(observer: TestObserver())
             snapshot = try session.propose(ReviewScrollTests.names)
             state = ReviewState(snapshot)
@@ -390,6 +390,52 @@ final class ReviewScrollTests: XCTestCase {
             }
             XCTAssertFalse(review.state.isReviewing, "all reviewed")
             check(steps, visibleBefore: 2)
+        }
+    }
+
+    /// The last decision swaps the review bar for the action bar, so the
+    /// text's room changes as the text is rebuilt: the reader still
+    /// scrolls on to the document's last line, however the room changed
+    /// (#1036; before, the scroll stopped short until Original and back).
+    func testTheTextScrollsToItsEndAfterTheLastDecision() throws {
+        let tail = (1...40).map { number in
+            "Абзац \(number). " + String(repeating: "Длинный текст без имён, чтобы документ продолжался после последнего имени. ", count: 6)
+        }.joined(separator: "\n\n")
+        let actionBar: CGFloat = 120
+        for swap in ["inset", "frame"] {
+            let review = try Review(text: Self.form + "\n\n" + tail)
+            var turn = 0
+            while review.state.isReviewing, turn < 40 {
+                review.scrollTheNameNearTheTop()
+                _ = try review.act(.replace)
+                turn += 1
+            }
+            XCTAssertFalse(review.state.isReviewing, "\(swap): all reviewed")
+            if swap == "inset" {
+                review.view.contentInset.bottom = actionBar
+            } else {
+                review.view.frame.size.height += Self.bar - actionBar
+            }
+            review.view.layoutIfNeeded()
+            review.settle()
+            // Flings to the end until the text stops moving, as the reader
+            // does: each lands where the content size ends.
+            var last = CGFloat.nan
+            for _ in 0..<30 {
+                let view = review.view
+                let lowest = view.contentSize.height + view.adjustedContentInset.bottom - view.bounds.height
+                view.setContentOffset(CGPoint(x: 0, y: max(lowest, -view.adjustedContentInset.top)), animated: false)
+                review.settle()
+                if view.contentOffset.y == last { break }
+                last = view.contentOffset.y
+            }
+            let view = review.view
+            let end = NSRange(location: view.textStorage.length - 1, length: 1)
+            let rect = try XCTUnwrap(review.coordinator.place(of: end, in: view)?.rect, "\(swap): the last line is laid out")
+            let shownBottom = view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom
+            XCTAssertLessThanOrEqual(
+                rect.maxY, shownBottom + 0.5,
+                "\(swap): the last line \(rect) shows above \(shownBottom); content \(view.contentSize.height), laid out \(view.laidOutContentHeight)")
         }
     }
 

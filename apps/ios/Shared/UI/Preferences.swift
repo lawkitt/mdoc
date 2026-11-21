@@ -4,10 +4,11 @@ import SwiftUI
 
 /// What the user chose and what the app has learned about them, in one
 /// store: the App Group's defaults, which the Restore extension reads too
-/// (ADR 0104). Theme, the document font and Show Markdown (Settings ›
-/// Appearance), haptics, the review's hints and the setup card. UI tests
-/// keep theirs under a prefix of their own, cleared at each launch, so a
-/// test never changes the user's choices.
+/// (ADR 0104). Theme and the document font (Settings › Appearance), Show
+/// Markdown, comments and the Original's Dark page (the title menu),
+/// haptics, the review's hints and the setup card. UI tests keep theirs
+/// under a prefix of their own, cleared at each launch, so a test never
+/// changes the user's choices.
 @Observable
 final class Preferences: @unchecked Sendable {
     enum Key: String, CaseIterable {
@@ -15,6 +16,7 @@ final class Preferences: @unchecked Sendable {
         case serif = "documentFontSerif"
         case showsSource = "showsMarkdownSource"
         case showsComments
+        case darkPage = "originalDarkPage"
         case haptics
         case swipeLearned = "hint.swipe.learned"
         case longPressLearned = "hint.longPress.learned"
@@ -84,6 +86,13 @@ final class Preferences: @unchecked Sendable {
     var showsComments: Bool {
         get { access(keyPath: \.showsComments); return bool(.showsComments, default: true) }
         set { withMutation(keyPath: \.showsComments) { store.set(newValue, forKey: name(.showsComments)) } }
+    }
+
+    /// The Original's Dark page, while the app is dark (#1036): off until
+    /// chosen, so the page looks like the paper.
+    var darkPage: Bool {
+        get { access(keyPath: \.darkPage); return bool(.darkPage) }
+        set { withMutation(keyPath: \.darkPage) { store.set(newValue, forKey: name(.darkPage)) } }
     }
 
     // MARK: Review

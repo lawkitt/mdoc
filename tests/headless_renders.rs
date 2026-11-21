@@ -523,7 +523,8 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 | "pdf-comments-rail"
                 | "pdf-comments-resolved"
                 | "pdf-comments-rotated"
-                | "pdf-comments-hidden" => [1500., 900.],
+                | "pdf-comments-hidden"
+                | "pdf-unlocked" => [1500., 900.],
                 "comments-markers" | "pdf-comments-markers" => [640., 480.],
                 _ => [1100., 760.],
             };

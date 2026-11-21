@@ -17,6 +17,7 @@ struct DocumentScreen: View {
     @Environment(\.hideSidebar) private var hideSidebar
     @Environment(\.appModel) private var app
     @Environment(\.preferences) private var preferences
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isRegular: Bool { layout.isRegular }
@@ -158,7 +159,8 @@ struct DocumentScreen: View {
                         original: model.snapshot.original, jobRuns: model.runningJob != nil,
                         onComments: { model.originalComments = $0 },
                         activeComment: model.commentSheet?.thread?.id,
-                        onOpenComment: openComment)
+                        onOpenComment: openComment,
+                        onDarkPageOn: darkPageToast)
                 }
             }
         } else {
@@ -180,7 +182,8 @@ struct DocumentScreen: View {
                         reachesBottom: model.originalCoversText && model.runningJob == nil,
                         onComments: { model.originalComments = $0 },
                         activeComment: model.commentSheet?.thread?.id,
-                        onOpenComment: openComment)
+                        onOpenComment: openComment,
+                        onDarkPageOn: darkPageToast)
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
@@ -188,6 +191,34 @@ struct DocumentScreen: View {
                 }
             }
         }
+    }
+
+    /// The Original is in view, with a page to show: its pane on iPhone;
+    /// on iPad the right column whenever it holds neither Identities nor
+    /// the reply, as `content` lays it out.
+    private var originalShows: Bool {
+        guard model.snapshot.original != .none else { return false }
+        if isRegular && hasRightPane {
+            return !(identitiesInPane && model.wantsIdentities)
+                && !(model.pane == .reply && model.snapshot.reply != nil)
+        }
+        return model.pane == .original
+    }
+
+    /// The title menu's Dark page: switching it teaches what its hint
+    /// would have.
+    private var darkPageBinding: Binding<Bool> {
+        Binding(
+            get: { preferences.darkPage },
+            set: {
+                preferences.darkPage = $0
+                ReviewHint.darkPage.learn()
+            })
+    }
+
+    /// After the hint turned Dark page on: where to turn it off.
+    private func darkPageToast() {
+        model.toast = ToastMessage(text: String(localized: "Dark page · in the title menu"))
     }
 
     /// The text is in view: always beside the right pane, and on iPhone
@@ -378,7 +409,8 @@ struct DocumentScreen: View {
     }
 
     /// The document's one menu, under its title (ADR 0114), in groups:
-    /// finding, Show Markdown, what leaves mdoc, the file, Delete.
+    /// finding, how the pane shows (Show Markdown on the text; comments
+    /// and Dark page on the Original), what leaves mdoc, the file, Delete.
     @ViewBuilder
     private var titleMenu: some View {
         let document = app.flatMap { $0.library.document(model.id) }
@@ -407,11 +439,22 @@ struct DocumentScreen: View {
             }
         }
         Section {
-            // The source as Copy for AI sends it, markers dimmed (ADR 0096).
-            Toggle(isOn: Bindable(preferences).showsSource) {
-                Label("Show Markdown", systemImage: "number")
+            // The source as Copy for AI sends it, markers dimmed (ADR 0096):
+            // the text's alone, so not over the Original (#1036).
+            if textShows {
+                Toggle(isOn: Bindable(preferences).showsSource) {
+                    Label("Show Markdown", systemImage: "number")
+                }
+                .accessibilityIdentifier("show-markdown")
             }
-            .accessibilityIdentifier("show-markdown")
+            // The page inverted while the app is dark (#1036): app-wide,
+            // off until chosen.
+            if originalShows, DarkPageState(preference: preferences.darkPage, colorScheme: colorScheme).offered {
+                Toggle(isOn: darkPageBinding) {
+                    Label("Dark page", systemImage: "moon")
+                }
+                .accessibilityIdentifier("dark-page")
+            }
             // The original's comments, in place of a bar over the page:
             // app-wide, on by default.
             if let comments = model.originalComments, !comments.all.isEmpty {

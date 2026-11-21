@@ -138,7 +138,10 @@ struct ReviewCard: View {
             HStack(spacing: Space.xs) {
                 categoryMenu
                 aliasMenu
-                scopeMenu
+                // One mention leaves nothing to choose (#1036).
+                if (identity?.mentionCount ?? 1) > 1 {
+                    scopeMenu
+                }
             }
         }
         .scrollIndicators(.hidden)
@@ -305,7 +308,7 @@ struct ReviewCard: View {
     }
 
     private var scopeMenu: some View {
-        let count = identity?.mentionCount ?? 1
+        let count = identity?.mentionCount ?? 2
         return Menu {
             Picker("Scope", selection: Binding(get: { model.reviewScope }, set: { model.setScope($0) })) {
                 Text("All \(count)").tag(Scope.all)
@@ -314,7 +317,6 @@ struct ReviewCard: View {
         } label: {
             Chip(model.reviewScope == .all ? Text("All \(count)") : Text("This one"), opensMenu: true)
         }
-        .disabled(count < 2)
         .accessibilityLabel(Text(model.reviewScope == .all ? "Scope, all \(count) mentions" : "Scope, this one"))
         .accessibilityIdentifier(id("review-scope"))
     }

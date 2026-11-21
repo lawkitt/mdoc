@@ -21,6 +21,10 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
     /// along the words under a caption (ADR 0115). Learned by moving a
     /// handle, Done, Cancel or a tap on the caption.
     case adjustWords
+    /// The first time the Original shows while the app is dark: a capsule
+    /// that turns Dark page on (#1036). Learned by it, its ×, or the title
+    /// menu's toggle.
+    case darkPage
 
     var id: String { rawValue }
 
@@ -30,6 +34,7 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
         case .longPress: "Long-press any name for more"
         case .dragMerge: "Tick names to act on them, or drag ≡ onto another name to make them one"
         case .adjustWords: "Drag the handles onto the name's words"
+        case .darkPage: "Dark page"
         }
     }
 
@@ -39,6 +44,7 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
         case .longPress: "hand.tap"
         case .dragMerge: "hand.point.up.left"
         case .adjustWords: "hand.point.up.left.and.text"
+        case .darkPage: "moon"
         }
     }
 
@@ -49,6 +55,7 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
         case .longPress: LongPressTip()
         case .dragMerge: DragMergeTip()
         case .adjustWords: AdjustWordsTip()
+        case .darkPage: DarkPageTip()
         }
     }
 
@@ -59,7 +66,7 @@ enum ReviewHint: String, CaseIterable, Identifiable, Sendable {
         case .swipe: .swipeLearned
         case .longPress: .longPressLearned
         case .dragMerge: .dragMergeLearned
-        case .adjustWords: nil
+        case .adjustWords, .darkPage: nil
         }
     }
 
@@ -101,6 +108,11 @@ struct DragMergeTip: Tip {
 struct AdjustWordsTip: Tip {
     var title: Text { Text(ReviewHint.adjustWords.text) }
     var image: Image? { Image(systemName: ReviewHint.adjustWords.symbol) }
+}
+
+struct DarkPageTip: Tip {
+    var title: Text { Text(ReviewHint.darkPage.text) }
+    var image: Image? { Image(systemName: ReviewHint.darkPage.symbol) }
 }
 
 /// What TipKit says about the hints, as mdoc's views read it: the hints

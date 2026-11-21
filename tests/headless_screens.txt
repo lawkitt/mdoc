@@ -81,6 +81,11 @@ pdf-comments-markers
 pdf-comments-hidden
 pdf-encrypted-twin
 pdf-encrypted
+pdf-unlocked
+import-password-pdf
+import-password-pdf-wrong
+pdf-original-password
+pdf-original-password-wrong
 docx-source
 shelf
 shelf-demos
