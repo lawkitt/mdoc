@@ -329,8 +329,9 @@ fn run() -> Result<bool, String> {
                     elapsed.as_secs_f64(),
                     BUDGET.as_secs()
                 ));
-            } else if elapsed > BUDGET.mul_f64(0.8) {
-                // The signal to add a shard before the nightly fails.
+            } else if elapsed > BUDGET.mul_f64(0.8) && !budget_warns {
+                // The signal to add a shard before the budget fails; where
+                // it only warns, a slow runner is no reason to.
                 println!(
                     "::warning::detection gate{part}: the model run took {:.0}s, over 80% of its {}s budget: add a shard (nightly.yml)",
                     elapsed.as_secs_f64(),
