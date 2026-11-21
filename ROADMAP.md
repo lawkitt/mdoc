@@ -356,18 +356,6 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
-## Import gaps (#1007)
-
-Hidden PDF layers and attached files, and locked Office files, from the
-[craft crates grill](https://github.com/lawkitt/mdoc/pull/1006)
-([spec](https://github.com/lawkitt/mdoc/issues/1007)). Items merge when
-green and ride the next RC. Every test goes through `mdoc-import`'s import
-of a file.
-
-5. **[Import] Password-protected DOC.** *From #1007.* RC4 through
-   `craft-doc-binary`, in the same card. *Blocked by:* item 4. *Done when:*
-   Word and LibreOffice DOC fixtures behave as in item 4.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
