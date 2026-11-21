@@ -232,7 +232,25 @@ pub fn prepare_resumable(
     recognized: &dyn Fn(u32, u32),
 ) -> Result<(Imported, Option<Completed>), ImportError> {
     check_cancel(cancel)?;
-    let source = Source::read(path)?.unlock(password)?;
+    let source = Source::read(path)?;
+    prepare_resumable_source(
+        source, password, installed, skip_ocr, cancel, kept, recognized,
+    )
+}
+
+/// [`prepare_resumable`] of `source`, already read: a caller that decides
+/// something from the bytes (a format's policy) converts those same bytes.
+pub fn prepare_resumable_source(
+    source: Source,
+    password: Option<&Password>,
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+    kept: &KeptPages,
+    recognized: &dyn Fn(u32, u32),
+) -> Result<(Imported, Option<Completed>), ImportError> {
+    check_cancel(cancel)?;
+    let source = source.unlock(password)?;
     check_cancel(cancel)?;
     let Some(installed) = installed.filter(|_| !skip_ocr && is_pdf(source.bytes())) else {
         return import_source(source, password, installed, skip_ocr, cancel)
@@ -929,6 +947,101 @@ mod tests {
             1,
             "the open twin's folder"
         );
+    }
+
+    /// What `a_locked_scan_is_recognized_with_its_password_and_keeps_nothing`
+    /// runs in a process of its own, whose temporary folder is an empty one:
+    /// a locked, partly scanned PDF through the desktop's import with OCR
+    /// and through the resumable one, with its password and the OCR
+    /// runtime the parent installed.
+    #[test]
+    #[ignore = "run by a_locked_scan_is_recognized_with_its_password_and_keeps_nothing"]
+    fn recognize_a_locked_scan() {
+        let var = |name: &str| PathBuf::from(std::env::var_os(name).expect(name));
+        let installed = crate::ocr::install_in(&var("MDOC_OCR_MODELS")).unwrap();
+        let kept = KeptPages::new(var("MDOC_KEPT_PAGES"));
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
+        let locked = fixtures.join("pdf-source/partly-scanned-aes256.pdf");
+        let open = fixtures.join("import/handmade-partly-scanned.pdf");
+        let password = Password::new("Petrov-2026".into());
+        let never = AtomicBool::new(false);
+        // Both OCR passes, the native one and PDFium's, take the password.
+        let expected =
+            crate::import::prepare_cancellable(&open, None, Some(&installed), false, &never)
+                .unwrap();
+        let desktop = crate::import::prepare_cancellable(
+            &locked,
+            Some(&password),
+            Some(&installed),
+            false,
+            &never,
+        )
+        .unwrap();
+        assert_eq!(desktop.markdown, expected.markdown);
+        assert_eq!(desktop.warning, expected.warning);
+        assert_eq!(desktop.left_out, expected.left_out);
+        // Page by page, with progress, keeping nothing and handing back no
+        // pages to remove.
+        let heard = std::sync::Mutex::new(Vec::new());
+        let (resumed, completed) = prepare_resumable(
+            &locked,
+            Some(&password),
+            Some(&installed),
+            false,
+            &never,
+            &kept,
+            &|page, pages| heard.lock().unwrap().push((page, pages)),
+        )
+        .unwrap();
+        assert!(completed.is_none());
+        assert_eq!(resumed.markdown, expected.markdown);
+        let heard = heard.into_inner().unwrap();
+        let pages = heard.first().map(|&(_, pages)| pages).unwrap();
+        assert_eq!(
+            heard,
+            (1..=pages).map(|page| (page, pages)).collect::<Vec<_>>()
+        );
+        assert!(!var("MDOC_KEPT_PAGES").exists(), "nothing kept");
+    }
+
+    /// A locked scan through both OCR paths (#1024 decisions 5 and 7), in a
+    /// process whose temporary folder is an empty one: the same Markdown as
+    /// its open copy, progress for every page, no kept page and no
+    /// `Completed`, and the temporary folder still empty afterwards. The OCR
+    /// runtime and models are installed beforehand, outside it.
+    #[test]
+    #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
+    fn a_locked_scan_is_recognized_with_its_password_and_keeps_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = dir.path().join("models");
+        crate::ocr::install_in(&models).unwrap();
+        let temporary = dir.path().join("temporary");
+        std::fs::create_dir(&temporary).unwrap();
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "resume::tests::recognize_a_locked_scan",
+                "--exact",
+                "--ignored",
+                "--test-threads=1",
+            ])
+            .env("MDOC_OCR_MODELS", &models)
+            .env("MDOC_KEPT_PAGES", dir.path().join("kept"))
+            .env("TMP", &temporary)
+            .env("TEMP", &temporary)
+            .env("TMPDIR", &temporary)
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&child.stdout);
+        assert!(
+            child.status.success() && output.contains("test result: ok. 1 passed"),
+            "{output}{}",
+            String::from_utf8_lossy(&child.stderr)
+        );
+        let left: Vec<_> = std::fs::read_dir(&temporary)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
     }
 
     /// Without a folder, pages are recognized and none is read or kept.

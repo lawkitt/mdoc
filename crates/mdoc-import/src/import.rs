@@ -184,6 +184,11 @@ impl Source {
         self.unlocked
     }
 
+    /// The bytes are a PDF's, as the import detects one.
+    pub fn is_pdf(&self) -> bool {
+        is_pdf(self.bytes())
+    }
+
     /// The file at `path` is still the one these bytes were read from: its
     /// stamp matches the one taken then.
     pub fn is_current(&self) -> bool {
@@ -716,6 +721,22 @@ pub fn prepare_cancellable(
     prepare_unlocking(path, &mut unlock, installed, skip_ocr, cancel)
 }
 
+/// [`prepare_cancellable`] of `source`, already read: a caller that
+/// decides something from the bytes (a format's policy) converts those same
+/// bytes.
+pub fn prepare_source(
+    source: Source,
+    password: Option<&Password>,
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    check_cancel(cancel)?;
+    let source = source.unlock(password)?;
+    check_cancel(cancel)?;
+    import_source(source, password, installed, skip_ocr, cancel)
+}
+
 /// Imports the file at `path` with a tab's `unlock`, then leaves in it what
 /// opens the file from now on. Unlocked bytes of the file as it still is
 /// convert again without reading or decrypting it; a password unlocks it.
@@ -1203,7 +1224,10 @@ fn unsupported_pdf_encryption(bytes: &[u8], password: Option<&Password>) -> bool
 }
 
 /// The encrypted `document`'s `/Encrypt` dictionary names the standard
-/// (password) security handler, the one a password can open.
+/// (password) security handler at a version (`/V` 1, 2, 4 or 5) and
+/// revision (`/R` 2 to 6) it defines: one a password can open. lopdf loads
+/// another version or revision as still encrypted and calls any password
+/// for it invalid, so it is told apart here.
 fn standard_security_handler(document: &lopdf::Document) -> bool {
     use lopdf::Object;
     let dictionary = match document.trailer.get(b"Encrypt") {
@@ -1211,10 +1235,22 @@ fn standard_security_handler(document: &lopdf::Document) -> bool {
         Ok(Object::Dictionary(dictionary)) => Some(dictionary),
         _ => None,
     };
+    let Some(dictionary) = dictionary else {
+        return false;
+    };
+    let number = |key: &[u8]| {
+        dictionary
+            .get(key)
+            .ok()
+            .and_then(|value| value.as_i64().ok())
+    };
     dictionary
-        .and_then(|dictionary| dictionary.get(b"Filter").ok())
+        .get(b"Filter")
+        .ok()
         .and_then(|filter| filter.as_name().ok())
         == Some(b"Standard".as_slice())
+        && number(b"V").is_some_and(|version| matches!(version, 1 | 2 | 4 | 5))
+        && number(b"R").is_some_and(|revision| (2..=6).contains(&revision))
 }
 
 const DAMAGED: &str =
@@ -2507,13 +2543,23 @@ EMC\n";
     /// The AES-256 twin with its standard security handler swapped for one
     /// no reader knows, the same length so every offset still holds.
     fn unknown_handler(dir: &Path) -> PathBuf {
+        unknown_encryption(dir, b"/Standard", b"/Nonstand")
+    }
+
+    /// The AES-256 twin with `from` in its encryption dictionary swapped
+    /// for `to`, the same length: an unknown handler, version or revision.
+    fn unknown_encryption(dir: &Path, from: &[u8], to: &[u8]) -> PathBuf {
+        assert_eq!(from.len(), to.len());
         let mut bytes = std::fs::read(pdf_source("comments-aes256.pdf")).unwrap();
         let at = bytes
-            .windows(9)
-            .position(|window| window == b"/Standard")
-            .expect("a standard security handler");
-        bytes[at..at + 9].copy_from_slice(b"/Nonstand");
-        let path = dir.join("unknown-handler.pdf");
+            .windows(from.len())
+            .position(|window| window == from)
+            .expect("the encryption dictionary's entry");
+        bytes[at..at + to.len()].copy_from_slice(to);
+        let path = dir.join(format!(
+            "unknown-{}.pdf",
+            String::from_utf8_lossy(&to[1..2])
+        ));
         std::fs::write(&path, bytes).unwrap();
         path
     }
@@ -2549,12 +2595,21 @@ EMC\n";
         assert_eq!(owner_only.markdown, open.markdown);
         assert_eq!(owner_only.annotations, open.annotations);
         let dir = tempfile::tempdir().unwrap();
-        let unknown = unknown_handler(dir.path());
-        for password in [None, Some(PDF_PASSWORD), Some("wrong")] {
+        // An unknown handler, version and revision, whatever is typed.
+        for unknown in [
+            unknown_handler(dir.path()),
+            unknown_encryption(dir.path(), b"/V 5/R 6", b"/V 7/R 6"),
+            unknown_encryption(dir.path(), b"/V 5/R 6", b"/V 5/R 8"),
+        ]
+        .iter()
+        .flat_map(|path| [None, Some(PDF_PASSWORD), Some("wrong")].map(|p| (path.clone(), p)))
+        {
+            let (unknown, password) = unknown;
             let error = import_with(&unknown, password).unwrap_err();
             assert!(
                 matches!(error, ImportError::PdfEncryptionUnsupported),
-                "{password:?}: {error:?}"
+                "{}: {password:?}: {error:?}",
+                unknown.display()
             );
             assert_eq!(
                 error.to_string(),

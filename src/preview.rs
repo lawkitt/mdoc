@@ -527,6 +527,8 @@ impl PreviewState {
         self.retryable = retryable;
         self.failed = true;
         self.message = Some(message);
+        // A password the failed load was trying proved nothing.
+        self.trial = None;
         true
     }
 
@@ -895,6 +897,14 @@ impl DocumentView {
                     "This PDF is damaged or incomplete, so it can't be previewed."
                 };
                 this.preview.fail(generation, message.into(), retryable);
+            } else if pdf.read(cx).is_locked()
+                && !with_password
+                && let Some(password) = this.pdf_password(&path)
+            {
+                // The tab has a password now that it lacked when this load
+                // began (an import proved it meanwhile): load with that.
+                this.open_locked_pdf(path.clone(), password, false, window, cx);
+                return;
             } else if pdf.read(cx).is_locked() {
                 // A password tried here and refused is a wrong one.
                 let prompt = if with_password {

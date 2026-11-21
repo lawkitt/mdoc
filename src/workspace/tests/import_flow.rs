@@ -1205,3 +1205,200 @@ fn a_locked_scan_s_original_opens_once_its_password_stops_for_ocr(cx: &mut TestA
         assert!(pdf.is_loaded() && !pdf.is_locked());
     });
 }
+
+/// The import proves a locked PDF's password while the Original's load
+/// without one is still under way (#1024 item 4): the Original, finding
+/// the file locked, opens with the tab's password instead of asking a
+/// second time.
+#[gpui::test]
+fn an_original_loading_without_the_password_opens_with_the_tab_s(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked agreement.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/comments-aes256.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let view = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        let view = tabs.active_view().unwrap();
+        view.update(cx, |view, cx| {
+            view.open_pdf(source.clone(), window, cx);
+            // Before that load ends, the tab's password arrives.
+            view.import
+                .keep_password(mdoc_import::import::Unlock::Password {
+                    path: source.clone(),
+                    password: mdoc_import::import::Password::new("Petrov-2026".into()),
+                });
+        });
+        view
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None, "no second card");
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
+    });
+}
+
+/// Through the app (#1024 item 4): a PDF locked only against editing
+/// imports and shows its Original with no card at all, and one whose
+/// encryption no password opens is refused by the import and the Original
+/// alike, with no card either.
+#[gpui::test]
+fn owner_only_and_unsupported_pdfs_ask_for_no_password(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source");
+    let owner_only = dir.path().join("Edit-locked agreement.pdf");
+    std::fs::copy(fixtures.join("comments-owner-only.pdf"), &owner_only).unwrap();
+    // The AES-256 twin with an unknown security handler, the same length.
+    let mut bytes = std::fs::read(fixtures.join("comments-aes256.pdf")).unwrap();
+    let at = bytes.windows(9).position(|w| w == b"/Standard").unwrap();
+    bytes[at..at + 9].copy_from_slice(b"/Nonstand");
+    let unsupported = dir.path().join("Sealed agreement.pdf");
+    std::fs::write(&unsupported, bytes).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let open = |path: &PathBuf, cx: &mut gpui::VisualTestContext| {
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.open_path(path.clone(), window, cx)
+        });
+        cx.run_until_parked();
+        let view = active(&tabs, cx);
+        if cx.update(|_, cx| view.read(cx).lifecycle.source_only() && !view.read(cx).import.busy())
+        {
+            cx.dispatch_action(Import);
+            cx.run_until_parked();
+        }
+        tabs.update_in(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                if !view.preview.visible() {
+                    view.toggle_preview(window, cx);
+                }
+            })
+        });
+        cx.run_until_parked();
+        view
+    };
+    let view = open(&owner_only, cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.import.password_prompt(), None);
+        assert!(view.editor.read(cx).text().contains("agreement"));
+        assert_eq!(view.preview.locked(), None);
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
+    });
+    let view = open(&unsupported, cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.import.password_prompt(), None, "no card asks");
+        assert_eq!(
+            view.error.as_deref(),
+            Some("This PDF uses encryption mdoc can’t open. Import an unlocked copy.")
+        );
+        assert_eq!(view.preview.locked(), None, "nor does the Original");
+        assert_eq!(
+            view.preview.message().map(String::as_str),
+            Some("This PDF uses encryption mdoc can’t open, so it can’t be previewed.")
+        );
+    });
+}
+
+/// A locked PDF's tab restored from the session (#1024 decision 6, Q7)
+/// has its saved Markdown and no password: its Original asks again on its
+/// card, and the right password opens it for the rest of the tab's life.
+#[gpui::test]
+fn a_restored_locked_pdf_tab_asks_again_on_its_original(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "Petrov-2026";
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked agreement.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/comments-aes256.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    if cx.update(|_, cx| view.read(cx).import.password_prompt().is_none()) {
+        cx.dispatch_action(Import);
+        cx.run_until_parked();
+    }
+    draw(cx);
+    let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+    field.update_in(cx, |field, window, cx| {
+        field.set_value(PASSWORD.into(), cx);
+        field.move_to_end(cx);
+        window.focus(&field.focus_handle(cx), cx);
+    });
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let markdown = dir.path().join("Locked agreement.md");
+    cx.dispatch_action(Save);
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(markdown.clone()));
+    cx.run_until_parked();
+    let session_path = dir.path().join("session.json");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.session_writer.set_path(Some(session_path.clone()));
+        tabs.checkpoint(window, cx);
+    });
+    cx.run_until_parked();
+    let saved = std::fs::read(&session_path).unwrap();
+    assert!(!String::from_utf8_lossy(&saved).contains(PASSWORD));
+
+    let kept = dir.path().join("kept-session.json");
+    std::fs::write(&kept, &saved).unwrap();
+    let restored = session_store::load(&kept).unwrap();
+    let (tabs, cx) = boot(cx, restored);
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    tabs.update_in(cx, |_, window, cx| {
+        view.update(cx, |view, cx| {
+            if !view.preview.visible() {
+                view.toggle_preview(window, cx);
+            }
+        })
+    });
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(
+            view.editor.read(cx).text().contains("agreement"),
+            "the saved Markdown"
+        );
+        assert!(view.import.unlock().is_none(), "no password");
+        assert_eq!(
+            view.preview.locked(),
+            Some(crate::document_view::PasswordPrompt::Asking)
+        );
+    });
+    let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+    field.update_in(cx, |field, _, cx| field.set_value(PASSWORD.into(), cx));
+    view.update_in(cx, |view, window, cx| view.unlock_original(window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None);
+        assert!(
+            view.preview
+                .pdf()
+                .is_some_and(|pdf| pdf.read(cx).is_loaded())
+        );
+        assert!(
+            view.import.unlock().is_some(),
+            "the tab keeps it from now on"
+        );
+    });
+}
