@@ -6,7 +6,7 @@
 # scripts/ci/ci-areas.txt (on a merge ref, against its main): the core, the app
 # and its tests on a Simulator of the pinned Xcode and runtime
 # (scripts/tools.env), shut down afterwards if this run booted it; ci/ios
-# (unit), (ui 1) and (ui 2) run its recipes, the unit tests or a UI shard
+# (unit), (ui 1), (ui 2) and (ui 3) run its recipes, the unit tests or a UI shard
 # each (ci-ios.yml, scripts/ios/ios-ui-shards.sh). Neither: both, as `just
 # mobile`. MDOC_IOS_JOB=always or never overrides the area check.
 source "$(dirname "$0")/../lib.sh"

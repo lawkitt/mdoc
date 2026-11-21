@@ -1,15 +1,15 @@
 name: CI iOS
 
 # The iOS job on hosted runners (ADR 0095, ADR 0091, ADR 0100, ADR 0112):
-# three jobs in parallel, and `ci/ios`, which merge-gate reads, green only
-# when all three ran and passed.
+# four jobs in parallel, and `ci/ios`, which merge-gate reads, green only
+# when all four ran and passed.
 #   ci/ios (unit)   the core, the app, the unit and parity tests (mdocTests)
 #                   on the pinned Xcode and Simulator (scripts/tools.env),
 #                   then the core and the app in the Release configuration,
 #                   as an archive builds them, unsigned and without tests.
-#   ci/ios (ui 1)   the core, the app and half of the UI test classes
+#   ci/ios (ui 1)   the core, the app and a third of the UI test classes
 #   ci/ios (ui 2)   (mdocUITests) each, by time, as scripts/ios/ios-ui-shards.sh
-#                   packs them (ADR 0113); the timing tests run only with
+#   ci/ios (ui 3)   packs them (ADR 0113); the timing tests run only with
 #                   `timing` (the nightly). A failed UI test retries once
 #                   (ADR 0113): a pass on the retry keeps the part green and
 #                   is named.
@@ -61,12 +61,15 @@ jobs:
   # The job id stays `ios`: main-caches.yml's build-only call saves the
   # cargo cache under it, and every part restores it (`cache-key: ios`).
   # That call, which runs the unit part alone, also saves the built core,
-  # which every part restores too. The UI tests are two parts, sharded by
-  # test class, as one took about 26 minutes after the sweep (#829), over
-  # ADR 0112's 20; each builds the app itself.
+  # which every part restores too. The UI tests are sharded by test class,
+  # as one part took about 26 minutes after the sweep (#829), over ADR
+  # 0112's 20; three parts since each of two took 31 minutes on the xcode-27
+  # image (#997). Each builds the app itself.
   ios:
     name: ci/ios (${{ matrix.part }})
-    runs-on: macos-26
+    # The only hosted image with Xcode 27 (ITMS-90725: App Store uploads need
+    # the iOS 27 SDK from April 2027), a preview (actions/runner-images#14404).
+    runs-on: xcode-27
     # Job limits (ADR 0095, ADR 0112): the one job took 29 to 46 minutes
     # with every test (2026-11-11); the unit part took 10 minutes and the
     # one UI part 26 on #829, so a UI shard should take about 17. A change
@@ -78,20 +81,23 @@ jobs:
       # A cancelled part would read as a capacity cancel to merge-gate.
       fail-fast: false
       matrix:
-        part: ${{ fromJSON(inputs.build-only && '["unit"]' || '["unit", "ui 1", "ui 2"]') }}
-    # Each part's own result (`unit`, `ui1`, `ui2`), failing tests
+        part: ${{ fromJSON(inputs.build-only && '["unit"]' || '["unit", "ui 1", "ui 2", "ui 3"]') }}
+    # Each part's own result (`unit`, `ui1`, `ui2`, `ui3`), failing tests
     # (`unit_tests`, ...) and tests that passed on their retry
-    # (`ui1_retried`, `ui2_retried`), which `ci/ios` names: a matrix job's
+    # (`ui1_retried`, ...), which `ci/ios` names: a matrix job's
     # outputs combine every part's.
     outputs:
       unit: ${{ steps.result.outputs.unit }}
       ui1: ${{ steps.result.outputs.ui1 }}
       ui2: ${{ steps.result.outputs.ui2 }}
+      ui3: ${{ steps.result.outputs.ui3 }}
       unit_tests: ${{ steps.failed.outputs.unit_tests }}
       ui1_tests: ${{ steps.failed.outputs.ui1_tests }}
       ui2_tests: ${{ steps.failed.outputs.ui2_tests }}
+      ui3_tests: ${{ steps.failed.outputs.ui3_tests }}
       ui1_retried: ${{ steps.failed.outputs.ui1_retried }}
       ui2_retried: ${{ steps.failed.outputs.ui2_retried }}
+      ui3_retried: ${{ steps.failed.outputs.ui3_retried }}
     env:
       PART: ${{ matrix.part }}
       # The timing tests (LivePreviewUITests' typing and Return times, in
@@ -244,4 +250,4 @@ jobs:
       - env:
           RESULT: ${{ needs.ios.result }}
           IOS_OUTPUTS: ${{ toJSON(needs.ios.outputs) }}
-        run: python3 scripts/ios/ios-failed-tests.py summary "$RESULT" unit "ui 1" "ui 2"
+        run: python3 scripts/ios/ios-failed-tests.py summary "$RESULT" unit "ui 1" "ui 2" "ui 3"

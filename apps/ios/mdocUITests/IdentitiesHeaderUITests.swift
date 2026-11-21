@@ -38,7 +38,7 @@ final class IdentitiesHeaderUITests: XCTestCase {
         search.typeText("zzzz")
         XCTAssertTrue(rows.firstMatch.waitForNonExistence(timeout: 5), "nothing matches zzzz")
         app.buttons["identities-search-clear"].firstMatch.tap()
-        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertEqual(rows.count, 2)
 
         // The filter: All and each category with its count; its value is
@@ -51,15 +51,15 @@ final class IdentitiesHeaderUITests: XCTestCase {
         let email = app.buttons["Email 1"].firstMatch
         XCTAssertTrue(email.exists, "each category with its count")
         email.tap()
-        XCTAssertTrue(filter.wait(until: NSPredicate(format: "value == 'Email'"), timeout: 5))
+        XCTAssertTrue(filter.wait(until: NSPredicate(format: "value == 'Email'"), timeout: MdocUITest.timeout))
         XCTAssertTrue(rows.element(boundBy: 1).waitForNonExistence(timeout: 5))
         XCTAssertEqual(rows.count, 1, "only the email")
         filter.tap()
         let all = app.buttons["All 2"].firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: MdocUITest.timeout))
         all.tap()
-        XCTAssertTrue(filter.wait(until: NSPredicate(format: "value == 'All'"), timeout: 5))
-        XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 5))
+        XCTAssertTrue(filter.wait(until: NSPredicate(format: "value == 'All'"), timeout: MdocUITest.timeout))
+        XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: MdocUITest.timeout))
 
         // Replace N floats at the bottom; Select's bar takes its place.
         let replaceAll = app.buttons["identities-replace-all"].firstMatch
@@ -71,9 +71,9 @@ final class IdentitiesHeaderUITests: XCTestCase {
         XCTAssertTrue(replaceAll.waitForNonExistence(timeout: 5), "Select's bar in its place")
         XCTAssertTrue(search.exists, "search stays in Select")
         app.buttons["identities-select-cancel"].firstMatch.tap()
-        XCTAssertTrue(replaceAll.waitUntilHittable(timeout: 5))
+        XCTAssertTrue(replaceAll.waitUntilHittable(timeout: MdocUITest.timeout))
         replaceAll.tap()
-        XCTAssertTrue(summary.wait(until: NSPredicate(format: "label == %@", "2 names · all decided ✓"), timeout: 10))
+        XCTAssertTrue(summary.wait(until: NSPredicate(format: "label == %@", "2 names · all decided ✓"), timeout: MdocUITest.timeout))
         XCTAssertTrue(replaceAll.waitForNonExistence(timeout: 5), "nothing left to replace")
     }
 
@@ -86,7 +86,7 @@ final class IdentitiesHeaderUITests: XCTestCase {
         // Home's Continue card: "N left" reads as words, never "Error".
         let card = app.buttons["continue-card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 60))
-        XCTAssertTrue(card.wait(until: NSPredicate(format: "label ENDSWITH 'names left to review' OR label ENDSWITH '1 name left to review'"), timeout: 10),
+        XCTAssertTrue(card.wait(until: NSPredicate(format: "label ENDSWITH 'names left to review' OR label ENDSWITH '1 name left to review'"), timeout: MdocUITest.timeout),
                       "the card reads \(card.label)")
         XCTAssertFalse(card.label.contains("Error"))
         let document = MdocUITest.documentRow(app)
@@ -98,8 +98,8 @@ final class IdentitiesHeaderUITests: XCTestCase {
 
         app.buttons["title-menu"].tap()
         // The menu's items; once ready the action bar has a Copy for AI too.
-        let copy = app.collectionViews.buttons["copy-for-ai"]
-        let share = app.collectionViews.buttons["share-document"]
+        let copy = MdocUITest.menuItem("Copy for AI", app)
+        let share = MdocUITest.menuItem("Share", app)
         XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout), "Copy for AI is listed while names are left")
         XCTAssertTrue(share.exists, "so is Share")
         XCTAssertFalse(copy.isEnabled)

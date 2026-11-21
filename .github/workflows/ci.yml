@@ -29,6 +29,7 @@ on:
       - "build/appicon.svg"
       - "docs/**"
       - ".github/workflows/actionlint.yml"
+      - ".github/actionlint.yaml"
       - ".github/dependabot.yml"
   # Any base branch, so a stacked PR gets CI too (fleet ADR 0016). No path
   # filter: `lint (ubuntu)` is required (ADR 0095), and a required check

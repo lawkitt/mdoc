@@ -66,6 +66,3 @@ How a PR reaches `main`. The machinery and the PC's runners:
   (`just ios-test "iPhone 17" mdocUITests/<Class>`), one heavy build at a
   time after checking `uptime`, because the full suite takes 25 to 30
   minutes on the fanless Air and parallel runs overheat it.
-- On macOS 27, Xcode 26.2's test runner hangs: set
-  `DEVELOPER_DIR=/Applications/Xcode-27.2.app/Contents/Developer`. Hosted
-  `ci/ios` stays the reference.

@@ -10,8 +10,8 @@
 #   queue    every queue commit's: median 25 minutes or less. A queue
 #            commit's time runs from its Queue run starting to its first
 #            green merge-gate status;
-#   ios-ui   the slower iOS UI shard's time on hosted macOS, per queue
-#            commit whose `ci/ios (ui 1)` and `(ui 2)` jobs both passed (or,
+#   ios-ui   the slowest iOS UI shard's time on hosted macOS, per queue
+#            commit whose `ci/ios (ui N)` jobs all passed (or,
 #            before the second shard, whose single `ci/ios (ui)` did): median
 #            15 minutes or less;
 #   drops    queue drops not caused by the PR: at most 1 a week.
@@ -277,22 +277,26 @@ repeated() { # pr at job test tests-file retried-file cutoff
     END { exit !found }' "$5" "$6"
 }
 
-# The slower UI shard's `<seconds> <end epoch>` from a Queue run's jobs.
-# Require the complete green pair, or the old single job. A missing, skipped,
-# failed or unfinished shard gives no sample; use the latest completion so
-# historical windows never see a pair that was only partly finished then.
+# The slowest UI shard's `<seconds> <end epoch>` from a Queue run's jobs.
+# Require a complete green set, `(ui 1)` to `(ui N)` once each (two shards
+# until #997, three since), or the old single job. A missing, skipped, failed
+# or unfinished shard gives no sample; use the latest completion so
+# historical windows never see a set that was only partly finished then.
 ios_ui_seconds() {
   awk '{ name = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", name) }
-    name ~ /(^|\/ )ci\/ios \(ui( [12])?\)$/ {
+    name ~ /(^|\/ )ci\/ios \(ui( [0-9]+)?\)$/ {
       if ($1 != "success" || $2 <= 0 || $3 <= 0) bad = 1
-      if (name ~ /\(ui 1\)$/) one++
-      else if (name ~ /\(ui 2\)$/) two++
-      else old++
+      if (match(name, /\(ui [0-9]+\)$/)) {
+        k = substr(name, RSTART + 4, RLENGTH - 5) + 0
+        if (seen[k]++) bad = 1
+        shards++
+        if (k > top) top = k
+      } else old++
       if ($3 - $2 > slow) slow = $3 - $2
       if ($3 > end) end = $3
     }
     END {
-      if (!bad && ((one == 1 && two == 1 && !old) || (old == 1 && !one && !two)))
+      if (!bad && ((shards >= 2 && shards == top && !old) || (old == 1 && !shards)))
         print slow + 0, end
     }'
 }

@@ -373,7 +373,7 @@ jobs_defs='
       and ([.steps[]? | select(.status != "queued" and .conclusion != "skipped")] | length == 0);
     def cut: .conclusion == "cancelled" and (never | not);
     def os: [(.labels // [])[] | ascii_downcase]
-      | if any(.[]; test("macos")) then "macOS"
+      | if any(.[]; test("macos|xcode")) then "macOS"
         elif any(.[]; test("windows")) then "Windows"
         elif any(.[]; test("ubuntu|linux")) then "Linux"
         else "hosted" end;
