@@ -34,6 +34,13 @@ pub(super) fn passthrough(jpeg: &[u8]) -> Option<Page> {
     })
 }
 
+/// `jpeg` without the segments [`passthrough`] drops, whatever its size,
+/// and its EXIF orientation; `None` for a file that doesn't parse.
+pub(super) fn without_metadata(jpeg: &[u8]) -> Option<(Vec<u8>, u8)> {
+    let segments = Segments::read(jpeg)?;
+    Some((segments.kept, segments.orientation))
+}
+
 struct Frame {
     precision: u8,
     height: u16,

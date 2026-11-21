@@ -608,6 +608,13 @@ impl Library {
         Ok(self.kept_pages().discard(Path::new(&source))?)
     }
 
+    /// `discard_import` for images imported together
+    /// (`DocumentSession::import_images_in`), in the same order.
+    pub fn discard_images(&self, images: Vec<String>) -> Result<(), CoreError> {
+        let images: Vec<std::path::PathBuf> = images.into_iter().map(Into::into).collect();
+        Ok(self.kept_pages().discard_images(&images)?)
+    }
+
     /// The reply kept for `document` in case `case_id`.
     pub fn reply(&self, case_id: String, document: String) -> Result<Option<String>, CoreError> {
         let member = self.member(Path::new(&document));

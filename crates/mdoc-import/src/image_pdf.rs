@@ -23,10 +23,12 @@
 //! JPEG without metadata, which then comes here as [`ImageFormat::Jpeg`].
 
 mod jpeg;
+mod metadata;
 mod pdf;
 #[cfg(test)]
 pub(crate) mod tests;
 
+pub use metadata::without_metadata;
 use std::{io::Cursor, path::Path};
 
 /// The longest side, in pixels, an image keeps: larger ones are scaled down.

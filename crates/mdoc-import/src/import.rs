@@ -239,17 +239,37 @@ impl Source {
     /// other source. The path and stamp stay the image file's.
     pub(crate) fn image_pdf(&self, dpi: u16) -> Option<Result<(Self, u64), ImportError>> {
         ImageFormat::from_bytes(self.bytes())?;
-        Some(
-            image_pdf::build(&[self.bytes()], dpi)
-                .map(|built| {
-                    (
-                        Self::new(self.path.clone(), self.stamp, built.pdf),
-                        built.frames_left_out,
-                    )
-                })
-                .map_err(ImportError::Image),
-        )
+        Some(images_pdf(std::slice::from_ref(self), dpi))
     }
+}
+
+/// Images as one PDF the image builder makes of them, a page each in
+/// order, sized for `dpi`, with the frames of animations it leaves out.
+/// The path and stamp are the first image's.
+pub(crate) fn images_pdf(images: &[Source], dpi: u16) -> Result<(Source, u64), ImportError> {
+    let first = images
+        .first()
+        .ok_or(ImportError::Image(image_pdf::ImageError::Unreadable))?;
+    let bytes: Vec<&[u8]> = images.iter().map(Source::bytes).collect();
+    let built = image_pdf::build(&bytes, dpi).map_err(ImportError::Image)?;
+    Ok((
+        Source::new(first.path.clone(), first.stamp, built.pdf),
+        built.frames_left_out,
+    ))
+}
+
+/// The image files at `paths`, read as an import reads them.
+pub(crate) fn read_images(
+    paths: &[PathBuf],
+    cancel: &AtomicBool,
+) -> Result<Vec<Source>, ImportError> {
+    paths
+        .iter()
+        .map(|path| {
+            check_cancel(cancel)?;
+            Source::read(path)
+        })
+        .collect()
 }
 
 /// Never the bytes: they are the user's document.
@@ -661,6 +681,37 @@ pub fn prepare_cancellable(
     import_source(source, installed, skip_ocr, cancel)
 }
 
+/// Imports the images at `paths` as one document, a page each in order:
+/// photos or camera pages picked together on a phone (#1024 decision 15).
+/// They become one PDF in memory, which imports like a scanned PDF; the
+/// import's source path is the first image's.
+pub fn prepare_images_cancellable(
+    paths: &[PathBuf],
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    let images = read_images(paths, cancel)?;
+    let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
+    import_image_pdf(images_pdf(&images, dpi)?, installed, skip_ocr, cancel)
+}
+
+/// Imports the PDF the image builder made, with the animation frames it
+/// left out, as an image's import: its warning names the image.
+fn import_image_pdf(
+    (pdf, frames): (Source, u64),
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    check_cancel(cancel)?;
+    let mut imported = convert_pdf(pdf, installed, skip_ocr, cancel)?;
+    imported.left_out.animation_frames = frames;
+    imported.warning = image_warning(imported.warning);
+    imported.is_image = true;
+    Ok(imported)
+}
+
 /// Imports `source`'s bytes: the one conversion every import makes after it
 /// has read them.
 pub(crate) fn import_source(
@@ -676,13 +727,7 @@ pub(crate) fn import_source(
     // page; the page is sized for OCR's render resolution.
     let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
     if let Some(built) = source.image_pdf(dpi) {
-        let (pdf, frames) = built?;
-        check_cancel(cancel)?;
-        let mut imported = convert_pdf(pdf, installed, skip_ocr, cancel)?;
-        imported.left_out.animation_frames = frames;
-        imported.warning = image_warning(imported.warning);
-        imported.is_image = true;
-        return Ok(imported);
+        return import_image_pdf(built?, installed, skip_ocr, cancel);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
