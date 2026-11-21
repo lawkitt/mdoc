@@ -138,7 +138,7 @@ pub enum ImageError {
 fn missing_codec_message(missing: &heic::MissingCodec) -> &'static str {
     match missing {
         heic::MissingCodec::HeifExtension => {
-            "Opening HEIC photos on Windows needs Microsoft's free HEIF Image Extensions \
+            "Opening HEIC photos on Windows needs Microsoft's HEIF Image Extensions \
              and HEVC Video Extensions. Install them from the Microsoft Store, then import \
              the photo again."
         }
