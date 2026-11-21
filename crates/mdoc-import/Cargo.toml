@@ -37,6 +37,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # TIFF pages (image_pdf::tiff): every directory, and CCITT strips read raw for
 # passthrough. Already in the tree through image.
 tiff = "0.11"
+# Only on a locked PDF's refusal: tells encryption no password opens
+# (an unknown handler or algorithm) from a missing or wrong password, which
+# pdf-inspector reports alike. The version pdf-inspector reads with.
+lopdf = { version = "0.45", default-features = false }
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
 # C API 17, which 1.17 and later serve: 1.32.0 downloaded on desktop
 # (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS,
@@ -51,6 +55,15 @@ libloading = "0.9"
 # Exact: DOCX preview rendering changes between releases; bump by hand.
 docxide-pdf = { version = "=0.21.4", default-features = false }
 roxmltree = "0.21"
+
+[dev-dependencies]
+# The CJK font test (#1036) reads the rendered PDF's fonts and glyphs; both
+# are already in the tree (pdf-inspector, docxide-pdf).
+lopdf = { version = "0.45", default-features = false }
+ttf-parser = "0.25"
+# The TIFF tests' decoded twin of a fax page (image_pdf::tiff), a CCITT
+# decoder independent of PDFium. Already in the tree through gpui-pdf's hayro.
+hayro-ccitt = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 # Recognition defaults read the keyboard layouts.
@@ -69,8 +82,3 @@ windows = { version = "0.62", features = [
 [lints]
 workspace = true
 
-
-[dev-dependencies]
-# The TIFF tests' decoded twin of a fax page (image_pdf::tiff), a CCITT
-# decoder independent of PDFium. Already in the tree through gpui-pdf's hayro.
-hayro-ccitt = "0.5"

@@ -114,6 +114,8 @@ pub(crate) struct ImportFlow {
     /// again) and the preview take it instead of asking again. Memory only,
     /// never in the session; dropped when the tab closes (#1024 decision 6).
     unlock: Option<Unlock>,
+    /// The Original's card proved a password while a run was under way.
+    kept_meanwhile: bool,
     /// What the finished run for a generation left of the unlock, adopted
     /// with its result.
     finished_unlock: Option<(u64, Option<Unlock>)>,
@@ -147,6 +149,7 @@ impl ImportFlow {
             password_prompt: None,
             unlock: None,
             finished_unlock: None,
+            kept_meanwhile: false,
             input_languages,
         }
     }
@@ -213,11 +216,16 @@ impl ImportFlow {
 
     /// A password typed on the Original's card opened the source:
     /// `unlock` becomes the tab's, for its preview and every later run, as
-    /// one the card's conversion left would. A closed tab keeps nothing.
+    /// one the card's conversion left would: a locked Office document's
+    /// unlocked bytes, or a locked PDF's password. A closed tab keeps
+    /// nothing. A run under way started without it: when it ends wanting a
+    /// password, it runs again with this one instead of asking.
     pub(crate) fn keep_unlock(&mut self, unlock: Unlock) {
-        if !self.cancelled() {
-            self.unlock = Some(unlock);
+        if self.cancelled() {
+            return;
         }
+        self.unlock = Some(unlock);
+        self.kept_meanwhile |= self.busy();
     }
 
     /// A password typed on the card can be tried now: nothing else runs
@@ -341,6 +349,19 @@ impl ImportFlow {
                 ImportError::PasswordRequired
             }),
         );
+    }
+
+    /// The tab holds `unlock`, as after the card unlocked its source.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn show_unlock_fixture(&mut self, unlock: Unlock) {
+        self.unlock = Some(unlock);
     }
 
     #[cfg(test)]
@@ -486,30 +507,49 @@ impl ImportFlow {
     ) -> Option<Vec<ImportEffect>> {
         let completion = self.job.take_ready(generation, prompting)?;
         let finished_unlock = self.finished_unlock.take();
+        let kept_meanwhile = std::mem::take(&mut self.kept_meanwhile);
         // A run that finishes after Cancel was accepted (the converter
         // returned before checking the flag) still ends cancelled.
         let stopped = std::mem::take(&mut self.stopping);
         let mut effects = Vec::new();
         if let ImportCompletion::Ready(result) = completion {
-            // What opens the source from now on: the run's unlock, or
-            // nothing (not locked, a wrong password, a changed file). A run
-            // that carried none keeps an unlock the Original's card made
-            // meanwhile, while it still opens the file as it is.
-            if let Some((finished, unlock)) = finished_unlock
-                && finished == generation
-            {
-                let kept = self
-                    .unlock
-                    .take()
-                    .filter(|kept| kept.current_source().is_some());
-                self.unlock = unlock.or(kept);
-            }
             let result = if stopped {
                 Err(ImportError::Cancelled)
             } else {
                 *result
             };
+            // What opens the source from now on: the run's unlock, or
+            // nothing (not locked, a wrong password, a changed file). A
+            // cancelled run proved nothing, so the tab keeps what it had. A
+            // run that carried none keeps an unlock the Original's card made
+            // meanwhile: an Office document's unlocked bytes while they
+            // still open the file as it is, or a PDF's password.
+            if let Some((finished, unlock)) = finished_unlock
+                && finished == generation
+                && !matches!(result, Err(ImportError::Cancelled))
+            {
+                let kept = self.unlock.take().filter(|kept| {
+                    kept.current_source().is_some() || kept_meanwhile && kept.password().is_some()
+                });
+                self.unlock = unlock.or(kept);
+            }
             self.password_prompt = None;
+            // The run wanted a password the Original's card proved while
+            // it ran: it runs again with that one, asking nothing.
+            if kept_meanwhile
+                && matches!(
+                    result,
+                    Err(ImportError::PasswordRequired | ImportError::WrongPassword)
+                )
+                && let Some(path) = self.source.clone()
+                && self
+                    .unlock
+                    .as_ref()
+                    .is_some_and(|unlock| unlock.password().is_some())
+            {
+                effects.extend(self.run(path, None, None, false));
+                return Some(effects);
+            }
             match result {
                 Ok(imported) => effects.push(ImportEffect::Request(imported)),
                 // The card asks for the password, or again after a wrong
@@ -945,6 +985,68 @@ mod tests {
         assert_eq!(names(&effects), ["Request", "State"]);
         assert_eq!(flow.password_prompt(), None);
         assert!(!slot.load(Ordering::Relaxed));
+    }
+
+    /// A locked PDF's password the Original's card proves while a run that
+    /// started without it is under way (#1024 item 4): the tab keeps it,
+    /// and the run, ending wanting a password, runs again with it instead
+    /// of asking. One password per tab.
+    #[test]
+    fn a_password_proved_on_the_original_during_a_run_answers_it() {
+        let (mut flow, _slot) = new_flow();
+        start(&mut flow, "/in/locked.pdf", None);
+        flow.keep_unlock(Unlock::Password {
+            path: "/in/locked.pdf".into(),
+            password: Password::new("right".into()),
+        });
+        flow.complete(1, Err(ImportError::PasswordRequired), None);
+        let effects = flow.resume(1, false, |_| false).unwrap();
+        assert_eq!(flow.password_prompt(), None, "nothing asks");
+        let run = effects
+            .into_iter()
+            .find(|effect| matches!(effect, ImportEffect::Run { .. }));
+        assert_eq!(password_in(run).as_deref(), Some("right"));
+        let kept = flow
+            .unlock()
+            .and_then(Unlock::password)
+            .map(Password::expose);
+        assert_eq!(kept, Some("right"));
+    }
+
+    /// A cancelled run proved nothing: a password typed for it never
+    /// becomes the tab's, even when Cancel lands before the run takes it,
+    /// and a password the tab had already proved stays.
+    #[test]
+    fn a_cancelled_run_never_keeps_an_untested_password() {
+        let (mut flow, _slot) = new_flow();
+        start(&mut flow, "/in/locked.pdf", None);
+        flow.complete(1, Err(ImportError::PasswordRequired), None);
+        flow.resume(1, false, |_| false).unwrap();
+        let typed = flow.try_password(Password::new("untested".into()));
+        let Some(ImportEffect::Run { unlock, permit, .. }) = typed else {
+            panic!("Unlock runs the conversion");
+        };
+        drop(permit);
+        flow.stop();
+        // Cancelled before it took the password, the run hands it back.
+        flow.complete(1, Err(ImportError::Cancelled), unlock);
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_none(), "never the untested password");
+
+        let proved = Unlock::Password {
+            path: "/in/locked.pdf".into(),
+            password: Password::new("proved".into()),
+        };
+        flow.keep_unlock(proved.clone());
+        start(&mut flow, "/in/locked.pdf", None);
+        flow.stop();
+        flow.complete(1, Err(ImportError::Cancelled), None);
+        flow.resume(1, false, |_| false).unwrap();
+        let kept = flow
+            .unlock()
+            .and_then(Unlock::password)
+            .map(Password::expose);
+        assert_eq!(kept, Some("proved"), "the proved one stays");
     }
 
     /// The run that took `unlock`'s password, for the tab's source.

@@ -714,7 +714,7 @@ fn pages_together_are_held_to_the_document_budget() {
     let source = crate::import::Source::new("big.tif".into(), None, tiff.clone());
     let cancel = std::sync::atomic::AtomicBool::new(false);
     assert!(matches!(
-        crate::import::import_source(source, None, false, &cancel),
+        crate::import::import_source(source, None, None, false, &cancel),
         Err(crate::import::ImportError::Image(ImageError::TooLarge))
     ));
     // Within a budget for exactly two pages, the third is refused before
@@ -803,7 +803,7 @@ fn cancelling_stops_between_pages() {
     let source = crate::import::Source::read(&fixture("fax-g3-1d.tif")).unwrap();
     let cancel = std::sync::atomic::AtomicBool::new(true);
     assert!(matches!(
-        crate::import::import_source(source, None, false, &cancel),
+        crate::import::import_source(source, None, None, false, &cancel),
         Err(crate::import::ImportError::Cancelled)
     ));
 }
