@@ -955,6 +955,10 @@ mod tests {
     /// and through the resumable one, with its password and the OCR
     /// runtime the parent installed.
     #[test]
+    #[cfg(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64")
+    ))]
     #[ignore = "run by a_locked_scan_is_recognized_with_its_password_and_keeps_nothing"]
     fn recognize_a_locked_scan() {
         let var = |name: &str| PathBuf::from(std::env::var_os(name).expect(name));
@@ -1010,6 +1014,10 @@ mod tests {
     /// `Completed`, and the temporary folder still empty afterwards. The OCR
     /// runtime and models are installed beforehand, outside it.
     #[test]
+    #[cfg(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64")
+    ))]
     #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
     fn a_locked_scan_is_recognized_with_its_password_and_keeps_nothing() {
         let dir = tempfile::tempdir().unwrap();
