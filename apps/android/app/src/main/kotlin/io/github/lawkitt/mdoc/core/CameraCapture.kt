@@ -12,31 +12,31 @@ import android.os.Binder
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.provider.OpenableColumns
-import android.system.Os
-import android.system.OsConstants
-import java.io.FileDescriptor
+import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
 
-/** Gives the system camera a seekable output URI with no disk-backed file. */
+/**
+ * The system camera's output: a raw file of its own under
+ * `no_backup/capture/`, outside `originals/`, so a shot survives mdoc being
+ * stopped while the camera is open. Home cleans it into the scan's stage on
+ * return and deletes it at once ([ScanSession]); leftovers go at the next
+ * start.
+ */
 class CameraCapture : ContentProvider() {
     override fun onCreate() = true
 
-    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor = synchronized(captures) {
-        val capture = captures[uri] ?: throw FileNotFoundException()
-        val access = ParcelFileDescriptor.parseMode(mode)
-        // A dup retains the memfd's write access. Only the chosen camera,
-        // which receives a write grant for this URI, can open it externally.
+    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        val context = requireNotNull(context)
+        val file = file(context, uri) ?: throw FileNotFoundException()
+        // Only mdoc and the chosen camera, which receives a write grant for
+        // this URI, can open it.
         if (Binder.getCallingUid() != Process.myUid() &&
-            requireNotNull(context).checkCallingUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != PackageManager.PERMISSION_GRANTED
+            context.checkCallingUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != PackageManager.PERMISSION_GRANTED
         ) {
             throw SecurityException("The camera output requires write access.")
         }
-        val fd = capture.fileDescriptor
-        if (access and ParcelFileDescriptor.MODE_TRUNCATE != 0) Os.ftruncate(fd, 0)
-        val seek = if (access and ParcelFileDescriptor.MODE_APPEND != 0) OsConstants.SEEK_END else OsConstants.SEEK_SET
-        Os.lseek(fd, 0, seek)
-        capture.dup()
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.parseMode(mode))
     }
 
     override fun getType(uri: Uri) = "image/jpeg"
@@ -47,14 +47,14 @@ class CameraCapture : ContentProvider() {
         selection: String?,
         selectionArgs: Array<out String>?,
         sortOrder: String?,
-    ): Cursor = synchronized(captures) {
+    ): Cursor {
         val columns = projection ?: arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
-        MatrixCursor(columns).apply {
-            captures[uri]?.let { capture ->
+        return MatrixCursor(columns).apply {
+            file(requireNotNull(context), uri)?.let { file ->
                 addRow(columns.map {
                     when (it) {
                         OpenableColumns.DISPLAY_NAME -> "page.jpg"
-                        OpenableColumns.SIZE -> capture.statSize
+                        OpenableColumns.SIZE -> file.length()
                         else -> null
                     }
                 })
@@ -69,22 +69,28 @@ class CameraCapture : ContentProvider() {
         throw UnsupportedOperationException()
 
     companion object {
-        private val captures = mutableMapOf<Uri, ParcelFileDescriptor>()
+        /** Where shots wait for Home: never backed up, never under `originals/`. */
+        fun dir(context: Context) = File(context.noBackupFilesDir, "capture")
 
+        /** A new, empty shot for the camera to write. */
         internal fun create(context: Context): Uri {
-            val uri = Uri.parse("content://${context.packageName}.capture/${UUID.randomUUID()}")
-            val capture = duplicateAndClose(Os.memfd_create("mdoc-camera-page", OsConstants.MFD_CLOEXEC))
-            synchronized(captures) { captures[uri] = capture }
-            return uri
+            val id = UUID.randomUUID().toString()
+            val folder = dir(context).apply { mkdirs() }
+            check(File(folder, "$id.jpg").createNewFile()) { "mdoc could not prepare the camera." }
+            return Uri.parse("content://${context.packageName}.capture/$id")
         }
 
-        private fun duplicateAndClose(fd: FileDescriptor): ParcelFileDescriptor =
-            try {
-                ParcelFileDescriptor.dup(fd)
-            } finally {
-                Os.close(fd)
-            }
+        /** The raw file behind `uri`, while it exists. */
+        internal fun file(context: Context, uri: Uri): File? {
+            val id = uri.lastPathSegment?.takeIf { uri.authority == "${context.packageName}.capture" } ?: return null
+            // Only the names `create` gives: no path can reach outside the folder.
+            runCatching { UUID.fromString(id) }.getOrNull()?.takeIf { it.toString() == id } ?: return null
+            return File(dir(context), "$id.jpg").takeIf { it.isFile }
+        }
 
-        internal fun take(uri: Uri): ParcelFileDescriptor? = synchronized(captures) { captures.remove(uri) }
+        /** Deletes every shot but `keep`, the one a restored scan still waits for. */
+        internal fun sweep(folder: File, keep: File?) {
+            folder.listFiles()?.forEach { if (it != keep) it.deleteRecursively() }
+        }
     }
 }

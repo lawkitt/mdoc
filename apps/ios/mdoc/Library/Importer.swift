@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import MdocFFI
 import UIKit
 import UniformTypeIdentifiers
@@ -21,17 +22,26 @@ struct Importer {
 
     /// A file from Files or "Open in mdoc". It is copied into mdoc's storage
     /// and the original left alone (an Inbox copy is removed). An image
-    /// becomes a page like the camera's, one document of its own.
+    /// becomes a page like the camera's, one document of its own. What it
+    /// is comes from its first bytes, which must agree with its name: a
+    /// photo named `.pdf`, or anything named `.jpg` that isn't an image, is
+    /// refused before a copy is kept.
     func file(_ url: URL) throws -> PendingImport? {
         let scoped = url.startAccessingSecurityScopedResource()
         defer {
             if scoped { url.stopAccessingSecurityScopedResource() }
         }
-        guard let kind = Self.kind(of: url) else { throw Failure.unsupported }
+        let header = (try? FileHandle(forReadingFrom: url))
+            .flatMap { handle in defer { try? handle.close() }; return try? handle.read(upToCount: 1024) } ?? Data()
+        guard let named = Self.kind(of: url), let kind = Self.kind(named, header: header) else {
+            throw Failure.unsupported
+        }
         if kind == .image {
-            guard let data = try? Data(contentsOf: url) else { throw Failure.unsupported }
+            guard let data = try? Data(contentsOf: url),
+                  let pending = try images([data], scanned: false, title: url.deletingPathExtension().lastPathComponent)
+            else { throw Failure.unsupported }
             removeInboxCopy(url)
-            return try images([data], scanned: false, title: url.deletingPathExtension().lastPathComponent)
+            return pending
         }
         let copy = try storage.importCopy(of: url, in: .originals)
         removeInboxCopy(url)
@@ -56,7 +66,10 @@ struct Importer {
             try page.write(to: url, options: [.atomic, .completeFileProtection])
             return url
         }
-        guard !urls.isEmpty else { return nil }
+        guard !urls.isEmpty else {
+            try? FileManager.default.removeItem(at: folder)
+            return nil
+        }
         let kind = scanned ? String(localized: "Scan") : String(localized: "Photo")
         return PendingImport(
             source: scanned ? .scan(urls) : .photos(urls),
@@ -84,6 +97,10 @@ struct Importer {
     /// reads is drawn upright as a JPEG without metadata. Nil when neither
     /// can read it.
     static func page(_ data: Data) -> (Data, String)? {
+        // A TIFF stays as it came: its tags hold its layout, and the core
+        // reads every page of it (only the PDF and the Markdown leave its
+        // tags out).
+        if isTIFF(data) { return (data, "tiff") }
         if let kept = imageWithoutMetadata(image: data), let format = coreFormat(kept) {
             return (kept, format)
         }
@@ -100,6 +117,35 @@ struct Importer {
             return "webp"
         }
         return nil
+    }
+
+    /// A classic TIFF or BigTIFF, in either byte order.
+    static func isTIFF(_ data: Data) -> Bool {
+        let bytes = [UInt8](data.prefix(4))
+        return [[0x49, 0x49, 0x2a, 0], [0x4d, 0x4d, 0, 0x2a], [0x49, 0x49, 0x2b, 0], [0x4d, 0x4d, 0, 0x2b]]
+            .contains(bytes)
+    }
+
+    /// What a file named as `named` is by its first bytes, `header`, or nil
+    /// when they disagree: a PDF has its header, a DOCX is a ZIP package,
+    /// and an image starts with a signature mdoc or iOS reads.
+    static func kind(_ named: SourceKind, header: Data) -> SourceKind? {
+        let bytes = [UInt8](header)
+        let pdf = header.range(of: Data("%PDF-".utf8)) != nil
+        let zip = bytes.starts(with: [0x50, 0x4b, 0x03, 0x04])
+        let image = coreFormat(header) != nil || isTIFF(header)
+            || (bytes.count >= 12 && Array(bytes[4..<8]) == Array("ftyp".utf8))
+        switch named {
+        case .pdf: return pdf ? .pdf : nil
+        case .docx: return zip ? .docx : nil
+        case .image:
+            if image { return .image }
+            // Other formats iOS reads (BMP, ICO, …), if their bytes say so.
+            guard !pdf, !zip, let source = CGImageSourceCreateWithData(header as CFData, nil),
+                  CGImageSourceGetType(source) != nil else { return nil }
+            return .image
+        default: return nil
+        }
     }
 
     /// Redraws an image with its orientation applied, as JPEG.

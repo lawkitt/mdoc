@@ -1,5 +1,8 @@
 import Foundation
 import ImageIO
+import class MdocFFI.DocumentSession
+import enum MdocFFI.CoreFailure
+import struct MdocFFI.ImportOptions
 import UIKit
 import UniformTypeIdentifiers
 import XCTest
@@ -110,5 +113,45 @@ final class ImporterTests: XCTestCase {
             try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), ["page-1.jpg", "page-2.png"])
         try core.library.deleteDocument(session.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    }
+    /// A file's first bytes decide what it is: a photo named `.pdf`, or
+    /// text named `.jpg`, is refused before any copy is kept.
+    func testAFilesItemIsKnownByItsFirstBytes() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let png = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { _ in })
+        let importer = Importer(storage: storage)
+        for (name, data) in [("photo.pdf", png), ("notes.jpg", Data("Not a photo.".utf8)), ("letter.docx", png)] {
+            let url = folder.appendingPathComponent(name)
+            try data.write(to: url)
+            XCTAssertThrowsError(try importer.file(url), name)
+        }
+        let photo = folder.appendingPathComponent("photo.png")
+        try png.write(to: photo)
+        let pending = try XCTUnwrap(try importer.file(photo))
+        guard case .photos(let pages) = pending.source else { return XCTFail("\(pending.source)") }
+        XCTAssertEqual(pages.map(\.pathExtension), ["png"])
+        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        XCTAssertEqual(left.count, 1, "\(left)")
+    }
+
+    /// A TIFF is kept as it came, and the core reads every page of it.
+    func testATIFFImportsEveryPageThroughTheCore() throws {
+        let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        let fax = try Data(contentsOf: Fixture.repository.appendingPathComponent("tests/fixtures/tiff/fax-g4.tif"))
+        let pending = try XCTUnwrap(try Importer(storage: storage).images([fax], scanned: false))
+        guard case .photos(let pages) = pending.source else { return XCTFail("\(pending.source)") }
+        let page = try XCTUnwrap(pages.first)
+        XCTAssertEqual(page.pathExtension, "tiff")
+        XCTAssertEqual(try Data(contentsOf: page), fax)
+        XCTAssertThrowsError(
+            try MdocFFI.DocumentSession().importImagesIn(
+                library: library.ffi, images: [page.path], title: "Fax",
+                options: MdocFFI.ImportOptions(ocr: nil, nativeTextOnly: false, password: nil), progress: nil)
+        ) { error in
+            XCTAssertEqual(CoreFailure(error), .needsOcr(pages: [1, 2], pageCount: 2))
+        }
     }
 }

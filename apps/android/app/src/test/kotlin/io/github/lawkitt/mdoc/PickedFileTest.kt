@@ -60,11 +60,12 @@ class PickedFileTest {
         assertEquals(SourceKind.Image, kind("image/gif"))
     }
 
-    /** Named as what it is, and refused with the supported formats until #1024 item 8 opens it. */
+    /** The core reads every page of a TIFF (#1024 item 8). */
     @Test
     fun aTiffIsATiff() {
         assertEquals("tiff", HomeViewModel.extensionFor("image/tiff"))
-        assertNull(kind("image/tiff"))
+        assertEquals(SourceKind.Image, kind("image/tiff"))
+        assertEquals(SourceKind.Image, HomeViewModel.kindOf(File("Fax.tif")))
     }
 
     /** Anything else is refused with the supported formats, never taken for a JPEG. */

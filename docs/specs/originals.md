@@ -60,11 +60,20 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 - A photo's or camera page's Original is the image itself, drawn natively
   and upright. The copy kept is the core's `without_metadata` rewrite
   (JPEG, PNG, WebP, GIF: same pixels, only the orientation left) or, for
-  HEIC and what the core doesn't read, the phone's own upright JPEG.
-  On Android, camera output and picked photo bytes are sanitized in memory
-  before mdoc writes the kept copies. Cancelling Add deletes the staged
-  copies. On restart only saved documents and pending imports keep their
-  staged files.
+  HEIC and what the core doesn't read, the phone's own upright JPEG. A
+  TIFF is kept as it came (its tags hold its layout); the core reads every
+  page, and its tags reach neither the PDF nor the Markdown.
+  On Android, picked photo bytes are sanitized in memory before mdoc
+  writes the kept copies. The camera writes its shot to a raw file under
+  `no_backup/capture/`, outside `originals/`, which is cleaned into the
+  scan's stage and deleted on return; leftovers go when a process starts.
+  A scan in progress belongs to the app and is saved with Home's state, so
+  a destroyed activity or a stopped process comes back to it; its
+  `scanning-` stage is kept for a day at a restart. Cancelling Add deletes
+  the staged copies. On restart only saved documents, pending imports and
+  scans in progress keep their staged files; once, the intake folders
+  older versions left unowned are removed too. A `pending.json` that can't
+  be read is moved aside (`pending.json.corrupt`) and clears nothing.
 - Photos picked together are one document. The core appends one photo at a
   time to an in-memory PDF and applies the 256 MiB import limit to the
   combined image files and the resulting PDF.

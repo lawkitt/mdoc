@@ -3,13 +3,12 @@ package io.github.lawkitt.mdoc.home
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
-import android.os.ParcelFileDescriptor
-import android.system.Os
-import android.system.OsConstants
 import android.provider.OpenableColumns
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.lawkitt.mdoc.MdocApplication
@@ -22,12 +21,12 @@ import io.github.lawkitt.mdoc.core.DocumentPhase
 import io.github.lawkitt.mdoc.core.DocumentSummary
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.Originals
+import io.github.lawkitt.mdoc.core.ScanSession
 import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.jobs.CancelReason
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
 import java.io.File
 import java.io.InputStream
 import kotlinx.coroutines.CancellationException
@@ -67,13 +66,34 @@ data class HomeState(
     val refused: String? = null,
 )
 
-class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = null) : ViewModel() {
+class HomeViewModel(
+    private val core: () -> AppCore,
+    private val jobs: Jobs? = null,
+    /** The scan in progress: the app's, so a destroyed activity keeps it. */
+    private val scan: ScanSession = ScanSession(),
+    /** Where the scan is saved for a process stopped while the camera is open. */
+    private val saved: SavedStateHandle = SavedStateHandle(),
+) : ViewModel() {
     private val mutable = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = mutable.asStateFlow()
     private var receiving: Job? = null
-    private var capture: Uri? = null
-    private var processingCapture = false
-    private val scanPages = mutableListOf<File>()
+
+    init {
+        // A new process: the scan comes back from the saved state, its shot
+        // in flight included, and shots no scan waits for go.
+        if (scan.pages.isEmpty() && scan.capture == null) {
+            scan.pages = saved.get<ArrayList<String>>(SCAN_PAGES).orEmpty().map(::File).filter { it.isFile }
+            scan.capture = saved.get<String>(SCAN_CAPTURE)?.let(::File)?.takeIf { it.isFile }
+        }
+        scan.sweep()
+        saveScan()
+        if (scan.capture == null && !scan.processing) mutable.update { it.copy(scanPageCount = scan.pages.size) }
+    }
+
+    private fun saveScan() {
+        saved[SCAN_PAGES] = ArrayList(scan.pages.map { it.path })
+        saved[SCAN_CAPTURE] = scan.capture?.path
+    }
 
     /**
      * Deletes a document from Home, as iOS's swipe does. A job on it stops
@@ -200,68 +220,68 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
         return named ?: typed ?: error(target.name)
     }
 
-    /** The camera writes to memory. Sanitized pages survive activity recreation in this ViewModel. */
+    /**
+     * The camera's output for the next page: a raw file outside
+     * `originals/`, saved with the scan so a stopped process finds it.
+     */
     fun takePage(context: Context): Uri? {
-        if (processingCapture || capture != null) return null
+        if (scan.processing || scan.capture != null) return null
         return runCatching { CameraCapture.create(context) }
             .onSuccess {
-                capture = it
+                scan.capture = CameraCapture.file(context, it)
+                saveScan()
                 mutable.update { state -> state.copy(scanPageCount = 0) }
             }
             .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
             .getOrNull()
     }
 
+    /** The camera returned: its shot is cleaned into the scan's stage and the raw file deleted at once. */
     fun cameraResult(taken: Boolean, launchError: String? = null) {
-        val uri = capture ?: return
-        capture = null
-        val data = CameraCapture.take(uri) ?: return
-        processingCapture = true
+        val raw = scan.capture ?: return
+        scan.capture = null
+        scan.processing = true
+        saveScan()
         viewModelScope.launch {
-            val previousFolder = scanPages.firstOrNull()?.parentFile
+            val previousFolder = scan.pages.firstOrNull()?.parentFile
             var folder = previousFolder
-            var handedOff = false
+            var kept: File? = null
             try {
-                data.use { descriptor ->
-                    val size = descriptor.statSize
-                    if (!taken || size <= 0) return@use
-                    check(size <= MAX_IMAGE_BYTES) { "This image is too large to import." }
-                    val number = scanPages.size + 1
-                    val page = withContext(Dispatchers.IO) {
+                kept = withContext(Dispatchers.IO) {
+                    try {
+                        val size = raw.length()
+                        if (!taken || size <= 0) return@withContext null
+                        check(size <= MAX_IMAGE_BYTES) { "This image is too large to import." }
+                        val bytes = raw.readBytes()
+                        raw.delete()
                         val originals = Originals(core().storage)
-                        val stage = previousFolder ?: originals.newStage().also { folder = it }
-                        val bytes = ByteArray(size.toInt())
-                        try {
-                            Os.lseek(descriptor.fileDescriptor, 0, OsConstants.SEEK_SET)
-                            DataInputStream(ParcelFileDescriptor.AutoCloseInputStream(descriptor.dup())).use { it.readFully(bytes) }
-                        } catch (error: Exception) {
-                            bytes.fill(0)
-                            throw error
-                        }
-                        originals.stageImage(File(stage, "page-$number.jpg"), bytes)
+                        val stage = previousFolder ?: originals.newScanStage().also { folder = it }
+                        originals.stageImage(File(stage, "page-${scan.pages.size + 1}.jpg"), bytes)
+                    } finally {
+                        raw.delete()
                     }
-                    scanPages += page
-                    handedOff = true
                 }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 mutable.update { it.copy(refused = error.message) }
             } finally {
-                if (!handedOff && previousFolder == null) folder?.deleteRecursively()
-                processingCapture = false
-                mutable.update { it.copy(scanPageCount = scanPages.size, refused = launchError ?: it.refused) }
+                if (kept != null) scan.pages += kept else if (previousFolder == null) folder?.deleteRecursively()
+                scan.processing = false
+                saveScan()
+                mutable.update { it.copy(scanPageCount = scan.pages.size, refused = launchError ?: it.refused) }
             }
         }
     }
 
     fun finishScan(title: String) {
-        if (scanPages.isEmpty() || processingCapture) return
+        if (scan.pages.isEmpty() || scan.processing) return
         receiving?.cancel()
-        val files = scanPages.toList()
-        scanPages.clear()
+        val (folder, files) = Originals(core().storage).finishScanStage(scan.pages)
+        scan.pages = emptyList()
+        saveScan()
         mutable.update { it.copy(scanPageCount = 0) }
-        replaceAdding(PendingAdd.Received(ImportSource.Pages(files, SourceKind.Scan), title, checkNotNull(files.first().parentFile)))
+        replaceAdding(PendingAdd.Received(ImportSource.Pages(files, SourceKind.Scan), title, folder))
     }
 
     fun cancelAdd() {
@@ -274,10 +294,10 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
         (previous as? PendingAdd.Received)?.folder?.deleteRecursively()
     }
 
+    // The scan in progress stays: it is the app's, and a destroyed
+    // activity comes back to it.
     override fun onCleared() {
         cancelAdd()
-        capture?.let { CameraCapture.take(it)?.close() }
-        scanPages.firstOrNull()?.parentFile?.deleteRecursively()
     }
 
     fun refusalShown() = mutable.update { it.copy(refused = null) }
@@ -312,6 +332,8 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
 
     companion object {
         private const val MAX_IMAGE_BYTES = 256 * 1024 * 1024
+        private const val SCAN_PAGES = "scan.pages"
+        private const val SCAN_CAPTURE = "scan.capture"
 
         private fun readImage(input: InputStream): ByteArray {
             val out = ByteArrayOutputStream()
@@ -335,7 +357,7 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
         fun kindOf(file: File): SourceKind? = when (file.extension.lowercase()) {
             "pdf" -> SourceKind.Pdf
             "docx" -> SourceKind.Docx
-            "jpg", "jpeg", "png", "heic", "heif", "webp", "gif" -> SourceKind.Image
+            "jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "tif", "tiff" -> SourceKind.Image
             else -> null
         }
 
@@ -343,7 +365,7 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
          * The extension a picked file without a name gets from its MIME
          * type: each format's own, so the core reads it as what it is; null
          * for a type mdoc doesn't open, which is refused with the supported
-         * formats. TIFF is named but not yet opened (#1024 item 8).
+         * formats.
          */
         fun extensionFor(mime: String?): String? = when (mime?.lowercase()) {
             "application/pdf" -> "pdf"
@@ -359,7 +381,7 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
         }
 
         fun factory(app: MdocApplication): ViewModelProvider.Factory = viewModelFactory {
-            initializer { HomeViewModel({ app.core }, app.jobs) }
+            initializer { HomeViewModel({ app.core }, app.jobs, app.scan, createSavedStateHandle()) }
         }
 
         /** The status line under a document's title. */

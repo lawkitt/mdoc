@@ -66,13 +66,44 @@ class Originals(private val storage: MdocStorage) {
         return target
     }
 
-    fun newStage(): File = File(storage.dir(MdocStorage.Area.Originals), "$STAGE_PREFIX${UUID.randomUUID()}").apply {
+    fun newStage(): File = newStage(STAGE_PREFIX)
+
+    /**
+     * The stage of a camera scan in progress: kept at a start for a day
+     * ([clearAbandonedStages]), so a scan whose process stopped while the
+     * camera was open comes back to it.
+     */
+    fun newScanStage(): File = newStage(SCAN_PREFIX)
+
+    private fun newStage(prefix: String): File = File(storage.dir(MdocStorage.Area.Originals), "$prefix${UUID.randomUUID()}").apply {
         check(mkdir()) { "mdoc could not stage the import." }
     }
 
-    /** Clean pages only. The picker and camera both supply the source bytes in memory. */
+    /** A finished scan's stage, made an ordinary one, and its pages there. */
+    fun finishScanStage(pages: List<File>): Pair<File, List<File>> {
+        val stage = checkNotNull(pages.first().parentFile)
+        if (!stage.name.startsWith(SCAN_PREFIX)) return stage to pages
+        val finished = File(stage.parentFile, STAGE_PREFIX + stage.name.removePrefix(SCAN_PREFIX))
+        Files.move(stage.toPath(), finished.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        return finished to pages.map { File(finished, it.name) }
+    }
+
+    /**
+     * Clean pages only. The picker and camera both supply the source bytes in
+     * memory. A TIFF stays as it came: its tags hold its layout, and the core
+     * reads every page of it (only the PDF and the Markdown leave its tags
+     * out).
+     */
     fun stageImage(file: File, bytes: ByteArray): File {
         try {
+            if (isTiff(bytes)) {
+                val target = imageFile(file, "tiff")
+                writeAtomically(target) {
+                    it.write(bytes)
+                    true
+                }
+                return target
+            }
             imageWithoutMetadata(bytes)?.let { clean ->
                 val target = imageFile(file, checkNotNull(imageExtension(clean)))
                 writeAtomically(target) {
@@ -107,7 +138,12 @@ class Originals(private val storage: MdocStorage) {
         return File(file.parentFile, "$stem.$extension")
     }
 
-    /** A stage survives a restart only when a saved document or pending import owns it. */
+    /**
+     * A stage survives a restart only when a saved document or pending
+     * import owns it, or it is a scan in progress less than a day old. Once,
+     * the intake folders older versions left unowned go too: picked files
+     * copied as they came, which may carry a photo's GPS position.
+     */
     fun clearAbandonedStages(pendingFiles: List<File>) {
         val saved = if (index.exists()) {
             runCatching { JSONObject(index.readText()) }.getOrElse { return }
@@ -118,9 +154,19 @@ class Originals(private val storage: MdocStorage) {
             saved.keys().asSequence().flatMap { files(saved.getJSONObject(it)) }.toList()
         }.getOrElse { return }
         val owned = (pendingFiles + savedFiles).mapNotNull(::importFolder).toSet()
+        val swept = File(storage.root, SWEPT_MARKER)
+        val sweepOld = !swept.exists()
+        val dayAgo = System.currentTimeMillis() - SCAN_KEPT_MILLIS
         storage.dir(MdocStorage.Area.Originals).listFiles()?.forEach {
-            if (it.name.startsWith(STAGE_PREFIX) && it.canonicalFile !in owned) it.deleteRecursively()
+            if (it.canonicalFile in owned) return@forEach
+            val abandoned = when {
+                it.name.startsWith(STAGE_PREFIX) -> true
+                it.name.startsWith(SCAN_PREFIX) -> it.lastModified() < dayAgo
+                else -> sweepOld && it.isDirectory && isUuid(it.name)
+            }
+            if (abandoned) it.deleteRecursively()
         }
+        if (sweepOld) swept.createNewFile()
     }
 
     @Synchronized
@@ -188,6 +234,23 @@ class Originals(private val storage: MdocStorage) {
 
     companion object {
         private const val STAGE_PREFIX = "staged-"
+        private const val SCAN_PREFIX = "scanning-"
+
+        /** How long a scan in progress waits for its process to come back. */
+        private const val SCAN_KEPT_MILLIS = 24L * 60 * 60 * 1000
+
+        /** Written once the unowned intake folders of older versions were swept. */
+        private const val SWEPT_MARKER = ".originals-swept"
+
+        private fun isUuid(name: String) = runCatching { UUID.fromString(name).toString() == name }.getOrDefault(false)
+
+        /** A classic TIFF or BigTIFF, in either byte order. */
+        internal fun isTiff(bytes: ByteArray): Boolean {
+            if (bytes.size < 4) return false
+            val head = bytes.copyOfRange(0, 4).map { it.toInt() and 0xff }
+            return head == listOf(0x49, 0x49, 0x2a, 0) || head == listOf(0x4d, 0x4d, 0, 0x2a) ||
+                head == listOf(0x49, 0x49, 0x2b, 0) || head == listOf(0x4d, 0x4d, 0, 0x2b)
+        }
 
         /** Recognizes the formats the core keeps without converting to JPEG. */
         internal fun imageExtension(bytes: ByteArray): String? {

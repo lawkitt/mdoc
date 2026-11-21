@@ -2,6 +2,8 @@ package io.github.lawkitt.mdoc.core
 
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
@@ -53,8 +55,10 @@ class Documents(
     init {
         // Imports not yet read when mdoc last stopped come back, ready to read again.
         val entries = pending.all()
-        if (entries != null) originals.clearAbandonedStages(entries.flatMap { it.source.files })
-        for (entry in entries.orEmpty()) {
+        // A pending list that couldn't be read says nothing of what it
+        // owned: no stage is cleared on its word.
+        if (!pending.setAside) originals.clearAbandonedStages(entries.flatMap { it.source.files })
+        for (entry in entries) {
             sessions[entry.id] = Session(entry.id, entry.title, entry.caseId, entry.source, entry.ocrStarted)
         }
     }
@@ -532,8 +536,16 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
 
     private val file = File(storage.root, "pending.json")
 
+    /**
+     * `pending.json` couldn't be read and was moved aside
+     * (`pending.json.corrupt`): imports start from an empty list.
+     */
+    @Volatile
+    var setAside = false
+        private set
+
     @Synchronized
-    fun all(): List<Entry>? = runCatching { load().values.toList() }.getOrNull()
+    fun all(): List<Entry> = load().values.toList()
 
     @Synchronized
     fun add(entry: Entry) = save(load() + (entry.id.raw to entry))
@@ -553,8 +565,22 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
     }
 
     private fun load(): Map<String, Entry> {
-        if (!file.exists()) return emptyMap()
-        val array = JSONArray(file.readText())
+        if (!file.isFile) return emptyMap()
+        return runCatching { parse(file.readText()) }.getOrElse {
+            // One damaged list must not stop every later import.
+            setAside = true
+            runCatching {
+                Files.move(
+                    file.toPath(), File(file.path + ".corrupt").toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE,
+                )
+            }
+            emptyMap()
+        }
+    }
+
+    private fun parse(text: String): Map<String, Entry> {
+        val array = JSONArray(text)
         return (0 until array.length()).associate { i ->
             val item = array.getJSONObject(i)
             val kind = SourceKind.valueOf(item.getString("kind"))

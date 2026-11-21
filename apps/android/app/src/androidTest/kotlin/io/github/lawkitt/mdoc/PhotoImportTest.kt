@@ -25,12 +25,19 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.CameraCapture
 import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.Originals
+import io.github.lawkitt.mdoc.core.ScanSession
 import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.home.HomeViewModel
 import io.github.lawkitt.mdoc.home.PendingAdd
@@ -57,6 +64,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import uniffi.mdoc_ffi.CoreException
+import uniffi.mdoc_ffi.DocumentSession
+import uniffi.mdoc_ffi.ImportOptions
 
 @RunWith(AndroidJUnit4::class)
 class PhotoImportTest {
@@ -85,7 +95,7 @@ class PhotoImportTest {
             assertNull(home.state.value.adding)
             assertTrue(originals.listFiles()!!.isEmpty())
         } finally {
-            CameraCapture.take(photo)?.close()
+            discard(photo)
         }
     }
 
@@ -106,8 +116,8 @@ class PhotoImportTest {
             assertNull(id)
             assertFalse(staged.folder.exists())
         } finally {
-            CameraCapture.take(photo)?.close()
-            CameraCapture.take(bad)?.close()
+            discard(photo)
+            discard(bad)
         }
     }
 
@@ -149,13 +159,13 @@ class PhotoImportTest {
             assertFalse(abandoned.exists())
             assertTrue(staged.folder.isDirectory)
         } finally {
-            CameraCapture.take(jpeg)?.close()
+            discard(jpeg)
             png.delete()
         }
     }
 
     @Test
-    fun aCameraPageStaysInMemoryUntilItsCleanCopyIsKept() = runBlocking {
+    fun aCameraShotIsDeletedOnceItsCleanCopyIsKept() = runBlocking {
         val home = home
         val uri = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
         // This is the seekable output the camera contract gives to another app.
@@ -232,6 +242,141 @@ class PhotoImportTest {
             }
             assertClean(file)
         }
+    }
+
+    /**
+     * A scan outlives its screen and its process while the camera is open:
+     * the activity is destroyed (Home's ViewModel cleared) with a shot in
+     * flight, then the process is gone and only the saved state is left.
+     * The restored scan still takes the shot, and the next start keeps the
+     * scan's stage.
+     */
+    @Test
+    fun aScanSurvivesItsScreenAndItsProcessWhileTheCameraIsOpen() = runBlocking {
+        val scan = ScanSession(CameraCapture.dir(core.app))
+        val saved = SavedStateHandle()
+        val store = ViewModelStore()
+        val factory = viewModelFactory { initializer { HomeViewModel({ core.app.core }, null, scan, saved) } }
+        val first = withContext(Dispatchers.Main) { ViewModelProvider.create(store, factory)[HomeViewModel::class] }
+        val page1 = withContext(Dispatchers.Main) { first.takePage(core.app) }!!
+        writePhoto(page1, taggedJpeg(6))
+        withContext(Dispatchers.Main) { first.cameraResult(true) }
+        withTimeout(15_000) { first.state.first { it.scanPageCount == 1 } }
+        // The second shot is in flight when the activity goes.
+        val page2 = withContext(Dispatchers.Main) { first.takePage(core.app) }!!
+        withContext(Dispatchers.Main) { store.clear() }
+        val kept = scan.pages.single()
+        assertTrue(kept.isFile)
+        writePhoto(page2, taggedJpeg(3))
+        // A new process: nothing in memory but the saved state, and a new
+        // start of the library, which sweeps abandoned stages.
+        core.app.reopenCore()
+        core.app.core.documents
+        val restoredState = SavedStateHandle(saved.keys().associateWith { saved.get<Any?>(it) })
+        val restored = withContext(Dispatchers.Main) {
+            HomeViewModel({ core.app.core }, null, ScanSession(CameraCapture.dir(core.app)), restoredState)
+        }
+        assertTrue(kept.isFile)
+        withContext(Dispatchers.Main) { restored.cameraResult(true) }
+        withTimeout(15_000) { restored.state.first { it.scanPageCount == 2 } }
+        // The raw shot is gone once its clean copy is kept.
+        assertNull(CameraCapture.file(core.app, page2))
+        assertTrue(CameraCapture.dir(core.app).listFiles().orEmpty().isEmpty())
+        withContext(Dispatchers.Main) { restored.finishScan("Scan") }
+        val pages = ((restored.state.value.adding as PendingAdd.Received).source as ImportSource.Pages).pages
+        assertEquals(2, pages.size)
+        pages.forEach(::assertClean)
+        withContext(Dispatchers.Main) { restored.cancelAdd() }
+    }
+
+    /** Shots no scan waits for go when a process starts. */
+    @Test
+    fun leftoverShotsAreSweptAtStart() = runBlocking {
+        val leftover = CameraCapture.create(core.app)
+        writePhoto(leftover, taggedJpeg(1))
+        withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, ScanSession(CameraCapture.dir(core.app))) }
+        assertNull(CameraCapture.file(core.app, leftover))
+    }
+
+    /** HEIC is drawn upright by Android as a JPEG without its GPS position or camera. */
+    @Test
+    fun aHeicBecomesAnUprightJpegWithoutMetadata() {
+        val originals = Originals(core.storage)
+        val folder = originals.newStage()
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        for (name in listOf("page-orientation-6.heic", "page-gps.heic")) {
+            val page = originals.stageImage(File(folder, name), assets.open(name).use { it.readBytes() })
+            assertEquals(name, "jpg", page.extension)
+            assertFalse(File(folder, name).exists())
+            val exif = ExifInterface(page)
+            assertNull(name, exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE))
+            assertNull(name, exif.getAttribute(ExifInterface.TAG_MAKE))
+            assertNull(name, exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL))
+            assertTrue(name, exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1) <= 1)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(page.path, bounds)
+            assertEquals(name, 1200 to 1600, bounds.outWidth to bounds.outHeight)
+        }
+    }
+
+    /** A TIFF is staged as it came and the core reads every page of it. */
+    @Test
+    fun aTiffImportsEveryPageThroughTheCore() = runBlocking {
+        val share = File(core.app.cacheDir, "hand-off").apply { mkdirs() }
+        val fax = File(share, "fax.tif")
+        try {
+            InstrumentationRegistry.getInstrumentation().context.assets.open("fax-g4.tif").use { input ->
+                fax.outputStream().use(input::copyTo)
+            }
+            val uri = FileProvider.getUriForFile(core.app, "${core.app.packageName}.files", fax)
+            val staged = withContext(Dispatchers.Main) {
+                home.also { it.received(resolver, listOf(uri), null, "Title") }
+            }.let { home -> withTimeout(15_000) { home.state.first { it.adding != null || it.refused != null } } }
+            assertNull(staged.refused)
+            val page = ((staged.adding as PendingAdd.Received).source as ImportSource.Pages).pages.single()
+            assertEquals("tiff", page.extension)
+            assertTrue(fax.readBytes().contentEquals(page.readBytes()))
+            val error = assertThrows(CoreException.NeedsOcr::class.java) {
+                DocumentSession().importImagesIn(core.app.core.library, listOf(page.path), "Fax", ImportOptions(null, false, null), null)
+            }
+            assertEquals(2u, error.pageCount)
+        } finally {
+            fax.delete()
+        }
+    }
+
+    /** A damaged pending list is set aside: imports go on, and no stage is cleared on its word. */
+    @Test
+    fun aDamagedPendingListIsSetAside() {
+        val pendingFile = File(core.storage.root, "pending.json").apply { writeText("{ not json") }
+        val stage = Originals(core.storage).newStage()
+        core.app.reopenCore()
+        val session = core.app.core.documents.importDocument(ImportSource.Text("A short note."), "Note", CaseChoice.New("Notes"))
+        assertNotNull(session)
+        assertTrue(File(core.storage.root, "pending.json.corrupt").isFile)
+        assertTrue(pendingFile.isFile)
+        assertTrue(stage.isDirectory)
+    }
+
+    /** Once, intake folders older versions left unowned go: raw copies that may carry GPS. */
+    @Test
+    fun unownedIntakeFoldersAreSweptOnce() {
+        // As an older version left it: the sweep hasn't run on this library.
+        File(core.storage.root, ".originals-swept").delete()
+        val raw = File(originals, UUID.randomUUID().toString()).apply { mkdirs() }
+        File(raw, "photo.jpg").writeBytes(taggedJpeg(1))
+        core.app.reopenCore()
+        core.app.core.documents
+        assertFalse(raw.exists())
+        // Later folders are left to their owners.
+        val later = File(originals, UUID.randomUUID().toString()).apply { mkdirs() }
+        core.app.reopenCore()
+        core.app.core.documents
+        assertTrue(later.isDirectory)
+    }
+
+    private fun discard(uri: Uri) {
+        CameraCapture.file(core.app, uri)?.delete()
     }
 
     private suspend fun receive(home: HomeViewModel, uris: List<Uri>): PendingAdd.Received {
