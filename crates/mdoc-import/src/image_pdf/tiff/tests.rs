@@ -15,13 +15,14 @@ fn read(name: &str) -> Vec<u8> {
     std::fs::read(fixture(name)).unwrap()
 }
 
-/// One page of a built PDF: its size in points, its image's dictionary and
-/// its image's stream.
+/// One page of a built PDF: its size in points, and each of its images'
+/// dictionary and stream, top band first (`image` and `data`: the first).
 #[derive(Debug)]
 struct Page {
     size: (f64, f64),
     image: String,
     data: Vec<u8>,
+    images: Vec<(String, Vec<u8>)>,
 }
 
 /// Where `needle` occurs in `haystack`, in order.
@@ -37,41 +38,48 @@ fn positions(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
 /// Every page of a PDF the builder wrote, in order. Searched as bytes: the
 /// streams between the objects are binary.
 fn pages(pdf: &[u8]) -> Vec<Page> {
-    let boxes = positions(pdf, b"/MediaBox [0 0 ").into_iter().map(|at| {
-        let rest = &pdf[at + 15..];
-        let end = rest.iter().position(|&byte| byte == b']').unwrap();
-        let numbers: Vec<f64> = String::from_utf8_lossy(&rest[..end])
-            .split_whitespace()
-            .map(|number| number.parse().unwrap())
-            .collect();
-        (numbers[0], numbers[1])
-    });
-    let images = positions(pdf, b"/Subtype /Image").into_iter().map(|at| {
-        let head_end = at + positions(&pdf[at..], b"\nstream\n")[0];
-        let image = String::from_utf8_lossy(&pdf[at..head_end]).into_owned();
-        let length_at = image.find("/Length ").unwrap() + 8;
-        let length: usize = image[length_at..]
-            .split(|c: char| !c.is_ascii_digit())
-            .next()
-            .unwrap()
-            .parse()
-            .unwrap();
-        let start = head_end + 8;
-        (image, pdf[start..start + length].to_vec())
-    });
+    let boxes = positions(pdf, b"/MediaBox [0 0 ");
+    let images: Vec<(usize, String, Vec<u8>)> = positions(pdf, b"/Subtype /Image")
+        .into_iter()
+        .map(|at| {
+            let head_end = at + positions(&pdf[at..], b"\nstream\n")[0];
+            let image = String::from_utf8_lossy(&pdf[at..head_end]).into_owned();
+            let length_at = image.find("/Length ").unwrap() + 8;
+            let length: usize = image[length_at..]
+                .split(|c: char| !c.is_ascii_digit())
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap();
+            let start = head_end + 8;
+            (at, image, pdf[start..start + length].to_vec())
+        })
+        .collect();
+    // A page's images follow its page object, before the next page's.
     boxes
-        .zip(images)
-        .map(|(size, (image, data))| Page { size, image, data })
+        .iter()
+        .enumerate()
+        .map(|(index, &at)| {
+            let rest = &pdf[at + 15..];
+            let end = rest.iter().position(|&byte| byte == b']').unwrap();
+            let numbers: Vec<f64> = String::from_utf8_lossy(&rest[..end])
+                .split_whitespace()
+                .map(|number| number.parse().unwrap())
+                .collect();
+            let next = boxes.get(index + 1).copied().unwrap_or(usize::MAX);
+            let images: Vec<(String, Vec<u8>)> = images
+                .iter()
+                .filter(|(image_at, _, _)| (at..next).contains(image_at))
+                .map(|(_, image, data)| (image.clone(), data.clone()))
+                .collect();
+            Page {
+                size: (numbers[0], numbers[1]),
+                image: images[0].0.clone(),
+                data: images[0].1.clone(),
+                images,
+            }
+        })
         .collect()
-}
-
-fn inflate(data: &[u8]) -> Vec<u8> {
-    use std::io::Read;
-    let mut out = Vec::new();
-    flate2::read::ZlibDecoder::new(data)
-        .read_to_end(&mut out)
-        .unwrap();
-    out
 }
 
 fn approx(actual: (f64, f64), expected: (f64, f64)) -> bool {
@@ -79,21 +87,28 @@ fn approx(actual: (f64, f64), expected: (f64, f64)) -> bool {
 }
 
 /// Every fixture gives every page, each sized by its own resolution, the
-/// CCITT pages passed through with their parameters, the LZW pages
-/// decoded and stored with Flate.
+/// CCITT pages passed through with their parameters (the multi-strip G4
+/// pages as one image per strip), the LZW pages decoded and stored with
+/// Flate.
 #[test]
 fn every_page_of_every_fixture_is_imported() {
     // Fax fine and fax normal are the same sheet: 1728 px at 204 dpi
     // across, 2200 rows at 196 dpi or 1100 at 98 dpi down.
     let fax_sheet = (1728. * 72. / 204., 2200. * 72. / 196.);
     let letter = (612., 792.);
-    for (name, count, size, filter) in [
-        ("fax-g3-1d.tif", 3, fax_sheet, "/CCITTFaxDecode"),
-        ("fax-g3-2d-normal-lsb.tif", 2, fax_sheet, "/CCITTFaxDecode"),
-        ("fax-g4.tif", 2, letter, "/CCITTFaxDecode"),
-        ("fax-g4-strips.tif", 2, letter, "/FlateDecode"),
-        ("scan-lzw-gray.tif", 2, letter, "/FlateDecode"),
-        ("scan-lzw-rgb.tif", 1, letter, "/FlateDecode"),
+    for (name, count, size, filter, images) in [
+        ("fax-g3-1d.tif", 3, fax_sheet, "/CCITTFaxDecode", 1),
+        (
+            "fax-g3-2d-normal-lsb.tif",
+            2,
+            fax_sheet,
+            "/CCITTFaxDecode",
+            1,
+        ),
+        ("fax-g4.tif", 2, letter, "/CCITTFaxDecode", 1),
+        ("fax-g4-strips.tif", 2, letter, "/CCITTFaxDecode", 5),
+        ("scan-lzw-gray.tif", 2, letter, "/FlateDecode", 1),
+        ("scan-lzw-rgb.tif", 1, letter, "/FlateDecode", 1),
     ] {
         let built = build(&[&read(name)], DEFAULT_DPI).unwrap();
         assert_eq!(built.pages, count, "{name}");
@@ -102,18 +117,25 @@ fn every_page_of_every_fixture_is_imported() {
         assert_eq!(pages.len(), count as usize, "{name}");
         for page in &pages {
             assert!(approx(page.size, size), "{name}: {:?}", page.size);
-            assert!(page.image.contains(filter), "{name}: {}", page.image);
+            assert_eq!(page.images.len(), images, "{name}");
+            for (image, _) in &page.images {
+                assert!(image.contains(filter), "{name}: {image}");
+            }
         }
     }
 }
 
-/// The CCITT pages carry the decoding parameters their tags call for.
+/// The CCITT pages carry the decoding parameters their tags call for. A
+/// Group 3 fax whose rows open with end-of-line codes is read by them, not
+/// by byte alignment: TIFF's T4Options bit 2 aligns the end of each code,
+/// and PDF's EncodedByteAlign would skip into the next one (PDFium loses
+/// rows with it; the qualification checks every row).
 #[test]
 fn fax_pages_pass_through_with_their_parameters() {
     for (name, parameters) in [
         (
             "fax-g3-1d.tif",
-            "/K 0 /Columns 1728 /Rows 2200 /BlackIs1 false /EncodedByteAlign true",
+            "/K 0 /Columns 1728 /Rows 2200 /BlackIs1 false /EncodedByteAlign false",
         ),
         (
             "fax-g3-2d-normal-lsb.tif",
@@ -217,12 +239,12 @@ fn tiff_file(entries: &[(u16, u16, u32)], arrays: &[(u16, Vec<u32>)], data: &[u8
 }
 
 /// A Group 3 page whose strips carry no end-of-line codes can't be joined:
-/// each strip is decoded on its own and the page stored losslessly. Here an
-/// 8-pixel-wide page of four rows in two strips, coded by hand: a white row
-/// (white run 8, `10011`) and a black row (white run 0 `00110101`, black run
-/// 8 `000101`), each row starting on a byte.
+/// each strip is its own CCITT image, stacked (decision 12), byte-aligned
+/// as its rows are. Here an 8-pixel-wide page of four rows in two strips,
+/// coded by hand: a white row (white run 8, `10011`) and a black row (white
+/// run 0 `00110101`, black run 8 `000101`), each row starting on a byte.
 #[test]
-fn group_3_strips_that_cant_be_joined_are_decoded_losslessly() {
+fn group_3_strips_that_cant_be_joined_are_stacked_as_their_own_images() {
     let strip = [0x98, 0x35, 0x14];
     let header = 8 + 2 + 12 * 9 + 4 + 2 * 4 * 2;
     let tiff = tiff_file(
@@ -240,14 +262,18 @@ fn group_3_strips_that_cant_be_joined_are_decoded_losslessly() {
     );
     let built = build(&[&tiff], DEFAULT_DPI).unwrap();
     let page = &pages(&built.pdf)[0];
-    assert!(
-        page.image
-            .contains("/BitsPerComponent 1 /Filter /FlateDecode"),
-        "{}",
-        page.image
-    );
-    // 1 is white: white, black, white, black.
-    assert_eq!(inflate(&page.data), [0xff, 0x00, 0xff, 0x00]);
+    assert_eq!(page.images.len(), 2);
+    for (image, data) in &page.images {
+        assert!(
+            image.contains("/Height 2 ")
+                && image.contains("/K 0 /Columns 8 /Rows 2 /BlackIs1 false /EncodedByteAlign true"),
+            "{image}"
+        );
+        assert_eq!(data, &strip);
+        // Each decodes on its own: white, then black (1 is white).
+        let rows = super::decode_strips(std::slice::from_ref(data), 8, 2, 2, 0, true).unwrap();
+        assert_eq!(rows, [0xff, 0x00]);
+    }
 }
 
 /// The joined Group 3 2D stream decodes to the same page as its strips
@@ -272,11 +298,11 @@ fn joined_group_3_strips_decode_like_the_strips_one_by_one() {
     }
 }
 
-/// Group 4 strips can't be joined: the page in five strips is decoded and
-/// stored losslessly, bit for bit the page the single-strip file decodes
-/// to (1 meaning white).
+/// Group 4 strips can't be joined: the page in five strips is five CCITT
+/// images, stacked (decision 12), each exactly its strip, and together they
+/// decode bit for bit to the page the single-strip file decodes to.
 #[test]
-fn group_4_pages_in_strips_are_decoded_losslessly() {
+fn group_4_pages_in_strips_are_stacked_as_their_own_images() {
     use tiff::decoder::{Decoder, DecodingResult};
     let single = read("fax-g4.tif");
     let mut decoder = Decoder::new(std::io::Cursor::new(&single[..])).unwrap();
@@ -289,19 +315,31 @@ fn group_4_pages_in_strips_are_decoded_losslessly() {
             panic!("bilevel pages decode to bytes");
         };
         // The decoder gives the min-is-white page as black-is-zero: 1 is
-        // white, as the PDF stores it.
-        let expected = packed;
-        assert!(
-            page.image
-                .contains("/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /FlateDecode"),
-            "{}",
-            page.image
-        );
-        let stored = inflate(&page.data);
-        assert_eq!(stored.len(), 2550usize.div_ceil(8) * 3300);
-        assert_eq!(stored, expected[..stored.len()]);
+        // white, as the CCITT decode gives coded white.
+        let strips = raw_strips(&read("fax-g4-strips.tif"), index);
+        assert_eq!(page.images.len(), strips.len());
+        let mut rows = Vec::new();
+        for ((image, data), strip) in page.images.iter().zip(&strips) {
+            assert!(image.contains("/K -1 /Columns 2550 "), "{image}");
+            assert_eq!(data, strip);
+        }
+        for (band, (image, data)) in page.images.iter().enumerate() {
+            let height: u32 = image[image.find("/Height ").unwrap() + 8..]
+                .split(' ')
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert_eq!(height, if band < 4 { 800 } else { 100 });
+            rows.extend(
+                super::decode_strips(std::slice::from_ref(data), 2550, height, height, -1, false)
+                    .unwrap(),
+            );
+        }
+        assert_eq!(rows.len(), 2550usize.div_ceil(8) * 3300);
+        assert_eq!(rows, packed[..rows.len()]);
         // Text, not a blank or black page.
-        let black = stored.iter().map(|byte| byte.count_zeros()).sum::<u32>();
+        let black = rows.iter().map(|byte| byte.count_zeros()).sum::<u32>();
         assert!((1_000..2_000_000).contains(&black), "{black} black pixels");
     }
 }
@@ -399,13 +437,384 @@ fn every_fixture_imports_every_page_for_ocr() {
     }
 }
 
+/// One directory's entries: (tag, type 3 SHORT, 4 LONG or 5 RATIONAL as
+/// numerator and denominator pairs, values).
+type Entries = Vec<(u16, u16, Vec<u32>)>;
+
+/// A little-endian TIFF: `data` right after the header, then a directory
+/// for each of `pages`, in order. StripOffsets (273) count from the start
+/// of `data`.
+fn tiff_of(pages: &[Entries], data: &[u8]) -> Vec<u8> {
+    let mut tiff = b"II*\x00".to_vec();
+    // Where the offset of the next directory goes: the header's first.
+    let mut link = tiff.len();
+    tiff.extend_from_slice(&0u32.to_le_bytes());
+    tiff.extend_from_slice(data);
+    for entries in pages {
+        let mut entries = entries.clone();
+        entries.sort_by_key(|entry| entry.0);
+        let mut fields = Vec::new();
+        for (tag, kind, values) in &entries {
+            let values: Vec<u32> = if *tag == 273 {
+                values.iter().map(|value| value + 8).collect()
+            } else {
+                values.clone()
+            };
+            let bytes: Vec<u8> = if *kind == 3 {
+                values
+                    .iter()
+                    .flat_map(|&value| (value as u16).to_le_bytes())
+                    .collect()
+            } else {
+                values
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect()
+            };
+            let value = if bytes.len() <= 4 {
+                let mut inline = bytes;
+                inline.resize(4, 0);
+                inline
+            } else {
+                if tiff.len() % 2 == 1 {
+                    tiff.push(0);
+                }
+                let at = tiff.len() as u32;
+                tiff.extend_from_slice(&bytes);
+                at.to_le_bytes().to_vec()
+            };
+            let count = if *kind == 5 {
+                values.len() / 2
+            } else {
+                values.len()
+            };
+            fields.push((*tag, *kind, count as u32, value));
+        }
+        if tiff.len() % 2 == 1 {
+            tiff.push(0);
+        }
+        let at = tiff.len() as u32;
+        tiff[link..link + 4].copy_from_slice(&at.to_le_bytes());
+        tiff.extend_from_slice(&(fields.len() as u16).to_le_bytes());
+        for (tag, kind, count, value) in fields {
+            tiff.extend_from_slice(&tag.to_le_bytes());
+            tiff.extend_from_slice(&kind.to_le_bytes());
+            tiff.extend_from_slice(&count.to_le_bytes());
+            tiff.extend_from_slice(&value);
+        }
+        link = tiff.len();
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+    }
+    tiff
+}
+
+/// An uncompressed page's entries: `bits` per sample, one strip per plane
+/// at `strips` (offset in the data, length).
+fn page_entries(
+    (width, height): (u32, u32),
+    photometric: u32,
+    bits: &[u32],
+    strips: &[(u32, u32)],
+) -> Entries {
+    vec![
+        (256, 4, vec![width]),
+        (257, 4, vec![height]),
+        (258, 3, bits.to_vec()),
+        (259, 3, vec![1]),
+        (262, 3, vec![photometric]),
+        (273, 4, strips.iter().map(|strip| strip.0).collect()),
+        (277, 3, vec![bits.len() as u32]),
+        (278, 4, vec![height]),
+        (279, 4, strips.iter().map(|strip| strip.1).collect()),
+    ]
+}
+
+/// `entries` with `tag` set to `values`.
+fn with(mut entries: Entries, tag: u16, kind: u16, values: &[u32]) -> Entries {
+    entries.retain(|entry| entry.0 != tag);
+    entries.push((tag, kind, values.to_vec()));
+    entries
+}
+
+/// Each page of `tiff` as the builder stores it, decoded: gray or not, and
+/// its 8-bit samples.
+fn stored_pixels(tiff: &[u8]) -> Vec<(bool, Vec<u8>)> {
+    use std::io::Read;
+    let mut budget = super::super::Budget::new(u64::MAX, &|| false);
+    super::pages(tiff, &mut budget)
+        .unwrap()
+        .into_iter()
+        .map(|page| {
+            assert_eq!(page.stream, super::super::Stream::Flate);
+            let mut samples = Vec::new();
+            flate2::read::ZlibDecoder::new(&page.data[..])
+                .read_to_end(&mut samples)
+                .unwrap();
+            (page.gray, samples)
+        })
+        .collect()
+}
+
+/// Whether every sample is within `by` of what was expected.
+fn close(actual: &[u8], expected: &[u8], by: u8) -> bool {
+    actual.len() == expected.len()
+        && actual
+            .iter()
+            .zip(expected)
+            .all(|(actual, expected)| actual.abs_diff(*expected) <= by)
+}
+
+/// A colour page compressed as a JPEG (compression 7) comes as YCbCr, which
+/// is turned to RGB, beside the file's other pages, and imports with them
+/// at the import seam.
+#[test]
+fn a_jpeg_compressed_colour_page_imports_beside_other_pages() {
+    let (red, blue) = ([200u8, 40, 30], [30u8, 60, 200]);
+    let photo = image::RgbImage::from_fn(16, 16, |x, _| image::Rgb(if x < 8 { red } else { blue }));
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 95)
+        .encode_image(&photo)
+        .unwrap();
+    let gray = [200u8; 64];
+    let mut data = jpeg.clone();
+    data.extend_from_slice(&gray);
+    let tiff = tiff_of(
+        &[
+            with(
+                with(
+                    page_entries((16, 16), 6, &[8, 8, 8], &[(0, jpeg.len() as u32)]),
+                    259,
+                    3,
+                    &[7],
+                ),
+                278,
+                4,
+                &[16],
+            ),
+            page_entries((8, 8), 1, &[8], &[(jpeg.len() as u32, 64)]),
+        ],
+        &data,
+    );
+    let pages = stored_pixels(&tiff);
+    assert_eq!(pages.len(), 2);
+    let (is_gray, rgb) = &pages[0];
+    assert!(!is_gray);
+    // The middle of each half, away from the JPEG's edge between them.
+    for (x, expected) in [(3usize, red), (12, blue)] {
+        let at = (8 * 16 + x) * 3;
+        assert!(
+            close(&rgb[at..at + 3], &expected, 12),
+            "{x}: {:?}",
+            &rgb[at..at + 3]
+        );
+    }
+    assert_eq!(pages[1], (true, gray.to_vec()));
+    // At the import seam: both pages, for OCR.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mixed.tif");
+    std::fs::write(&path, &tiff).unwrap();
+    match crate::import::prepare(&path, None, false) {
+        Err(crate::import::ImportError::NeedsOcr(_, pages, _, page_count)) => {
+            assert_eq!((pages, page_count), (vec![1, 2], 2));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Alpha is read as ExtraSamples says: associated alpha's colour is already
+/// premultiplied, unassociated alpha's isn't, and gray with alpha (which
+/// the decoder gives as two bands) is read too. Each goes on white.
+#[test]
+fn alpha_goes_on_white_as_extra_samples_say() {
+    // One pixel: a sample of 100 at about half opacity (128).
+    for (bits, extra, pixel, expected) in [
+        // Associated: 100 + (255 - 128).
+        (
+            &[8u32, 8, 8, 8][..],
+            1,
+            vec![100u8, 100, 100, 128],
+            vec![227u8, 227, 227],
+        ),
+        // Unassociated: (100 * 128 + 255 * 127) / 255.
+        (
+            &[8, 8, 8, 8],
+            2,
+            vec![100, 100, 100, 128],
+            vec![177, 177, 177],
+        ),
+        // Unspecified: not alpha, so the colour shows as it is.
+        (
+            &[8, 8, 8, 8],
+            0,
+            vec![100, 100, 100, 128],
+            vec![100, 100, 100],
+        ),
+        (&[8, 8], 1, vec![100, 128], vec![227]),
+        (&[8, 8], 2, vec![100, 128], vec![177]),
+    ] {
+        let photometric = if bits.len() == 2 { 1 } else { 2 };
+        let entries = with(
+            page_entries((1, 1), photometric, bits, &[(0, pixel.len() as u32)]),
+            338,
+            3,
+            &[extra],
+        );
+        let pages = stored_pixels(&tiff_of(&[entries], &pixel));
+        assert_eq!(pages[0].1, expected, "{bits:?} extra {extra}");
+    }
+}
+
+/// A planar RGB page gives all three planes, and 16-bit CMYK becomes RGB,
+/// both at the import seam too.
+#[test]
+fn planar_rgb_and_16_bit_cmyk_pages_are_read() {
+    // Two pixels: red and blue, each plane its own strip.
+    let planes = [255u8, 0, 0, 0, 0, 255];
+    let planar = with(
+        page_entries((2, 1), 2, &[8, 8, 8], &[(0, 2), (2, 2), (4, 2)]),
+        284,
+        3,
+        &[2],
+    );
+    // Two pixels: cyan ink at full (red off), and black at half.
+    let cmyk: Vec<u8> = [65_535u16, 0, 0, 0, 0, 0, 0, 32_768]
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect();
+    let cmyk_page = page_entries((2, 1), 5, &[16, 16, 16, 16], &[(6, 16)]);
+    let mut data = planes.to_vec();
+    data.extend_from_slice(&cmyk);
+    let tiff = tiff_of(&[planar, cmyk_page], &data);
+    let pages = stored_pixels(&tiff);
+    assert_eq!(pages[0], (false, vec![255, 0, 0, 0, 0, 255]));
+    assert_eq!(pages[1], (false, vec![0, 255, 255, 127, 127, 127]));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("layouts.tif");
+    std::fs::write(&path, &tiff).unwrap();
+    match crate::import::prepare(&path, None, false) {
+        Err(crate::import::ImportError::NeedsOcr(_, _, _, page_count)) => {
+            assert_eq!(page_count, 2);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A file's pages together may hold no more than the document budget, their
+/// bytes charged before they are copied: here 129 directories share one
+/// 2 MiB Group 4 strip, a small file naming 258 MiB of pages. At the import
+/// seam it is too large.
+#[test]
+fn pages_together_are_held_to_the_document_budget() {
+    let strip = vec![0u8; 2 << 20];
+    let page = page_entries((8, 8), 0, &[1], &[(0, strip.len() as u32)]);
+    let page = with(page, 259, 3, &[4]);
+    let pages = vec![page; 129];
+    let tiff = tiff_of(&pages, &strip);
+    assert!(tiff.len() < (3 << 20));
+    let source = crate::import::Source::new("big.tif".into(), None, tiff.clone());
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    assert!(matches!(
+        crate::import::import_source(source, None, false, &cancel),
+        Err(crate::import::ImportError::Image(ImageError::TooLarge))
+    ));
+    // Within a budget for exactly two pages, the third is refused before
+    // its strip is copied.
+    let mut budget = super::super::Budget::new(2 * strip.len() as u64, &|| false);
+    assert!(matches!(
+        super::pages(&tiff_of(&pages[..2], &strip), &mut budget),
+        Ok(pages) if pages.len() == 2
+    ));
+    let mut budget = super::super::Budget::new(2 * strip.len() as u64, &|| false);
+    assert!(matches!(
+        super::pages(&tiff_of(&pages[..3], &strip), &mut budget),
+        Err(ImageError::TooLarge)
+    ));
+}
+
+/// A white, 1-bit page `width` by `height` at `dpi`, uncompressed.
+fn white_scan(width: u32, height: u32, dpi: u32) -> Vec<u8> {
+    let data = vec![0u8; width.div_ceil(8) as usize * height as usize];
+    let page = page_entries((width, height), 0, &[1], &[(0, data.len() as u32)]);
+    let page = with(page, 282, 5, &[dpi, 1]);
+    let page = with(page, 283, 5, &[dpi, 1]);
+    tiff_of(&[with(page, 296, 3, &[2])], &data)
+}
+
+/// A page scaled down to the long-side cap keeps its physical size: a 600
+/// dpi Letter scan (5100 by 6600) is stored 3477 by 4500 and stays Letter,
+/// which OCR renders at 1275 by 1650 at its default 150 dpi and 2550 by
+/// 3300 at 300, under the cap either way.
+#[test]
+fn a_scaled_down_scan_keeps_its_physical_size() {
+    let scan = white_scan(5100, 6600, 600);
+    let built = build(&[&scan], DEFAULT_DPI).unwrap();
+    let page = &pages(&built.pdf)[0];
+    assert!(approx(page.size, (612., 792.)), "{:?}", page.size);
+    assert!(
+        page.image.contains("/Width 3477 /Height 4500 "),
+        "{}",
+        page.image
+    );
+    for dpi in [150., 300.] {
+        let raster = (page.size.0 / 72. * dpi, page.size.1 / 72. * dpi);
+        assert!(approx(raster, (8.5 * dpi, 11. * dpi)), "{raster:?}");
+        assert!(raster.1 <= f64::from(super::super::MAX_LONG_SIDE));
+    }
+}
+
+/// A sheet OCR would render longer than the cap is made smaller: a
+/// 20-inch strip at 300 dpi (1000 by 6000, stored 750 by 4500) keeps its
+/// 20 inches for OCR at 150 dpi (3000 pixels), and is drawn 15 inches long
+/// for OCR at 300 dpi, 4500 pixels, not 6000.
+#[test]
+fn no_sheet_renders_longer_than_the_cap_for_ocr() {
+    let scan = white_scan(1000, 6000, 300);
+    for (dpi, inches) in [(150u16, 20.), (300, 15.)] {
+        let built = build(&[&scan], dpi).unwrap();
+        let page = &pages(&built.pdf)[0];
+        assert!(
+            approx(page.size, (inches / 6. * 72., inches * 72.)),
+            "{dpi}: {:?}",
+            page.size
+        );
+        assert!(page.size.1 / 72. * f64::from(dpi) <= 4500.5);
+    }
+}
+
+/// A cancelled import stops between pages: the builder asks before each
+/// page, and stops at the first yes, without reading the rest. At the
+/// import seam a cancelled build is a cancelled import.
+#[test]
+fn cancelling_stops_between_pages() {
+    use std::cell::Cell;
+    let asked = Cell::new(0);
+    // Yes on the third question: the first is before the file, the second
+    // before its first page.
+    let cancelled = || {
+        asked.set(asked.get() + 1);
+        asked.get() == 3
+    };
+    let bytes = read("fax-g3-1d.tif");
+    assert!(matches!(
+        super::super::build_cancellable(&[&bytes], DEFAULT_DPI, &cancelled),
+        Err(ImageError::Cancelled)
+    ));
+    assert_eq!(asked.get(), 3, "stopped after the first of three pages");
+    let source = crate::import::Source::read(&fixture("fax-g3-1d.tif")).unwrap();
+    let cancel = std::sync::atomic::AtomicBool::new(true);
+    assert!(matches!(
+        crate::import::import_source(source, None, false, &cancel),
+        Err(crate::import::ImportError::Cancelled)
+    ));
+}
+
 /// The qualification with OCR and PDFium, on the targets OCR supports.
 #[cfg(any(
     all(target_os = "macos", target_arch = "aarch64"),
     all(target_os = "windows", target_arch = "x86_64")
 ))]
 mod qualification {
-    use super::{DEFAULT_DPI, build, fixture, read};
+    use super::{DEFAULT_DPI, fixture, read};
 
     /// The decoded twin of a bilevel page: 1 meaning white, rows byte-padded.
     type Twin = (u32, u32, Vec<u8>);
@@ -466,38 +875,54 @@ mod qualification {
         (width, height, bits)
     }
 
-    /// The share of `twin`'s pixels whose colour the rendering (gray, one byte
-    /// a pixel, any size) disagrees with, sampling the rendering where each
-    /// pixel's centre lands. Only pixels inside a run (their eight
-    /// neighbours the same colour) count: at a glyph's edge, rendering at
-    /// another resolution decides either way.
-    fn disagreement(twin: &Twin, rendered: (u32, u32, usize, &[u8])) -> f64 {
+    /// The rows of `twin` that PDFium draws differently from it, rendering
+    /// the built page at one pixel per fax pixel: the page's resolution is
+    /// made square at its horizontal one, so a 204 × 98 dpi fax renders
+    /// 1728 × 1100 at 204 dpi. Every pixel of every row is compared.
+    fn rows_drawn_otherwise(
+        renderer: &pdf_inspector::vision::PdfiumRenderer,
+        name: &str,
+        page: usize,
+        twin: &Twin,
+    ) -> usize {
+        use pdf_inspector::vision::{RenderOptions, RenderPixelFormat};
+        let mut built = crate::image_pdf::pages(
+            crate::image_pdf::ImageFormat::Tiff,
+            &read(name),
+            &mut crate::image_pdf::Budget::new(u64::MAX, &|| false),
+        )
+        .unwrap()
+        .remove(page);
+        let dpi = built.resolution.unwrap().0;
+        built.resolution = Some((dpi, dpi));
+        let pdf = crate::image_pdf::pdf::write(&[built], DEFAULT_DPI);
+        let rendered = renderer
+            .render_pages(
+                &pdf,
+                &[1],
+                None,
+                &RenderOptions::new()
+                    .dpi(dpi as f32)
+                    .pixel_format(RenderPixelFormat::Gray8),
+            )
+            .unwrap()
+            .remove(0);
         let (width, height, bits) = twin;
-        let (rendered_width, rendered_height, stride, luma) = rendered;
+        assert_eq!(
+            (rendered.width(), rendered.height()),
+            (*width, *height),
+            "{name}"
+        );
+        let (stride, luma) = (rendered.stride(), rendered.pixels());
         let row = width.div_ceil(8) as usize;
-        let white =
-            |x: u32, y: u32| bits[y as usize * row + x as usize / 8] >> (7 - x % 8) & 1 == 1;
-        let (mut wrong, mut counted) = (0u64, 0u64);
-        for y in 1..height - 1 {
-            for x in 1..width - 1 {
-                let colour = white(x, y);
-                let inside =
-                    (y - 1..=y + 1).all(|ny| (x - 1..=x + 1).all(|nx| white(nx, ny) == colour));
-                if !inside {
-                    continue;
-                }
-                counted += 1;
-                let rx =
-                    ((f64::from(x) + 0.5) * f64::from(rendered_width) / f64::from(*width)) as u32;
-                let ry =
-                    ((f64::from(y) + 0.5) * f64::from(rendered_height) / f64::from(*height)) as u32;
-                let shown_white = luma[ry as usize * stride + rx as usize] >= 128;
-                if colour != shown_white {
-                    wrong += 1;
-                }
-            }
-        }
-        wrong as f64 / counted as f64
+        (0..*height as usize)
+            .filter(|&y| {
+                (0..*width as usize).any(|x| {
+                    let white = bits[y * row + x / 8] >> (7 - x % 8) & 1 == 1;
+                    white != (luma[y * stride + x] >= 128)
+                })
+            })
+            .count()
     }
 
     /// The qualification the item's Done-when asks for, with the pinned OCR
@@ -508,7 +933,7 @@ mod qualification {
     #[test]
     #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
     fn ocr_reads_every_page_and_pdfium_draws_fax_pages_like_their_twins() {
-        use pdf_inspector::vision::{PdfiumRenderer, RenderOptions, RenderPixelFormat};
+        use pdf_inspector::vision::PdfiumRenderer;
         let dir = tempfile::tempdir().unwrap();
         let installed = crate::ocr::install_in(dir.path()).unwrap();
         let notice = ["NOTICE OF TERMINATION", "УВЕДОМЛЕНИЕ"];
@@ -538,53 +963,21 @@ mod qualification {
             }
         }
         let renderer = PdfiumRenderer::load_from_path(&installed.pdfium).unwrap();
-        for (name, page, twin) in [
-            ("fax-g3-1d.tif", 0, ccitt_twin("fax-g3-1d.tif", 0)),
-            ("fax-g3-1d.tif", 1, ccitt_twin("fax-g3-1d.tif", 1)),
-            ("fax-g3-1d.tif", 2, ccitt_twin("fax-g3-1d.tif", 2)),
-            (
-                "fax-g3-2d-normal-lsb.tif",
-                0,
-                ccitt_twin("fax-g3-2d-normal-lsb.tif", 0),
-            ),
-            (
-                "fax-g3-2d-normal-lsb.tif",
-                1,
-                ccitt_twin("fax-g3-2d-normal-lsb.tif", 1),
-            ),
-            ("fax-g4.tif", 0, tiff_twin("fax-g4.tif", 0)),
-            ("fax-g4.tif", 1, tiff_twin("fax-g4.tif", 1)),
-        ] {
-            let built = build(&[&read(name)], DEFAULT_DPI).unwrap();
-            let rendered = renderer
-                .render_pages(
-                    &built.pdf,
-                    &[page as u32 + 1],
-                    None,
-                    &RenderOptions::new()
-                        .dpi(300.)
-                        .pixel_format(RenderPixelFormat::Gray8),
-                )
-                .unwrap()
-                .remove(0);
-            let wrong = disagreement(
-                &twin,
-                (
-                    rendered.width(),
-                    rendered.height(),
-                    rendered.stride(),
-                    rendered.pixels(),
-                ),
-            );
-            // Resampling a fax pixel (204 or 300 dpi) to 300 dpi moves a
-            // fraction of a percent; an inverted, mis-joined or misread page
-            // differs in tens of percent.
-            println!(
-                "{name} page {}: {:.3}% of run pixels differ",
-                page + 1,
-                wrong * 100.
-            );
-            assert!(wrong < 0.01, "{name} page {}: {wrong}", page + 1);
+        let mut twins: Vec<(&str, usize, Twin)> = Vec::new();
+        for page in 0..3 {
+            twins.push(("fax-g3-1d.tif", page, ccitt_twin("fax-g3-1d.tif", page)));
+        }
+        for page in 0..2 {
+            let name = "fax-g3-2d-normal-lsb.tif";
+            twins.push((name, page, ccitt_twin(name, page)));
+            for name in ["fax-g4.tif", "fax-g4-strips.tif"] {
+                twins.push((name, page, tiff_twin(name, page)));
+            }
+        }
+        for (name, page, twin) in &twins {
+            let wrong = rows_drawn_otherwise(&renderer, name, *page, twin);
+            println!("{name} page {}: {wrong} rows drawn otherwise", page + 1);
+            assert_eq!(wrong, 0, "{name} page {}", page + 1);
         }
     }
 }

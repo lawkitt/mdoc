@@ -37,10 +37,6 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # TIFF pages (image_pdf::tiff): every directory, and CCITT strips read raw for
 # passthrough. Already in the tree through image.
 tiff = "0.11"
-# CCITT strips that can't pass through joined (image_pdf::tiff): Group 3 1D
-# and 2D and Group 4, decoded strip by strip. Already in the tree through
-# gpui-pdf's hayro.
-hayro-ccitt = "0.5"
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
 # C API 17, which 1.17 and later serve: 1.32.0 downloaded on desktop
 # (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS,
@@ -72,3 +68,9 @@ windows = { version = "0.62", features = [
 
 [lints]
 workspace = true
+
+
+[dev-dependencies]
+# The TIFF tests' decoded twin of a fax page (image_pdf::tiff), a CCITT
+# decoder independent of PDFium. Already in the tree through gpui-pdf's hayro.
+hayro-ccitt = "0.5"

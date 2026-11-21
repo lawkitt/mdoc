@@ -79,7 +79,10 @@ fn through_import(name: &str, bytes: &[u8]) -> ImagePdf {
         other => panic!("{name}: {other:?}"),
     }
     let source = crate::import::Source::read(&path).unwrap();
-    let (pdf, frames_left_out) = source.image_pdf(DEFAULT_DPI).unwrap().unwrap();
+    let (pdf, frames_left_out) = source
+        .image_pdf(DEFAULT_DPI, &std::sync::atomic::AtomicBool::new(false))
+        .unwrap()
+        .unwrap();
     ImagePdf {
         pdf: pdf.bytes().to_vec(),
         pages: 1,
@@ -347,8 +350,11 @@ fn an_oversized_photo_is_scaled_down_and_only_it() {
     let oversized = jpeg(4800, 320, [30, 60, 90]);
     let page = page(&through_import("oversized.jpg", &oversized).pdf);
     assert_eq!((page.width, page.height), (4500, 300));
-    // The sheet stays the photo's own: 4,800 by 320 pixels at 150 dpi.
-    assert_eq!(page.media_box, (4800. * 72. / 150., 320. * 72. / 150.));
+    // A photo states no physical size: its sheet is its stored pixels at
+    // the OCR resolution, so OCR renders it at 4,500 pixels, never more
+    // (decision 10's bound), not the 4,800 it was taken at.
+    let dpi = f64::from(DEFAULT_DPI);
+    assert_eq!(page.media_box, (4500. * 72. / dpi, 300. * 72. / dpi));
     assert_eq!(page.filter, "DCTDecode");
     assert_ne!(page.data, without_app0(&oversized));
     let decoded = image::load_from_memory(&page.data).unwrap().into_rgb8();

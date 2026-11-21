@@ -132,6 +132,9 @@ pub enum ImageError {
     /// A HEIC photo where no decoder for it is built in.
     #[error("This computer can't decode HEIC photos. Save the photo as JPEG and import that.")]
     HeicUnsupported,
+    /// The import was cancelled while the PDF was being built.
+    #[error("Import cancelled")]
+    Cancelled,
 }
 
 /// The card's words for the Windows extensions a HEIC photo needs.
@@ -164,13 +167,25 @@ pub struct ImagePdf {
 /// resolution). The images are read from memory and the PDF is built in
 /// memory.
 pub fn build(images: &[&[u8]], dpi: u16) -> Result<ImagePdf, ImageError> {
+    build_cancellable(images, dpi, &|| false)
+}
+
+/// [`build`], stopping with [`ImageError::Cancelled`] between pages, and
+/// before the PDF is written, once `cancelled` says so.
+pub fn build_cancellable(
+    images: &[&[u8]],
+    dpi: u16,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ImagePdf, ImageError> {
+    let mut budget = Budget::new(MAX_DOCUMENT, cancelled);
     let mut built = Vec::with_capacity(images.len());
     let mut frames_left_out = 0u64;
     for bytes in images {
         let format = ImageFormat::from_bytes(bytes).ok_or(ImageError::Unreadable)?;
         frames_left_out += later_frames(format, bytes);
-        built.extend(pages(format, bytes)?);
+        built.extend(pages(format, bytes, &mut budget)?);
     }
+    budget.check()?;
     let pages = u32::try_from(built.len()).unwrap_or(u32::MAX);
     Ok(ImagePdf {
         pdf: pdf::write(&built, dpi),
@@ -194,6 +209,48 @@ const MAX_DIMENSION: u32 = 30_000;
 
 /// The memory a decode may allocate: a 100-megapixel RGBA image.
 const MAX_ALLOC: u64 = 512 * 1024 * 1024;
+
+/// The page data a PDF may hold, all its pages together: with the PDF's
+/// copy of it, a build stays within [`MAX_ALLOC`], however many pages under
+/// the per-page limits a file has (a TIFF's directories may even share one
+/// strip).
+const MAX_DOCUMENT: u64 = MAX_ALLOC / 2;
+
+/// What a build may still hold, and whether to stop: a page's data is
+/// charged before it is copied or kept, and a cancelled import stops
+/// between pages.
+struct Budget<'a> {
+    left: u64,
+    cancelled: &'a dyn Fn() -> bool,
+}
+
+impl<'a> Budget<'a> {
+    fn new(left: u64, cancelled: &'a dyn Fn() -> bool) -> Self {
+        Self { left, cancelled }
+    }
+
+    /// Charges `bytes` of page data: `TooLarge` when they don't fit in what
+    /// is left.
+    fn charge(&mut self, bytes: u64) -> Result<(), ImageError> {
+        self.left = self.left.checked_sub(bytes).ok_or(ImageError::TooLarge)?;
+        Ok(())
+    }
+
+    /// `page`, its data charged.
+    fn keep(&mut self, page: Page) -> Result<Page, ImageError> {
+        self.charge(page.data.len() as u64)?;
+        Ok(page)
+    }
+
+    /// `Cancelled` once the import is.
+    fn check(&self) -> Result<(), ImageError> {
+        if (self.cancelled)() {
+            Err(ImageError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
 
 /// How a page's pixels are stored in the PDF.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -231,29 +288,57 @@ struct Page {
     data: Vec<u8>,
     /// EXIF orientation, 1 to 8.
     orientation: u8,
-    /// The image's size before it was scaled down, in pixels: with the
-    /// resolution, the sheet's size, which scaling doesn't change.
-    sheet: (u32, u32),
     /// The page's own horizontal and vertical resolution, in dots per inch,
     /// when it states one (a TIFF); else the PDF's.
     resolution: Option<(f64, f64)>,
+    /// The page as bands of rows, top to bottom, each its own image of
+    /// `data` in order (a fax's CCITT strips, each coded on its own);
+    /// empty for a page that is one image.
+    bands: Vec<Band>,
 }
 
-/// The pages `bytes` give as `format`: the seam formats plug into.
-fn pages(format: ImageFormat, bytes: &[u8]) -> Result<Vec<Page>, ImageError> {
+/// One band of a page: its rows, and its bytes in the page's `data`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Band {
+    rows: u32,
+    bytes: usize,
+}
+
+impl Page {
+    /// The page's bands, a single one for a page that is one image.
+    fn bands(&self) -> Vec<Band> {
+        if self.bands.is_empty() {
+            vec![Band {
+                rows: self.height,
+                bytes: self.data.len(),
+            }]
+        } else {
+            self.bands.clone()
+        }
+    }
+}
+
+/// The pages `bytes` give as `format`, charged to `budget`: the seam
+/// formats plug into.
+fn pages(format: ImageFormat, bytes: &[u8], budget: &mut Budget) -> Result<Vec<Page>, ImageError> {
+    budget.check()?;
     if format == ImageFormat::Tiff {
-        return tiff::pages(bytes);
+        return tiff::pages(bytes, budget);
     }
     if format == ImageFormat::Heic {
-        return Ok(vec![heic::page(bytes)?]);
+        return Ok(vec![budget.keep(heic::page(bytes)?)?]);
     }
     if format == ImageFormat::Jpeg
         && let Some(page) = jpeg::passthrough(bytes)
     {
-        return Ok(vec![page]);
+        return Ok(vec![budget.keep(page)?]);
     }
     let (image, orientation) = decode(format, bytes, later_frames(format, bytes) > 0)?;
-    Ok(vec![encode(image, orientation, format.is_photo())?])
+    Ok(vec![budget.keep(encode(
+        image,
+        orientation,
+        format.is_photo(),
+    )?)?])
 }
 
 /// The first frame of `bytes`, within [`limits`], and its EXIF orientation.
@@ -293,7 +378,6 @@ fn error(error: image::ImageError) -> ImageError {
 /// stored as a JPEG when it is a `photo`, else with Flate.
 fn encode(image: image::DynamicImage, orientation: u8, photo: bool) -> Result<Page, ImageError> {
     let gray = !image.color().has_color();
-    let sheet = (image.width(), image.height());
     let image = scale_down(on_white(image, gray));
     let (width, height) = (image.width(), image.height());
     let (stream, data) = if photo {
@@ -316,7 +400,7 @@ fn encode(image: image::DynamicImage, orientation: u8, photo: bool) -> Result<Pa
         stream,
         data,
         orientation,
-        sheet,
+        bands: Vec::new(),
         resolution: None,
     })
 }

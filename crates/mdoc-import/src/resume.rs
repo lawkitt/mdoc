@@ -237,7 +237,7 @@ pub fn prepare_resumable(
     // Pages are kept under the file's digest: an image's, not the PDF built
     // from it, so `KeptPages::discard` finds them by the file.
     let digest = digest(source.bytes());
-    let (source, frames) = match source.image_pdf(installed.config.dpi) {
+    let (source, frames) = match source.image_pdf(installed.config.dpi, cancel) {
         Some(built) => built?,
         None => (source, 0),
     };
