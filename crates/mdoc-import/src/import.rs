@@ -2348,6 +2348,36 @@ EMC\n";
         assert!(convert(&csv).unwrap().markdown.contains("| Apples | 2 |"));
     }
 
+    /// A CSV in a legacy encoding without a BOM imports as its UTF-8 twin
+    /// does (#1023): Russian from Windows-1251, KOI8-R or UTF-8 with a BOM,
+    /// Western European from Windows-1252.
+    #[test]
+    fn legacy_encoded_csvs_import_as_their_utf8_twins() {
+        for (twin, legacy) in [
+            (
+                "russian-utf8.csv",
+                &[
+                    "russian-utf8-bom.csv",
+                    "russian-windows-1251.csv",
+                    "russian-koi8-r.csv",
+                ][..],
+            ),
+            ("western-utf8.csv", &["western-windows-1252.csv"][..]),
+        ] {
+            let expected = convert(&fixture(twin)).unwrap();
+            for name in legacy {
+                let imported = convert(&fixture(name)).unwrap();
+                assert_eq!(imported.markdown, expected.markdown, "{name}");
+                assert_eq!(imported.note(), expected.note(), "{name}");
+            }
+        }
+        let russian = convert(&fixture("russian-koi8-r.csv")).unwrap().markdown;
+        assert!(
+            russian.contains("| Белозёрова Анна Викторовна | Москва | бухгалтер | 1 250,00 |"),
+            "{russian}"
+        );
+    }
+
     #[test]
     fn scan_reports_the_languages_its_text_layer_suggests() {
         use crate::recognition::ENGLISH;

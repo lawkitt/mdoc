@@ -28,3 +28,7 @@ tests/headless_screens.txt merge=union text eol=lf
 
 # Recognition fixtures (ADR 0093): byte offsets and snapshots assume LF.
 tests/fixtures/recognition/** text eol=lf
+
+# CSV import fixtures in legacy encodings (#1023) are compared byte for byte
+# with their UTF-8 twins: never EOL-convert them.
+tests/fixtures/import/*.csv -text

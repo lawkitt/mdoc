@@ -52,6 +52,12 @@ as inline bold, not a heading; the table's cell text is kept.
   `tests/gen_fixtures.py`. Each has one hidden sheet, one hidden row and
   one hidden column holding fictional names, every hidden one spelled
   `HIDDEN-*`; expected Markdown is its snapshots without Insta metadata.
+- `russian-*.csv` and `western-*.csv`: byte-for-byte from the
+  lawkitt/anydoc fork at `a0ee8dbf1c894ef8ede0b64e9cd5a3eb1d204119`
+  (`tests/fixtures/csv`), made by `csvs` in its `tests/gen_fixtures.py`:
+  the same fictional people in UTF-8, UTF-8 with a BOM, Windows-1251 and
+  KOI8-R (Russian), and in UTF-8 and Windows-1252 (Western European). Each
+  legacy file imports as its `*-utf8.csv` twin.
 - `handmade-comments.*`: byte-for-byte from AnyDoc `5e22f0a2`'s fixtures;
   `text_annotations.pdf` from pdf-inspector `957693f5`'s (both MIT).
 
