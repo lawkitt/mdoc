@@ -207,6 +207,22 @@ fn a_transparent_heic_goes_on_white() {
     });
 }
 
+/// The size check every decoder asks with its stored size before it
+/// decodes: 30,000 pixels a side at most, and 512 MiB as RGBA.
+#[test]
+fn sizes_over_the_limits_are_refused() {
+    use super::fits;
+    for (width, height) in [(1200, 1600), (30_000, 16), (16, 30_000), (11_000, 11_000)] {
+        assert!(fits(width, height).is_ok(), "{width} x {height}");
+    }
+    for (width, height) in [(30_001, 16), (16, 40_000), (12_000, 12_000)] {
+        assert!(
+            matches!(fits(width, height), Err(ImageError::TooLarge)),
+            "{width} x {height}"
+        );
+    }
+}
+
 /// The alpha plane is found by its auxiliary type: `transparent.heic`'s item
 /// 2 is the primary's alpha; the same item typed as depth (as phones store
 /// depth maps) is not, nor is anything in an opaque photo. Naming it
@@ -529,15 +545,21 @@ fn image_io_decodes_the_primary_image() {
     assert!(shows(&read("two-images.heic"), 32, [220, 30, 30]));
 }
 
-/// A HEIC claiming 40,000 pixels square is refused from its properties,
-/// before ImageIO decodes anything.
+/// A HEIC whose `ispe` boxes claim 40,000 pixels square is refused, never
+/// decoded at that size. (ImageIO refuses the rewritten file as damaged:
+/// its tiles no longer add up. No encoder here writes a real HEIC over
+/// the limits, so `sizes_over_the_limits_are_refused` pins the check
+/// ImageIO's stored size goes through.)
 #[cfg(target_os = "macos")]
 #[test]
-fn image_io_refuses_an_oversized_heic_before_decoding() {
+fn image_io_refuses_an_oversized_heic() {
     let error = super::image_io::Decoder
         .decode_heic(&oversized("page-upright.heic"))
         .err();
-    assert!(matches!(error, Some(ImageError::TooLarge)), "{error:?}");
+    assert!(
+        matches!(error, Some(ImageError::TooLarge | ImageError::Unreadable)),
+        "{error:?}"
+    );
 }
 
 /// At the import seam with ImageIO: each real fixture is one page for OCR.

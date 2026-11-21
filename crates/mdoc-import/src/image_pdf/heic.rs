@@ -273,19 +273,26 @@ pub(super) fn with_primary(bytes: &[u8], item: u32) -> Option<Vec<u8>> {
     Some(copy)
 }
 
-/// `bytes` decoded by the platform's decoder (or the test's stub), as a
-/// page by the builder's rules for a photo: turned upright in its pixels
-/// (decision 13: the JPEG itself is upright), on white.
-pub(super) fn page(bytes: &[u8]) -> Result<super::Page, ImageError> {
-    let decoded = decode(bytes)?;
-    let mut image = decoded.image;
-    let (width, height) = (image.width(), image.height());
+/// Whether an image `width` by `height` fits the builder's limits: at most
+/// [`MAX_DIMENSION`] pixels a side and [`MAX_ALLOC`] as RGBA. Each decoder
+/// asks with the stored size before it decodes, and the page asks again.
+pub(super) fn fits(width: u32, height: u32) -> Result<(), ImageError> {
     if width > MAX_DIMENSION
         || height > MAX_DIMENSION
         || u64::from(width) * u64::from(height) * 4 > MAX_ALLOC
     {
         return Err(ImageError::TooLarge);
     }
+    Ok(())
+}
+
+/// `bytes` decoded by the platform's decoder (or the test's stub), as a
+/// page by the builder's rules for a photo: turned upright in its pixels
+/// (decision 13: the JPEG itself is upright), on white.
+pub(super) fn page(bytes: &[u8]) -> Result<super::Page, ImageError> {
+    let decoded = decode(bytes)?;
+    let mut image = decoded.image;
+    fits(image.width(), image.height())?;
     if let Some(orientation) = image::metadata::Orientation::from_exif(decoded.orientation) {
         image.apply_orientation(orientation);
     }

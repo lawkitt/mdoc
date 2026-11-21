@@ -179,9 +179,7 @@ pub(super) fn decode(bytes: &[u8], container: &GUID) -> Result<OsDecoded, ImageE
         if width == 0 || height == 0 {
             return Err(ImageError::Unreadable);
         }
-        if width > super::super::MAX_DIMENSION || height > super::super::MAX_DIMENSION {
-            return Err(ImageError::TooLarge);
-        }
+        super::fits(width, height)?;
         let stride = width.checked_mul(4).ok_or(ImageError::TooLarge)?;
         let size = u64::from(stride) * u64::from(height);
         if size > super::MAX_ALLOC {

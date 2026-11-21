@@ -149,12 +149,7 @@ impl OsDecoder for Decoder {
                 side(kCGImagePropertyPixelWidth).ok_or(ImageError::Unreadable)?,
                 side(kCGImagePropertyPixelHeight).ok_or(ImageError::Unreadable)?,
             );
-            if stored_width > super::MAX_DIMENSION
-                || stored_height > super::MAX_DIMENSION
-                || u64::from(stored_width) * u64::from(stored_height) * 4 > super::MAX_ALLOC
-            {
-                return Err(ImageError::TooLarge);
-            }
+            super::fits(stored_width, stored_height)?;
             // The whole image, never an embedded preview, turned upright,
             // and no larger than it is stored.
             let longest = i64::from(stored_width.max(stored_height));
