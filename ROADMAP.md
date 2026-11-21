@@ -217,6 +217,22 @@ Features are frozen until items 13–19 land (Q4).
     and Android follow (Later). One TestFlight build after. *Done when:*
     both merged and checked on the iPhone 17 Pro.
 
+30. **[Mobile] UI polish from the 2026-11-21 device check.** *From the
+    device-check grill; spec #1036.* One PR, Swift only: Text scrolls to
+    the end after review (failing test first, #705), a theme change shows
+    in open sheets, no scope chip under 2 mentions, the Original never
+    below fit (⤢ guard), Show Markdown only in the title menu with Text,
+    lighter comment markers, Dark page with its one-time tip. *Done when:*
+    merged and #1036's device rows pass on the iPhone 17 Pro.
+
+31. **[Mobile] Chinese, Japanese and Korean in DOCX Originals.** *From
+    the device-check grill; spec #1036.* One PR: a Noto Sans CJK SC subset
+    (SC, kana and JIS kanji, all Hangul) bundled for iOS only under its
+    own family name so docxide's fallback finds it; a Rust test on the iOS
+    font set; measured size in the PR. One TestFlight build after 30 and
+    31. *Done when:* merged and the bilingual contract's Chinese reads on
+    the iPhone 17 Pro.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
