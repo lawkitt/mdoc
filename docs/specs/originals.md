@@ -24,9 +24,12 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 ## DOCX rendering
 
-- A password-protected DOCX shows no rendering, even unlocked: docxide
-  renders to a temporary PDF, which would be an unlocked copy on disk. Its
-  comments count in the left-out line instead.
+- On desktop every DOCX renders in memory: the worker takes the document on
+  stdin and returns the PDF on stdout, and the pane opens it from those
+  bytes. Nothing of it reaches disk, so an unlocked password-protected DOCX
+  shows its Original, and a reopened one asks for its password there
+  (#1024). iOS still renders into a file and shows no Original for an
+  unlocked DOCX until it renders in memory too.
 - docxide is bumped at the start of each desktop milestone, with the DOCX
   fidelity check; no fork unless a patch is unavoidable.
 - Upstream docxide issues carry synthetic fixtures only, never a user's

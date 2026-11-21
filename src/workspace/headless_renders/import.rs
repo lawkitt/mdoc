@@ -65,7 +65,8 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
             w.active_view().unwrap().update(cx, |v, cx| {
                 let source = PathBuf::from(file);
                 v.lifecycle.show_source();
-                v.preview.unlocked_docx(source.clone());
+                // The Original points to the conversion card's field.
+                v.preview.show_password(source.clone(), false);
                 v.import.show_password_fixture(
                     v.session.generation,
                     source.to_str().unwrap(),
@@ -81,7 +82,72 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         })?;
         d.capture(name)?;
     }
+    locked_original(d)?;
     comments_note(d)
+}
+
+/// Word's locked DOCX (`tests/fixtures/locked-office`): unlocked on the
+/// conversion card, its Original renders in memory (#1024 item 3); reopened,
+/// its Markdown opens without the password and the Original asks for it,
+/// then again after a wrong one (#1024 decision 6).
+fn locked_original(d: &mut Driver) -> Result<()> {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/locked-office/word-locked.docx");
+    let password = mdoc_import::import::Password::new("Petrov-2026".into());
+    let mut imported = mdoc_import::import::prepare_cancellable(
+        &fixture,
+        Some(&password),
+        None,
+        true,
+        &AtomicBool::new(false),
+    )
+    .map_err(|e| e.to_string())?;
+    let preview = mdoc_import::docx_preview::render_in_process(
+        &imported.source,
+        Arc::new(AtomicBool::new(false)),
+        crate::preview::read_comment_marks,
+        Default::default(),
+        None,
+    )
+    .map_err(|e| e.to_string())?;
+    let markdown = imported.markdown.clone();
+    // No preview worker: the rendering above stands in for its answer.
+    imported.is_docx = false;
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.proceed(
+                crate::document_view::Next::Import(Box::new(imported)),
+                window,
+                cx,
+            );
+            v.begin_preview(fixture.clone());
+            v.load_docx(fixture.clone(), preview, window, cx);
+            cx.notify();
+        });
+    })?;
+    d.settle()?;
+    d.capture("original-unlocked")?;
+    for (name, wrong) in [
+        ("original-password", false),
+        ("original-password-wrong", true),
+    ] {
+        let (fixture, markdown) = (fixture.clone(), markdown.clone());
+        d.change(move |w, window, cx| {
+            w.new_tab(window, cx);
+            w.active_view().unwrap().update(cx, |v, cx| {
+                v.editor.update(cx, |e, cx| e.set_text(markdown, cx));
+                v.preview.show_password(fixture, wrong);
+                v.original_password_field.update(cx, |field, cx| {
+                    field.set_value("fictional-pass".into(), cx);
+                    field.move_to_end(cx);
+                });
+                cx.notify();
+            });
+        })?;
+        d.capture(name)?;
+    }
+    Ok(())
 }
 
 /// A DOCX whose comments and deleted changes name people: the Markdown

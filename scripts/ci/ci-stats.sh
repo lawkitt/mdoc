@@ -5,15 +5,19 @@
 # queue's Queue runs) over the last N days (default 7) or since a time such
 # as 2026-11-05T22:20:00Z (to measure only what ran after a change landed):
 #
-#   core     a core queue commit's time to green: median 20 minutes or less;
+#   core     a core queue commit's time to green: median 30 minutes or less
+#            (#1041: missing it reopens a self-hosted Mac, which its FAIL
+#            line says);
 #   desktop  a desktop-only one's: median 15 minutes or less;
 #   queue    every queue commit's: median 25 minutes or less. A queue
 #            commit's time runs from its Queue run starting to its first
 #            green merge-gate status;
-#   ios-ui   the slower iOS UI shard's time on hosted macOS, per queue
-#            commit whose `ci/ios (ui 1)` and `(ui 2)` jobs both passed (or,
+#   ios-ui   the slowest iOS UI shard's time on hosted macOS, per queue
+#            commit whose `ci/ios (ui N)` jobs all passed (or,
 #            before the second shard, whose single `ci/ios (ui)` did): median
-#            15 minutes or less;
+#            20 minutes or less (a job; its `Tests` step takes about 17 on
+#            `macos-26`, which the maintainer accepted over a test sweep,
+#            #1041);
 #   drops    queue drops not caused by the PR: at most 1 a week.
 #
 # A queue commit's class comes from the jobs its Queue run started (not
@@ -79,9 +83,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 repo=${GH_REPO:-lawkitt/mdoc}
 quarantine=${CI_STATS_QUARANTINE:-$(dirname "${BASH_SOURCE[0]}")/../../.config/quarantine.txt}
 queue_min=${CI_STATS_QUEUE_MIN:-25}
-core_min=${CI_STATS_CORE_MIN:-20}
+core_min=${CI_STATS_CORE_MIN:-30}
 desktop_min=${CI_STATS_DESKTOP_MIN:-15}
-ios_ui_min=${CI_STATS_IOS_UI_MIN:-15}
+ios_ui_min=${CI_STATS_IOS_UI_MIN:-20}
 drops_week=${CI_STATS_DROPS_WEEK:-1}
 drill=${CI_STATS_DRILL:-}
 # The repeat rule's reach either side of a drop.
@@ -93,19 +97,19 @@ repeat_s=$((14 * 86400))
 # judge only data from after that change. `pending` (the change has not
 # merged): the line reports every sample and its verdict but never fails
 # the run; set the date when the change merges.
-#   core     items 27 (one rule pack), 28 (UI shards by time) and 31
-#            (detection on hosted Windows)
+#   core     items 32 (the iOS core once per run), 33 (iOS tests on
+#            `macos-26`) and 34 (three UI shards on `macos-26`)
 #   desktop  item 24 (detection only when its inputs change)
 #   queue    the queue-speed and quarantine rollout, the median it keeps
 #            as a floor
-#   ios-ui   item 28 (UI shards by time)
+#   ios-ui   items 33 and 34 (a UI shard's tests on `macos-26`)
 #   drops    the queue-speed and quarantine rollout
 target_start() { # target
   case "$1" in
-    core) echo 2026-11-13T12:57:58Z ;;
+    core) echo 2026-11-21T16:45:12Z ;;
     desktop) echo 2026-11-13T07:07:50Z ;;
     queue) echo 2026-11-12T15:21:00Z ;;
-    ios-ui) echo 2026-11-13T12:57:58Z ;;
+    ios-ui) echo 2026-11-21T16:45:12Z ;;
     drops) echo 2026-11-12T15:21:00Z ;;
     *) die "unknown target: $1" ;;
   esac
@@ -277,22 +281,26 @@ repeated() { # pr at job test tests-file retried-file cutoff
     END { exit !found }' "$5" "$6"
 }
 
-# The slower UI shard's `<seconds> <end epoch>` from a Queue run's jobs.
-# Require the complete green pair, or the old single job. A missing, skipped,
-# failed or unfinished shard gives no sample; use the latest completion so
-# historical windows never see a pair that was only partly finished then.
+# The slowest UI shard's `<seconds> <end epoch>` from a Queue run's jobs.
+# Require a complete green set, `(ui 1)` to `(ui N)` once each (two shards
+# until #997, three since), or the old single job. A missing, skipped, failed
+# or unfinished shard gives no sample; use the latest completion so
+# historical windows never see a set that was only partly finished then.
 ios_ui_seconds() {
   awk '{ name = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", name) }
-    name ~ /(^|\/ )ci\/ios \(ui( [12])?\)$/ {
+    name ~ /(^|\/ )ci\/ios \(ui( [0-9]+)?\)$/ {
       if ($1 != "success" || $2 <= 0 || $3 <= 0) bad = 1
-      if (name ~ /\(ui 1\)$/) one++
-      else if (name ~ /\(ui 2\)$/) two++
-      else old++
+      if (match(name, /\(ui [0-9]+\)$/)) {
+        k = substr(name, RSTART + 4, RLENGTH - 5) + 0
+        if (seen[k]++) bad = 1
+        shards++
+        if (k > top) top = k
+      } else old++
       if ($3 - $2 > slow) slow = $3 - $2
       if ($3 > end) end = $3
     }
     END {
-      if (!bad && ((one == 1 && two == 1 && !old) || (old == 1 && !one && !two)))
+      if (!bad && ((shards >= 2 && shards == top && !old) || (old == 1 && !shards)))
         print slow + 0, end
     }'
 }
@@ -521,7 +529,7 @@ target_from() { # target window-start
 # wrote in $3), after a line counting the window's commits by class: 0 when
 # every judged target holds, 1 when one fails.
 report() { # from to dir
-  local from=$1 to=$2 dir=$3 rc=0 n m p verdict days per_week target limit what start note
+  local from=$1 to=$2 dir=$3 rc=0 n m p verdict consequence days per_week target limit what start note
   local at sha pr desc why unrelated=0 drops=0 infra=0 quar=0 rep=0 list='' failed='' test
   commit_classes "$dir/classes" "$from" "$to" >"$dir/classes.now"
   awk '{ n[$2]++ }
@@ -545,13 +553,14 @@ report() { # from to dir
           (want == "core" && cls[$4] == "core") || (want == "desktop" && cls[$4] == "desktop-only")) { print $2 }
       ' "$dir/classes.now" "$dir/queue" | summary)"
     fi
-    verdict=pass
+    verdict=pass consequence=''
     if ! within "$m" "$limit"; then
       verdict=FAIL
       [ "${note%%:*}" = "not judged" ] || rc=1
+      [ "$target" != core ] || consequence='; missing it reopens a self-hosted Mac (#1041)'
     fi
-    printf '%-8s %s  %s: %s, median %s min, p90 %s min (target: median %s or less; %s)\n' \
-      "$target" "$verdict" "$what" "$n" "$(minutes "$m")" "$(minutes "$p")" "$limit" "$note"
+    printf '%-8s %s  %s: %s, median %s min, p90 %s min (target: median %s or less; %s)%s\n' \
+      "$target" "$verdict" "$what" "$n" "$(minutes "$m")" "$(minutes "$p")" "$limit" "$note" "$consequence"
   done
   read -r start note <<<"$(target_from drops "$from")"
   [ "$start" -le "$to" ] || start=$to

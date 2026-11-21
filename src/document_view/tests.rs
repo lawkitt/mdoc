@@ -1325,7 +1325,7 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mut TestAppContext) {
+fn repeated_document_switches_release_preview_entities_and_pdf_bytes(cx: &mut TestAppContext) {
     let (mut app, cx) = boot(cx);
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for _ in 0..3 {
@@ -1342,10 +1342,11 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
             (
                 preview.pdf().unwrap().downgrade(),
                 preview.comment_rail().unwrap().downgrade(),
-                preview.docx().unwrap().pdf_path.clone(),
+                preview.docx().unwrap().pdf.clone(),
             )
         });
-        assert!(backing.exists());
+        // Nothing is written: the PDF is in memory only.
+        assert!(backing.holders() > 1);
         app.update_in(cx, |app, window, cx| {
             app.open_pdf(base.join("tests/fixtures/reference.pdf"), window, cx);
         });
@@ -1356,7 +1357,8 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
         });
         assert!(pdf.upgrade().is_none());
         assert!(comments.upgrade().is_none());
-        assert!(crate::test_support::removed(&backing));
+        assert_eq!(backing.holders(), 1, "the PDF bytes were let go");
+        drop(backing);
         let pdf = cx.update(|_, cx| app.read(cx).preview.pdf().unwrap().downgrade());
         app.update_in(cx, |app, window, cx| {
             app.close_preview(window, cx);

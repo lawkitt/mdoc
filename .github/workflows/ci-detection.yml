@@ -11,12 +11,14 @@ name: Detection gate
 # 16 s; 660 s for all 256, 2026-11-13), but runners differ for a whole job,
 # whatever their CPU: of 38 jobs, 3 ran 0.6 times as long, 2 1.25 times and
 # 2 about 2.3 and 2.9 times (one Xeon 8573C ran 3 times as long as another).
-# A model run over 5 minutes fails, so the queue, the nightly and
-# recognition-area PR heads (ci.yml's `detection-head`) run 12 shards, ADR
-# 0113's limit: the slowest holds about 75 s, about 225 s (75%) on a runner
-# 3 times as slow. With 5 shards such a runner took 358 s and failed, with
-# 8 one took 250 s. A shard warns past 80% of the budget; past 12 shards the
-# ADR is reopened. The job logs the runner's CPU.
+# A model run over its 5-minute budget fails only with `budget-fails`, the
+# nightly, which runs 12 shards: the slowest holds about 75 s, about 225 s
+# (75%) on a runner 3 times as slow (with 5 shards such a runner took 358 s,
+# with 8 one took 250 s). The queue and recognition-area PR heads (ci.yml's
+# `detection-head`) run 4 and only warn past the budget, because a shared
+# VM's wall clock must not decide a merge (#1041): a shard holds about
+# 165 s on a typical runner. A shard warns past 80% of the budget. The job
+# logs the runner's CPU.
 # `ci/detection` sums the shards up and is the context merge-gate reads. A
 # failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
@@ -33,7 +35,11 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 12
+        default: 4
+      budget-fails:
+        description: Fail a shard whose model run passes its 5-minute budget (the nightly); otherwise it warns.
+        type: boolean
+        default: false
       build-only:
         description: Set up the model and build only, which saves both caches on main (main-caches.yml).
         type: boolean
@@ -45,9 +51,13 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over (12, so a slow runner stays inside the 5-minute model budget).
+        description: Parallel jobs the fixtures split over (the nightly runs 12, so a slow runner stays inside the 5-minute model budget).
         type: number
-        default: 12
+        default: 4
+      budget-fails:
+        description: Fail a shard whose model run passes its 5-minute budget, as the nightly does; otherwise it warns.
+        type: boolean
+        default: false
       build-only:
         description: Set up the model and build only.
         type: boolean
@@ -72,7 +82,7 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 12 }}
+          SHARDS: ${{ inputs.shards || 4 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
@@ -141,7 +151,9 @@ jobs:
 
       - name: Detection gate
         if: ${{ !inputs.build-only }}
-        run: just recognize --check --shard "$SHARD" --out target/detection-snapshots
+        env:
+          BUDGET: ${{ !inputs.budget-fails && '--budget-warns' || '' }}
+        run: just recognize --check --shard "$SHARD" --out target/detection-snapshots ${BUDGET:+"$BUDGET"}
 
       # Every fixture of the shard refreshed, and each snapshot whose bytes
       # changed added to the artifact beside the stale ones.

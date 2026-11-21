@@ -197,6 +197,12 @@ pub(crate) struct DocumentView {
     /// The conversion card's field for a locked document's password: what
     /// it holds goes to one conversion on Unlock and is wiped.
     pub(crate) password_field: Entity<markdown_search::SearchInput>,
+    /// The Original's field for a reopened locked DOCX's password: what it
+    /// holds unlocks the tab's source on Unlock and is wiped.
+    pub(crate) original_password_field: Entity<markdown_search::SearchInput>,
+    /// The Original's password field takes focus once, after a wrong
+    /// password.
+    pub(crate) focus_original_card: bool,
     /// The Replace row's field; its text stays with the tab.
     pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
     pub(crate) search: search_session::SearchSession,
@@ -277,6 +283,13 @@ impl DocumentView {
                 .with_placeholder("Replace with")
         });
         let password_field = cx.new(|cx| {
+            markdown_search::SearchInput::new(cx)
+                .with_theme(dependencies.theme.clone())
+                .with_key_context("DocumentPassword")
+                .with_placeholder("Password")
+                .secure()
+        });
+        let original_password_field = cx.new(|cx| {
             markdown_search::SearchInput::new(cx)
                 .with_theme(dependencies.theme.clone())
                 .with_key_context("DocumentPassword")
@@ -410,6 +423,8 @@ impl DocumentView {
             ),
             markdown_search,
             password_field,
+            original_password_field,
+            focus_original_card: false,
             markdown_replace,
             search: search_session::SearchSession::default(),
             ocr_setup_subscription: None,
@@ -741,8 +756,6 @@ impl DocumentView {
                     self.show_image_pdf(path, imported.source.bytes().to_vec(), window, cx);
                 } else if imported.is_pdf {
                     self.open_pdf(imported.source.path, window, cx);
-                } else if imported.is_docx && imported.decrypted {
-                    self.preview.unlocked_docx(imported.source.path);
                 } else if imported.is_docx {
                     self.open_docx(imported.source.path, window, cx);
                 } else {
@@ -877,7 +890,7 @@ impl DocumentView {
                 }
                 ImportEffect::Run {
                     path,
-                    password,
+                    mut unlock,
                     installed,
                     skip_ocr,
                     permit,
@@ -887,21 +900,23 @@ impl DocumentView {
                     self.error = None;
                     let generation = self.session.generation;
                     let task = cx.background_executor().spawn(async move {
-                        // The password lives only as long as this run.
-                        let result = import::prepare_cancellable(
+                        // The run takes the tab's unlock (or a typed
+                        // password) and hands back what opens the source
+                        // now; a closed tab's drops with the task.
+                        let result = import::prepare_unlocking(
                             &path,
-                            password.as_ref(),
+                            &mut unlock,
                             installed.as_ref(),
                             skip_ocr,
                             &cancel,
                         );
                         drop(permit);
-                        result
+                        (result, unlock)
                     });
                     let task = cx.spawn_in(window, async move |this, cx| {
-                        let result = task.await;
+                        let (result, unlock) = task.await;
                         let _ = this.update_in(cx, |this, window, cx| {
-                            this.import.complete(generation, result);
+                            this.import.complete(generation, result, unlock);
                             this.resume_import(window, cx);
                             cx.emit(workspace::TabEvent::Import(
                                 workspace::ImportEvent::Finished,
@@ -1057,7 +1072,8 @@ impl DocumentView {
     }
 
     /// Unlock on the conversion card: the field's text goes to one
-    /// conversion as the document's password and is wiped from the field.
+    /// conversion as the document's password and is wiped from the field;
+    /// what it unlocks stays with the tab.
     fn unlock_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.import.can_unlock() || self.lifecycle.prompting() {
             return;
@@ -1068,7 +1084,7 @@ impl DocumentView {
         if password.is_empty() {
             return;
         }
-        let effect = self.import.unlock(import::Password::from(password));
+        let effect = self.import.try_password(import::Password::from(password));
         self.carry_out_import(effect, window, cx);
     }
 
@@ -1087,21 +1103,103 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let theme = self.theme.get();
         let field_focus = self.password_field.read(cx).focus_handle(cx);
         if std::mem::take(&mut self.focus_card)
             && (self.focus.contains_focused(window, cx) || window.focused(cx).is_none())
         {
-            let focus = field_focus.clone();
-            window.defer(cx, move |window, cx| window.focus(&focus, cx));
+            window.defer(cx, move |window, cx| window.focus(&field_focus, cx));
         }
-        let can_unlock = self.import.can_unlock();
-        card.child(ui::card_title("This document is password-protected"))
-            .child(ui::card_text(
-                "Enter its password to convert it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.",
-                theme,
+        self.password_form(
+            card,
+            "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+            prompt == import_flow::PasswordPrompt::Wrong,
+            self.password_field.clone(),
+            ("document-password", "unlock-document"),
+            self.import.can_unlock(),
+            Self::unlock_document,
+            cx,
+        )
+    }
+
+    /// The Original's card for a locked DOCX this tab holds no unlock for,
+    /// a reopened one (#1024 decision 6): its password shows the Original,
+    /// and the unlock stays with the tab. While the conversion card asks for
+    /// the same password, the Original only points to it.
+    fn original_password_card(
+        &mut self,
+        password: crate::preview::OriginalPassword,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        if self.lifecycle.source_only() && self.import.password_prompt().is_some() {
+            return div()
+                .id("original-password-pending")
+                .max_w(px(360.))
+                .px_6()
+                .text_center()
+                .text_size(px(14.))
+                .child("Enter the document’s password to show the Original.")
+                .into_any_element();
+        }
+        let field_focus = self.original_password_field.read(cx).focus_handle(cx);
+        if std::mem::take(&mut self.focus_original_card) {
+            window.defer(cx, move |window, cx| window.focus(&field_focus, cx));
+        }
+        let card = ui::state_card("original-password-card", theme)
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "original-password-card".into())
+            })
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(theme.pdf_style().header_muted)
+                    .text_ellipsis()
+                    .child(
+                        self.preview
+                            .source()
+                            .and_then(|path| path.file_name())
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    ),
+            );
+        div()
+            .w_full()
+            .px_6()
+            .flex()
+            .justify_center()
+            .child(self.password_form(
+                card,
+                "Enter its password to show the Original. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+                password == crate::preview::OriginalPassword::Wrong,
+                self.original_password_field.clone(),
+                ("original-password", "unlock-original"),
+                password != crate::preview::OriginalPassword::Unlocking,
+                Self::unlock_original,
+                cx,
             ))
-            .when(prompt == import_flow::PasswordPrompt::Wrong, |v| {
+            .into_any_element()
+    }
+
+    /// A locked document's password card: `body`, the wrong-password line,
+    /// and `field` with an Unlock button (`ids`); Enter unlocks too.
+    #[allow(clippy::too_many_arguments)]
+    fn password_form(
+        &self,
+        card: gpui::Stateful<gpui::Div>,
+        body: &'static str,
+        wrong: bool,
+        field: Entity<markdown_search::SearchInput>,
+        ids: (&'static str, &'static str),
+        enabled: bool,
+        unlock: fn(&mut Self, &mut Window, &mut Context<Self>),
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let (field_id, button_id) = ids;
+        card.child(ui::card_title("This document is password-protected"))
+            .child(ui::card_text(body, theme))
+            .when(wrong, |v| {
                 v.child(ui::card_error(
                     mdoc_import::import::ImportError::WrongPassword.to_string(),
                     theme,
@@ -1112,10 +1210,8 @@ impl DocumentView {
                     .flex_nowrap()
                     .child(
                         div()
-                            .id("document-password")
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "document-password".into())
-                            })
+                            .id(field_id)
+                            .when(cfg!(test), |v| v.debug_selector(move || field_id.into()))
                             .flex_1()
                             .min_w_0()
                             .border_1()
@@ -1125,20 +1221,22 @@ impl DocumentView {
                             .px_2()
                             .py_1()
                             // Enter unlocks, as the button does.
-                            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
-                                let keystroke = &event.keystroke;
-                                if keystroke.key == "enter" && !keystroke.modifiers.modified() {
-                                    cx.stop_propagation();
-                                    this.unlock_document(window, cx);
-                                }
-                            }))
-                            .child(self.password_field.clone()),
+                            .on_key_down(cx.listener(
+                                move |this, event: &gpui::KeyDownEvent, window, cx| {
+                                    let keystroke = &event.keystroke;
+                                    if keystroke.key == "enter" && !keystroke.modifiers.modified() {
+                                        cx.stop_propagation();
+                                        unlock(this, window, cx);
+                                    }
+                                },
+                            ))
+                            .child(field),
                     )
                     .child(
-                        ui::primary_button("unlock-document", "Unlock", theme, can_unlock)
-                            .when(cfg!(test), |v| v.debug_selector(|| "unlock-document".into()))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.unlock_document(window, cx);
+                        ui::primary_button(button_id, "Unlock", theme, enabled)
+                            .when(cfg!(test), |v| v.debug_selector(move || button_id.into()))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                unlock(this, window, cx);
                             })),
                     ),
             )
@@ -2414,7 +2512,7 @@ impl Render for DocumentView {
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
                 .when(show_original && self.preview.pdf().is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
-                    .child(self.preview_status(theme))))
+                    .child(match self.preview.password() { Some(password) => self.original_password_card(password, window, cx), None => self.preview_status(theme) })))
                 .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).on_action(cx.listener(Self::next_comment)).on_action(cx.listener(Self::previous_comment)).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .children(preview_notice)))

@@ -45,8 +45,8 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         let view = w.active_view().unwrap();
         view.update(cx, |v, cx| {
             v.preview.set_split(0.25);
-            v.begin_preview(source);
-            v.load_preview(preview.pdf_path.clone(), Some(preview), window, cx);
+            v.begin_preview(source.clone());
+            v.load_docx(source, preview, window, cx);
         });
         view
     })?;
@@ -89,8 +89,8 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.change(|w, window, cx| {
         let _ = w.update_general(|general| general.show_hidden_text = true, cx);
         view.update(cx, |v, cx| {
-            v.begin_preview(source);
-            v.load_preview(preview.pdf_path.clone(), Some(preview), window, cx);
+            v.begin_preview(source.clone());
+            v.load_docx(source, preview, window, cx);
         });
     })?;
     d.capture("comments-hidden-text")?;

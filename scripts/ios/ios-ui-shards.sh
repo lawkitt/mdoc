@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-ui-shards.sh <shard> | --check | --plan | --classes
+#        scripts/ios/ios-ui-shards.sh --touched [<file>...] | --declared <file>...
 # The UI test classes (mdocUITests) split over ci-ios.yml's UI parts,
-# `ci/ios (ui 1)` and `ci/ios (ui 2)`, by measured time: `<shard>` prints that
+# `ci/ios (ui 1)`, `(ui 2)` and `(ui 3)`, by measured time: `<shard>` prints that
 # shard's classes as xcodebuild `-only-testing`
 # identifiers on one line (`mdocUITests/EditToolbarUITests ...`), which
 # `just ios-test` takes as its `only` arguments. `--check` prints nothing;
 # `--plan` prints each class's shard and seconds (`1 EditModeUITests 146`,
 # `median` after a class the table lacks) and each shard's total;
-# `--classes` prints the test classes, one per line.
+# `--classes` prints the test classes, one per line. `--touched` prints the
+# shards, one number per line, holding the test classes the given Swift
+# files under the folder declare; a file there that declares none (a helper
+# such as Waits.swift) touches every shard, and any other file none
+# (scripts/ios/ios-ci-parts.sh passes a branch's changed files).
+# `--declared` prints the test classes the given Swift files declare,
+# wherever they are (ios-ci-parts.sh reads a deleted file's old copy).
 #
 # The times are apps/ios/ui-class-times.tsv's (MDOC_UI_CLASS_TIMES replaces
 # it): `<class>\t<seconds>[\t<parts>]` lines and `#` comments, measured from
@@ -26,16 +33,26 @@
 # compatible.
 source "$(dirname "$0")/../lib.sh"
 
-count=2
+# Three on macos-26 (#1041): two took 19.6 and 21.8 minutes of tests there,
+# over ADR 0113's 15. MDOC_UI_SHARDS replaces it (the tests').
+count=${MDOC_UI_SHARDS:-3}
 dir=${MDOC_UI_TESTS_DIR:-apps/ios/mdocUITests}
 times=${MDOC_UI_CLASS_TIMES:-apps/ios/ui-class-times.tsv}
-usage="usage: scripts/ios/ios-ui-shards.sh <shard 1-$count> | --check | --plan | --classes"
+usage="usage: scripts/ios/ios-ui-shards.sh <shard 1-$count> | --check | --plan | --classes | --touched [<file>...] | --declared <file>..."
 
+touched=()
 case "${1:-}" in
   --check | --plan | --classes) want=$1 ;;
   [1-9])
     [ "$1" -le "$count" ] || die "no shard $1: there are $count"
     want=$1
+    ;;
+  --touched | --declared)
+    want=$1
+    shift
+    [ "$want" = --touched ] || [ "$#" -gt 0 ] || die "$usage"
+    touched=("$@")
+    set -- "$want"
     ;;
   *) die "$usage" ;;
 esac
@@ -43,13 +60,14 @@ esac
 [ -d "$dir" ] || die "no $dir"
 [ -f "$times" ] || die "no $times"
 
-# The test classes declared under the folder, one per line. Each file is
-# read as one line without its `//` comments, so a declaration whose
-# superclass is on a later line (`class A:` then `XCTestCase {`) counts:
-# what follows the name up to its `{` is its generic clause and
-# inheritance.
-# shellcheck disable=SC2016 # awk fields, not shell ones
-found=$(find "$dir" -type f -name '*.swift' -print0 | xargs -0 awk '
+# The test classes the Swift files (NUL-separated on stdin) declare, one per
+# line. Each file is read as one line without its `//` comments, so a
+# declaration whose superclass is on a later line (`class A:` then
+# `XCTestCase {`) counts: what follows the name up to its `{` is its
+# generic clause and inheritance.
+test_classes() {
+  # shellcheck disable=SC2016 # awk fields, not shell ones
+  xargs -0 awk '
   function scan(t, decl, head, i) {
     while (match(t, /(^|[^A-Za-z0-9_])class[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
       decl = substr(t, RSTART, RLENGTH)
@@ -69,7 +87,14 @@ found=$(find "$dir" -type f -name '*.swift' -print0 | xargs -0 awk '
     sub(/\/\/.*/, "", line)
     text = text " " line
   }
-  END { scan(text) }' | LC_ALL=C sort)
+  END { scan(text) }' | LC_ALL=C sort
+}
+if [ "$want" = --declared ]; then
+  for file in "${touched[@]}"; do [ -f "$file" ] || die "no $file"; done
+  printf '%s\0' "${touched[@]}" | test_classes
+  exit 0
+fi
+found=$(find "$dir" -type f -name '*.swift' -print0 | test_classes)
 
 bad=0
 for c in $(printf '%s\n' "$found" | uniq -d); do
@@ -141,6 +166,23 @@ case "$want" in
     printf '%s\n' "$plan" | awk -v count="$count" '
       { tot[$1] += $3; num[$1]++ }
       END { for (s = 1; s <= count; s++) printf "shard %d: %d classes, %d s\n", s, num[s], tot[s] }'
+    exit 0
+    ;;
+  --touched)
+    for file in ${touched[@]+"${touched[@]}"}; do
+      case "$file" in "$dir"/*.swift) ;; *) continue ;; esac
+      # A deleted file holds no class to test.
+      [ -f "$file" ] || continue
+      declared=$(printf '%s\0' "$file" | test_classes)
+      if [ -z "$declared" ]; then
+        seq 1 "$count"
+        continue
+      fi
+      # shellcheck disable=SC2016 # awk fields, not shell ones
+      printf '%s\n' "$plan" | awk -v list="$declared" '
+        BEGIN { n = split(list, c, "\n"); for (i = 1; i <= n; i++) want[c[i]] = 1 }
+        $2 in want { print $1 }'
+    done | LC_ALL=C sort -nu
     exit 0
     ;;
 esac

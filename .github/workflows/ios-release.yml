@@ -72,7 +72,8 @@ jobs:
           fi
 
   # The tag's commit came from main, but nothing tested it as a release:
-  # the iOS tests and the Release configuration, as the queue runs them.
+  # the iOS tests and the Release configuration, as the queue runs them
+  # (Xcode 26.2 on macos-26; the archive below uses Xcode 27.2).
   tests:
     name: tests
     needs: check
@@ -90,7 +91,9 @@ jobs:
     if: >-
       always() && needs.check.result == 'success' &&
       (needs.tests.result == 'success' || (github.event_name != 'push' && needs.tests.result == 'skipped'))
-    runs-on: macos-26
+    # The only hosted image with Xcode 27 (ITMS-90725: App Store uploads need
+    # the iOS 27 SDK from April 2027), a preview (actions/runner-images#14404).
+    runs-on: xcode-27
     environment: release-ios
     # The archive takes about 15 minutes; Apple's processing up to 45.
     timeout-minutes: 90
@@ -100,6 +103,8 @@ jobs:
       # The build number is the commit count (ADR 0091): never from a
       # shallow clone.
       MDOC_REQUIRE_FULL_HISTORY: "1"
+      # Xcode 27.2, the builds pin (scripts/tools.env, ADR 0124).
+      MDOC_XCODE: builds
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       VERSION: ${{ needs.check.outputs.version }}
@@ -120,7 +125,8 @@ jobs:
       # Xcode and the iOS platform, which the image ships.
       - run: scripts/ios/ios-toolchain.sh >>"$GITHUB_ENV"
 
-      # main's built core, as in ci-ios.yml; this job never saves it.
+      # main's built core of this Xcode, which the nightly saves; this job
+      # never saves it.
       - id: core-key
         if: inputs.finish == ''
         run: scripts/ios/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
