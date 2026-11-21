@@ -356,6 +356,67 @@ sidebar's hover reveal gets quicker and smooth
    are under `docs/evidence/`. If one does, A/B GPUI Fast 0.1.15 as ADR 0117
    describes.
 
+## Unlocked files and images (#1024)
+
+A password-protected file shows its Original once unlocked, nothing
+unlocked reaches disk, and photos and scans import everywhere
+([spec](https://github.com/lawkitt/mdoc/issues/1024)). Items merge when
+green and ride the next RC. Every item that touches opening, importing or
+the preview posts before-and-after `just perf` numbers; a regression goes
+to the maintainer, never a raised ceiling.
+
+1. **[Import] A tab keeps its unlock in memory.** *From #1024.* The
+   unlocked bytes (Office) or the password (PDF) live as long as the tab,
+   wiped on close, never in the session, so OCR, reloads and the
+   hidden-text toggle don't ask again; reopening asks. *Done when:* tests
+   show each of those reuses the unlock and none persists it.
+2. **[Desktop] gpui-pdf opens a PDF from bytes, with a password.** *From
+   #1024.* Form fields and the display fix-up read encrypted files, and
+   comment annotations stay hidden on them. *Done when:* an encrypted
+   fixture renders like its open twin, light and dark.
+3. **[Desktop] Every DOCX renders in memory.** *From #1024.* The worker
+   takes bytes on stdin and returns the PDF and anchors on stdout; the path
+   functions go, and an unlocked DOCX shows its Original. *Blocked by:*
+   items 1, 2. *Done when:* the temp folder stays empty in a test, and 5
+   release `just perf` runs on the M4 keep the first page within 5% and
+   peak memory within 10%; otherwise only unlocked DOCX render in memory.
+4. **[Import] Password-protected PDFs on desktop.** *From #1024.* The card
+   for PDFs, the password through every PDF call, no kept OCR pages, three
+   errors (none, wrong, unsupported), no card for owner-only locks.
+   *Blocked by:* items 1, 2. *Done when:* each case passes at the import and
+   preview seams.
+5. **[Import] Hidden spreadsheet content is counted.** *From #1019.* AnyDoc
+   fork change and pin bump. *Done when:* XLSX, XLSB, XLS and ODS fixtures
+   count their hidden sheets, rows and columns.
+6. **[Import] Cyrillic CSVs import correctly.** *From #1023.* `chardetng`
+   in the fork; its pin bump rebases on item 5's. *Done when:* 1251, KOI8-R,
+   1252 and UTF-8 fixtures match their UTF-8 twins.
+7. **[Import] Desktop imports images.** *From #1024.* The shared
+   image-to-PDF builder (JPEG passthrough, metadata stripped, orientation,
+   alpha, 16-bit and CMYK, first frames, limits, resume by digest); the
+   image is its Original. *Blocked by:* item 2. *Done when:* each case
+   passes at the import seam and the core half of #1021 is fixed.
+8. **[Import] Multi-page and fax TIFF.** *From #1024.* Every page through
+   the `tiff` crate; CCITT G3/G4 pass through to PDFium. *Blocked by:* item
+   7. *Done when:* synthetic G3, G4 and LZW TIFFs import every page.
+9. **[Import] HEIC on desktop.** *From #1024.* ImageIO and WIC hand over an
+   upright JPEG without metadata; a Windows PC without the extensions gets
+   a card naming them. *Blocked by:* item 7. *Done when:* a HEIC fixture
+   imports on macOS and on Windows with the extensions.
+10. **[Mobile] Phones use the shared image path.** *From #1024.* Every
+    image format through the core, HEIC by each phone's OS; no JPEG-only
+    refusal or scratch file; several picked photos stay one document.
+    *Blocked by:* item 7. *Done when:* #1021's Android half and #1022 are
+    fixed and camera JPEG import is no slower.
+11. **[Mobile] Password-protected PDFs on iOS and Android.** *From #1024.*
+    The phones' card for PDFs, the password through the bridge, no kept
+    pages. *Blocked by:* item 4. *Done when:* both apps build with it and
+    the core tests pass.
+12. **[Mobile] iOS renders DOCX in memory.** *From #1024.* The Original
+    takes the unlocked bytes and reads comment marks from bytes; PDFKit
+    opens the PDF from data. *Blocked by:* item 3. *Done when:* nothing
+    reaches the temp folder and the iPhone 17 Pro keeps item 3's bar.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -739,10 +800,6 @@ Android takes what applies. Its clipboard finding is
   codes. *From #911.*
 - **[Import]** Secure keyboard entry while the desktop password field has
   focus (`EnableSecureEventInput` on macOS). *From #1010.*
-- **[Import]** A rendering for a password-protected file once it's unlocked,
-  as an unprotected DOCX or PDF has: today it shows none, because docxide
-  renders through a temporary PDF on disk (`docs/specs/originals.md`). Grill
-  it first. *From the 2026-11-21 Import gaps run (#1007).*
 - **[Import]** Dynamic XFA forms, which import as "Please wait…": first find
   at least 3 real legal XFA PDFs in public sources; only then spike
   pdfcraft's `xfa` layout in the pdf-inspector fork. *From the 2026-11-20
