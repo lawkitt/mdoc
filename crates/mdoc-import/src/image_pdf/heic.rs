@@ -38,29 +38,117 @@ pub enum MissingCodec {
     HevcExtension,
 }
 
+/// The most a HEIC file may hold: it goes whole to the operating system's
+/// decoder (WIC's stream length is 32-bit), and no photo is this large.
+/// The PDF import's cap.
+pub const MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// The HEVC-coded HEIF brands.
+const HEVC_BRANDS: [&[u8; 4]; 8] = [
+    b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs",
+];
+
+/// The brands an `ftyp` box at the start of `bytes` names: its major
+/// brand, then its compatible brands. `None` when `bytes` don't start with
+/// one.
+fn brands(bytes: &[u8]) -> Option<impl Iterator<Item = &[u8; 4]> + Clone> {
+    if bytes.len() < 16 || &bytes[4..8] != b"ftyp" {
+        return None;
+    }
+    let size = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+    let end = size.clamp(16, bytes.len().min(256));
+    let major: &[u8; 4] = bytes[8..12].try_into().expect("four bytes");
+    // The minor version sits between the major and the compatible brands.
+    Some(std::iter::once(major).chain(bytes[16..end].as_chunks::<4>().0))
+}
+
+/// Whether `bytes` start as a HEIF file that may be a HEIC: an `ftyp` box
+/// naming an HEVC brand or a generic HEIF one (`mif1`, `msf1`), whose
+/// `meta` box may lie further on. The import's read stays bounded for
+/// these.
+pub(crate) fn is_heif_container(bytes: &[u8]) -> bool {
+    brands(bytes).is_some_and(|mut brands| {
+        brands.any(|brand| HEVC_BRANDS.contains(&brand) || brand == b"mif1" || brand == b"msf1")
+    })
+}
+
 /// Whether `bytes` are a HEIC or HEIF image coded with HEVC: an ISO base
 /// media file whose `ftyp` box names an HEVC-coded HEIF brand, or names
 /// only the generic HEIF brands (`mif1`, `msf1`) and whose primary item is
 /// HEVC-coded. AVIF, also HEIF but AV1-coded, is not.
 pub(super) fn is_heic(bytes: &[u8]) -> bool {
-    const BRANDS: [&[u8; 4]; 8] = [
-        b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs",
-    ];
-    if bytes.len() < 16 || &bytes[4..8] != b"ftyp" {
+    let Some(mut brands) = brands(bytes) else {
         return false;
-    }
-    let size = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-    let end = size.clamp(16, bytes.len().min(256));
-    let major: &[u8; 4] = bytes[8..12].try_into().expect("four bytes");
-    // The major brand, then the compatible brands after the minor version.
-    let mut brands = std::iter::once(major).chain(bytes[16..end].as_chunks::<4>().0);
-    if brands.clone().any(|brand| BRANDS.contains(&brand)) {
+    };
+    if brands.clone().any(|brand| HEVC_BRANDS.contains(&brand)) {
         return true;
     }
     // A generic brand leaves the codec to the primary item.
     brands.any(|brand| brand == b"mif1" || brand == b"msf1")
         && primary_item_type(bytes).is_some_and(|kind| kind == *b"hvc1" || kind == *b"grid")
         && !items_of_type(bytes, *b"av01")
+}
+
+/// The largest `meta` box the file probe reads: a photo's is a few
+/// kilobytes.
+const MAX_META_BYTES: u64 = 16 * 1024 * 1024;
+
+/// The top-level boxes the file probe walks past before it gives up.
+const MAX_PROBED_BOXES: usize = 1024;
+
+/// The format of the HEIF `file` whose first bytes, `head`, didn't settle
+/// it: its top-level boxes are walked by their headers alone to its `meta`
+/// box, which is read on its own and judged with the `ftyp` box, so a
+/// `meta` box after a large `mdat` is found without reading the photo.
+pub(super) fn probe_file(
+    file: &mut (impl std::io::Read + std::io::Seek),
+    head: &[u8],
+) -> std::io::Result<bool> {
+    use std::io::{Read, SeekFrom};
+    let ftyp = u64::from(u32::from_be_bytes(
+        head[..4].try_into().expect("four bytes"),
+    ));
+    let Some(ftyp) = usize::try_from(ftyp).ok().and_then(|size| head.get(..size)) else {
+        return Ok(false);
+    };
+    let length = file.seek(SeekFrom::End(0))?;
+    let mut at = ftyp.len() as u64;
+    for _ in 0..MAX_PROBED_BOXES {
+        if at.checked_add(8).is_none_or(|end| end > length) {
+            break;
+        }
+        file.seek(SeekFrom::Start(at))?;
+        let mut header = [0u8; 16];
+        file.read_exact(&mut header[..8])?;
+        let size = u64::from(u32::from_be_bytes(
+            header[..4].try_into().expect("four bytes"),
+        ));
+        let size = match size {
+            0 => length - at,
+            1 => {
+                if at + 16 > length {
+                    break;
+                }
+                file.read_exact(&mut header[8..])?;
+                u64::from_be_bytes(header[8..].try_into().expect("eight bytes"))
+            }
+            size => size,
+        };
+        if size < 8 || at.checked_add(size).is_none_or(|end| end > length) {
+            break;
+        }
+        if &header[4..8] == b"meta" {
+            if size > MAX_META_BYTES {
+                break;
+            }
+            let mut probe = ftyp.to_vec();
+            file.seek(SeekFrom::Start(at))?;
+            (&mut *file).take(size).read_to_end(&mut probe)?;
+            return Ok(is_heic(&probe));
+        }
+        at += size;
+    }
+    Ok(false)
 }
 
 /// The boxes in `data`, as (type, body), in order; a box that runs past the
@@ -71,16 +159,17 @@ fn boxes(data: &[u8]) -> impl Iterator<Item = ([u8; 4], &[u8])> {
         let header = data.get(at..at.checked_add(8)?)?;
         let size = u32::from_be_bytes(header[..4].try_into().expect("four bytes")) as u64;
         let kind: [u8; 4] = header[4..8].try_into().expect("four bytes");
+        // A malformed size (past the end, or overflowing) ends the list.
         let (body_at, end) = match size {
             // A 64-bit size follows the type.
             1 => {
-                let large = data.get(at + 8..at + 16)?;
+                let large = data.get(at + 8..at.checked_add(16)?)?;
                 let size = u64::from_be_bytes(large.try_into().expect("eight bytes"));
-                (at + 16, at as u64 + size)
+                (at + 16, (at as u64).checked_add(size)?)
             }
             // To the end of the data.
             0 => (at + 8, data.len() as u64),
-            _ => (at + 8, at as u64 + size),
+            _ => (at + 8, (at as u64).checked_add(size)?),
         };
         let end = usize::try_from(end).ok()?;
         let body = data.get(body_at..end)?;
@@ -195,10 +284,42 @@ pub(super) fn alpha_item(bytes: &[u8]) -> Option<u32> {
     let (_, iprp) = boxes(meta).find(|(kind, _)| kind == b"iprp")?;
     let (_, ipco) = boxes(iprp).find(|(kind, _)| kind == b"ipco")?;
     let properties: Vec<([u8; 4], &[u8])> = boxes(ipco).collect();
-    let (_, ipma) = boxes(iprp).find(|(kind, _)| kind == b"ipma")?;
+    // Associations may be split across several `ipma` boxes (one per
+    // version and flags pair): every one counts.
+    boxes(iprp)
+        .filter(|(kind, _)| kind == b"ipma")
+        .filter_map(|(_, ipma)| associations(ipma))
+        .flatten()
+        .find(|(item, indices)| {
+            auxiliaries.contains(item)
+                && indices.iter().any(|&index| {
+                    properties
+                        .get(index.wrapping_sub(1))
+                        .is_some_and(|(kind, body)| {
+                            // A full box: version and flags, then the type
+                            // as a string ending in a zero.
+                            kind == b"auxC"
+                                && body.get(4..).is_some_and(|name| {
+                                    let end = name
+                                        .iter()
+                                        .position(|&byte| byte == 0)
+                                        .unwrap_or(name.len());
+                                    ALPHA.contains(&&name[..end])
+                                })
+                        })
+                })
+        })
+        .map(|(item, _)| item)
+}
+
+/// An `ipma` box's entries: each item and the 1-based `ipco` indices of
+/// its properties. `None` for a box that runs short.
+#[cfg(any(target_os = "windows", test))]
+fn associations(ipma: &[u8]) -> Option<Vec<(u32, Vec<usize>)>> {
     let (version, flags) = (*ipma.first()?, *ipma.get(3)?);
     let count = u32::from_be_bytes(ipma.get(4..8)?.try_into().ok()?);
     let mut at = 8;
+    let mut entries = Vec::new();
     for _ in 0..count {
         let (item, next) = if version < 1 {
             (
@@ -211,11 +332,11 @@ pub(super) fn alpha_item(bytes: &[u8]) -> Option<u32> {
                 at + 4,
             )
         };
-        let associations = usize::from(*ipma.get(next)?);
+        let count = usize::from(*ipma.get(next)?);
         at = next + 1;
-        let mut indices = Vec::with_capacity(associations);
-        for _ in 0..associations {
-            // The essential bit, then a 1-based index into `ipco`.
+        let mut indices = Vec::with_capacity(count);
+        for _ in 0..count {
+            // The essential bit, then the index.
             if flags & 1 != 0 {
                 indices.push(usize::from(
                     u16::from_be_bytes(ipma.get(at..at + 2)?.try_into().ok()?) & 0x7fff,
@@ -226,30 +347,9 @@ pub(super) fn alpha_item(bytes: &[u8]) -> Option<u32> {
                 at += 1;
             }
         }
-        if !auxiliaries.contains(&item) {
-            continue;
-        }
-        let is_alpha = indices.iter().any(|&index| {
-            properties
-                .get(index.wrapping_sub(1))
-                .is_some_and(|(kind, body)| {
-                    // A full box: version and flags, then the type as a
-                    // string ending in a zero.
-                    kind == b"auxC"
-                        && body.get(4..).is_some_and(|name| {
-                            let end = name
-                                .iter()
-                                .position(|&byte| byte == 0)
-                                .unwrap_or(name.len());
-                            ALPHA.contains(&&name[..end])
-                        })
-                })
-        });
-        if is_alpha {
-            return Some(item);
-        }
+        entries.push((item, indices));
     }
-    None
+    Some(entries)
 }
 
 /// `bytes` with `item` named primary instead, the file otherwise as it is:
@@ -290,6 +390,10 @@ pub(super) fn fits(width: u32, height: u32) -> Result<(), ImageError> {
 /// page by the builder's rules for a photo: turned upright in its pixels
 /// (decision 13: the JPEG itself is upright), on white.
 pub(super) fn page(bytes: &[u8]) -> Result<super::Page, ImageError> {
+    // Whatever read the file, no more than this goes to the decoder.
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(ImageError::TooLarge);
+    }
     let decoded = decode(bytes)?;
     let mut image = decoded.image;
     fits(image.width(), image.height())?;

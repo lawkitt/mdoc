@@ -965,6 +965,47 @@ fn a_renamed_image_shows_its_original(cx: &mut TestAppContext) {
     });
 }
 
+/// A renamed generic HEIF (`mif1` only) whose `meta` box lies past its
+/// first 64 KiB is known by the bounded probe the import's admission asks,
+/// so reopening it tries its Original (here the photo is a stand-in, so it
+/// says why it can't be shown) instead of "No preview".
+#[gpui::test]
+fn a_renamed_generic_heif_is_known_by_its_content(cx: &mut TestAppContext) {
+    fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        [&((8 + body.len()) as u32).to_be_bytes()[..], kind, body].concat()
+    }
+    let hdlr = boxed(b"hdlr", &[&[0; 8][..], b"pict", &[0; 13]].concat());
+    let pitm = boxed(b"pitm", &[0, 0, 0, 0, 0, 1]);
+    let infe = boxed(
+        b"infe",
+        &[&[2, 0, 0, 0, 0, 1, 0, 0][..], b"hvc1", &[0]].concat(),
+    );
+    let iinf = boxed(b"iinf", &[&[0, 0, 0, 0, 0, 1][..], &infe].concat());
+    let meta = boxed(b"meta", &[&[0; 4][..], &hdlr, &pitm, &iinf].concat());
+    let heif = [
+        boxed(b"ftyp", &[&b"mif1"[..], &[0; 4], b"mif1miaf"].concat()),
+        boxed(b"mdat", &vec![0; 100 * 1024]),
+        meta,
+    ]
+    .concat();
+    let dir = tempfile::tempdir().unwrap();
+    let photo = dir.path().join("scan.bin");
+    std::fs::write(&photo, heif).unwrap();
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.open_source(photo.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert_ne!(
+            app.preview.message().map(String::as_str),
+            Some(crate::preview::NO_PREVIEW)
+        );
+        assert!(app.preview.failed() || app.preview.pdf().is_some());
+    });
+}
+
 /// Opening a photo shows its Original, built from the file in memory; a
 /// damaged one says why it can't be shown.
 #[gpui::test]

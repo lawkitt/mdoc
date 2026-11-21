@@ -286,19 +286,209 @@ fn generic_heif(item_type: [u8; 4]) -> Vec<u8> {
         out.extend_from_slice(body);
         out
     }
-    let ftyp = boxed(b"ftyp", b"mif1    mif1miaf");
-    let hdlr = boxed(b"hdlr", b"        pict             ");
-    let pitm = boxed(b"pitm", b"     ");
-    let mut infe = b"      ".to_vec();
+    let ftyp = boxed(b"ftyp", b"mif1\x00\x00\x00\x00mif1miaf");
+    let hdlr = boxed(
+        b"hdlr",
+        b"\x00\x00\x00\x00\x00\x00\x00\x00pict\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    );
+    let pitm = boxed(b"pitm", b"\x00\x00\x00\x00\x00\x01");
+    let mut infe = b"\x02\x00\x00\x00\x00\x01\x00\x00".to_vec();
     infe.extend_from_slice(&item_type);
     infe.push(0);
-    let mut iinf = b"     ".to_vec();
+    let mut iinf = b"\x00\x00\x00\x00\x00\x01".to_vec();
     iinf.extend_from_slice(&boxed(b"infe", &infe));
-    let mut meta = b"    ".to_vec();
+    let mut meta = b"\x00\x00\x00\x00".to_vec();
     for part in [hdlr, pitm, boxed(b"iinf", &iinf)] {
         meta.extend_from_slice(&part);
     }
     [ftyp, boxed(b"meta", &meta), boxed(b"mdat", &[0; 32])].concat()
+}
+
+/// A box of `kind` around `body`.
+fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let mut out = ((8 + body.len()) as u32).to_be_bytes().to_vec();
+    out.extend_from_slice(kind);
+    out.extend_from_slice(body);
+    out
+}
+
+/// A full box (version 0, no flags) of `kind` around `body`.
+fn full_box(kind: &[u8; 4], flags: u8, body: &[u8]) -> Vec<u8> {
+    boxed(kind, &[&[0, 0, 0, flags][..], body].concat())
+}
+
+/// A generic HEIF (`mif1` only) of item 1 of `item_type`, primary, whose
+/// `meta` box follows `gap` bytes of `mdat`: past the probe's first read
+/// when `gap` is large.
+fn generic_heif_meta_last(item_type: [u8; 4], gap: usize) -> Vec<u8> {
+    let ftyp = boxed(b"ftyp", b"mif1\x00\x00\x00\x00mif1miaf");
+    let hdlr = full_box(
+        b"hdlr",
+        0,
+        b"\x00\x00\x00\x00pict\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    );
+    let pitm = full_box(b"pitm", 0, &1u16.to_be_bytes());
+    let infe = full_box(b"infe", 0, &[&[0, 1, 0, 0][..], &item_type, &[0]].concat());
+    // Version 2 of `infe`.
+    let mut infe = infe;
+    infe[8] = 2;
+    let iinf = full_box(b"iinf", 0, &[&1u16.to_be_bytes()[..], &infe].concat());
+    let meta = full_box(b"meta", 0, &[hdlr, pitm, iinf].concat());
+    [ftyp, boxed(b"mdat", &vec![0; gap]), meta].concat()
+}
+
+/// An alpha plane whose `auxC` association sits in a second `ipma` box
+/// (HEIF allows one per version and flags pair) is found as well as one
+/// in the first.
+#[test]
+fn the_alpha_plane_is_found_in_any_ipma_box() {
+    use super::alpha_item;
+    let file = |split: bool| {
+        let ftyp = boxed(b"ftyp", b"heic\x00\x00\x00\x00mif1heic");
+        let pitm = full_box(b"pitm", 0, &1u16.to_be_bytes());
+        let infe = |id: u16| {
+            let mut infe = full_box(
+                b"infe",
+                0,
+                &[&id.to_be_bytes()[..], &[0, 0], b"hvc1", &[0]].concat(),
+            );
+            infe[8] = 2;
+            infe
+        };
+        let iinf = full_box(
+            b"iinf",
+            0,
+            &[&2u16.to_be_bytes()[..], &infe(1), &infe(2)].concat(),
+        );
+        // Item 2 is item 1's auxiliary.
+        let auxl = boxed(
+            b"auxl",
+            &[
+                &2u16.to_be_bytes()[..],
+                &1u16.to_be_bytes(),
+                &1u16.to_be_bytes(),
+            ]
+            .concat(),
+        );
+        let iref = full_box(b"iref", 0, &auxl);
+        let ipco = boxed(
+            b"ipco",
+            &[
+                boxed(b"ispe", &[0; 12]),
+                full_box(b"auxC", 0, b"urn:mpeg:hevc:2015:auxid:1\x00"),
+            ]
+            .concat(),
+        );
+        // Item 1 has property 1; item 2 has properties 1 and 2 (`auxC`).
+        let entry = |item: u16, properties: &[u8]| {
+            [
+                &item.to_be_bytes()[..],
+                &[properties.len() as u8],
+                properties,
+            ]
+            .concat()
+        };
+        let ipma = |entries: &[Vec<u8>]| {
+            full_box(
+                b"ipma",
+                0,
+                &[&(entries.len() as u32).to_be_bytes()[..], &entries.concat()].concat(),
+            )
+        };
+        let associations = if split {
+            [ipma(&[entry(1, &[1])]), ipma(&[entry(2, &[1, 2])])].concat()
+        } else {
+            ipma(&[entry(1, &[1]), entry(2, &[1, 2])])
+        };
+        let iprp = boxed(b"iprp", &[ipco, associations].concat());
+        let meta = full_box(b"meta", 0, &[pitm, iinf, iref, iprp].concat());
+        [ftyp, meta].concat()
+    };
+    assert_eq!(alpha_item(&file(false)), Some(2));
+    assert_eq!(alpha_item(&file(true)), Some(2));
+}
+
+/// A box whose 64-bit size overflows its offset ends the list, where a
+/// sum would overflow.
+#[test]
+fn an_overflowing_box_size_ends_the_list() {
+    let mut data = boxed(b"free", &[0; 8]);
+    data.extend_from_slice(&1u32.to_be_bytes());
+    data.extend_from_slice(b"meta");
+    data.extend_from_slice(&u64::MAX.to_be_bytes());
+    data.extend_from_slice(&[0; 16]);
+    let kinds: Vec<[u8; 4]> = super::boxes(&data).map(|(kind, _)| kind).collect();
+    assert_eq!(kinds, [*b"free"]);
+    assert!(!is_heic(
+        &[boxed(b"ftyp", b"mif1\x00\x00\x00\x00mif1"), data].concat()
+    ));
+}
+
+/// A renamed generic HEIF whose `meta` box lies past the first 64 KiB is
+/// known by the file probe that admission and the Original ask, reading
+/// only its boxes' headers and that box; AV1 stays out. At the import seam
+/// it is one page for OCR.
+#[test]
+fn the_file_probe_finds_a_meta_box_far_into_the_file() {
+    use crate::image_pdf::format_of_file;
+    let dir = tempfile::tempdir().unwrap();
+    let heic = dir.path().join("scan.bin");
+    std::fs::write(&heic, generic_heif_meta_last(*b"hvc1", 100 * 1024)).unwrap();
+    let avif = dir.path().join("other.bin");
+    std::fs::write(&avif, generic_heif_meta_last(*b"av01", 100 * 1024)).unwrap();
+    assert_eq!(format_of_file(&heic).unwrap(), Some(ImageFormat::Heic));
+    assert_eq!(format_of_file(&avif).unwrap(), None);
+    assert!(crate::import::supported_source(&heic));
+    let stub = Stub {
+        width: 120,
+        height: 160,
+        orientation: 1,
+    };
+    with_decoder(stub, || match crate::import::prepare(&heic, None, false) {
+        Err(crate::import::ImportError::NeedsOcr(_, pages, _, count)) => {
+            assert_eq!((pages, count), (vec![1], 1));
+        }
+        other => panic!("{other:?}"),
+    });
+}
+
+/// A HEIF file is held to the 256 MiB cap however far its `meta` box lies:
+/// a generic one with 300 MiB of `mdat` before it is refused by the read,
+/// having read no more than the cap; and the builder refuses more than the
+/// cap again, before any decoder sees it.
+#[test]
+fn a_heif_file_over_the_cap_is_refused() {
+    use super::MAX_FILE_BYTES;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large.heif");
+    {
+        use std::io::{Seek, SeekFrom, Write};
+        let small = generic_heif_meta_last(*b"hvc1", 0);
+        let (ftyp, meta) = (&small[..24], &small[32..]);
+        let gap: u64 = 300 * 1024 * 1024;
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(ftyp).unwrap();
+        file.write_all(&(gap as u32 + 8).to_be_bytes()).unwrap();
+        file.write_all(b"mdat").unwrap();
+        // The `mdat` is a hole: nothing is written to it.
+        file.seek(SeekFrom::Current(gap as i64)).unwrap();
+        file.write_all(meta).unwrap();
+    }
+    match crate::import::Source::read(&path) {
+        Err(crate::import::ImportError::Image(ImageError::TooLarge)) => {}
+        other => panic!("{:?}", other.map(|_| ())),
+    }
+    // The builder's own check, before the decoder.
+    struct Never;
+    impl OsDecoder for Never {
+        fn decode_heic(&self, _: &[u8]) -> Result<OsDecoded, ImageError> {
+            panic!("decoded past the cap");
+        }
+    }
+    let mut bytes = vec![0u8; MAX_FILE_BYTES as usize + 1];
+    bytes[..64].copy_from_slice(&read("page-upright.heic")[..64]);
+    let refused = with_decoder(Never, || super::page(&bytes).err());
+    assert!(matches!(refused, Some(ImageError::TooLarge)), "{refused:?}");
 }
 
 /// `name` claiming to be 40,000 pixels square: every `ispe` box (the

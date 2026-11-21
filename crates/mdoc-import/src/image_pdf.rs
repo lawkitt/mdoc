@@ -117,6 +117,27 @@ impl ImageFormat {
     }
 }
 
+/// The bytes [`format_of_file`] reads from the start of a file.
+const PROBE_BYTES: u64 = 64 * 1024;
+
+/// The image format of the file at `path`, judged as the import judges its
+/// bytes but reading few of them: its first 64 KiB, and for a HEIF file
+/// whose `meta` box lies further on (after a large `mdat`), that box alone.
+/// Admission and the Original ask this, so they agree with the import.
+pub fn format_of_file(path: &Path) -> std::io::Result<Option<ImageFormat>> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut head = Vec::new();
+    (&mut file).take(PROBE_BYTES).read_to_end(&mut head)?;
+    if let Some(format) = ImageFormat::from_bytes(&head) {
+        return Ok(Some(format));
+    }
+    if heic::is_heif_container(&head) && heic::probe_file(&mut file, &head)? {
+        return Ok(Some(ImageFormat::Heic));
+    }
+    Ok(None)
+}
+
 /// Why an image could not become a PDF.
 #[derive(Debug, thiserror::Error)]
 pub enum ImageError {
