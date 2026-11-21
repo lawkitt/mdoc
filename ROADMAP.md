@@ -363,23 +363,6 @@ green and ride the next RC. Every item that touches opening, importing or
 the preview posts before-and-after `just perf` numbers; a regression goes
 to the maintainer, never a raised ceiling.
 
-4. **[Import] Password-protected PDFs on desktop.** *From #1024.* The card
-   for PDFs, the password through every PDF call, no kept OCR pages, three
-   errors (none, wrong, unsupported), no card for owner-only locks.
-   *Blocked by:* items 1, 2. *Done when:* each case passes at the import and
-   preview seams.
-7. **[Import] Desktop imports images.** *From #1024.* The shared
-   image-to-PDF builder (JPEG passthrough, metadata stripped, orientation,
-   alpha, 16-bit and CMYK, first frames, limits, resume by digest); the
-   image is its Original. *Blocked by:* item 2. *Done when:* each case
-   passes at the import seam and the core half of #1021 is fixed.
-8. **[Import] Multi-page and fax TIFF.** *From #1024.* Every page through
-   the `tiff` crate; CCITT G3/G4 pass through to PDFium. *Blocked by:* item
-   7. *Done when:* synthetic G3, G4 and LZW TIFFs import every page.
-9. **[Import] HEIC on desktop.** *From #1024.* ImageIO and WIC hand over an
-   upright JPEG without metadata; a Windows PC without the extensions gets
-   a card naming them. *Blocked by:* item 7. *Done when:* a HEIC fixture
-   imports on macOS and on Windows with the extensions.
 10. **[Mobile] Phones use the shared image path.** *From #1024.* Every
     image format through the core, HEIC by each phone's OS; no JPEG-only
     refusal or scratch file; several picked photos stay one document.
