@@ -232,6 +232,7 @@ fn fax(
             data: super::deflate(&packed),
             orientation: 1,
             resolution: None,
+            sheet: (width, height),
         }));
     }
     let data = strips.concat();
