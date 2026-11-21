@@ -219,5 +219,124 @@ fn hidden_text_note(d: &mut Driver) -> Result<()> {
             cx.notify();
         });
     })?;
-    d.capture("import-hidden-note")
+    d.capture("import-hidden-note")?;
+    photo(d)
+}
+
+/// A photo of a page, stored sideways with EXIF orientation 6 as a phone
+/// writes it: the Original shows the image builder's PDF upright, from
+/// memory, and the note asks for a check against the image. Then an
+/// animated GIF: its first frame, and the note counting the others. No OCR
+/// runs here: the Markdown stands in for what it would read.
+fn photo(d: &mut Driver) -> Result<()> {
+    let photo = sideways_page();
+    let animation = animation();
+    for (name, file, bytes, warning) in [
+        (
+            "import-photo",
+            "Lease photo.jpg",
+            photo,
+            Some(
+                "OCR review needed: pages 1 of 1 may be incomplete or inaccurate. Compare with the source image.",
+            ),
+        ),
+        ("import-animation", "Signing day.gif", animation, None),
+    ] {
+        let built = mdoc_import::image_pdf::build(&[&bytes], mdoc_import::image_pdf::DEFAULT_DPI)
+            .map_err(|e| e.to_string())?;
+        let path = PathBuf::from(file);
+        let imported = mdoc_import::import::Imported {
+            ocr_configuration: None,
+            source: mdoc_import::import::Source::new(path, None, built.pdf),
+            markdown: "# Lease of 12 Fictional Street\n\nThe tenant, Ada Quillfeather, \
+                       rents the flat from 1 March 2026.\n"
+                .into(),
+            warning: warning.map(str::to_owned),
+            left_out: mdoc_import::import::LeftOut {
+                animation_frames: built.frames_left_out,
+                ..Default::default()
+            },
+            comments: Vec::new(),
+            annotations: Vec::new(),
+            is_pdf: true,
+            is_docx: false,
+            is_image: true,
+            decrypted: false,
+        };
+        d.change(|w, window, cx| {
+            w.new_tab(window, cx);
+            w.active_view().unwrap().update(cx, |v, cx| {
+                v.preview.set_split(0.5);
+                v.proceed(
+                    crate::document_view::Next::Import(Box::new(imported)),
+                    window,
+                    cx,
+                );
+                cx.notify();
+            });
+        })?;
+        d.settle()?;
+        d.capture(name)?;
+    }
+    Ok(())
+}
+
+/// A page photographed sideways: a white sheet with a heading bar and
+/// lines of "text" on a grey desk, stored turned a quarter anticlockwise
+/// with EXIF orientation 6, so only the orientation turns it upright.
+fn sideways_page() -> Vec<u8> {
+    let (width, height) = (900u32, 1200u32);
+    let upright = image::RgbImage::from_fn(width, height, |x, y| {
+        let sheet = (90..810).contains(&x) && (80..1120).contains(&y);
+        let heading = sheet && (150..750).contains(&x) && (150..200).contains(&y);
+        let line =
+            sheet && (150..750).contains(&x) && (260..1050).contains(&y) && (y - 260) % 60 < 14;
+        image::Rgb(if heading || line {
+            [40, 40, 48]
+        } else if sheet {
+            [250, 249, 245]
+        } else {
+            [150, 140, 128]
+        })
+    });
+    // Stored a quarter anticlockwise, which orientation 6 undoes.
+    let stored = image::imageops::rotate270(&upright);
+    let mut jpeg = Vec::new();
+    image::DynamicImage::ImageRgb8(stored)
+        .write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
+            &mut jpeg, 90,
+        ))
+        .expect("encoding in memory");
+    let mut exif = b"Exif\x00\x00II*\x00\x08\x00\x00\x00\x01\x00".to_vec();
+    for field in [0x0112u16, 3] {
+        exif.extend_from_slice(&field.to_le_bytes());
+    }
+    exif.extend_from_slice(&1u32.to_le_bytes());
+    exif.extend_from_slice(&6u32.to_le_bytes());
+    exif.extend_from_slice(&0u32.to_le_bytes());
+    let mut segment = vec![0xff, 0xe1];
+    segment.extend_from_slice(&(exif.len() as u16 + 2).to_be_bytes());
+    segment.extend_from_slice(&exif);
+    [&jpeg[..2], &segment, &jpeg[2..]].concat()
+}
+
+/// A three-frame GIF: a teal, an amber and a violet card.
+fn animation() -> Vec<u8> {
+    let mut gif = Vec::new();
+    {
+        let mut encoder = image::codecs::gif::GifEncoder::new(&mut gif);
+        let frames = [
+            [20, 140, 140, 255],
+            [220, 150, 30, 255],
+            [120, 60, 170, 255],
+        ]
+        .map(|color| {
+            image::Frame::new(image::RgbaImage::from_fn(480, 320, |x, y| {
+                let card = (60..420).contains(&x) && (60..260).contains(&y);
+                image::Rgba(if card { color } else { [245, 245, 245, 255] })
+            }))
+        });
+        encoder.encode_frames(frames).expect("encoding in memory");
+    }
+    gif
 }

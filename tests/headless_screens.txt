@@ -66,6 +66,8 @@ original-password
 original-password-wrong
 import-comments-note
 import-hidden-note
+import-photo
+import-animation
 restored-reply
 comments-rail
 comments-resolved

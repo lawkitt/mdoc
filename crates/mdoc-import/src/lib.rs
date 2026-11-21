@@ -11,6 +11,7 @@ pub mod conversion_worker;
 mod doc_crypt;
 #[cfg(not(target_os = "android"))]
 pub mod docx_preview;
+pub mod image_pdf;
 pub mod import;
 pub mod import_session;
 pub mod model_download;
