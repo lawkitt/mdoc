@@ -37,16 +37,19 @@ cat >"$GH_ENTRIES" <<'LIST'
 1 v0-rust-test-Darwin-arm64-14cbc3c1-796622c3
 0 v0-rust-clippy-Darwin-arm64-14cbc3c1-ce98b0bd
 LIST
-# The built iOS core: every older key goes, a new version's included.
+# The built iOS core: the newest key of each Xcode stays (ADR 0124's two
+# pins); every older one of that Xcode goes, a new cache version's included.
 cat >"$GH_CORE" <<'LIST'
-9 ios-core-v2-5f0c
-8 ios-core-v1-a7d1
-7 ios-core-v1-03be
+12 ios-core-xcode27.2-v2-77aa
+11 ios-core-xcode26.2-v2-5f0c
+10 ios-core-xcode26.2-v1-a7d1
+9 ios-core-xcode27.2-v2-03be
+8 ios-core-xcode26.2-v2-03be
 LIST
 : >"$GH_LOG"
 scripts/ci/ci-cache-cleanup.sh >"$tmp/out" || fail "cleanup exited non-zero"
-[ "$(cat "$GH_LOG")" = $'4\n3\n2\n1\n8\n7' ] || fail "deleted: $(tr '\n' ' ' <"$GH_LOG")"
-grep -qx 'deleted 6 older cache generation(s)' "$tmp/out" || fail "summary: $(cat "$tmp/out")"
+[ "$(cat "$GH_LOG")" = $'4\n3\n2\n1\n10\n9\n8' ] || fail "deleted: $(tr '\n' ' ' <"$GH_LOG")"
+grep -qx 'deleted 7 older cache generation(s)' "$tmp/out" || fail "summary: $(cat "$tmp/out")"
 
 # No caches, or one generation per key: nothing to delete.
 : >"$GH_ENTRIES"

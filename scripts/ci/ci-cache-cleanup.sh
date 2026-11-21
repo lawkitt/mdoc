@@ -8,10 +8,11 @@
 # While a new runner image rolls out, two env hashes alternate and a run on
 # the other image restores nothing; main runs have no time target, and the
 # alternative is a second full cache set for every toolchain change, over
-# the 10 GB repository limit. The built iOS core's keys (main-caches.yml,
-# scripts/ios/ios-core-cache.sh) are `ios-core-<version>-<input hash>`, so all
-# of them are one job's generations. Needs GH_TOKEN with actions: write and
-# GH_REPO.
+# the 10 GB repository limit. The built iOS core's keys
+# (scripts/ios/ios-core-cache.sh) are `ios-core-xcode<version>-<cache
+# version>-<input hash>`, one job per Xcode: main keeps the newest core of
+# each pin (ADR 0124), the queue's from main-caches.yml and the archive's
+# from the nightly. Needs GH_TOKEN with actions: write and GH_REPO.
 source "$(dirname "$0")/../lib.sh"
 
 # list <key prefix>: main's caches under it, newest first.

@@ -14,6 +14,9 @@ inputs:
   rust:
     description: Install the Rust toolchain and restore the cargo cache; false for a job that builds no Rust (the iOS parts link a built core).
     default: "true"
+  cache-save:
+    description: Save the cargo cache on main; false for a job on another image than the one main's cache is for (ci-ios.yml's builds pin).
+    default: "true"
 
 runs:
   using: composite
@@ -31,7 +34,7 @@ runs:
         shared-key: ${{ inputs.cache-key }}
         # Only main saves (ADR 0070): every other ref restores main's cache, so
         # a stack of PRs can't evict it from the 10 GB repository limit.
-        save-if: ${{ github.ref == 'refs/heads/main' }}
+        save-if: ${{ github.ref == 'refs/heads/main' && inputs.cache-save == 'true' }}
         # Keep the cache when a later step fails so a rerun isn't a cold build.
         cache-on-failure: true
 

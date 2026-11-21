@@ -46,12 +46,15 @@ jobs:
     with:
       os: windows
 
-  # With the timing tests, which the queue skips (ADR 0112).
+  # With the timing tests, which the queue skips (ADR 0112), and Xcode 27 on
+  # iOS 27, which the queue does not test (ADR 0124); on main its core job
+  # saves the core the archive restores (ios-release.yml).
   ios:
     if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-ios.yml
     with:
       timing: true
+      xcode: builds
 
   android:
     if: ${{ !inputs.drill }}
