@@ -860,6 +860,15 @@ impl DocumentView {
             return;
         };
         self.carry_out_import(effects, window, cx);
+        // The run's password opened the locked PDF the Original asks for,
+        // though the import stopped short (OCR consent, a failed
+        // recognition): the Original opens with it, asking no more.
+        if self.preview.password().is_some()
+            && let Some(path) = self.preview.source().cloned()
+            && self.pdf_password(&path).is_some()
+        {
+            self.open_pdf(path, window, cx);
+        }
         // A stale completion also clears the busy indicator.
         cx.notify();
     }
@@ -2490,7 +2499,7 @@ impl Render for DocumentView {
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
                     .child(match self.preview.password() { Some(password) => self.original_password_card(password, window, cx), None => self.preview_status(theme) })))
                 .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).on_action(cx.listener(Self::next_comment)).on_action(cx.listener(Self::previous_comment)).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
-                    .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
+                    .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Enter its password to see it here.").into_any_element() } else { pdf.into_any_element() }))
                     .children(preview_notice)))
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice)

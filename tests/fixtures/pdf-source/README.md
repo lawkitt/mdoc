@@ -41,3 +41,11 @@ cargo test -p gpui-pdf --lib -- --ignored write_encrypted_fixtures
 ```
 
 Random salts make every run's bytes differ.
+
+## A locked scan
+
+`partly-scanned-aes256.pdf` is `tests/fixtures/import/handmade-partly-scanned.pdf`
+encrypted the same way (V5, R6, AES-256, user password `Petrov-2026`, owner
+password `owner-2026`) by mdoc-import's test helper `encrypted`. A locked PDF
+with pages that need OCR: the desktop's import stops for OCR consent with
+its password kept, and the Original then opens with it.

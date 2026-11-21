@@ -16,7 +16,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source/comments.pdf");
     let read = mdoc_import::import::Source::read(&source).map_err(|e| e.to_string())?;
-    let annotations = mdoc_import::import::source_annotations(&read).unwrap_or_default();
+    let annotations = mdoc_import::import::source_annotations(&read, None).unwrap_or_default();
     let view = d.change(|w, window, cx| {
         w.new_tab(window, cx);
         let view = w.active_view().unwrap();
@@ -126,6 +126,121 @@ pub(super) fn encrypted(d: &mut Driver) -> Result<()> {
                     "{name}: loaded, locked, comments hidden: {state:?}"
                 )),
             }
+        })??;
+        d.capture(name)?;
+    }
+    d.resize(WIDTH, HEIGHT)
+}
+
+/// A locked PDF its tab unlocked (#1024 item 4): the Original opens the
+/// file with the tab's password, in memory, and the rail reads its
+/// annotations with it, so the page leaves them to the rail.
+pub(super) fn unlocked(d: &mut Driver) -> Result<()> {
+    d.resize(1500., 900.)?;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pdf-source/comments-aes256.pdf");
+    let view = d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        let view = w.active_view().unwrap();
+        view.update(cx, |v, cx| {
+            v.preview.set_split(0.4);
+            v.import
+                .show_unlock_fixture(mdoc_import::import::Unlock::Password {
+                    path: path.clone(),
+                    password: mdoc_import::import::Password::new(PASSWORD.into()),
+                });
+            v.open_pdf(path, window, cx);
+        });
+        view
+    })?;
+    d.settle()?;
+    d.change(|_, _, cx| {
+        let view = view.read(cx);
+        let pdf = view.preview.pdf().ok_or("the PDF opens")?.read(cx);
+        match (
+            pdf.is_loaded(),
+            pdf.is_locked(),
+            view.preview.comment_rail().is_some(),
+        ) {
+            (true, false, true) => Ok(()),
+            state => Err(format!("pdf-unlocked: loaded, locked, rail: {state:?}")),
+        }
+    })??;
+    d.capture("pdf-unlocked")?;
+    d.resize(WIDTH, HEIGHT)
+}
+
+/// A locked PDF's password cards (#1024 item 4), each with a typed password
+/// that shows only as bullets: the conversion card asking and after a wrong
+/// password, the Original pointing to it; then a reopened tab's Original
+/// asking on its own card, and after a wrong password.
+pub(super) fn locked(d: &mut Driver) -> Result<()> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pdf-source/comments-aes256.pdf");
+    for (name, wrong) in [
+        ("import-password-pdf", false),
+        ("import-password-pdf-wrong", true),
+    ] {
+        let path = path.clone();
+        d.change(move |w, window, cx| {
+            w.new_tab(window, cx);
+            w.active_view().unwrap().update(cx, |v, cx| {
+                v.lifecycle.show_source();
+                v.preview.set_split(0.5);
+                v.import
+                    .show_password_fixture(v.session.generation, path.to_str().unwrap(), wrong);
+                v.resume_import(window, cx);
+                v.open_pdf(path, window, cx);
+                v.password_field.update(cx, |field, cx| {
+                    field.set_value("fictional-pass".into(), cx);
+                    field.move_to_end(cx);
+                });
+                cx.notify();
+            });
+        })?;
+        d.settle()?;
+        d.capture(name)?;
+    }
+    for (name, typed) in [
+        ("pdf-original-password", None),
+        ("pdf-original-password-wrong", Some("fictional-pass")),
+    ] {
+        let view = d.change(|w, window, cx| {
+            w.new_tab(window, cx);
+            let view = w.active_view().unwrap();
+            view.update(cx, |v, cx| {
+                v.preview.set_split(0.5);
+                v.open_pdf(path.clone(), window, cx);
+            });
+            view
+        })?;
+        d.settle()?;
+        if let Some(typed) = typed {
+            d.change(|_, window, cx| {
+                view.update(cx, |v, cx| {
+                    v.original_password_field
+                        .update(cx, |field, cx| field.set_value(typed.into(), cx));
+                    v.unlock_original(window, cx);
+                })
+            })?;
+            d.settle()?;
+        }
+        d.change(|_, _, cx| {
+            view.update(cx, |v, cx| {
+                v.original_password_field.update(cx, |field, cx| {
+                    field.set_value("fictional-pass".into(), cx);
+                    field.move_to_end(cx);
+                });
+            })
+        })?;
+        let expected = if typed.is_some() {
+            crate::preview::OriginalPassword::Wrong
+        } else {
+            crate::preview::OriginalPassword::Asking
+        };
+        d.change(|_, _, cx| match view.read(cx).preview.password() {
+            Some(prompt) if prompt == expected => Ok(()),
+            state => Err(format!("{name}: the Original asks: {state:?}")),
         })??;
         d.capture(name)?;
     }
