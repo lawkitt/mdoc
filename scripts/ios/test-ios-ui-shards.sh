@@ -148,6 +148,39 @@ shard 2 BUITests
 expect 0 "$s" --classes
 [ "$(cat "$tmp/out")" = "$(printf 'AUITests\nBUITests\nCUITests')" ] || fail "--classes: $(cat "$tmp/out")"
 
+# --touched: the shards holding the classes the files declare (shard 1: A,
+# D, E; shard 2: B, C); a file there declaring none (a helper) touches
+# every shard; a deleted file, a file elsewhere or none touch none.
+classes AUITests BUITests CUITests DUITests EUITests
+times AUITests 100 BUITests 90 CUITests 60 DUITests 50 EUITests 40
+touched() { # <shards> <file>...
+  local want=$1 got
+  shift
+  expect 0 "$s" --touched "$@"
+  got=$(cat "$tmp/out")
+  [ "${got//$'\n'/ }" = "$want" ] || fail "--touched $*: ${got//$'\n'/ }, not $want"
+}
+touched 2 "$tmp/ui/BUITests.swift"
+touched "1 2" "$tmp/ui/DUITests.swift" "$tmp/ui/CUITests.swift" "$tmp/ui/EUITests.swift" README.md
+printf 'import XCTest\n\nfunc waitLong() {}\n' >"$tmp/ui/Waits.swift"
+touched "1 2" "$tmp/ui/Waits.swift"
+rm "$tmp/ui/Waits.swift"
+touched "" "$tmp/ui/GoneUITests.swift" "$tmp/ui/notes.md" "$tmp/BUITests.swift"
+touched ""
+# A path with a space and a non-ASCII letter counts as it is.
+printf 'import XCTest\n\nfinal class FUITests: XCTestCase {}\n' >"$tmp/ui/Spaced Ü.swift"
+expect 0 "$s" --plan
+want=$(awk '$2 == "FUITests" { print $1 }' "$tmp/out")
+touched "$want" "$tmp/ui/Spaced Ü.swift"
+rm "$tmp/ui/Spaced Ü.swift"
+# --declared: the classes of files anywhere; a helper declares none.
+printf 'func waitLong() {}\n' >"$tmp/Helper.swift"
+expect 0 "$s" --declared "$tmp/ui/BUITests.swift" "$tmp/Helper.swift"
+[ "$(cat "$tmp/out")" = BUITests ] || fail "--declared: $(cat "$tmp/out")"
+expect 1 "$s" --declared
+expect 1 "$s" --declared "$tmp/Gone.swift"
+grep -q "no $tmp/Gone.swift" "$tmp/out" || fail "--declared a missing file: $(cat "$tmp/out")"
+
 # The errors, each by name.
 classes AUITests BUITests
 times AUITests 10 BUITests 20 AUITests 30
@@ -193,6 +226,95 @@ expect 0 "$s" --classes
 [ "$(cat "$tmp/out")" = "$(printf 'AUITests\nGenericCase\nOpenUITests\nRegressionCase\nSubclassedTests')" ] ||
   fail "test classes: $(cat "$tmp/out")"
 unset MDOC_UI_TESTS_DIR MDOC_UI_CLASS_TIMES
+
+# scripts/ios/ios-ci-parts.sh in a scratch repository, its main as the
+# branch's main (MDOC_MAIN_REF), two shards (shard 1: A; shard 2: B, C).
+pr=$tmp/parts-repo
+mkdir -p "$pr/scripts/ios" "$pr/apps/ios/mdocUITests" "$pr/apps/ios/mdocTests"
+cp scripts/lib.sh "$pr/scripts/"
+cp scripts/ios/ios-ui-shards.sh scripts/ios/ios-ci-parts.sh "$pr/scripts/ios/"
+for c in AUITests BUITests CUITests; do
+  printf 'import XCTest\n\nfinal class %s: XCTestCase {\n    func testIt() {}\n}\n' "$c" >"$pr/apps/ios/mdocUITests/$c.swift"
+done
+printf 'import XCTest\n\nfunc waitLong() {}\n' >"$pr/apps/ios/mdocUITests/Waits.swift"
+printf 'final class CoreTests {}\n' >"$pr/apps/ios/mdocTests/CoreTests.swift"
+printf 'AUITests\t100\nBUITests\t90\nCUITests\t60\n' >"$pr/apps/ios/ui-class-times.tsv"
+git -C "$pr" init -q -b main
+git -C "$pr" config core.autocrlf false
+# Quote as git does by default, whatever this machine says.
+git -C "$pr" config core.quotePath true
+commit() { # <message>
+  git -C "$pr" add -A
+  git -C "$pr" -c user.name=t -c user.email=t@example.com commit -q -m "$1"
+}
+commit base
+export MDOC_MAIN_REF=main
+# parts <json> <spec>: the script prints that list.
+parts() {
+  expect 0 "$pr/scripts/ios/ios-ci-parts.sh" "$2"
+  [ "$(cat "$tmp/out")" = "$1" ] || fail "parts $2: $(cat "$tmp/out"), not $1"
+}
+parts '["unit","ui 1","ui 2"]' all
+parts '["unit","ui 2"]' 'ui2, unit'
+parts '["ui 2"]' 'ui 2,ui2'
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" 'ui 3'
+grep -q 'no part ui 3: there are 2 UI shards' "$tmp/out" || fail "ui 3: $(cat "$tmp/out")"
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" 'unit,lint'
+grep -q "no part 'lint'" "$tmp/out" || fail "lint: $(cat "$tmp/out")"
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" ''
+# Nothing touched, on main itself: the unit part.
+parts '["unit"]' touched
+# A UI-only branch: one shard, by its merge base, not by main's tip, which
+# moved on (A, in shard 1).
+git -C "$pr" checkout -q -b ui-only
+echo '// more' >>"$pr/apps/ios/mdocUITests/CUITests.swift"
+commit ui
+git -C "$pr" checkout -q main
+echo '// later' >>"$pr/apps/ios/mdocUITests/AUITests.swift"
+commit main
+git -C "$pr" checkout -q ui-only
+parts '["ui 2"]' touched
+# A unit test changed too adds the unit part; a helper, every shard.
+echo '// more' >>"$pr/apps/ios/mdocTests/CoreTests.swift"
+commit unit
+parts '["unit","ui 2"]' touched
+echo '// more' >>"$pr/apps/ios/mdocUITests/Waits.swift"
+commit helper
+parts '["unit","ui 1","ui 2"]' touched
+# No UI test class left (app code, a deleted class): the unit part.
+git -C "$pr" checkout -q -b app main
+git -C "$pr" rm -q apps/ios/mdocUITests/BUITests.swift
+echo '// app' >"$pr/apps/ios/App.swift"
+commit app
+parts '["unit"]' touched
+# A deleted helper touches every shard; a moved one too, at both paths.
+git -C "$pr" checkout -q -b helper-gone main
+git -C "$pr" rm -q apps/ios/mdocUITests/Waits.swift
+commit helper-gone
+parts '["ui 1","ui 2"]' touched
+git -C "$pr" checkout -q -b helper-moved main
+mkdir -p "$pr/apps/ios/mdocUITests/Support"
+git -C "$pr" mv apps/ios/mdocUITests/Waits.swift apps/ios/mdocUITests/Support/Waits.swift
+commit helper-moved
+parts '["ui 1","ui 2"]' touched
+# A moved class: its shard at the new path, none at the old.
+git -C "$pr" checkout -q -b class-moved main
+git -C "$pr" mv apps/ios/mdocUITests/CUITests.swift apps/ios/mdocUITests/Support.swift
+commit class-moved
+parts '["ui 2"]' touched
+# A path git would quote (a space, a non-ASCII letter) still counts.
+git -C "$pr" checkout -q -b quoted main
+printf 'import XCTest\n\nfinal class CUITests: XCTestCase {}\n' >"$pr/apps/ios/mdocUITests/CUITests.swift"
+git -C "$pr" mv apps/ios/mdocUITests/CUITests.swift "apps/ios/mdocUITests/Spaced Ü.swift"
+commit quoted
+parts '["ui 2"]' touched
+# One line only.
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" "$(printf 'unit\nui 2')"
+grep -q 'parts is one line' "$tmp/out" || fail "two lines: $(cat "$tmp/out")"
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" touched x
+MDOC_MAIN_REF=nowhere expect 1 "$pr/scripts/ios/ios-ci-parts.sh" touched
+grep -q 'no merge base of HEAD and nowhere' "$tmp/out" || fail "no main: $(cat "$tmp/out")"
+unset MDOC_MAIN_REF
 
 # scripts/ios/ios-ui-class-times.py.
 py=$(command -v python3 || command -v python) || fail "no python"
