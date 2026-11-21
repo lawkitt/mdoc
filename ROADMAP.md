@@ -327,18 +327,10 @@ items 8–15: [ADR 0100](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c
 Items 16–31 shipped (ADR 0112 and 0113, retired; item 30 dropped, #857).
 Items 32–37 come from the third grill, #1041: a core change's queue time
 went from a median of 32 minutes to 51 when iOS moved to the `xcode-27`
-image, and every iOS part builds the core itself. Items 32–35 edit
-`ci-ios.yml`; 36 (#1046) and 37 (#1045) have shipped.
+image, and every iOS part builds the core itself. Items 32 (#1044), 33
+(#1052), 36 (#1046) and 37 (#1045) have shipped; 34 and 35 edit
+`ci-ios.yml` and go in order.
 
-32. **[CI] The iOS core once per run.** One job builds or restores the iOS
-    core and hands it to the unit and UI parts as an artifact. *Done when:*
-    a core change's queue run builds the core in one job.
-33. **[CI] iOS tests on `macos-26`.** The unit and UI parts run with Xcode
-    26.2 and the iOS 26.2 Simulator; the Release build, the archive and a
-    nightly test pass stay on `xcode-27`
-    ([ADR 0124](docs/adr/0124-ios-tests-on-xcode-26-builds-on-xcode-27.md)).
-    *Done when:* the queue's iOS tests run on `macos-26` and the nightly's
-    on `xcode-27`, both green.
 34. **[CI] Three UI shards on `macos-26`.** *Done when:* a queue commit's
     slower UI shard takes 15 minutes of tests or less.
 35. **[CI] Branch iOS runs test what they touched.** A dispatch runs the
