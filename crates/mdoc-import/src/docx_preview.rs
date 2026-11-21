@@ -247,6 +247,18 @@ pub fn render_with_cancel(
     )
 }
 
+/// A locked document's bytes, unlocked in memory, are refused: the render
+/// writes a temporary PDF, which would be an unlocked copy on disk (#1024
+/// decision 6). A tab hands them over so that rendering in memory can take
+/// them (#1024 item 3).
+fn refuse_unlocked(source: &Source) -> Result<(), PreviewError> {
+    if source.unlocked() {
+        Err(PreviewError::Encrypted)
+    } else {
+        Ok(())
+    }
+}
+
 fn check_cancel(cancelled: &AtomicBool) -> Result<(), PreviewError> {
     if cancelled.load(Ordering::Relaxed) || SHUTTING_DOWN.load(Ordering::Relaxed) {
         Err(PreviewError::Cancelled)
@@ -265,6 +277,7 @@ pub fn render_with_executable(
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
+    refuse_unlocked(source)?;
     let _lock = loop {
         check_cancel(&cancelled)?;
         if let Ok(lock) = WORKER.try_lock() {
@@ -391,6 +404,7 @@ pub fn render_in(
     read_marks: MarkReader,
     options: RenderOptions,
 ) -> Result<DocxPreview, PreviewError> {
+    refuse_unlocked(source)?;
     let directory = tempfile::tempdir_in(parent)
         .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
@@ -405,6 +419,7 @@ fn render_direct(
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
+    refuse_unlocked(source)?;
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
     run_worker(source.bytes(), &pdf_path, read_marks, options)?;
@@ -772,6 +787,51 @@ mod tests {
             None,
         );
         assert!(matches!(result, Err(PreviewError::Cancelled)));
+    }
+
+    /// A tab's unlocked DOCX reaches no render, each of which would write it
+    /// to a temporary PDF (#1024 decision 6): in process, in the worker, or
+    /// into the phones' folder.
+    #[test]
+    fn unlocked_bytes_are_never_rendered_to_a_temporary_file() {
+        let plain = package(&[("word/document.xml", b"<w:document/>")]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("locked.docx");
+        std::fs::write(
+            &path,
+            craft_offcrypto::encrypt_with_spin_count(&plain, "fictional-pass", 1000).unwrap(),
+        )
+        .unwrap();
+        let unlocked = Source::read(&path)
+            .unwrap()
+            .unlock(Some(&crate::import::Password::new("fictional-pass".into())))
+            .unwrap();
+        assert!(unlocked.unlocked());
+        let in_process = render_in_process(
+            &unlocked,
+            Arc::new(AtomicBool::new(false)),
+            |_| panic!("no PDF is read"),
+            RenderOptions::default(),
+            None,
+        );
+        assert!(matches!(in_process, Err(PreviewError::Encrypted)));
+        let worker = render_with_executable(
+            &unlocked,
+            Arc::new(AtomicBool::new(false)),
+            Path::new("no-such-executable"),
+            MAX_CONVERSION_TIME,
+            RenderOptions::default(),
+            None,
+        );
+        assert!(matches!(worker, Err(PreviewError::Encrypted)));
+        let phones = render_in(
+            dir.path(),
+            &unlocked,
+            |_| panic!("no PDF is read"),
+            RenderOptions::default(),
+        );
+        assert!(matches!(phones, Err(PreviewError::Encrypted)));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]

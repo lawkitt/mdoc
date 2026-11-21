@@ -236,8 +236,8 @@ impl PreviewState {
             self.unread_annotations = None;
         }
         // Past its limit the preview refuses the file, so none are kept;
-        // nor are a locked file's unlocked bytes, which the preview would
-        // render to a temporary file.
+        // a locked file's unlocked bytes stay with the tab's unlock, their
+        // one holder.
         let docx = (source
             .path
             .extension()
@@ -952,9 +952,13 @@ impl DocumentView {
             show_hidden_text: self.source_display().hidden_text,
         };
         let known = self.preview.imported_comments(&path);
+        let unlocked = self.unlocked_source(&path);
         let task = cx.background_executor().spawn(async move {
             let (comments, held) = known.and_then(ImportedComments::current).unzip();
-            let source = match held.flatten() {
+            let source = match held
+                .flatten()
+                .or_else(|| unlocked.filter(Source::is_current))
+            {
                 Some(source) => source,
                 None => docx_preview::read_source(&path)?,
             };
@@ -1002,6 +1006,17 @@ impl DocumentView {
         });
         self.keep_background(task);
         cx.notify();
+    }
+
+    /// The tab's unlocked bytes of the locked file at `path`: a reload or a
+    /// redraw of its preview renders these, never asking again (#1024
+    /// decision 6). The render refuses them until it runs in memory.
+    pub(crate) fn unlocked_source(&self, path: &Path) -> Option<Source> {
+        let unlock = self.import.unlock()?;
+        match unlock {
+            import::Unlock::Unlocked(source) if source.path == path => Some(source.clone()),
+            _ => None,
+        }
     }
 
     pub(super) fn retry_preview(

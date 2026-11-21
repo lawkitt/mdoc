@@ -869,7 +869,7 @@ impl DocumentView {
                 }
                 ImportEffect::Run {
                     path,
-                    password,
+                    mut unlock,
                     installed,
                     skip_ocr,
                     permit,
@@ -879,21 +879,23 @@ impl DocumentView {
                     self.error = None;
                     let generation = self.session.generation;
                     let task = cx.background_executor().spawn(async move {
-                        // The password lives only as long as this run.
-                        let result = import::prepare_cancellable(
+                        // The run takes the tab's unlock (or a typed
+                        // password) and hands back what opens the source
+                        // now; a closed tab's drops with the task.
+                        let result = import::prepare_unlocking(
                             &path,
-                            password.as_ref(),
+                            &mut unlock,
                             installed.as_ref(),
                             skip_ocr,
                             &cancel,
                         );
                         drop(permit);
-                        result
+                        (result, unlock)
                     });
                     let task = cx.spawn_in(window, async move |this, cx| {
-                        let result = task.await;
+                        let (result, unlock) = task.await;
                         let _ = this.update_in(cx, |this, window, cx| {
-                            this.import.complete(generation, result);
+                            this.import.complete(generation, result, unlock);
                             this.resume_import(window, cx);
                             cx.emit(workspace::TabEvent::Import(
                                 workspace::ImportEvent::Finished,
@@ -1049,7 +1051,8 @@ impl DocumentView {
     }
 
     /// Unlock on the conversion card: the field's text goes to one
-    /// conversion as the document's password and is wiped from the field.
+    /// conversion as the document's password and is wiped from the field;
+    /// what it unlocks stays with the tab.
     fn unlock_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.import.can_unlock() || self.lifecycle.prompting() {
             return;
@@ -1060,7 +1063,7 @@ impl DocumentView {
         if password.is_empty() {
             return;
         }
-        let effect = self.import.unlock(import::Password::from(password));
+        let effect = self.import.try_password(import::Password::from(password));
         self.carry_out_import(effect, window, cx);
     }
 
@@ -1090,7 +1093,7 @@ impl DocumentView {
         let can_unlock = self.import.can_unlock();
         card.child(ui::card_title("This document is password-protected"))
             .child(ui::card_text(
-                "Enter its password to convert it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.",
+                "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
                 theme,
             ))
             .when(prompt == import_flow::PasswordPrompt::Wrong, |v| {

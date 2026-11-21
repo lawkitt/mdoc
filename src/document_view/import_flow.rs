@@ -1,12 +1,13 @@
 //! Converting this tab's source into Markdown: the one import
 //! job and its slot in the app-wide import permit, automatic conversion of
-//! opened PDFs and DOCX files, and OCR consent, recognition languages and
-//! setup on the conversion card, and the password of a locked document. The document view reads
-//! Settings, starts the background work and the model setup, and carries
-//! out the returned effects.
+//! opened PDFs and DOCX files, OCR consent, recognition languages and
+//! setup on the conversion card, the password card of a locked document,
+//! and the tab's unlock of it. The document view reads Settings, starts the
+//! background work and the model setup, and carries out the returned
+//! effects.
 
 use mdoc_import::{
-    import::{ImportError, Imported, Password},
+    import::{ImportError, Imported, Password, Unlock},
     import_session::{ImportCompletion, ImportPermit, ImportSession},
     ocr, recognition,
 };
@@ -42,11 +43,12 @@ pub(crate) enum ImportEffect {
         installed: ocr::Installed,
     },
     /// Run the conversion in the background, holding `permit` and stopping
-    /// when `cancel` is set; report with `complete`. `password` unlocks a
-    /// locked document for this run only and drops with it.
+    /// when `cancel` is set; report with `complete`, handing back what
+    /// `unlock` became. `unlock` is the tab's, or a password typed on the
+    /// card.
     Run {
         path: PathBuf,
-        password: Option<Password>,
+        unlock: Option<Unlock>,
         installed: Option<ocr::Installed>,
         skip_ocr: bool,
         permit: Arc<ImportPermit>,
@@ -106,8 +108,15 @@ pub(crate) struct ImportFlow {
     ocr_notice_dismissed: bool,
     setup_error_dismissed: bool,
     /// The source is password-protected: the card asks for its password.
-    /// The password itself is never kept here.
+    /// A typed password goes to one run; only what it unlocked is kept.
     password_prompt: Option<PasswordPrompt>,
+    /// The tab's unlock of its locked source: every later run (OCR, Try
+    /// again) and the preview take it instead of asking again. Memory only,
+    /// never in the session; dropped when the tab closes (#1024 decision 6).
+    unlock: Option<Unlock>,
+    /// What the finished run for a generation left of the unlock, adopted
+    /// with its result.
+    finished_unlock: Option<(u64, Option<Unlock>)>,
     /// Keyboard input source languages; tests inject their own.
     input_languages: fn() -> Vec<recognition::Language>,
 }
@@ -136,6 +145,8 @@ impl ImportFlow {
             ocr_notice_dismissed: false,
             setup_error_dismissed: false,
             password_prompt: None,
+            unlock: None,
+            finished_unlock: None,
             input_languages,
         }
     }
@@ -192,6 +203,12 @@ impl ImportFlow {
     /// The card asks for the source's password.
     pub(crate) fn password_prompt(&self) -> Option<PasswordPrompt> {
         self.password_prompt
+    }
+
+    /// The tab's unlock of its locked source: the unlocked bytes of an
+    /// Office document, or a PDF's password, for whatever opens it again.
+    pub(crate) fn unlock(&self) -> Option<&Unlock> {
+        self.unlock.as_ref()
     }
 
     /// A password typed on the card can be tried now: nothing else runs
@@ -392,21 +409,27 @@ impl ImportFlow {
     }
 
     /// Unlock on the card: convert the source with `password`, which goes
-    /// with the run and is dropped when it ends. Nothing unless
+    /// with the run; what it unlocks stays with the tab. Nothing unless
     /// [`Self::can_unlock`].
-    pub(crate) fn unlock(&mut self, password: Password) -> Option<ImportEffect> {
+    pub(crate) fn try_password(&mut self, password: Password) -> Option<ImportEffect> {
         if !self.can_unlock() {
             return None;
         }
         let path = self.source.clone()?;
         self.automatic = false;
-        self.run(path, Some(password), None, false)
+        let unlock = Unlock::Password {
+            path: path.clone(),
+            password,
+        };
+        self.run(path, Some(unlock), None, false)
     }
 
+    /// Run a conversion of `path` with `typed`, a password from the card,
+    /// else the tab's unlock.
     fn run(
         &mut self,
         path: PathBuf,
-        password: Option<Password>,
+        typed: Option<Unlock>,
         installed: Option<ocr::Installed>,
         skip_ocr: bool,
     ) -> Option<ImportEffect> {
@@ -424,7 +447,7 @@ impl ImportFlow {
         self.ocr_error = None;
         Some(ImportEffect::Run {
             path,
-            password,
+            unlock: typed.or_else(|| self.unlock.clone()),
             installed,
             skip_ocr,
             permit,
@@ -432,8 +455,15 @@ impl ImportFlow {
         })
     }
 
-    /// The conversion for `generation` finished in the background.
-    pub(crate) fn complete(&mut self, generation: u64, result: Result<Imported, ImportError>) {
+    /// The conversion for `generation` finished in the background, leaving
+    /// `unlock` of the one it took. A closed tab keeps nothing.
+    pub(crate) fn complete(
+        &mut self,
+        generation: u64,
+        result: Result<Imported, ImportError>,
+        unlock: Option<Unlock>,
+    ) {
+        self.finished_unlock = (!self.cancelled()).then_some((generation, unlock));
         self.job.complete(generation, result);
     }
 
@@ -446,11 +476,19 @@ impl ImportFlow {
         shared: impl FnOnce(&Self) -> bool,
     ) -> Option<Vec<ImportEffect>> {
         let completion = self.job.take_ready(generation, prompting)?;
+        let finished_unlock = self.finished_unlock.take();
         // A run that finishes after Cancel was accepted (the converter
         // returned before checking the flag) still ends cancelled.
         let stopped = std::mem::take(&mut self.stopping);
         let mut effects = Vec::new();
         if let ImportCompletion::Ready(result) = completion {
+            // What opens the source from now on: the run's unlock, or
+            // nothing (not locked, a wrong password, a changed file).
+            if let Some((finished, unlock)) = finished_unlock
+                && finished == generation
+            {
+                self.unlock = unlock;
+            }
             let result = if stopped {
                 Err(ImportError::Cancelled)
             } else {
@@ -670,10 +708,13 @@ impl ImportFlow {
         self.cancel = Arc::new(AtomicBool::new(false));
     }
 
-    /// The tab is closing: a running conversion stops and the slot goes.
+    /// The tab is closing: a running conversion stops, the slot goes, and
+    /// the unlock is dropped (wiped once a running job lets go of it).
     pub(crate) fn cancel(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
         self.permit = None;
+        self.unlock = None;
+        self.finished_unlock = None;
     }
 }
 
@@ -745,7 +786,7 @@ mod tests {
         assert!(other.begin("/in/c.pdf".into(), None, false).is_none());
         drop(permit);
         // A dialog holds the completion back.
-        flow.complete(1, Err(ImportError::Cancelled));
+        flow.complete(1, Err(ImportError::Cancelled), None);
         assert!(flow.resume(1, true, |_| false).is_none());
         let effects = flow.resume(1, false, |_| false).unwrap();
         assert_eq!(names(&effects), ["Error", "State"]);
@@ -775,7 +816,7 @@ mod tests {
                 "the slot stays held until the run exits"
             );
             drop(permit);
-            flow.complete(1, late);
+            flow.complete(1, late, None);
             let effects = flow.resume(1, false, |_| false).unwrap();
             let [ImportEffect::Error(error), ImportEffect::State] = &effects[..] else {
                 panic!("{:?}", names(&effects));
@@ -804,7 +845,7 @@ mod tests {
         assert!(flow.stopping() && flow.busy());
         assert!(!flow.cancelled(), "the tab itself is not closing");
         drop(permit);
-        flow.complete(1, Err(ImportError::Cancelled));
+        flow.complete(1, Err(ImportError::Cancelled), None);
         let effects = flow.resume(1, false, |_| false).unwrap();
         assert_eq!(names(&effects), ["Error", "State"]);
         assert!(!flow.stopping() && !flow.busy() && !slot.load(Ordering::Relaxed));
@@ -827,7 +868,7 @@ mod tests {
         let (mut flow, slot) = new_flow();
         assert!(!flow.can_unlock(), "nothing asks yet");
         start(&mut flow, "/in/locked.docx", None);
-        flow.complete(1, Err(ImportError::PasswordRequired));
+        flow.complete(1, Err(ImportError::PasswordRequired), None);
         let effects = flow.resume(1, false, |_| false).unwrap();
         assert_eq!(names(&effects), ["FocusCard", "State"]);
         assert_eq!(flow.password_prompt(), Some(PasswordPrompt::Asking));
@@ -839,23 +880,27 @@ mod tests {
             assert!(flow.can_unlock());
             let Some(ImportEffect::Run {
                 path,
-                password,
+                unlock,
                 permit,
                 skip_ocr,
                 installed,
                 ..
-            }) = flow.unlock(Password::new("guess".into()))
+            }) = flow.try_password(Password::new("guess".into()))
             else {
                 panic!("Unlock runs the conversion");
             };
             assert_eq!(path, PathBuf::from("/in/locked.docx"));
-            assert!(password.is_some() && !skip_ocr && installed.is_none());
             assert!(
-                flow.unlock(Password::new("again".into())).is_none(),
+                unlock.as_ref().and_then(Unlock::password).is_some()
+                    && !skip_ocr
+                    && installed.is_none()
+            );
+            assert!(
+                flow.try_password(Password::new("again".into())).is_none(),
                 "one run at a time"
             );
             drop(permit);
-            flow.complete(1, result);
+            flow.complete(1, result, None);
             let effects = flow.resume(1, false, |_| false).unwrap();
             assert_eq!(flow.password_prompt(), prompt);
             if prompt.is_some() {
@@ -868,9 +913,10 @@ mod tests {
         // Asked again (Try again converts without a password), then the
         // right password imports.
         start(&mut flow, "/in/locked.docx", None);
-        flow.complete(1, Err(ImportError::PasswordRequired));
+        flow.complete(1, Err(ImportError::PasswordRequired), None);
         flow.resume(1, false, |_| false).unwrap();
-        let Some(ImportEffect::Run { permit, .. }) = flow.unlock(Password::new("right".into()))
+        let Some(ImportEffect::Run { permit, .. }) =
+            flow.try_password(Password::new("right".into()))
         else {
             panic!("Unlock runs the conversion");
         };
@@ -878,6 +924,7 @@ mod tests {
         flow.complete(
             1,
             Ok(crate::test_support::converted("/in/locked.docx".into())),
+            None,
         );
         let effects = flow.resume(1, false, |_| false).unwrap();
         assert_eq!(names(&effects), ["Request", "State"]);
@@ -885,11 +932,106 @@ mod tests {
         assert!(!slot.load(Ordering::Relaxed));
     }
 
+    /// The run that took `unlock`'s password, for the tab's source.
+    fn password_in(effect: Option<ImportEffect>) -> Option<String> {
+        let Some(ImportEffect::Run { unlock, permit, .. }) = effect else {
+            panic!("the conversion runs");
+        };
+        drop(permit);
+        unlock
+            .as_ref()
+            .and_then(Unlock::password)
+            .map(|password| password.expose().to_owned())
+    }
+
+    /// The tab keeps what unlocked its source (#1024 decision 6): OCR
+    /// consent, a failed recognition and Try again after Cancel all run
+    /// with it and never ask, a stale run doesn't change it, a run that
+    /// opened nothing drops it, and closing the tab drops it for good,
+    /// even from a run that ends afterwards.
+    #[test]
+    fn the_tab_s_unlock_goes_with_every_later_run_until_the_tab_closes() {
+        const PDF: &str = "/in/locked.pdf";
+        let held = || {
+            Some(Unlock::Password {
+                path: PDF.into(),
+                password: Password::new("right".into()),
+            })
+        };
+        let (mut flow, _) = new_flow();
+        start(&mut flow, PDF, None);
+        flow.complete(1, Err(ImportError::PasswordRequired), None);
+        flow.resume(1, false, |_| false).unwrap();
+        assert_eq!(
+            password_in(flow.try_password(Password::new("right".into()))).as_deref(),
+            Some("right")
+        );
+        // The password opened it; its scanned pages wait for consent.
+        flow.complete(
+            1,
+            Err(ImportError::NeedsOcr(PDF.into(), vec![1], Vec::new(), 1)),
+            held(),
+        );
+        flow.resume(1, false, |_| false).unwrap();
+        assert_eq!(flow.password_prompt(), None);
+        assert!(flow.unlock().is_some());
+
+        // Recognize: the run takes the tab's unlock.
+        let Some(ImportEffect::Convert {
+            path, allow_ocr, ..
+        }) = flow.consent(false, false, None, 1, true, false)
+        else {
+            panic!("Recognize converts");
+        };
+        assert!(allow_ocr);
+        let ocr = Some(installed(OcrModel::default()));
+        let run = flow.begin(path, ocr.clone(), false);
+        assert_eq!(password_in(run).as_deref(), Some("right"));
+        flow.complete(
+            1,
+            Err(ImportError::OcrFailed(OcrFailure::Engine("stopped".into()))),
+            held(),
+        );
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.ocr_required().is_some() && flow.unlock().is_some());
+        // Recognize again, Cancel, then Try again: still no asking.
+        let run = flow.begin(PDF.into(), ocr.clone(), false);
+        assert_eq!(password_in(run).as_deref(), Some("right"));
+        flow.stop();
+        flow.complete(1, Ok(crate::test_support::converted(PDF.into())), held());
+        flow.resume(1, false, |_| false).unwrap();
+        let run = flow.begin(PDF.into(), None, false);
+        assert_eq!(password_in(run).as_deref(), Some("right"));
+        // A run for a replaced document leaves the unlock as it was.
+        flow.complete(2, Err(ImportError::PasswordRequired), None);
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_some() && flow.password_prompt().is_none());
+        // The file changed: the run opened nothing, so the card asks.
+        start(&mut flow, PDF, None);
+        flow.complete(1, Err(ImportError::PasswordRequired), None);
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_none());
+        assert_eq!(flow.password_prompt(), Some(PasswordPrompt::Asking));
+
+        // Unlocked again, then the tab closes while a run is out.
+        password_in(flow.try_password(Password::new("right".into())));
+        flow.complete(1, Ok(crate::test_support::converted(PDF.into())), held());
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_some());
+        let run = flow.begin(PDF.into(), None, false);
+        assert_eq!(password_in(run).as_deref(), Some("right"));
+        flow.cancel();
+        assert!(flow.unlock().is_none());
+        flow.complete(1, Err(ImportError::Cancelled), held());
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_none(), "a closed tab keeps nothing");
+    }
+
     #[test]
     fn a_stale_conversion_only_frees_the_slot() {
         let (mut flow, slot) = new_flow();
         start(&mut flow, "/in/a.pdf", None);
-        flow.complete(1, Err(ImportError::Cancelled));
+        flow.complete(1, Err(ImportError::Cancelled), None);
         let effects = flow.resume(2, false, |_| false).unwrap();
         assert_eq!(names(&effects), ["State"]);
         assert!(!slot.load(Ordering::Relaxed));
@@ -907,6 +1049,7 @@ mod tests {
                 Vec::new(),
                 5,
             )),
+            None,
         );
         let effects = flow.resume(1, false, |_| false).unwrap();
         assert_eq!(names(&effects), ["FocusCard", "State", "State"]);
@@ -984,7 +1127,7 @@ mod tests {
             "/in/scan.pdf",
             Some(installed(OcrModel::default())),
         );
-        flow.complete(1, failure());
+        flow.complete(1, failure(), None);
         let effects = flow.resume(1, false, |_| true).unwrap();
         assert_eq!(
             names(&effects),
@@ -1005,7 +1148,7 @@ mod tests {
             "/in/scan.pdf",
             Some(installed(OcrModel::default())),
         );
-        flow.complete(1, failure());
+        flow.complete(1, failure(), None);
         let effects = flow.resume(1, false, |_| false).unwrap();
         assert_eq!(names(&effects), ["Error", "FocusCard", "State", "State"]);
         assert!(flow.ocr_failure().is_some());
@@ -1016,7 +1159,7 @@ mod tests {
             "/in/scan.pdf",
             Some(installed(OcrModel::default())),
         );
-        flow.complete(1, Err(ImportError::OcrNoText));
+        flow.complete(1, Err(ImportError::OcrNoText), None);
         let effects = flow.resume(1, false, |_| true).unwrap();
         assert_eq!(names(&effects)[0], "Error");
         assert!(flow.ocr_error().is_some());
