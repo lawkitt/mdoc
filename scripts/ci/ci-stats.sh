@@ -5,7 +5,9 @@
 # queue's Queue runs) over the last N days (default 7) or since a time such
 # as 2026-11-05T22:20:00Z (to measure only what ran after a change landed):
 #
-#   core     a core queue commit's time to green: median 20 minutes or less;
+#   core     a core queue commit's time to green: median 30 minutes or less
+#            (#1041: missing it reopens a self-hosted Mac, which its FAIL
+#            line says);
 #   desktop  a desktop-only one's: median 15 minutes or less;
 #   queue    every queue commit's: median 25 minutes or less. A queue
 #            commit's time runs from its Queue run starting to its first
@@ -79,7 +81,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 repo=${GH_REPO:-lawkitt/mdoc}
 quarantine=${CI_STATS_QUARANTINE:-$(dirname "${BASH_SOURCE[0]}")/../../.config/quarantine.txt}
 queue_min=${CI_STATS_QUEUE_MIN:-25}
-core_min=${CI_STATS_CORE_MIN:-20}
+core_min=${CI_STATS_CORE_MIN:-30}
 desktop_min=${CI_STATS_DESKTOP_MIN:-15}
 ios_ui_min=${CI_STATS_IOS_UI_MIN:-15}
 drops_week=${CI_STATS_DROPS_WEEK:-1}
@@ -525,7 +527,7 @@ target_from() { # target window-start
 # wrote in $3), after a line counting the window's commits by class: 0 when
 # every judged target holds, 1 when one fails.
 report() { # from to dir
-  local from=$1 to=$2 dir=$3 rc=0 n m p verdict days per_week target limit what start note
+  local from=$1 to=$2 dir=$3 rc=0 n m p verdict consequence days per_week target limit what start note
   local at sha pr desc why unrelated=0 drops=0 infra=0 quar=0 rep=0 list='' failed='' test
   commit_classes "$dir/classes" "$from" "$to" >"$dir/classes.now"
   awk '{ n[$2]++ }
@@ -549,13 +551,14 @@ report() { # from to dir
           (want == "core" && cls[$4] == "core") || (want == "desktop" && cls[$4] == "desktop-only")) { print $2 }
       ' "$dir/classes.now" "$dir/queue" | summary)"
     fi
-    verdict=pass
+    verdict=pass consequence=''
     if ! within "$m" "$limit"; then
       verdict=FAIL
       [ "${note%%:*}" = "not judged" ] || rc=1
+      [ "$target" != core ] || consequence='; missing it reopens a self-hosted Mac (#1041)'
     fi
-    printf '%-8s %s  %s: %s, median %s min, p90 %s min (target: median %s or less; %s)\n' \
-      "$target" "$verdict" "$what" "$n" "$(minutes "$m")" "$(minutes "$p")" "$limit" "$note"
+    printf '%-8s %s  %s: %s, median %s min, p90 %s min (target: median %s or less; %s)%s\n' \
+      "$target" "$verdict" "$what" "$n" "$(minutes "$m")" "$(minutes "$p")" "$limit" "$note" "$consequence"
   done
   read -r start note <<<"$(target_from drops "$from")"
   [ "$start" -le "$to" ] || start=$to

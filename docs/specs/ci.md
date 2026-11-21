@@ -59,6 +59,9 @@ How a PR reaches `main`. The machinery and the PC's runners:
   Delete both branches afterwards.
 - If a merged gate change blocks the queue, the maintainer pushes its revert
   straight to `main`.
+- A core change's queue commit aims for a median of 30 minutes to a green
+  gate, because hosted macOS runners cannot meet 20. Missing it reopens the
+  self-hosted Mac that #1041 put off.
 
 ## iOS tests on the Mac
 
