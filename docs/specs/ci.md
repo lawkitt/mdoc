@@ -44,6 +44,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 - Hosted `windows-latest` is the reference platform, because a developer
   machine's scores differ in the fourth decimal.
+- Detection's 5-minute model budget fails only the nightly, because a
+  shared VM's wall clock must not decide merges.
 - Never commit your own `--refresh-snapshots` output: push, let the head's
   detection gate fail, run `just snapshots-fetch <PR>`, review the diff,
   then commit and push.

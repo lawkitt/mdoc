@@ -60,8 +60,11 @@ jobs:
   detection:
     if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-detection.yml
+    # The only run the 5-minute model budget fails: twelve shards keep a
+    # runner 3 times as slow inside it (ci-detection.yml).
     with:
       shards: 12
+      budget-fails: true
 
   # Reports and never fails: a quarantined test still failing is expected.
   quarantined:
