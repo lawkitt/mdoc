@@ -57,12 +57,24 @@ enum Snapshot {
             .tint(Palette.accent)
             .environment(\.colorScheme, appearance.scheme)
             .environment(\.dynamicTypeSize, size)
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = 2
-        guard let image = renderer.uiImage, let png = image.pngData() else {
-            XCTFail("\(name): nothing rendered", file: file, line: line)
+        // A render that comes back empty is retried, up to 3 tries with the
+        // main run loop turning between them: ImageRenderer returned no
+        // image once on the xcode-27 image (#1044's queue run). Only an
+        // empty render: a pixel mismatch below is never re-rendered or
+        // compared again, as unit tests do not retry (docs/specs/ci.md) and
+        // a retried diff would hide a real rendering change.
+        var rendered: (image: UIImage, png: Data)?
+        for attempt in 1...3 where rendered == nil {
+            if attempt > 1 { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = 2
+            if let image = renderer.uiImage, let png = image.pngData() { rendered = (image, png) }
+        }
+        guard let rendered else {
+            XCTFail("\(name): nothing rendered after 3 tries", file: file, line: line)
             return
         }
+        let (image, png) = rendered
         let reference = Snapshot.reference("\(name)-\(appearance.rawValue)")
         guard !recording, let expected = UIImage(contentsOfFile: reference.path) else {
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
