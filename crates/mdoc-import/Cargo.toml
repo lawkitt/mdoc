@@ -34,6 +34,9 @@ zeroize = "1"
 # The image builder (image_pdf): decoding within limits, EXIF orientation,
 # and photos re-encoded as JPEG. Already in the tree through pdf-inspector.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# TIFF pages (image_pdf::tiff): every directory, and CCITT strips read raw for
+# passthrough. Already in the tree through image.
+tiff = "0.11"
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
 # C API 17, which 1.17 and later serve: 1.32.0 downloaded on desktop
 # (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS,

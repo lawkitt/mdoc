@@ -21,12 +21,14 @@ pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
     );
     for (index, page) in pages.iter().enumerate() {
         let first = 3 + 3 * index;
-        // The sheet's size comes from the image's size before scaling: a
+        // The sheet's size comes from the image's size before scaling, at
+        // the page's own resolution when it states one (a TIFF): a
         // scaled-down page keeps its sheet, its pixels drawn larger.
-        let scale = 72. / f64::from(dpi.max(1));
+        let fallback = f64::from(dpi.max(1));
+        let (x_dpi, y_dpi) = page.resolution.unwrap_or((fallback, fallback));
         let (width, height) = (
-            f64::from(page.sheet.0) * scale,
-            f64::from(page.sheet.1) * scale,
+            f64::from(page.sheet.0) * 72. / x_dpi,
+            f64::from(page.sheet.1) * 72. / y_dpi,
         );
         let [a, b, c, d, e, f] = upright(page.orientation, width, height);
         // Orientations 5 to 8 turn the image a quarter, swapping its sides.
@@ -47,8 +49,13 @@ pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
             None,
         );
         let filter = match page.stream {
-            Stream::Jpeg => "/DCTDecode",
-            Stream::Flate => "/FlateDecode",
+            Stream::Jpeg => "/DCTDecode".to_owned(),
+            Stream::Flate => "/FlateDecode".to_owned(),
+            Stream::Ccitt(ccitt) => format!(
+                "/CCITTFaxDecode /DecodeParms << /K {} /Columns {} /Rows {} /BlackIs1 {} \
+                 /EncodedByteAlign {} /EndOfBlock false >>",
+                ccitt.k, page.width, page.height, ccitt.black_is_1, ccitt.byte_align
+            ),
         };
         let color = if page.gray {
             "/DeviceGray"
@@ -58,9 +65,10 @@ pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
         pdf.object(
             &format!(
                 "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {color} \
-                 /BitsPerComponent 8 /Filter {filter} /Length {} >>",
+                 /BitsPerComponent {} /Filter {filter} /Length {} >>",
                 page.width,
                 page.height,
+                page.bits,
                 page.data.len()
             ),
             Some(&page.data),
