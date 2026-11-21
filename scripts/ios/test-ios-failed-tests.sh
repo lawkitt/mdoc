@@ -170,10 +170,23 @@ has "$GITHUB_STEP_SUMMARY" "- \`$two\`"
 if IOS_OUTPUTS='{"unit":"success","ui1":"cancelled","ui2":""}' run summary failure unit 'ui 1' 'ui 2'; then fail 'cancelled summary passed'; fi
 has "$tmp/out" '::error::ci/ios (ui 1): cancelled'
 has "$tmp/out" '::error::ci/ios (ui 2): did not finish'
+# The third UI part (#997) reads as the others.
+if IOS_OUTPUTS='{"unit":"success","ui1":"success","ui2":"success","ui3":"failure","ui3_tests":"ios:mdocUITests/S/testZ"}' run summary failure unit 'ui 1' 'ui 2' 'ui 3'; then
+  fail 'red summary on ui 3 passed'
+fi
+has "$tmp/out" '::error::Failed in ci/ios (ui 3): ios:mdocUITests/S/testZ'
+[ "$(grep -c '^::error::' "$tmp/out")" = 1 ] || fail "summary annotated a part that passed: $(cat "$tmp/out")"
 if IOS_OUTPUTS='{"unit":"success","ui1":"success","ui2":"success"}' run summary cancelled unit 'ui 1' 'ui 2'; then fail 'cancelled run passed'; fi
 has "$tmp/out" '::error::ci/ios: parts cancelled'
 if IOS_OUTPUTS='' run summary skipped unit; then fail 'skipped run passed'; fi
 has "$tmp/out" '::error::ci/ios (unit): did not finish'
+
+# A core job that did not pass is named alone: its parts never ran.
+if CORE_RESULT=failure IOS_OUTPUTS='' run summary skipped unit 'ui 1'; then fail 'summary after a failed core passed'; fi
+has "$tmp/out" '::error::Failed in ci/ios (core)'
+[ "$(grep -c '^::error::' "$tmp/out")" = 1 ] || fail "summary after a failed core named its parts: $(cat "$tmp/out")"
+if CORE_RESULT=cancelled IOS_OUTPUTS='' run summary skipped unit; then fail 'summary after a cancelled core passed'; fi
+has "$tmp/out" '::error::ci/ios (core): cancelled'
 
 # Usage.
 if run nonsense; then fail 'a bad command passed'; fi

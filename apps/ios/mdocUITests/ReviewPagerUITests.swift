@@ -41,7 +41,7 @@ final class ReviewPagerUITests: XCTestCase {
         XCTAssertLessThanOrEqual(text.frame.maxY, primary.frame.minY, "the text ends at the bottom bar")
         // Names to step through: Find and Hide name on the surname.
         app.buttons["title-menu"].tap()
-        let find = app.buttons["find-in-document"]
+        let find = MdocUITest.menuItem("Find in document", app)
         XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
         find.tap()
         let field = app.searchFields.firstMatch

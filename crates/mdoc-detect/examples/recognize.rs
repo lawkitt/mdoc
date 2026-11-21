@@ -4,7 +4,7 @@
 //! just recognize <file.md|folder> [--gold] [--snapshot]
 //! just recognize --scoreboard [<folder>] [--snapshot]
 //! just recognize --refresh-snapshots [--shard <k>/<n>] [<file.md|folder>]
-//! just recognize --check [--shard <k>/<n>] [--out <dir>] [<folder>]
+//! just recognize --check [--shard <k>/<n>] [--out <dir>] [--budget-warns] [<folder>]
 //! just recognize --record-flaws [<file.md|folder>]
 //! just recognize --setup
 //! ```
@@ -24,7 +24,9 @@
 //! a draft that CI's `detection-snapshots-<k>` replace (`just snapshots-fetch`).
 //! `--check` is the detection gate: it reruns the model
 //! over every fixture, fails on a stale snapshot or an unexpected result,
-//! and on a model run over its 5-minute budget. `--shard k/n` checks (or
+//! and on a model run over its 5-minute budget, which `--budget-warns` makes
+//! a warning (the queue and PR heads: a shared VM's wall clock must not
+//! decide a merge; the nightly still fails on it). `--shard k/n` checks (or
 //! refreshes) every n-th fixture from the k-th (1-based) in sorted order,
 //! one CI shard, and `--out` writes each stale or missing snapshot afresh under that folder at
 //! its path in the repository (CI's `detection-snapshots-<k>` artifact, which
@@ -76,7 +78,7 @@ fn usage() -> String {
     "usage: just recognize <file.md|folder> [--gold] [--snapshot]\n       \
      just recognize --scoreboard [<folder>] [--snapshot]\n       \
      just recognize --refresh-snapshots [--shard <k>/<n>] [<file.md|folder>]\n       \
-     just recognize --check [--shard <k>/<n>] [--out <dir>] [<folder>]\n       \
+     just recognize --check [--shard <k>/<n>] [--out <dir>] [--budget-warns] [<folder>]\n       \
      just recognize --record-flaws [<file.md|folder>]\n       \
      just recognize --setup"
         .into()
@@ -89,6 +91,7 @@ fn run() -> Result<bool, String> {
     let mut target = None;
     let mut shard = None;
     let mut out = None;
+    let mut budget_warns = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -101,6 +104,7 @@ fn run() -> Result<bool, String> {
             "--setup" => mode = Mode::Setup,
             "--shard" => shard = Some(parse_shard(&args.next().unwrap_or_default())?),
             "--out" => out = Some(PathBuf::from(args.next().ok_or_else(usage)?)),
+            "--budget-warns" => budget_warns = true,
             "-h" | "--help" => {
                 println!("{}", usage());
                 return Ok(true);
@@ -123,6 +127,9 @@ fn run() -> Result<bool, String> {
     }
     if out.is_some() && mode != Mode::Check {
         return Err(format!("--out goes with --check\n{}", usage()));
+    }
+    if budget_warns && mode != Mode::Check {
+        return Err(format!("--budget-warns goes with --check\n{}", usage()));
     }
     if mode == Mode::Setup {
         return setup().map(|()| true);
@@ -309,17 +316,24 @@ fn run() -> Result<bool, String> {
                 elapsed.as_secs_f64(),
                 BUDGET.as_secs()
             );
-            if elapsed > BUDGET {
+            // Warnings are GitHub Actions annotations, plain text elsewhere.
+            if elapsed > BUDGET && budget_warns {
+                println!(
+                    "::warning::detection gate{part}: the model run took {:.0}s, over its {}s budget (a slow runner; only the nightly fails on it)",
+                    elapsed.as_secs_f64(),
+                    BUDGET.as_secs()
+                );
+            } else if elapsed > BUDGET {
                 failures.push(format!(
                     "the model run took {:.0}s, over its {}s budget: raise the detection gate's shards",
                     elapsed.as_secs_f64(),
                     BUDGET.as_secs()
                 ));
-            } else if elapsed > BUDGET.mul_f64(0.8) {
-                // A GitHub Actions annotation, plain text elsewhere: the
-                // signal to add a shard before the budget fails.
+            } else if elapsed > BUDGET.mul_f64(0.8) && !budget_warns {
+                // The signal to add a shard before the budget fails; where
+                // it only warns, a slow runner is no reason to.
                 println!(
-                    "::warning::detection gate{part}: the model run took {:.0}s, over 80% of its {}s budget: add a shard (queue.yml, nightly.yml)",
+                    "::warning::detection gate{part}: the model run took {:.0}s, over 80% of its {}s budget: add a shard (nightly.yml)",
                     elapsed.as_secs_f64(),
                     BUDGET.as_secs()
                 );

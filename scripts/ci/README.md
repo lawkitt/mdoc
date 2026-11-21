@@ -24,8 +24,9 @@ and `ci/android`; `merge-gate.sh` dispatches their hosted fallbacks.
 
 ## Hosted iOS
 
-- Keep the Xcode and runtime pins in `../tools.env` on what the `macos-26`
-  image ships: a pin the image lacks downloads about 8 GB per job.
+- Keep each Xcode pin in `../tools.env` on what its image ships (tests:
+  `macos-26`, builds: `xcode-27`): a runtime the image lacks downloads about
+  8 GB per job.
 - Parallel Simulator clones (`MDOC_IOS_TEST_WORKERS`) stay off: two clones
   were slower and failed UI tests.
 - The organization's policy lets no workflow open a PR, so the hub opens

@@ -11,11 +11,13 @@ collect  On the Mac, after a UI part passed: each class's summed test case
          durations in the .xcresult bundles in the folder (`xcrun
          xcresulttool get test-results tests`), one `<class>\t<seconds>`
          line each, sorted. ci-ios.yml uploads it as the artifact
-         `ios-ui-times-<part>-<attempt>` (a few hundred bytes: the
+         `ios-ui-times-<pin>-<part>-<attempt>` (a few hundred bytes: the
          xcresults themselves, about 100 MB, upload only on a failure).
-fetch    Downloads every such artifact of the last <n> days into the
-         folder, one `<artifact id>.tsv` each (GH_REPO names the repository,
-         GH_TOKEN reads it through `gh`).
+fetch    Downloads every such artifact of the tests pin (macos-26) of the
+         last <n> days into the folder, one `<artifact id>.tsv` each: the
+         builds pin's image (xcode-27) runs the tests 2-3 times slower
+         (#1041), and the shards run on the tests pin. GH_REPO names the
+         repository, GH_TOKEN reads it through `gh`.
 table    The committed table (apps/ios/ui-class-times.tsv) from a folder of
          collected files: per class, the median of its times over the files
          that have it, in whole seconds, and how many there were; --days
@@ -35,12 +37,12 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-ARTIFACT = re.compile(r"^ios-ui-times-ui[0-9]+-[0-9]+$")
+ARTIFACT = re.compile(r"^ios-ui-times-tests-ui[0-9]+-[0-9]+$")
 HEADER = """\
 # The UI test classes' times on hosted macos-26, which
 # scripts/ios/ios-ui-shards.sh packs into ci-ios.yml's UI shards, longest first,
 # each into the shard with less so far. Per class: the median, over the green
-# UI parts of the last {days} days (the `ios-ui-times-*` artifacts), of its
+# UI parts of the last {days} days (the `ios-ui-times-tests-*` artifacts), of its
 # test cases' summed durations in whole seconds, and how many parts measured
 # it. Written by scripts/ios/ios-ui-class-times.py; the nightly refreshes it
 # (scripts/ios/ios-ui-class-times.sh), replacing a row only with 3 parts or more.

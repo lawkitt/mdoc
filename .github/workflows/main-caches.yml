@@ -6,8 +6,9 @@ name: Main caches
 # commit helps nothing. ci.yml's main run saves the desktop jobs' (`checks`
 # and `test`, ADR 0100); this saves the iOS core's (`ios`), the detection
 # build's (`detection`) and the detection model, and the built iOS core
-# itself (target/ios, scripts/ios/ios-core-cache.sh), which ci/ios restores to
-# skip that build. Same job ids as the queue's jobs, so the keys match.
+# itself (target/ios, scripts/ios/ios-core-cache.sh), which ci/ios (core)
+# restores to skip that build: ci-ios.yml's tests pin, the queue's (ADR
+# 0124). Same cache keys as the queue's jobs.
 on:
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - "build/appicon.svg"
       - "docs/**"
       - ".github/workflows/actionlint.yml"
+      - ".github/actionlint.yaml"
       - ".github/dependabot.yml"
   workflow_dispatch:
 

@@ -60,6 +60,7 @@ none                  .gitignore
 none                  build/appicon.svg
 none                  docs/**
 none                  .github/workflows/actionlint.yml
+none                  .github/actionlint.yaml
 none                  .github/dependabot.yml
 
 ios                   apps/ios/**

@@ -27,13 +27,13 @@ fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut T
         let view = first.read(cx);
         (
             view.preview.pdf().unwrap().downgrade(),
-            view.preview.docx().unwrap().pdf_path.clone(),
+            view.preview.docx().unwrap().pdf.clone(),
         )
     });
     drop(first);
     tabs.update_in(cx, |tabs, window, cx| tabs.remove(first_id, window, cx));
     cx.run_until_parked();
-    assert!(crate::test_support::removed(&backing));
+    assert_eq!(backing.holders(), 1, "the closed tab let go of its PDF");
     cx.update(|_, _| {
         assert!(
             weak.upgrade().is_none(),

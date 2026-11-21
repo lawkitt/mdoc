@@ -29,6 +29,7 @@ on:
       - "build/appicon.svg"
       - "docs/**"
       - ".github/workflows/actionlint.yml"
+      - ".github/actionlint.yaml"
       - ".github/dependabot.yml"
   # Any base branch, so a stacked PR gets CI too (fleet ADR 0016). No path
   # filter: `lint (ubuntu)` is required (ADR 0095), and a required check
@@ -294,14 +295,14 @@ jobs:
   # for) and its shards; a stale snapshot is red here, not in the queue, and
   # `just snapshots-fetch <PR>` fetches the regenerated ones. Skipped, the
   # job is one check, `detection-head`, which merge-gate takes as not needed.
-  # The queue still runs ci/detection on the queue commit. Twelve shards on
-  # hosted Windows, as queue.yml.
+  # The queue still runs ci/detection on the queue commit. Four shards on
+  # hosted Windows, as queue.yml, whose model budget only warns.
   detection-head:
     needs: areas
     if: needs.areas.outputs.detection-head == 'true'
     uses: ./.github/workflows/ci-detection.yml
     with:
-      shards: 12
+      shards: 4
 
   # The shipped targets: clippy and the full test suite, as parallel jobs so
   # the slow Windows test build doesn't wait for clippy (ADR 0070), when the

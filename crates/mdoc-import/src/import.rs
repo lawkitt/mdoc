@@ -119,13 +119,31 @@ pub struct Source {
 }
 
 /// A document's bytes, shared rather than copied, and wiped when the last
-/// holder drops them: they may be a locked document's, unlocked.
+/// holder drops them: they may be a locked document's, unlocked. A view that
+/// opens them from memory takes a clone as `Arc<dyn AsRef<[u8]> + Send +
+/// Sync>`, with no copy.
 #[derive(Clone)]
-pub(crate) struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
+pub struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
 
 impl AsRef<[u8]> for SharedBytes {
     fn as_ref(&self) -> &[u8] {
         &self.0
+    }
+}
+
+impl SharedBytes {
+    /// How many hold the bytes now: a test's check that a closed view let
+    /// go of them, so they were wiped.
+    pub fn holders(&self) -> usize {
+        Arc::strong_count(&self.0)
+    }
+}
+
+/// Takes `bytes` without copying them: they are wiped when the last holder
+/// drops them.
+impl From<zeroize::Zeroizing<Vec<u8>>> for SharedBytes {
+    fn from(bytes: zeroize::Zeroizing<Vec<u8>>) -> Self {
+        Self(Arc::new(bytes))
     }
 }
 
@@ -169,18 +187,31 @@ impl Source {
         self.bytes.as_ref()
     }
 
-    /// The bytes, shared rather than copied: for the workers (Android has
-    /// neither).
-    #[cfg(not(target_os = "android"))]
-    pub(crate) fn shared_bytes(&self) -> SharedBytes {
+    /// The bytes, shared rather than copied: for the workers and for views
+    /// that open a document from memory.
+    pub fn shared_bytes(&self) -> SharedBytes {
         self.bytes.clone()
     }
 
     /// The bytes are a password-protected file's, unlocked in memory: no
-    /// copy of them may be written, so the DOCX preview, which renders to a
-    /// temporary file, leaves them alone.
+    /// copy of them may be written. The desktop's DOCX preview renders them
+    /// in memory; iOS's, which renders to a file, leaves them alone.
     pub fn unlocked(&self) -> bool {
         self.unlocked
+    }
+
+    /// The bytes are a password-protected DOCX, XLSX, PPTX or DOC, still
+    /// locked: [`Source::unlock`] opens them with the password.
+    pub fn locked(&self) -> bool {
+        !self.unlocked
+            && (craft_offcrypto::is_encrypted(self.bytes())
+                || craft_doc_binary::is_encrypted(self.bytes()))
+    }
+
+    /// The file at `path` is still the one these bytes were read from: its
+    /// stamp matches the one taken then.
+    pub fn is_current(&self) -> bool {
+        self.stamp.is_some() && SourceStamp::of(&self.path) == self.stamp
     }
 
     /// The bytes as an import converts them: a password-protected DOCX,
@@ -249,25 +280,36 @@ fn unlock_doc(bytes: &[u8], password: Option<&str>) -> Result<Vec<u8>, ImportErr
     Ok(std::mem::take(&mut *unlocked))
 }
 
-/// The password for one import of a password-protected document. It lives
-/// only as long as that import: never stored, logged or shown, and wiped
-/// from memory when dropped.
-pub struct Password(zeroize::Zeroizing<String>);
+/// The password of a password-protected document. It lives in memory only:
+/// for one import, or as a tab's [`Unlock`] of a locked PDF. Never stored,
+/// logged or shown; clones share one copy, wiped when the last one drops.
+#[derive(Clone)]
+pub struct Password(Arc<zeroize::Zeroizing<String>>);
 
 impl Password {
     /// Takes `text` without copying it.
     pub fn new(text: String) -> Self {
-        Self(zeroize::Zeroizing::new(text))
+        Self::from(zeroize::Zeroizing::new(text))
     }
 
-    fn expose(&self) -> &str {
+    /// The text, for the call that opens the document with it and nothing
+    /// else: it is never kept, logged or shown.
+    pub fn expose(&self) -> &str {
         &self.0
+    }
+}
+
+/// For a view that opens a PDF with it from memory, as `Arc<dyn AsRef<str>
+/// + Send + Sync>`: the text is shared, never copied.
+impl AsRef<str> for Password {
+    fn as_ref(&self) -> &str {
+        self.expose()
     }
 }
 
 impl From<zeroize::Zeroizing<String>> for Password {
     fn from(text: zeroize::Zeroizing<String>) -> Self {
-        Self(text)
+        Self(Arc::new(text))
     }
 }
 
@@ -275,6 +317,69 @@ impl From<zeroize::Zeroizing<String>> for Password {
 impl std::fmt::Debug for Password {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Password(..)")
+    }
+}
+
+/// What opens a password-protected source again without asking, for as
+/// long as the tab that unlocked it is open (#1024 decision 6): the
+/// unlocked bytes of a locked DOCX, XLSX, PPTX or DOC, or the password of a
+/// locked PDF, which every PDF call takes. It lives in memory only, never in
+/// the session, a log or a file, and is wiped when its last holder drops;
+/// reopening the document asks again. An import takes it and hands back
+/// what opens the source from then on ([`prepare_unlocking`]).
+#[derive(Clone)]
+pub enum Unlock {
+    /// A password for the file at `path`: typed on the conversion card and
+    /// not tried yet, or a locked PDF's once it opened the file.
+    Password { path: PathBuf, password: Password },
+    /// A locked Office document's bytes, unlocked in memory. Conversions and
+    /// the preview read these while the file is unchanged, never the file.
+    Unlocked(Source),
+}
+
+impl Unlock {
+    /// The file this unlock opens.
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Password { path, .. } => path,
+            Self::Unlocked(source) => &source.path,
+        }
+    }
+
+    /// A locked PDF's password (or one typed on the card): what every call
+    /// that opens the PDF takes.
+    pub fn password(&self) -> Option<&Password> {
+        match self {
+            Self::Password { password, .. } => Some(password),
+            Self::Unlocked(_) => None,
+        }
+    }
+
+    /// A locked Office document's unlocked bytes, while its file is still
+    /// the one they were read from.
+    pub fn current_source(&self) -> Option<&Source> {
+        match self {
+            Self::Unlocked(source) if source.is_current() => Some(source),
+            _ => None,
+        }
+    }
+
+    /// It opens the file at `path`.
+    fn opens(&self, path: &Path) -> bool {
+        std::path::absolute(self.path()).is_ok_and(|own| own == path)
+    }
+}
+
+/// Never the password or the bytes.
+impl std::fmt::Debug for Unlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Password { path, .. } => f
+                .debug_struct("Password")
+                .field("path", path)
+                .finish_non_exhaustive(),
+            Self::Unlocked(source) => f.debug_tuple("Unlocked").field(source).finish(),
+        }
     }
 }
 
@@ -286,8 +391,8 @@ pub(crate) fn is_pdf(bytes: &[u8]) -> bool {
         .any(|window| window == b"%PDF-")
 }
 
-/// The largest PDF an import reads.
-const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
+/// The largest PDF mdoc opens: an import's, and a DOCX preview's rendering.
+pub const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
 
 /// A file's size and modification time: a later reading of the same path
 /// is taken to be of the same bytes while its stamp matches.
@@ -617,8 +722,36 @@ pub fn prepare_cancellable(
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
+    let mut unlock = password.map(|password| Unlock::Password {
+        path: path.to_path_buf(),
+        password: password.clone(),
+    });
+    prepare_unlocking(path, &mut unlock, installed, skip_ocr, cancel)
+}
+
+/// Imports the file at `path` with a tab's `unlock`, then leaves in it what
+/// opens the file from now on. Unlocked bytes of the file as it still is
+/// convert again without reading or decrypting it; a password unlocks it.
+/// Afterwards `unlock` holds a locked Office document's unlocked bytes, and
+/// nothing when the file isn't locked, the password was missing or wrong,
+/// or the file changed since it was unlocked (so the card asks again). An
+/// unlock of another file is ignored and dropped.
+pub fn prepare_unlocking(
+    path: &Path,
+    unlock: &mut Option<Unlock>,
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
     check_cancel(cancel)?;
-    let source = Source::read(path)?.unlock(password)?;
+    let path = std::path::absolute(path).map_err(ImportError::Read)?;
+    let held = unlock.take().filter(|held| held.opens(&path));
+    let source = match held.as_ref().and_then(Unlock::current_source) {
+        Some(unlocked) => unlocked.clone(),
+        None => Source::read(&path)?.unlock(held.as_ref().and_then(Unlock::password))?,
+    };
+    drop(held);
+    *unlock = source.unlocked().then(|| Unlock::Unlocked(source.clone()));
     check_cancel(cancel)?;
     import_source(source, installed, skip_ocr, cancel)
 }
@@ -1327,6 +1460,119 @@ mod tests {
         assert_eq!(format!("{password:?}"), "Password(..)");
         let source = Source::new("locked.docx".into(), None, "Секрет".as_bytes().to_vec());
         assert!(!format!("{source:?}").contains("Секрет"));
+    }
+
+    /// A tab's unlock (#1024 decision 6): the right password leaves the
+    /// unlocked bytes in it, and the next conversion (OCR, Try again) reads
+    /// those, with no password and without decrypting the file again, and
+    /// keeps them. Cancelled before it starts, it keeps them too. Once the
+    /// file changes, or for another file, they are dropped and a locked
+    /// file asks again.
+    #[test]
+    fn a_tab_s_unlock_converts_again_without_its_password() {
+        const PASSWORD: &str = "Пароль-2026";
+        for name in ["text.docx", "sheet.xlsx"] {
+            let expected = convert(&fixture(name)).unwrap().markdown;
+            let plain = std::fs::read(fixture(name)).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join(format!("locked-{name}"));
+            let locked = craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap();
+            std::fs::write(&path, &locked).unwrap();
+            let run = |unlock: &mut Option<Unlock>, path: &Path| {
+                prepare_unlocking(path, unlock, None, true, &AtomicBool::new(false))
+            };
+            let mut unlock = Some(Unlock::Password {
+                path: path.clone(),
+                password: Password::new(PASSWORD.into()),
+            });
+            assert_eq!(
+                run(&mut unlock, &path).unwrap().markdown,
+                expected,
+                "{name}"
+            );
+            let held = unlock.clone().expect(name);
+            let bytes = held.current_source().expect(name).bytes();
+            assert_eq!(bytes, plain.as_slice(), "{name}");
+            assert!(held.password().is_none(), "{name}: no password is kept");
+            for _ in 0..2 {
+                let imported = run(&mut unlock, &path).unwrap();
+                assert_eq!(imported.markdown, expected, "{name}");
+                assert!(imported.decrypted, "{name}");
+                let again = unlock
+                    .as_ref()
+                    .and_then(Unlock::current_source)
+                    .expect(name);
+                assert_eq!(
+                    again.bytes().as_ptr(),
+                    bytes.as_ptr(),
+                    "{name}: the same bytes"
+                );
+            }
+            let cancelled =
+                prepare_unlocking(&path, &mut unlock, None, true, &AtomicBool::new(true));
+            assert!(matches!(cancelled, Err(ImportError::Cancelled)), "{name}");
+            assert!(unlock.is_some(), "{name}: a cancelled run keeps it");
+
+            let other = dir.path().join(format!("open-{name}"));
+            std::fs::write(&other, &plain).unwrap();
+            let mut elsewhere = unlock.clone();
+            assert_eq!(
+                run(&mut elsewhere, &other).unwrap().markdown,
+                expected,
+                "{name}"
+            );
+            assert!(elsewhere.is_none(), "{name}: another file drops it");
+
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+                .unwrap();
+            assert!(
+                matches!(run(&mut unlock, &path), Err(ImportError::PasswordRequired)),
+                "{name}: a changed file asks again"
+            );
+            assert!(unlock.is_none(), "{name}");
+            let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+            assert_eq!(left.len(), 2, "{name}: nothing unlocked is written");
+        }
+    }
+
+    /// The password and an unlocked document's bytes go to a view from
+    /// memory as shared trait objects: the same text and bytes, not copies.
+    #[test]
+    fn a_view_shares_the_password_and_bytes_without_copying() {
+        let password = Password::new("Секрет".into());
+        let text: Arc<dyn AsRef<str> + Send + Sync> = Arc::new(password.clone());
+        let shown: &str = (*text).as_ref();
+        assert_eq!(shown.as_ptr(), password.expose().as_ptr());
+        let source = Source::new("locked.docx".into(), None, b"bytes".to_vec());
+        let bytes: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(source.shared_bytes());
+        let read: &[u8] = (*bytes).as_ref();
+        assert_eq!(read.as_ptr(), source.bytes().as_ptr());
+    }
+
+    /// An unlock never shows its password or bytes in its `Debug`.
+    #[test]
+    fn an_unlock_never_shows_what_it_holds() {
+        let password = Unlock::Password {
+            path: "locked.pdf".into(),
+            password: Password::new("Секрет".into()),
+        };
+        let unlocked = Unlock::Unlocked(Source::new(
+            "locked.docx".into(),
+            None,
+            "Тайна".as_bytes().to_vec(),
+        ));
+        for unlock in [password, unlocked] {
+            let shown = format!("{unlock:?}");
+            assert!(
+                !shown.contains("Секрет") && !shown.contains("Тайна"),
+                "{shown}"
+            );
+            assert!(shown.contains("locked."), "{shown}");
+        }
     }
 
     /// An import converts the bytes it holds: a document and a PDF held

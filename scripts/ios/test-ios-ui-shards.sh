@@ -9,8 +9,9 @@
 # number); what counts as a test class (XCTestCase, also with the
 # superclass on the next line or after generics; a name ending in Tests;
 # not a helper class, `class func`, `class var` or a comment). Then
-# scripts/ios/ios-ui-class-times.py's table (and, off Windows, collect against
-# a fake xcrun, a retried case counting its passing run) and
+# scripts/ios/ios-ui-class-times.py's table, the artifacts fetch reads (the
+# tests pin's only), and, off Windows, collect against a fake xcrun (a
+# retried case counting its passing run); and
 # scripts/ios/ios-ui-class-times.sh's refresh against a local origin: no push
 # when nothing moves or the branch already holds it, else one commit on main
 # pushed to the branch, never to main. No network. Bash 3.2 compatible.
@@ -39,29 +40,32 @@ expect 0 scripts/ios/ios-ui-shards.sh 1
 one=$(cat "$tmp/out")
 expect 0 scripts/ios/ios-ui-shards.sh 2
 two=$(cat "$tmp/out")
-if [ -z "$one" ] || [ -z "$two" ]; then fail "a shard is empty"; fi
+expect 0 scripts/ios/ios-ui-shards.sh 3
+three=$(cat "$tmp/out")
+if [ -z "$one" ] || [ -z "$two" ] || [ -z "$three" ]; then fail "a shard is empty"; fi
 # shellcheck disable=SC2086 # one identifier per word
-both=$(printf '%s\n' $one $two | LC_ALL=C sort)
-[ -z "$(printf '%s\n' "$both" | uniq -d)" ] || fail "in both shards: $(printf '%s\n' "$both" | uniq -d)"
-for id in $one $two; do
+both=$(printf '%s\n' $one $two $three | LC_ALL=C sort)
+[ -z "$(printf '%s\n' "$both" | uniq -d)" ] || fail "in two shards: $(printf '%s\n' "$both" | uniq -d)"
+for id in $one $two $three; do
   case "$id" in mdocUITests/*UITests) ;; *) fail "not an identifier: $id" ;; esac
 done
 want=$(grep -rhoE 'class +[A-Za-z0-9_]+ *: *XCTestCase' apps/ios/mdocUITests |
   awk '{ sub(/^class +/, ""); sub(/ *:.*/, ""); print "mdocUITests/" $0 }' | LC_ALL=C sort)
 [ "$both" = "$want" ] || fail "the shards are not every XCTestCase class: $(diff <(echo "$both") <(echo "$want") || true)"
-# The plan covers every class, and its totals are the two shards'.
+# The plan covers every class, and its totals are the three shards'.
 expect 0 scripts/ios/ios-ui-shards.sh --plan
-[ "$(grep -c '^[12] ' "$tmp/out")" = "$(printf '%s
+[ "$(grep -c '^[123] ' "$tmp/out")" = "$(printf '%s
 ' "$want" | wc -l | tr -d ' ')" ] || fail "plan: $(cat "$tmp/out")"
-grep -q '^shard 2: ' "$tmp/out" || fail "plan totals: $(cat "$tmp/out")"
-expect 1 scripts/ios/ios-ui-shards.sh 3
-grep -q 'no shard 3' "$tmp/out" || fail "shard 3: $(cat "$tmp/out")"
+grep -q '^shard 3: ' "$tmp/out" || fail "plan totals: $(cat "$tmp/out")"
+expect 1 scripts/ios/ios-ui-shards.sh 4
+grep -q 'no shard 4' "$tmp/out" || fail "shard 4: $(cat "$tmp/out")"
 expect 1 scripts/ios/ios-ui-shards.sh
 expect 1 scripts/ios/ios-ui-shards.sh 1 2
 
-# Scratch classes and tables: MDOC_UI_TESTS_DIR and MDOC_UI_CLASS_TIMES.
+# Scratch classes and tables: MDOC_UI_TESTS_DIR and MDOC_UI_CLASS_TIMES,
+# packed into two shards (MDOC_UI_SHARDS) but where a case says three.
 s=scripts/ios/ios-ui-shards.sh
-export MDOC_UI_TESTS_DIR="$tmp/ui" MDOC_UI_CLASS_TIMES="$tmp/times.tsv"
+export MDOC_UI_TESTS_DIR="$tmp/ui" MDOC_UI_CLASS_TIMES="$tmp/times.tsv" MDOC_UI_SHARDS=2
 # classes <name>...: a fresh tests folder with these classes.
 classes() {
   rm -rf "$tmp/ui"
@@ -112,6 +116,14 @@ classes AUITests BUITests CUITests DUITests EUITests
 times EUITests 40 DUITests 50 CUITests 60 BUITests 90 AUITests 100.4
 shard 1 AUITests DUITests
 shard 2 BUITests CUITests EUITests
+# Three shards, as ci-ios.yml runs: the third takes C, then the least
+# loaded takes each of D and E.
+MDOC_UI_SHARDS=3
+times AUITests 100 BUITests 90 CUITests 60 DUITests 50 EUITests 40
+shard 1 AUITests
+shard 2 BUITests EUITests
+shard 3 CUITests DUITests
+MDOC_UI_SHARDS=2
 
 # A class the table lacks counts as its median (60 of 100, 90, 60, 50, 40),
 # placed by name among equal times, and the plan marks it.
@@ -135,6 +147,39 @@ shard 1 AUITests CUITests
 shard 2 BUITests
 expect 0 "$s" --classes
 [ "$(cat "$tmp/out")" = "$(printf 'AUITests\nBUITests\nCUITests')" ] || fail "--classes: $(cat "$tmp/out")"
+
+# --touched: the shards holding the classes the files declare (shard 1: A,
+# D, E; shard 2: B, C); a file there declaring none (a helper) touches
+# every shard; a deleted file, a file elsewhere or none touch none.
+classes AUITests BUITests CUITests DUITests EUITests
+times AUITests 100 BUITests 90 CUITests 60 DUITests 50 EUITests 40
+touched() { # <shards> <file>...
+  local want=$1 got
+  shift
+  expect 0 "$s" --touched "$@"
+  got=$(cat "$tmp/out")
+  [ "${got//$'\n'/ }" = "$want" ] || fail "--touched $*: ${got//$'\n'/ }, not $want"
+}
+touched 2 "$tmp/ui/BUITests.swift"
+touched "1 2" "$tmp/ui/DUITests.swift" "$tmp/ui/CUITests.swift" "$tmp/ui/EUITests.swift" README.md
+printf 'import XCTest\n\nfunc waitLong() {}\n' >"$tmp/ui/Waits.swift"
+touched "1 2" "$tmp/ui/Waits.swift"
+rm "$tmp/ui/Waits.swift"
+touched "" "$tmp/ui/GoneUITests.swift" "$tmp/ui/notes.md" "$tmp/BUITests.swift"
+touched ""
+# A path with a space and a non-ASCII letter counts as it is.
+printf 'import XCTest\n\nfinal class FUITests: XCTestCase {}\n' >"$tmp/ui/Spaced Ü.swift"
+expect 0 "$s" --plan
+want=$(awk '$2 == "FUITests" { print $1 }' "$tmp/out")
+touched "$want" "$tmp/ui/Spaced Ü.swift"
+rm "$tmp/ui/Spaced Ü.swift"
+# --declared: the classes of files anywhere; a helper declares none.
+printf 'func waitLong() {}\n' >"$tmp/Helper.swift"
+expect 0 "$s" --declared "$tmp/ui/BUITests.swift" "$tmp/Helper.swift"
+[ "$(cat "$tmp/out")" = BUITests ] || fail "--declared: $(cat "$tmp/out")"
+expect 1 "$s" --declared
+expect 1 "$s" --declared "$tmp/Gone.swift"
+grep -q "no $tmp/Gone.swift" "$tmp/out" || fail "--declared a missing file: $(cat "$tmp/out")"
 
 # The errors, each by name.
 classes AUITests BUITests
@@ -182,6 +227,95 @@ expect 0 "$s" --classes
   fail "test classes: $(cat "$tmp/out")"
 unset MDOC_UI_TESTS_DIR MDOC_UI_CLASS_TIMES
 
+# scripts/ios/ios-ci-parts.sh in a scratch repository, its main as the
+# branch's main (MDOC_MAIN_REF), two shards (shard 1: A; shard 2: B, C).
+pr=$tmp/parts-repo
+mkdir -p "$pr/scripts/ios" "$pr/apps/ios/mdocUITests" "$pr/apps/ios/mdocTests"
+cp scripts/lib.sh "$pr/scripts/"
+cp scripts/ios/ios-ui-shards.sh scripts/ios/ios-ci-parts.sh "$pr/scripts/ios/"
+for c in AUITests BUITests CUITests; do
+  printf 'import XCTest\n\nfinal class %s: XCTestCase {\n    func testIt() {}\n}\n' "$c" >"$pr/apps/ios/mdocUITests/$c.swift"
+done
+printf 'import XCTest\n\nfunc waitLong() {}\n' >"$pr/apps/ios/mdocUITests/Waits.swift"
+printf 'final class CoreTests {}\n' >"$pr/apps/ios/mdocTests/CoreTests.swift"
+printf 'AUITests\t100\nBUITests\t90\nCUITests\t60\n' >"$pr/apps/ios/ui-class-times.tsv"
+git -C "$pr" init -q -b main
+git -C "$pr" config core.autocrlf false
+# Quote as git does by default, whatever this machine says.
+git -C "$pr" config core.quotePath true
+commit() { # <message>
+  git -C "$pr" add -A
+  git -C "$pr" -c user.name=t -c user.email=t@example.com commit -q -m "$1"
+}
+commit base
+export MDOC_MAIN_REF=main
+# parts <json> <spec>: the script prints that list.
+parts() {
+  expect 0 "$pr/scripts/ios/ios-ci-parts.sh" "$2"
+  [ "$(cat "$tmp/out")" = "$1" ] || fail "parts $2: $(cat "$tmp/out"), not $1"
+}
+parts '["unit","ui 1","ui 2"]' all
+parts '["unit","ui 2"]' 'ui2, unit'
+parts '["ui 2"]' 'ui 2,ui2'
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" 'ui 3'
+grep -q 'no part ui 3: there are 2 UI shards' "$tmp/out" || fail "ui 3: $(cat "$tmp/out")"
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" 'unit,lint'
+grep -q "no part 'lint'" "$tmp/out" || fail "lint: $(cat "$tmp/out")"
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" ''
+# Nothing touched, on main itself: the unit part.
+parts '["unit"]' touched
+# A UI-only branch: one shard, by its merge base, not by main's tip, which
+# moved on (A, in shard 1).
+git -C "$pr" checkout -q -b ui-only
+echo '// more' >>"$pr/apps/ios/mdocUITests/CUITests.swift"
+commit ui
+git -C "$pr" checkout -q main
+echo '// later' >>"$pr/apps/ios/mdocUITests/AUITests.swift"
+commit main
+git -C "$pr" checkout -q ui-only
+parts '["ui 2"]' touched
+# A unit test changed too adds the unit part; a helper, every shard.
+echo '// more' >>"$pr/apps/ios/mdocTests/CoreTests.swift"
+commit unit
+parts '["unit","ui 2"]' touched
+echo '// more' >>"$pr/apps/ios/mdocUITests/Waits.swift"
+commit helper
+parts '["unit","ui 1","ui 2"]' touched
+# No UI test class left (app code, a deleted class): the unit part.
+git -C "$pr" checkout -q -b app main
+git -C "$pr" rm -q apps/ios/mdocUITests/BUITests.swift
+echo '// app' >"$pr/apps/ios/App.swift"
+commit app
+parts '["unit"]' touched
+# A deleted helper touches every shard; a moved one too, at both paths.
+git -C "$pr" checkout -q -b helper-gone main
+git -C "$pr" rm -q apps/ios/mdocUITests/Waits.swift
+commit helper-gone
+parts '["ui 1","ui 2"]' touched
+git -C "$pr" checkout -q -b helper-moved main
+mkdir -p "$pr/apps/ios/mdocUITests/Support"
+git -C "$pr" mv apps/ios/mdocUITests/Waits.swift apps/ios/mdocUITests/Support/Waits.swift
+commit helper-moved
+parts '["ui 1","ui 2"]' touched
+# A moved class: its shard at the new path, none at the old.
+git -C "$pr" checkout -q -b class-moved main
+git -C "$pr" mv apps/ios/mdocUITests/CUITests.swift apps/ios/mdocUITests/Support.swift
+commit class-moved
+parts '["ui 2"]' touched
+# A path git would quote (a space, a non-ASCII letter) still counts.
+git -C "$pr" checkout -q -b quoted main
+printf 'import XCTest\n\nfinal class CUITests: XCTestCase {}\n' >"$pr/apps/ios/mdocUITests/CUITests.swift"
+git -C "$pr" mv apps/ios/mdocUITests/CUITests.swift "apps/ios/mdocUITests/Spaced Ü.swift"
+commit quoted
+parts '["ui 2"]' touched
+# One line only.
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" "$(printf 'unit\nui 2')"
+grep -q 'parts is one line' "$tmp/out" || fail "two lines: $(cat "$tmp/out")"
+expect 1 "$pr/scripts/ios/ios-ci-parts.sh" touched x
+MDOC_MAIN_REF=nowhere expect 1 "$pr/scripts/ios/ios-ci-parts.sh" touched
+grep -q 'no merge base of HEAD and nowhere' "$tmp/out" || fail "no main: $(cat "$tmp/out")"
+unset MDOC_MAIN_REF
+
 # scripts/ios/ios-ui-class-times.py.
 py=$(command -v python3 || command -v python) || fail "no python"
 mkdir -p "$tmp/parts"
@@ -196,6 +330,17 @@ printf 'AUITests\tslow\n' >"$tmp/parts/4.tsv"
 ! "$py" -I scripts/ios/ios-ui-class-times.py table "$tmp/parts" >"$tmp/out" 2>&1 || fail "a bad part read"
 grep -q '4.tsv:1' "$tmp/out" || fail "bad part: $(cat "$tmp/out")"
 rm "$tmp/parts/4.tsv"
+# fetch reads only the tests pin's artifacts (macos-26), not the builds
+# pin's or those named before the pin was (xcode-27's).
+"$py" -I - scripts/ios/ios-ui-class-times.py >"$tmp/out" 2>&1 <<'EOF' || fail "artifact names: $(cat "$tmp/out")"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("times", sys.argv[1])
+times = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(times)
+names = ["ios-ui-times-tests-ui1-1", "ios-ui-times-tests-ui3-2", "ios-ui-times-builds-ui1-1", "ios-ui-times-ui1-1", "ios-xcresult-ui1-1"]
+print(" ".join(n for n in names if times.ARTIFACT.match(n)))
+EOF
+[ "$(cat "$tmp/out")" = "ios-ui-times-tests-ui1-1 ios-ui-times-tests-ui3-2" ] || fail "artifact names: $(cat "$tmp/out")"
 
 # collect, against a fake xcrun (Windows' Python runs no shell script).
 if [ "$(platform)" != windows-x64 ]; then

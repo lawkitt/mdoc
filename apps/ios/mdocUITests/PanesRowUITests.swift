@@ -34,8 +34,8 @@ final class PanesRowUITests: XCTestCase {
         // Find in document and Show Markdown are in it with Rename….
         XCTAssertFalse(app.buttons["document-menu"].exists, "no ⋯ in the bar")
         title.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertTrue(app.descendants(matching: .any)["show-markdown"].firstMatch.exists)
+        XCTAssertTrue(MdocUITest.menuItem("Find in document", app).waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(MdocUITest.menuItem("Show Markdown", app).exists)
         XCTAssertTrue(app.buttons["Rename…"].firstMatch.exists)
         dismissMenu(app)
 

@@ -20,7 +20,7 @@ final class ReviewToolsUITests: XCTestCase {
 
         // Find in document, then Hide name: the bar opens on the proposal.
         app.buttons["title-menu"].tap()
-        let find = app.buttons["find-in-document"]
+        let find = MdocUITest.menuItem("Find in document", app)
         XCTAssertTrue(find.waitForExistence(timeout: MdocUITest.timeout))
         find.tap()
         typeInFindField(app, "Bennett")
@@ -277,7 +277,7 @@ final class ReviewToolsUITests: XCTestCase {
     private func openFind(_ app: XCUIApplication) {
         let field = app.searchFields.firstMatch
         for _ in 0..<3 {
-            let find = app.buttons["find-in-document"]
+            let find = MdocUITest.menuItem("Find in document", app)
             if !find.exists { app.buttons["title-menu"].tap() }
             guard find.waitForExistence(timeout: MdocUITest.timeout) else { continue }
             _ = MdocUITest.wait(timeout: MdocUITest.probeTimeout) { find.isHittable }

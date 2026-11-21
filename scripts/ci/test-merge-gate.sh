@@ -376,6 +376,7 @@ eq "$(failure_kind 20 <<<"$(jobs_json "$(job 21 "macos / ci/macos (lint)" "$neve
 eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (ui)" "$ran")" \
   "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
 eq "$(failure_kind 30 <<<"$(jobs_json "$(job 32 "ios / ci/ios (unit)" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "infra macOS"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 32 "ios / ci/ios (unit)" "${never/macos-26/xcode-27}")" "$(job 30 "ios / ci/ios" "$ran")")")" "infra macOS"
 eq "$(failure_kind 30 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
 eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "lint (ubuntu)" "$never")" "$(job 40 "fast (ubuntu)" "$ran")")")" "result"
 eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "fast (unit)" "${never/macos-26/ubuntu-latest}")" "$(job 40 "fast (ubuntu)" "$ran")")")" "infra Linux"

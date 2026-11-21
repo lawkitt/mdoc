@@ -46,12 +46,15 @@ jobs:
     with:
       os: windows
 
-  # With the timing tests, which the queue skips (ADR 0112).
+  # With the timing tests, which the queue skips (ADR 0112), and Xcode 27 on
+  # iOS 27, which the queue does not test (ADR 0124); on main its core job
+  # saves the core the archive restores (ios-release.yml).
   ios:
     if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-ios.yml
     with:
       timing: true
+      xcode: builds
 
   android:
     if: ${{ !inputs.drill }}
@@ -60,8 +63,11 @@ jobs:
   detection:
     if: ${{ !inputs.drill }}
     uses: ./.github/workflows/ci-detection.yml
+    # The only run the 5-minute model budget fails: twelve shards keep a
+    # runner 3 times as slow inside it (ci-detection.yml).
     with:
       shards: 12
+      budget-fails: true
 
   # Reports and never fails: a quarantined test still failing is expected.
   quarantined:
@@ -121,7 +127,7 @@ jobs:
           CI_STATS_DRILL: ${{ inputs.drill && '1' || '' }}
 
   # The UI shards' class times (ADR 0113): refreshed from the last 14 days
-  # of green UI parts; a refresh that moves a class to the other shard is
+  # of green UI parts on the tests pin (macos-26); a refresh that moves a class to the other shard is
   # one commit on main, force-pushed to nightly/ui-class-times, and named in
   # a notice and the job summary (scripts/ios/ios-ui-class-times.sh). The hub
   # opens the PR from it: the organization's Actions policy lets no

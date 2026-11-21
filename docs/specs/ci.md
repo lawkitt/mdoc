@@ -5,29 +5,28 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 ## Merging
 
-- `main` merges only through GitHub's merge queue; a ruleset requires
-  `lint (ubuntu)` and `merge-gate` on the PR head and on the queue commit.
-- Never merge with `--admin`. The maintainer's bypass is for `just release`
-  and break-glass reverts only.
-- Nothing posts a waiver or a partial result as green.
+- `main` merges only through GitHub's merge queue, which requires
+  `lint (ubuntu)` and `merge-gate` on PR heads and queue commits.
+- Never merge with `--admin`; the maintainer bypasses only for
+  `just release` and break-glass reverts.
+- Nothing posts a waiver or partial result as green.
 - Enqueue a green, reviewed PR with `gh pr merge <N> --auto`, and
-  independent PRs off `main` together so they batch. The queue takes only
-  PRs based on `main`, so a stack goes one PR at a time.
-- Merge `main` into a PR only when GitHub reports it `CONFLICTING`, because
+  independent PRs off `main` together so they batch.
+- Merge `main` into a PR only when GitHub reports `CONFLICTING`, because
   each new head reruns its checks.
 
 ## A red or stale gate
 
 - If `merge-gate` says "Waiting" after its checks finished, or a green PR
   with auto-merge is not queued after 5 minutes, run
-  `gh workflow run merge-gate.yml --repo lawkitt/mdoc`; never re-run the
-  PR's own `pull_request_target` gate run.
+  `gh workflow run merge-gate.yml`; never re-run the PR's
+  `pull_request_target` gate run.
 - A queue failure is unrelated when it is infrastructure, the same test
   failed the same way on another queue commit, on `main` or in the nightly
-  within 14 days, or the failing test is in an area the PR does not touch.
-  Anything else goes back to the PR's author.
+  within 14 days, or the failing test is outside the PR's areas. Anything
+  else goes back to the PR's author.
 - After an unrelated failure the hub re-queues the PR once, naming the
-  matching rule in a PR comment. A second drop goes to the maintainer.
+  matching rule in a comment. A second drop goes to the maintainer.
 - A red `main` stops enqueueing until fixed.
 
 ## Quarantine
@@ -35,21 +34,21 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - A pass on the hosted iOS UI tests' one retry counts as an unrelated
   failure.
 - After a test's second unrelated failure, the hub quarantines it in
-  `.config/quarantine.txt` (its header has the format) by PR, without
-  asking.
+  `.config/quarantine.txt` by PR, without asking.
 - Tests that measure speed, take screenshots or survey layouts stay off the
   queue.
 
 ## Detection snapshots
 
-- Hosted `windows-latest` is the reference platform, because a developer
-  machine's scores differ in the fourth decimal.
-- Never commit your own `--refresh-snapshots` output: push, let the head's
-  detection gate fail, run `just snapshots-fetch <PR>`, review the diff,
-  then commit and push.
-- After a runtime or model pin change, record every snapshot with
-  `gh workflow run ci-detection.yml --ref <branch> -f record=true`, because
-  scores can shift within the gate's tolerance.
+- Detection's model budget fails only the nightly, because a shared VM's
+  wall clock must not decide merges.
+- Never commit your own `--refresh-snapshots` output, because a developer
+  machine's scores differ from hosted `windows-latest`'s in the fourth
+  decimal: commit what `just snapshots-fetch <PR>` takes from the head's
+  failed gate, reviewed.
+- After a runtime or model pin change, record every snapshot
+  (`ci-detection.yml`'s `record`), because scores can shift within the
+  gate's tolerance.
 
 ## Changing CI
 
@@ -60,12 +59,15 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - If a merged gate change blocks the queue, the maintainer pushes its revert
   straight to `main`.
 
-## iOS tests on the Mac
+## iOS tests
 
-- Run only the test classes you touched
-  (`just ios-test "iPhone 17" mdocUITests/<Class>`), one heavy build at a
-  time after checking `uptime`, because the full suite takes 25 to 30
-  minutes on the fanless Air and parallel runs overheat it.
-- On macOS 27, Xcode 26.2's test runner hangs: set
-  `DEVELOPER_DIR=/Applications/Xcode-27.2.app/Contents/Developer`. Hosted
-  `ci/ios` stays the reference.
+- On the Mac, test only the classes you touched
+  (`just ios-test "iPhone 17" mdocUITests/<Class>`), one build at a time
+  after checking `uptime`, because the full suite takes 25–30 minutes and
+  parallel runs overheat the fanless Air.
+- The queue tests with Xcode 26.2 on iOS 26.2, the nightly with Xcode 27.2 on
+  iOS 27.2 (ADR 0124); a test passes on both. Reproduce a queue failure with
+  Xcode 27.2 on the iOS 26.2 Simulator runtime: Xcode 26.2's test runner hangs
+  on macOS 27.
+- Branch `ci-ios.yml` dispatches test what they touched, one at a time,
+  because they took 13% of macOS minutes.
