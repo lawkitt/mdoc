@@ -10,12 +10,11 @@
 //!   every strip after the first starts with an end-of-line code followed
 //!   by a one-dimensional row, which is how libtiff writes them. The joined
 //!   stream then decodes as one: each row is found by its end-of-line
-//!   code, and no row refers to a row of another strip. Group 4 strips
-//!   can't be joined (each strip codes its first row against an imaginary
-//!   white row, the joined stream against the real row above), so such a
-//!   page is decoded and stored losslessly as 1-bit Flate. A Group 3 page
-//!   whose strips can't be joined is refused: the `tiff` crate has no
-//!   Group 3 decoder.
+//!   code, and no row refers to a row of another strip. Otherwise each
+//!   strip is decoded on its own (`hayro-ccitt`) and the page is stored
+//!   losslessly as 1-bit Flate. Group 4 strips are never joined: each
+//!   strip codes its first row against an imaginary white row, the joined
+//!   stream would code it against the real row above.
 //! - **Everything else** (uncompressed, PackBits, LZW, Deflate, JPEG) is
 //!   decoded by the `tiff` crate within the builder's limits, then follows
 //!   the builder's rules: bilevel pages stay 1-bit (Flate), others become
@@ -147,9 +146,9 @@ fn resolution(decoder: &mut TiffDecoder) -> Option<(f64, f64)> {
     (sane(x) && sane(y)).then_some((x, y))
 }
 
-/// A CCITT page passed through, or `None` when it must be decoded instead
-/// (tiles, uncompressed mode, Group 4 in several strips). A Group 3 page
-/// whose strips can't be joined is refused.
+/// A CCITT page, passed through, or decoded strip by strip when its strips
+/// can't be joined; `None` when the `tiff` crate must decode it instead
+/// (tiles, Group 4 uncompressed mode).
 fn fax(
     decoder: &mut TiffDecoder,
     bytes: &[u8],
@@ -196,26 +195,46 @@ fn fax(
     if offsets.is_empty() || offsets.len() != counts.len() {
         return Err(ImageError::Unreadable);
     }
-    if compression == 4 && offsets.len() > 1 {
-        return Ok(None);
-    }
-    let mut data = Vec::new();
-    for (index, (&offset, &count)) in offsets.iter().zip(&counts).enumerate() {
+    let mut strips = Vec::with_capacity(offsets.len());
+    for (&offset, &count) in offsets.iter().zip(&counts) {
         let start = usize::try_from(offset).map_err(|_| ImageError::Unreadable)?;
         let end = start
             .checked_add(usize::try_from(count).map_err(|_| ImageError::Unreadable)?)
             .ok_or(ImageError::Unreadable)?;
         let strip = bytes.get(start..end).ok_or(ImageError::Unreadable)?;
-        let at = data.len();
-        if reversed {
-            data.extend(strip.iter().map(|byte| byte.reverse_bits()));
+        strips.push(if reversed {
+            strip
+                .iter()
+                .map(|byte| byte.reverse_bits())
+                .collect::<Vec<u8>>()
         } else {
-            data.extend_from_slice(strip);
-        }
-        if index > 0 && !starts_a_fresh_row(&data[at..], k > 0) {
-            return Err(ImageError::Unreadable);
-        }
+            strip.to_vec()
+        });
     }
+    let joinable = strips.len() == 1
+        || (k >= 0
+            && strips[1..]
+                .iter()
+                .all(|strip| starts_a_fresh_row(strip, k > 0)));
+    if !joinable {
+        let rows_per_strip = tag::<u32>(decoder, Tag::RowsPerStrip).unwrap_or(height);
+        let mut packed = decode_strips(&strips, width, height, rows_per_strip, k, byte_align)?;
+        // A min-is-black page's coded white runs show black.
+        if photometric == 1 {
+            packed.iter_mut().for_each(|byte| *byte = !*byte);
+        }
+        return Ok(Some(Page {
+            width,
+            height,
+            gray: true,
+            bits: 1,
+            stream: Stream::Flate,
+            data: super::deflate(&packed),
+            orientation: 1,
+            resolution: None,
+        }));
+    }
+    let data = strips.concat();
     Ok(Some(Page {
         width,
         height,
@@ -248,6 +267,87 @@ fn starts_a_fresh_row(data: &[u8], two_dimensional: bool) -> bool {
         return false;
     }
     !two_dimensional || bit(index + 1) == Some(1)
+}
+
+/// A CCITT page's `strips` decoded one by one (`hayro-ccitt`): rows packed
+/// most significant bit first, padded to a byte, 1 meaning a coded white
+/// pixel. Each strip holds `rows_per_strip` rows, the last what remains;
+/// each may or may not open its rows with end-of-line codes.
+pub(super) fn decode_strips(
+    strips: &[Vec<u8>],
+    width: u32,
+    height: u32,
+    rows_per_strip: u32,
+    k: i32,
+    byte_align: bool,
+) -> Result<Vec<u8>, ImageError> {
+    use hayro_ccitt::{DecodeSettings, DecoderContext, EncodingMode};
+    let row_bytes = width.div_ceil(8) as usize;
+    let mut rows = Rows {
+        width,
+        row_bytes,
+        packed: Vec::with_capacity(row_bytes * height as usize),
+    };
+    let rows_per_strip = rows_per_strip.clamp(1, height);
+    for (index, strip) in strips.iter().enumerate() {
+        let first = u32::try_from(index)
+            .ok()
+            .and_then(|index| index.checked_mul(rows_per_strip))
+            .ok_or(ImageError::Unreadable)?;
+        if first >= height {
+            break;
+        }
+        let strip_rows = rows_per_strip.min(height - first);
+        let settings = DecodeSettings {
+            columns: width,
+            rows: strip_rows,
+            end_of_block: true,
+            end_of_line: k >= 0 && starts_a_fresh_row(strip, false),
+            rows_are_byte_aligned: byte_align,
+            encoding: match k {
+                0 => EncodingMode::Group3_1D,
+                1.. => EncodingMode::Group3_2D,
+                _ => EncodingMode::Group4,
+            },
+            strict: false,
+        };
+        let before = rows.packed.len();
+        // A strip that ends badly after its last row still gave every row;
+        // one that gave fewer is damaged.
+        let _ = hayro_ccitt::decode(strip, &mut rows, &mut DecoderContext::new(settings));
+        let wanted = before + strip_rows as usize * row_bytes;
+        if rows.packed.len() < wanted {
+            return Err(ImageError::Unreadable);
+        }
+        rows.packed.truncate(wanted);
+    }
+    if rows.packed.len() != row_bytes * height as usize {
+        return Err(ImageError::Unreadable);
+    }
+    Ok(rows.packed)
+}
+
+/// Decoded CCITT rows, packed.
+struct Rows {
+    width: u32,
+    row_bytes: usize,
+    packed: Vec<u8>,
+}
+
+impl hayro_ccitt::Decoder for Rows {
+    fn push_row(&mut self, changes: &[u32]) {
+        let mut row = vec![0xff; self.row_bytes];
+        // Each row starts white; the runs from an even change to the next
+        // are black.
+        for run in changes.chunks(2) {
+            let start = run[0].min(self.width);
+            let end = run.get(1).copied().unwrap_or(self.width).min(self.width);
+            for x in start..end {
+                row[x as usize / 8] &= !(0x80 >> (x % 8));
+            }
+        }
+        self.packed.extend_from_slice(&row);
+    }
 }
 
 /// The page decoded by the `tiff` crate, within the builder's limits.
