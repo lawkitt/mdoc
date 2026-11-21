@@ -193,6 +193,25 @@ fn a_missing_codec_names_the_extensions() {
     }
 }
 
+/// The cards' exact words. HEVC Video Extensions is a paid Store app, so
+/// neither says "free".
+#[test]
+fn the_missing_codec_cards_read_as_written() {
+    let both = "Opening HEIC photos on Windows needs Microsoft's HEIF Image Extensions and HEVC \
+                Video Extensions. Install them from the Microsoft Store, then import the photo \
+                again.";
+    let hevc = "Opening HEIC photos on Windows needs Microsoft's HEVC Video Extensions. Install \
+                them from the Microsoft Store, then import the photo again.";
+    assert_eq!(
+        ImageError::HeicCodecMissing(MissingCodec::HeifExtension).to_string(),
+        both
+    );
+    assert_eq!(
+        ImageError::HeicCodecMissing(MissingCodec::HevcExtension).to_string(),
+        hevc
+    );
+}
+
 /// Where the red arrow in a decoded fixture is: the quadrant with the most
 /// red pixels, once the orientation is applied.
 #[cfg(any(target_os = "windows", target_os = "macos"))]
