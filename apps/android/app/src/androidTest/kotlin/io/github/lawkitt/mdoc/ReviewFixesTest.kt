@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.media.ExifInterface
 import android.text.Spanned
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
@@ -115,14 +116,33 @@ class ReviewFixesTest {
         assertEquals(snapshot.candidates.single().id, opened)
     }
 
+    /**
+     * A PNG goes to the core as it is (#1024 item 10); a camera JPEG is kept
+     * without its GPS position and camera, its orientation kept (#1021).
+     */
     @Test
-    fun aSinglePngBecomesAJpeg() {
+    fun picturesAreKeptAsTheyAreWithoutTheirMetadata() {
         val folder = File(app.core.storage.dir(io.github.lawkitt.mdoc.storage.MdocStorage.Area.Originals), "png-test").apply { mkdirs() }
         val png = File(folder, "photo.png")
-        png.outputStream().use { Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
-        val prepared = Originals(app.core.storage).prepare(ImportSource.File(png, SourceKind.Image), "Photo")
-        assertEquals("jpg", prepared.file?.extension)
-        assertTrue(prepared.file!!.length() > 0)
+        png.outputStream().use { Bitmap.createBitmap(40, 30, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val originals = Originals(app.core.storage)
+        val prepared = originals.prepare(ImportSource.File(png, SourceKind.Image), "Photo")
+        assertTrue(prepared.input is Originals.Input.Images)
+        assertEquals(png, prepared.file)
+        val camera = File(folder, "page-1.jpg")
+        camera.outputStream().use { Bitmap.createBitmap(40, 30, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        ExifInterface(camera).apply {
+            setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
+            setAttribute(ExifInterface.TAG_MAKE, "Fictional Camera Co")
+            setAttribute(ExifInterface.TAG_GPS_LATITUDE, "12/1,20/1,4416/100")
+            setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF, "N")
+            saveAttributes()
+        }
+        val page = originals.prepare(ImportSource.Pages(listOf(camera), SourceKind.Scan), "Scan").file!!
+        val exif = ExifInterface(page)
+        assertEquals(ExifInterface.ORIENTATION_ROTATE_90, exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 0))
+        assertEquals(null, exif.getAttribute(ExifInterface.TAG_MAKE))
+        assertEquals(null, exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE))
         folder.deleteRecursively()
     }
 

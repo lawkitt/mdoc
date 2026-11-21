@@ -48,3 +48,9 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 - Android follows iOS as it reaches the Original pane; TalkBack reaches each
   comment marker right after its line.
+- A photo's or camera page's Original is the image itself, drawn natively
+  and upright. The copy kept is the core's `without_metadata` rewrite
+  (JPEG, PNG, WebP, GIF: same pixels, only the orientation left) or, for
+  HEIC and what the core doesn't read, the phone's own upright JPEG.
+  Photos picked together are one document; the core builds their PDF in
+  memory, as for one.

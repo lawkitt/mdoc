@@ -1,11 +1,12 @@
 import Foundation
+import MdocFFI
 import UIKit
 import UniformTypeIdentifiers
 
 /// File intake (ADR 0104): what comes in from Files, "Open in mdoc", the
 /// camera, Photos or the clipboard becomes a `PendingImport` over a copy in
 /// mdoc's storage. PDF, DOCX and text go to the core as they are; images
-/// become upright JPEG pages, which the core reads with OCR.
+/// become pages the core reads with OCR, kept without their metadata.
 struct Importer {
     let storage: MdocStorage
 
@@ -19,8 +20,8 @@ struct Importer {
     }
 
     /// A file from Files or "Open in mdoc". It is copied into mdoc's storage
-    /// and the original left alone (an Inbox copy is removed). Images become
-    /// JPEG pages like the camera's.
+    /// and the original left alone (an Inbox copy is removed). An image
+    /// becomes a page like the camera's, one document of its own.
     func file(_ url: URL) throws -> PendingImport? {
         let scoped = url.startAccessingSecurityScopedResource()
         defer {
@@ -43,16 +44,16 @@ struct Importer {
         }
     }
 
-    /// Page images from the document camera or Photos, as upright JPEGs:
-    /// the core reads JPEG only (PNG and HEIC are converted here). Nil when
-    /// no page could be read.
+    /// Page images from the document camera or Photos, picked together as
+    /// one document, each kept as `page` keeps it. Nil when no page could be
+    /// read.
     func images(_ images: [Data], scanned: Bool, title: String? = nil) throws -> PendingImport? {
         let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let urls = try images.enumerated().compactMap { index, data -> URL? in
-            guard let jpeg = Self.uprightJPEG(data) else { return nil }
-            let url = folder.appendingPathComponent("page-\(index + 1).jpg")
-            try jpeg.write(to: url, options: [.atomic, .completeFileProtection])
+            guard let (page, format) = Self.page(data) else { return nil }
+            let url = folder.appendingPathComponent("page-\(index + 1).\(format)")
+            try page.write(to: url, options: [.atomic, .completeFileProtection])
             return url
         }
         guard !urls.isEmpty else { return nil }
@@ -74,6 +75,31 @@ struct Importer {
         let firstLine = trimmed.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
         let title = firstLine.trimmingCharacters(in: CharacterSet(charactersIn: "# ")).prefix(60)
         return title.isEmpty ? String(localized: "Pasted text") : String(title)
+    }
+
+    /// An image as mdoc keeps it, which the core reads and the Original
+    /// shows (#1021), with its file extension: the core rewrites JPEG, PNG,
+    /// WebP and GIF without their metadata (GPS position, camera, dates),
+    /// the pixels and orientation as they were; HEIC and anything else iOS
+    /// reads is drawn upright as a JPEG without metadata. Nil when neither
+    /// can read it.
+    static func page(_ data: Data) -> (Data, String)? {
+        if let kept = imageWithoutMetadata(image: data), let format = coreFormat(kept) {
+            return (kept, format)
+        }
+        return uprightJPEG(data).map { ($0, "jpg") }
+    }
+
+    /// The extension of an image the core reads, by its signature.
+    static func coreFormat(_ data: Data) -> String? {
+        let bytes = [UInt8](data.prefix(12))
+        if bytes.starts(with: [0xff, 0xd8, 0xff]) { return "jpg" }
+        if bytes.starts(with: [0x89, 0x50, 0x4e, 0x47]) { return "png" }
+        if bytes.starts(with: Array("GIF8".utf8)) { return "gif" }
+        if bytes.count == 12, bytes.starts(with: Array("RIFF".utf8)), Array(bytes[8...]) == Array("WEBP".utf8) {
+            return "webp"
+        }
+        return nil
     }
 
     /// Redraws an image with its orientation applied, as JPEG.

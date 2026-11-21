@@ -108,14 +108,17 @@ class Documents(
         // An import still being read must not save itself back afterwards.
         session.discard()
         val path = session.path
-        val source = session.sourceFile
+        val source = session.pendingSource
         if (path != null) {
             core { ffi.deleteDocument(path) }
             ids.remove(path)
             originals.remove(path)
         } else if (source != null) {
-            // OCR's kept pages go first, found by the source file's digest.
-            core { ffi.discardImport(source.path) }
+            // OCR's kept pages go first, found by the source files' digests.
+            when (source.input) {
+                is Originals.Input.Images -> core { ffi.discardImages(source.files.map { it.path }) }
+                else -> source.file?.let { core { ffi.discardImport(it.path) } }
+            }
         }
         sessions.remove(id)
         pending.remove(id)
@@ -155,7 +158,8 @@ class Documents(
         var path: String? = null
             private set
 
-        internal val sourceFile: File? get() = source?.file
+        /** The import not yet read, if any. */
+        internal val pendingSource: Originals.Prepared? get() = synchronized(this) { source }
 
         @Volatile private var discarded = false
 
@@ -172,7 +176,7 @@ class Documents(
             caseId = opened.caseId
             scanned = opened.mentions.isNotEmpty() || originals.scanned(path)
             kind = originals.kind(path)
-            originalFile = originals.file(path)
+            originalFiles = originals.files(path)
         }
 
         internal fun summary(updated: Long): DocumentSummary {
@@ -189,7 +193,7 @@ class Documents(
                 ?: return DocumentSnapshot(
                     id, title, caseId?.let(::CaseId), caseName(caseId), kind, DocumentPhase.Recognizing,
                     "", null, emptyList(), emptyList(), null, resumesOcr = ocrStarted,
-                    original = OriginalSource.of(source?.file ?: originalFile),
+                    original = OriginalSource.of(source?.files ?: originalFiles),
                 )
             val candidates = review.mentions.map(::candidate)
             val identities = review.identities.map { row ->
@@ -223,7 +227,7 @@ class Documents(
                 id, review.title, (review.caseId ?: caseId)?.let(::CaseId), caseName(review.caseId ?: caseId),
                 kind, phase, review.text, markdownStyling(review.text), candidates, identities, reply,
                 warning = review.warning,
-                original = OriginalSource.of(source?.file ?: originalFile),
+                original = OriginalSource.of(source?.files ?: originalFiles),
             )
         }
 
@@ -250,6 +254,20 @@ class Documents(
                         ffi.importFileIn(
                             this@Documents.ffi, input.file.path,
                             ImportOptions(ocr, nativeTextOnly = false, password = password), progress,
+                        )
+                    }
+                }
+                is Originals.Input.Images -> {
+                    val ocr = models?.ocrPaths() ?: throw AppError.ModelMissing()
+                    if (!ocrStarted) {
+                        ocrStarted = true
+                        pending.markOcrStarted(id)
+                    }
+                    // One document, a page each, built in memory by the core.
+                    core {
+                        ffi.importImagesIn(
+                            this@Documents.ffi, input.files.map { it.path }, title,
+                            ImportOptions(ocr, nativeTextOnly = false, password = null), progress,
                         )
                     }
                 }
@@ -370,11 +388,11 @@ class Documents(
                 review = saved.review
             }
             synchronized(this@Documents) { ids[saved.path] = id }
-            originals.record(saved.path, kind, source?.file ?: originalFile)
+            originals.record(saved.path, kind, source?.files ?: originalFiles)
             pending.remove(id, keepFiles = true)
         }
 
-        private var originalFile: File? = source?.file
+        private var originalFiles: List<File> = source?.files.orEmpty()
     }
 
     /** The core's job stages and a scan's time left, and what it asks about the phone. */
@@ -537,10 +555,11 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
         (0 until array.length()).associate { i ->
             val item = array.getJSONObject(i)
             val kind = SourceKind.valueOf(item.getString("kind"))
-            val input = if (item.has("text")) {
-                Originals.Input.Text(item.getString("text"))
-            } else {
-                Originals.Input.File(File(item.getString("file")), item.getBoolean("needsOcr"))
+            val images = item.optJSONArray("images")
+            val input = when {
+                item.has("text") -> Originals.Input.Text(item.getString("text"))
+                images != null -> Originals.Input.Images((0 until images.length()).map { File(images.getString(it)) })
+                else -> Originals.Input.File(File(item.getString("file")), item.getBoolean("needsOcr"))
             }
             val id = item.getString("id")
             id to Entry(
@@ -559,6 +578,7 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
             when (val input = entry.source.input) {
                 is Originals.Input.Text -> item.put("text", input.text)
                 is Originals.Input.File -> item.put("file", input.file.path).put("needsOcr", input.needsOcr)
+                is Originals.Input.Images -> item.put("images", JSONArray().apply { input.files.forEach { put(it.path) } })
             }
             array.put(item)
         }

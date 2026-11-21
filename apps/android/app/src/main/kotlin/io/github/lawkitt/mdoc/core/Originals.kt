@@ -1,10 +1,12 @@
 package io.github.lawkitt.mdoc.core
 
-import android.graphics.BitmapFactory
-import android.graphics.pdf.PdfDocument
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
+import org.json.JSONArray
 import org.json.JSONObject
+import uniffi.mdoc_ffi.imageWithoutMetadata
 
 /**
  * Which source file each saved document came from, for the Original view
@@ -15,28 +17,40 @@ class Originals(private val storage: MdocStorage) {
     sealed interface Input {
         data class Text(val text: String) : Input
 
-        /** `needsOcr`: page images, which only text recognition can read. */
+        /** `needsOcr`: page images, which only text recognition can read (imports kept from before [Images]). */
         data class File(val file: java.io.File, val needsOcr: Boolean) : Input
+
+        /** Photos or camera pages, one document of a page each, which only text recognition can read. */
+        data class Images(val files: List<java.io.File>) : Input
     }
 
     data class Prepared(val input: Input, val kind: SourceKind) {
-        val file: File? get() = (input as? Input.File)?.file
+        /** The files the import reads. */
+        val files: List<File> get() = when (input) {
+            is Input.Text -> emptyList()
+            is Input.File -> listOf(input.file)
+            is Input.Images -> input.files
+        }
+        val file: File? get() = files.firstOrNull()
     }
 
     private val index = File(storage.root, "originals.json")
 
-    /** Names a received file after its title (the core titles a document by its file). */
+    /**
+     * Names a received file after its title (the core titles a document by
+     * its file). Images go to the core as they are, a page each, the copies
+     * kept without their metadata ([kept]).
+     */
     fun prepare(source: ImportSource, title: String): Prepared = when (source) {
         is ImportSource.Text -> Prepared(Input.Text(source.text), SourceKind.Text)
         is ImportSource.File -> if (source.kind == SourceKind.Image) {
-            Prepared(Input.File(jpeg(source.file, title), needsOcr = true), source.kind)
+            Prepared(Input.Images(listOf(kept(source.file))), source.kind)
         } else {
             Prepared(Input.File(rename(source.file, title), needsOcr = false), source.kind)
         }
         is ImportSource.Pages -> {
-            val first = source.pages.firstOrNull() ?: throw AppError.EmptySelection()
-            val file = if (source.pages.size == 1) jpeg(first, title) else pagesPdf(source.pages, title, first.parentFile!!)
-            Prepared(Input.File(file, needsOcr = true), source.kind)
+            if (source.pages.isEmpty()) throw AppError.EmptySelection()
+            Prepared(Input.Images(source.pages.map(::kept)), source.kind)
         }
     }
 
@@ -49,44 +63,54 @@ class Originals(private val storage: MdocStorage) {
     }
 
     /**
-     * One page as the JPEG the core reads: a PNG or HEIC photo is decoded and
-     * written again, a JPEG only renamed.
+     * A photo or page as mdoc keeps it, which the core reads and the
+     * Original shows (#1021): the core rewrites JPEG, PNG, WebP and GIF
+     * without their metadata (GPS position, camera, dates), the pixels and
+     * orientation as they were; HEIC and anything else Android draws
+     * upright as a JPEG without metadata. A file neither reads stays as it
+     * came, and the core refuses it when the import reads it.
      */
-    private fun jpeg(file: File, title: String): File {
-        if (file.extension.lowercase() in setOf("jpg", "jpeg")) return rename(file, title)
-        val bitmap = BitmapFactory.decodeFile(file.path) ?: throw AppError.Failed("The scanned pages could not be read.")
-        val target = File(file.parentFile, MdocStorage.safeFileName("$title.jpg"))
-        target.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
-        bitmap.recycle()
-        file.delete()
-        return target
+    private fun kept(file: File): File {
+        imageWithoutMetadata(file.readBytes())?.let { clean ->
+            replace(file, file) { it.write(clean) }
+            return file
+        }
+        return uprightJpeg(file) ?: file
     }
 
-    /** Several pages as one image-only PDF, which the core reads with OCR as a scan. */
-    private fun pagesPdf(pages: List<File>, title: String, folder: File): File {
-        val document = PdfDocument()
-        try {
-            pages.forEachIndexed { index, file ->
-                val bitmap = BitmapFactory.decodeFile(file.path) ?: return@forEachIndexed
-                val page = document.startPage(PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, index + 1).create())
-                page.canvas.drawBitmap(bitmap, 0f, 0f, null)
-                document.finishPage(page)
-                bitmap.recycle()
+    /** `file` decoded upright by Android, as a JPEG beside it (it goes); null when Android can't read it. */
+    private fun uprightJpeg(file: File): File? {
+        val bitmap = runCatching {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.setTargetSampleSize(sampleSize(maxOf(info.size.width, info.size.height)))
             }
-            if (document.pages.isEmpty()) throw AppError.Failed("The scanned pages could not be read.")
-            val target = File(folder, MdocStorage.safeFileName("$title.pdf"))
-            target.outputStream().use(document::writeTo)
+        }.getOrNull() ?: return null
+        try {
+            val target = File(file.parentFile, MdocStorage.safeFileName("${file.nameWithoutExtension}.jpg"))
+            replace(file, target) { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
+            if (target != file) file.delete()
             return target
         } finally {
-            document.close()
+            bitmap.recycle()
         }
     }
 
+    /** Writes `target` whole through a temporary file beside `source`. */
+    private fun replace(source: File, target: File, write: (java.io.OutputStream) -> Unit) {
+        val temp = File(source.parentFile, ".${source.name}.new")
+        temp.outputStream().use(write)
+        target.delete()
+        check(temp.renameTo(target)) { "mdoc could not keep ${source.name}." }
+    }
+
     @Synchronized
-    fun record(path: String, kind: SourceKind, file: File?) {
+    fun record(path: String, kind: SourceKind, files: List<File>) {
         val entries = load()
         val entry = entries.optJSONObject(relative(path)) ?: JSONObject()
-        entries.put(relative(path), entry.put("kind", kind.name).put("file", file?.let { relative(it.path) }))
+        entry.remove("file")
+        val list = JSONArray().apply { files.forEach { put(relative(it.path)) } }
+        entries.put(relative(path), entry.put("kind", kind.name).put("files", list))
         save(entries)
     }
 
@@ -107,16 +131,23 @@ class Originals(private val storage: MdocStorage) {
         SourceKind.valueOf(load().getJSONObject(relative(path)).getString("kind"))
     }.getOrDefault(SourceKind.Text)
 
+    /** The files a document came from; an entry recorded before several were kept has one. */
     @Synchronized
-    fun file(path: String): File? = runCatching {
-        File(storage.root, load().getJSONObject(relative(path)).getString("file"))
-    }.getOrNull()
+    fun files(path: String): List<File> = runCatching {
+        val entry = load().getJSONObject(relative(path))
+        val list = entry.optJSONArray("files")
+        if (list == null) {
+            listOf(File(storage.root, entry.getString("file")))
+        } else {
+            (0 until list.length()).map { File(storage.root, list.getString(it)) }
+        }
+    }.getOrDefault(emptyList())
 
     /** Forgets a deleted document and removes its intake folder. */
     @Synchronized
     fun remove(path: String) {
         val entries = load()
-        file(path)?.let(::importFolder)?.deleteRecursively()
+        files(path).firstOrNull()?.let(::importFolder)?.deleteRecursively()
         entries.remove(relative(path))
         save(entries)
     }
@@ -132,6 +163,21 @@ class Originals(private val storage: MdocStorage) {
     private fun relative(path: String): String = File(path).relativeTo(storage.root).path.replace('\\', '/')
 
     private fun load(): JSONObject = runCatching { JSONObject(index.readText()) }.getOrDefault(JSONObject())
+
+    private companion object {
+        /** As the core's image builder stores a re-encoded photo. */
+        const val JPEG_QUALITY = 92
+
+        /** The core scales a longer side down to this many pixels. */
+        const val MAX_LONG_SIDE = 4500
+
+        /** The power of two that brings `longSide` to [MAX_LONG_SIDE] or less, so a huge photo fits in memory. */
+        fun sampleSize(longSide: Int): Int {
+            var sample = 1
+            while (longSide / sample > MAX_LONG_SIDE) sample *= 2
+            return sample
+        }
+    }
 
     private fun save(entries: JSONObject) {
         index.parentFile?.mkdirs()
