@@ -329,7 +329,76 @@ fn fax(d: &mut Driver) -> Result<()> {
     let pdf = pdf.ok_or("the fax's Original loads")?;
     d.change(|_, _, cx| pdf.update(cx, |pdf, cx| pdf.go_to_page(1, cx)))?;
     d.settle()?;
-    d.capture("import-fax")
+    d.capture("import-fax")?;
+    heic(d)
+}
+
+/// A HEIC photo of a page stored sideways (EXIF orientation 6): the
+/// Original shows it upright. On the hosted Mac ImageIO decodes the HEIC,
+/// as an import does. Windows runners have neither HEIF nor HEVC
+/// extension, so the Windows render shows the upright JPEG a WIC import
+/// stores for the same photo (`page-orientation-6-decoded.jpg`, see the
+/// fixtures' README). Then the card a Windows PC without the extensions
+/// gets. No OCR runs here: the Markdown stands in.
+fn heic(d: &mut Driver) -> Result<()> {
+    let name = if cfg!(target_os = "macos") {
+        "page-orientation-6.heic"
+    } else {
+        "page-orientation-6-decoded.jpg"
+    };
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/heic")
+        .join(name);
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let built = mdoc_import::image_pdf::build(&[&bytes], mdoc_import::image_pdf::DEFAULT_DPI)
+        .map_err(|e| e.to_string())?;
+    let imported = mdoc_import::import::Imported {
+        ocr_configuration: None,
+        source: mdoc_import::import::Source::new(PathBuf::from("Lease page.heic"), None, built.pdf),
+        markdown: "# Lease of 12 Fictional Street\n\nThe tenant, Ada Quillfeather, \
+                   rents the flat from 1 March 2026.\n"
+            .into(),
+        warning: None,
+        left_out: Default::default(),
+        comments: Vec::new(),
+        annotations: Vec::new(),
+        is_pdf: true,
+        is_docx: false,
+        is_image: true,
+        decrypted: false,
+    };
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.preview.set_split(0.5);
+            v.proceed(
+                crate::document_view::Next::Import(Box::new(imported)),
+                window,
+                cx,
+            );
+            cx.notify();
+        });
+    })?;
+    d.settle()?;
+    d.capture("import-heic")?;
+    // The extensions missing: the import's own error, as the card shows it.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.lifecycle.show_source();
+            v.preview.no_preview(PathBuf::from("Lease page.heic"));
+            v.error = Some(
+                mdoc_import::import::ImportError::Image(
+                    mdoc_import::image_pdf::ImageError::HeicCodecMissing(
+                        mdoc_import::image_pdf::heic::MissingCodec::HeifExtension,
+                    ),
+                )
+                .to_string(),
+            );
+            cx.notify();
+        });
+    })?;
+    d.capture("import-heic-missing")
 }
 
 /// A page photographed sideways: a white sheet with a heading bar and

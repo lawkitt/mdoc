@@ -1789,19 +1789,13 @@ impl DocumentView {
             ])));
         } else if self.lifecycle.source_only() {
             let generation = self.begin_preview(path.clone());
-            // A renamed image is known by its content, as the import knows
-            // it, so its Original shows.
+            // A renamed image is known by its content, by the same bounded
+            // probe admission asks (a generic HEIF's `meta` box may lie far
+            // into the file), so its Original shows.
             let task = cx.background_executor().spawn({
                 let path = path.clone();
                 async move {
-                    use std::io::Read as _;
-                    let mut head = Vec::with_capacity(256);
-                    std::fs::File::open(path)?
-                        .take(256)
-                        .read_to_end(&mut head)?;
-                    Ok::<_, std::io::Error>(
-                        mdoc_import::image_pdf::ImageFormat::from_bytes(&head).is_some(),
-                    )
+                    mdoc_import::image_pdf::format_of_file(&path).map(|format| format.is_some())
                 }
             });
             cx.spawn_in(window, async move |this, cx| {

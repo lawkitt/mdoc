@@ -695,7 +695,7 @@ fn formats_are_known_by_content_and_extension() {
     for magic in [b"II*\0".as_slice(), b"MM\0*", b"II+\0", b"MM\0+"] {
         assert_eq!(ImageFormat::from_bytes(magic), Some(ImageFormat::Tiff));
     }
-    assert_eq!(ImageFormat::from_extension("heic"), None);
+    assert_eq!(ImageFormat::from_extension("heic"), Some(ImageFormat::Heic));
 }
 
 /// The test images the import-seam tests share, written to `dir`.
@@ -774,8 +774,7 @@ mod import_seam {
         for name in ["a.jpg", "a.JPEG", "a.png", "a.webp", "a.gif"] {
             assert!(supported_extension(Path::new(name)), "{name}");
         }
-        // HEIC comes with #1024 item 9.
-        assert!(!supported_extension(Path::new("a.heic")));
+        assert!(supported_extension(Path::new("a.heic")));
     }
 
     #[test]

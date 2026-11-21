@@ -67,7 +67,10 @@ pub fn droppable(path: &Path) -> bool {
 /// Admission does not convert documents. Unknown extensions retain AnyDoc's
 /// content detection, with bounded reads performed on the background executor.
 pub fn supported_source(path: &Path) -> bool {
-    if anydoc::Format::from_path(path).is_some() || ImageFormat::from_path(path).is_some() {
+    if anydoc::Format::from_path(path).is_some()
+        || ImageFormat::from_path(path).is_some()
+        || image_pdf::format_of_file(path).is_ok_and(|format| format.is_some())
+    {
         return true;
     }
     let Ok(file) = std::fs::File::open(path) else {
@@ -173,6 +176,14 @@ impl Source {
         if is_pdf(&bytes) {
             if bytes.len() as u64 > MAX_PDF_BYTES {
                 return Err(ImportError::PdfTooLarge);
+            }
+        } else if image_pdf::heic::is_heif_container(&bytes) {
+            // A HEIC photo goes to the operating system's decoder whole: no
+            // photo is this large, and WIC can't take 4 GiB. A HEIF file is
+            // held to it whether or not its first bytes settle that it is a
+            // HEIC: a generic one's `meta` box may lie past them.
+            if bytes.len() as u64 > image_pdf::heic::MAX_FILE_BYTES {
+                return Err(ImportError::Image(image_pdf::ImageError::TooLarge));
             }
         } else {
             file.into_inner()
