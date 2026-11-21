@@ -21,14 +21,13 @@ pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
     );
     for (index, page) in pages.iter().enumerate() {
         let first = 3 + 3 * index;
-        // The sheet's size comes from the image's size before scaling, at
-        // the page's own resolution when it states one (a TIFF): a
-        // scaled-down page keeps its sheet, its pixels drawn larger.
+        // A page that states its resolution (a TIFF) has its own physical
+        // size; any other is its pixels at the PDF's resolution.
         let fallback = f64::from(dpi.max(1));
         let (x_dpi, y_dpi) = page.resolution.unwrap_or((fallback, fallback));
         let (width, height) = (
-            f64::from(page.sheet.0) * 72. / x_dpi,
-            f64::from(page.sheet.1) * 72. / y_dpi,
+            f64::from(page.width) * 72. / x_dpi,
+            f64::from(page.height) * 72. / y_dpi,
         );
         let [a, b, c, d, e, f] = upright(page.orientation, width, height);
         // Orientations 5 to 8 turn the image a quarter, swapping its sides.

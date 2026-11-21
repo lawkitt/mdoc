@@ -232,7 +232,6 @@ fn fax(
             data: super::deflate(&packed),
             orientation: 1,
             resolution: None,
-            sheet: (width, height),
         }));
     }
     let data = strips.concat();
@@ -250,7 +249,6 @@ fn fax(
         data,
         orientation: 1,
         resolution: None,
-        sheet: (width, height),
     }))
 }
 
@@ -404,7 +402,6 @@ fn bilevel(result: DecodingResult, width: u32, height: u32) -> Result<Page, Imag
         data: super::deflate(&packed),
         orientation: 1,
         resolution: None,
-        sheet: (width, height),
     })
 }
 
