@@ -50,6 +50,12 @@ libloading = "0.9"
 docxide-pdf = { version = "=0.21.4", default-features = false }
 roxmltree = "0.21"
 
+[dev-dependencies]
+# The CJK font test (#1036) reads the rendered PDF's fonts and glyphs; both
+# are already in the tree (pdf-inspector, docxide-pdf).
+lopdf = { version = "0.45", default-features = false }
+ttf-parser = "0.25"
+
 [target.'cfg(windows)'.dependencies]
 # Recognition defaults read the keyboard layouts.
 windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
