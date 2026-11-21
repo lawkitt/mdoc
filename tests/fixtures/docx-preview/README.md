@@ -35,6 +35,17 @@ Verified SHA-256 digests:
 - `coverage.docx`: `baa3f1b2c5cef58afc57d6680fb172d4720c57c8f3d1e1c0f6be1ad344e707d1`
 - `comment-anchors.docx`: `022631407e7bd4981b49d7c84900d43735d47712b922391205bc5fa68840c9bd`
 
+## Embedded CJK face
+
+`NotoSansCJKsc-Embedded.otf` (2,504 bytes) is Noto Sans CJK SC cut to 髙橋一郎,
+under OFL-1.1 like the app's subset
+([licence](../../../resources/fonts-ios/NotoSansCJK-OFL.txt)). mdoc-import's
+DOCX preview test embeds it in a document to check that the document's own
+face wins over the iOS app's subset, which lacks 髙. It is made by
+`scripts/dev/subset-cjk-font.py --fixture` ([fonts](../../../resources/fonts/README.md)).
+
+- `NotoSansCJKsc-Embedded.otf`: `60200de28220d1204d1a3269dfaab45918afae0800e0528468e1cfdf8d3e0ecd`
+
 ## Scrubbed legal opinion
 
 `legal-opinion.docx` is the ordinary legal-document workload for `just perf`

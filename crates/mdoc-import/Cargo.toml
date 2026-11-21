@@ -34,6 +34,10 @@ zeroize = "1"
 # The image builder (image_pdf): decoding within limits, EXIF orientation,
 # and photos re-encoded as JPEG. Already in the tree through pdf-inspector.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# Only on a locked PDF's refusal: tells encryption no password opens
+# (an unknown handler or algorithm) from a missing or wrong password, which
+# pdf-inspector reports alike. The version pdf-inspector reads with.
+lopdf = { version = "0.45", default-features = false }
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
 # C API 17, which 1.17 and later serve: 1.32.0 downloaded on desktop
 # (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS,
@@ -48,6 +52,12 @@ libloading = "0.9"
 # Exact: DOCX preview rendering changes between releases; bump by hand.
 docxide-pdf = { version = "=0.21.4", default-features = false }
 roxmltree = "0.21"
+
+[dev-dependencies]
+# The CJK font test (#1036) reads the rendered PDF's fonts and glyphs; both
+# are already in the tree (pdf-inspector, docxide-pdf).
+lopdf = { version = "0.45", default-features = false }
+ttf-parser = "0.25"
 
 [target.'cfg(windows)'.dependencies]
 # Recognition defaults read the keyboard layouts.

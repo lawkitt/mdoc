@@ -15,6 +15,8 @@ struct DocxOriginalView: View {
     /// one long job runs at a time and docxide beside the detector is
     /// memory the budgets never measured.
     var waits = false
+    /// The page shows dark (`darkPage(_:)`); its markers go with it.
+    var darkPage = false
     /// The rendered comments, for the title menu's Show comments and "Not
     /// on the page (N)".
     var onComments: (DocxComments) -> Void = { _ in }
@@ -87,6 +89,7 @@ struct DocxOriginalView: View {
                 onCard: { id in expanded = expanded == id ? nil : id },
                 onPassage: onOpenComment,
                 viewport: viewport)
+            .darkPage(darkPage)
             .accessibilityLabel(Text("Original document"))
             .accessibilityIdentifier("docx-original")
             .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }

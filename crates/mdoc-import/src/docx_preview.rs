@@ -638,8 +638,11 @@ fn draw(bytes: &[u8], options: RenderOptions) -> Result<Drawn, PreviewError> {
     {
         render_input = Cow::Owned(copy);
     }
-    let pdf = docxide_pdf::convert_docx_bytes_to_pdf_bytes_with(&render_input, &fonts::options())
-        .map_err(|error| match error {
+    let pdf = docxide_pdf::convert_docx_bytes_to_pdf_bytes_with(
+        &render_input,
+        &fonts::options(&render_input),
+    )
+    .map_err(|error| match error {
         // Nothing is written, so an I/O error is the renderer's own.
         docxide_pdf::Error::Io(error) => PreviewError::Render(error.to_string()),
         _ => PreviewError::Rejected,

@@ -401,6 +401,8 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     comments::scenes(d)?;
     pdf_source::scenes(d)?;
     pdf_source::encrypted(d)?;
+    pdf_source::unlocked(d)?;
+    pdf_source::locked(d)?;
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
     review::long_counts(d)?;

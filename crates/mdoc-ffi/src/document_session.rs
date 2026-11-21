@@ -1314,7 +1314,7 @@ mod tests {
             let comments: Vec<_> = mdoc_import::import::source_comments(&source)
                 .into_iter()
                 .chain(
-                    mdoc_import::import::source_annotations(&source)
+                    mdoc_import::import::source_annotations(&source, None)
                         .unwrap_or_default()
                         .iter()
                         .enumerate()
@@ -1349,6 +1349,37 @@ mod tests {
     /// A locked DOCX, saved by Word and by LibreOffice: no password asks for
     /// one, a wrong one asks again, and the right one gives what its
     /// unlocked twin gives. Nothing is written beside it or into the library.
+    #[test]
+    fn a_locked_pdf_is_refused_on_the_phones_until_they_open_one() {
+        let pdf_source = |name: &str| fixture(&format!("pdf-source/{name}"));
+        let import = |path: String, password: Option<&str>| {
+            DocumentSession::new().import_file(
+                path,
+                ImportOptions {
+                    password: password.map(Into::into),
+                    ..ImportOptions::default()
+                },
+                None,
+            )
+        };
+        for name in ["comments-aes128.pdf", "comments-aes256.pdf"] {
+            // Even the right password: no phone opens a locked PDF yet.
+            for password in [None, Some("petrov-2026"), Some("Petrov-2026")] {
+                match import(pdf_source(name), password) {
+                    Err(CoreError::Import { message }) => assert_eq!(
+                        message, "This PDF is password-protected. Import an unlocked copy.",
+                        "{name}"
+                    ),
+                    other => panic!("{name} {password:?}: {:?}", other.map(|_| ())),
+                }
+            }
+        }
+        // A PDF locked only against editing imports as before.
+        let open = import(pdf_source("comments.pdf"), None).unwrap();
+        let owner_only = import(pdf_source("comments-owner-only.pdf"), None).unwrap();
+        assert_eq!(owner_only.text, open.text);
+    }
+
     #[test]
     fn a_locked_docx_imports_with_its_password_only() {
         const PASSWORD: &str = "Petrov-2026";
