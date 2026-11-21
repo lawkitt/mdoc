@@ -19,7 +19,6 @@ pub fn converted(source: PathBuf) -> Imported {
         is_pdf: false,
         is_docx: false,
         is_image: false,
-        decrypted: false,
     }
 }
 

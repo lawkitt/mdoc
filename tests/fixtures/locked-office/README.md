@@ -1,10 +1,9 @@
 # Locked Office fixtures
 
-Password-protected Office files saved by the real applications, for the
+Password-protected Office files, mostly saved by the real applications, for the
 Done-when checks of ROADMAP "Import gaps" items 4 and 5 (#1007). The text is
-fictional. Each locked file has an `-open` twin, saved by the same app with
-the same text and no password, so a test can check that the right password
-gives the same Markdown as the unlocked file.
+fictional. Each application fixture has an `-open` twin with the same text,
+so a test can check that the right password gives the same Markdown.
 
 The password for every locked file is the published test value
 `Petrov-2026`. It protects nothing real.
@@ -22,11 +21,12 @@ every file in that folder and would fail on a locked one.
 | `libreoffice-locked.xlsx` / `libreoffice-open.xlsx` | LibreOffice 26.8.3 Calc | OOXML standard 3.2 |
 | `libreoffice-locked.pptx` / `libreoffice-open.pptx` | LibreOffice 26.8.3 Impress | OOXML standard 3.2 |
 | `libreoffice-locked.doc` / `libreoffice-open.doc` | LibreOffice 26.8.3 Writer, Word 97 format | RC4 (header 1.1) |
+| `comments-locked.docx` | `craft_offcrypto::encrypt_with_spin_count` with 1,000 spins, from [comments.docx](../docx-preview/comments.docx) | OOXML agile |
 
-Together they cover the four schemes a real locked file uses: agile and
-standard OOXML encryption, and both RC4 forms of DOC. Every locked file opens
-in Word, Excel or PowerPoint with the password and is refused with a wrong
-one.
+The application fixtures cover agile and standard OOXML encryption and both
+RC4 forms of DOC. They open in Word, Excel or PowerPoint with the password
+and are refused with a wrong one. The generated DOCX exercises comment
+placement after unlocking in the iOS tests.
 
 To rebuild them on Windows with Microsoft 365, run
 `pwsh -NoProfile -File tests/fixtures/locked-office/make-microsoft-office.ps1`.

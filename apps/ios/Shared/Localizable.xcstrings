@@ -599,9 +599,6 @@
     "Enter its password to show the Original. mdoc unlocks it in memory while this document is open and never saves the password or an unlocked copy." : {
 
     },
-    "Enter the document’s password to show the Original." : {
-
-    },
     "Failed · %@" : {
 
     },
@@ -1046,9 +1043,6 @@
 
     },
     "Password" : {
-
-    },
-    "Password-protected DOCX files aren’t shown, so no unlocked copy is written to disk." : {
 
     },
     "Paste" : {
@@ -1564,6 +1558,9 @@
 
     },
     "Unlock" : {
+
+    },
+    "Unlock the document in Text to show its original." : {
 
     },
     "URL" : {

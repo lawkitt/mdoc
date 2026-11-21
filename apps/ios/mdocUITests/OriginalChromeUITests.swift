@@ -12,6 +12,38 @@ final class OriginalChromeUITests: XCTestCase {
     }
 
     @MainActor
+    func testALockedScanCanShowItsOriginalWhileImportNeedsTheOCRModel() throws {
+        let app = MdocUITest.launch(seed: "tests/fixtures/pdf-source/partly-scanned-aes256.pdf")
+        MdocUITest.revealSidebar(app)
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH 'partly-scanned-aes256'"))
+            .firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+
+        let importPassword = app.secureTextFields["document-password"]
+        XCTAssertTrue(importPassword.waitForExistence(timeout: MdocUITest.timeout))
+        let picker = app.segmentedControls["pane-picker"]
+        picker.buttons["Original"].tap()
+        XCTAssertTrue(importPassword.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertFalse(app.secureTextFields["original-password"].exists)
+        importPassword.tap()
+        importPassword.typeText("Petrov-2026")
+        app.buttons["unlock-document"].tap()
+        XCTAssertTrue(importPassword.waitForNonExistence(timeout: MdocUITest.timeout))
+
+        picker.buttons["Text"].tap()
+        XCTAssertTrue(app.buttons["setup-download"].waitForExistence(timeout: MdocUITest.timeout))
+        picker.buttons["Original"].tap()
+        let originalPassword = app.secureTextFields["original-password"]
+        XCTAssertTrue(originalPassword.waitForExistence(timeout: MdocUITest.timeout))
+        originalPassword.tap()
+        originalPassword.typeText("Petrov-2026")
+        app.buttons["unlock-original"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["Original PDF"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+    }
+
+    @MainActor
     func testTheOriginalHidesTheBarsAndTextBringsThemBack() throws {
         let app = MdocUITest.launch()
         let document = MdocUITest.documentRow(app)

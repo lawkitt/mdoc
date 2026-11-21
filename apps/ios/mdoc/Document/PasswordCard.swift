@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A locked DOCX's or PDF's password, asked in place of the action bar,
-/// or in the Original pane for a locked PDF opened again. The password
+/// A locked DOCX's or PDF's password, asked in place of the action bar
+/// or in the Original pane. The password
 /// lives in this field until Unlock hands it to the one import or unlock
 /// that uses it; the field is emptied then, and after a wrong one.
 struct PasswordCard: View {
@@ -10,9 +10,9 @@ struct PasswordCard: View {
     let unlock: @MainActor (String) async -> Void
 
     enum Purpose {
-        /// The import asks, in place of the action bar.
+        /// Unlock also imports the document.
         case importing
-        /// A locked PDF's Original asks, in its pane.
+        /// Unlock shows the Original of a document opened again.
         case original
     }
     @State private var password = ""
@@ -113,6 +113,35 @@ struct PasswordCard: View {
         let given = password
         password = ""
         Task { await unlock(given) }
+    }
+}
+
+/// The password card used by either Original. A pending import owns the
+/// password prompt, and a running job keeps a second unlock from starting.
+struct OriginalPasswordCard: View {
+    let prompt: DocumentViewModel.PasswordPrompt
+    var purpose = PasswordCard.Purpose.original
+    var waits = false
+    var importPending = false
+    let unlock: @MainActor (String) async -> Void
+
+    var body: some View {
+        if waits {
+            ContentUnavailableView(
+                "Original waits", systemImage: "hourglass",
+                description: Text("The original page shows once mdoc finishes the current job."))
+        } else if importPending {
+            ContentUnavailableView(
+                "Original waits", systemImage: "lock",
+                description: Text("Unlock the document in Text to show its original."))
+        } else {
+            ScrollView {
+                PasswordCard(prompt: prompt, purpose: purpose, unlock: unlock)
+                    .padding()
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .background(Color(uiColor: .secondarySystemBackground))
+        }
     }
 }
 

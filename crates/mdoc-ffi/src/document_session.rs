@@ -128,6 +128,10 @@ struct Document {
     title: String,
     note: intake::ImportNote,
     review: ReviewText,
+    /// An import hands these bytes to the open iOS document. They are never
+    /// part of a saved document or a snapshot.
+    #[cfg(not(target_os = "android"))]
+    unlocked_docx: Option<mdoc_import::import::Source>,
     /// The case the document joined or started; it never changes.
     case: Option<String>,
     /// Categories its case does not detect; scans drop them.
@@ -294,6 +298,8 @@ impl DocumentSession {
             markdown: text,
             note: intake::ImportNote::default(),
             kept: None,
+            #[cfg(not(target_os = "android"))]
+            unlocked_docx: None,
         };
         self.open(imported, &cancel, Some(Opened::begun(origin)))
     }
@@ -326,6 +332,8 @@ impl DocumentSession {
             markdown: stored.saved.clone(),
             note: intake::ImportNote::default(),
             kept: None,
+            #[cfg(not(target_os = "android"))]
+            unlocked_docx: None,
         };
         let opened = Opened {
             path: stored.path.clone(),
@@ -794,6 +802,20 @@ impl Opened {
     }
 }
 
+#[cfg(not(target_os = "android"))]
+#[uniffi::export]
+impl DocumentSession {
+    /// Hand the import's unlock to the open document. The iOS library can
+    /// keep a session after its screen is closed, so the session lets go.
+    pub fn take_unlocked_docx(&self) -> Option<Arc<crate::original::UnlockedDocx>> {
+        self.lock_document()
+            .as_mut()?
+            .unlocked_docx
+            .take()
+            .map(crate::original::UnlockedDocx::new)
+    }
+}
+
 impl Document {
     /// `DocumentSession::share_file_name`.
     fn share_file_name(&self) -> String {
@@ -854,6 +876,8 @@ impl DocumentSession {
             title: imported.title,
             note: imported.note,
             review: ReviewText::new(imported.markdown),
+            #[cfg(not(target_os = "android"))]
+            unlocked_docx: imported.unlocked_docx,
             case: None,
             skip: HashSet::new(),
             path: None,
@@ -1520,12 +1544,13 @@ mod tests {
         assert!(!imports.exists(), "nothing kept");
     }
 
+    const PASSWORD: &str = "Petrov-2026";
+
     /// A locked DOCX, saved by Word and by LibreOffice: no password asks for
     /// one, a wrong one asks again, and the right one gives what its
     /// unlocked twin gives. Nothing is written beside it or into the library.
     #[test]
     fn a_locked_docx_imports_with_its_password_only() {
-        const PASSWORD: &str = "Petrov-2026";
         let scratch = Scratch::new();
         let library = library(&scratch);
         for app in ["word", "libreoffice"] {
@@ -1568,6 +1593,125 @@ mod tests {
             assert_eq!(unlocked.left_out, open.left_out, "{app}");
             assert_eq!(files(scratch.path()), before, "{app}");
         }
+    }
+
+    /// The session hands its unlock to the open document. Both that path
+    /// and reopening with a password render without writing to TMPDIR.
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn a_locked_docx_original_leaves_the_temp_folder_empty() {
+        use crate::original::{CommentMark, CommentMarkReader, DocxInput, DocxOriginal, PageRect};
+
+        const CHILD: &str = "MDOC_FFI_LOCKED_ORIGINAL_TEST";
+        const FIXTURE: &str = "MDOC_FFI_LOCKED_ORIGINAL_FIXTURE";
+        if std::env::var_os(CHILD).is_some() {
+            struct Marks;
+            impl CommentMarkReader for Marks {
+                fn comment_marks(&self, pdf: Vec<u8>) -> Vec<CommentMark> {
+                    assert!(pdf.starts_with(b"%PDF-"));
+                    vec![CommentMark {
+                        page: 0,
+                        rect: PageRect {
+                            x: 0.1,
+                            y: 0.1,
+                            w: 0.2,
+                            h: 0.02,
+                        },
+                        target: "0".into(),
+                    }]
+                }
+            }
+
+            assert_eq!(
+                std::env::temp_dir(),
+                Path::new(&std::env::var_os("TMPDIR").unwrap())
+            );
+            let fixture = std::env::var(FIXTURE).unwrap();
+            let check_original = |original: &DocxOriginal| {
+                assert!(original.pdf_bytes().starts_with(b"%PDF-"));
+                let anchor = &original.anchors()[0];
+                assert_eq!(anchor.id, "0");
+                assert_eq!(anchor.page, 0);
+                assert_eq!(anchor.rects[0].x, 0.1);
+                assert!(
+                    std::fs::read_dir(std::env::temp_dir())
+                        .unwrap()
+                        .next()
+                        .is_none()
+                );
+            };
+            let session = DocumentSession::new();
+            session
+                .import_file(
+                    fixture.clone(),
+                    ImportOptions {
+                        password: Some(PASSWORD.into()),
+                        ..ImportOptions::default()
+                    },
+                    None,
+                )
+                .unwrap();
+            let source = session
+                .take_unlocked_docx()
+                .expect("the import hands over the unlock");
+            assert!(session.take_unlocked_docx().is_none());
+            let original =
+                DocxOriginal::render(DocxInput::Unlocked { source }, Box::new(Marks)).unwrap();
+            check_original(&original);
+            assert!(original.unlocked_source().is_none());
+
+            let render_reopened = |password: Option<String>| {
+                DocxOriginal::render(
+                    DocxInput::File {
+                        bytes: std::fs::read(&fixture).unwrap(),
+                        password,
+                    },
+                    Box::new(Marks),
+                )
+            };
+            assert!(matches!(
+                render_reopened(None),
+                Err(CoreError::NeedsPassword)
+            ));
+            assert!(matches!(
+                render_reopened(Some("wrong".into())),
+                Err(CoreError::WrongPassword)
+            ));
+            let original = render_reopened(Some(PASSWORD.into())).unwrap();
+            check_original(&original);
+            assert!(original.unlocked_source().is_some());
+            return;
+        }
+
+        let input = Scratch::new();
+        let encrypted = input.path().join("comments.docx");
+        let plain = std::fs::read(fixture("docx-preview/comments.docx")).unwrap();
+        std::fs::write(
+            &encrypted,
+            craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap(),
+        )
+        .unwrap();
+        let empty = Scratch::new();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "document_session::tests::a_locked_docx_original_leaves_the_temp_folder_empty",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env(FIXTURE, encrypted)
+            .env("TMPDIR", empty.path())
+            .env("TEMP", empty.path())
+            .env("TMP", empty.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "{stdout}\n{stderr}"
+        );
+        assert!(std::fs::read_dir(empty.path()).unwrap().next().is_none());
     }
 
     /// Import options never show their password.

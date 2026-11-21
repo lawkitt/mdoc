@@ -36,6 +36,23 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertEqual(app.navigator.destination, .start)
     }
 
+    func testOpeningAnotherDocumentReleasesTheDocxUnlock() async throws {
+        let app = try app()
+        let source = try Fixture.copy("tests/fixtures/locked-office/word-locked.docx", into: seeded.storage)
+        let locked = try seeded.core.library.importDocument(
+            .file(source, .docx), title: "Locked", into: .existing(seeded.ellison))
+        app.open(locked.id)
+        let model = try XCTUnwrap(app.openModel)
+        await model.recognize()
+        XCTAssertEqual(model.passwordPrompt, .needed)
+        await model.unlock(password: "Petrov-2026")
+        XCTAssertNotNil(model.unlockedDocx)
+
+        app.open(seeded.letter)
+        XCTAssertEqual(app.navigator.openDocument, seeded.letter)
+        XCTAssertNil(model.unlockedDocx)
+    }
+
     func testSearchOpensTheSidebar() throws {
         let app = try app()
         app.requestSearch()

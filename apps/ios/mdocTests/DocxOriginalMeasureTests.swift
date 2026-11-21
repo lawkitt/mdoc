@@ -1,17 +1,17 @@
 import Darwin
 import Foundation
-import MdocFFI
 import PDFKit
 import XCTest
 @testable import mdoc
 
-/// The DOCX original's render time and peak memory on this device
+/// Time through the first PDFKit page draw and peak memory on this device
 /// (`scripts/ios/ios-docx-measure.sh` runs it once per document, so each
 /// peak is its own). Measurement only: it runs only when `MDOC_DOCX_MEASURE`
 /// names a document of the corpus (`TEST_RUNNER_MDOC_DOCX_MEASURE` through
 /// xcodebuild). The first run includes the bundled fonts' one scan.
+@MainActor
 final class DocxOriginalMeasureTests: XCTestCase {
-    func testRender() throws {
+    func testRender() async throws {
         let environment = ProcessInfo.processInfo.environment
         let name = environment["MDOC_DOCX_MEASURE"] ?? ""
         try XCTSkipIf(name.isEmpty, "DOCX measurement not requested")
@@ -25,27 +25,39 @@ final class DocxOriginalMeasureTests: XCTestCase {
                 .appendingPathComponent(environment["MDOC_DOCX_MEASURE_TAG"] ?? "untagged", isDirectory: true)
         let source = corpus.appendingPathComponent(name)
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path), "no \(source.path)")
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
 
         var rows: [String] = []
         for run in 1...runs {
             let sampler = FootprintSampler()
-            let started = Date()
-            let original = try DocxOriginal.render(source: source.path, folder: folder.path, marks: CommentMarks())
-            let seconds = Date().timeIntervalSince(started)
-            let (start, peak) = sampler.stop()
-            let pages = PDFDocument(url: URL(fileURLWithPath: original.pdfPath()))?.pageCount ?? 0
-            let row = [
-                name, String(run), String(pages), String(original.comments().count), String(original.anchors().count),
-                String(format: "%.3f", seconds), String(peak), String(start), String(FootprintSampler.lifetimePeak()),
-            ].joined(separator: "\t")
+            defer { _ = sampler.stop() }
+            let clock = ContinuousClock()
+            let started = clock.now
+            let result = await RenderedDocx.render(source).rendering
+            guard case .ready(let rendered) = result else {
+                XCTFail("The Original did not render: \(result)")
+                return
+            }
+            let row = try autoreleasepool {
+                let view = CommentedPDFContainer(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+                view.load(rendered)
+                let document = try XCTUnwrap(view.pdfView.document)
+                let page = try XCTUnwrap(document.page(at: 0))
+                _ = page.thumbnail(of: CGSize(width: 390, height: 600), for: .cropBox)
+                let elapsed = started.duration(to: clock.now).components
+                let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+                let (start, peak) = sampler.stop()
+                return [
+                    name, String(run), String(document.pageCount), String(rendered.comments.all.count),
+                    String(rendered.comments.markers.reduce(0) { $0 + $1.threads.count }),
+                    String(format: "%.6f", seconds), String(peak), String(start),
+                    String(FootprintSampler.lifetimePeak()),
+                ].joined(separator: "\t")
+            }
             print("DOCX-MEASURE\t\(row)")
             rows.append(row)
         }
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        let header = "document\trun\tpages\tcomments\tanchors\tseconds\tpeak_footprint\tstart_footprint\tlifetime_peak"
+        let header = "document\trun\tpages\tcomments\tplaced_threads\tseconds\tpeak_footprint\tstart_footprint\tlifetime_peak"
         try ([header] + rows).joined(separator: "\n").appending("\n").write(
             to: output.appendingPathComponent("\(name).tsv"), atomically: true, encoding: .utf8)
     }

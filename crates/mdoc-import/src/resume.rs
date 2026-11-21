@@ -323,7 +323,6 @@ pub fn prepare_resumable(
             is_pdf: true,
             is_docx: false,
             is_image: image,
-            decrypted: false,
         },
         folder.map(|_| Completed {
             kept: kept.clone(),

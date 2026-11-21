@@ -109,7 +109,9 @@ final class AppModel {
         let storage = try CoreFactory.appStorage(launch)
         try storage.prepare()
         storage.clear(.handOff)
-        RenderedDocx.removeLeftovers()
+        // Remove PDFs left by versions that rendered DOCX Originals to disk.
+        try? FileManager.default.removeItem(
+            at: FileManager.default.temporaryDirectory.appendingPathComponent("originals", isDirectory: true))
         return (storage, try CoreFactory.appCore(storage: storage, launch))
     }
 

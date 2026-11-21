@@ -62,6 +62,23 @@ final class DocumentViewModel {
     /// The rendered original's comments once the Original has shown: the
     /// title menu's Show comments and "Not on the page (N)".
     var originalComments: DocxComments?
+    private enum OriginalUnlock {
+        case pdf(PDFDocument)
+        case docx(UnlockedDocx)
+    }
+
+    /// The unlocked Original lives in memory until the document closes.
+    private var originalUnlock: OriginalUnlock?
+    @ObservationIgnored private var originalUnlockGeneration = 0
+
+    var unlockedOriginal: PDFDocument? {
+        if case .pdf(let document) = originalUnlock { document } else { nil }
+    }
+
+    var unlockedDocx: UnlockedDocx? {
+        if case .docx(let source) = originalUnlock { source } else { nil }
+    }
+
     /// The comment sheet, at a thread of the original's comments; nil
     /// while closed.
     var commentSheet: CommentSheetState?
@@ -138,20 +155,10 @@ final class DocumentViewModel {
         snapshot.phase == nil && !snapshot.kind.needsRecognition && runningJob == nil
     }
 
-    /// A locked DOCX or PDF waits for its password: the password card shows
-    /// in place of the action bar until Unlock imports it.
+    /// A locked DOCX or PDF waits for its password in the visible pane.
     private(set) var passwordPrompt: PasswordPrompt?
 
-    /// A locked PDF's Original, unlocked in memory by the password that
-    /// imported it, or by the one typed on the Original's own card once the
-    /// document opens again. It lives as long as this model and is never
-    /// saved, and the password is not kept (#1024 decision 6).
-    private(set) var unlockedOriginal: PDFDocument?
-    /// Counts `closeOriginal`: an import that began before the document
-    /// was left doesn't unlock its Original when it ends.
-    @ObservationIgnored private var originalCloses = 0
-
-    enum PasswordPrompt: Equatable {
+    enum PasswordPrompt: Equatable, Sendable {
         case needed
         /// The last password didn't unlock it.
         case wrong
@@ -252,22 +259,48 @@ final class DocumentViewModel {
               let document = PDFDocument(data: data),
               document.isLocked, document.unlock(withPassword: password)
         else { return false }
-        unlockedOriginal = document
+        originalUnlock = .pdf(document)
         return true
     }
 
-    /// The document left the screen: a locked PDF's Original locks again,
-    /// so it asks for the password once the document opens again
-    /// (#1024 decision 6), even while this model stays for a job's notice.
+    /// The Original asks again on reopening, even if this model stayed for
+    /// a job's notice. Work started by the closed screen cannot restore it.
     func closeOriginal() {
-        unlockedOriginal = nil
-        originalCloses += 1
+        originalUnlock = nil
+        originalUnlockGeneration += 1
+    }
+
+    var importUnlockAction: @MainActor (String) async -> Void {
+        let generation = originalUnlockGeneration
+        return { password in
+            guard self.originalUnlockGeneration == generation else { return }
+            await self.unlock(password: password)
+        }
+    }
+
+    var pdfUnlockAction: @MainActor (String) -> Bool {
+        let generation = originalUnlockGeneration
+        return { password in
+            self.originalUnlockGeneration == generation && self.unlockOriginal(password: password)
+        }
+    }
+
+    /// An Original finishing after its document closed cannot restore the unlock.
+    var docxUnlockBinding: Binding<UnlockedDocx?> {
+        let generation = originalUnlockGeneration
+        return Binding(
+            get: { self.originalUnlockGeneration == generation ? self.unlockedDocx : nil },
+            set: { source in
+                if self.originalUnlockGeneration == generation {
+                    self.originalUnlock = source.map(OriginalUnlock.docx)
+                }
+            })
     }
 
     private func recognize(password: String?) async {
         waitingForSetup = nil
-        let closes = originalCloses
         let session = session
+        let generation = originalUnlockGeneration
         let outcome = await jobs.run(.recognize, documentID: id, title: Self.recognizeTaskTitle) { observer in
             try session.recognize(observer: observer, password: password)
         }
@@ -287,8 +320,13 @@ final class DocumentViewModel {
             return
         case .finished:
             passwordPrompt = nil
-            if let password, closes == originalCloses {
-                unlockOriginal(password: password)
+            let docx = session.takeUnlockedDocx()
+            if generation == originalUnlockGeneration {
+                if let docx {
+                    originalUnlock = .docx(docx)
+                } else if let password {
+                    unlockOriginal(password: password)
+                }
             }
         case .cancelled, .failed, .busy:
             break

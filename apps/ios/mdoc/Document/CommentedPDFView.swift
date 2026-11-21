@@ -9,8 +9,7 @@ import UIKit
 /// pane). Marks are never links: the core's `mdoc-comment:` links come off
 /// the shown page, and a real link under a comment keeps its target.
 struct CommentedPDFView: UIViewRepresentable {
-    let url: URL
-    let comments: DocxComments
+    let rendered: RenderedDocx
     let showsComments: Bool
     let rail: Bool
     /// The comment whose passage is strengthened: the open sheet's or the
@@ -25,15 +24,15 @@ struct CommentedPDFView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> CommentedPDFContainer {
         let view = CommentedPDFContainer()
-        view.load(url: url, comments: comments)
+        view.load(rendered)
         view.pdfView.onControl = { [weak viewport] in viewport?.report($0) }
         viewport.attach { [weak view] in view?.pdfView.perform($0) }
         return view
     }
 
     func updateUIView(_ view: CommentedPDFContainer, context: Context) {
-        if view.url != url {
-            view.load(url: url, comments: comments)
+        if view.renderID != rendered.id {
+            view.load(rendered)
         }
         view.onMarker = onMarker
         view.onCard = onCard
@@ -79,7 +78,7 @@ final class CommentedPDFContainer: UIView {
     let pdfView = FittingPDFView()
     private let overlay = PassthroughView()
     private let railView = PassthroughView()
-    private(set) var url: URL?
+    private(set) var renderID: UUID?
     private var comments = DocxComments(comments: [], anchors: [])
     private var showsComments = true
     private var rail = false
@@ -132,15 +131,15 @@ final class CommentedPDFContainer: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    func load(url: URL, comments: DocxComments) {
-        self.url = url
-        self.comments = comments
+    func load(_ rendered: RenderedDocx) {
+        renderID = rendered.id
+        comments = rendered.comments
         tints = [:]
         underlines = []
         textRights = [:]
         lineElements = nil
         readingOrder = nil
-        let document = PDFDocument(url: url)
+        let document = PDFDocument(data: rendered.pdf)
         if let document {
             Self.removeMarks(from: document)
         }

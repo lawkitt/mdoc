@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-docx-measure.sh <hardware UDID | Simulator name> OUTPUT
-# The DOCX original's render time and peak memory on a phone or a Simulator:
+# Time through the DOCX Original's first PDFKit draw and peak memory:
 # DocxOriginalMeasureTests renders legal-opinion.docx, coverage.docx and a
 # synthetic 100-page contract (tests/fixtures/docx-preview/long.py) in
 # process, MDOC_DOCX_MEASURE_RUNS times each (3 by default), in one test

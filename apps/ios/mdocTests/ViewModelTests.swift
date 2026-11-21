@@ -257,7 +257,7 @@ final class DocumentViewModelTests: XCTestCase {
         let model = try imported(
             {
                 storage = $0
-                return try .file(Fixture.copy("tests/fixtures/locked-office/word-locked.docx", into: $0), .docx)
+                return try .file(Fixture.copy("tests/fixtures/locked-office/comments-locked.docx", into: $0), .docx)
             },
             title: "Locked")
         await model.recognize()
@@ -272,10 +272,43 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(model.snapshot.phase, .unscanned)
         XCTAssertFalse(model.snapshot.markdown.isEmpty)
+        let unlocked = try XCTUnwrap(model.unlockedDocx)
+        // This URL has no file. Rendering the open document must use its
+        // import's unlock, and the PDFKit page must have text.
+        let missing = try XCTUnwrap(storage).root.appendingPathComponent("missing.docx")
+        let files = FileManager.default
+        func temporaryEntries() throws -> Set<String> {
+            let entries = try XCTUnwrap(files.enumerator(atPath: files.temporaryDirectory.path))
+            return Set(entries.compactMap { $0 as? String })
+        }
+        let before = try temporaryEntries()
+        let result = await RenderedDocx.render(missing, unlocked: unlocked)
+        XCTAssertEqual(try temporaryEntries(), before)
+        XCTAssertNil(result.unlocked)
+        guard case .ready(let original) = result.rendering else {
+            return XCTFail("The unlocked document should render its Original")
+        }
+        let page = try XCTUnwrap(PDFDocument(data: original.pdf)?.page(at: 0))
+        XCTAssertFalse(try XCTUnwrap(page.string).isEmpty)
+        XCTAssertNotNil(original.comments.marker(of: "0"))
+        let closedPane = model.docxUnlockBinding
+        model.closeOriginal()
+        closedPane.wrappedValue = unlocked
+        XCTAssertNil(model.unlockedDocx)
+        guard case .docx(let source) = model.snapshot.original,
+              case .password(.needed) = await RenderedDocx.render(source).rendering else {
+            return XCTFail("Reopening the Original should ask for the password again")
+        }
+        let reopened = await RenderedDocx.render(source, password: "Petrov-2026")
+        guard case .ready = reopened.rendering else {
+            return XCTFail("The Original should render after unlocking from its card")
+        }
+        XCTAssertNotNil(reopened.unlocked)
+        XCTAssertEqual(try temporaryEntries(), before)
         let root = try XCTUnwrap(storage).root
-        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+        let savedFiles = files.enumerator(at: root, includingPropertiesForKeys: nil)?
             .compactMap { $0 as? URL } ?? []
-        for file in files where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+        for file in savedFiles where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
             let bytes = try Data(contentsOf: file)
             XCTAssertNil(bytes.range(of: Data("Petrov-2026".utf8)), file.lastPathComponent)
         }
@@ -287,6 +320,7 @@ final class DocumentViewModelTests: XCTestCase {
     /// it, drawing its page with nothing written to the temporary folder.
     /// The password is in none of the app's files afterwards.
     func testALockedPdfAsksForItsPasswordUntilItUnlocks() async throws {
+        let password = "Petrov-2026"
         var storage: MdocStorage?
         let model = try imported(
             {
@@ -301,7 +335,7 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(model.passwordPrompt, .wrong)
         XCTAssertNil(model.errorMessage)
         XCTAssertNil(model.unlockedOriginal)
-        await model.unlock(password: "Petrov-2026")
+        await model.unlock(password: password)
         XCTAssertNil(model.passwordPrompt)
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(model.snapshot.phase, .unscanned)
@@ -309,7 +343,9 @@ final class DocumentViewModelTests: XCTestCase {
         let original = try XCTUnwrap(model.unlockedOriginal)
         XCTAssertFalse(original.isLocked)
         XCTAssertGreaterThan(original.pageCount, 0)
+        let closedPane = model.pdfUnlockAction
         model.closeOriginal()
+        XCTAssertFalse(closedPane(password))
         XCTAssertNil(model.unlockedOriginal)
         let reopened = DocumentViewModel(
             session: model.session, jobs: LongJobRunner(background: NoBackgroundContinuation()),
@@ -319,7 +355,7 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(reopened.unlockedOriginal)
         let temporary = FileManager.default.temporaryDirectory
         let before = Self.files(under: temporary)
-        XCTAssertTrue(reopened.unlockOriginal(password: "Petrov-2026"))
+        XCTAssertTrue(reopened.pdfUnlockAction(password))
         let page = try XCTUnwrap(reopened.unlockedOriginal?.page(at: 0))
         XCTAssertGreaterThan(page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox).size.width, 0)
         XCTAssertEqual(Self.files(under: temporary), before)
@@ -328,7 +364,7 @@ final class DocumentViewModelTests: XCTestCase {
             .compactMap { $0 as? URL } ?? []
         for file in files where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
             let bytes = try Data(contentsOf: file)
-            XCTAssertNil(bytes.range(of: Data("Petrov-2026".utf8)), file.lastPathComponent)
+            XCTAssertNil(bytes.range(of: Data(password.utf8)), file.lastPathComponent)
         }
     }
 
