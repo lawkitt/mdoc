@@ -4709,6 +4709,7 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 2.0.21",
+ "tiff",
  "ureq",
  "url",
  "windows-sys 0.61.2",

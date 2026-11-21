@@ -212,7 +212,58 @@ fn photo(d: &mut Driver) -> Result<()> {
         d.settle()?;
         d.capture(name)?;
     }
-    Ok(())
+    fax(d)
+}
+
+/// A three-page Group 3 fax (#1024 item 8): its Original shows the pages
+/// as the fax coded them, passed through, turned to page 2 of 3, the
+/// Russian page. No OCR runs here: the Markdown stands in for what it
+/// would read.
+fn fax(d: &mut Driver) -> Result<()> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tiff/fax-g3-1d.tif");
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let built = mdoc_import::image_pdf::build(&[&bytes], mdoc_import::image_pdf::DEFAULT_DPI)
+        .map_err(|e| e.to_string())?;
+    let imported = mdoc_import::import::Imported {
+        ocr_configuration: None,
+        source: mdoc_import::import::Source::new(
+            PathBuf::from("Supply agreement.tif"),
+            None,
+            built.pdf,
+        ),
+        markdown: "# SUPPLY AGREEMENT No. 17/26\n\nDate: 3 March 2026\n\n\
+                   # ДОГОВОР ПОСТАВКИ № 17/26\n\nг. Казань, 3 марта 2026 г.\n\n\
+                   # SIGNATURES\n"
+            .into(),
+        warning: None,
+        left_out: Default::default(),
+        comments: Vec::new(),
+        annotations: Vec::new(),
+        is_pdf: true,
+        is_docx: false,
+        is_image: true,
+        decrypted: false,
+    };
+    let view = d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        let view = w.active_view().unwrap();
+        view.update(cx, |v, cx| {
+            v.preview.set_split(0.5);
+            v.proceed(
+                crate::document_view::Next::Import(Box::new(imported)),
+                window,
+                cx,
+            );
+            cx.notify();
+        });
+        view
+    })?;
+    d.settle()?;
+    let pdf = d.change(|_, _, cx| view.read(cx).preview.pdf().cloned())?;
+    let pdf = pdf.ok_or("the fax's Original loads")?;
+    d.change(|_, _, cx| pdf.update(cx, |pdf, cx| pdf.go_to_page(1, cx)))?;
+    d.settle()?;
+    d.capture("import-fax")
 }
 
 /// A page photographed sideways: a white sheet with a heading bar and

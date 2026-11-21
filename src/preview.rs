@@ -1144,6 +1144,43 @@ pub(crate) mod tests {
         [&jpeg[..2], &segment, &jpeg[2..]].concat()
     }
 
+    /// The Original draws a fax TIFF's pages as their CCITT streams code
+    /// them: each Group 4 page, passed through, matches its decoded twin,
+    /// the same page stored decoded (`fax-g4-strips.tif`, whose strips the
+    /// import decodes; mdoc-import checks those are the `tiff` crate's
+    /// bits). Every page of a fax-normal Group 3 fax keeps its sheet's size.
+    #[test]
+    fn the_original_draws_fax_pages_like_their_decoded_twins() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tiff");
+        let document = |name: &str| {
+            let bytes = std::fs::read(dir.join(name)).unwrap();
+            gpui_pdf::parse(Arc::new(image_pdf::build(&[&bytes], 150).unwrap().pdf)).unwrap()
+        };
+        let (coded, decoded) = (document("fax-g4.tif"), document("fax-g4-strips.tif"));
+        for page in 0..2 {
+            let (width, height, drawn) = gpui_pdf::page_luma(&coded, page, 150. / 72.).unwrap();
+            let twin = gpui_pdf::page_luma(&decoded, page, 150. / 72.).unwrap();
+            // 150 dpi, give or take a row of rounding.
+            assert!(width.abs_diff(1275) <= 1 && height.abs_diff(1650) <= 1);
+            assert_eq!((twin.0, twin.1), (width, height));
+            let wrong = drawn
+                .iter()
+                .zip(&twin.2)
+                .filter(|(a, b)| (**a >= 128) != (**b >= 128))
+                .count();
+            assert!(
+                wrong < 2550 * 3300 / 500,
+                "page {}: {wrong} pixels differ",
+                page + 1
+            );
+            let black = drawn.iter().filter(|value| **value < 128).count();
+            assert!(black > 3_000, "page {}: {black} black pixels", page + 1);
+        }
+        for (width, height) in gpui_pdf::page_dims(&document("fax-g3-2d-normal-lsb.tif")) {
+            assert!((width - 609.88).abs() < 0.1 && (height - 808.16).abs() < 0.1);
+        }
+    }
+
     /// The Original draws every EXIF orientation upright: rendered by the
     /// pane's own renderer, the stored corners land where a viewer shows
     /// them, and a quarter turn makes the page tall.
