@@ -162,8 +162,15 @@ impl Writer {
     }
 }
 
-/// A PDF of `pages` at once, as [`Writer`] makes it: for tests.
-#[cfg(test)]
+/// A PDF of `pages` at once, as [`Writer`] makes it: for the TIFF
+/// qualification, on the targets OCR supports.
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64")
+    )
+))]
 pub(super) fn write(pages: &[Page], dpi: u16) -> Vec<u8> {
     let mut writer = Writer::new(dpi, usize::MAX).expect("no limit");
     for page in pages {
