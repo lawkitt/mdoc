@@ -97,11 +97,6 @@ struct SettingsView: View {
             }
             .pickerStyle(.menu)
             .accessibilityIdentifier("settings-document-font")
-            // The source as Copy for AI sends it, markers dimmed (ADR 0096).
-            Toggle(isOn: $preferences.showsSource) {
-                SettingsLabel("Show Markdown", systemImage: "number", color: .blue)
-            }
-            .accessibilityIdentifier("settings-show-markdown")
         }
     }
 

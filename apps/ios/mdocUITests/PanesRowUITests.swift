@@ -47,6 +47,13 @@ final class PanesRowUITests: XCTestCase {
             // 43359359817); the wait returns as soon as the segment is on.
             XCTAssertTrue(original.wait(until: NSPredicate(format: "isSelected == true"), timeout: 15))
             XCTAssertTrue(picker.exists, "the row stays over the Original")
+            // Over the Original, Show Markdown is not the page's; Dark page
+            // only while the app is dark (#1036).
+            title.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+            XCTAssertFalse(app.descendants(matching: .any)["show-markdown"].firstMatch.exists)
+            XCTAssertFalse(app.descendants(matching: .any)["dark-page"].firstMatch.exists)
+            dismissMenu(app)
             picker.buttons["Text"].tap()
         }
 
