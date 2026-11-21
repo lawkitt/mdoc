@@ -175,7 +175,6 @@ pub(super) fn unlocked(d: &mut Driver) -> Result<()> {
 /// password, the Original pointing to it; then a reopened tab's Original
 /// asking on its own card, and after a wrong password.
 pub(super) fn locked(d: &mut Driver) -> Result<()> {
-    d.resize(1500., 900.)?;
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/pdf-source/comments-aes256.pdf");
     for (name, wrong) in [
