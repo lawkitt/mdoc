@@ -365,15 +365,6 @@ green and ride the next RC. Every item that touches opening, importing or
 the preview posts before-and-after `just perf` numbers; a regression goes
 to the maintainer, never a raised ceiling.
 
-1. **[Import] A tab keeps its unlock in memory.** *From #1024.* The
-   unlocked bytes (Office) or the password (PDF) live as long as the tab,
-   wiped on close, never in the session, so OCR, reloads and the
-   hidden-text toggle don't ask again; reopening asks. *Done when:* tests
-   show each of those reuses the unlock and none persists it.
-2. **[Desktop] gpui-pdf opens a PDF from bytes, with a password.** *From
-   #1024.* Form fields and the display fix-up read encrypted files, and
-   comment annotations stay hidden on them. *Done when:* an encrypted
-   fixture renders like its open twin, light and dark.
 3. **[Desktop] Every DOCX renders in memory.** *From #1024.* The worker
    takes bytes on stdin and returns the PDF and anchors on stdout; the path
    functions go, and an unlocked DOCX shows its Original. *Blocked by:*
@@ -837,6 +828,11 @@ Android takes what applies. Its clipboard finding is
 - **Dev-build profile override:** debug builds read `MDOC_PROFILE_DIR`, so GUI
   checks run on a scratch profile instead of moving the user's
   `session.json` and `recents.json` aside. *From the 0.3.0 away hub.*
+- **`build.rs` declares what it reads:** it prints no `rerun-if-changed`, so
+  cargo reruns it, and rebuilds the `mdoc` crate, whenever any file under the
+  repository root changes (a log, a render, a scratch file). One `just perf`
+  run spent about 2 hours rebuilding. Declare `build.rs`, `resources/icon.rc`
+  and the icon it names. *From the #1024 Mac hub.*
 
 ## Deferred
 
