@@ -333,13 +333,22 @@ fn fax(d: &mut Driver) -> Result<()> {
     heic(d)
 }
 
-/// A HEIC photo of a page stored sideways (EXIF orientation 6), decoded by
-/// the platform (ImageIO on the hosted Mac, WIC elsewhere): the Original
-/// shows it upright. Then the card a Windows PC without Microsoft's HEIF and
-/// HEVC extensions gets. No OCR runs here: the Markdown stands in.
+/// A HEIC photo of a page stored sideways (EXIF orientation 6): the
+/// Original shows it upright. On the hosted Mac ImageIO decodes the HEIC,
+/// as an import does. Windows runners have neither HEIF nor HEVC
+/// extension, so the Windows render shows the upright JPEG a WIC import
+/// stores for the same photo (`page-orientation-6-decoded.jpg`, see the
+/// fixtures' README). Then the card a Windows PC without the extensions
+/// gets. No OCR runs here: the Markdown stands in.
 fn heic(d: &mut Driver) -> Result<()> {
+    let name = if cfg!(target_os = "macos") {
+        "page-orientation-6.heic"
+    } else {
+        "page-orientation-6-decoded.jpg"
+    };
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/heic/page-orientation-6.heic");
+        .join("tests/fixtures/heic")
+        .join(name);
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     let built = mdoc_import::image_pdf::build(&[&bytes], mdoc_import::image_pdf::DEFAULT_DPI)
         .map_err(|e| e.to_string())?;

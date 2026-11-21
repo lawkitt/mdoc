@@ -1,7 +1,9 @@
-//! HEIC on macOS: ImageIO decodes the photo and applies its orientation
-//! (`kCGImageSourceCreateThumbnailWithTransform`, at full size), and
-//! CoreGraphics draws it into an 8-bit RGB bitmap on white. Only pixels
-//! leave this module.
+//! HEIC on macOS: ImageIO decodes the file's primary image and applies its
+//! orientation (`kCGImageSourceCreateThumbnailWithTransform`, at full
+//! size), and CoreGraphics draws it into an 8-bit RGB bitmap on white.
+//! The image's size is read from its properties first and held to the
+//! builder's limits, and the decode is bounded to it. Only pixels leave
+//! this module.
 #![allow(unsafe_code)] // ImageIO, CoreGraphics and CoreFoundation calls (#897).
 
 use super::{ImageError, OsDecoded, OsDecoder};
@@ -33,14 +35,29 @@ unsafe extern "C" {
         value_callbacks: *const c_void,
     ) -> CFTypeRef;
     fn CFRelease(value: CFTypeRef);
+    fn CFDictionaryGetValue(dictionary: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
+    fn CFNumberCreate(allocator: CFTypeRef, kind: CFIndex, value: *const c_void) -> CFTypeRef;
+    fn CFNumberGetValue(number: CFTypeRef, kind: CFIndex, value: *mut c_void) -> u8;
 }
+
+/// `kCFNumberSInt64Type`.
+const SINT64: CFIndex = 4;
 
 #[link(name = "ImageIO", kind = "framework")]
 unsafe extern "C" {
     static kCGImageSourceCreateThumbnailFromImageAlways: CFTypeRef;
     static kCGImageSourceCreateThumbnailWithTransform: CFTypeRef;
+    static kCGImageSourceThumbnailMaxPixelSize: CFTypeRef;
+    static kCGImagePropertyPixelWidth: CFTypeRef;
+    static kCGImagePropertyPixelHeight: CFTypeRef;
     fn CGImageSourceCreateWithData(data: CFTypeRef, options: CFTypeRef) -> CFTypeRef;
     fn CGImageSourceGetCount(source: CFTypeRef) -> usize;
+    fn CGImageSourceGetPrimaryImageIndex(source: CFTypeRef) -> usize;
+    fn CGImageSourceCopyPropertiesAtIndex(
+        source: CFTypeRef,
+        index: usize,
+        options: CFTypeRef,
+    ) -> CFTypeRef;
     fn CGImageSourceCreateThumbnailAtIndex(
         source: CFTypeRef,
         index: usize,
@@ -94,32 +111,75 @@ pub(super) struct Decoder;
 impl OsDecoder for Decoder {
     fn decode_heic(&self, bytes: &[u8]) -> Result<OsDecoded, ImageError> {
         let length = CFIndex::try_from(bytes.len()).map_err(|_| ImageError::TooLarge)?;
-        // SAFETY: every Create call's result is checked for null and
-        // released by `Owned`; the option keys and values are ImageIO's and
-        // CoreFoundation's own constants; the bitmap context draws into
-        // `pixels`, which outlives it and is exactly `height` rows of
-        // `width * 4` bytes.
+        // SAFETY: every Create and Copy call's result is checked for null
+        // and released by `Owned`; the option keys and values are ImageIO's
+        // and CoreFoundation's own constants or numbers made here; the
+        // dictionary's values are read only while `properties` holds them,
+        // and a number is read into an i64 as kCFNumberSInt64Type; the
+        // bitmap context draws into `pixels`, which outlives it and is
+        // exactly `height` rows of `width * 4` bytes.
         unsafe {
             let data = Owned::new(CFDataCreate(std::ptr::null(), bytes.as_ptr(), length))?;
             let source = Owned::new(CGImageSourceCreateWithData(data.0, std::ptr::null()))?;
-            if CGImageSourceGetCount(source.0) == 0 {
+            // The image the file names primary, which need not be its
+            // first.
+            let index = CGImageSourceGetPrimaryImageIndex(source.0);
+            if index >= CGImageSourceGetCount(source.0) {
                 return Err(ImageError::Unreadable);
             }
-            // The whole image, never an embedded preview, turned upright.
+            // Its size as stored, from its properties, before any pixel is
+            // decoded: a small file can claim a huge image.
+            let properties = Owned::new(CGImageSourceCopyPropertiesAtIndex(
+                source.0,
+                index,
+                std::ptr::null(),
+            ))?;
+            let side = |key: CFTypeRef| -> Option<u32> {
+                let number = CFDictionaryGetValue(properties.0, key);
+                if number.is_null() {
+                    return None;
+                }
+                let mut value = 0i64;
+                (CFNumberGetValue(number, SINT64, (&raw mut value).cast()) != 0)
+                    .then_some(value)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .filter(|&value| value > 0)
+            };
+            let (stored_width, stored_height) = (
+                side(kCGImagePropertyPixelWidth).ok_or(ImageError::Unreadable)?,
+                side(kCGImagePropertyPixelHeight).ok_or(ImageError::Unreadable)?,
+            );
+            if stored_width > super::MAX_DIMENSION
+                || stored_height > super::MAX_DIMENSION
+                || u64::from(stored_width) * u64::from(stored_height) * 4 > super::MAX_ALLOC
+            {
+                return Err(ImageError::TooLarge);
+            }
+            // The whole image, never an embedded preview, turned upright,
+            // and no larger than it is stored.
+            let longest = i64::from(stored_width.max(stored_height));
+            let longest = Owned::new(CFNumberCreate(
+                std::ptr::null(),
+                SINT64,
+                (&raw const longest).cast(),
+            ))?;
             let keys = [
                 kCGImageSourceCreateThumbnailFromImageAlways,
                 kCGImageSourceCreateThumbnailWithTransform,
+                kCGImageSourceThumbnailMaxPixelSize,
             ];
-            let values = [kCFBooleanTrue, kCFBooleanTrue];
+            let values = [kCFBooleanTrue, kCFBooleanTrue, longest.0];
             let options = Owned::new(CFDictionaryCreate(
                 std::ptr::null(),
                 keys.as_ptr(),
                 values.as_ptr(),
-                2,
+                3,
                 &raw const kCFTypeDictionaryKeyCallBacks,
                 &raw const kCFTypeDictionaryValueCallBacks,
             ))?;
-            let image = Owned::new(CGImageSourceCreateThumbnailAtIndex(source.0, 0, options.0))?;
+            let image = Owned::new(CGImageSourceCreateThumbnailAtIndex(
+                source.0, index, options.0,
+            ))?;
             let (width, height) = (CGImageGetWidth(image.0), CGImageGetHeight(image.0));
             if width == 0 || height == 0 {
                 return Err(ImageError::Unreadable);
@@ -160,7 +220,7 @@ impl OsDecoder for Decoder {
             let image =
                 image::RgbImage::from_raw(width, height, rgb).ok_or(ImageError::Unreadable)?;
             Ok(OsDecoded {
-                image,
+                image: image::DynamicImage::ImageRgb8(image),
                 orientation: 1,
             })
         }

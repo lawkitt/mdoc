@@ -47,7 +47,7 @@ impl OsDecoder for Stub {
     fn decode_heic(&self, bytes: &[u8]) -> Result<OsDecoded, ImageError> {
         assert!(is_heic(bytes));
         Ok(OsDecoded {
-            image: page(self.width, self.height),
+            image: image::DynamicImage::ImageRgb8(page(self.width, self.height)),
             orientation: self.orientation,
         })
     }
@@ -112,10 +112,12 @@ fn an_upright_heic_imports_as_one_photo_page() {
 }
 
 /// A decoder that gives the pixels as stored with orientation 6 (WIC):
-/// the page turns, the stored 1600 × 1200 pixels show as a 1200 × 1600
-/// page.
+/// the pixels are turned before they are encoded (decision 13), so the
+/// JPEG itself is upright, 1200 × 1600, drawn by a plain matrix, and the
+/// red block stored top-left shows top-right, as a quarter turn clockwise
+/// puts it.
 #[test]
-fn an_oriented_heic_is_turned_by_the_page() {
+fn an_oriented_heic_is_stored_as_an_upright_jpeg() {
     let stub = Stub {
         width: 1600,
         height: 1200,
@@ -125,9 +127,178 @@ fn an_oriented_heic_is_turned_by_the_page() {
         let built = build(&[&read("page-orientation-6.heic")], 72).unwrap();
         let pdf = text(&built.pdf);
         assert!(pdf.contains("/MediaBox [0 0 1200 1600]"), "{pdf}");
-        assert!(pdf.contains("/Width 1600 /Height 1200"), "{pdf}");
-        assert!(pdf.contains("q 0 -1600 1200 0 0 1600 cm"), "{pdf}");
+        assert!(pdf.contains("/Width 1200 /Height 1600"), "{pdf}");
+        assert!(pdf.contains("q 1200 0 0 1600 0 0 cm"), "{pdf}");
+        let jpeg = jpeg_in(&built.pdf);
+        let image = image::load_from_memory(jpeg).unwrap().into_rgb8();
+        assert_eq!(image.dimensions(), (1200, 1600));
+        let red = |pixel: &image::Rgb<u8>| pixel[0] > 170 && pixel[1] < 100 && pixel[2] < 100;
+        assert!(red(image.get_pixel(1150, 50)), "top-right");
+        assert!(!red(image.get_pixel(50, 50)), "not top-left");
     });
+}
+
+/// The JPEG stream of a built one-page PDF.
+fn jpeg_in(pdf: &[u8]) -> &[u8] {
+    let start = pdf.windows(2).position(|w| w == [0xff, 0xd8]).unwrap();
+    let end = start
+        + pdf[start..]
+            .windows(2)
+            .position(|w| w == [0xff, 0xd9])
+            .unwrap()
+        + 2;
+    &pdf[start..end]
+}
+
+/// A decoder that gives a photo with an alpha plane: transparent black on
+/// the left half, half-transparent black on the next quarter, opaque red
+/// on the last.
+struct Transparent;
+
+impl OsDecoder for Transparent {
+    fn decode_heic(&self, _: &[u8]) -> Result<OsDecoded, ImageError> {
+        Ok(OsDecoded {
+            image: image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(64, 64, |x, _| {
+                image::Rgba(transparent_pixel(x))
+            })),
+            orientation: 1,
+        })
+    }
+}
+
+/// The pixel `transparent.heic` holds in column `x` (its README).
+fn transparent_pixel(x: u32) -> [u8; 4] {
+    match x {
+        0..32 => [0, 0, 0, 0],
+        32..48 => [0, 0, 0, 128],
+        _ => [220, 30, 30, 255],
+    }
+}
+
+/// How column `x` of the stored page shows, put on white.
+fn on_white(x: u32) -> [u8; 3] {
+    match x {
+        0..32 => [255, 255, 255],
+        32..48 => [127, 127, 127],
+        _ => [220, 30, 30],
+    }
+}
+
+/// Transparency goes on white: what lies under a transparent pixel never
+/// shows.
+#[test]
+fn a_transparent_heic_goes_on_white() {
+    with_decoder(Transparent, || {
+        let built = build(&[&read("transparent.heic")], DEFAULT_DPI).unwrap();
+        let image = image::load_from_memory(jpeg_in(&built.pdf))
+            .unwrap()
+            .into_rgb8();
+        for x in [8, 40, 56] {
+            let stored = image.get_pixel(x, 32).0;
+            let expected = on_white(x);
+            assert!(
+                stored
+                    .iter()
+                    .zip(expected)
+                    .all(|(a, b)| a.abs_diff(b) <= 12),
+                "{x}: {stored:?}"
+            );
+        }
+    });
+}
+
+/// The alpha plane is found by its auxiliary type: `transparent.heic`'s item
+/// 2 is the primary's alpha; the same item typed as depth (as phones store
+/// depth maps) is not, nor is anything in an opaque photo. Naming it
+/// primary in a copy changes only the `pitm` box.
+#[test]
+fn the_alpha_plane_is_found_by_its_auxiliary_type() {
+    use super::{alpha_item, with_primary};
+    let bytes = read("transparent.heic");
+    assert_eq!(alpha_item(&bytes), Some(2));
+    let depth = bytes
+        .windows(7)
+        .position(|window| window == b"auxid:1")
+        .map(|at| {
+            let mut depth = bytes.clone();
+            depth[at + 6] = b'2';
+            depth
+        })
+        .unwrap();
+    assert_eq!(alpha_item(&depth), None);
+    for name in FIXTURES.into_iter().chain(["two-images.heic"]) {
+        assert_eq!(alpha_item(&read(name)), None, "{name}");
+    }
+    let copy = with_primary(&bytes, 2).unwrap();
+    let changed: Vec<usize> = (0..bytes.len())
+        .filter(|&at| bytes[at] != copy[at])
+        .collect();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(copy[changed[0]], 2);
+}
+
+/// A HEIF of the generic brand `mif1` is HEIC when its primary item is
+/// HEVC-coded, and imports through the decoder at the import seam; one
+/// whose items are AV1 (AVIF) is not.
+#[test]
+fn a_generic_heif_is_known_by_its_primary_item() {
+    let heif = generic_heif(*b"hvc1");
+    assert!(is_heic(&heif));
+    assert_eq!(ImageFormat::from_bytes(&heif), Some(ImageFormat::Heic));
+    assert_eq!(ImageFormat::from_bytes(&generic_heif(*b"av01")), None);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("photo.heif");
+    std::fs::write(&path, &heif).unwrap();
+    let stub = Stub {
+        width: 120,
+        height: 160,
+        orientation: 1,
+    };
+    with_decoder(stub, || match crate::import::prepare(&path, None, false) {
+        Err(crate::import::ImportError::NeedsOcr(_, pages, _, count)) => {
+            assert_eq!((pages, count), (vec![1], 1));
+        }
+        other => panic!("{other:?}"),
+    });
+}
+
+/// A HEIF file of brand `mif1` only, with one item of `item_type`, primary.
+fn generic_heif(item_type: [u8; 4]) -> Vec<u8> {
+    fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut out = ((8 + body.len()) as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(kind);
+        out.extend_from_slice(body);
+        out
+    }
+    let ftyp = boxed(b"ftyp", b"mif1    mif1miaf");
+    let hdlr = boxed(b"hdlr", b"        pict             ");
+    let pitm = boxed(b"pitm", b"     ");
+    let mut infe = b"      ".to_vec();
+    infe.extend_from_slice(&item_type);
+    infe.push(0);
+    let mut iinf = b"     ".to_vec();
+    iinf.extend_from_slice(&boxed(b"infe", &infe));
+    let mut meta = b"    ".to_vec();
+    for part in [hdlr, pitm, boxed(b"iinf", &iinf)] {
+        meta.extend_from_slice(&part);
+    }
+    [ftyp, boxed(b"meta", &meta), boxed(b"mdat", &[0; 32])].concat()
+}
+
+/// `name` claiming to be 40,000 pixels square: every `ispe` box (the
+/// image's stored size) rewritten, the coded data left as it is.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn oversized(name: &str) -> Vec<u8> {
+    let mut bytes = read(name);
+    let mut at = 0;
+    while let Some(found) = bytes[at..].windows(4).position(|w| w == b"ispe") {
+        let size = at + found + 4 + 4;
+        bytes[size..size + 4].copy_from_slice(&40_000u32.to_be_bytes());
+        bytes[size + 4..size + 8].copy_from_slice(&40_000u32.to_be_bytes());
+        at = size + 8;
+    }
+    assert!(at > 0, "{name} has an ispe box");
+    bytes
 }
 
 /// The GPS position, camera and date in the photo never reach the PDF,
@@ -216,7 +387,7 @@ fn the_missing_codec_cards_read_as_written() {
 /// red pixels, once the orientation is applied.
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn arrow_corner(decoded: OsDecoded) -> (u32, u32, &'static str) {
-    let mut image = image::DynamicImage::ImageRgb8(decoded.image);
+    let mut image = decoded.image;
     image.apply_orientation(image::metadata::Orientation::from_exif(decoded.orientation).unwrap());
     let image = image.into_rgb8();
     let (width, height) = image.dimensions();
@@ -285,6 +456,101 @@ fn image_io_decodes_the_fixtures_upright() {
             !built.pdf.windows(17).any(|w| w == b"Fixture Camera Co"),
             "{name}"
         );
+    }
+}
+
+/// Whether the page built from `bytes` shows `expected` in column `x`,
+/// row 32, give or take the encoders' rounding (the HEVC fixture's colours
+/// are decoded within 20 of what was encoded).
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn shows(bytes: &[u8], x: u32, expected: [u8; 3]) -> bool {
+    let built = build(&[bytes], DEFAULT_DPI).unwrap();
+    let image = image::load_from_memory(jpeg_in(&built.pdf))
+        .unwrap()
+        .into_rgb8();
+    let stored = image.get_pixel(x, 32).0;
+    stored
+        .iter()
+        .zip(expected)
+        .all(|(a, b)| a.abs_diff(b) <= 20)
+}
+
+/// The real transparent fixture through WIC: what lies under its
+/// transparent pixels (black) never shows; the page is white there.
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "needs Microsoft's HEIF and HEVC extensions"]
+fn wic_puts_a_transparent_heic_on_white() {
+    let bytes = read("transparent.heic");
+    for x in [8, 40, 56] {
+        assert!(shows(&bytes, x, on_white(x)), "{x}");
+    }
+}
+
+/// The real two-image fixture through WIC: the primary image (red), not
+/// the first (blue).
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "needs Microsoft's HEIF and HEVC extensions"]
+fn wic_decodes_the_primary_image() {
+    assert!(shows(&read("two-images.heic"), 32, [220, 30, 30]));
+}
+
+/// A HEIC claiming 40,000 pixels square is refused as too large, never
+/// decoded at that size.
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "needs Microsoft's HEIF and HEVC extensions"]
+fn wic_refuses_an_oversized_heic() {
+    let error = super::wic::Decoder
+        .decode_heic(&oversized("page-upright.heic"))
+        .err();
+    assert!(
+        matches!(error, Some(ImageError::TooLarge | ImageError::Unreadable)),
+        "{error:?}"
+    );
+}
+
+/// The real transparent fixture through ImageIO, drawn on white.
+#[cfg(target_os = "macos")]
+#[test]
+fn image_io_puts_a_transparent_heic_on_white() {
+    let bytes = read("transparent.heic");
+    for x in [8, 40, 56] {
+        assert!(shows(&bytes, x, on_white(x)), "{x}");
+    }
+}
+
+/// ImageIO decodes the image the file names primary (red), not its first
+/// (blue).
+#[cfg(target_os = "macos")]
+#[test]
+fn image_io_decodes_the_primary_image() {
+    assert!(shows(&read("two-images.heic"), 32, [220, 30, 30]));
+}
+
+/// A HEIC claiming 40,000 pixels square is refused from its properties,
+/// before ImageIO decodes anything.
+#[cfg(target_os = "macos")]
+#[test]
+fn image_io_refuses_an_oversized_heic_before_decoding() {
+    let error = super::image_io::Decoder
+        .decode_heic(&oversized("page-upright.heic"))
+        .err();
+    assert!(matches!(error, Some(ImageError::TooLarge)), "{error:?}");
+}
+
+/// At the import seam with ImageIO: each real fixture is one page for OCR.
+#[cfg(target_os = "macos")]
+#[test]
+fn image_io_imports_each_fixture_as_one_page_for_ocr() {
+    for name in FIXTURES {
+        match crate::import::prepare(&fixture(name), None, false) {
+            Err(crate::import::ImportError::NeedsOcr(_, pages, _, count)) => {
+                assert_eq!((pages, count), (vec![1], 1), "{name}");
+            }
+            other => panic!("{name}: {other:?}"),
+        }
     }
 }
 

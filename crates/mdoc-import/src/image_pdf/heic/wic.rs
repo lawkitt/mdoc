@@ -1,8 +1,10 @@
 //! HEIC on Windows: WIC decodes the photo with Microsoft's HEIF Image
 //! Extensions, which hand the HEVC data to the HEVC Video Extensions.
-//! The pixels come out as stored, 8-bit RGB, with the EXIF orientation
-//! (`System.Photo.Orientation`) that shows them upright; the builder turns
-//! the page. Only pixels leave this module.
+//! The pixels come out as stored, 8-bit RGBA with straight alpha (a HEIF
+//! may carry an alpha plane, which the extension leaves out and this module
+//! decodes on its own; the builder puts it on white), with the EXIF
+//! orientation (`System.Photo.Orientation`) that shows them upright; the
+//! builder turns them. Only pixels leave this module.
 //!
 //! Without the HEIF extension WIC has no HEIF decoder and says
 //! `WINCODEC_ERR_COMPONENTNOTFOUND` when one is asked for. With it but
@@ -15,7 +17,7 @@ use windows::{
     Win32::{
         Foundation::{RPC_E_CHANGED_MODE, WINCODEC_ERR_COMPONENTNOTFOUND},
         Graphics::Imaging::{
-            CLSID_WICImagingFactory, GUID_ContainerFormatHeif, GUID_WICPixelFormat24bppRGB,
+            CLSID_WICImagingFactory, GUID_ContainerFormatHeif, GUID_WICPixelFormat32bppRGBA,
             IWICBitmapFrameDecode, IWICImagingFactory, WICBitmapDitherTypeNone,
             WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
         },
@@ -65,7 +67,26 @@ fn orientation(frame: &IWICBitmapFrameDecode) -> u8 {
 
 impl OsDecoder for Decoder {
     fn decode_heic(&self, bytes: &[u8]) -> Result<OsDecoded, ImageError> {
-        decode(bytes, &GUID_ContainerFormatHeif)
+        let mut decoded = decode(bytes, &GUID_ContainerFormatHeif)?;
+        // Windows' HEIF extension decodes the primary image without its
+        // alpha plane (its frames are 32bppBGR). The plane is an image of
+        // its own in the file: named primary in a copy, it decodes the same
+        // way, its gray the alpha. A plane that doesn't decode, or doesn't
+        // match, leaves the photo opaque.
+        if let Some(alpha) =
+            super::alpha_item(bytes).and_then(|item| super::with_primary(bytes, item))
+            && let image::DynamicImage::ImageRgba8(pixels) = &mut decoded.image
+            && pixels.pixels().all(|pixel| pixel[3] == u8::MAX)
+            && let Ok(plane) = decode(&alpha, &GUID_ContainerFormatHeif)
+        {
+            let plane = plane.image.to_luma8();
+            if plane.dimensions() == pixels.dimensions() {
+                for (pixel, alpha) in pixels.pixels_mut().zip(plane.pixels()) {
+                    pixel[3] = alpha[0];
+                }
+            }
+        }
+        Ok(decoded)
     }
 }
 
@@ -100,6 +121,10 @@ impl Drop for Com {
 /// use, one no decoder implements in the test of the missing-extension
 /// path. COM objects are released as they drop, before `_com` leaves COM.
 pub(super) fn decode(bytes: &[u8], container: &GUID) -> Result<OsDecoded, ImageError> {
+    // WIC takes the stream's length as 32 bits.
+    if u32::try_from(bytes.len()).is_err() {
+        return Err(ImageError::TooLarge);
+    }
     let _com = Com::enter()?;
     let unreadable = |_| ImageError::Unreadable;
     // SAFETY: plain COM calls on interfaces WIC returned; the stream reads
@@ -140,7 +165,7 @@ pub(super) fn decode(bytes: &[u8], container: &GUID) -> Result<OsDecoded, ImageE
         converter
             .Initialize(
                 &frame,
-                &GUID_WICPixelFormat24bppRGB,
+                &GUID_WICPixelFormat32bppRGBA,
                 WICBitmapDitherTypeNone,
                 None,
                 0.,
@@ -157,7 +182,7 @@ pub(super) fn decode(bytes: &[u8], container: &GUID) -> Result<OsDecoded, ImageE
         if width > super::super::MAX_DIMENSION || height > super::super::MAX_DIMENSION {
             return Err(ImageError::TooLarge);
         }
-        let stride = width.checked_mul(3).ok_or(ImageError::TooLarge)?;
+        let stride = width.checked_mul(4).ok_or(ImageError::TooLarge)?;
         let size = u64::from(stride) * u64::from(height);
         if size > super::MAX_ALLOC {
             return Err(ImageError::TooLarge);
@@ -167,7 +192,10 @@ pub(super) fn decode(bytes: &[u8], container: &GUID) -> Result<OsDecoded, ImageE
             .CopyPixels(std::ptr::null(), stride, &mut pixels)
             .map_err(missing_hevc)?;
         let image =
-            image::RgbImage::from_raw(width, height, pixels).ok_or(ImageError::Unreadable)?;
-        Ok(OsDecoded { image, orientation })
+            image::RgbaImage::from_raw(width, height, pixels).ok_or(ImageError::Unreadable)?;
+        Ok(OsDecoded {
+            image: image::DynamicImage::ImageRgba8(image),
+            orientation,
+        })
     }
 }

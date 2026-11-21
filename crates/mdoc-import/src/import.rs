@@ -174,6 +174,12 @@ impl Source {
             if bytes.len() as u64 > MAX_PDF_BYTES {
                 return Err(ImportError::PdfTooLarge);
             }
+        } else if ImageFormat::from_bytes(&bytes) == Some(ImageFormat::Heic) {
+            // A HEIC photo goes to the operating system's decoder whole: no
+            // photo is this large, and WIC can't take 4 GiB.
+            if bytes.len() as u64 > MAX_PDF_BYTES {
+                return Err(ImportError::Image(image_pdf::ImageError::TooLarge));
+            }
         } else {
             file.into_inner()
                 .read_to_end(&mut bytes)
