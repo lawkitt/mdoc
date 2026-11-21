@@ -59,6 +59,8 @@ How a PR reaches `main`. The machinery and the PC's runners:
   Delete both branches afterwards.
 - If a merged gate change blocks the queue, the maintainer pushes its revert
   straight to `main`.
+- The iOS core builds once per run, in `ci/ios (core)`, and its cache key
+  hashes the Xcode that builds it.
 
 ## iOS tests on the Mac
 

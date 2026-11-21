@@ -26,10 +26,12 @@ part     in a matrix part of ci-ios.yml, on its Mac, with the job's status
          Release build), or whose xcresult cannot be read, names none.
 summary  in ci/ios, with `needs.ios.outputs` as JSON in $IOS_OUTPUTS
          (`<key>`: the part's job status, `<key>_tests` and `<key>_retried`:
-         its names): repeats each part's retried tests, then exits 0 when
-         <result> is success, otherwise annotates each part that did not
-         pass, with its tests, or its status when it did not fail
-         (cancelled, or "did not finish" when it wrote none), and exits 1.
+         its names) and the core job's result in $CORE_RESULT: repeats each
+         part's retried tests, then exits 0 when <result> is success,
+         otherwise annotates the core job when it did not pass (its parts
+         never ran), else each part that did not pass, with its tests, or
+         its status when it did not fail (cancelled, or "did not finish"
+         when it wrote none), and exits 1.
 """
 import json
 import os
@@ -153,6 +155,10 @@ def summary(result, parts):
         report_retried(f"ci/ios ({name})", (outputs.get(f"{name.replace(' ', '')}_retried") or "").split())
     if result == "success":
         return 0
+    core = os.environ.get("CORE_RESULT") or "success"
+    if core != "success":
+        report("ci/ios (core)", [], None if core == "failure" else core)
+        return 1
     bad = 0
     for name in parts:
         key = name.replace(" ", "")

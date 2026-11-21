@@ -181,6 +181,13 @@ has "$tmp/out" '::error::ci/ios: parts cancelled'
 if IOS_OUTPUTS='' run summary skipped unit; then fail 'skipped run passed'; fi
 has "$tmp/out" '::error::ci/ios (unit): did not finish'
 
+# A core job that did not pass is named alone: its parts never ran.
+if CORE_RESULT=failure IOS_OUTPUTS='' run summary skipped unit 'ui 1'; then fail 'summary after a failed core passed'; fi
+has "$tmp/out" '::error::Failed in ci/ios (core)'
+[ "$(grep -c '^::error::' "$tmp/out")" = 1 ] || fail "summary after a failed core named its parts: $(cat "$tmp/out")"
+if CORE_RESULT=cancelled IOS_OUTPUTS='' run summary skipped unit; then fail 'summary after a cancelled core passed'; fi
+has "$tmp/out" '::error::ci/ios (core): cancelled'
+
 # Usage.
 if run nonsense; then fail 'a bad command passed'; fi
 grep -q '^Usage: scripts/ios/ios-failed-tests.py part' "$tmp/out" || fail "no usage: $(cat "$tmp/out")"
