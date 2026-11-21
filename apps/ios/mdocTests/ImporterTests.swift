@@ -27,7 +27,9 @@ final class ImporterTests: XCTestCase {
     /// A camera JPEG with a GPS position, a camera and orientation 6, as
     /// ImageIO writes one.
     private func cameraJPEG() throws -> Data {
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30)).image { context in
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30), format: format).image { context in
             UIColor.red.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
         }
