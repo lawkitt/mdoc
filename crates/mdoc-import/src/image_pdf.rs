@@ -277,16 +277,13 @@ fn on_white(image: image::DynamicImage, gray: bool) -> image::DynamicImage {
     }
 }
 
-/// `image` with its long side at most [`MAX_LONG_SIDE`], its aspect kept.
+/// `image` with its long side at most [`MAX_LONG_SIDE`], its aspect kept:
+/// area averaging, which suits a downscale and costs half of a cubic filter.
 fn scale_down(image: image::DynamicImage) -> image::DynamicImage {
     if image.width().max(image.height()) <= MAX_LONG_SIDE {
         return image;
     }
-    image.resize(
-        MAX_LONG_SIDE,
-        MAX_LONG_SIDE,
-        image::imageops::FilterType::CatmullRom,
-    )
+    image.thumbnail(MAX_LONG_SIDE, MAX_LONG_SIDE)
 }
 
 /// `samples` zlib-compressed, as `FlateDecode` reads them. Fast compression:
