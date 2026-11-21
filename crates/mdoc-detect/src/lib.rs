@@ -2671,6 +2671,57 @@ mod tests {
             Category::Person
         );
     }
+    /// #1023: the fictional people of a CSV imported from Windows-1251,
+    /// KOI8-R, UTF-8 with a BOM or Windows-1252 are people to the scan's
+    /// model-free stages: a selection of one guesses Person, and the model's
+    /// span for one survives the correction stage.
+    #[test]
+    fn people_in_a_legacy_encoded_csv_are_found() {
+        let fixtures =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/import");
+        for (name, people) in [
+            ("russian-utf8-bom.csv", RUSSIAN_PEOPLE),
+            ("russian-windows-1251.csv", RUSSIAN_PEOPLE),
+            ("russian-koi8-r.csv", RUSSIAN_PEOPLE),
+            ("western-windows-1252.csv", WESTERN_PEOPLE),
+        ] {
+            let bytes = std::fs::read(fixtures.join(name)).unwrap();
+            let source = mdoc_import::import::convert_bytes(&bytes, Some("csv"))
+                .unwrap()
+                .markdown;
+            for person in people {
+                let start = source
+                    .find(person)
+                    .unwrap_or_else(|| panic!("{name}: {person}"));
+                let range = start..start + person.len();
+                assert_eq!(
+                    guess_category(&source, range.clone()),
+                    Category::Person,
+                    "{name}: {person}"
+                );
+                let raw = [RawEntity {
+                    start,
+                    end: range.end,
+                    label: "person".into(),
+                    score: 0.9,
+                    text: person.to_string(),
+                }];
+                assert!(
+                    correct(&source, &raw)
+                        .iter()
+                        .any(|d| d.range == range && d.category == Category::Person),
+                    "{name}: {person}"
+                );
+            }
+        }
+    }
+    const RUSSIAN_PEOPLE: &[&str] = &[
+        "Белозёрова Анна Викторовна",
+        "Кудрявцев Олег Петрович",
+        "Шелестова Ирина Юрьевна",
+    ];
+    const WESTERN_PEOPLE: &[&str] = &["François Dupré", "Jürgen Weißmüller", "Inés Peñalosa"];
+
     /// #367: the correction stage reads character references decoded, and
     /// what it finds maps back to whole references in the source.
     #[test]
