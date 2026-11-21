@@ -63,3 +63,4 @@ final class NoticeCardUITests: XCTestCase {
         return screen
     }
 }
+// CI verification of #1050: a branch touching one UI test class.
