@@ -9,8 +9,9 @@
 # number); what counts as a test class (XCTestCase, also with the
 # superclass on the next line or after generics; a name ending in Tests;
 # not a helper class, `class func`, `class var` or a comment). Then
-# scripts/ios/ios-ui-class-times.py's table (and, off Windows, collect against
-# a fake xcrun, a retried case counting its passing run) and
+# scripts/ios/ios-ui-class-times.py's table, the artifacts fetch reads (the
+# tests pin's only), and, off Windows, collect against a fake xcrun (a
+# retried case counting its passing run); and
 # scripts/ios/ios-ui-class-times.sh's refresh against a local origin: no push
 # when nothing moves or the branch already holds it, else one commit on main
 # pushed to the branch, never to main. No network. Bash 3.2 compatible.
@@ -207,6 +208,17 @@ printf 'AUITests\tslow\n' >"$tmp/parts/4.tsv"
 ! "$py" -I scripts/ios/ios-ui-class-times.py table "$tmp/parts" >"$tmp/out" 2>&1 || fail "a bad part read"
 grep -q '4.tsv:1' "$tmp/out" || fail "bad part: $(cat "$tmp/out")"
 rm "$tmp/parts/4.tsv"
+# fetch reads only the tests pin's artifacts (macos-26), not the builds
+# pin's or those named before the pin was (xcode-27's).
+"$py" -I - scripts/ios/ios-ui-class-times.py >"$tmp/out" 2>&1 <<'EOF' || fail "artifact names: $(cat "$tmp/out")"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("times", sys.argv[1])
+times = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(times)
+names = ["ios-ui-times-tests-ui1-1", "ios-ui-times-tests-ui3-2", "ios-ui-times-builds-ui1-1", "ios-ui-times-ui1-1", "ios-xcresult-ui1-1"]
+print(" ".join(n for n in names if times.ARTIFACT.match(n)))
+EOF
+[ "$(cat "$tmp/out")" = "ios-ui-times-tests-ui1-1 ios-ui-times-tests-ui3-2" ] || fail "artifact names: $(cat "$tmp/out")"
 
 # collect, against a fake xcrun (Windows' Python runs no shell script).
 if [ "$(platform)" != windows-x64 ]; then
