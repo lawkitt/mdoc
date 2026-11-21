@@ -12,6 +12,12 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.Semaphore
+import java.util.concurrent.atomic.AtomicInteger
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +42,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -78,16 +85,7 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             is OriginalSource.Images -> if (original.files.size == 1) {
-                val file = original.files.single()
-                val bitmap by produceState<Bitmap?>(null, file) { value = withContext(Dispatchers.IO) { decode(file) } }
-                bitmap?.let {
-                    Image(
-                        it.asImageBitmap(),
-                        contentDescription = stringResource(R.string.original_page, 1, 1),
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize().then(zoomed),
-                    )
-                }
+                ImagePage(original.files.single(), 1, 1, ContentScale.Fit, Modifier.fillMaxSize().then(zoomed))
             } else {
                 ImagePages(original.files, Modifier.fillMaxSize().then(zoomed))
             }
@@ -154,18 +152,72 @@ private fun open(file: File): PdfRenderer {
 private fun ImagePages(files: List<File>, modifier: Modifier) {
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(files.size) { index ->
-            val file = files[index]
-            val page by produceState<Bitmap?>(null, file) { value = withContext(Dispatchers.IO) { decode(file) } }
-            page?.let {
-                Image(
-                    it.asImageBitmap(),
-                    contentDescription = stringResource(R.string.original_page, index + 1, files.size),
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth(),
+            // Page-sized until drawn, so the list lays out only the pages it shows.
+            ImagePage(files[index], index + 1, files.size, ContentScale.FillWidth, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** A page being drawn, drawn, or one Android can't draw. */
+private sealed interface PageImage {
+    data object Loading : PageImage
+
+    data class Shown(val bitmap: Bitmap) : PageImage
+
+    data object Unavailable : PageImage
+}
+
+/**
+ * One photo or page, drawn upright off the main thread; a placeholder the
+ * size of a page while it is drawn, and in its place when Android can't
+ * draw it (a TIFF), so every other page keeps its position.
+ */
+@Composable
+private fun ImagePage(file: File, number: Int, count: Int, scale: ContentScale, modifier: Modifier) {
+    val description = stringResource(R.string.original_page, number, count)
+    val page by produceState<PageImage>(PageImage.Loading, file) {
+        value = decodes.withPermit { withContext(Dispatchers.IO) { decode(file) } }
+            ?.let(PageImage::Shown) ?: PageImage.Unavailable
+    }
+    when (val shown = page) {
+        is PageImage.Shown -> Image(
+            shown.bitmap.asImageBitmap(),
+            contentDescription = description,
+            contentScale = scale,
+            modifier = modifier,
+        )
+        else -> Box(
+            modifier
+                .aspectRatio(PAGE_ASPECT)
+                .background(MaterialTheme.colorScheme.surface)
+                .semantics { contentDescription = description }
+                .then(if (shown == PageImage.Loading) Modifier.testTag(PAGE_PLACEHOLDER) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (shown == PageImage.Unavailable) {
+                Text(
+                    stringResource(R.string.no_page_preview),
+                    modifier = Modifier.padding(16.dp),
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
     }
+}
+
+/** The test tag of a page still being drawn. */
+internal const val PAGE_PLACEHOLDER = "original-page-placeholder"
+
+/** A placeholder's shape: an A4 page. */
+private const val PAGE_ASPECT = 210f / 297f
+
+/** At most two photos decode at once, however many pages a list shows. */
+private val decodes = Semaphore(2)
+
+/** Decodes started, for the tests. */
+internal object OriginalDecodes {
+    val started = AtomicInteger()
 }
 
 private fun render(renderer: PdfRenderer, index: Int, width: Int): Bitmap = renderer.openPage(index).use { page ->
@@ -178,6 +230,7 @@ private fun render(renderer: PdfRenderer, index: Int, width: Int): Bitmap = rend
 
 /** A photo, upright by its EXIF orientation, scaled down to at most about 2,500 px on its long side. */
 private fun decode(file: File): Bitmap? = runCatching {
+    OriginalDecodes.started.incrementAndGet()
     ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
         var sample = 1
         while (maxOf(info.size.width, info.size.height) / sample > 2500) sample *= 2

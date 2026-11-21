@@ -4,22 +4,24 @@
 //! the one tag of a minimal EXIF block, so a viewer and the image builder
 //! still draw the image upright.
 
+mod tags;
+
 use super::{ImageFormat, jpeg};
 
 /// `bytes` without metadata, in their own format: EXIF (GPS, camera,
 /// dates), XMP, ICC profiles, text chunks, comments and appended data go;
-/// the orientation stays. `None` for a format or a file this can't rewrite
-/// (HEIC, a JPEG the passthrough doesn't parse), which the phone then has
-/// its operating system draw as an upright JPEG instead, and for TIFF,
-/// whose tags hold its layout as well: a phone keeps a TIFF as it came
-/// (only the PDF and the Markdown are made without its tags).
+/// the orientation stays. A TIFF keeps every page, with only the tags that
+/// say how to draw it ([`tags`]). `None` for a format or a file this can't
+/// rewrite (HEIC, BigTIFF, a JPEG the passthrough doesn't parse), which the
+/// phone then has its operating system draw as an upright JPEG instead, or
+/// refuses.
 pub fn without_metadata(bytes: &[u8]) -> Option<Vec<u8>> {
     match ImageFormat::from_bytes(bytes)? {
         ImageFormat::Jpeg => jpeg_without_metadata(bytes),
         ImageFormat::Png => png_without_metadata(bytes),
         ImageFormat::WebP => webp_without_metadata(bytes),
         ImageFormat::Gif => gif_without_metadata(bytes),
-        ImageFormat::Tiff => None,
+        ImageFormat::Tiff => tags::without_metadata(bytes),
     }
 }
 

@@ -538,11 +538,13 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
 
     /**
      * `pending.json` couldn't be read and was moved aside
-     * (`pending.json.corrupt`): imports start from an empty list.
+     * (`pending.json.corrupt`): imports start from an empty list. It stays
+     * true at every start while that copy is kept, since nothing else says
+     * which staged pages its imports owned: no stage is cleared meanwhile.
      */
-    @Volatile
-    var setAside = false
-        private set
+    val setAside: Boolean get() = corrupt.isFile
+
+    private val corrupt = File(storage.root, "pending.json.corrupt")
 
     @Synchronized
     fun all(): List<Entry> = load().values.toList()
@@ -568,10 +570,9 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
         if (!file.isFile) return emptyMap()
         return runCatching { parse(file.readText()) }.getOrElse {
             // One damaged list must not stop every later import.
-            setAside = true
             runCatching {
                 Files.move(
-                    file.toPath(), File(file.path + ".corrupt").toPath(),
+                    file.toPath(), corrupt.toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE,
                 )
             }

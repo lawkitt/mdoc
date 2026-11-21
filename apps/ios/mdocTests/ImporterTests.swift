@@ -122,7 +122,14 @@ final class ImporterTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: folder) }
         let png = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { _ in })
         let importer = Importer(storage: storage)
-        for (name, data) in [("photo.pdf", png), ("notes.jpg", Data("Not a photo.".utf8)), ("letter.docx", png)] {
+        // A photo whose early comment says `%PDF-`: still a photo, never a PDF.
+        let jpeg = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).jpegData(withCompressionQuality: 0.9) { _ in })
+        let comment = Data([0xff, 0xfe, 0x00, 0x0b]) + Data("%PDF-1.7 x".utf8)
+        let disguised = jpeg.prefix(2) + comment + jpeg.dropFirst(2)
+        XCTAssertNotNil(disguised.prefix(1024).range(of: Data("%PDF-".utf8)))
+        for (name, data) in [
+            ("photo.pdf", png), ("notes.jpg", Data("Not a photo.".utf8)), ("letter.docx", png), ("scan.pdf", disguised),
+        ] {
             let url = folder.appendingPathComponent(name)
             try data.write(to: url)
             XCTAssertThrowsError(try importer.file(url), name)
@@ -136,16 +143,26 @@ final class ImporterTests: XCTestCase {
         XCTAssertEqual(left.count, 1, "\(left)")
     }
 
-    /// A TIFF is kept as it came, and the core reads every page of it.
+    /// A TIFF is kept as a TIFF without its GPS position, camera or private
+    /// tags (#1021), and the core reads every page of it.
     func testATIFFImportsEveryPageThroughTheCore() throws {
         let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
         let library = try XCTUnwrap(core.library as? RealLibrary)
-        let fax = try Data(contentsOf: Fixture.repository.appendingPathComponent("tests/fixtures/tiff/fax-g4.tif"))
-        let pending = try XCTUnwrap(try Importer(storage: storage).images([fax], scanned: false))
+        let tagged = try Data(contentsOf: Fixture.repository.appendingPathComponent("tests/fixtures/tiff/tagged-gps.tif"))
+        XCTAssertNotNil(tagged.range(of: Data("FictionalCam".utf8)))
+        let pending = try XCTUnwrap(try Importer(storage: storage).images([tagged], scanned: false))
         guard case .photos(let pages) = pending.source else { return XCTFail("\(pending.source)") }
         let page = try XCTUnwrap(pages.first)
         XCTAssertEqual(page.pathExtension, "tiff")
-        XCTAssertEqual(try Data(contentsOf: page), fax)
+        let kept = try Data(contentsOf: page)
+        for needle in ["FictionalCam", "Fictional Studio", "xmpmeta", "A fictional comment", "2031:03:14"] {
+            XCTAssertNil(kept.range(of: Data(needle.utf8)), needle)
+        }
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(kept as CFData, nil))
+        XCTAssertEqual(CGImageSourceGetCount(source), 2)
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
+        XCTAssertEqual(properties[kCGImagePropertyOrientation] as? Int, 6)
         XCTAssertThrowsError(
             try MdocFFI.DocumentSession().importImagesIn(
                 library: library.ffi, images: [page.path], title: "Fax",

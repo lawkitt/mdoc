@@ -92,15 +92,11 @@ struct Importer {
 
     /// An image as mdoc keeps it, which the core reads and the Original
     /// shows (#1021), with its file extension: the core rewrites JPEG, PNG,
-    /// WebP and GIF without their metadata (GPS position, camera, dates),
-    /// the pixels and orientation as they were; HEIC and anything else iOS
+    /// WebP, GIF and TIFF (every page) without their metadata (GPS
+    /// position, camera, dates), the pixels and orientation as they were; HEIC and anything else iOS
     /// reads is drawn upright as a JPEG without metadata. Nil when neither
     /// can read it.
     static func page(_ data: Data) -> (Data, String)? {
-        // A TIFF stays as it came: its tags hold its layout, and the core
-        // reads every page of it (only the PDF and the Markdown leave its
-        // tags out).
-        if isTIFF(data) { return (data, "tiff") }
         if let kept = imageWithoutMetadata(image: data), let format = coreFormat(kept) {
             return (kept, format)
         }
@@ -113,6 +109,7 @@ struct Importer {
         if bytes.starts(with: [0xff, 0xd8, 0xff]) { return "jpg" }
         if bytes.starts(with: [0x89, 0x50, 0x4e, 0x47]) { return "png" }
         if bytes.starts(with: Array("GIF8".utf8)) { return "gif" }
+        if bytes.starts(with: [0x49, 0x49, 0x2a, 0]) || bytes.starts(with: [0x4d, 0x4d, 0, 0x2a]) { return "tiff" }
         if bytes.count == 12, bytes.starts(with: Array("RIFF".utf8)), Array(bytes[8...]) == Array("WEBP".utf8) {
             return "webp"
         }
@@ -135,11 +132,13 @@ struct Importer {
         let zip = bytes.starts(with: [0x50, 0x4b, 0x03, 0x04])
         let image = coreFormat(header) != nil || isTIFF(header)
             || (bytes.count >= 12 && Array(bytes[4..<8]) == Array("ftyp".utf8))
+        // An image's signature wins: a photo with `%PDF-` in an early
+        // comment is a photo, as the core reads it.
+        if image { return named == .image ? .image : nil }
         switch named {
         case .pdf: return pdf ? .pdf : nil
         case .docx: return zip ? .docx : nil
         case .image:
-            if image { return .image }
             // Other formats iOS reads (BMP, ICO, …), if their bytes say so.
             guard !pdf, !zip, let source = CGImageSourceCreateWithData(header as CFData, nil),
                   CGImageSourceGetType(source) != nil else { return nil }

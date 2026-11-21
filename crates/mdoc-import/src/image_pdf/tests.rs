@@ -1377,4 +1377,189 @@ mod kept_copy {
             assert_eq!(without_metadata(bytes), None);
         }
     }
+
+    /// A two-page 8-bit gray TIFF as a scanner app might write it, every
+    /// descriptive and private tag filled with fictional values: a camera, the
+    /// software, dates, an artist, a description, an EXIF block, a GPS block
+    /// with a position, XMP and a private tag. The first page says orientation
+    /// 6. Little-endian, uncompressed, one strip per page.
+    pub(crate) fn tagged_tiff() -> Vec<u8> {
+        // Each directory's entries: (tag, type, value bytes).
+        type Entries = Vec<(u16, u16, Vec<u8>)>;
+        let size = |kind: u16| match kind {
+            3 => 2,
+            4 => 4,
+            5 => 8,
+            _ => 1,
+        };
+        let ascii = |text: &str| [text.as_bytes(), b"\0"].concat();
+        let short = |value: u16| value.to_le_bytes().to_vec();
+        let long = |value: u32| value.to_le_bytes().to_vec();
+        let rational = |n: u32, d: u32| [n.to_le_bytes(), d.to_le_bytes()].concat();
+        let (width, height) = (16u32, 8u32);
+        let pixels = |page: u8| -> Vec<u8> {
+            (0..width * height)
+                .map(|i| (i as u8).wrapping_mul(7).wrapping_add(page * 60))
+                .collect()
+        };
+        let mut out = b"II*\0".to_vec();
+        out.extend_from_slice(&[0; 4]);
+        // Writes `entries` as a directory at the end, its long values first;
+        // gives its offset and where its next-directory link is.
+        let write_ifd = |out: &mut Vec<u8>, entries: &Entries| -> (u32, usize) {
+            let mut placed = Vec::new();
+            for (_, _, value) in entries {
+                if value.len() > 4 {
+                    placed.push(Some(out.len() as u32));
+                    out.extend_from_slice(value);
+                    if out.len() % 2 == 1 {
+                        out.push(0);
+                    }
+                } else {
+                    placed.push(None);
+                }
+            }
+            let at = out.len() as u32;
+            out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+            for ((tag, kind, value), place) in entries.iter().zip(placed) {
+                out.extend_from_slice(&tag.to_le_bytes());
+                out.extend_from_slice(&kind.to_le_bytes());
+                out.extend_from_slice(&((value.len() / size(*kind)) as u32).to_le_bytes());
+                match place {
+                    Some(offset) => out.extend_from_slice(&offset.to_le_bytes()),
+                    None => {
+                        let mut inline = [0u8; 4];
+                        inline[..value.len()].copy_from_slice(value);
+                        out.extend_from_slice(&inline);
+                    }
+                }
+            }
+            let link = out.len();
+            out.extend_from_slice(&[0; 4]);
+            (at, link)
+        };
+        let mut link = 4;
+        for page in 0..2u8 {
+            let strip = out.len() as u32;
+            out.extend_from_slice(&pixels(page));
+            // The EXIF and GPS blocks, which the page's directory points at.
+            let (exif, _) = write_ifd(
+                &mut out,
+                &vec![(0x9003, 2, ascii("2031:03:14 09:26:53"))],
+            );
+            let (gps, _) = write_ifd(
+                &mut out,
+                &vec![
+                    (0x0001, 2, ascii("N")),
+                    (0x0002, 5, LATITUDE.to_vec()),
+                ],
+            );
+            let mut entries: Entries = vec![
+                (256, 4, long(width)),
+                (257, 4, long(height)),
+                (258, 3, short(8)),
+                (259, 3, short(1)),
+                (262, 3, short(1)),
+                (270, 2, ascii("A fictional comment page")),
+                (271, 2, ascii("FictionalCam")),
+                (272, 2, ascii("Model F1")),
+                (273, 4, long(strip)),
+            ];
+            if page == 0 {
+                entries.push((274, 3, short(6)));
+            }
+            entries.extend([
+                (277, 3, short(1)),
+                (278, 4, long(height)),
+                (279, 4, long(width * height)),
+                (282, 5, rational(300, 1)),
+                (283, 5, rational(300, 1)),
+                (296, 3, short(2)),
+                (305, 2, ascii("Fictional Studio")),
+                (306, 2, ascii("2031:03:14 09:26:53")),
+                (315, 2, ascii("Ann Fictive")),
+                (700, 1, b"<x:xmpmeta></x:x>".to_vec()),
+                (0x8769, 4, long(exif)),
+                (0x8825, 4, long(gps)),
+                (65000, 7, b"A fictional comment.".to_vec()),
+            ]);
+            let (at, next) = write_ifd(&mut out, &entries);
+            out[link..link + 4].copy_from_slice(&at.to_le_bytes());
+            link = next;
+        }
+        out
+    }
+
+    /// The pages of a TIFF as the `tiff` crate decodes them, with each page's
+    /// orientation tag.
+    fn tiff_pages(bytes: &[u8]) -> Vec<(Vec<u8>, Option<u32>)> {
+        use ::tiff::{decoder::DecodingResult, tags::Tag};
+        let mut decoder = ::tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut pages = Vec::new();
+        loop {
+            let orientation = decoder.find_tag(Tag::Orientation).unwrap().map(|value| value.into_u32().unwrap());
+            let DecodingResult::U8(pixels) = decoder.read_image().unwrap() else {
+                panic!("8-bit pages");
+            };
+            pages.push((pixels, orientation));
+            if !decoder.more_images() {
+                return pages;
+            }
+            decoder.next_image().unwrap();
+        }
+    }
+
+    /// A TIFF keeps every page, pixel for pixel, and its orientation; its
+    /// camera, software, dates, artist, description, EXIF, GPS, XMP and
+    /// private tags go (#1021).
+    #[test]
+    fn a_tiff_keeps_every_page_and_only_the_tags_that_draw_it() {
+        let tagged = tagged_tiff();
+        assert!(contains(&tagged, LATITUDE.as_slice()) && contains(&tagged, b"FictionalCam"));
+        let kept = without_metadata(&tagged).unwrap();
+        assert_no_metadata(&kept);
+        for needle in [
+            b"Model F1".as_slice(),
+            b"2031:03:14",
+            b"Ann Fictive",
+        ] {
+            assert!(!contains(&kept, needle), "{}", String::from_utf8_lossy(needle));
+        }
+        let (before, after) = (tiff_pages(&tagged), tiff_pages(&kept));
+        assert_eq!(after.len(), 2);
+        assert_eq!(after, before);
+        assert_eq!(after[0].1, Some(6));
+        // The builder makes the same pages of it.
+        let pages = |bytes: &[u8]| {
+            let pdf = build(&[bytes], DEFAULT_DPI).unwrap();
+            (pdf.pages, String::from_utf8_lossy(&pdf.pdf).matches("/MediaBox").count())
+        };
+        assert_eq!(pages(&kept), pages(&tagged));
+        assert_eq!(pages(&kept).0, 2);
+        // A fax from #1048's fixtures, strips and all.
+        let fixture = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tiff/fax-g4.tif"),
+        )
+        .unwrap();
+        let kept = without_metadata(&fixture).unwrap();
+        assert_eq!(build(&[&kept], DEFAULT_DPI).unwrap().pages, 2);
+    }
+
+    /// The tagged TIFF committed for the phones' tests.
+    #[test]
+    fn the_committed_tagged_tiff_is_the_one_made_here() {
+        let committed = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tiff/tagged-gps.tif"),
+        )
+        .unwrap();
+        assert_eq!(committed, tagged_tiff());
+    }
+
+    /// Writes `tests/fixtures/tiff/tagged-gps.tif`. Run by hand.
+    #[test]
+    #[ignore = "writes a committed fixture"]
+    fn write_tagged_tiff_fixture() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tiff/tagged-gps.tif");
+        std::fs::write(path, tagged_tiff()).unwrap();
+    }
 }

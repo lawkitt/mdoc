@@ -90,20 +90,12 @@ class Originals(private val storage: MdocStorage) {
 
     /**
      * Clean pages only. The picker and camera both supply the source bytes in
-     * memory. A TIFF stays as it came: its tags hold its layout, and the core
-     * reads every page of it (only the PDF and the Markdown leave its tags
-     * out).
+     * memory. The core rewrites JPEG, PNG, WebP, GIF and TIFF (every page)
+     * without their metadata; anything else Android draws upright as a JPEG,
+     * or the page is refused.
      */
     fun stageImage(file: File, bytes: ByteArray): File {
         try {
-            if (isTiff(bytes)) {
-                val target = imageFile(file, "tiff")
-                writeAtomically(target) {
-                    it.write(bytes)
-                    true
-                }
-                return target
-            }
             imageWithoutMetadata(bytes)?.let { clean ->
                 val target = imageFile(file, checkNotNull(imageExtension(clean)))
                 writeAtomically(target) {
@@ -244,13 +236,6 @@ class Originals(private val storage: MdocStorage) {
 
         private fun isUuid(name: String) = runCatching { UUID.fromString(name).toString() == name }.getOrDefault(false)
 
-        /** A classic TIFF or BigTIFF, in either byte order. */
-        internal fun isTiff(bytes: ByteArray): Boolean {
-            if (bytes.size < 4) return false
-            val head = bytes.copyOfRange(0, 4).map { it.toInt() and 0xff }
-            return head == listOf(0x49, 0x49, 0x2a, 0) || head == listOf(0x4d, 0x4d, 0, 0x2a) ||
-                head == listOf(0x49, 0x49, 0x2b, 0) || head == listOf(0x4d, 0x4d, 0, 0x2b)
-        }
 
         /** Recognizes the formats the core keeps without converting to JPEG. */
         internal fun imageExtension(bytes: ByteArray): String? {
@@ -261,6 +246,7 @@ class Originals(private val storage: MdocStorage) {
                 has(0, "\u0089PNG\r\n\u001a\n") -> "png"
                 has(0, "RIFF") && has(8, "WEBP") -> "webp"
                 has(0, "GIF87a") || has(0, "GIF89a") -> "gif"
+                has(0, "II*\u0000") || has(0, "MM\u0000*") -> "tiff"
                 else -> null
             }
         }

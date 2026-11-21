@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
@@ -43,7 +45,9 @@ import io.github.lawkitt.mdoc.home.HomeViewModel
 import io.github.lawkitt.mdoc.home.PendingAdd
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import io.github.lawkitt.mdoc.ui.MdocTheme
+import io.github.lawkitt.mdoc.ui.OriginalDecodes
 import io.github.lawkitt.mdoc.ui.OriginalView
+import io.github.lawkitt.mdoc.ui.PAGE_PLACEHOLDER
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
@@ -229,7 +233,8 @@ class PhotoImportTest {
         pages.forEachIndexed { index, file ->
             compose.runOnIdle { page = file }
             compose.waitUntil(10_000) {
-                compose.onAllNodes(hasContentDescription(description)).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodes(hasContentDescription(description)).fetchSemanticsNodes().isNotEmpty() &&
+                    compose.onAllNodes(hasTestTag(PAGE_PLACEHOLDER)).fetchSemanticsNodes().isEmpty()
             }
             val drawn = compose.onNodeWithContentDescription(description).captureToImage().toPixelMap()
             for ((corner, expected) in corners.withIndex()) {
@@ -265,7 +270,7 @@ class PhotoImportTest {
         // The second shot is in flight when the activity goes.
         val page2 = withContext(Dispatchers.Main) { first.takePage(core.app) }!!
         withContext(Dispatchers.Main) { store.clear() }
-        val kept = scan.pages.single()
+        val kept = scan.state.value.pages.single()
         assertTrue(kept.isFile)
         writePhoto(page2, taggedJpeg(3))
         // A new process: nothing in memory but the saved state, and a new
@@ -287,6 +292,29 @@ class PhotoImportTest {
         assertEquals(2, pages.size)
         pages.forEach(::assertClean)
         withContext(Dispatchers.Main) { restored.cancelAdd() }
+    }
+
+    /**
+     * The shot's cleaning is the scan's own job: Home's ViewModel destroyed
+     * right after the camera returns loses no page.
+     */
+    @Test
+    fun aShotBeingCleanedOutlivesHome() = runBlocking {
+        val scan = ScanSession(CameraCapture.dir(core.app))
+        val store = ViewModelStore()
+        val factory = viewModelFactory { initializer { HomeViewModel({ core.app.core }, null, scan, SavedStateHandle()) } }
+        val home = withContext(Dispatchers.Main) { ViewModelProvider.create(store, factory)[HomeViewModel::class] }
+        val shot = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
+        writePhoto(shot, taggedJpeg(6))
+        withContext(Dispatchers.Main) {
+            home.cameraResult(true)
+            store.clear()
+        }
+        withTimeout(15_000) { scan.state.first { it.pages.size == 1 && it.capture == null } }
+        assertClean(scan.state.value.pages.single())
+        // A new Home saves it, and the raw shot goes.
+        withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, scan, SavedStateHandle()) }
+        assertNull(CameraCapture.file(core.app, shot))
     }
 
     /** Shots no scan waits for go when a process starts. */
@@ -319,13 +347,13 @@ class PhotoImportTest {
         }
     }
 
-    /** A TIFF is staged as it came and the core reads every page of it. */
+    /** A TIFF is staged without its metadata and the core reads every page of it. */
     @Test
     fun aTiffImportsEveryPageThroughTheCore() = runBlocking {
         val share = File(core.app.cacheDir, "hand-off").apply { mkdirs() }
         val fax = File(share, "fax.tif")
         try {
-            InstrumentationRegistry.getInstrumentation().context.assets.open("fax-g4.tif").use { input ->
+            InstrumentationRegistry.getInstrumentation().context.assets.open("tagged-gps.tif").use { input ->
                 fax.outputStream().use(input::copyTo)
             }
             val uri = FileProvider.getUriForFile(core.app, "${core.app.packageName}.files", fax)
@@ -335,7 +363,12 @@ class PhotoImportTest {
             assertNull(staged.refused)
             val page = ((staged.adding as PendingAdd.Received).source as ImportSource.Pages).pages.single()
             assertEquals("tiff", page.extension)
-            assertTrue(fax.readBytes().contentEquals(page.readBytes()))
+            // Kept without its GPS position, camera, software or private tags (#1021).
+            val kept = String(page.readBytes(), Charsets.ISO_8859_1)
+            assertTrue(String(fax.readBytes(), Charsets.ISO_8859_1).contains("FictionalCam"))
+            for (needle in listOf("FictionalCam", "Fictional Studio", "xmpmeta", "A fictional comment", "2031:03:14")) {
+                assertFalse(needle, kept.contains(needle))
+            }
             val error = assertThrows(CoreException.NeedsOcr::class.java) {
                 DocumentSession().importImagesIn(core.app.core.library, listOf(page.path), "Fax", ImportOptions(null, false, null), null)
             }
@@ -343,6 +376,25 @@ class PhotoImportTest {
         } finally {
             fax.delete()
         }
+    }
+
+    /**
+     * A pending scan's pages outlive a damaged pending list across two
+     * restarts: while the damaged copy is kept, no stage is cleared.
+     */
+    @Test
+    fun aPendingScanSurvivesTwoRestartsAfterADamagedList() {
+        val originals = Originals(core.storage)
+        val stage = originals.newStage()
+        val page = originals.stageImage(File(stage, "page-1.jpg"), taggedJpeg(1))
+        core.app.core.documents.importDocument(ImportSource.Pages(listOf(page), SourceKind.Scan), "Scan", CaseChoice.New("Scans"))
+        File(core.storage.root, "pending.json").writeText("{ not json")
+        repeat(2) {
+            core.app.reopenCore()
+            core.app.core.documents
+            assertTrue("restart ${it + 1}", page.isFile)
+        }
+        assertTrue(File(core.storage.root, "pending.json.corrupt").isFile)
     }
 
     /** A damaged pending list is set aside: imports go on, and no stage is cleared on its word. */
@@ -377,6 +429,43 @@ class PhotoImportTest {
 
     private fun discard(uri: Uri) {
         CameraCapture.file(core.app, uri)?.delete()
+    }
+
+    /** A TIFF in a mixed Original keeps its place with a placeholder; the JPEG still shows. */
+    @Test
+    fun aMixedOriginalShowsEveryPageItCan() {
+        val originals = Originals(core.storage)
+        val folder = originals.newStage()
+        val jpeg = originals.stageImage(File(folder, "page-1"), taggedJpeg(1))
+        val tiff = originals.stageImage(
+            File(folder, "page-2"),
+            InstrumentationRegistry.getInstrumentation().context.assets.open("tagged-gps.tif").use { it.readBytes() },
+        )
+        val original = OriginalSource.of(listOf(jpeg, tiff))
+        assertEquals(OriginalSource.Images(listOf(jpeg, tiff)), original)
+        compose.setContent { MdocTheme { OriginalView(original, Modifier.fillMaxSize()) } }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag(PAGE_PLACEHOLDER)).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithContentDescription("Original page 1 of 2").assertExists()
+        compose.onNodeWithText("No preview for this page").assertExists()
+    }
+
+    /** Twenty photos: the list lays out and decodes only what it shows, not every page at once. */
+    @Test
+    fun aLongScanDecodesOnlyTheVisiblePages() {
+        val originals = Originals(core.storage)
+        val folder = originals.newStage()
+        val pages = (1..20).map { originals.stageImage(File(folder, "page-$it"), taggedJpeg(1)) }
+        val before = OriginalDecodes.started.get()
+        compose.setContent {
+            MdocTheme {
+                Box(Modifier.size(160.dp, 240.dp)) { OriginalView(OriginalSource.Images(pages), Modifier.fillMaxSize()) }
+            }
+        }
+        compose.waitForIdle()
+        compose.waitUntil(10_000) { OriginalDecodes.started.get() > before }
+        compose.waitForIdle()
+        val started = OriginalDecodes.started.get() - before
+        assertTrue("$started decodes", started in 1..6)
     }
 
     private suspend fun receive(home: HomeViewModel, uris: List<Uri>): PendingAdd.Received {

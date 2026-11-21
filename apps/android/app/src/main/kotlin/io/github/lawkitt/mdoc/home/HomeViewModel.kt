@@ -26,7 +26,6 @@ import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.jobs.CancelReason
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.storage.MdocStorage
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import kotlinx.coroutines.CancellationException
@@ -80,19 +79,28 @@ class HomeViewModel(
 
     init {
         // A new process: the scan comes back from the saved state, its shot
-        // in flight included, and shots no scan waits for go.
-        if (scan.pages.isEmpty() && scan.capture == null) {
-            scan.pages = saved.get<ArrayList<String>>(SCAN_PAGES).orEmpty().map(::File).filter { it.isFile }
-            scan.capture = saved.get<String>(SCAN_CAPTURE)?.let(::File)?.takeIf { it.isFile }
-        }
+        // in flight included (cleaned again if the camera had returned), and
+        // shots no scan waits for go.
+        scan.restore(
+            ScanSession.State(
+                pages = saved.get<ArrayList<String>>(SCAN_PAGES).orEmpty().map(::File),
+                capture = saved.get<String>(SCAN_CAPTURE)?.let(::File),
+                returned = saved.get<Boolean>(SCAN_RETURNED) == true,
+            ),
+        ) { Originals(core().storage) }
         scan.sweep()
-        saveScan()
-        if (scan.capture == null && !scan.processing) mutable.update { it.copy(scanPageCount = scan.pages.size) }
-    }
-
-    private fun saveScan() {
-        saved[SCAN_PAGES] = ArrayList(scan.pages.map { it.path })
-        saved[SCAN_CAPTURE] = scan.capture?.path
+        // Each change of the scan is saved, then its spent raw shots go.
+        viewModelScope.launch {
+            scan.state.collect { scanned ->
+                saved[SCAN_PAGES] = ArrayList(scanned.pages.map { it.path })
+                saved[SCAN_CAPTURE] = scanned.capture?.path
+                saved[SCAN_RETURNED] = scanned.returned
+                scan.saved()
+                val count = if (scanned.capture == null) scanned.pages.size else 0
+                mutable.update { it.copy(scanPageCount = count, refused = scanned.refused ?: it.refused) }
+                if (scanned.refused != null) scan.refusalShown()
+            }
+        }
     }
 
     /**
@@ -157,7 +165,11 @@ class HomeViewModel(
                     }
                     val parent = File(stage, "${index + 1}").apply { check(mkdir()) }
                     val target = File(parent, MdocStorage.safeFileName(name))
-                    checkNotNull(resolver.openInputStream(uri)).buffered().use { input ->
+                    val descriptor = checkNotNull(resolver.openAssetFileDescriptor(uri, "r"))
+                    // The size the provider declares, checked before any image
+                    // is read into memory.
+                    val declared = descriptor.length
+                    descriptor.createInputStream().buffered().use { input ->
                         val sourceKind = kind ?: receivedKind(input, target, extension, mime)
                         if (index == 0) {
                             firstKind = sourceKind
@@ -166,7 +178,7 @@ class HomeViewModel(
                             check(firstKind?.needsRecognition == true && sourceKind.needsRecognition) { name }
                         }
                         if (sourceKind.needsRecognition) {
-                            originals.stageImage(target, readImage(input))
+                            originals.stageImage(target, readImage(input, declared))
                         } else {
                             target.outputStream().use(input::copyTo)
                             target
@@ -225,62 +237,27 @@ class HomeViewModel(
      * `originals/`, saved with the scan so a stopped process finds it.
      */
     fun takePage(context: Context): Uri? {
-        if (scan.processing || scan.capture != null) return null
+        if (scan.state.value.capture != null) return null
         return runCatching { CameraCapture.create(context) }
-            .onSuccess {
-                scan.capture = CameraCapture.file(context, it)
-                saveScan()
-                mutable.update { state -> state.copy(scanPageCount = 0) }
-            }
+            .onSuccess { scan.begin(checkNotNull(CameraCapture.file(context, it))) }
             .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
             .getOrNull()
     }
 
-    /** The camera returned: its shot is cleaned into the scan's stage and the raw file deleted at once. */
+    /**
+     * The camera returned: the scan cleans its shot into the scan's stage,
+     * in a job of its own that Home's going doesn't stop.
+     */
     fun cameraResult(taken: Boolean, launchError: String? = null) {
-        val raw = scan.capture ?: return
-        scan.capture = null
-        scan.processing = true
-        saveScan()
-        viewModelScope.launch {
-            val previousFolder = scan.pages.firstOrNull()?.parentFile
-            var folder = previousFolder
-            var kept: File? = null
-            try {
-                kept = withContext(Dispatchers.IO) {
-                    try {
-                        val size = raw.length()
-                        if (!taken || size <= 0) return@withContext null
-                        check(size <= MAX_IMAGE_BYTES) { "This image is too large to import." }
-                        val bytes = raw.readBytes()
-                        raw.delete()
-                        val originals = Originals(core().storage)
-                        val stage = previousFolder ?: originals.newScanStage().also { folder = it }
-                        originals.stageImage(File(stage, "page-${scan.pages.size + 1}.jpg"), bytes)
-                    } finally {
-                        raw.delete()
-                    }
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                mutable.update { it.copy(refused = error.message) }
-            } finally {
-                if (kept != null) scan.pages += kept else if (previousFolder == null) folder?.deleteRecursively()
-                scan.processing = false
-                saveScan()
-                mutable.update { it.copy(scanPageCount = scan.pages.size, refused = launchError ?: it.refused) }
-            }
-        }
+        scan.clean(taken) { Originals(core().storage) }
+        if (launchError != null) mutable.update { it.copy(refused = launchError) }
     }
 
     fun finishScan(title: String) {
-        if (scan.pages.isEmpty() || scan.processing) return
+        val current = scan.state.value
+        if (current.pages.isEmpty() || current.capture != null) return
         receiving?.cancel()
-        val (folder, files) = Originals(core().storage).finishScanStage(scan.pages)
-        scan.pages = emptyList()
-        saveScan()
-        mutable.update { it.copy(scanPageCount = 0) }
+        val (folder, files) = Originals(core().storage).finishScanStage(scan.finish())
         replaceAdding(PendingAdd.Received(ImportSource.Pages(files, SourceKind.Scan), title, folder))
     }
 
@@ -331,20 +308,63 @@ class HomeViewModel(
         }
 
     companion object {
-        private const val MAX_IMAGE_BYTES = 256 * 1024 * 1024
+        private const val MAX_IMAGE_BYTES = 256L * 1024 * 1024
+        private const val TOO_LARGE = "This image is too large to import."
+        private const val TOO_LARGE_HERE = "This image is too large to import on this phone."
         private const val SCAN_PAGES = "scan.pages"
         private const val SCAN_CAPTURE = "scan.capture"
+        private const val SCAN_RETURNED = "scan.returned"
 
-        private fun readImage(input: InputStream): ByteArray {
-            val out = ByteArrayOutputStream()
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val size = input.read(buffer)
-                if (size < 0) return out.toByteArray()
-                check(size <= MAX_IMAGE_BYTES - out.size()) { "This image is too large to import." }
-                out.write(buffer, 0, size)
+        /**
+         * An image's bytes in one array of exactly its size: no growing
+         * buffer and no second full copy. The `declared` size is checked
+         * against the import limit and the memory this process may still
+         * use (the bytes, their clean copy and the core's copy) before
+         * anything is allocated. An image of unknown size is first copied,
+         * within the limit, to a temporary file outside `originals/`,
+         * deleted at once, so its size is known.
+         */
+        internal fun readImage(
+            input: InputStream,
+            declared: Long,
+            limit: Long = MAX_IMAGE_BYTES,
+            free: () -> Long = ::freeMemory,
+        ): ByteArray {
+            if (declared < 0) {
+                val spill = File.createTempFile("intake-", ".image")
+                try {
+                    spill.outputStream().use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            check(total <= limit) { TOO_LARGE }
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                    return spill.inputStream().use { readImage(it, spill.length(), limit, free) }
+                } finally {
+                    spill.delete()
+                }
             }
+            check(declared <= limit) { TOO_LARGE }
+            check(declared <= free() / 3) { TOO_LARGE_HERE }
+            val bytes = ByteArray(declared.toInt())
+            var at = 0
+            while (at < bytes.size) {
+                val read = input.read(bytes, at, bytes.size - at)
+                if (read < 0) break
+                at += read
+            }
+            // A provider that declared less than it has: refused, not grown.
+            check(input.read() < 0) { TOO_LARGE }
+            return if (at == bytes.size) bytes else bytes.copyOf(at)
         }
+
+        /** What this process may still allocate on its heap. */
+        private fun freeMemory(): Long = Runtime.getRuntime().let { it.maxMemory() - (it.totalMemory() - it.freeMemory()) }
 
         /**
          * A pasted text's title: its first line without Markdown's heading
