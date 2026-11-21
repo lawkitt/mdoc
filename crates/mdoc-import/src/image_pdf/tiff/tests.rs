@@ -322,114 +322,120 @@ fn every_fixture_imports_every_page_for_ocr() {
     }
 }
 
-/// The decoded twin of a bilevel page: 1 meaning white, rows byte-padded.
-type Twin = (u32, u32, Vec<u8>);
-
-/// `page` of a Group 4 (or any `tiff`-decodable) fixture, decoded.
-fn tiff_twin(name: &str, page: usize) -> Twin {
-    use tiff::decoder::{Decoder, DecodingResult};
-    let bytes = read(name);
-    let mut decoder = Decoder::new(std::io::Cursor::new(&bytes[..])).unwrap();
-    for _ in 0..page {
-        decoder.next_image().unwrap();
-    }
-    let (width, height) = decoder.dimensions().unwrap();
-    let DecodingResult::U8(packed) = decoder.read_image().unwrap() else {
-        panic!("bilevel pages decode to bytes");
-    };
-    (width, height, packed)
-}
-
-/// The share of `twin`'s pixels whose colour the rendering (gray, one byte
-/// a pixel, any size) disagrees with, sampling the rendering where each
-/// pixel's centre lands.
-fn disagreement(twin: &Twin, rendered: (u32, u32, usize, &[u8])) -> f64 {
-    let (width, height, bits) = twin;
-    let (rendered_width, rendered_height, stride, luma) = rendered;
-    let row = width.div_ceil(8) as usize;
-    let mut wrong = 0u64;
-    for y in 0..*height {
-        for x in 0..*width {
-            let white = bits[y as usize * row + x as usize / 8] >> (7 - x % 8) & 1 == 1;
-            let rx = ((f64::from(x) + 0.5) * f64::from(rendered_width) / f64::from(*width)) as u32;
-            let ry =
-                ((f64::from(y) + 0.5) * f64::from(rendered_height) / f64::from(*height)) as u32;
-            let shown_white = luma[ry as usize * stride + rx as usize] >= 128;
-            if white != shown_white {
-                wrong += 1;
-            }
-        }
-    }
-    wrong as f64 / (f64::from(*width) * f64::from(*height))
-}
-
-/// The qualification the item's Done-when asks for, with the pinned OCR
-/// runtime and models downloaded to throwaway storage: OCR reads every
-/// page of every fixture, English and Russian, in order; and PDFium, which
-/// OCR renders with, draws each passed-through CCITT page like its decoded
-/// twin.
-#[test]
-#[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
+/// The qualification with OCR and PDFium, on the targets OCR supports.
 #[cfg(any(
     all(target_os = "macos", target_arch = "aarch64"),
     all(target_os = "windows", target_arch = "x86_64")
 ))]
-fn ocr_reads_every_page_and_pdfium_draws_fax_pages_like_their_twins() {
-    use pdf_inspector::vision::{PdfiumRenderer, RenderOptions, RenderPixelFormat};
-    let dir = tempfile::tempdir().unwrap();
-    let installed = crate::ocr::install_in(dir.path()).unwrap();
-    let notice = ["NOTICE OF TERMINATION", "УВЕДОМЛЕНИЕ"];
-    for (name, pages) in [
-        (
-            "fax-g3-1d.tif",
-            &["SUPPLY AGREEMENT", "ДОГОВОР ПОСТАВКИ", "SIGNATURES"][..],
-        ),
-        (
-            "fax-g3-2d-normal-lsb.tif",
-            &["SUPPLY AGREEMENT", "ДОГОВОР ПОСТАВКИ"][..],
-        ),
-        ("fax-g4.tif", &notice[..]),
-        ("fax-g4-strips.tif", &notice[..]),
-        ("scan-lzw-gray.tif", &notice[..]),
-        ("scan-lzw-rgb.tif", &notice[..1]),
-    ] {
-        let imported = crate::import::prepare(&fixture(name), Some(&installed), false).unwrap();
-        assert!(imported.is_image && imported.is_pdf, "{name}");
-        let markdown = imported.markdown.to_uppercase();
-        let mut from = 0;
-        for heading in pages {
-            let found = markdown[from..]
-                .find(heading)
-                .unwrap_or_else(|| panic!("{name}: {heading} after {from} in {markdown}"));
-            from += found + heading.len();
+mod qualification {
+    use super::{DEFAULT_DPI, build, fixture, read};
+
+    /// The decoded twin of a bilevel page: 1 meaning white, rows byte-padded.
+    type Twin = (u32, u32, Vec<u8>);
+
+    /// `page` of a Group 4 (or any `tiff`-decodable) fixture, decoded.
+    fn tiff_twin(name: &str, page: usize) -> Twin {
+        use tiff::decoder::{Decoder, DecodingResult};
+        let bytes = read(name);
+        let mut decoder = Decoder::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        for _ in 0..page {
+            decoder.next_image().unwrap();
         }
+        let (width, height) = decoder.dimensions().unwrap();
+        let DecodingResult::U8(packed) = decoder.read_image().unwrap() else {
+            panic!("bilevel pages decode to bytes");
+        };
+        (width, height, packed)
     }
-    let renderer = PdfiumRenderer::load_from_path(&installed.pdfium).unwrap();
-    for (name, page, twin) in [
-        ("fax-g4.tif", 0, tiff_twin("fax-g4.tif", 0)),
-        ("fax-g4.tif", 1, tiff_twin("fax-g4.tif", 1)),
-    ] {
-        let built = build(&[&read(name)], DEFAULT_DPI).unwrap();
-        let rendered = renderer
-            .render_pages(
-                &built.pdf,
-                &[page as u32 + 1],
-                None,
-                &RenderOptions::new()
-                    .dpi(300.)
-                    .pixel_format(RenderPixelFormat::Gray8),
-            )
-            .unwrap()
-            .remove(0);
-        let wrong = disagreement(
-            &twin,
+
+    /// The share of `twin`'s pixels whose colour the rendering (gray, one byte
+    /// a pixel, any size) disagrees with, sampling the rendering where each
+    /// pixel's centre lands.
+    fn disagreement(twin: &Twin, rendered: (u32, u32, usize, &[u8])) -> f64 {
+        let (width, height, bits) = twin;
+        let (rendered_width, rendered_height, stride, luma) = rendered;
+        let row = width.div_ceil(8) as usize;
+        let mut wrong = 0u64;
+        for y in 0..*height {
+            for x in 0..*width {
+                let white = bits[y as usize * row + x as usize / 8] >> (7 - x % 8) & 1 == 1;
+                let rx =
+                    ((f64::from(x) + 0.5) * f64::from(rendered_width) / f64::from(*width)) as u32;
+                let ry =
+                    ((f64::from(y) + 0.5) * f64::from(rendered_height) / f64::from(*height)) as u32;
+                let shown_white = luma[ry as usize * stride + rx as usize] >= 128;
+                if white != shown_white {
+                    wrong += 1;
+                }
+            }
+        }
+        wrong as f64 / (f64::from(*width) * f64::from(*height))
+    }
+
+    /// The qualification the item's Done-when asks for, with the pinned OCR
+    /// runtime and models downloaded to throwaway storage: OCR reads every
+    /// page of every fixture, English and Russian, in order; and PDFium, which
+    /// OCR renders with, draws each passed-through CCITT page like its decoded
+    /// twin.
+    #[test]
+    #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
+    fn ocr_reads_every_page_and_pdfium_draws_fax_pages_like_their_twins() {
+        use pdf_inspector::vision::{PdfiumRenderer, RenderOptions, RenderPixelFormat};
+        let dir = tempfile::tempdir().unwrap();
+        let installed = crate::ocr::install_in(dir.path()).unwrap();
+        let notice = ["NOTICE OF TERMINATION", "УВЕДОМЛЕНИЕ"];
+        for (name, pages) in [
             (
-                rendered.width(),
-                rendered.height(),
-                rendered.stride(),
-                rendered.pixels(),
+                "fax-g3-1d.tif",
+                &["SUPPLY AGREEMENT", "ДОГОВОР ПОСТАВКИ", "SIGNATURES"][..],
             ),
-        );
-        assert!(wrong < 0.002, "{name} page {}: {wrong}", page + 1);
+            (
+                "fax-g3-2d-normal-lsb.tif",
+                &["SUPPLY AGREEMENT", "ДОГОВОР ПОСТАВКИ"][..],
+            ),
+            ("fax-g4.tif", &notice[..]),
+            ("fax-g4-strips.tif", &notice[..]),
+            ("scan-lzw-gray.tif", &notice[..]),
+            ("scan-lzw-rgb.tif", &notice[..1]),
+        ] {
+            let imported = crate::import::prepare(&fixture(name), Some(&installed), false).unwrap();
+            assert!(imported.is_image && imported.is_pdf, "{name}");
+            let markdown = imported.markdown.to_uppercase();
+            let mut from = 0;
+            for heading in pages {
+                let found = markdown[from..]
+                    .find(heading)
+                    .unwrap_or_else(|| panic!("{name}: {heading} after {from} in {markdown}"));
+                from += found + heading.len();
+            }
+        }
+        let renderer = PdfiumRenderer::load_from_path(&installed.pdfium).unwrap();
+        for (name, page, twin) in [
+            ("fax-g4.tif", 0, tiff_twin("fax-g4.tif", 0)),
+            ("fax-g4.tif", 1, tiff_twin("fax-g4.tif", 1)),
+        ] {
+            let built = build(&[&read(name)], DEFAULT_DPI).unwrap();
+            let rendered = renderer
+                .render_pages(
+                    &built.pdf,
+                    &[page as u32 + 1],
+                    None,
+                    &RenderOptions::new()
+                        .dpi(300.)
+                        .pixel_format(RenderPixelFormat::Gray8),
+                )
+                .unwrap()
+                .remove(0);
+            let wrong = disagreement(
+                &twin,
+                (
+                    rendered.width(),
+                    rendered.height(),
+                    rendered.stride(),
+                    rendered.pixels(),
+                ),
+            );
+            assert!(wrong < 0.002, "{name} page {}: {wrong}", page + 1);
+        }
     }
 }
