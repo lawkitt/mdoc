@@ -177,22 +177,99 @@ fn several_group_3_strips_are_joined_bit_reversed() {
     }
 }
 
-/// A Group 3 page whose later strip doesn't open with an end-of-line code
-/// can't be joined, and nothing here decodes Group 3: it is refused, not
-/// shown wrong.
+/// A little-endian, one-page TIFF: `entries` (tag, type, value), each one
+/// value long, then `arrays` (tag, type, values) of 32-bit values stored
+/// after the directory, then `data`.
+fn tiff_file(entries: &[(u16, u16, u32)], arrays: &[(u16, Vec<u32>)], data: &[u8]) -> Vec<u8> {
+    let count = entries.len() + arrays.len();
+    let directory_end = 8 + 2 + 12 * count + 4;
+    let arrays_size: usize = arrays.iter().map(|(_, values)| 4 * values.len()).sum();
+    let data_at = (directory_end + arrays_size) as u32;
+    let mut all: Vec<(u16, u16, u32, u32)> = entries
+        .iter()
+        .map(|&(tag, kind, value)| (tag, kind, 1, value))
+        .collect();
+    let mut at = directory_end as u32;
+    for (tag, values) in arrays {
+        all.push((*tag, 4, values.len() as u32, at));
+        at += 4 * values.len() as u32;
+    }
+    all.sort_by_key(|entry| entry.0);
+    let mut tiff = b"II*\x00".to_vec();
+    tiff.extend_from_slice(&8u32.to_le_bytes());
+    tiff.extend_from_slice(&(count as u16).to_le_bytes());
+    for (tag, kind, count, value) in all {
+        tiff.extend_from_slice(&tag.to_le_bytes());
+        tiff.extend_from_slice(&kind.to_le_bytes());
+        tiff.extend_from_slice(&count.to_le_bytes());
+        tiff.extend_from_slice(&value.to_le_bytes());
+    }
+    tiff.extend_from_slice(&0u32.to_le_bytes());
+    for (_, values) in arrays {
+        for value in values {
+            // Offsets are relative to the data, which follows the arrays.
+            tiff.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    assert_eq!(tiff.len() as u32, data_at);
+    tiff.extend_from_slice(data);
+    tiff
+}
+
+/// A Group 3 page whose strips carry no end-of-line codes can't be joined:
+/// each strip is decoded on its own and the page stored losslessly. Here an
+/// 8-pixel-wide page of four rows in two strips, coded by hand: a white row
+/// (white run 8, `10011`) and a black row (white run 0 `00110101`, black run
+/// 8 `000101`), each row starting on a byte.
 #[test]
-fn group_3_strips_that_cant_be_joined_are_refused() {
-    let mut bytes = read("fax-g3-2d-normal-lsb.tif");
-    use tiff::{decoder::Decoder, tags::Tag};
-    let second = Decoder::new(std::io::Cursor::new(&bytes[..]))
-        .unwrap()
-        .get_tag_u64_vec(Tag::StripOffsets)
-        .unwrap()[1] as usize;
-    bytes[second] = 0xff;
-    assert!(matches!(
-        build(&[&bytes], DEFAULT_DPI),
-        Err(ImageError::Unreadable)
-    ));
+fn group_3_strips_that_cant_be_joined_are_decoded_losslessly() {
+    let strip = [0x98, 0x35, 0x14];
+    let header = 8 + 2 + 12 * 9 + 4 + 2 * 4 * 2;
+    let tiff = tiff_file(
+        &[
+            (256, 3, 8),
+            (257, 3, 4),
+            (258, 3, 1),
+            (259, 3, 3),
+            (262, 3, 0),
+            (278, 3, 2),
+            (292, 4, 4),
+        ],
+        &[(273, vec![header, header + 3]), (279, vec![3, 3])],
+        &[strip, strip].concat(),
+    );
+    let built = build(&[&tiff], DEFAULT_DPI).unwrap();
+    let page = &pages(&built.pdf)[0];
+    assert!(
+        page.image
+            .contains("/BitsPerComponent 1 /Filter /FlateDecode"),
+        "{}",
+        page.image
+    );
+    // 1 is white: white, black, white, black.
+    assert_eq!(inflate(&page.data), [0xff, 0x00, 0xff, 0x00]);
+}
+
+/// The joined Group 3 2D stream decodes to the same page as its strips
+/// decoded one by one (303 rows each, the last 191): joining them is sound.
+#[test]
+fn joined_group_3_strips_decode_like_the_strips_one_by_one() {
+    let bytes = read("fax-g3-2d-normal-lsb.tif");
+    for page in 0..2 {
+        let strips: Vec<Vec<u8>> = raw_strips(&bytes, page)
+            .into_iter()
+            .map(|strip| strip.iter().map(|byte| byte.reverse_bits()).collect())
+            .collect();
+        let one_by_one = super::decode_strips(&strips, 1728, 1100, 303, 1100, false).unwrap();
+        let joined =
+            super::decode_strips(&[strips.concat()], 1728, 1100, 1100, 1100, false).unwrap();
+        assert_eq!(one_by_one, joined, "page {}", page + 1);
+        let black = one_by_one
+            .iter()
+            .map(|byte| byte.count_zeros())
+            .sum::<u32>();
+        assert!(black > 10_000, "page {}: {black}", page + 1);
+    }
 }
 
 /// Group 4 strips can't be joined: the page in five strips is decoded and
@@ -348,28 +425,79 @@ mod qualification {
         (width, height, packed)
     }
 
+    /// `page` of a Group 3 fixture decoded strip by strip (`hayro-ccitt`, not
+    /// PDFium), as shown: 1 meaning white.
+    fn ccitt_twin(name: &str, page: usize) -> Twin {
+        use tiff::{decoder::Decoder, tags::Tag};
+        let bytes = read(name);
+        let mut decoder = Decoder::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        for _ in 0..page {
+            decoder.next_image().unwrap();
+        }
+        let (width, height) = decoder.dimensions().unwrap();
+        let mut tag = |tag| decoder.find_tag_unsigned::<u32>(tag).unwrap();
+        let options = tag(Tag::Unknown(292)).unwrap_or(0);
+        let reversed = tag(Tag::FillOrder) == Some(2);
+        let min_is_black = tag(Tag::PhotometricInterpretation) == Some(1);
+        let rows_per_strip = tag(Tag::RowsPerStrip).unwrap_or(height);
+        let strips: Vec<Vec<u8>> = super::raw_strips(&bytes, page)
+            .into_iter()
+            .map(|strip| {
+                if reversed {
+                    strip.iter().map(|byte| byte.reverse_bits()).collect()
+                } else {
+                    strip
+                }
+            })
+            .collect();
+        let k = if options & 1 != 0 { 1 } else { 0 };
+        let mut bits = super::super::decode_strips(
+            &strips,
+            width,
+            height,
+            rows_per_strip,
+            k,
+            options & 4 != 0,
+        )
+        .unwrap();
+        if min_is_black {
+            bits.iter_mut().for_each(|byte| *byte = !*byte);
+        }
+        (width, height, bits)
+    }
+
     /// The share of `twin`'s pixels whose colour the rendering (gray, one byte
     /// a pixel, any size) disagrees with, sampling the rendering where each
-    /// pixel's centre lands.
+    /// pixel's centre lands. Only pixels inside a run (their eight
+    /// neighbours the same colour) count: at a glyph's edge, rendering at
+    /// another resolution decides either way.
     fn disagreement(twin: &Twin, rendered: (u32, u32, usize, &[u8])) -> f64 {
         let (width, height, bits) = twin;
         let (rendered_width, rendered_height, stride, luma) = rendered;
         let row = width.div_ceil(8) as usize;
-        let mut wrong = 0u64;
-        for y in 0..*height {
-            for x in 0..*width {
-                let white = bits[y as usize * row + x as usize / 8] >> (7 - x % 8) & 1 == 1;
+        let white =
+            |x: u32, y: u32| bits[y as usize * row + x as usize / 8] >> (7 - x % 8) & 1 == 1;
+        let (mut wrong, mut counted) = (0u64, 0u64);
+        for y in 1..height - 1 {
+            for x in 1..width - 1 {
+                let colour = white(x, y);
+                let inside =
+                    (y - 1..=y + 1).all(|ny| (x - 1..=x + 1).all(|nx| white(nx, ny) == colour));
+                if !inside {
+                    continue;
+                }
+                counted += 1;
                 let rx =
                     ((f64::from(x) + 0.5) * f64::from(rendered_width) / f64::from(*width)) as u32;
                 let ry =
                     ((f64::from(y) + 0.5) * f64::from(rendered_height) / f64::from(*height)) as u32;
                 let shown_white = luma[ry as usize * stride + rx as usize] >= 128;
-                if white != shown_white {
+                if colour != shown_white {
                     wrong += 1;
                 }
             }
         }
-        wrong as f64 / (f64::from(*width) * f64::from(*height))
+        wrong as f64 / counted as f64
     }
 
     /// The qualification the item's Done-when asks for, with the pinned OCR
@@ -411,6 +539,19 @@ mod qualification {
         }
         let renderer = PdfiumRenderer::load_from_path(&installed.pdfium).unwrap();
         for (name, page, twin) in [
+            ("fax-g3-1d.tif", 0, ccitt_twin("fax-g3-1d.tif", 0)),
+            ("fax-g3-1d.tif", 1, ccitt_twin("fax-g3-1d.tif", 1)),
+            ("fax-g3-1d.tif", 2, ccitt_twin("fax-g3-1d.tif", 2)),
+            (
+                "fax-g3-2d-normal-lsb.tif",
+                0,
+                ccitt_twin("fax-g3-2d-normal-lsb.tif", 0),
+            ),
+            (
+                "fax-g3-2d-normal-lsb.tif",
+                1,
+                ccitt_twin("fax-g3-2d-normal-lsb.tif", 1),
+            ),
             ("fax-g4.tif", 0, tiff_twin("fax-g4.tif", 0)),
             ("fax-g4.tif", 1, tiff_twin("fax-g4.tif", 1)),
         ] {
@@ -435,7 +576,15 @@ mod qualification {
                     rendered.pixels(),
                 ),
             );
-            assert!(wrong < 0.002, "{name} page {}: {wrong}", page + 1);
+            // Resampling a fax pixel (204 or 300 dpi) to 300 dpi moves a
+            // fraction of a percent; an inverted, mis-joined or misread page
+            // differs in tens of percent.
+            println!(
+                "{name} page {}: {:.3}% of run pixels differ",
+                page + 1,
+                wrong * 100.
+            );
+            assert!(wrong < 0.01, "{name} page {}: {wrong}", page + 1);
         }
     }
 }
