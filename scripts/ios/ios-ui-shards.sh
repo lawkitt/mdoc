@@ -26,8 +26,8 @@
 # compatible.
 source "$(dirname "$0")/../lib.sh"
 
-# Three since Xcode 27: a shard of two took 31 minutes on the xcode-27
-# image, 16-21 on macos-26 (#997). MDOC_UI_SHARDS replaces it (the tests').
+# Three on macos-26 (#1041): two took 19.6 and 21.8 minutes of tests there,
+# over ADR 0113's 15. MDOC_UI_SHARDS replaces it (the tests').
 count=${MDOC_UI_SHARDS:-3}
 dir=${MDOC_UI_TESTS_DIR:-apps/ios/mdocUITests}
 times=${MDOC_UI_CLASS_TIMES:-apps/ios/ui-class-times.tsv}

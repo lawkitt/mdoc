@@ -143,7 +143,7 @@ jobs:
 
   # The UI tests are sharded by test class, as one part took about 26
   # minutes after the sweep (#829), over ADR 0112's 20; three parts since
-  # each of two took 31 minutes on the xcode-27 image (#997).
+  # two took 19.6 and 21.8 minutes of tests on macos-26 (#1041).
   ios:
     name: ci/ios (${{ matrix.part }})
     needs: core
@@ -235,8 +235,9 @@ jobs:
 
       # A green UI part's class times (ADR 0113), without the timing tests:
       # a few hundred bytes, from which the nightly refreshes
-      # apps/ios/ui-class-times.tsv, the shards' times. A failure here only
-      # loses one measurement, never the part.
+      # apps/ios/ui-class-times.tsv, the shards' times, with the tests pin's
+      # only (its name holds the pin). A failure here only loses one
+      # measurement, never the part.
       - name: Class times
         id: times
         if: ${{ !inputs.timing && startsWith(matrix.part, 'ui ') }}
@@ -246,7 +247,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ios-ui-times-${{ steps.part.outputs.key }}-${{ github.run_attempt }}
+          name: ios-ui-times-${{ inputs.xcode }}-${{ steps.part.outputs.key }}-${{ github.run_attempt }}
           path: ui-class-times.tsv
           retention-days: 15
 
