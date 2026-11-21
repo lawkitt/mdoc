@@ -130,11 +130,23 @@ pub struct Source {
 /// A document's bytes, shared rather than copied, and wiped when the last
 /// holder drops them: they may be a locked document's, unlocked.
 #[derive(Clone)]
-pub(crate) struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
+pub(crate) struct SharedBytes(Arc<Held>);
+
+enum Held {
+    Wiped(zeroize::Zeroizing<Vec<u8>>),
+    /// The PDF the image builder made of image files, which can't be
+    /// locked: nothing in it isn't in those files, and wiping a photo's
+    /// worth of bytes again would slow the phones' camera import
+    /// (#1024 decision 11).
+    Built(Vec<u8>),
+}
 
 impl AsRef<[u8]> for SharedBytes {
     fn as_ref(&self) -> &[u8] {
-        &self.0
+        match &*self.0 {
+            Held::Wiped(bytes) => bytes,
+            Held::Built(bytes) => bytes,
+        }
     }
 }
 
@@ -145,12 +157,13 @@ impl Source {
     pub fn read(path: &Path) -> Result<Self, ImportError> {
         let path = std::path::absolute(path).map_err(ImportError::Read)?;
         let file = std::fs::File::open(&path).map_err(ImportError::Read)?;
-        let stamp = file
-            .metadata()
-            .ok()
-            .map(|metadata| SourceStamp::from(&metadata));
+        let metadata = file.metadata().ok();
+        let stamp = metadata.as_ref().map(SourceStamp::from);
+        // Sized to the file: the bytes are wiped when dropped, spare
+        // capacity included, so a doubled buffer costs twice.
+        let size = metadata.map_or(0, |metadata| metadata.len().min(MAX_PDF_BYTES + 1));
         let mut file = file.take(MAX_PDF_BYTES + 1);
-        let mut bytes = Vec::new();
+        let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
         file.read_to_end(&mut bytes).map_err(ImportError::Io)?;
         if is_pdf(&bytes) {
             if bytes.len() as u64 > MAX_PDF_BYTES {
@@ -169,7 +182,18 @@ impl Source {
         Self {
             path,
             stamp,
-            bytes: SharedBytes(Arc::new(zeroize::Zeroizing::new(bytes))),
+            bytes: SharedBytes(Arc::new(Held::Wiped(zeroize::Zeroizing::new(bytes)))),
+            unlocked: false,
+        }
+    }
+
+    /// The PDF the image builder made of image files, said to come from
+    /// `path` as `stamp` stood: not wiped ([`Held::Built`]).
+    fn built_from_images(path: PathBuf, stamp: Option<SourceStamp>, pdf: Vec<u8>) -> Self {
+        Self {
+            path,
+            stamp,
+            bytes: SharedBytes(Arc::new(Held::Built(pdf))),
             unlocked: false,
         }
     }
@@ -239,17 +263,37 @@ impl Source {
     /// other source. The path and stamp stay the image file's.
     pub(crate) fn image_pdf(&self, dpi: u16) -> Option<Result<(Self, u64), ImportError>> {
         ImageFormat::from_bytes(self.bytes())?;
-        Some(
-            image_pdf::build(&[self.bytes()], dpi)
-                .map(|built| {
-                    (
-                        Self::new(self.path.clone(), self.stamp, built.pdf),
-                        built.frames_left_out,
-                    )
-                })
-                .map_err(ImportError::Image),
-        )
+        Some(images_pdf(std::slice::from_ref(self), dpi))
     }
+}
+
+/// Images as one PDF the image builder makes of them, a page each in
+/// order, sized for `dpi`, with the frames of animations it leaves out.
+/// The path and stamp are the first image's.
+pub(crate) fn images_pdf(images: &[Source], dpi: u16) -> Result<(Source, u64), ImportError> {
+    let first = images
+        .first()
+        .ok_or(ImportError::Image(image_pdf::ImageError::Unreadable))?;
+    let bytes: Vec<&[u8]> = images.iter().map(Source::bytes).collect();
+    let built = image_pdf::build(&bytes, dpi).map_err(ImportError::Image)?;
+    Ok((
+        Source::built_from_images(first.path.clone(), first.stamp, built.pdf),
+        built.frames_left_out,
+    ))
+}
+
+/// The image files at `paths`, read as an import reads them.
+pub(crate) fn read_images(
+    paths: &[PathBuf],
+    cancel: &AtomicBool,
+) -> Result<Vec<Source>, ImportError> {
+    paths
+        .iter()
+        .map(|path| {
+            check_cancel(cancel)?;
+            Source::read(path)
+        })
+        .collect()
 }
 
 /// Never the bytes: they are the user's document.
@@ -661,6 +705,37 @@ pub fn prepare_cancellable(
     import_source(source, installed, skip_ocr, cancel)
 }
 
+/// Imports the images at `paths` as one document, a page each in order:
+/// photos or camera pages picked together on a phone (#1024 decision 15).
+/// They become one PDF in memory, which imports like a scanned PDF; the
+/// import's source path is the first image's.
+pub fn prepare_images_cancellable(
+    paths: &[PathBuf],
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    let images = read_images(paths, cancel)?;
+    let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
+    import_image_pdf(images_pdf(&images, dpi)?, installed, skip_ocr, cancel)
+}
+
+/// Imports the PDF the image builder made, with the animation frames it
+/// left out, as an image's import: its warning names the image.
+fn import_image_pdf(
+    (pdf, frames): (Source, u64),
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    check_cancel(cancel)?;
+    let mut imported = convert_pdf(pdf, installed, skip_ocr, cancel)?;
+    imported.left_out.animation_frames = frames;
+    imported.warning = image_warning(imported.warning);
+    imported.is_image = true;
+    Ok(imported)
+}
+
 /// Imports `source`'s bytes: the one conversion every import makes after it
 /// has read them.
 pub(crate) fn import_source(
@@ -676,13 +751,7 @@ pub(crate) fn import_source(
     // page; the page is sized for OCR's render resolution.
     let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
     if let Some(built) = source.image_pdf(dpi) {
-        let (pdf, frames) = built?;
-        check_cancel(cancel)?;
-        let mut imported = convert_pdf(pdf, installed, skip_ocr, cancel)?;
-        imported.left_out.animation_frames = frames;
-        imported.warning = image_warning(imported.warning);
-        imported.is_image = true;
-        return Ok(imported);
+        return import_image_pdf(built?, installed, skip_ocr, cancel);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;

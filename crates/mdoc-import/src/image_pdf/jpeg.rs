@@ -34,6 +34,13 @@ pub(super) fn passthrough(jpeg: &[u8]) -> Option<Page> {
     })
 }
 
+/// `jpeg` without the segments [`passthrough`] drops, whatever its size,
+/// and its EXIF orientation; `None` for a file that doesn't parse.
+pub(super) fn without_metadata(jpeg: &[u8]) -> Option<(Vec<u8>, u8)> {
+    let segments = Segments::read(jpeg)?;
+    Some((segments.kept, segments.orientation))
+}
+
 struct Frame {
     precision: u8,
     height: u16,
@@ -139,12 +146,54 @@ impl Segments {
 /// other than a stuffed `FF 00`, a restart or fill.
 fn scan_end(jpeg: &[u8], mut at: usize) -> Option<usize> {
     loop {
-        let found = jpeg.get(at..)?.iter().position(|&byte| byte == 0xff)?;
-        at += found;
+        at += next_marker_byte(jpeg.get(at..)?)?;
         match *jpeg.get(at + 1)? {
             0x00 | 0xd0..=0xd7 => at += 2,
             0xff => at += 1,
             _ => return Some(at),
+        }
+    }
+}
+
+/// Where the first `FF` byte in `bytes` is. A camera photo's scan data is
+/// most of its file, so it is searched eight bytes at a time: the phones'
+/// camera import must stay as fast as it was (#1024 decision 11).
+fn next_marker_byte(bytes: &[u8]) -> Option<usize> {
+    const ONES: u64 = 0x0101_0101_0101_0101;
+    const HIGHS: u64 = 0x8080_8080_8080_8080;
+    let mut skipped = 0;
+    for chunk in bytes.as_chunks::<8>().0 {
+        // A byte of `inverted` is zero where `chunk` holds FF.
+        let inverted = !u64::from_ne_bytes(*chunk);
+        if inverted.wrapping_sub(ONES) & !inverted & HIGHS != 0 {
+            break;
+        }
+        skipped += 8;
+    }
+    bytes[skipped..]
+        .iter()
+        .position(|&byte| byte == 0xff)
+        .map(|found| skipped + found)
+}
+
+#[cfg(test)]
+mod tests {
+    /// The word-at-a-time search finds what a byte-by-byte one does.
+    #[test]
+    fn the_next_ff_is_found_wherever_it_is() {
+        for length in 0..40 {
+            for at in 0..=length {
+                let mut bytes = vec![0x7f; length];
+                if at < length {
+                    bytes[at] = 0xff;
+                    // A byte just below FF is no match.
+                    if at > 0 {
+                        bytes[at - 1] = 0xfe;
+                    }
+                }
+                let expected = bytes.iter().position(|&byte| byte == 0xff);
+                assert_eq!(super::next_marker_byte(&bytes), expected, "{length} {at}");
+            }
         }
     }
 }

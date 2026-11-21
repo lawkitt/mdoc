@@ -100,7 +100,10 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
                     val storage = core().storage
                     val folder = File(storage.dir(MdocStorage.Area.Originals), java.util.UUID.randomUUID().toString()).apply { mkdirs() }
                     val files = uris.mapIndexed { index, uri ->
-                        val name = displayName(resolver, uri) ?: "${fallbackTitle}.${extension(resolver, uri)}"
+                        // Without a name, the MIME type names the format; one mdoc
+                        // doesn't open is refused here, never saved as a JPEG (#1022).
+                        val name = displayName(resolver, uri)
+                            ?: "$fallbackTitle.${extensionFor(resolver.getType(uri)) ?: error(resolver.getType(uri) ?: fallbackTitle)}"
                         // Each in a folder of its own: two photos may share a name.
                         val target = File(File(folder, "${index + 1}").apply { mkdirs() }, MdocStorage.safeFileName(name))
                         checkNotNull(resolver.openInputStream(uri)).use { input -> target.outputStream().use(input::copyTo) }
@@ -152,13 +155,6 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
             if (cursor.moveToFirst()) cursor.getString(0) else null
         }
 
-    private fun extension(resolver: ContentResolver, uri: Uri): String = when (resolver.getType(uri)) {
-        "application/pdf" -> "pdf"
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
-        "image/png" -> "png"
-        else -> "jpg"
-    }
-
     companion object {
         /**
          * A pasted text's title: its first line without Markdown's heading
@@ -171,7 +167,26 @@ class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = n
         fun kindOf(file: File): SourceKind? = when (file.extension.lowercase()) {
             "pdf" -> SourceKind.Pdf
             "docx" -> SourceKind.Docx
-            "jpg", "jpeg", "png", "heic", "heif", "webp" -> SourceKind.Image
+            "jpg", "jpeg", "png", "heic", "heif", "webp", "gif" -> SourceKind.Image
+            else -> null
+        }
+
+        /**
+         * The extension a picked file without a name gets from its MIME
+         * type: each format's own, so the core reads it as what it is; null
+         * for a type mdoc doesn't open, which is refused with the supported
+         * formats. TIFF is named but not yet opened (#1024 item 8).
+         */
+        fun extensionFor(mime: String?): String? = when (mime?.lowercase()) {
+            "application/pdf" -> "pdf"
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
+            "image/jpeg", "image/jpg", "image/pjpeg" -> "jpg"
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            "image/gif" -> "gif"
+            "image/heic" -> "heic"
+            "image/heif" -> "heif"
+            "image/tiff" -> "tiff"
             else -> null
         }
 

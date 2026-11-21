@@ -673,6 +673,44 @@ pub(crate) fn write_photo(dir: &Path, name: &str) -> std::path::PathBuf {
     path
 }
 
+/// A small gray PNG, a second page beside [`write_photo`]'s.
+pub(crate) fn small_png() -> Vec<u8> {
+    png(&DynamicImage::ImageLuma8(ImageBuffer::from_pixel(
+        20,
+        30,
+        image::Luma([200]),
+    )))
+}
+
+/// A camera's photo as a phone hands it over: `width` x `height`, sensor
+/// noise over a pale page with dark rows (so it compresses as a photo does,
+/// about 3 MB at 12 MP), stored sideways with EXIF orientation 6, a
+/// fictional camera and a GPS position. Fictional content only.
+pub(crate) fn camera_jpeg(width: u32, height: u32) -> Vec<u8> {
+    let mut state = 0x2545_f491_u32;
+    let image = ImageBuffer::from_fn(width, height, |x, y| {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        let noise = (state % 20) as u8;
+        // Dark rows, like lines of text.
+        let ink = if (y / 8) % 5 == 0 && x % 300 < 260 {
+            120
+        } else {
+            0
+        };
+        let value = 230u8.saturating_sub(ink).saturating_sub(noise);
+        Rgb([value, value.saturating_sub(4), value.saturating_sub(10)])
+    });
+    let mut bytes = Vec::new();
+    DynamicImage::ImageRgb8(image)
+        .write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
+            &mut bytes, 92,
+        ))
+        .unwrap();
+    with_segments(&bytes, &[app1_exif(Some(6))])
+}
+
 pub(crate) fn bomb() -> Vec<u8> {
     png_claiming(100_000, 100_000)
 }
@@ -692,7 +730,8 @@ fn write_image_fixtures() {
 mod import_seam {
     use super::{ImageError, bomb, write_photo};
     use crate::import::{
-        ImportError, LeftOut, image_warning, prepare, supported_extension, supported_source,
+        ImportError, LeftOut, image_warning, prepare, prepare_images_cancellable,
+        supported_extension, supported_source,
     };
     use std::path::Path;
 
@@ -724,6 +763,73 @@ mod import_seam {
             Err(ImportError::NoNativeText)
         ));
         assert_eq!(names(dir.path()), ["Lease photo.jpg"]);
+    }
+
+    /// Photos picked together import as one document, a page each, as a
+    /// scan does; nothing is written beside them.
+    #[test]
+    fn photos_picked_together_import_as_one_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = write_photo(dir.path(), "page-1.jpg");
+        let second = dir.path().join("page-2.png");
+        std::fs::write(&second, super::small_png()).unwrap();
+        let pages = [first.clone(), second];
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        match prepare_images_cancellable(&pages, None, false, &cancel) {
+            Err(ImportError::NeedsOcr(path, pages, _, page_count)) => {
+                assert_eq!(path, std::path::absolute(&first).unwrap());
+                assert_eq!((pages, page_count), (vec![1, 2], 2));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(
+            prepare_images_cancellable(&pages, None, true, &cancel),
+            Err(ImportError::NoNativeText)
+        ));
+        assert_eq!(names(dir.path()), ["page-1.jpg", "page-2.png"]);
+        // A page that isn't an image, or none at all, is refused.
+        let text = dir.path().join("notes.txt");
+        std::fs::write(&text, "Not a photo.").unwrap();
+        for pages in [vec![first, text], vec![]] {
+            assert!(matches!(
+                prepare_images_cancellable(&pages, None, false, &cancel),
+                Err(ImportError::Image(ImageError::Unreadable))
+            ));
+        }
+    }
+
+    /// The phones' camera photo, 12 MP with its metadata, imports through
+    /// the passthrough (decision 11): the PDF holds the photo's own scan
+    /// data, never re-encoded. Prints the import's time before OCR, the
+    /// median of 5 (`--no-capture`), for the phones' camera check.
+    #[test]
+    fn a_12_mp_camera_jpeg_imports_without_re_encoding() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("camera.jpg");
+        let bytes = super::camera_jpeg(4032, 3024);
+        std::fs::write(&photo, &bytes).unwrap();
+        let page = super::page(&super::build_one(&bytes).pdf);
+        assert_eq!(page.filter, "DCTDecode");
+        let scan = &bytes[super::find(&bytes, &[0xff, 0xda]).unwrap()..];
+        assert!(page.data.ends_with(scan));
+        let mut times: Vec<_> = (0..5)
+            .map(|_| {
+                let start = std::time::Instant::now();
+                assert!(matches!(
+                    prepare(&photo, None, false),
+                    Err(ImportError::NeedsOcr(..))
+                ));
+                start.elapsed()
+            })
+            .collect();
+        times.sort();
+        println!(
+            "12 MP camera JPEG ({:.1} MB): import before OCR {:?} median, {:?} to {:?}",
+            bytes.len() as f64 / 1e6,
+            times[2],
+            times[0],
+            times[4]
+        );
     }
 
     /// Images are admitted by extension, and by content when renamed.
@@ -851,5 +957,226 @@ mod import_seam {
         ));
         let built = super::build_one(&std::fs::read(photo).unwrap());
         assert_eq!(built.pages, 1);
+    }
+}
+
+/// The copy a phone keeps (#1021): the same pixels without metadata, its
+/// orientation kept as the one tag left.
+mod kept_copy {
+    use super::*;
+
+    const XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/\x00<x:xmpmeta>Fictional Studio</x:xmpmeta>";
+
+    /// What no kept copy may hold: the GPS rationals, the camera, XMP, a
+    /// comment.
+    fn assert_no_metadata(bytes: &[u8]) {
+        for needle in [
+            LATITUDE.as_slice(),
+            b"FictionalCam",
+            b"xmpmeta",
+            b"Fictional Studio",
+            b"A fictional comment",
+        ] {
+            assert!(
+                !contains(bytes, needle),
+                "{}",
+                String::from_utf8_lossy(needle)
+            );
+        }
+    }
+
+    fn orientation(bytes: &[u8]) -> u8 {
+        use image::ImageDecoder;
+        image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .unwrap()
+            .into_decoder()
+            .unwrap()
+            .orientation()
+            .unwrap()
+            .to_exif()
+    }
+
+    fn pixels(bytes: &[u8]) -> Vec<u8> {
+        image::load_from_memory(bytes)
+            .unwrap()
+            .into_rgba8()
+            .into_raw()
+    }
+
+    /// A JPEG keeps its scan data byte for byte; EXIF with its GPS, XMP,
+    /// comments and appended data go, the orientation stays.
+    #[test]
+    fn a_jpeg_keeps_its_pixels_and_orientation_only() {
+        let plain = jpeg(40, 30, [90, 160, 60]);
+        let comment = segment(0xfe, b"A fictional comment");
+        for orientation in [None, Some(1), Some(6), Some(8)] {
+            let tagged = [
+                with_segments(
+                    &plain,
+                    &[app1_exif(orientation), segment(0xe1, XMP), comment.clone()],
+                ),
+                b"appended preview".to_vec(),
+            ]
+            .concat();
+            let kept = without_metadata(&tagged).unwrap();
+            assert_no_metadata(&kept);
+            assert!(!contains(&kept, b"appended preview"));
+            let scan = &plain[find(&plain, &[0xff, 0xda]).unwrap()..];
+            assert!(kept.ends_with(scan));
+            let expected = orientation.map_or(1, |o| o as u8);
+            assert_eq!(self::orientation(&kept), expected, "{orientation:?}");
+            if expected == 1 {
+                assert_eq!(kept, without_app0(&plain));
+            }
+            assert_eq!(pixels(&kept), pixels(&plain));
+        }
+    }
+
+    /// The camera's photo loses its metadata and keeps its orientation, and
+    /// the builder still passes it through upright.
+    #[test]
+    fn a_camera_photo_s_kept_copy_still_passes_through_upright() {
+        let photo = with_segments(&jpeg(64, 48, [10, 20, 30]), &[app1_exif(Some(6))]);
+        let kept = without_metadata(&photo).unwrap();
+        let from_photo = page(&build_one(&photo).pdf);
+        let from_kept = page(&build_one(&kept).pdf);
+        assert_eq!(from_kept.data, from_photo.data);
+        assert_eq!(from_kept.matrix, from_photo.matrix);
+        assert_eq!(from_kept.media_box, from_photo.media_box);
+    }
+
+    fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut chunk = (data.len() as u32).to_be_bytes().to_vec();
+        chunk.extend_from_slice(kind);
+        chunk.extend_from_slice(data);
+        let mut crc = flate2::Crc::new();
+        crc.update(kind);
+        crc.update(data);
+        chunk.extend_from_slice(&crc.sum().to_be_bytes());
+        chunk
+    }
+
+    /// `png` with `chunks` inserted right after its header chunk.
+    fn png_with(png: &[u8], chunks: &[Vec<u8>]) -> Vec<u8> {
+        let after_header = 8 + 25;
+        [&png[..after_header], &chunks.concat(), &png[after_header..]].concat()
+    }
+
+    /// A PNG keeps its image data and transparency; EXIF, text and time
+    /// chunks go, the orientation stays.
+    #[test]
+    fn a_png_keeps_its_pixels_and_orientation_only() {
+        let plain = png(&DynamicImage::ImageRgba8(ImageBuffer::from_pixel(
+            6,
+            4,
+            Rgba([10, 200, 30, 128]),
+        )));
+        for orientation in [None, Some(6)] {
+            let tagged = png_with(
+                &plain,
+                &[
+                    png_chunk(b"eXIf", &exif_tiff(orientation)),
+                    png_chunk(b"tEXt", b"Comment\x00A fictional comment"),
+                    png_chunk(
+                        b"iTXt",
+                        &[b"XML:com.adobe.xmp\x00\x00\x00\x00\x00".as_slice(), XMP].concat(),
+                    ),
+                    png_chunk(b"tIME", &[0x07, 0xea, 3, 14, 9, 26, 53]),
+                ],
+            );
+            let kept = without_metadata(&tagged).unwrap();
+            assert_no_metadata(&kept);
+            assert!(!contains(&kept, b"tEXt") && !contains(&kept, b"tIME"));
+            let expected = orientation.map_or(1, |o| o as u8);
+            assert_eq!(self::orientation(&kept), expected);
+            assert_eq!(pixels(&kept), pixels(&plain));
+            if expected == 1 {
+                assert_eq!(kept, plain);
+            }
+        }
+    }
+
+    /// An extended WebP keeps its image; EXIF, XMP and the profile go with
+    /// their flags, the orientation stays.
+    #[test]
+    fn a_webp_keeps_its_pixels_and_orientation_only() {
+        let still = webp_still([10, 200, 30, 255]);
+        let chunk = |fourcc: &[u8], data: &[u8]| {
+            let mut chunk = fourcc.to_vec();
+            chunk.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            chunk.extend_from_slice(data);
+            if data.len() % 2 == 1 {
+                chunk.push(0);
+            }
+            chunk
+        };
+        // Canvas 4×4, with the ICC, EXIF and XMP flags.
+        let vp8x = [0x2c, 0, 0, 0, 3, 0, 0, 3, 0, 0];
+        for orientation in [None, Some(6)] {
+            let mut body = b"WEBP".to_vec();
+            body.extend(chunk(b"VP8X", &vp8x));
+            body.extend(chunk(b"ICCP", b"Fictional Studio profile"));
+            body.extend_from_slice(&still[12..]);
+            body.extend(chunk(b"EXIF", &exif_tiff(orientation)));
+            body.extend(chunk(b"XMP ", XMP));
+            let tagged = [
+                b"RIFF".as_slice(),
+                &(body.len() as u32).to_le_bytes(),
+                &body,
+            ]
+            .concat();
+            let kept = without_metadata(&tagged).unwrap();
+            assert_no_metadata(&kept);
+            assert!(!contains(&kept, b"ICCP") && !contains(&kept, b"XMP "));
+            let expected = orientation.map_or(1, |o| o as u8);
+            assert_eq!(self::orientation(&kept), expected);
+            assert_eq!(kept[20], if expected == 1 { 0 } else { 0x08 });
+            assert_eq!(
+                u32::from_le_bytes(kept[4..8].try_into().unwrap()) as usize,
+                kept.len() - 8
+            );
+            assert_eq!(pixels(&kept), pixels(&still));
+        }
+        // A simple WebP has nothing to strip.
+        assert_eq!(without_metadata(&still).unwrap(), still);
+    }
+
+    /// A GIF keeps its frames and looping; comments and other application
+    /// blocks (XMP) go.
+    #[test]
+    fn a_gif_keeps_its_frames_only() {
+        let animated = gif(&[[200, 0, 0, 255], [0, 200, 0, 255]]);
+        let comment = b"\x21\xfe\x13A fictional comment\x00".to_vec();
+        let xmp = [
+            b"\x21\xff\x0bXMP DataXMP".as_slice(),
+            &[16],
+            b"Fictional Studio",
+            &[0],
+        ]
+        .concat();
+        let trailer = animated.len() - 1;
+        let tagged = [&animated[..trailer], &comment, &xmp, &animated[trailer..]].concat();
+        let kept = without_metadata(&tagged).unwrap();
+        assert_no_metadata(&kept);
+        assert_eq!(kept, animated);
+        assert_eq!(later_frames(ImageFormat::Gif, &kept), 1);
+    }
+
+    /// What it can't rewrite is the operating system's to convert.
+    #[test]
+    fn other_formats_are_left_to_the_operating_system() {
+        let heic = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/heic/page-gps.heic"),
+        )
+        .unwrap();
+        for bytes in [
+            heic.as_slice(),
+            b"II*\x00 a TIFF",
+            b"\xff\xd8\xff\xe0 damaged",
+            b"",
+        ] {
+            assert_eq!(without_metadata(bytes), None);
+        }
     }
 }
