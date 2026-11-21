@@ -1,6 +1,7 @@
 import Foundation
 import MdocFFI
 import Observation
+import PDFKit
 import SwiftUI
 import UIKit
 
@@ -137,9 +138,18 @@ final class DocumentViewModel {
         snapshot.phase == nil && !snapshot.kind.needsRecognition && runningJob == nil
     }
 
-    /// A locked DOCX waits for its password: the password card shows in
-    /// place of the action bar until Unlock imports it.
+    /// A locked DOCX or PDF waits for its password: the password card shows
+    /// in place of the action bar until Unlock imports it.
     private(set) var passwordPrompt: PasswordPrompt?
+
+    /// A locked PDF's Original, unlocked in memory by the password that
+    /// imported it, or by the one typed on the Original's own card once the
+    /// document opens again. It lives as long as this model and is never
+    /// saved, and the password is not kept (#1024 decision 6).
+    private(set) var unlockedOriginal: PDFDocument?
+    /// Counts `closeOriginal`: an import that began before the document
+    /// was left doesn't unlock its Original when it ends.
+    @ObservationIgnored private var originalCloses = 0
 
     enum PasswordPrompt: Equatable {
         case needed
@@ -226,22 +236,48 @@ final class DocumentViewModel {
     }
 
     /// Unlock on the password card: the import runs again with `password`,
-    /// which goes no further than this one call.
+    /// which goes no further than this one call and, for a PDF, the
+    /// unlocking of its Original.
     func unlock(password: String) async {
         guard !password.isEmpty else { return }
         await recognize(password: password)
     }
 
+    /// The Original's card: unlocks the locked PDF it shows, in memory.
+    /// False when `password` doesn't open it.
+    @discardableResult
+    func unlockOriginal(password: String) -> Bool {
+        guard case .pdf(let url) = snapshot.original,
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              let document = PDFDocument(data: data),
+              document.isLocked, document.unlock(withPassword: password)
+        else { return false }
+        unlockedOriginal = document
+        return true
+    }
+
+    /// The document left the screen: a locked PDF's Original locks again,
+    /// so it asks for the password once the document opens again
+    /// (#1024 decision 6), even while this model stays for a job's notice.
+    func closeOriginal() {
+        unlockedOriginal = nil
+        originalCloses += 1
+    }
+
     private func recognize(password: String?) async {
         waitingForSetup = nil
+        let closes = originalCloses
         let session = session
         let outcome = await jobs.run(.recognize, documentID: id, title: Self.recognizeTaskTitle) { observer in
             try session.recognize(observer: observer, password: password)
         }
         switch outcome {
         case .failed(CoreError.modelMissing):
-            // Scans, photos and text-less PDFs need OCR.
+            // Scans, photos and text-less PDFs need OCR. A locked one's
+            // password opened it: the setup card takes the password card's
+            // place, which asks again once the model is in.
             waitingForSetup = .recognize
+            passwordPrompt = nil
             return
         case .failed(CoreError.needsPassword):
             passwordPrompt = .needed
@@ -251,6 +287,9 @@ final class DocumentViewModel {
             return
         case .finished:
             passwordPrompt = nil
+            if let password, closes == originalCloses {
+                unlockOriginal(password: password)
+            }
         case .cancelled, .failed, .busy:
             break
         }

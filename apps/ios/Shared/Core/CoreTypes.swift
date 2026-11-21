@@ -426,7 +426,7 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     case modelMissing
     /// Reading or converting the file.
     case importFailed(String)
-    /// A locked DOCX: its password is needed, or the one given was wrong.
+    /// A locked DOCX or PDF: its password is needed, or the one given was wrong.
     case needsPassword
     case wrongPassword
     /// A locked DOCX's Original isn't rendered: that would write an unlocked copy.

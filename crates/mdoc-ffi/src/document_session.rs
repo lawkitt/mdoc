@@ -81,8 +81,8 @@ pub struct ImportOptions {
     pub ocr: Option<OcrPaths>,
     /// Take a PDF's text layer only, skipping pages that need OCR.
     pub native_text_only: bool,
-    /// A locked DOCX's password, for this import only: never kept, and
-    /// wiped once the import returns.
+    /// A locked DOCX's or PDF's password, for this import only: never kept,
+    /// and wiped once the import returns.
     #[uniffi(default = None)]
     pub password: Option<String>,
 }
@@ -225,8 +225,8 @@ impl DocumentSession {
     /// opens, Markdown and plain text as they are, and JPEG images (camera
     /// scans, photos) through OCR. A PDF with pages that need OCR fails with
     /// `CoreError::NeedsOcr` unless `options` say how to treat them; a
-    /// locked DOCX, with `CoreError::NeedsPassword` or `WrongPassword`
-    /// until `options` carry its password.
+    /// locked DOCX or PDF, with `CoreError::NeedsPassword` or
+    /// `WrongPassword` until `options` carry its password.
     pub fn import_file(
         &self,
         path: String,
@@ -1346,15 +1346,43 @@ mod tests {
         }
     }
 
-    /// A locked DOCX, saved by Word and by LibreOffice: no password asks for
-    /// one, a wrong one asks again, and the right one gives what its
-    /// unlocked twin gives. Nothing is written beside it or into the library.
+    /// Every file under `root`, sorted.
+    fn files(root: &Path) -> Vec<std::path::PathBuf> {
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                found.extend(files(&path));
+            } else {
+                found.push(path);
+            }
+        }
+        found.sort();
+        found
+    }
+
+    /// The encrypted PDF fixtures' user password, a published test value.
+    const PDF_PASSWORD: &str = "Petrov-2026";
+
+    /// A locked PDF on the phones (#1024 item 11), AES-128 and AES-256: no
+    /// password asks for one, a wrong one asks again, and the right one
+    /// gives what its open twin gives. Encryption no password opens says so
+    /// whatever is typed, and a PDF locked only against editing opens with
+    /// none. Nothing is written beside it or into the library: no kept
+    /// pages, no unlocked copy.
     #[test]
-    fn a_locked_pdf_is_refused_on_the_phones_until_they_open_one() {
-        let pdf_source = |name: &str| fixture(&format!("pdf-source/{name}"));
-        let import = |path: String, password: Option<&str>| {
-            DocumentSession::new().import_file(
-                path,
+    fn a_locked_pdf_imports_with_its_password_only() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let copy = |name: &str| {
+            let path = scratch.path().join(name);
+            std::fs::copy(fixture(&format!("pdf-source/{name}")), &path).unwrap();
+            path.display().to_string()
+        };
+        let import = |path: &str, password: Option<&str>| {
+            DocumentSession::new().import_file_in(
+                library.clone(),
+                path.into(),
                 ImportOptions {
                     password: password.map(Into::into),
                     ..ImportOptions::default()
@@ -1362,40 +1390,142 @@ mod tests {
                 None,
             )
         };
-        for name in ["comments-aes128.pdf", "comments-aes256.pdf"] {
-            // Even the right password: no phone opens a locked PDF yet.
-            for password in [None, Some("petrov-2026"), Some("Petrov-2026")] {
-                match import(pdf_source(name), password) {
-                    Err(CoreError::Import { message }) => assert_eq!(
-                        message, "This PDF is password-protected. Import an unlocked copy.",
-                        "{name}"
-                    ),
-                    other => panic!("{name} {password:?}: {:?}", other.map(|_| ())),
-                }
+        let open = DocumentSession::new()
+            .import_file(
+                fixture("pdf-source/comments.pdf"),
+                ImportOptions::default(),
+                None,
+            )
+            .unwrap();
+        // The AES-256 copy with its standard security handler swapped for
+        // one no reader knows, the same length so every offset still holds.
+        let unknown = scratch.path().join("unknown-handler.pdf");
+        let mut bytes = std::fs::read(fixture("pdf-source/comments-aes256.pdf")).unwrap();
+        let at = bytes
+            .windows(b"/Standard".len())
+            .position(|window| window == b"/Standard")
+            .unwrap();
+        bytes[at..at + b"/Nonstand".len()].copy_from_slice(b"/Nonstand");
+        std::fs::write(&unknown, bytes).unwrap();
+        let unknown = unknown.display().to_string();
+        let locked = ["comments-aes128.pdf", "comments-aes256.pdf"].map(copy);
+        let owner_only = copy("comments-owner-only.pdf");
+        let before = files(scratch.path());
+        for path in &locked {
+            assert!(
+                matches!(import(path, None), Err(CoreError::NeedsPassword)),
+                "{path}"
+            );
+            assert!(
+                matches!(
+                    import(path, Some("petrov-2026")),
+                    Err(CoreError::WrongPassword)
+                ),
+                "{path}"
+            );
+            let unlocked = import(path, Some(PDF_PASSWORD)).unwrap();
+            assert_eq!(unlocked.text, open.text, "{path}");
+            assert_eq!(unlocked.warning, open.warning, "{path}");
+            assert_eq!(unlocked.left_out, open.left_out, "{path}");
+        }
+        for password in [None, Some(PDF_PASSWORD), Some("wrong")] {
+            match import(&unknown, password) {
+                Err(CoreError::Import { message }) => assert_eq!(
+                    message,
+                    "This PDF uses encryption mdoc can’t open. Import an unlocked copy."
+                ),
+                other => panic!("{password:?}: {:?}", other.map(|_| ())),
             }
         }
-        // A PDF locked only against editing imports as before.
-        let open = import(pdf_source("comments.pdf"), None).unwrap();
-        let owner_only = import(pdf_source("comments-owner-only.pdf"), None).unwrap();
+        let owner_only = import(&owner_only, None).unwrap();
         assert_eq!(owner_only.text, open.text);
+        assert_eq!(owner_only.left_out, open.left_out);
+        assert_eq!(files(scratch.path()), before);
     }
 
+    /// With the OCR runtime: a locked, partly scanned PDF recognized through
+    /// the phones' resumable import keeps no page (#1024 decision 7). A
+    /// cancelled run leaves nothing to resume, and the next one, with its
+    /// password, gives its open twin's document.
+    #[test]
+    #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
+    #[cfg(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64")
+    ))]
+    fn a_locked_scan_keeps_no_pages_on_the_phones() {
+        struct CancelAtFirstPage(Arc<DocumentSession>);
+        impl JobProgress for CancelAtFirstPage {
+            fn stage(&self, _: JobStage) {}
+            fn advanced(&self, _: u64, _: u64) {
+                self.0.cancel();
+            }
+            fn remaining(&self, _: u64) {}
+            fn thermal(&self) -> Thermal {
+                Thermal::Nominal
+            }
+            fn free_memory(&self) -> Option<u64> {
+                None
+            }
+        }
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let models = scratch.path().join("models");
+        let installed = mdoc_import::ocr::install_config_in(
+            &models,
+            &mdoc_store::settings::OcrConfig {
+                model: mdoc_store::settings::OcrModel::Cyrillic,
+                ..Default::default()
+            },
+            &mdoc_import::model_download::Progress::default(),
+        )
+        .unwrap();
+        let ocr = OcrPaths {
+            root: models.display().to_string(),
+            model: crate::setup::ModelId::OcrEnglishRussian,
+            pdfium: installed.pdfium.display().to_string(),
+            onnx: installed.onnx.display().to_string(),
+        };
+        let options = |password: Option<&str>| ImportOptions {
+            ocr: Some(ocr.clone()),
+            password: password.map(Into::into),
+            ..ImportOptions::default()
+        };
+        let locked = fixture("pdf-source/partly-scanned-aes256.pdf");
+        let session = DocumentSession::new();
+        let stopped = session.import_file_in(
+            library.clone(),
+            locked.clone(),
+            options(Some(PDF_PASSWORD)),
+            Some(Box::new(CancelAtFirstPage(session.clone()))),
+        );
+        assert!(
+            matches!(stopped, Err(CoreError::Cancelled)),
+            "{:?}",
+            stopped.map(|_| ())
+        );
+        let imports = scratch.path().join("imports");
+        assert!(!imports.exists(), "nothing kept");
+        let recognized = DocumentSession::new()
+            .import_file_in(library, locked, options(Some(PDF_PASSWORD)), None)
+            .unwrap();
+        let open = DocumentSession::new()
+            .import_file(
+                fixture("import/handmade-partly-scanned.pdf"),
+                options(None),
+                None,
+            )
+            .unwrap();
+        assert_eq!(recognized.text, open.text);
+        assert!(!imports.exists(), "nothing kept");
+    }
+
+    /// A locked DOCX, saved by Word and by LibreOffice: no password asks for
+    /// one, a wrong one asks again, and the right one gives what its
+    /// unlocked twin gives. Nothing is written beside it or into the library.
     #[test]
     fn a_locked_docx_imports_with_its_password_only() {
         const PASSWORD: &str = "Petrov-2026";
-        fn files(root: &Path) -> Vec<std::path::PathBuf> {
-            let mut found = Vec::new();
-            for entry in std::fs::read_dir(root).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    found.extend(files(&path));
-                } else {
-                    found.push(path);
-                }
-            }
-            found.sort();
-            found
-        }
         let scratch = Scratch::new();
         let library = library(&scratch);
         for app in ["word", "libreoffice"] {

@@ -795,22 +795,6 @@ pub fn prepare_cancellable(
     prepare_unlocking(path, &mut unlock, installed, skip_ocr, cancel)
 }
 
-/// [`prepare_cancellable`] of `source`, already read: a caller that
-/// decides something from the bytes (a format's policy) converts those same
-/// bytes.
-pub fn prepare_source(
-    source: Source,
-    password: Option<&Password>,
-    installed: Option<&crate::ocr::Installed>,
-    skip_ocr: bool,
-    cancel: &AtomicBool,
-) -> Result<Imported, ImportError> {
-    check_cancel(cancel)?;
-    let source = source.unlock(password)?;
-    check_cancel(cancel)?;
-    import_source(source, password, installed, skip_ocr, cancel)
-}
-
 /// Imports the file at `path` with a tab's `unlock`, then leaves in it what
 /// opens the file from now on. Unlocked bytes of the file as it still is
 /// convert again without reading or decrypting it; a password unlocks it.

@@ -7,7 +7,7 @@ pub enum CoreError {
     /// with native text only. Pages are 1-based.
     #[error("This PDF requires OCR.")]
     NeedsOcr { pages: Vec<u32>, page_count: u32 },
-    /// A locked DOCX and no password: the app asks for one.
+    /// A locked DOCX or PDF and no password: the app asks for one.
     #[error("{}", mdoc_import::import::ImportError::PasswordRequired)]
     NeedsPassword,
     /// The password given doesn't unlock the document: the app asks again.

@@ -52,6 +52,7 @@
     <string name="original">Original</string>
     <string name="no_original_page">No original page</string>
     <string name="original_page">Original page %1$d of %2$d</string>
+    <string name="original_pdf_locked">This PDF is encrypted, so its pages aren\'t shown here.</string>
     <string name="recognize_text">Recognize text</string>
     <string name="resume_recognition">Resume recognition</string>
     <string name="finish_import">Finish import</string>

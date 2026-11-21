@@ -229,7 +229,7 @@ class Documents(
 
         /**
          * Import and OCR; resumes after the pages already finished. A locked
-         * DOCX throws [AppError.NeedsPassword] until [password] unlocks it;
+         * DOCX or PDF throws [AppError.NeedsPassword] until [password] unlocks it;
          * the password goes no further than this call.
          */
         fun recognize(observer: JobObserver, password: String? = null): DocumentSnapshot {

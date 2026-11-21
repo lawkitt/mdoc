@@ -18,6 +18,17 @@ struct OriginalView: View {
     /// Dark page was turned on from its hint, for a toast saying where the
     /// toggle lives.
     var onDarkPageOn: () -> Void = {}
+    /// A locked PDF, unlocked in memory (`DocumentViewModel.unlockedOriginal`).
+    var unlockedPDF: PDFDocument?
+    /// The import's password card asks (`DocumentViewModel.passwordPrompt`).
+    var importPrompt: DocumentViewModel.PasswordPrompt?
+    /// The bottom bar shows the import's card beside the pane, or the
+    /// import runs, so the pane doesn't ask too; over the text, the pane
+    /// shows that card itself.
+    var importCardInBar = true
+    var onImportUnlock: @MainActor (String) async -> Void = { _ in }
+    /// The pane's own card unlocks a locked PDF; false for a wrong password.
+    var onUnlockPDF: @MainActor (String) -> Bool = { _ in false }
     @State private var viewport = PageViewport()
     @State private var bottomInset: CGFloat = 0
     @Environment(\.preferences) private var preferences
@@ -70,10 +81,9 @@ struct OriginalView: View {
                 systemImage: "doc.plaintext",
                 description: Text("Pasted text shows its text only."))
         case .pdf(let url):
-            PDFKitView(url: url, viewport: viewport)
-                .darkPage(dark.isOn)
-                .accessibilityLabel(Text("Original PDF"))
-                .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
+            PDFOriginal(
+                url: url, unlocked: unlockedPDF, importPrompt: importPrompt, importCardInBar: importCardInBar,
+                importUnlock: onImportUnlock, unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
         case .docx(let url):
             DocxOriginalView(
                 source: url, waits: jobRuns, darkPage: dark.isOn, onComments: onComments,
@@ -92,8 +102,76 @@ struct OriginalView: View {
     }
 }
 
-struct PDFKitView: UIViewRepresentable {
+/// A PDF's pages. A locked PDF asks for its password in the pane, and
+/// PDFKit unlocks it in memory: no unlocked copy is written. A PDF locked
+/// only against editing opens as it is.
+private struct PDFOriginal: View {
     let url: URL
+    let unlocked: PDFDocument?
+    let importPrompt: DocumentViewModel.PasswordPrompt?
+    let importCardInBar: Bool
+    let importUnlock: @MainActor (String) async -> Void
+    let unlock: @MainActor (String) -> Bool
+    let viewport: PageViewport
+    let darkPage: Bool
+    /// The file as read, once per URL.
+    @State private var read: (url: URL, document: PDFDocument?)?
+    @State private var prompt = DocumentViewModel.PasswordPrompt.needed
+
+    private var document: PDFDocument? {
+        unlocked ?? read.flatMap { $0.url == url ? $0.document : nil }
+    }
+
+    var body: some View {
+        Group {
+            if document?.isLocked == true {
+                locked
+            } else {
+                PDFKitView(document: document, viewport: viewport)
+                    .darkPage(darkPage)
+                    .accessibilityLabel(Text("Original PDF"))
+                    .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
+            }
+        }
+        .task(id: url) {
+            if read?.url != url {
+                read = (url, PDFDocument(url: url))
+            }
+        }
+    }
+
+    /// One card at a time: the import's while it asks, whose password
+    /// unlocks the Original too, else the pane's own.
+    @ViewBuilder
+    private var locked: some View {
+        if let importPrompt, importCardInBar {
+            ContentUnavailableView(
+                "This document is password-protected",
+                systemImage: "lock",
+                description: Text("Enter the document’s password to show the Original."))
+        } else if let importPrompt {
+            card(PasswordCard(prompt: importPrompt, unlock: importUnlock))
+        } else {
+            card(
+                PasswordCard(prompt: prompt, purpose: .original) { password in
+                    if !unlock(password) {
+                        prompt = .wrong
+                    }
+                })
+        }
+    }
+
+    private func card(_ card: PasswordCard) -> some View {
+        ScrollView {
+            card.padding()
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(Color(uiColor: .secondarySystemBackground))
+    }
+}
+
+struct PDFKitView: UIViewRepresentable {
+    let document: PDFDocument?
     let viewport: PageViewport
 
     func makeUIView(context: Context) -> FittingPDFView {
@@ -101,15 +179,15 @@ struct PDFKitView: UIViewRepresentable {
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.backgroundColor = .secondarySystemBackground
-        view.document = PDFDocument(url: url)
+        view.document = document
         view.onControl = { [weak viewport] in viewport?.report($0) }
         viewport.attach { [weak view] in view?.perform($0) }
         return view
     }
 
     func updateUIView(_ view: FittingPDFView, context: Context) {
-        if view.document?.documentURL != url {
-            view.document = PDFDocument(url: url)
+        if view.document !== document {
+            view.document = document
         }
     }
 }
