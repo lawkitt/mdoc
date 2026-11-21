@@ -467,6 +467,12 @@
     "Dark" : {
 
     },
+    "Dark page" : {
+      "comment" : "The title menu's toggle, and its hint, that shows the original's page dark while the app is dark."
+    },
+    "Dark page · in the title menu" : {
+      "comment" : "Toast after the hint turned Dark page on: where the toggle lives."
+    },
     "Date" : {
 
     },
@@ -1532,6 +1538,9 @@
     },
     "Turn into" : {
 
+    },
+    "Turns the page dark. It's also in the title menu." : {
+      "comment" : "VoiceOver hint on the Dark page hint."
     },
     "Typing" : {
 

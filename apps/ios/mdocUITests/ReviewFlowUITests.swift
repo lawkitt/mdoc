@@ -28,6 +28,8 @@ final class ReviewFlowUITests: XCTestCase {
         let replace = app.buttons["review-replace"]
         XCTAssertTrue(replace.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(app.descendants(matching: .any)["review-alias"].firstMatch.exists)
+        // One mention: no All 1 / This one to choose between (#1036).
+        XCTAssertFalse(app.descendants(matching: .any)["review-scope"].firstMatch.exists)
         replace.tap()
         // The text view rebuilds its elements after a change; ask the app.
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))

@@ -619,15 +619,20 @@ final class CommentMarkerButton: UIButton {
         return true
     }
 
+    /// The comments' amber, dark enough for a glyph on the white page.
+    static let ink = UIColor(red: 0.73, green: 0.46, blue: 0.09, alpha: 1)
+
     private func configure() {
-        // A soft yellow disc with an ink glyph on the white page, no
-        // shadow; a resolved thread a quiet grey check.
-        var configuration = UIButton.Configuration.filled()
-        configuration.baseBackgroundColor = shown.resolved
-            ? UIColor(white: 0.9, alpha: 1) : CommentedPDFContainer.tint.withAlphaComponent(0.55)
-        configuration.baseForegroundColor = shown.resolved ? UIColor(white: 0.35, alpha: 1) : UIColor(white: 0.1, alpha: 1)
-        configuration.cornerStyle = .capsule
+        // The bubble itself, an amber outline on the page's own white (it
+        // hides text under it in a narrow margin, unseen on the page), no
+        // disc; threads that share a marker a small amber-tinted tag with
+        // their count; resolved ones grey (#1036, option B).
+        var configuration = UIButton.Configuration.plain()
+        let ink = shown.resolved ? UIColor(white: 0.5, alpha: 1) : Self.ink
+        configuration.baseForegroundColor = ink
         configuration.contentInsets = .zero
+        configuration.background.backgroundColor = .white
+        configuration.background.cornerRadius = 7
         if shown.threads.count > 1 {
             configuration.title = String(shown.threads.count)
             configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
@@ -635,9 +640,12 @@ final class CommentMarkerButton: UIButton {
                 attributes.font = .systemFont(ofSize: 12, weight: .semibold)
                 return attributes
             }
+            configuration.background.backgroundColor = UIColor.white.blended(with: ink, share: 0.16)
+            configuration.background.strokeColor = ink.withAlphaComponent(0.7)
+            configuration.background.strokeWidth = 1
         } else {
-            configuration.image = UIImage(systemName: shown.resolved ? "checkmark" : "text.bubble.fill")?
-                .applyingSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+            configuration.image = UIImage(systemName: shown.resolved ? "checkmark.bubble" : "text.bubble")?
+                .applyingSymbolConfiguration(.init(pointSize: 17, weight: .regular))
         }
         self.configuration = configuration
         accessibilityLabel = shown.spokenLabel
@@ -646,7 +654,7 @@ final class CommentMarkerButton: UIButton {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    /// A 44 pt target around the 30 pt marker.
+    /// A 44 pt target around the 24 pt marker.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         bounds.insetBy(dx: -CommentedPDFContainer.markerTouchSlop, dy: -CommentedPDFContainer.markerTouchSlop).contains(point)
     }
@@ -818,5 +826,18 @@ extension UIView {
 private extension UIFont {
     func bold() -> UIFont {
         fontDescriptor.withSymbolicTraits(.traitBold).map { UIFont(descriptor: $0, size: 0) } ?? self
+    }
+}
+
+private extension UIColor {
+    /// This colour with `share` of `other` mixed in, both as on a light page.
+    func blended(with other: UIColor, share: CGFloat) -> UIColor {
+        var (r1, g1, b1, a1): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+        var (r2, g2, b2, a2): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+        getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        return UIColor(
+            red: r1 + (r2 - r1) * share, green: g1 + (g2 - g1) * share, blue: b1 + (b2 - b1) * share,
+            alpha: a1 + (a2 - a1) * share)
     }
 }

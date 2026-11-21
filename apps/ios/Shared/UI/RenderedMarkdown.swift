@@ -1639,6 +1639,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        coverLaidOutText()
         let width = textWidth
         var renderedAgain = false
         if width > 0, abs(width - shownWidth) > 0.5 {
@@ -1781,6 +1782,18 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         guard let layout = textLayoutManager, let content = layout.textContentManager else { return }
         layout.ensureLayout(for: content.documentRange)
         if !tableViews.isEmpty { placeTables() }
+    }
+
+    /// Keeps the content size up with the text as laid out. After a
+    /// rebuild that laid the whole text out (`layOutAll`), UIKit kept the
+    /// content size it had estimated before, and scrolling never grew it:
+    /// the reader stopped thousands of points short of the end until
+    /// something resized the view (#1036, measured 9031 of 15610 pt).
+    private func coverLaidOutText() {
+        let height = laidOutContentHeight
+        if height > contentSize.height + 0.5 {
+            contentSize.height = height
+        }
     }
 
     /// The text's height as laid out so far: the content size lags behind
