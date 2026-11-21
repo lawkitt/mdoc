@@ -475,7 +475,7 @@ mod tests {
             let options = ViewOptions {
                 hide_comment_annotations: hide,
             };
-            let (doc, _) = open_document(bytes.clone(), None, options).unwrap();
+            let (doc, _) = open_document(bytes.clone().into(), None, options).unwrap();
             crate::page_luma(&doc, 0, 1.).unwrap()
         };
         // FreeText at (40, 40) from the bottom; the stamp at (220, 40).

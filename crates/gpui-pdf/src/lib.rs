@@ -49,6 +49,8 @@ use gpui::{
 // Only the forms layer maps field rects to window space.
 use gpui::{Bounds, Pixels};
 use hayro::hayro_interpret::InterpreterSettings;
+/// The bytes of a PDF, shared without copying (see [`PdfSource::Bytes`]).
+pub use hayro::hayro_syntax::PdfData;
 use hayro::hayro_syntax::{DecryptionError, LoadPdfError, Pdf};
 use image::{Frame, RgbaImage};
 
@@ -100,12 +102,21 @@ pub enum PdfSource {
     /// A document already in memory: an unlocked tab's bytes, a DOCX rendered
     /// in memory, a built image PDF. `password` opens it when it's
     /// encrypted. Nothing read, decrypted or rendered from it is written
-    /// anywhere; the view drops the password once the document opens.
+    /// anywhere; the view drops its handle on the password once the
+    /// document opens.
+    ///
+    /// Both are shared, never copied: [`PdfData`] wraps any
+    /// `Arc<T: AsRef<[u8]>>` (`PdfData::from(arc)`), and `password` any
+    /// `Arc` of a string type, so a host's wiped buffers stay the only copy
+    /// (beyond those lopdf and hayro make while opening the file).
     Bytes {
-        bytes: Arc<Vec<u8>>,
-        password: Option<String>,
+        bytes: PdfData,
+        password: Option<Password>,
     },
 }
+
+/// A shared password: any string type, such as a host's wiped one.
+pub type Password = Arc<dyn AsRef<str> + Send + Sync>;
 
 impl From<PathBuf> for PdfSource {
     fn from(path: PathBuf) -> Self {
@@ -119,7 +130,7 @@ impl std::fmt::Debug for PdfSource {
             Self::Path(path) => f.debug_tuple("Path").field(path).finish(),
             Self::Bytes { bytes, password } => f
                 .debug_struct("Bytes")
-                .field("len", &bytes.len())
+                .field("len", &bytes.as_ref().len())
                 .field("password", &password.as_ref().map(|_| "***"))
                 .finish(),
         }
@@ -161,7 +172,7 @@ pub fn close_control(id: impl Into<gpui::ElementId>, style: &PdfStyle) -> FocusR
 /// Parse a PDF's bytes into a reusable [`Document`]. The `Document` owns the bytes,
 /// so the caller can drop its own copy. Returns [`LoadError::Locked`] for a
 /// password-protected file (retry with [`parse_with_password`]).
-pub fn parse(bytes: Arc<Vec<u8>>) -> Result<Arc<Document>, LoadError> {
+pub fn parse(bytes: impl Into<PdfData>) -> Result<Arc<Document>, LoadError> {
     parse_with_password(bytes, None)
 }
 
@@ -169,10 +180,10 @@ pub fn parse(bytes: Arc<Vec<u8>>) -> Result<Arc<Document>, LoadError> {
 /// [`LoadError::Locked`] if the file is password-protected and `password` is
 /// missing or wrong.
 pub fn parse_with_password(
-    bytes: Arc<Vec<u8>>,
+    bytes: impl Into<PdfData>,
     password: Option<&str>,
 ) -> Result<Arc<Document>, LoadError> {
-    open_document(bytes, password, ViewOptions::default()).map(|(doc, _)| doc)
+    open_document(bytes.into(), password, ViewOptions::default()).map(|(doc, _)| doc)
 }
 
 /// How a [`PdfView`] draws its document.
@@ -243,13 +254,13 @@ fn display_bytes(bytes: &[u8], options: ViewOptions) -> Option<Vec<u8>> {
 /// document and its form fields. Returns [`LoadError::Locked`] if the file is
 /// password-protected and `password` is missing or wrong.
 fn open_document(
-    bytes: Arc<Vec<u8>>,
+    bytes: PdfData,
     password: Option<&str>,
     options: ViewOptions,
 ) -> Result<(Arc<Document>, Vec<FormField>), LoadError> {
-    let FixedUp { fields, display } = fix_up(&bytes, password, options);
+    let FixedUp { fields, display } = fix_up(bytes.as_ref(), password, options);
     // Decrypted by the fix-up, the display bytes open without a password.
-    let bytes = display.map(Arc::new).unwrap_or(bytes);
+    let bytes = display.map(PdfData::from).unwrap_or(bytes);
     match Pdf::new_with_password(bytes, password.unwrap_or_default()) {
         Ok(pdf) => Ok((Arc::new(pdf), fields)),
         Err(LoadPdfError::Decryption(DecryptionError::PasswordProtected)) => Err(LoadError::Locked),
@@ -274,7 +285,7 @@ struct Prepared {
 
 /// Open `bytes` with `password` and measure it — the off-thread half of a load.
 fn prepare(
-    bytes: Arc<Vec<u8>>,
+    bytes: PdfData,
     password: Option<&str>,
     options: ViewOptions,
 ) -> Result<Prepared, LoadError> {
@@ -1100,13 +1111,14 @@ impl PdfView {
                 .background_executor()
                 .spawn(async move {
                     let (bytes, password) = match source {
-                        PdfSource::Path(path) => (
-                            Arc::new(std::fs::read(&path).map_err(|e| e.to_string())?),
-                            None,
-                        ),
+                        PdfSource::Path(path) => {
+                            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+                            (PdfData::from(bytes), None)
+                        }
                         PdfSource::Bytes { bytes, password } => (bytes, password),
                     };
-                    Ok::<_, String>(prepare(bytes, password.as_deref(), options))
+                    let password = password.as_ref().map(|p| (**p).as_ref());
+                    Ok::<_, String>(prepare(bytes, password, options))
                 })
                 .await;
             let prepared = match loaded {

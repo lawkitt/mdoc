@@ -100,8 +100,8 @@ pub(super) fn encrypted(d: &mut Driver) -> Result<()> {
         let path = dir.join(file);
         let bytes = Arc::new(std::fs::read(&path).map_err(|e| e.to_string())?);
         let source = PdfSource::Bytes {
-            bytes,
-            password: password.map(str::to_owned),
+            bytes: bytes.into(),
+            password: password.map(|p| Arc::new(p.to_owned()) as gpui_pdf::Password),
         };
         let view = d.change(|w, window, cx| {
             w.new_tab(window, cx);

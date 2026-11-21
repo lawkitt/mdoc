@@ -1,7 +1,8 @@
 //! Encrypted PDFs opened with their password: the fixtures
 //! `tests/fixtures/pdf-source/comments-aes128.pdf` and `comments-aes256.pdf`
-//! (user password [`PASSWORD`]) against their open twin `comments.pdf`, and a
-//! form built in code, encrypted here.
+//! (user password [`PASSWORD`]) and `comments-owner-only.pdf` (an edit lock,
+//! no user password) against their open twin `comments.pdf`, and a form
+//! built in code, encrypted here.
 //!
 //! The fixtures are written by [`write_encrypted_fixtures`]:
 //! `cargo test -p gpui-pdf -- --ignored write_encrypted_fixtures`.
@@ -15,8 +16,8 @@ use lopdf::encryption::crypt_filters::{Aes128CryptFilter, Aes256CryptFilter, Cry
 use lopdf::{Document as LoDocument, EncryptionState, EncryptionVersion, Object, Permissions};
 
 use crate::{
-    FormField, LoadError, PageTone, PdfSource, PdfStyle, PdfView, ViewOptions, open_document,
-    render_page,
+    FormField, LoadError, PageTone, PdfData, PdfSource, PdfStyle, PdfView, ViewOptions,
+    open_document, render_page,
 };
 
 /// The published test password of every encrypted fixture. It protects
@@ -29,6 +30,8 @@ const OWNER_PASSWORD: &str = "Petrov-2026-owner";
 const OPEN: &[u8] = include_bytes!("../../../tests/fixtures/pdf-source/comments.pdf");
 const AES128: &[u8] = include_bytes!("../../../tests/fixtures/pdf-source/comments-aes128.pdf");
 const AES256: &[u8] = include_bytes!("../../../tests/fixtures/pdf-source/comments-aes256.pdf");
+const OWNER_ONLY: &[u8] =
+    include_bytes!("../../../tests/fixtures/pdf-source/comments-owner-only.pdf");
 
 #[derive(Clone, Copy, Debug)]
 enum Cipher {
@@ -39,6 +42,17 @@ enum Cipher {
 /// `bytes` encrypted with `cipher` under [`PASSWORD`] (user) and
 /// [`OWNER_PASSWORD`], every permission granted.
 fn encrypt(bytes: &[u8], cipher: Cipher) -> Vec<u8> {
+    encrypt_with(bytes, cipher, PASSWORD, Permissions::all())
+}
+
+/// `bytes` encrypted with `cipher` under `user_password` and
+/// [`OWNER_PASSWORD`], granting `permissions`.
+fn encrypt_with(
+    bytes: &[u8],
+    cipher: Cipher,
+    user_password: &str,
+    permissions: Permissions,
+) -> Vec<u8> {
     let mut doc = LoDocument::load_mem(bytes).unwrap();
     // AES-128 keys from the first /ID; a generated file has none.
     if doc.trailer.get(b"ID").is_err() {
@@ -55,8 +69,8 @@ fn encrypt(bytes: &[u8], cipher: Cipher) -> Vec<u8> {
                 stream_filter: b"StdCF".to_vec(),
                 string_filter: b"StdCF".to_vec(),
                 owner_password: OWNER_PASSWORD,
-                user_password: PASSWORD,
-                permissions: Permissions::all(),
+                user_password,
+                permissions,
             })
         }
         Cipher::Aes256 => {
@@ -70,8 +84,8 @@ fn encrypt(bytes: &[u8], cipher: Cipher) -> Vec<u8> {
                 stream_filter: b"StdCF".to_vec(),
                 string_filter: b"StdCF".to_vec(),
                 owner_password: OWNER_PASSWORD,
-                user_password: PASSWORD,
-                permissions: Permissions::all(),
+                user_password,
+                permissions,
             })
         }
     }
@@ -97,6 +111,14 @@ fn write_encrypted_fixtures() {
     ] {
         std::fs::write(dir.join(name), encrypt(&open, cipher)).unwrap();
     }
+    // Locked against editing only: it opens with no password, printing and
+    // copying allowed.
+    let edit_lock = Permissions::PRINTABLE | Permissions::COPYABLE;
+    std::fs::write(
+        dir.join("comments-owner-only.pdf"),
+        encrypt_with(&open, Cipher::Aes128, "", edit_lock),
+    )
+    .unwrap();
 }
 
 /// Each page of `bytes`, opened with `password` under `options`, rendered
@@ -107,13 +129,18 @@ fn pages(
     options: ViewOptions,
     tone: PageTone,
 ) -> Vec<Vec<u8>> {
-    let (doc, _) = open_document(Arc::new(bytes.to_vec()), password, options).unwrap();
+    let (doc, _) = open_document(data(bytes), password, options).unwrap();
     (0..doc.pages().len())
         .map(|idx| {
             let image = render_page(&doc, idx, 1.0, tone).unwrap();
             image.as_bytes(0).unwrap().to_vec()
         })
         .collect()
+}
+
+/// `bytes` as the view shares them.
+fn data(bytes: &[u8]) -> PdfData {
+    Arc::new(bytes.to_vec()).into()
 }
 
 /// The light page and the dark theme's toned page.
@@ -159,6 +186,29 @@ fn an_encrypted_fixture_renders_like_its_open_twin() {
     }
 }
 
+/// An edit lock (no user password) opens with no password and renders
+/// like its twin, comments hidden too: no card for owner-only locks.
+#[test]
+fn an_owner_only_lock_opens_without_a_password() {
+    let doc = LoDocument::load_mem(OWNER_ONLY).unwrap();
+    assert!(doc.was_encrypted(), "the fixture is encrypted");
+    for hide in [false, true] {
+        for tone in tones() {
+            assert!(
+                pages(OWNER_ONLY, None, options(hide), tone)
+                    == pages(OPEN, None, options(hide), tone),
+                "comments hidden: {hide}, {tone:?}"
+            );
+        }
+    }
+    let shown = pages(OWNER_ONLY, None, options(false), PageTone::Original);
+    let hidden = pages(OWNER_ONLY, None, options(true), PageTone::Original);
+    assert!(
+        shown[0] != hidden[0],
+        "comments hide on an edit-locked file"
+    );
+}
+
 #[test]
 fn comment_annotations_stay_hidden_on_an_encrypted_file() {
     for bytes in [AES128, AES256] {
@@ -173,33 +223,27 @@ fn comment_annotations_stay_hidden_on_an_encrypted_file() {
 #[test]
 fn a_missing_or_wrong_password_leaves_it_locked() {
     for bytes in [AES128, AES256] {
+        // Near misses: case, a trailing space, the last character dropped.
         for password in [
             None,
             Some(""),
             Some("petrov-2026"),
-            Some(OWNER_PASSWORD.trim_end_matches("-owner")),
+            Some("Petrov-2026 "),
+            Some("Petrov-202"),
         ] {
-            let result = open_document(Arc::new(bytes.to_vec()), password, ViewOptions::default());
-            match (password, result) {
-                (Some(PASSWORD), Ok(_)) => {}
-                (_, Err(LoadError::Locked)) => {}
-                (password, other) => panic!(
-                    "{:?}: {:?}",
-                    password.map(|_| "***"),
-                    other.map(|_| ()).map_err(|e| format!("{e:?}"))
-                ),
-            }
+            assert_ne!(password, Some(PASSWORD));
+            let result = open_document(data(bytes), password, ViewOptions::default());
+            assert!(
+                matches!(result, Err(LoadError::Locked)),
+                "{:?}: {:?}",
+                password.map(str::len),
+                result.map(|_| ()).map_err(|e| format!("{e:?}"))
+            );
         }
+        assert!(open_document(data(bytes), Some(PASSWORD), ViewOptions::default()).is_ok());
         // The owner password opens it too, as in other readers (hayro 0.9
         // alone refuses it for AES-128; the fix-up's decrypted bytes cover it).
-        assert!(
-            open_document(
-                Arc::new(bytes.to_vec()),
-                Some(OWNER_PASSWORD),
-                ViewOptions::default()
-            )
-            .is_ok()
-        );
+        assert!(open_document(data(bytes), Some(OWNER_PASSWORD), ViewOptions::default()).is_ok());
     }
 }
 
@@ -213,7 +257,7 @@ fn an_unknown_security_handler_is_unsupported() {
         .position(|w| w == b"/Standard")
         .expect("a standard security handler");
     bytes[at..at + 9].copy_from_slice(b"/Nonstand");
-    let result = open_document(Arc::new(bytes), Some(PASSWORD), ViewOptions::default());
+    let result = open_document(data(&bytes), Some(PASSWORD), ViewOptions::default());
     assert!(
         matches!(result, Err(LoadError::Unsupported)),
         "{:?}",
@@ -231,17 +275,12 @@ fn form_fields_and_the_fix_up_read_an_encrypted_form() {
             .map(|f| (f.name, f.value, f.page, f.rect))
             .collect::<Vec<_>>()
     };
-    let (_, open_fields) =
-        open_document(Arc::new(open.clone()), None, ViewOptions::default()).unwrap();
+    let (_, open_fields) = open_document(data(&open), None, ViewOptions::default()).unwrap();
     assert_eq!(open_fields.len(), 3);
     for cipher in [Cipher::Aes128, Cipher::Aes256] {
         let locked = encrypt(&open, cipher);
-        let (_, fields) = open_document(
-            Arc::new(locked.clone()),
-            Some(PASSWORD),
-            ViewOptions::default(),
-        )
-        .unwrap();
+        let (_, fields) =
+            open_document(data(&locked), Some(PASSWORD), ViewOptions::default()).unwrap();
         assert_eq!(
             describe(fields),
             describe(open_fields.clone()),
@@ -262,8 +301,8 @@ fn form_fields_and_the_fix_up_read_an_encrypted_form() {
 #[test]
 fn a_source_never_prints_its_bytes_or_password() {
     let source = PdfSource::Bytes {
-        bytes: Arc::new(b"%PDF-1.7 secret body".to_vec()),
-        password: Some(PASSWORD.into()),
+        bytes: data(b"%PDF-1.7 secret body"),
+        password: Some(Arc::new(PASSWORD.to_owned())),
     };
     let debug = format!("{source:?} {source:#?}");
     assert!(!debug.contains(PASSWORD), "{debug}");
@@ -284,8 +323,8 @@ fn bytes_view<'a>(
     cx: &'a mut gpui::TestAppContext,
 ) -> (gpui::Entity<PdfView>, &'a mut gpui::VisualTestContext) {
     let source = PdfSource::Bytes {
-        bytes: Arc::new(bytes.to_vec()),
-        password: password.map(Into::into),
+        bytes: data(bytes),
+        password: password.map(|p| Arc::new(p.to_owned()) as crate::Password),
     };
     cx.add_window_view(|_, cx| {
         PdfView::with_options(
@@ -343,4 +382,20 @@ async fn a_view_opens_plain_bytes(cx: &mut gpui::TestAppContext) {
     let (view, cx) = bytes_view(OPEN, None, cx);
     settled(&view, cx).await;
     view.read_with(cx, |view, _| assert!(view.is_loaded()));
+}
+
+#[gpui::test]
+async fn a_view_opens_an_owner_only_lock_by_path(cx: &mut gpui::TestAppContext) {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(OWNER_ONLY).unwrap();
+    let path = file.path().to_path_buf();
+    let (view, cx) = cx.add_window_view(|_, cx| {
+        PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
+    });
+    settled(&view, cx).await;
+    view.read_with(cx, |view, _| {
+        assert!(view.is_loaded(), "{:?}", view.load_error());
+        assert!(!view.is_locked());
+    });
 }
