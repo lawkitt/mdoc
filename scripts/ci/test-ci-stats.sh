@@ -20,6 +20,8 @@ printf '%s\n' \
   'test(=deep::slow)  #3  2099-01-01' \
   'ios:mdocUITests/S/testQuar  #4  2099-01-01' >"$tmp/quarantine"
 export CI_STATS_QUARANTINE=$tmp/quarantine
+# The report fixtures below were written for a 15-minute UI shard.
+export CI_STATS_IOS_UI_MIN=15
 CI_STATS_SOURCED=1 source scripts/ci/ci-stats.sh
 # No GitHub: a case that reads annotations fakes them.
 fetch_ios_annotations() { :; }
@@ -50,7 +52,7 @@ eq "$(
   unset CI_STATS_CORE_MIN CI_STATS_DESKTOP_MIN CI_STATS_QUEUE_MIN CI_STATS_IOS_UI_MIN
   CI_STATS_SOURCED=1 source scripts/ci/ci-stats.sh
   echo "$core_min $desktop_min $queue_min $ios_ui_min"
-)" "30 15 25 15"
+)" "30 15 25 20"
 echo "ok: the default limits"
 
 eq "$(printf 'pending 1000 Waiting: macos\nsuccess 1660 Passed: macos (hosted)\n' | queue_seconds 1000)" "660 1660"

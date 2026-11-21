@@ -328,11 +328,9 @@ Items 16–31 shipped (ADR 0112 and 0113, retired; item 30 dropped, #857).
 Items 32–37 come from the third grill, #1041: a core change's queue time
 went from a median of 32 minutes to 51 when iOS moved to the `xcode-27`
 image, and every iOS part builds the core itself. Items 32 (#1044), 33
-(#1052), 36 (#1046) and 37 (#1045) have shipped; 34 and 35 edit
-`ci-ios.yml` and go in order.
+(#1052), 34 (#1053; its shards take about 17 minutes of tests, accepted
+over a test sweep), 36 (#1046) and 37 (#1045) have shipped.
 
-34. **[CI] Three UI shards on `macos-26`.** *Done when:* a queue commit's
-    slower UI shard takes 15 minutes of tests or less.
 35. **[CI] Branch iOS runs test what they touched.** A dispatch runs the
     unit part or the UI shards holding the touched classes by default, one
     branch iOS run at a time. *Done when:* a UI-only branch dispatch runs
