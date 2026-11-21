@@ -400,6 +400,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     restore::restored_reply(d)?;
     comments::scenes(d)?;
     pdf_source::scenes(d)?;
+    pdf_source::encrypted(d)?;
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
     review::long_counts(d)?;

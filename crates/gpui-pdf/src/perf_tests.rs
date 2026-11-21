@@ -247,7 +247,7 @@ fn initial_fit_waits_for_measured_viewport(cx: &mut gpui::TestAppContext) {
     let file = blank_document(4);
     let document = prepare(
         Arc::new(std::fs::read(file.path()).unwrap()),
-        "",
+        None,
         ViewOptions::default(),
     )
     .unwrap();

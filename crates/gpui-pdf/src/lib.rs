@@ -82,13 +82,50 @@ pub enum LoadError {
     /// The PDF is encrypted and the supplied password was missing or wrong — the
     /// caller can prompt for a password and retry via [`parse_with_password`].
     Locked,
-    /// Any other failure (malformed file, unsupported encryption, …).
+    /// The PDF is encrypted in a way the renderer can't decrypt (an unknown
+    /// security handler or algorithm), so no password opens it.
+    Unsupported,
+    /// Any other failure (malformed file, damaged encryption, …).
     Other(String),
 }
 
-/// Parse a PDF's bytes into a reusable [`Document`]. The `Document` owns the bytes,
-/// so the caller can drop its own copy. Returns [`LoadError::Locked`] for a
-/// password-protected file (retry with [`parse_with_password`]).
+/// Where a [`PdfView`] reads its document.
+///
+/// `Debug` names the variant and the byte count only: never the bytes or the
+/// password, so neither reaches a log or a panic message.
+#[derive(Clone)]
+pub enum PdfSource {
+    /// A file, read off-thread when the view opens.
+    Path(PathBuf),
+    /// A document already in memory: an unlocked tab's bytes, a DOCX rendered
+    /// in memory, a built image PDF. `password` opens it when it's
+    /// encrypted. Nothing read, decrypted or rendered from it is written
+    /// anywhere; the view drops the password once the document opens.
+    Bytes {
+        bytes: Arc<Vec<u8>>,
+        password: Option<String>,
+    },
+}
+
+impl From<PathBuf> for PdfSource {
+    fn from(path: PathBuf) -> Self {
+        Self::Path(path)
+    }
+}
+
+impl std::fmt::Debug for PdfSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Path(path) => f.debug_tuple("Path").field(path).finish(),
+            Self::Bytes { bytes, password } => f
+                .debug_struct("Bytes")
+                .field("len", &bytes.len())
+                .field("password", &password.as_ref().map(|_| "***"))
+                .finish(),
+        }
+    }
+}
+
 /// A compact header button: the Original viewer's toolbar style.
 pub fn header_control(
     id: impl Into<gpui::ElementId>,
@@ -121,8 +158,21 @@ pub fn close_control(id: impl Into<gpui::ElementId>, style: &PdfStyle) -> FocusR
     header_control(id, "✕", style).text_size(px(11.0))
 }
 
+/// Parse a PDF's bytes into a reusable [`Document`]. The `Document` owns the bytes,
+/// so the caller can drop its own copy. Returns [`LoadError::Locked`] for a
+/// password-protected file (retry with [`parse_with_password`]).
 pub fn parse(bytes: Arc<Vec<u8>>) -> Result<Arc<Document>, LoadError> {
-    parse_with_password(bytes, "", ViewOptions::default())
+    parse_with_password(bytes, None)
+}
+
+/// Like [`parse`], but opens an encrypted PDF with `password`. Returns
+/// [`LoadError::Locked`] if the file is password-protected and `password` is
+/// missing or wrong.
+pub fn parse_with_password(
+    bytes: Arc<Vec<u8>>,
+    password: Option<&str>,
+) -> Result<Arc<Document>, LoadError> {
+    open_document(bytes, password, ViewOptions::default()).map(|(doc, _)| doc)
 }
 
 /// How a [`PdfView`] draws its document.
@@ -135,41 +185,77 @@ pub struct ViewOptions {
     pub hide_comment_annotations: bool,
 }
 
-/// The bytes hayro renders: every form widget given a directly-renderable
-/// appearance stream (see `forms`) and, under `options`, comment
-/// annotations hidden. `None` keeps the original bytes: nothing to change,
-/// or an encrypted or unparseable file.
-fn display_bytes(bytes: &[u8], options: ViewOptions) -> Option<Vec<u8>> {
-    let mut doc = lopdf::Document::load_mem(bytes).ok()?;
+/// What the display fix-up reads and makes from a document's bytes.
+struct FixedUp {
+    /// The form-field widgets, read before the fix-up changes them.
+    fields: Vec<FormField>,
+    /// The bytes hayro renders, when the fix-up changed something.
+    display: Option<Vec<u8>>,
+}
+
+/// One lopdf pass over `bytes`, opened with `password` when encrypted: the
+/// form fields, and the bytes hayro renders, with every form widget given a
+/// directly-renderable appearance stream (see `forms`) and, under `options`,
+/// comment annotations hidden. A file lopdf decrypted always comes out
+/// decrypted, in memory only: hayro 0.9 refuses an AES-128 file's owner
+/// password, which lopdf and other readers accept. `display` is `None` when
+/// nothing changed, or the file is unparseable or doesn't open with
+/// `password`: hayro then reads the original bytes and decides.
+fn fix_up(bytes: &[u8], password: Option<&str>, options: ViewOptions) -> FixedUp {
+    let none = || FixedUp {
+        fields: Vec::new(),
+        display: None,
+    };
+    // An owner-only lock opens with the empty password, as lopdf tries it first.
+    let load = match password {
+        Some(password) => lopdf::LoadOptions::with_password(password),
+        None => lopdf::LoadOptions::default(),
+    };
+    let Ok(mut doc) = lopdf::Document::load_mem_with_options(bytes, load) else {
+        return none();
+    };
+    // Still encrypted: it needs a password it wasn't given.
     if doc.is_encrypted() {
-        return None;
+        return none();
     }
-    let mut changed = forms::normalize_forms(&mut doc);
+    let fields = form_fields(&doc);
+    let mut changed = doc.was_encrypted();
+    changed |= forms::normalize_forms(&mut doc);
     if options.hide_comment_annotations {
         changed |= annotations::hide_comment_annotations(&mut doc);
     }
-    if !changed {
-        return None;
-    }
-    let mut out = Vec::with_capacity(bytes.len() + 4096);
-    doc.save_to(&mut out).ok()?;
-    Some(out)
+    let display = changed
+        .then(|| {
+            let mut out = Vec::with_capacity(bytes.len() + 4096);
+            doc.save_to(&mut out).ok().map(|()| out)
+        })
+        .flatten();
+    FixedUp { fields, display }
 }
 
-/// Like [`parse`], but supplies a decryption `password` for an encrypted PDF
-/// and draws it under `options`. Returns [`LoadError::Locked`] if the file is
-/// password-protected and `password` is missing or incorrect.
-pub(crate) fn parse_with_password(
+/// The display bytes of an open file under `options` (see [`fix_up`]).
+#[cfg(test)]
+fn display_bytes(bytes: &[u8], options: ViewOptions) -> Option<Vec<u8>> {
+    fix_up(bytes, None, options).display
+}
+
+/// Open `bytes` with `password` and draw it under `options`: the parsed
+/// document and its form fields. Returns [`LoadError::Locked`] if the file is
+/// password-protected and `password` is missing or wrong.
+fn open_document(
     bytes: Arc<Vec<u8>>,
-    password: &str,
+    password: Option<&str>,
     options: ViewOptions,
-) -> Result<Arc<Document>, LoadError> {
-    let bytes = display_bytes(&bytes, options)
-        .map(Arc::new)
-        .unwrap_or(bytes);
-    match Pdf::new_with_password(bytes, password) {
-        Ok(pdf) => Ok(Arc::new(pdf)),
+) -> Result<(Arc<Document>, Vec<FormField>), LoadError> {
+    let FixedUp { fields, display } = fix_up(&bytes, password, options);
+    // Decrypted by the fix-up, the display bytes open without a password.
+    let bytes = display.map(Arc::new).unwrap_or(bytes);
+    match Pdf::new_with_password(bytes, password.unwrap_or_default()) {
+        Ok(pdf) => Ok((Arc::new(pdf), fields)),
         Err(LoadPdfError::Decryption(DecryptionError::PasswordProtected)) => Err(LoadError::Locked),
+        Err(LoadPdfError::Decryption(DecryptionError::UnsupportedAlgorithm)) => {
+            Err(LoadError::Unsupported)
+        }
         Err(e) => Err(LoadError::Other(format!("parse PDF: {e:?}"))),
     }
 }
@@ -181,21 +267,18 @@ struct Prepared {
     dims: Vec<(f32, f32)>,
     toc: Vec<OutlineItem>,
     links: Vec<Vec<PdfLink>>,
-    /// Enumerated from the ORIGINAL bytes (not the display-normalized ones), so
-    /// values/rects match what [`set_form_value`] will rewrite on disk.
+    /// Read from the ORIGINAL document (before the display fix-up), so
+    /// values and rects are the file's own.
     fields: Vec<FormField>,
 }
 
-/// Parse `bytes` with `password` and measure it — the off-thread half of a load,
-/// shared by the initial open, a password [`PdfView::unlock`], and
-/// [`PdfView::replace_bytes`].
+/// Open `bytes` with `password` and measure it — the off-thread half of a load.
 fn prepare(
     bytes: Arc<Vec<u8>>,
-    password: &str,
+    password: Option<&str>,
     options: ViewOptions,
 ) -> Result<Prepared, LoadError> {
-    let fields = form_fields(&bytes);
-    let doc = parse_with_password(bytes, password, options)?;
+    let (doc, fields) = open_document(bytes, password, options)?;
     let dims = page_dims(&doc);
     let toc = crate::outline::outline(&doc);
     let links = crate::outline::page_links(&doc);
@@ -829,16 +912,17 @@ struct SearchMatch {
 /// the host's [quality](PdfQualityFn) multiplier; and no blanking on zoom/quality
 /// changes (the old bitmap is shown, rescaled, until the crisp one lands).
 ///
-/// Emitted when the view's lock state changes — encrypted-and-locked, unlocked, or a
-/// failed unlock — so a host rendering a password prompt around the viewer knows to
-/// re-render. (Fired only on these transitions, not on every redraw.)
+/// Emitted when the view's lock state changes — encrypted and locked (no password
+/// or a wrong one), or opened — so a host rendering a password prompt around the
+/// viewer knows to re-render. (Fired only on these transitions, not on every
+/// redraw.)
 pub enum PdfEvent {
     LockChanged,
     /// The file couldn't be read or parsed (see [`PdfView::load_error`]) —
     /// terminal for this view; the viewer shows the message in place of the
-    /// loading placeholder. Also fired when a retry-unlock fails with a
-    /// non-password error (e.g. an unsupported encryption handler discovered
-    /// at unlock time), so a password prompt knows to stand down.
+    /// loading placeholder. Also fired for encryption no password opens
+    /// ([`PdfView::is_unsupported_encryption`]), so a password prompt knows
+    /// to stand down.
     LoadFailed,
     /// A form-field widget was clicked (`forms` feature): the field's
     /// description and its current window-space bounds — everything a host
@@ -870,18 +954,20 @@ pub struct PdfView {
     source_note: Option<SharedString>,
     #[cfg(test)]
     render_requests: usize,
-    path: PathBuf,
+    /// The file the view opened; `None` for bytes in memory.
+    path: Option<PathBuf>,
     style: PdfStyleFn,
     quality: PdfQualityFn,
     loading_indicator: Option<Rc<dyn Fn(SharedString) -> gpui::AnyElement>>,
     /// The parsed PDF (shared with the background render tasks); `None` until the
     /// off-thread load finishes.
     pdf: Option<Arc<Document>>,
-    /// The raw file bytes, kept so an encrypted PDF can be retried with a password
-    /// without re-reading the file. `None` until the load reads them.
-    bytes: Option<Arc<Vec<u8>>>,
-    /// The PDF is encrypted — the host shows a notice instead of the viewer.
+    /// The PDF is encrypted and the password was missing or wrong — the host
+    /// asks for one instead of showing the viewer.
     locked: bool,
+    /// The PDF is encrypted in a way no password opens (see
+    /// [`LoadError::Unsupported`]); the load failed for that reason.
+    unsupported_encryption: bool,
     /// A terminal read/parse failure — the viewer renders this message
     /// instead of sitting on "Loading PDF…" forever.
     load_error: Option<SharedString>,
@@ -991,26 +1077,39 @@ impl PdfView {
         Self::with_options(path, style, quality, ViewOptions::default(), cx)
     }
 
-    /// [`PdfView::new`], drawing the document under `options`.
+    /// [`PdfView::new`] for any [`PdfSource`] (a path, or bytes in memory
+    /// with an optional password), drawing the document under `options`.
+    /// A source without a path has no name until
+    /// [`set_display_name`](PdfView::set_display_name).
     pub fn with_options(
-        path: PathBuf,
+        source: impl Into<PdfSource>,
         style: PdfStyleFn,
         quality: PdfQualityFn,
         options: ViewOptions,
         cx: &mut Context<Self>,
     ) -> Self {
-        let load_path = path.clone();
+        let source = source.into();
+        let path = match &source {
+            PdfSource::Path(path) => Some(path.clone()),
+            PdfSource::Bytes { .. } => None,
+        };
         cx.spawn(async move |this, cx| {
-            // Read the file off-thread, keep the bytes (so an encrypted PDF can be
-            // retried with a password without re-reading), then parse + measure.
+            // Read the file (or take the bytes) off-thread, then parse + measure.
+            // The password lives only in this task and drops when it ends.
             let loaded = cx
                 .background_executor()
                 .spawn(async move {
-                    let bytes = Arc::new(std::fs::read(&load_path).map_err(|e| e.to_string())?);
-                    Ok::<_, String>((bytes.clone(), prepare(bytes, "", options)))
+                    let (bytes, password) = match source {
+                        PdfSource::Path(path) => (
+                            Arc::new(std::fs::read(&path).map_err(|e| e.to_string())?),
+                            None,
+                        ),
+                        PdfSource::Bytes { bytes, password } => (bytes, password),
+                    };
+                    Ok::<_, String>(prepare(bytes, password.as_deref(), options))
                 })
                 .await;
-            let (bytes, prepared) = match loaded {
+            let prepared = match loaded {
                 Ok(x) => x,
                 Err(e) => {
                     log::error!("read pdf: {e}");
@@ -1020,20 +1119,26 @@ impl PdfView {
                     return;
                 }
             };
-            let _ = this.update(cx, |this, cx| {
-                this.bytes = Some(bytes);
-                match prepared {
-                    Ok(p) => this.install_document(p, cx),
-                    // Encrypted: hold for the host to prompt + call `unlock`.
-                    Err(LoadError::Locked) => {
-                        this.locked = true;
-                        cx.emit(PdfEvent::LockChanged);
-                        cx.notify();
-                    }
-                    Err(LoadError::Other(e)) => {
-                        log::error!("parse pdf: {e}");
-                        this.fail_load(format!("Couldn’t open the PDF: {e}"), false, cx);
-                    }
+            let _ = this.update(cx, |this, cx| match prepared {
+                Ok(p) => this.install_document(p, cx),
+                // Encrypted, and the password was missing or wrong: the
+                // host asks for one and opens a new view with it.
+                Err(LoadError::Locked) => {
+                    this.locked = true;
+                    cx.emit(PdfEvent::LockChanged);
+                    cx.notify();
+                }
+                Err(LoadError::Unsupported) => {
+                    this.unsupported_encryption = true;
+                    this.fail_load(
+                        "This PDF is encrypted in a way that can’t be opened.".into(),
+                        false,
+                        cx,
+                    );
+                }
+                Err(LoadError::Other(e)) => {
+                    log::error!("parse pdf: {e}");
+                    this.fail_load(format!("Couldn’t open the PDF: {e}"), false, cx);
                 }
             });
         })
@@ -1051,8 +1156,8 @@ impl PdfView {
             quality,
             loading_indicator: None,
             pdf: None,
-            bytes: None,
             locked: false,
+            unsupported_encryption: false,
             load_error: None,
             load_error_retryable: false,
             on_close: None,
@@ -1192,9 +1297,7 @@ impl PdfView {
         }
     }
 
-    /// Store a freshly parsed document + its measurements and clear the lock — the
-    /// shared tail of the initial load, a successful [`PdfView::unlock`], and
-    /// [`PdfView::replace_bytes`].
+    /// Store a freshly parsed document + its measurements and clear the lock.
     fn install_document(&mut self, prepared: Prepared, cx: &mut Context<Self>) {
         let n = prepared.dims.len();
         self.pdf = Some(prepared.doc);
@@ -1256,10 +1359,17 @@ impl PdfView {
         self.pdf.is_some()
     }
 
-    /// Whether the PDF is encrypted and awaiting a password — the host should show a
-    /// prompt and call [`PdfView::unlock`] rather than rendering the viewer.
+    /// Whether the PDF is encrypted and its password was missing or wrong — the
+    /// host should ask for one and open a new view from
+    /// [`PdfSource::Bytes`] with it, rather than rendering this one.
     pub fn is_locked(&self) -> bool {
         self.locked
+    }
+
+    /// Whether the load failed because the PDF's encryption can't be
+    /// opened by any password ([`LoadError::Unsupported`]).
+    pub fn is_unsupported_encryption(&self) -> bool {
+        self.unsupported_encryption
     }
 
     /// Record a terminal load failure (the message renders in the viewer) and
@@ -2432,7 +2542,8 @@ impl Render for PdfView {
 
         let name = self.display_name.clone().unwrap_or_else(|| {
             self.path
-                .file_name()
+                .as_deref()
+                .and_then(|path| path.file_name())
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
@@ -3432,6 +3543,9 @@ mod tests {
 
 #[cfg(test)]
 mod perf_tests;
+
+#[cfg(test)]
+mod encrypted_tests;
 
 #[cfg(test)]
 mod scrolling_tests {

@@ -18,14 +18,15 @@
 //! Deliberate ceilings (ponytail: display correctness, not a form engine):
 //! synthesized text is single-line, left-aligned, WinAnsi-lossy (non-Latin-1
 //! chars become `?`), and ignores `/DA` font choices, `/Q` quadding, comb
-//! fields, and rich-text values. Encrypted documents are left untouched
-//! (lopdf would need the password; hayro decrypts on its own).
+//! fields, and rich-text values. An encrypted document is fixed up once lopdf
+//! opens it with its password, in memory: hayro then reads the fixed bytes
+//! unencrypted, and nothing is written to disk.
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 /// Rewrite `bytes` so every form widget has a directly-renderable appearance
 /// stream. `Some(fixed)` only when something actually changed; `None` means
-/// nothing to do (no forms, already normalized, encrypted, or unparseable) —
+/// nothing to do (no forms, already normalized, locked, or unparseable) —
 /// the caller keeps the original bytes either way.
 #[cfg(test)]
 pub(crate) fn normalize_form_appearances(bytes: &[u8]) -> Option<Vec<u8>> {
@@ -211,33 +212,27 @@ pub struct FormField {
     pub options: Vec<String>,
 }
 
-/// Every form-field widget in the document, in page order — what a host needs
-/// to overlay inputs on the viewer. Pushbuttons (no value) are skipped; an
-/// encrypted or unparseable file yields an empty list.
-pub(crate) fn form_fields(bytes: &[u8]) -> Vec<FormField> {
-    let Ok(doc) = Document::load_mem(bytes) else {
-        return Vec::new();
-    };
-    if doc.is_encrypted() {
-        return Vec::new();
-    }
+/// Every form-field widget in `doc`, in page order — what a host needs to
+/// overlay inputs on the viewer. Pushbuttons (no value) are skipped. `doc` is
+/// an open document: an encrypted file is read once decrypted.
+pub(crate) fn form_fields(doc: &Document) -> Vec<FormField> {
     let mut out = Vec::new();
     // lopdf numbers pages from 1, in document order.
     for (page_no, page_id) in doc.get_pages() {
         let Some(annots) = (|| {
             let page = doc.get_object(page_id).ok()?.as_dict().ok()?;
-            deref(&doc, page.get(b"Annots").ok()?)?.as_array().ok()
+            deref(doc, page.get(b"Annots").ok()?)?.as_array().ok()
         })() else {
             continue;
         };
         for a in annots {
-            let Some(w) = deref(&doc, a).and_then(|o| o.as_dict().ok()) else {
+            let Some(w) = deref(doc, a).and_then(|o| o.as_dict().ok()) else {
                 continue;
             };
             if w.get(b"Subtype").and_then(|o| o.as_name()).ok() != Some(b"Widget".as_slice()) {
                 continue;
             }
-            let Some(field) = describe_widget(&doc, w, page_no as usize - 1) else {
+            let Some(field) = describe_widget(doc, w, page_no as usize - 1) else {
                 continue;
             };
             out.push(field);
@@ -441,7 +436,7 @@ fn escape_pdf_text(text: &str) -> Vec<u8> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use lopdf::dictionary;
 
@@ -449,7 +444,7 @@ mod tests {
     /// checkbox whose `/AP /N` is a state dict (hayro gap 1), a merged text
     /// field with `/V` but no `/AP` (gap 2), and a split parent-field/kid-
     /// widget pair (gap 2 + `/Parent` inheritance).
-    fn build_test_pdf() -> Vec<u8> {
+    pub(crate) fn build_test_pdf() -> Vec<u8> {
         let mut doc = Document::with_version("1.7");
         let on = doc.add_object(Stream::new(
             dictionary! { "Type" => "XObject", "Subtype" => "Form",
@@ -568,7 +563,7 @@ mod tests {
 
     #[test]
     fn fields_enumerate_with_kinds_and_values() {
-        let fields = form_fields(&build_test_pdf());
+        let fields = form_fields(&Document::load_mem(&build_test_pdf()).unwrap());
         assert_eq!(fields.len(), 3);
         let by_name = |n: &str| fields.iter().find(|f| f.name == n).unwrap();
 

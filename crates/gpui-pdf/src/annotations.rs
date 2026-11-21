@@ -194,7 +194,7 @@ fn deref<'a>(doc: &'a Document, object: &'a Object) -> Option<&'a Object> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ViewOptions, page_frames, parse_with_password};
+    use crate::{ViewOptions, open_document, page_frames};
     use lopdf::{Stream, dictionary};
     use std::sync::Arc;
 
@@ -475,7 +475,7 @@ mod tests {
             let options = ViewOptions {
                 hide_comment_annotations: hide,
             };
-            let doc = parse_with_password(bytes.clone(), "", options).unwrap();
+            let (doc, _) = open_document(bytes.clone(), None, options).unwrap();
             crate::page_luma(&doc, 0, 1.).unwrap()
         };
         // FreeText at (40, 40) from the bottom; the stamp at (220, 40).

@@ -4,9 +4,12 @@
 //! drawing of them hidden. The rail with the highlight's thread open, the
 //! resolved note open, the turned second page, markers in a 640×480 window,
 //! and the plain page with comments off, where the stamp, ink and the
-//! uncommented highlight stay.
+//! uncommented highlight stay. Then the same agreement encrypted with
+//! AES-256, opened from its bytes with its password, beside its open twin
+//! opened the same way: the same pages, the PDF's own comment drawing hidden.
 use super::{Driver, HEIGHT, Result, WIDTH};
-use std::path::PathBuf;
+use gpui_pdf::PdfSource;
+use std::{path::PathBuf, sync::Arc};
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.resize(1500., 900.)?;
@@ -79,5 +82,52 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     show(d, false)?;
     d.capture("pdf-comments-hidden")?;
     show(d, true)?;
+    d.resize(WIDTH, HEIGHT)
+}
+
+/// The fixtures' published test password (tests/fixtures/pdf-source).
+const PASSWORD: &str = "Petrov-2026";
+
+/// The encrypted agreement and its open twin in the Original, each opened
+/// from bytes in memory: comments hidden on the page, as no rail reads an
+/// encrypted file's annotations yet.
+pub(super) fn encrypted(d: &mut Driver) -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source");
+    for (name, file, password) in [
+        ("pdf-encrypted-twin", "comments.pdf", None),
+        ("pdf-encrypted", "comments-aes256.pdf", Some(PASSWORD)),
+    ] {
+        let path = dir.join(file);
+        let bytes = Arc::new(std::fs::read(&path).map_err(|e| e.to_string())?);
+        let source = PdfSource::Bytes {
+            bytes,
+            password: password.map(str::to_owned),
+        };
+        let view = d.change(|w, window, cx| {
+            w.new_tab(window, cx);
+            let view = w.active_view().unwrap();
+            view.update(cx, |v, cx| {
+                v.preview.set_split(0.25);
+                v.begin_preview(path.clone());
+                v.load_preview_source(path, source, None, window, cx);
+            });
+            view
+        })?;
+        d.settle()?;
+        d.change(|_, _, cx| {
+            let pdf = view.read(cx).preview.pdf().ok_or("the PDF opens")?.read(cx);
+            match (
+                pdf.is_loaded(),
+                pdf.is_locked(),
+                pdf.options().hide_comment_annotations,
+            ) {
+                (true, false, true) => Ok(()),
+                state => Err(format!(
+                    "{name}: loaded, locked, comments hidden: {state:?}"
+                )),
+            }
+        })??;
+        d.capture(name)?;
+    }
     d.resize(WIDTH, HEIGHT)
 }
