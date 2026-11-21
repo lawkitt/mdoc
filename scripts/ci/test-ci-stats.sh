@@ -46,9 +46,11 @@ within - 20 || fail "no samples hold"
 echo "ok: a median within its limit, unrounded"
 
 # The default limits: a core change's is 30 minutes (#1041).
-eq "$(unset CI_STATS_CORE_MIN CI_STATS_DESKTOP_MIN CI_STATS_QUEUE_MIN CI_STATS_IOS_UI_MIN
+eq "$(
+  unset CI_STATS_CORE_MIN CI_STATS_DESKTOP_MIN CI_STATS_QUEUE_MIN CI_STATS_IOS_UI_MIN
   CI_STATS_SOURCED=1 source scripts/ci/ci-stats.sh
-  echo "$core_min $desktop_min $queue_min $ios_ui_min")" "30 15 25 15"
+  echo "$core_min $desktop_min $queue_min $ios_ui_min"
+)" "30 15 25 15"
 echo "ok: the default limits"
 
 eq "$(printf 'pending 1000 Waiting: macos\nsuccess 1660 Passed: macos (hosted)\n' | queue_seconds 1000)" "660 1660"
