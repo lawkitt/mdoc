@@ -782,8 +782,9 @@ fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppCont
 
 /// A locked DOCX unlocked in a tab keeps its unlock as long as the tab
 /// (#1024 decision 6): the tab holds the unlocked bytes, not the password;
-/// reloading the preview and redrawing it for Show hidden text take those
-/// bytes, never asking again; the saved session holds neither the password
+/// reloading the preview takes those bytes, never the file, and never asks
+/// again (the Show hidden text redraw needs a rendering, item 3); the saved
+/// session holds neither the password
 /// nor the unlocked document, so the tab it restores opens its Markdown
 /// with no unlock; closing the tab drops the unlock. Nothing unlocked is
 /// written beside the file.
@@ -833,8 +834,19 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
         unlocked.bytes().as_ptr() as usize
     });
 
-    // Reloading the preview, and redrawing it as Show hidden text does,
-    // render the tab's bytes and never ask.
+    // The file now holds garbage of the same size and time: a preview that
+    // read it would call it damaged, so the refusal shows it read the
+    // tab's bytes.
+    let modified = std::fs::metadata(&source).unwrap().modified().unwrap();
+    let size = std::fs::metadata(&source).unwrap().len() as usize;
+    std::fs::write(&source, vec![b'x'; size]).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    // Reloading the preview renders the tab's bytes and never asks.
     for _ in 0..2 {
         tabs.update_in(cx, |_, window, cx| {
             view.update(cx, |view, cx| {

@@ -119,9 +119,11 @@ pub struct Source {
 }
 
 /// A document's bytes, shared rather than copied, and wiped when the last
-/// holder drops them: they may be a locked document's, unlocked.
+/// holder drops them: they may be a locked document's, unlocked. A view that
+/// opens them from memory takes a clone as `Arc<dyn AsRef<[u8]> + Send +
+/// Sync>`, with no copy.
 #[derive(Clone)]
-pub(crate) struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
+pub struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
 
 impl AsRef<[u8]> for SharedBytes {
     fn as_ref(&self) -> &[u8] {
@@ -169,10 +171,9 @@ impl Source {
         self.bytes.as_ref()
     }
 
-    /// The bytes, shared rather than copied: for the workers (Android has
-    /// neither).
-    #[cfg(not(target_os = "android"))]
-    pub(crate) fn shared_bytes(&self) -> SharedBytes {
+    /// The bytes, shared rather than copied: for the workers and for views
+    /// that open a document from memory.
+    pub fn shared_bytes(&self) -> SharedBytes {
         self.bytes.clone()
     }
 
@@ -271,6 +272,14 @@ impl Password {
     /// else: it is never kept, logged or shown.
     pub fn expose(&self) -> &str {
         &self.0
+    }
+}
+
+/// For a view that opens a PDF with it from memory, as `Arc<dyn AsRef<str>
+/// + Send + Sync>`: the text is shared, never copied.
+impl AsRef<str> for Password {
+    fn as_ref(&self) -> &str {
+        self.expose()
     }
 }
 
@@ -1448,6 +1457,20 @@ mod tests {
             let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
             assert_eq!(left.len(), 2, "{name}: nothing unlocked is written");
         }
+    }
+
+    /// The password and an unlocked document's bytes go to a view from
+    /// memory as shared trait objects: the same text and bytes, not copies.
+    #[test]
+    fn a_view_shares_the_password_and_bytes_without_copying() {
+        let password = Password::new("Секрет".into());
+        let text: Arc<dyn AsRef<str> + Send + Sync> = Arc::new(password.clone());
+        let shown: &str = (*text).as_ref();
+        assert_eq!(shown.as_ptr(), password.expose().as_ptr());
+        let source = Source::new("locked.docx".into(), None, b"bytes".to_vec());
+        let bytes: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(source.shared_bytes());
+        let read: &[u8] = (*bytes).as_ref();
+        assert_eq!(read.as_ptr(), source.bytes().as_ptr());
     }
 
     /// An unlock never shows its password or bytes in its `Debug`.

@@ -226,7 +226,6 @@ pub fn render_in_process(
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
     check_cancel(&cancelled)?;
-    refuse_unlocked(source)?;
     render_direct(source, read_marks, options, comments)
 }
 
@@ -405,6 +404,7 @@ pub fn render_in(
     read_marks: MarkReader,
     options: RenderOptions,
 ) -> Result<DocxPreview, PreviewError> {
+    refuse_unlocked(source)?;
     let directory = tempfile::tempdir_in(parent)
         .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
@@ -419,6 +419,7 @@ fn render_direct(
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
+    refuse_unlocked(source)?;
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
     run_worker(source.bytes(), &pdf_path, read_marks, options)?;
@@ -788,8 +789,9 @@ mod tests {
         assert!(matches!(result, Err(PreviewError::Cancelled)));
     }
 
-    /// A tab's unlocked DOCX reaches neither render, which would write it to
-    /// a temporary PDF (#1024 decision 6).
+    /// A tab's unlocked DOCX reaches no render, each of which would write it
+    /// to a temporary PDF (#1024 decision 6): in process, in the worker, or
+    /// into the phones' folder.
     #[test]
     fn unlocked_bytes_are_never_rendered_to_a_temporary_file() {
         let plain = package(&[("word/document.xml", b"<w:document/>")]);
@@ -822,6 +824,14 @@ mod tests {
             None,
         );
         assert!(matches!(worker, Err(PreviewError::Encrypted)));
+        let phones = render_in(
+            dir.path(),
+            &unlocked,
+            |_| panic!("no PDF is read"),
+            RenderOptions::default(),
+        );
+        assert!(matches!(phones, Err(PreviewError::Encrypted)));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]
