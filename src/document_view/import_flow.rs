@@ -211,6 +211,15 @@ impl ImportFlow {
         self.unlock.as_ref()
     }
 
+    /// A password typed on the Original's card opened the source:
+    /// `unlock` becomes the tab's, for its preview and every later run, as
+    /// one the card's conversion left would. A closed tab keeps nothing.
+    pub(crate) fn keep_unlock(&mut self, unlock: Unlock) {
+        if !self.cancelled() {
+            self.unlock = Some(unlock);
+        }
+    }
+
     /// A password typed on the card can be tried now: nothing else runs
     /// and the slot is free.
     pub(crate) fn can_unlock(&self) -> bool {
@@ -483,11 +492,17 @@ impl ImportFlow {
         let mut effects = Vec::new();
         if let ImportCompletion::Ready(result) = completion {
             // What opens the source from now on: the run's unlock, or
-            // nothing (not locked, a wrong password, a changed file).
+            // nothing (not locked, a wrong password, a changed file). A run
+            // that carried none keeps an unlock the Original's card made
+            // meanwhile, while it still opens the file as it is.
             if let Some((finished, unlock)) = finished_unlock
                 && finished == generation
             {
-                self.unlock = unlock;
+                let kept = self
+                    .unlock
+                    .take()
+                    .filter(|kept| kept.current_source().is_some());
+                self.unlock = unlock.or(kept);
             }
             let result = if stopped {
                 Err(ImportError::Cancelled)
@@ -942,6 +957,30 @@ mod tests {
             .as_ref()
             .and_then(Unlock::password)
             .map(|password| password.expose().to_owned())
+    }
+
+    /// An unlock the Original's card made while a conversion ran outlives
+    /// that run, which carried none, while the file is unchanged; once the
+    /// file changes, the next such run drops it.
+    #[test]
+    fn an_unlock_made_during_a_run_outlives_it_while_the_file_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("locked.docx");
+        std::fs::write(&path, b"a locked document").unwrap();
+        let name = path.to_str().unwrap();
+        let (mut flow, _) = new_flow();
+        start(&mut flow, name, None);
+        flow.keep_unlock(Unlock::Unlocked(
+            mdoc_import::import::Source::read(&path).unwrap(),
+        ));
+        flow.complete(1, Ok(crate::test_support::converted(path.clone())), None);
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_some(), "the run carried none");
+        start(&mut flow, name, None);
+        std::fs::write(&path, b"another, longer document").unwrap();
+        flow.complete(1, Ok(crate::test_support::converted(path.clone())), None);
+        flow.resume(1, false, |_| false).unwrap();
+        assert!(flow.unlock().is_none(), "the file changed");
     }
 
     /// The tab keeps what unlocked its source (#1024 decision 6): OCR
