@@ -1206,10 +1206,8 @@ fn locked_pdf_error(bytes: &[u8], password: Option<&Password>) -> ImportError {
 /// `password`, use encryption no password opens here: a security handler
 /// other than the standard one, or a version, revision or algorithm it
 /// doesn't know. pdf-inspector reports those as it reports a missing or
-/// wrong password, so lopdf tells them apart (gpui-pdf's 0.47; pdf-inspector
-/// reads with 0.45, so a file this lopdf opens counts as one no password
-/// opens here): the handler first, whatever was typed, then what the
-/// password meets. Only an
+/// wrong password, so lopdf, the version it reads with, tells them apart:
+/// the handler first, whatever was typed, then what the password meets. Only an
 /// import that already failed asks; a document lopdf opens is dropped at
 /// once, and nothing of it is kept or logged.
 fn unsupported_pdf_encryption(bytes: &[u8], password: Option<&Password>) -> bool {

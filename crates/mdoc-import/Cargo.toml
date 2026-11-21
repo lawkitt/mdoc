@@ -33,8 +33,8 @@ sha1 = "0.11"
 zeroize = "1"
 # Only on a locked PDF's refusal: tells encryption no password opens
 # (an unknown handler or algorithm) from a missing or wrong password, which
-# pdf-inspector reports alike. The version gpui-pdf already uses.
-lopdf = { version = "0.47", default-features = false }
+# pdf-inspector reports alike. The version pdf-inspector reads with.
+lopdf = { version = "0.45", default-features = false }
 # Exact: pre-release API. Without an `api-*` feature it asks ONNX Runtime for
 # C API 17, which 1.17 and later serve: 1.32.0 downloaded on desktop
 # (src/ocr.rs) and packaged on Android, 1.27.0 linked into the app on iOS,

@@ -4710,7 +4710,6 @@ dependencies = [
  "flate2",
  "libloading 0.9.0",
  "lopdf 0.45.0",
- "lopdf 0.47.0",
  "mdoc-store",
  "ort",
  "pdf-inspector",
