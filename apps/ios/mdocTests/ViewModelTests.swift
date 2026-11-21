@@ -272,6 +272,23 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(model.snapshot.phase, .unscanned)
         XCTAssertFalse(model.snapshot.markdown.isEmpty)
+        let unlocked = try XCTUnwrap(model.unlockedDocx)
+        // This URL has no file. Rendering the open document must use its
+        // import's unlock, and the PDFKit page must have text.
+        let missing = try XCTUnwrap(storage).root.appendingPathComponent("missing.docx")
+        guard case .ready(let original) = await RenderedDocx.render(missing, unlocked: unlocked) else {
+            return XCTFail("The unlocked document should render its Original")
+        }
+        let page = try XCTUnwrap(PDFDocument(data: original.pdf)?.page(at: 0))
+        XCTAssertFalse(try XCTUnwrap(page.string).isEmpty)
+        let closedPane = model.docxUnlockBinding
+        model.closeOriginal()
+        closedPane.wrappedValue = unlocked
+        XCTAssertNil(model.unlockedDocx)
+        guard case .docx(let source) = model.snapshot.original,
+              case .password(.needed) = await RenderedDocx.render(source, unlocked: model.unlockedDocx) else {
+            return XCTFail("Reopening the Original should ask for the password again")
+        }
         let root = try XCTUnwrap(storage).root
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
             .compactMap { $0 as? URL } ?? []

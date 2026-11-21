@@ -9,8 +9,8 @@ import PDFKit
 final class CommentMarks: MdocFFI.CommentMarkReader, Sendable {
     static let scheme = "mdoc-comment:"
 
-    func commentMarks(pdfPath: String) -> [CommentMark] {
-        guard let document = PDFDocument(url: URL(fileURLWithPath: pdfPath)) else { return [] }
+    func commentMarks(pdf: Data) -> [CommentMark] {
+        guard let document = PDFDocument(data: pdf) else { return [] }
         var marks: [CommentMark] = []
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index), page.rotation == 0 else { continue }

@@ -156,18 +156,7 @@ struct DocumentScreen: View {
                 } else if model.pane == .reply, let reply = model.snapshot.reply {
                     ReplyPane(reply: reply, onClear: model.clearReply)
                 } else {
-                    OriginalView(
-                        original: model.snapshot.original, jobRuns: model.runningJob != nil,
-                        onComments: { model.originalComments = $0 },
-                        activeComment: model.commentSheet?.thread?.id,
-                        onOpenComment: openComment,
-                        onDarkPageOn: darkPageToast,
-                        unlockedPDF: model.unlockedOriginal,
-                        importPrompt: model.passwordPrompt,
-                        // While the import runs, the pane waits for it.
-                        importCardInBar: !model.originalCoversText || model.runningJob != nil,
-                        onImportUnlock: { await model.unlock(password: $0) },
-                        onUnlockPDF: { model.unlockOriginal(password: $0) })
+                    originalPane()
                 }
             }
         } else {
@@ -184,19 +173,7 @@ struct DocumentScreen: View {
                 case .original:
                     // With no bar under it, the page runs to the screen's
                     // bottom edge; its scroll keeps the home indicator clear.
-                    OriginalView(
-                        original: model.snapshot.original, jobRuns: model.runningJob != nil,
-                        reachesBottom: model.originalCoversText && model.runningJob == nil,
-                        onComments: { model.originalComments = $0 },
-                        activeComment: model.commentSheet?.thread?.id,
-                        onOpenComment: openComment,
-                        onDarkPageOn: darkPageToast,
-                        unlockedPDF: model.unlockedOriginal,
-                        importPrompt: model.passwordPrompt,
-                        // While the import runs, the pane waits for it.
-                        importCardInBar: !model.originalCoversText || model.runningJob != nil,
-                        onImportUnlock: { await model.unlock(password: $0) },
-                        onUnlockPDF: { model.unlockOriginal(password: $0) })
+                    originalPane(reachesBottom: model.originalCoversText && model.runningJob == nil)
                 case .reply:
                     if let reply = model.snapshot.reply {
                         ReplyPane(reply: reply, onClear: model.clearReply)
@@ -204,6 +181,18 @@ struct DocumentScreen: View {
                 }
             }
         }
+    }
+
+    private func originalPane(reachesBottom: Bool = false) -> some View {
+        OriginalView(
+            original: model.snapshot.original, unlockedDocx: model.docxUnlockBinding,
+            importPending: model.snapshot.phase == nil, jobRuns: model.runningJob != nil,
+            reachesBottom: reachesBottom,
+            onComments: { model.originalComments = $0 },
+            activeComment: model.commentSheet?.thread?.id,
+            onOpenComment: openComment, onDarkPageOn: darkPageToast,
+            unlockedPDF: model.unlockedOriginal, importPrompt: model.passwordPrompt,
+            onImportUnlock: model.importUnlockAction, onUnlockPDF: model.pdfUnlockAction)
     }
 
     /// The Original is in view, with a page to show: its pane on iPhone;
@@ -664,9 +653,9 @@ struct DocumentScreen: View {
                 noticeLabel(notice)
             }
             if let prompt = model.passwordPrompt, model.runningJob == nil {
-                // Unlock is the view's one primary button while it asks.
-                PasswordCard(prompt: prompt) { password in
-                    await model.unlock(password: password)
+                // The Original pane hosts this card whenever it is visible.
+                if !originalShows {
+                    PasswordCard(prompt: prompt, unlock: model.importUnlockAction)
                 }
             } else if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {
                 // The card's download, of the model this job needs, is the

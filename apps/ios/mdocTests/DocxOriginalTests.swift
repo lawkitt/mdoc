@@ -12,6 +12,7 @@ final class DocxOriginalTests: XCTestCase {
         switch await RenderedDocx.render(source) {
         case .ready(let rendered): return rendered
         case .failed(let message): throw RenderFailed(message: message)
+        case .password: throw RenderFailed(message: "password required")
         case .working: throw RenderFailed(message: "still rendering")
         }
     }
@@ -39,7 +40,7 @@ final class DocxOriginalTests: XCTestCase {
         XCTAssertEqual(comments.passages["12"].map { Set($0.map(\.page)) }, [0, 1])
 
         let view = CommentedPDFContainer(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
-        view.load(url: rendered.pdf, comments: comments)
+        view.load(rendered)
         let document = try XCTUnwrap(view.pdfView.document)
         let marks = (0..<document.pageCount).flatMap { document.page(at: $0)?.annotations ?? [] }
             .compactMap(CommentMarks.target(of:))
@@ -120,7 +121,7 @@ final class DocxOriginalTests: XCTestCase {
     func testAdjacentLinesShareAMarkerAndTheRotorFollowsZoom() async throws {
         let rendered = try await render("comments.docx")
         let view = CommentedPDFContainer(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
-        view.load(url: rendered.pdf, comments: rendered.comments)
+        view.load(rendered)
         var shown: [[String]] = []
         for _ in 0..<200 {
             view.setNeedsLayout()
@@ -197,16 +198,10 @@ final class DocxOriginalTests: XCTestCase {
         CommentAnchor(id: id, page: 0, rects: [PageRect(x: 0.1, y: y, w: 0.5, h: 0.02)], point: false)
     }
 
-    /// The rendered PDF goes with the object, as the pane discards it.
-    func testTheRenderedPDFGoesWithTheOriginal() async throws {
-        var rendered: RenderedDocx? = try await render("coverage.docx")
-        let folder = try XCTUnwrap(rendered?.pdf.deletingLastPathComponent())
-        XCTAssertNotNil(rendered.flatMap { PDFDocument(url: $0.pdf) })
-        rendered = nil
-        // The core removes it on a cleanup thread.
-        for _ in 0..<500 where FileManager.default.fileExists(atPath: folder.path) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    func testTheOriginalOpensFromPDFBytes() async throws {
+        let rendered = try await render("coverage.docx")
+        let document = try XCTUnwrap(PDFDocument(data: rendered.pdf))
+        XCTAssertNil(document.documentURL)
+        XCTAssertNotNil(document.page(at: 0))
     }
 }

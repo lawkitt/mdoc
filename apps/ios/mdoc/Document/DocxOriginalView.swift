@@ -2,15 +2,16 @@ import MdocFFI
 import PDFKit
 import SwiftUI
 
-/// A DOCX file's original page: docxide renders it in process into a
-/// temporary PDF each time the pane shows, and the PDF goes when it leaves
-/// (`DocxOriginal`). Its comments sit on the page as margin markers that
-/// open the comment sheet at their thread (`onOpenComment`; the document
+/// A DOCX file's original page: docxide renders it in memory. Its comments
+/// sit on the page as margin markers that open the comment sheet
+/// at their thread (`onOpenComment`; the document
 /// screen holds the sheet), or on an iPad's wide pane as the rail. The
 /// title menu's Show comments shows or hides them, an app-wide setting,
 /// and opens those not on the page (`onComments` tells it what there is).
 struct DocxOriginalView: View {
     let source: URL
+    @Binding var unlocked: UnlockedDocx?
+    var importPending = false
     /// A long job runs on the document: the render waits for it, because
     /// one long job runs at a time and docxide beside the detector is
     /// memory the budgets never measured.
@@ -27,6 +28,7 @@ struct DocxOriginalView: View {
     var onOpenComment: (String) -> Void = { _ in }
     @Environment(\.preferences) private var preferences
     @State private var rendering = Rendering.working
+    @State private var request = UUID()
     /// The expanded rail card.
     @State private var expanded: String?
     @State private var width: CGFloat = 0
@@ -35,12 +37,14 @@ struct DocxOriginalView: View {
     enum Rendering: Sendable {
         case working
         case ready(RenderedDocx)
+        case password(DocumentViewModel.PasswordPrompt)
         case failed(String)
     }
 
     private struct TaskKey: Equatable {
         let source: URL
         let waits: Bool
+        let unlocked: Bool
     }
 
     var body: some View {
@@ -48,15 +52,32 @@ struct DocxOriginalView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(uiColor: .secondarySystemBackground))
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            .task(id: TaskKey(source: source, waits: waits)) {
-                guard !waits else { return }
+            .task(id: TaskKey(source: source, waits: waits, unlocked: unlocked != nil)) {
+                if waits {
+                    request = UUID()
+                    return
+                }
                 if case .ready(let shown) = rendering, shown.source == source { return }
-                rendering = .working
-                rendering = await RenderedDocx.render(source)
-                if case .ready(let rendered) = rendering { onComments(rendered.comments) }
+                await show()
             }
-            // The PDF goes with the pane.
-            .onDisappear { rendering = .working }
+            .onDisappear {
+                request = UUID()
+                rendering = .working
+            }
+    }
+
+    private func show(password: String? = nil) async {
+        guard !waits else { return }
+        let current = UUID()
+        request = current
+        rendering = .working
+        let result = await RenderedDocx.render(source, unlocked: unlocked, password: password)
+        guard !Task.isCancelled, request == current else { return }
+        rendering = result
+        if case .ready(let rendered) = result {
+            if let source = rendered.unlocked { unlocked = source }
+            onComments(rendered.comments)
+        }
     }
 
     @ViewBuilder
@@ -69,17 +90,17 @@ struct DocxOriginalView: View {
         case .working:
             ProgressView("Rendering the original…")
                 .accessibilityIdentifier("docx-rendering")
+        case .password(let prompt):
+            OriginalPasswordCard(prompt: prompt, waits: waits, importPending: importPending) { password in
+                await show(password: password)
+            }
         case .failed(let message):
-            // The import counted the comments here, so they are counted here
-            // when the page can't show them.
             ContentUnavailableView(
                 "No original page", systemImage: "doc.plaintext",
-                description: Text(([message] + [docxCommentsNotShown(source: source.path)].compactMap { $0 })
-                    .joined(separator: "\n")))
+                description: Text(message))
         case .ready(let rendered):
             CommentedPDFView(
-                url: rendered.pdf,
-                comments: rendered.comments,
+                rendered: rendered,
                 showsComments: preferences.showsComments,
                 rail: showsRail,
                 active: activeComment ?? expanded,
@@ -102,47 +123,45 @@ struct DocxOriginalView: View {
     }
 }
 
-/// A rendered DOCX original: the core's object keeps the PDF on disk while
-/// this lives.
+/// The PDF bytes and the comments shown by the pane.
 final class RenderedDocx: Sendable {
-    let original: DocxOriginal
+    let id = UUID()
     let source: URL
-    let pdf: URL
+    let pdf: Data
     let comments: DocxComments
+    let unlocked: UnlockedDocx?
 
     private init(original: DocxOriginal, source: URL) {
-        self.original = original
         self.source = source
-        pdf = URL(fileURLWithPath: original.pdfPath())
+        pdf = original.pdfBytes()
         comments = DocxComments(comments: original.comments(), anchors: original.anchors())
+        unlocked = original.unlockedSource()
     }
 
-    /// Renders off the main thread into a temporary folder under Data
-    /// Protection Complete.
-    static func render(_ source: URL) async -> DocxOriginalView.Rendering {
+    static func render(
+        _ source: URL, unlocked: UnlockedDocx? = nil, password: String? = nil
+    ) async -> DocxOriginalView.Rendering {
         await Task.detached(priority: .userInitiated) {
             do {
-                let folder = try folder()
-                let original = try DocxOriginal.render(source: source.path, folder: folder.path, marks: CommentMarks())
+                let input = try unlocked.map { DocxInput.unlocked(source: $0) } ?? .file(
+                    bytes: readSource(source), password: password)
+                let original = try DocxOriginal.render(input: input, marks: CommentMarks())
                 return .ready(RenderedDocx(original: original, source: source))
             } catch {
-                return .failed(CoreError(error).localizedDescription)
+                switch CoreError(error) {
+                case .needsPassword: return .password(.needed)
+                case .wrongPassword: return .password(.wrong)
+                case let failure: return .failed(failure.localizedDescription)
+                }
             }
         }.value
     }
 
-    /// The renders' folder in the app's temporary folder: its files take
-    /// its Data Protection Complete and are never backed up. A render left
-    /// by a crash goes at the next launch (`removeLeftovers`).
-    static func folder() throws -> URL {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("originals", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
-        return folder
-    }
-
-    static func removeLeftovers() {
-        try? FileManager.default.removeItem(
-            at: FileManager.default.temporaryDirectory.appendingPathComponent("originals", isDirectory: true))
+    static func readSource(_ source: URL) throws -> Data {
+        let file = try FileHandle(forReadingFrom: source)
+        defer { try? file.close() }
+        // Read one byte past the core's limit so an oversized source fails
+        // there without sending the entire file across the bridge.
+        return try file.read(upToCount: Int(docxPreviewMaxInputBytes()) + 1) ?? Data()
     }
 }

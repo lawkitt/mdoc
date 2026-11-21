@@ -3,13 +3,12 @@
 //! On desktop a supervised worker (this executable in its DOCX worker mode)
 //! reads the document on stdin and sends the PDF, its comment anchors and
 //! warnings back on stdout, so nothing of the document, locked or not, is
-//! written anywhere (#1024 decision 3). iOS still renders into a folder it
-//! names ([`render_in`]) until #1024 item 12.
+//! written anywhere (#1024 decision 3). iOS renders in this process.
 use std::{
     borrow::Cow,
     fs,
     io::{Cursor, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Stdio},
     sync::{
         Arc, Mutex,
@@ -19,7 +18,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tempfile::TempDir;
 use zip::ZipArchive;
 
 mod comments;
@@ -44,12 +42,8 @@ fn cards(
 }
 
 /// Reads the `/Link` annotations whose URI starts with [`COMMENT_SCHEME`]
-/// from a rendered PDF's bytes. The app passes gpui-pdf's reader: this crate
-/// parses no PDF.
+/// from a rendered PDF's bytes. The platform supplies its PDF reader.
 pub type MarkReader = fn(&SharedBytes) -> Result<Vec<LinkMark>, String>;
-
-/// [`MarkReader`] for iOS's [`render_in`], which reads the PDF's file.
-pub type FileMarkReader = fn(&Path) -> Result<Vec<LinkMark>, String>;
 
 /// How the worker draws a document.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -90,48 +84,14 @@ pub struct DocxPreview {
     pub options: RenderOptions,
 }
 
-/// iOS's DOCX preview ([`render_in`]): the PDF in a folder of its own, which
-/// must live as long as the PDF view. #1024 item 12 replaces it with
-/// [`DocxPreview`].
-pub struct DocxFile {
-    pub pdf_path: PathBuf,
-    pub warnings: Vec<String>,
-    /// The comments its cards show (AnyDoc's; see `cards`).
-    pub comments: Arc<Vec<Comment>>,
-    /// Where the comments sit on the rendered pages, in document order, by
-    /// comment id.
-    pub anchors: Arc<Vec<CommentAnchor>>,
-    /// Passages of hidden text in the document, drawn or not.
-    pub hidden_text: usize,
-    /// The options it was drawn with.
-    pub options: RenderOptions,
-    directory: Option<TempDir>,
-}
-
-impl Drop for DocxFile {
-    fn drop(&mut self) {
-        if let Some(directory) = self.directory.take() {
-            CLEANUPS.fetch_add(1, Ordering::Relaxed);
-            thread::spawn(move || {
-                drop(directory);
-                CLEANUPS.fetch_sub(1, Ordering::Release);
-            });
-        }
-    }
-}
-
 // A replacement waits for the obsolete worker to be killed and reaped.
 static WORKER: Mutex<()> = Mutex::new(());
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
-static CLEANUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Called off-thread by GPUI's graceful-quit hook after windows are dropped.
 pub fn shutdown_workers() {
     SHUTTING_DOWN.store(true, Ordering::Relaxed);
     let _lock = WORKER.lock().unwrap_or_else(|e| e.into_inner());
-    while CLEANUPS.load(Ordering::Acquire) != 0 {
-        thread::sleep(Duration::from_millis(5));
-    }
 }
 struct Worker(std::process::Child);
 impl Drop for Worker {
@@ -163,14 +123,12 @@ pub enum PreviewError {
     Timeout,
     #[error("DOCX preview conversion was cancelled")]
     Cancelled,
-    #[error("DOCX preview could not create temporary storage: {0}")]
-    TemporaryStorage(String),
     #[error("DOCX preview could not read the source: {0}")]
     Read(#[from] std::io::Error),
 }
 
 impl PreviewError {
-    /// The worker's error file: a kind tag, a tab, then the `Display` text,
+    /// The worker's error report: a kind tag, a tab, then the `Display` text,
     /// so the supervisor can tell a damaged document from a failed worker.
     fn report(&self) -> String {
         let kind = match self {
@@ -184,7 +142,6 @@ impl PreviewError {
             Self::Rejected => "rejected",
             Self::Timeout => "timeout",
             Self::Cancelled => "cancelled",
-            Self::TemporaryStorage(_) => "temporary-storage",
             Self::Read(_) => "read",
         };
         format!("{kind}\t{self}")
@@ -204,9 +161,6 @@ impl PreviewError {
             "rejected" => Self::Rejected,
             "timeout" => Self::Timeout,
             "cancelled" => Self::Cancelled,
-            "temporary-storage" => {
-                Self::TemporaryStorage(detail("DOCX preview could not create temporary storage: "))
-            }
             "read" => Self::Read(std::io::Error::other(detail(
                 "DOCX preview could not read the source: ",
             ))),
@@ -219,10 +173,7 @@ impl PreviewError {
     /// that failed, or a file system problem. The document's own content
     /// fails the same way every time.
     pub fn retryable(&self) -> bool {
-        matches!(
-            self,
-            Self::Render(_) | Self::Timeout | Self::TemporaryStorage(_) | Self::Read(_)
-        )
+        matches!(self, Self::Render(_) | Self::Timeout | Self::Read(_))
     }
 }
 
@@ -253,13 +204,12 @@ fn read_within_limit(input: impl Read) -> Result<Vec<u8>, PreviewError> {
     Ok(bytes)
 }
 
-/// Render in this process instead of a supervised worker. Headless UI tests
-/// cannot launch the Rust test harness as an app worker; integration tests
-/// exercise the real executable and supervisor separately.
+/// Render in this process on iOS and in headless UI tests. The renderer
+/// cannot be stopped mid-document, so there is no worker deadline.
 pub fn render_in_process(
     source: &Source,
     cancelled: Arc<AtomicBool>,
-    read_marks: MarkReader,
+    read_marks: impl FnOnce(&SharedBytes) -> Result<Vec<LinkMark>, String>,
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
@@ -285,17 +235,6 @@ pub fn render_with_cancel(
         options,
         comments,
     )
-}
-
-/// iOS's renders refuse a locked document's bytes, unlocked in memory: they
-/// write the PDF to a file, which would be an unlocked copy on disk (#1024
-/// decision 6). Item 12 renders them in memory there too.
-fn refuse_unlocked(source: &Source) -> Result<(), PreviewError> {
-    if source.unlocked() {
-        Err(PreviewError::Encrypted)
-    } else {
-        Ok(())
-    }
 }
 
 fn check_cancel(cancelled: &AtomicBool) -> Result<(), PreviewError> {
@@ -502,41 +441,6 @@ fn read_length(input: &mut impl Read) -> std::io::Result<u64> {
     Ok(u64::from_le_bytes(length))
 }
 
-/// Render in this process into a new folder under `parent`, for the iOS app,
-/// which has no worker process: the same input limits as the worker, but no
-/// deadline, because nothing can stop the renderer mid-document. A renderer
-/// panic is a failed render, not a crash. `parent` decides the PDF's file
-/// protection. The cards are AnyDoc's, read again as the import read them.
-/// A locked document's unlocked bytes are refused until #1024 item 12.
-pub fn render_in(
-    parent: &Path,
-    source: &Source,
-    read_marks: FileMarkReader,
-    options: RenderOptions,
-) -> Result<DocxFile, PreviewError> {
-    refuse_unlocked(source)?;
-    let directory = tempfile::tempdir_in(parent)
-        .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
-    let pdf_path = directory.path().join("preview.pdf");
-    let (drawn, anchors) = std::panic::catch_unwind(|| {
-        let drawn = draw(source.bytes(), options)?;
-        fs::write(&pdf_path, &*drawn.pdf)
-            .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
-        let anchors = drawn.placing.anchors(|| read_marks(&pdf_path))?;
-        Ok((drawn, anchors))
-    })
-    .unwrap_or_else(|_| Err(PreviewError::Render("the renderer stopped".into())))?;
-    Ok(DocxFile {
-        comments: cards(source, None, &AtomicBool::new(false)),
-        anchors: Arc::new(anchors),
-        hidden_text: drawn.hidden,
-        options,
-        pdf_path,
-        warnings: drawn.warnings,
-        directory: Some(directory),
-    })
-}
-
 /// A document drawn and its comments placed, in memory: what the worker
 /// sends back.
 struct Rendered {
@@ -569,7 +473,7 @@ struct Metadata {
 /// `bytes` drawn, with its comments placed by `read_marks` reading the PDF.
 fn render_marked(
     bytes: &[u8],
-    read_marks: MarkReader,
+    read_marks: impl FnOnce(&SharedBytes) -> Result<Vec<LinkMark>, String>,
     options: RenderOptions,
 ) -> Result<Rendered, PreviewError> {
     let Drawn {
@@ -578,6 +482,9 @@ fn render_marked(
         hidden,
         placing,
     } = draw(bytes, options)?;
+    if pdf.len() as u64 > MAX_OUTPUT_BYTES {
+        return Err(PreviewError::Rejected);
+    }
     let pdf = SharedBytes::from(pdf);
     let anchors = placing.anchors(|| read_marks(&pdf))?;
     Ok(Rendered {
@@ -884,7 +791,6 @@ mod tests {
             PreviewError::Render("worker crashed".into()),
             PreviewError::Rejected,
             PreviewError::Timeout,
-            PreviewError::TemporaryStorage("disk full".into()),
             PreviewError::Read(std::io::Error::other("gone")),
         ] {
             let back = PreviewError::from_report(&error.report());
@@ -929,11 +835,9 @@ mod tests {
         assert!(matches!(result, Err(PreviewError::Cancelled)));
     }
 
-    /// A locked DOCX, unlocked in memory: the desktop renders it in memory
-    /// and writes nothing; iOS's render, which writes its PDF to a folder,
-    /// still refuses it (#1024 item 12).
+    /// A locked DOCX draws from the bytes unlocked in memory.
     #[test]
-    fn unlocked_bytes_render_in_memory_and_never_into_a_folder() {
+    fn unlocked_bytes_render_in_memory() {
         let plain = std::fs::read(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/import/text.docx"),
         )
@@ -960,13 +864,6 @@ mod tests {
         )
         .unwrap();
         assert!(preview.pdf.as_ref().starts_with(b"%PDF-"));
-        let phones = render_in(
-            dir.path(),
-            &unlocked,
-            |_| panic!("no PDF is read"),
-            RenderOptions::default(),
-        );
-        assert!(matches!(phones, Err(PreviewError::Encrypted)));
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 

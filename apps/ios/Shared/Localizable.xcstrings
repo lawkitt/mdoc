@@ -593,7 +593,13 @@
     "Enough memory to find names on this device." : {
 
     },
+    "Enter its password to import it. mdoc keeps the unlocked document in memory while it is open." : {
+
+    },
     "Enter its password to import it. mdoc unlocks it in memory while this document is open and never saves the password or an unlocked copy." : {
+
+    },
+    "Enter its password to show the original. mdoc keeps the unlocked document in memory while it is open." : {
 
     },
     "Enter its password to show the Original. mdoc unlocks it in memory while this document is open and never saves the password or an unlocked copy." : {
@@ -1046,9 +1052,6 @@
 
     },
     "Password" : {
-
-    },
-    "Password-protected DOCX files aren’t shown, so no unlocked copy is written to disk." : {
 
     },
     "Paste" : {
@@ -1564,6 +1567,9 @@
 
     },
     "Unlock" : {
+
+    },
+    "Unlock the document in Text to show its original." : {
 
     },
     "URL" : {

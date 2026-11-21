@@ -1,0 +1,1 @@
+- **Word Originals render in memory.** Open the Original of a password-protected DOCX after unlocking it (#1024).

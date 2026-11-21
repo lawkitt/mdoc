@@ -1,15 +1,14 @@
-//! A DOCX file's Original pane on iOS: docxide renders the source into a
-//! temporary PDF in this process (desktop's worker is a child process, which
-//! iOS forbids), under the worker's input limits. The platform shows the PDF
-//! and reads its comment marks back with its own PDF reader; the core turns
-//! them into anchors. The PDF goes when the platform drops the object.
+//! A DOCX file's Original on iOS. The core draws it in memory, and the
+//! platform reads the PDF's comment marks with PDFKit on the render thread.
 use std::{
-    cell::RefCell,
-    path::Path,
-    sync::{Arc, Mutex},
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 
-use mdoc_import::docx_preview::{self, AnchorRect, DocxFile, LinkMark, RenderOptions};
+use mdoc_import::{
+    docx_preview::{self, AnchorRect, DocxPreview, LinkMark, PreviewError, RenderOptions},
+    import::{Password, Source},
+};
 
 use crate::CoreError;
 
@@ -17,7 +16,7 @@ use crate::CoreError;
 /// URI starts with `mdoc-comment:`. Called on the render's thread.
 #[uniffi::export(callback_interface)]
 pub trait CommentMarkReader: Send + Sync {
-    fn comment_marks(&self, pdf_path: String) -> Vec<CommentMark>;
+    fn comment_marks(&self, pdf: Vec<u8>) -> Vec<CommentMark>;
 }
 
 /// One comment mark: a `/Link` rectangle and its URI after the scheme.
@@ -67,84 +66,105 @@ pub struct CommentAnchor {
     pub point: bool,
 }
 
+/// An open document's unlocked DOCX, shared in Rust without sending its
+/// decrypted bytes across the bridge.
+#[derive(uniffi::Object)]
+pub struct UnlockedDocx(Source);
+
+impl UnlockedDocx {
+    pub(crate) fn new(source: Source) -> Arc<Self> {
+        Arc::new(Self(source))
+    }
+}
+
+#[derive(uniffi::Enum)]
+pub enum DocxInput {
+    File {
+        bytes: Vec<u8>,
+        password: Option<String>,
+    },
+    Unlocked {
+        source: Arc<UnlockedDocx>,
+    },
+}
+
+#[uniffi::export]
+pub fn docx_preview_max_input_bytes() -> u64 {
+    docx_preview::MAX_INPUT_BYTES
+}
+
 /// A rendered DOCX original. Its PDF lives as long as the object.
 #[derive(uniffi::Object)]
 pub struct DocxOriginal {
-    preview: DocxFile,
+    preview: DocxPreview,
+    unlocked: Option<Arc<UnlockedDocx>>,
 }
 
 // One render at a time: two would hold two documents' layouts in memory.
 static RENDER: Mutex<()> = Mutex::new(());
 
-thread_local! {
-    static MARKS: RefCell<Option<Box<dyn CommentMarkReader>>> = const { RefCell::new(None) };
-}
-
-fn read_marks(pdf: &Path) -> Result<Vec<LinkMark>, String> {
-    MARKS.with_borrow(|reader| {
-        let reader = reader.as_ref().ok_or("no comment mark reader")?;
-        Ok(reader
-            .comment_marks(pdf.to_string_lossy().into_owned())
-            .into_iter()
-            .map(|mark| LinkMark {
-                page: mark.page as usize,
-                rect: AnchorRect {
-                    x: mark.rect.x,
-                    y: mark.rect.y,
-                    w: mark.rect.w,
-                    h: mark.rect.h,
-                },
-                target: mark.target,
-            })
-            .collect())
-    })
-}
-
-/// The left-out count of `source`'s comments, for an original that could
-/// not render: the import counted them on the original instead of the
-/// left-out line, so nothing is lost without a note.
-#[uniffi::export]
-pub fn docx_comments_not_shown(source: String) -> Option<String> {
-    let source = mdoc_import::import::Source::read(Path::new(&source)).ok()?;
-    mdoc_import::import::source_comments_not_shown(&source)
-}
-
 #[uniffi::export]
 impl DocxOriginal {
-    /// Renders `source` into a new folder under `folder`, whose file
-    /// protection the PDF inherits. Blocks for the whole render: call it off
-    /// the main thread.
+    /// Draws the DOCX bytes and reads the PDF's marks in memory. Call off
+    /// the main thread. A reopened locked file asks via NeedsPassword.
     #[uniffi::constructor]
     pub fn render(
-        source: String,
-        folder: String,
+        input: DocxInput,
         marks: Box<dyn CommentMarkReader>,
     ) -> Result<Arc<Self>, CoreError> {
         let _one = RENDER.lock().unwrap_or_else(|e| e.into_inner());
-        MARKS.set(Some(marks));
-        // Phones offer no hidden text: the page as Word prints it.
-        let preview = docx_preview::read_source(Path::new(&source)).and_then(|source| {
-            docx_preview::render_in(
-                Path::new(&folder),
+        let source = match input {
+            DocxInput::File { bytes, password } => {
+                let password = password.map(Password::new);
+                let source = Source::new("original.docx".into(), None, bytes);
+                if source.bytes().len() as u64 > docx_preview::MAX_INPUT_BYTES {
+                    return Err(render_error(PreviewError::InputTooLarge, &source));
+                }
+                source.unlock(password.as_ref())?
+            }
+            DocxInput::Unlocked { source } => source.0.clone(),
+        };
+        // Phones offer no hidden-text toggle: the page is as Word prints it.
+        let preview = catch_unwind(AssertUnwindSafe(|| {
+            docx_preview::render_in_process(
                 &source,
-                read_marks,
+                Arc::new(AtomicBool::new(false)),
+                |pdf| {
+                    Ok(marks
+                        .comment_marks(pdf.as_ref().to_vec())
+                        .into_iter()
+                        .map(|mark| LinkMark {
+                            page: mark.page as usize,
+                            rect: AnchorRect {
+                                x: mark.rect.x,
+                                y: mark.rect.y,
+                                w: mark.rect.w,
+                                h: mark.rect.h,
+                            },
+                            target: mark.target,
+                        })
+                        .collect())
+                },
                 RenderOptions::default(),
+                None,
             )
-        });
-        MARKS.set(None);
-        let preview = preview.map_err(|error| match error {
-            // docxide renders to a file, which would be an unlocked copy; the
-            // import already counted the comments.
-            docx_preview::PreviewError::Encrypted => CoreError::OriginalLocked,
-            error => CoreError::Import {
-                message: error.to_string(),
-            },
-        })?;
-        Ok(Arc::new(Self { preview }))
+        }))
+        .unwrap_or_else(|_| Err(PreviewError::Render("the renderer stopped".into())))
+        .map_err(|error| render_error(error, &source))?;
+        Ok(Arc::new(Self {
+            preview,
+            unlocked: source.unlocked().then(|| UnlockedDocx::new(source)),
+        }))
     }
 
-    pub fn pdf_path(&self) -> String {
-        self.preview.pdf_path.to_string_lossy().into_owned()
+    pub fn pdf_bytes(&self) -> Vec<u8> {
+        self.preview.pdf.as_ref().to_vec()
+    }
+
+    /// The unlock obtained on the Original's password card. The document
+    /// keeps it while open, including when the Original pane is hidden.
+    pub fn unlocked_source(&self) -> Option<Arc<UnlockedDocx>> {
+        self.unlocked.clone()
     }
 
     /// What the rendering left out or may show incompletely.
@@ -191,29 +211,28 @@ impl DocxOriginal {
     }
 }
 
+fn render_error(error: PreviewError, source: &Source) -> CoreError {
+    let mut message = error.to_string();
+    // The Original normally shows comments omitted from the Markdown.
+    // If an ordinary DOCX can't draw, its failure still gives their count.
+    if !source.unlocked()
+        && !matches!(error, PreviewError::InputTooLarge)
+        && let Some(count) = mdoc_import::import::source_comments_not_shown(source)
+    {
+        message.push('\n');
+        message.push_str(&count);
+    }
+    CoreError::Import { message }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::Scratch;
-    use std::path::PathBuf;
 
-    fn fixture(name: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/docx-preview")
-            .join(name)
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    /// Hands back one mark per page it is asked about, like a PDF reader
-    /// that found marker `0` at the top of page 1.
     struct OneMark;
     impl CommentMarkReader for OneMark {
-        fn comment_marks(&self, pdf_path: String) -> Vec<CommentMark> {
-            assert!(
-                Path::new(&pdf_path).is_file(),
-                "asked before the PDF exists"
-            );
+        fn comment_marks(&self, pdf: Vec<u8>) -> Vec<CommentMark> {
+            assert!(pdf.starts_with(b"%PDF-"));
             vec![CommentMark {
                 page: 0,
                 rect: PageRect {
@@ -227,89 +246,41 @@ mod tests {
         }
     }
 
-    #[test]
-    fn renders_a_docx_with_its_comments_into_the_folder_and_removes_it_when_dropped() {
-        let folder = Scratch::new();
-        let original = DocxOriginal::render(
-            fixture("comments.docx"),
-            folder.path().to_string_lossy().into_owned(),
+    fn render(bytes: Vec<u8>) -> Result<Arc<DocxOriginal>, CoreError> {
+        DocxOriginal::render(
+            DocxInput::File {
+                bytes,
+                password: None,
+            },
             Box::new(OneMark),
         )
-        .unwrap();
-        let pdf = PathBuf::from(original.pdf_path());
-        assert!(pdf.starts_with(folder.path()));
-        assert!(std::fs::read(&pdf).unwrap().starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn renders_pdf_bytes_and_comment_anchors() {
+        let original =
+            render(include_bytes!("../../../tests/fixtures/docx-preview/comments.docx").to_vec())
+                .unwrap();
+        assert!(original.pdf_bytes().starts_with(b"%PDF-"));
         assert!(!original.comments().is_empty());
         let anchor = &original.anchors()[0];
         assert_eq!(anchor.page, 0);
         assert_eq!(anchor.rects[0].x, 0.1);
-        drop(original);
-        // The folder goes on a cleanup thread.
-        let started = std::time::Instant::now();
-        while pdf.parent().unwrap().exists() {
-            assert!(
-                started.elapsed().as_secs() < 5,
-                "the render's folder stayed"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
     }
 
     #[test]
-    fn a_failed_original_still_counts_its_comments() {
-        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/import/handmade-hidden-content.docx");
-        let folder = Scratch::new();
-        // Tracked changes: the preview refuses it.
+    fn an_ordinary_docx_that_cannot_render_still_counts_its_comments() {
+        let result = render(
+            include_bytes!("../../../tests/fixtures/import/handmade-hidden-content.docx").to_vec(),
+        );
         assert!(
-            DocxOriginal::render(
-                source.to_string_lossy().into_owned(),
-                folder.path().to_string_lossy().into_owned(),
-                Box::new(OneMark),
-            )
-            .is_err()
+            matches!(result, Err(CoreError::Import { message }) if message.contains("2 comments not shown."))
         );
-        assert_eq!(
-            docx_comments_not_shown(source.to_string_lossy().into_owned()).as_deref(),
-            Some("2 comments not shown.")
-        );
-    }
-
-    /// A locked DOCX's original never renders, since the render would be an
-    /// unlocked copy on disk, and the pane says so.
-    #[test]
-    fn a_locked_docx_has_no_original_and_says_why() {
-        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/locked-office/word-locked.docx");
-        let folder = Scratch::new();
-        let error = DocxOriginal::render(
-            source.to_string_lossy().into_owned(),
-            folder.path().to_string_lossy().into_owned(),
-            Box::new(OneMark),
-        )
-        .err()
-        .unwrap();
-        assert!(
-            error
-                .to_string()
-                .starts_with("Password-protected DOCX files"),
-            "{error}"
-        );
-        assert_eq!(std::fs::read_dir(folder.path()).unwrap().count(), 0);
     }
 
     #[test]
     fn a_damaged_docx_is_an_import_error() {
-        let folder = Scratch::new();
-        let source = folder.path().join("broken.docx");
-        std::fs::write(&source, b"not a zip").unwrap();
-        let error = DocxOriginal::render(
-            source.to_string_lossy().into_owned(),
-            folder.path().to_string_lossy().into_owned(),
-            Box::new(OneMark),
-        )
-        .err()
-        .unwrap();
-        assert!(matches!(error, CoreError::Import { .. }), "{error:?}");
+        let result = render(b"not a zip".to_vec());
+        assert!(matches!(result, Err(CoreError::Import { .. })));
     }
 }

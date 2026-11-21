@@ -24,12 +24,11 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 ## DOCX rendering
 
-- On desktop every DOCX renders in memory: the worker takes the document on
-  stdin and returns the PDF on stdout, and the pane opens it from those
-  bytes. Nothing of it reaches disk, so an unlocked password-protected DOCX
-  shows its Original, and a reopened one asks for its password there
-  (#1024). iOS still renders into a file and shows no Original for an
-  unlocked DOCX until it renders in memory too.
+- On desktop and iOS, DOCX previews render in memory. The desktop worker
+  takes the document on stdin and returns the PDF on stdout. On iOS the
+  core renders in process and PDFKit opens the PDF bytes. An unlocked
+  password-protected DOCX shows its Original, and a reopened one asks for
+  its password there (#1024).
 - docxide is bumped at the start of each desktop milestone, with the DOCX
   fidelity check; no fork unless a patch is unavoidable.
 - Upstream docxide issues carry synthetic fixtures only, never a user's

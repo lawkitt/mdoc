@@ -87,6 +87,8 @@ extension Library {
 
 /// One document's import, OCR, review and hand-off.
 protocol DocumentSession: AnyObject, Sendable {
+    /// Moves the import's in-memory unlock to the open document.
+    func takeUnlockedDocx() -> UnlockedDocx?
     var id: DocumentID { get }
     func snapshot() -> DocumentSnapshot
     /// Import and OCR. Resumes after the pages already finished. A locked
@@ -230,6 +232,8 @@ struct Core: Sendable {
 }
 
 extension DocumentSession {
+    func takeUnlockedDocx() -> UnlockedDocx? { nil }
+
     func scanEstimate() -> Int? { nil }
 
     /// Hide name in the core's guessed category.

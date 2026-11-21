@@ -17,6 +17,8 @@ pub(super) struct Imported {
     pub note: ImportNote,
     /// OCR's kept pages, removed once the session takes the document.
     pub kept: Option<mdoc_import::resume::Completed>,
+    #[cfg(not(target_os = "android"))]
+    pub unlocked_docx: Option<mdoc_import::import::Source>,
 }
 
 /// Import `path`; with `kept`, a PDF's OCR keeps its finished pages there
@@ -52,6 +54,8 @@ pub(super) fn import_file(
             markdown,
             note: ImportNote::default(),
             kept: None,
+            #[cfg(not(target_os = "android"))]
+            unlocked_docx: None,
         });
     }
     let installed = options
@@ -127,6 +131,8 @@ pub(super) fn import_file(
         note: ImportNote::of(&imported),
         markdown: imported.markdown,
         kept: completed,
+        #[cfg(not(target_os = "android"))]
+        unlocked_docx: (imported.is_docx && imported.source.unlocked()).then_some(imported.source),
     })
 }
 
@@ -137,11 +143,10 @@ impl ImportNote {
             notice: imported.warning.clone(),
             // A Word file's comments show on its rendered original, which
             // iOS has (`crate::original`) and Android not yet; every other
-            // format's comments (a PDF's annotations included) count here,
-            // and so do an unlocked DOCX's, whose original never renders.
+            // format's comments (a PDF's annotations included) count here.
             left_out: imported
                 .left_out
-                .line(cfg!(not(target_os = "android")) && imported.is_docx && !imported.decrypted),
+                .line(cfg!(not(target_os = "android")) && imported.is_docx),
         }
     }
 }
@@ -171,11 +176,9 @@ pub(super) fn title(path: &Path) -> String {
 mod tests {
     use super::*;
 
-    /// An unlocked DOCX's comments count in the left-out line on every
-    /// phone, since no original shows them. The open file stands in for its
-    /// unlocked bytes, so no locked copy is made.
+    /// A DOCX’s comments count only on phones without an Original pane.
     #[test]
-    fn an_unlocked_docx_counts_its_comments_in_the_left_out_line() {
+    fn a_docx_counts_its_comments_when_the_app_has_no_original_pane() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/import/handmade-comments.docx");
         let mut imported = mdoc_import::import::prepare_cancellable(
@@ -193,7 +196,10 @@ mod tests {
             cfg!(target_os = "android")
         );
         imported.decrypted = true;
-        assert!(counted(ImportNote::of(&imported).left_out));
+        assert_eq!(
+            counted(ImportNote::of(&imported).left_out),
+            cfg!(target_os = "android")
+        );
     }
 
     /// pdf-inspector opens the wrapper and finds one page without text,

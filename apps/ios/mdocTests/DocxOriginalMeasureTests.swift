@@ -5,7 +5,7 @@ import PDFKit
 import XCTest
 @testable import mdoc
 
-/// The DOCX original's render time and peak memory on this device
+/// Time through the first PDFKit page draw and peak memory on this device
 /// (`scripts/ios/ios-docx-measure.sh` runs it once per document, so each
 /// peak is its own). Measurement only: it runs only when `MDOC_DOCX_MEASURE`
 /// names a document of the corpus (`TEST_RUNNER_MDOC_DOCX_MEASURE` through
@@ -25,22 +25,27 @@ final class DocxOriginalMeasureTests: XCTestCase {
                 .appendingPathComponent(environment["MDOC_DOCX_MEASURE_TAG"] ?? "untagged", isDirectory: true)
         let source = corpus.appendingPathComponent(name)
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path), "no \(source.path)")
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
 
         var rows: [String] = []
         for run in 1...runs {
-            let sampler = FootprintSampler()
-            let started = Date()
-            let original = try DocxOriginal.render(source: source.path, folder: folder.path, marks: CommentMarks())
-            let seconds = Date().timeIntervalSince(started)
-            let (start, peak) = sampler.stop()
-            let pages = PDFDocument(url: URL(fileURLWithPath: original.pdfPath()))?.pageCount ?? 0
-            let row = [
-                name, String(run), String(pages), String(original.comments().count), String(original.anchors().count),
-                String(format: "%.3f", seconds), String(peak), String(start), String(FootprintSampler.lifetimePeak()),
-            ].joined(separator: "\t")
+            let row = try autoreleasepool {
+                let sampler = FootprintSampler()
+                let clock = ContinuousClock()
+                let started = clock.now
+                let original = try DocxOriginal.render(
+                    input: .file(bytes: RenderedDocx.readSource(source), password: nil), marks: CommentMarks())
+                let document = try XCTUnwrap(PDFDocument(data: original.pdfBytes()))
+                let page = try XCTUnwrap(document.page(at: 0))
+                _ = page.thumbnail(of: CGSize(width: 390, height: 600), for: .cropBox)
+                let elapsed = started.duration(to: clock.now).components
+                let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+                let (start, peak) = sampler.stop()
+                return [
+                    name, String(run), String(document.pageCount), String(original.comments().count),
+                    String(original.anchors().count), String(format: "%.6f", seconds), String(peak), String(start),
+                    String(FootprintSampler.lifetimePeak()),
+                ].joined(separator: "\t")
+            }
             print("DOCX-MEASURE\t\(row)")
             rows.append(row)
         }

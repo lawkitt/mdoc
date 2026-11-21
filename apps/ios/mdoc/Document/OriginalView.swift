@@ -1,3 +1,4 @@
+import MdocFFI
 import PDFKit
 import SwiftUI
 import UIKit
@@ -6,6 +7,8 @@ import UIKit
 /// zoomable image view for scans and photos (ADR 0085).
 struct OriginalView: View {
     let original: OriginalSource
+    @Binding var unlockedDocx: UnlockedDocx?
+    var importPending = false
     /// A long job runs on the document (`DocxOriginalView.waits`).
     var jobRuns = false
     /// Nothing sits under the pane: the page runs to the screen's bottom.
@@ -20,12 +23,8 @@ struct OriginalView: View {
     var onDarkPageOn: () -> Void = {}
     /// A locked PDF, unlocked in memory (`DocumentViewModel.unlockedOriginal`).
     var unlockedPDF: PDFDocument?
-    /// The import's password card asks (`DocumentViewModel.passwordPrompt`).
+    /// When import needs a password, its card takes the place of the page.
     var importPrompt: DocumentViewModel.PasswordPrompt?
-    /// The bottom bar shows the import's card beside the pane, or the
-    /// import runs, so the pane doesn't ask too; over the text, the pane
-    /// shows that card itself.
-    var importCardInBar = true
     var onImportUnlock: @MainActor (String) async -> Void = { _ in }
     /// The pane's own card unlocks a locked PDF; false for a wrong password.
     var onUnlockPDF: @MainActor (String) -> Bool = { _ in false }
@@ -42,12 +41,19 @@ struct OriginalView: View {
     /// light (dark already, it has nothing to teach), and the hints'
     /// one-at-a-time rule letting it show.
     private var hintShows: Bool {
-        dark.offered && !preferences.darkPage && original != .none
+        dark.offered && !preferences.darkPage && original != .none && importPrompt == nil
             && Hints.shared.teachable.contains(.darkPage)
     }
 
     var body: some View {
-        page
+        Group {
+            if let importPrompt {
+                OriginalPasswordCard(
+                    prompt: importPrompt, purpose: .importing, waits: jobRuns, unlock: onImportUnlock)
+            } else {
+                page
+            }
+        }
             .overlay(alignment: .bottom) {
                 ZStack {
                     if hintShows {
@@ -82,12 +88,13 @@ struct OriginalView: View {
                 description: Text("Pasted text shows its text only."))
         case .pdf(let url):
             PDFOriginal(
-                url: url, unlocked: unlockedPDF, importPrompt: importPrompt, importCardInBar: importCardInBar,
-                importUnlock: onImportUnlock, unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
+                url: url, unlocked: unlockedPDF, waits: jobRuns, importPending: importPending,
+                unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
         case .docx(let url):
             DocxOriginalView(
-                source: url, waits: jobRuns, darkPage: dark.isOn, onComments: onComments,
-                activeComment: activeComment, onOpenComment: onOpenComment)
+                source: url, unlocked: $unlockedDocx, importPending: importPending, waits: jobRuns,
+                darkPage: dark.isOn, onComments: onComments, activeComment: activeComment,
+                onOpenComment: onOpenComment)
         case .images(let urls):
             TabView {
                 ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
@@ -108,9 +115,8 @@ struct OriginalView: View {
 private struct PDFOriginal: View {
     let url: URL
     let unlocked: PDFDocument?
-    let importPrompt: DocumentViewModel.PasswordPrompt?
-    let importCardInBar: Bool
-    let importUnlock: @MainActor (String) async -> Void
+    let waits: Bool
+    let importPending: Bool
     let unlock: @MainActor (String) -> Bool
     let viewport: PageViewport
     let darkPage: Bool
@@ -125,7 +131,9 @@ private struct PDFOriginal: View {
     var body: some View {
         Group {
             if document?.isLocked == true {
-                locked
+                OriginalPasswordCard(prompt: prompt, waits: waits, importPending: importPending) { password in
+                    if !unlock(password) { prompt = .wrong }
+                }
             } else {
                 PDFKitView(document: document, viewport: viewport)
                     .darkPage(darkPage)
@@ -140,34 +148,6 @@ private struct PDFOriginal: View {
         }
     }
 
-    /// One card at a time: the import's while it asks, whose password
-    /// unlocks the Original too, else the pane's own.
-    @ViewBuilder
-    private var locked: some View {
-        if let importPrompt, importCardInBar {
-            ContentUnavailableView(
-                "This document is password-protected",
-                systemImage: "lock",
-                description: Text("Enter the document’s password to show the Original."))
-        } else if let importPrompt {
-            card(PasswordCard(prompt: importPrompt, unlock: importUnlock))
-        } else {
-            card(
-                PasswordCard(prompt: prompt, purpose: .original) { password in
-                    if !unlock(password) {
-                        prompt = .wrong
-                    }
-                })
-        }
-    }
-
-    private func card(_ card: PasswordCard) -> some View {
-        ScrollView {
-            card.padding()
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .background(Color(uiColor: .secondarySystemBackground))
-    }
 }
 
 struct PDFKitView: UIViewRepresentable {

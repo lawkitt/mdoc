@@ -107,8 +107,7 @@ pub struct Imported {
     /// of it: `source` holds that PDF's bytes, which the Original shows.
     pub is_image: bool,
     /// The file was password-protected and this import unlocked it in
-    /// memory. No rendering shows it (that would write it to disk), so the
-    /// left-out line counts its comments.
+    /// memory.
     pub decrypted: bool,
 }
 
@@ -214,8 +213,7 @@ impl Source {
     }
 
     /// The bytes are a password-protected file's, unlocked in memory: no
-    /// copy of them may be written. The desktop's DOCX preview renders them
-    /// in memory; iOS's, which renders to a file, leaves them alone.
+    /// copy of them may be written. DOCX previews render them in memory.
     pub fn unlocked(&self) -> bool {
         self.unlocked
     }

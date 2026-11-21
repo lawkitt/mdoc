@@ -1488,9 +1488,6 @@ pub(crate) fn docx_message(error: &PreviewError) -> &'static str {
         PreviewError::Rejected => "The preview can't draw this DOCX.",
         PreviewError::Timeout => "The preview took longer than 30 seconds and was stopped.",
         PreviewError::Cancelled => "The preview was cancelled.",
-        PreviewError::TemporaryStorage(_) => {
-            "mdoc could not create temporary files for the preview."
-        }
         PreviewError::Read(_) => "mdoc could not read this file. Check that it is still there.",
     }
 }

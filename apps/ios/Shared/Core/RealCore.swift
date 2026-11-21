@@ -79,7 +79,6 @@ extension CoreError {
         case .needsOcr: .modelMissing
         case .needsPassword: .needsPassword
         case .wrongPassword: .wrongPassword
-        case .originalLocked: .originalLocked
         case .ocr(let message): .recognitionFailed(message)
         case .detect(let message): .findNamesFailed(message)
         case .cancelled: .cancelled
@@ -781,6 +780,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         observer.onCancel { [ffi] in ffi.cancelJob(job: job) }
         return try core(call)
     }
+
+    func takeUnlockedDocx() -> UnlockedDocx? { ffi.takeUnlockedDocx() }
 
     func recognize(observer: any JobObserver, password: String?) throws -> DocumentSnapshot {
         guard let source = lock.withLock({ self.source }) else { return snapshot() }
