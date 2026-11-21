@@ -5,10 +5,12 @@
 # skip that build on an exact hit.
 #
 #   key    Prints the cache's `key=` and `paths=` for $GITHUB_OUTPUT. The key
-#          hashes the committed tree of every input below and the pinned
-#          Xcode (XCODE_VERSION in scripts/tools.env, which links and
-#          assembles the xcframeworks), so a change to any of them misses.
-#          Refuses uncommitted changes to the inputs: the key is HEAD's.
+#          hashes the committed tree of every input below and the Xcode that
+#          builds it (the one DEVELOPER_DIR selects, as
+#          scripts/ios/ios-toolchain.sh prints it: it links and assembles the
+#          xcframeworks), so a change to any of them, or a job that builds
+#          with another Xcode, misses. Refuses uncommitted changes to the
+#          inputs: the key is HEAD's.
 #   check  After `just ios-core`: fails when the build read a file the key
 #          does not hash. Cargo's dep-info for the core (both targets) and
 #          for uniffi-bindgen lists every workspace file rustc and the build
@@ -38,11 +40,13 @@ key() {
   [ -z "$(git ls-files --others --exclude-standard -- "${inputs[@]}")" ] ||
     die "untracked files among the iOS core's inputs; its key hashes HEAD"
   local xcode hash
-  xcode=$(sed -n 's/^XCODE_VERSION=//p' scripts/tools.env)
-  [ -n "$xcode" ] || die "no XCODE_VERSION in scripts/tools.env"
+  # Its version and build: a preview image's Xcode keeps its version
+  # through new builds.
+  xcode=$(xcodebuild -version 2>/dev/null | tr '\n' ' ')
+  [[ "$xcode" == "Xcode "* ]] || die "no Xcode selected: run scripts/ios/ios-toolchain.sh first"
   hash=$({
     git ls-tree -r HEAD -- "${inputs[@]}"
-    echo "XCODE_VERSION=$xcode"
+    echo "$xcode"
   } | shasum -a 256 | cut -c1-64)
   echo "key=ios-core-$version-$hash"
   echo "paths<<PATHS_END"

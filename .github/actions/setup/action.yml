@@ -11,16 +11,21 @@ inputs:
   cache-key:
     description: Swatinem/rust-cache shared key; release builds share one.
     default: ""
+  rust:
+    description: Install the Rust toolchain and restore the cargo cache; false for a job that builds no Rust (the iOS parts link a built core).
+    default: "true"
 
 runs:
   using: composite
   steps:
     # rustup reads rust-toolchain.toml; the runner images ship rustup.
     - name: Install the pinned Rust toolchain
+      if: inputs.rust == 'true'
       shell: bash
       run: rustup toolchain install && rustc --version
 
     - name: Cache cargo registry + target
+      if: inputs.rust == 'true'
       uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
       with:
         shared-key: ${{ inputs.cache-key }}
