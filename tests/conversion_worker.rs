@@ -180,9 +180,9 @@ fn imports_other_than_pdfs_go_through_the_installed_worker() {
     supervise(PathBuf::from("no-such-worker-executable"));
     let cancel = AtomicBool::new(false);
     assert!(matches!(
-        prepare_cancellable(&fixture("text.docx"), None, true, &cancel),
+        prepare_cancellable(&fixture("text.docx"), None, None, true, &cancel),
         Err(ImportError::ConverterFailed(_))
     ));
-    let pdf = prepare_cancellable(&fixture("text.pdf"), None, true, &cancel).unwrap();
+    let pdf = prepare_cancellable(&fixture("text.pdf"), None, None, true, &cancel).unwrap();
     assert!(pdf.is_pdf);
 }

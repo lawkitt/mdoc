@@ -1,12 +1,12 @@
 //! Converting this tab's source into Markdown: the one import
 //! job and its slot in the app-wide import permit, automatic conversion of
 //! opened PDFs and DOCX files, and OCR consent, recognition languages and
-//! setup on the conversion card. The document view reads
+//! setup on the conversion card, and the password of a locked document. The document view reads
 //! Settings, starts the background work and the model setup, and carries
 //! out the returned effects.
 
 use mdoc_import::{
-    import::{ImportError, Imported},
+    import::{ImportError, Imported, Password},
     import_session::{ImportCompletion, ImportPermit, ImportSession},
     ocr, recognition,
 };
@@ -18,6 +18,14 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+
+/// The card asks for a locked document's password: first, or again after
+/// a wrong one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PasswordPrompt {
+    Asking,
+    Wrong,
+}
 
 /// What the document view carries out for an import transition.
 pub(crate) enum ImportEffect {
@@ -34,9 +42,11 @@ pub(crate) enum ImportEffect {
         installed: ocr::Installed,
     },
     /// Run the conversion in the background, holding `permit` and stopping
-    /// when `cancel` is set; report with `complete`.
+    /// when `cancel` is set; report with `complete`. `password` unlocks a
+    /// locked document for this run only and drops with it.
     Run {
         path: PathBuf,
+        password: Option<Password>,
         installed: Option<ocr::Installed>,
         skip_ocr: bool,
         permit: Arc<ImportPermit>,
@@ -95,6 +105,9 @@ pub(crate) struct ImportFlow {
     setup: Option<(OcrModel, bool)>,
     ocr_notice_dismissed: bool,
     setup_error_dismissed: bool,
+    /// The source is password-protected: the card asks for its password.
+    /// The password itself is never kept here.
+    password_prompt: Option<PasswordPrompt>,
     /// Keyboard input source languages; tests inject their own.
     input_languages: fn() -> Vec<recognition::Language>,
 }
@@ -122,6 +135,7 @@ impl ImportFlow {
             setup: None,
             ocr_notice_dismissed: false,
             setup_error_dismissed: false,
+            password_prompt: None,
             input_languages,
         }
     }
@@ -173,6 +187,21 @@ impl ImportFlow {
 
     pub(crate) fn ocr_failure(&self) -> Option<&String> {
         self.ocr_failure.as_ref()
+    }
+
+    /// The card asks for the source's password.
+    pub(crate) fn password_prompt(&self) -> Option<PasswordPrompt> {
+        self.password_prompt
+    }
+
+    /// A password typed on the card can be tried now: nothing else runs
+    /// and the slot is free.
+    pub(crate) fn can_unlock(&self) -> bool {
+        self.password_prompt.is_some()
+            && self.source.is_some()
+            && !self.job.busy()
+            && !self.slot_busy()
+            && !self.cancelled()
     }
 
     pub(crate) fn ocr_notice_dismissed(&self) -> bool {
@@ -270,6 +299,24 @@ impl ImportFlow {
         );
     }
 
+    /// The card asking for `name`'s password, first or after a `wrong` one.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn show_password_fixture(&mut self, generation: u64, name: &str, wrong: bool) {
+        self.source = Some(name.into());
+        self.job.complete(
+            generation,
+            Err(if wrong {
+                ImportError::WrongPassword
+            } else {
+                ImportError::PasswordRequired
+            }),
+        );
+    }
+
     #[cfg(test)]
     pub(crate) fn job(&self) -> &ImportSession {
         &self.job
@@ -341,6 +388,28 @@ impl ImportFlow {
         installed: Option<ocr::Installed>,
         skip_ocr: bool,
     ) -> Option<ImportEffect> {
+        self.run(path, None, installed, skip_ocr)
+    }
+
+    /// Unlock on the card: convert the source with `password`, which goes
+    /// with the run and is dropped when it ends. Nothing unless
+    /// [`Self::can_unlock`].
+    pub(crate) fn unlock(&mut self, password: Password) -> Option<ImportEffect> {
+        if !self.can_unlock() {
+            return None;
+        }
+        let path = self.source.clone()?;
+        self.automatic = false;
+        self.run(path, Some(password), None, false)
+    }
+
+    fn run(
+        &mut self,
+        path: PathBuf,
+        password: Option<Password>,
+        installed: Option<ocr::Installed>,
+        skip_ocr: bool,
+    ) -> Option<ImportEffect> {
         if self.job.busy() {
             return None;
         }
@@ -355,6 +424,7 @@ impl ImportFlow {
         self.ocr_error = None;
         Some(ImportEffect::Run {
             path,
+            password,
             installed,
             skip_ocr,
             permit,
@@ -386,8 +456,19 @@ impl ImportFlow {
             } else {
                 *result
             };
+            self.password_prompt = None;
             match result {
                 Ok(imported) => effects.push(ImportEffect::Request(imported)),
+                // The card asks for the password, or again after a wrong
+                // one; the field takes focus.
+                Err(ImportError::PasswordRequired) => {
+                    self.password_prompt = Some(PasswordPrompt::Asking);
+                    effects.push(ImportEffect::FocusCard);
+                }
+                Err(ImportError::WrongPassword) => {
+                    self.password_prompt = Some(PasswordPrompt::Wrong);
+                    effects.push(ImportEffect::FocusCard);
+                }
                 Err(ImportError::OcrFailed(error)) => {
                     let error = error.to_string();
                     if shared(self) {
@@ -442,6 +523,7 @@ impl ImportFlow {
     /// The conversion replaced the document. Returns whether it started by
     /// itself, so the document counts as generated and unedited.
     pub(crate) fn imported(&mut self) -> bool {
+        self.password_prompt = None;
         self.ocr_required = None;
         self.ocr_all_pages = false;
         self.ocr_error = None;
@@ -735,6 +817,72 @@ mod tests {
         let (mut idle, _) = new_flow();
         idle.stop();
         assert!(!idle.stopping() && !idle.cancelled());
+    }
+
+    /// A locked document: the card asks without holding the slot, Unlock
+    /// runs with the password, a wrong one asks again, and the right one
+    /// imports. Any other ending puts the card away.
+    #[test]
+    fn a_locked_document_asks_for_its_password_until_it_imports() {
+        let (mut flow, slot) = new_flow();
+        assert!(!flow.can_unlock(), "nothing asks yet");
+        start(&mut flow, "/in/locked.docx", None);
+        flow.complete(1, Err(ImportError::PasswordRequired));
+        let effects = flow.resume(1, false, |_| false).unwrap();
+        assert_eq!(names(&effects), ["FocusCard", "State"]);
+        assert_eq!(flow.password_prompt(), Some(PasswordPrompt::Asking));
+        assert!(!flow.busy() && !slot.load(Ordering::Relaxed));
+        for (result, prompt) in [
+            (Err(ImportError::WrongPassword), Some(PasswordPrompt::Wrong)),
+            (Err(ImportError::Damaged), None),
+        ] {
+            assert!(flow.can_unlock());
+            let Some(ImportEffect::Run {
+                path,
+                password,
+                permit,
+                skip_ocr,
+                installed,
+                ..
+            }) = flow.unlock(Password::new("guess".into()))
+            else {
+                panic!("Unlock runs the conversion");
+            };
+            assert_eq!(path, PathBuf::from("/in/locked.docx"));
+            assert!(password.is_some() && !skip_ocr && installed.is_none());
+            assert!(
+                flow.unlock(Password::new("again".into())).is_none(),
+                "one run at a time"
+            );
+            drop(permit);
+            flow.complete(1, result);
+            let effects = flow.resume(1, false, |_| false).unwrap();
+            assert_eq!(flow.password_prompt(), prompt);
+            if prompt.is_some() {
+                assert_eq!(names(&effects), ["FocusCard", "State"]);
+            } else {
+                assert_eq!(names(&effects), ["Error", "State"]);
+                assert!(!flow.can_unlock());
+            }
+        }
+        // Asked again (Try again converts without a password), then the
+        // right password imports.
+        start(&mut flow, "/in/locked.docx", None);
+        flow.complete(1, Err(ImportError::PasswordRequired));
+        flow.resume(1, false, |_| false).unwrap();
+        let Some(ImportEffect::Run { permit, .. }) = flow.unlock(Password::new("right".into()))
+        else {
+            panic!("Unlock runs the conversion");
+        };
+        drop(permit);
+        flow.complete(
+            1,
+            Ok(crate::test_support::converted("/in/locked.docx".into())),
+        );
+        let effects = flow.resume(1, false, |_| false).unwrap();
+        assert_eq!(names(&effects), ["Request", "State"]);
+        assert_eq!(flow.password_prompt(), None);
+        assert!(!slot.load(Ordering::Relaxed));
     }
 
     #[test]

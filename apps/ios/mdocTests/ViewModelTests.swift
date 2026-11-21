@@ -24,6 +24,22 @@ final class DocumentViewModelTests: XCTestCase {
             findsNames: findsNames)
     }
 
+    /// The system shows a continued task's title outside the app, so a
+    /// document job never puts the document's title there.
+    func testBackgroundTaskTitlesNeverNameTheDocument() async throws {
+        let title = "Halvorsen v. Okonkwo"
+        let (core, storage) = try Fixture.core(memory: Fixture.belowFloor)
+        let session = try core.library.importDocument(
+            .text(Letters.quotation), title: title, into: .newCase(name: "Case"))
+        let background = RecordingContinuation()
+        let model = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: background), storage: storage)
+        await model.recognize()
+        await model.findNames()
+        XCTAssertEqual(background.titles, ["Recognizing a document", "Finding names"])
+        XCTAssertFalse(background.titles.contains { $0.contains(title) })
+    }
+
     /// Below the floor the document offers no Find names: it says why, and
     /// the hand-off is there for what the user marks (ADR 0088).
     func testBelowTheFloorTheNoteStandsWhereFindNamesWouldBe() async throws {
@@ -232,6 +248,38 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(comments.snapshot.leftOut)
     }
 
+    /// A locked DOCX asks for its password in place of an error, asks again
+    /// after a wrong one, and imports with the right one. The password is
+    /// in none of the app's files afterwards.
+    func testALockedDocxAsksForItsPasswordUntilItUnlocks() async throws {
+        var storage: MdocStorage?
+        let model = try imported(
+            {
+                storage = $0
+                return try .file(Fixture.copy("tests/fixtures/locked-office/word-locked.docx", into: $0), .docx)
+            },
+            title: "Locked")
+        await model.recognize()
+        XCTAssertEqual(model.passwordPrompt, .needed)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.snapshot.phase)
+        await model.unlock(password: "petrov-2026")
+        XCTAssertEqual(model.passwordPrompt, .wrong)
+        XCTAssertNil(model.errorMessage)
+        await model.unlock(password: "Petrov-2026")
+        XCTAssertNil(model.passwordPrompt)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
+        XCTAssertFalse(model.snapshot.markdown.isEmpty)
+        let root = try XCTUnwrap(storage).root
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? []
+        for file in files where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            let bytes = try Data(contentsOf: file)
+            XCTAssertNil(bytes.range(of: Data("Petrov-2026".utf8)), file.lastPathComponent)
+        }
+    }
+
     /// A cancelled recognition ends the job and offers it again. Resume,
     /// after OCR kept pages, is `ResumeDeleteTests`' and `OCRResumeTests`'.
     func testACancelledRecognitionCanStartAgain() async throws {
@@ -422,4 +470,15 @@ private final class EmptyLibrary: Library {
     func deleteDocument(_ document: DocumentID) throws {}
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult { throw CoreError.noCase }
     func saveReply(_ reply: String, to document: DocumentID) throws {}
+}
+
+/// Records the title of every continued task a job asks for.
+private final class RecordingContinuation: BackgroundContinuation, @unchecked Sendable {
+    private(set) var titles: [String] = []
+
+    @MainActor
+    func begin(title: String, expire: @escaping @Sendable () -> Void) -> any BackgroundLease {
+        titles.append(title)
+        return NoBackgroundContinuation().begin(title: title, expire: expire)
+    }
 }

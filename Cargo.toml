@@ -43,10 +43,19 @@ gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 [workspace.dependencies]
 gpui = { package = "gpui-pre", version = "0.3.12" }
 gpui_platform = { package = "gpui-pre-platform", version = "0.3.12", features = ["font-kit", "wayland", "x11", "runtime_shaders"] }
+# Exact: unlocks password-protected DOCX, XLSX and PPTX in memory (#1007);
+# storytold's craft-libs is not on crates.io and churns (ADR 0001). The app's
+# tests lock fixtures with it.
+craft-offcrypto = { git = "https://github.com/storytold/craft-libs.git", rev = "712b35379b17e442921c03855d4a5c2a2699968e" }
+# Exact, the same revision as craft-offcrypto: unlocks password-protected DOC
+# (RC4 and RC4 CryptoAPI) in memory (#1007, ADR 0001).
+craft-doc-binary = { git = "https://github.com/storytold/craft-libs.git", rev = "712b35379b17e442921c03855d4a5c2a2699968e" }
+# Exact, the same revision: rewrites an unlocked DOC's compound file in memory.
+craft-cfb = { git = "https://github.com/storytold/craft-libs.git", rev = "712b35379b17e442921c03855d4a5c2a2699968e" }
 
 [dependencies]
 regex = "1"
-pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "2c1b44d7fea1b6fac820c68029294b378ec898cc", features = ["ocr"] }
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "7e35e4daaafee464727a5bab952e9d3859f3cc7f", features = ["ocr"] }
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
 # models, updates, crash report); a bump must keep those paths (ADR 0053).
 dirs = "7"
@@ -76,6 +85,8 @@ tempfile = "3"
 url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 unicode-segmentation = "1"
+# The import card's password field wipes what was typed (src/markdown_search.rs).
+zeroize = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The save dialog's reason (src/save_prompt.rs), the quit question
@@ -277,6 +288,8 @@ mdoc-store = { path = "crates/mdoc-store", features = ["deny-os-services"] }
 # tests/docx_worker.rs inspects the worker's DOCX package.
 roxmltree = "0.21"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# Locks fixtures for the password card's tests.
+craft-offcrypto = { workspace = true }
 
 # PDF rasterization is CPU-heavy. Keep application/editor code debuggable while
 # avoiding unoptimized pixel/vector loops during `cargo run` and tests.

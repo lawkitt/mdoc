@@ -3,11 +3,9 @@
 # scripts/dev/docs-lint.sh on scratch repositories: a tree that fits passes,
 # and each rule fails on its own, naming what broke it: every ceiling (an
 # ADR's Status paragraph and development.md's fleet-profile block not
-# counted), the pending list's older ceilings and its shrinking, a CONTEXT.md
-# entry, a README, the pending rows, a pending ADR's older count, ADR
-# numbers against Last number and Retired, a docs/design
-# folder, dated and pr-* evidence, and a changelog fragment release.sh would
-# reject. Bash 3.2 compatible.
+# counted), a CONTEXT.md entry, a README, ADR numbers against Last number
+# and Retired, a docs/design folder, dated and pr-* evidence, and a
+# changelog fragment release.sh would reject. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -33,7 +31,6 @@ base() {
   mkdir -p "$tmp/repo/scripts/dev" "$tmp/repo/docs/adr" "$tmp/repo/docs/specs" "$tmp/repo/docs/evidence/baseline"
   cp scripts/lib.sh "$tmp/repo/scripts/"
   cp scripts/dev/docs-lint.sh "$tmp/repo/scripts/dev/"
-  printf '# Pending.\n' >"$tmp/repo/scripts/dev/docs-lint-pending.md"
   git -C "$tmp/repo" init -q
   printf '# Kept choice\n\nStatus: Accepted, 2026-01-01.\n\n%s\n' "$(words 200)" >"$tmp/repo/docs/adr/0001-kept.md"
   printf '# Architecture decisions\n\nLast number: 0001.\n' >"$tmp/repo/docs/adr/README.md"
@@ -85,37 +82,6 @@ printf '# Development\n\n%s\n\n```toml fleet-profile\n%s\n```\n\n%s\n' \
   "$(words 700)" "$(words 900)" "$(words 700)" >"$tmp/repo/docs/development.md"
 run
 expect 0 "docs-lint: ok" "an ADR's Status or the fleet profile counts"
-
-# The pending list: the older ceiling holds, and a file that fits the new
-# one must leave the list.
-base
-printf 'docs/specs/desktop.md 3000\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.md"
-printf '%s\n' "$(words 2900)" >"$tmp/repo/docs/specs/desktop.md"
-run
-expect 0 "docs-lint: ok" "a pending spec under its older ceiling fails"
-printf '%s\n' "$(words 3001)" >"$tmp/repo/docs/specs/desktop.md"
-run
-expect 1 "docs/specs/desktop.md: 3001 words, over its pending ceiling of 3000" "a pending spec over its older ceiling passes"
-printf '%s\n' "$(words 1400)" >"$tmp/repo/docs/specs/desktop.md"
-run
-expect 1 "docs/specs/desktop.md fits its ceiling of 1500 now" "a trimmed spec can stay pending"
-
-# A pending ADR is held to its older count, which left out References.
-base
-printf 'docs/adr/0001-kept.md 400\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.md"
-printf '# Kept choice\n\nStatus: Accepted.\n\n%s\n\nReferences: %s\n' "$(words 390)" "$(words 20)" >"$tmp/repo/docs/adr/0001-kept.md"
-run
-expect 0 "docs-lint: ok" "a pending ADR under its older count fails"
-printf '# Kept choice\n\nStatus: Accepted.\n\n%s\n\nReferences: %s\n' "$(words 405)" "$(words 20)" >"$tmp/repo/docs/adr/0001-kept.md"
-run
-expect 1 "docs/adr/0001-kept.md: 408 words, over its pending ceiling of 400" "a pending ADR over its older count passes"
-
-# A pending row names an existing file and a number.
-base
-printf 'docs/specs/gone.md 3000\ndocs/specs/ci.md 300O\n' >>"$tmp/repo/scripts/dev/docs-lint-pending.md"
-run
-expect 1 "docs/specs/gone.md is not a file" "a pending row for a missing file passes"
-expect 1 "docs/specs/ci.md needs a number, not '300O'" "a pending row with a bad number passes"
 
 # A CONTEXT.md entry over 60 words, named; CONTEXT.md over 2,000.
 base
@@ -177,10 +143,11 @@ done
 # Changelog fragments, by release.sh's rules: good ones in each folder and
 # the folder READMEs pass; each broken rule fails, naming the file.
 fragments() { # writes good fragments and READMEs
-  mkdir -p "$tmp/repo/changes/ios" "$tmp/repo/changes/android"
+  mkdir -p "$tmp/repo/changes/ios" "$tmp/repo/changes/android" "$tmp/repo/changes/mobile"
   printf -- '- Desktop.\n' >"$tmp/repo/changes/desk_top-1.2.md"
   printf -- '- iOS.\n' >"$tmp/repo/changes/ios/phone.md"
   printf -- '- Android.\n' >"$tmp/repo/changes/android/droid.md"
+  printf -- '- Both apps.\n' >"$tmp/repo/changes/mobile/both.md"
   printf '# Changelog fragments\n' >"$tmp/repo/changes/README.md"
   printf '# Changelog\n\n## Unreleased\n' >"$tmp/repo/CHANGELOG.md"
 }
@@ -191,6 +158,12 @@ expect 0 "docs-lint: ok" "good fragments fail"
 printf 'Not a bullet.\n' >"$tmp/repo/changes/ios/plain.md"
 run
 expect 1 "changes/ios/plain.md must start with a '- ' CHANGELOG bullet" "a fragment that is not a bullet passes"
+base
+run
+fragments
+printf 'Not a bullet.\n' >"$tmp/repo/changes/mobile/plain.md"
+run
+expect 1 "changes/mobile/plain.md must start with a '- ' CHANGELOG bullet" "a mobile fragment that is not a bullet passes"
 base
 run
 fragments

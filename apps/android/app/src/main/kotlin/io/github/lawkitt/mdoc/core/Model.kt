@@ -198,6 +198,12 @@ sealed class AppError(message: String) : Exception(message) {
     /** Recognition or Find names needs a model that is not downloaded. */
     class ModelMissing : AppError("Download the models first.")
 
+    /** A locked DOCX: the screen asks for its password. */
+    class NeedsPassword : AppError("This document is password-protected")
+
+    /** The password given doesn't unlock the document: the screen asks again. */
+    class WrongPassword : AppError("The password is incorrect. Check it and try again.")
+
     class NotFound : AppError("The document is gone.")
 
     class NoCase : AppError("This document has no case yet.")

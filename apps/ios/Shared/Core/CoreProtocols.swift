@@ -89,8 +89,10 @@ extension Library {
 protocol DocumentSession: AnyObject, Sendable {
     var id: DocumentID { get }
     func snapshot() -> DocumentSnapshot
-    /// Import and OCR. Resumes after the pages already finished.
-    func recognize(observer: any JobObserver) throws -> DocumentSnapshot
+    /// Import and OCR. Resumes after the pages already finished. A locked
+    /// DOCX throws `CoreError.needsPassword` until `password` unlocks it;
+    /// the password is used for this call only.
+    func recognize(observer: any JobObserver, password: String?) throws -> DocumentSnapshot
     /// Finds candidates; a cancelled scan reruns from the start.
     func scan(observer: any JobObserver) throws -> DocumentSnapshot
     /// Minutes a scan takes on this phone, when it is expected to take more
@@ -233,5 +235,11 @@ extension DocumentSession {
     /// Hide name in the core's guessed category.
     func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
         try markSelection(range, as: nil)
+    }
+}
+
+extension DocumentSession {
+    func recognize(observer: any JobObserver) throws -> DocumentSnapshot {
+        try recognize(observer: observer, password: nil)
     }
 }

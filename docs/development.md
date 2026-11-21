@@ -77,7 +77,7 @@ hard to reverse. [privacy.md](privacy.md) is for users.
   five must-fix items.
 - Finishing an item: the same commit deletes it from `ROADMAP.md` and adds
   its CHANGELOG entry as `changes/<slug>.md` (`changes/ios/` or
-  `changes/android/` for an app change; format in
+  `changes/android/` for one app, `changes/mobile/` for both; format in
   [changes/README.md](../changes/README.md)).
 - Groom after each release and acceptance run: close the finished milestone
   into Current status, triage issues, pick the next minor's must-fix items,
@@ -197,7 +197,7 @@ done_when = "headless renders of {what}, light and dark (the hosted desktop job 
 [bookkeeping]
 roadmap_item = "remove item {number} from `{roadmap}` {milestone} (delete only its own lines; do not renumber)"
 issue = "the commit that finishes it says `fixes #{number}`"
-fragment = "add `changes/{slug}.md`, or `changes/ios/{slug}.md` / `changes/android/{slug}.md` for an app change (format in `changes/README.md`)"
+fragment = "add `changes/{slug}.md`, or `changes/ios/{slug}.md` / `changes/android/{slug}.md` for one app, `changes/mobile/{slug}.md` for both (format in `changes/README.md`)"
 
 [machines.macbook-air]
 setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."

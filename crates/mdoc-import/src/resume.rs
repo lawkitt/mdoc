@@ -13,8 +13,8 @@
 //! ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
 use crate::import::{
-    ImportError, Imported, LeftOut, OcrFailure, SourceStamp, check_cancel, pdf_error, pdf_warning,
-    read_pdf, repeated_lines,
+    ImportError, Imported, LeftOut, OcrFailure, Password, Source, check_cancel, import_source,
+    is_pdf, pdf_bytes, pdf_error, pdf_warning, repeated_lines,
 };
 use pdf_inspector::{MarkdownOptions, vision::OcrRepeatEvidence};
 use sha2::{Digest, Sha256};
@@ -218,41 +218,29 @@ fn digest(bytes: &[u8]) -> String {
 /// `prepare_cancellable`, and nothing is kept.
 pub fn prepare_resumable(
     path: &Path,
+    password: Option<&Password>,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
     kept: &KeptPages,
     recognized: &dyn Fn(u32, u32),
 ) -> Result<(Imported, Option<Completed>), ImportError> {
-    let desktop = |installed| {
-        crate::import::prepare_cancellable(path, installed, skip_ocr, cancel)
-            .map(|imported| (imported, None))
-    };
-    let Some(installed) = installed.filter(|_| !skip_ocr) else {
-        return desktop(installed);
-    };
     check_cancel(cancel)?;
-    let source = std::path::absolute(path).map_err(ImportError::Read)?;
-    let mut file = std::fs::File::open(&source).map_err(ImportError::Read)?;
-    let stamp = file
-        .metadata()
-        .ok()
-        .map(|metadata| SourceStamp::from(&metadata));
-    let mut header = [0; 1024];
-    let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
-    if !header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
-        return desktop(Some(installed));
-    }
+    let source = Source::read(path)?.unlock(password)?;
+    check_cancel(cancel)?;
+    let Some(installed) = installed.filter(|_| !skip_ocr && is_pdf(source.bytes())) else {
+        return import_source(source, installed, skip_ocr, cancel).map(|imported| (imported, None));
+    };
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
-    let bytes = read_pdf(&source)?;
+    let bytes = pdf_bytes(&source)?;
     // The native pass reads the page count and refuses damaged or locked
     // files before any model loads, as the desktop's does.
-    let mut native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let mut native = process_pdf_with_ocr_mem(bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     let (page_count, mut left_out) = (native.page_count, LeftOut::of_pdf(&native, &[]));
     let annotations = std::mem::take(&mut native.annotations);
     drop(native);
     check_cancel(cancel)?;
-    let digest = digest(&bytes);
+    let digest = digest(bytes);
     let folder = kept.folder(&digest, &installed.config);
     folder.open();
     let markdown_options = installed.options().markdown;
@@ -271,7 +259,7 @@ pub fn prepare_resumable(
             .options()
             .retain_repeat_evidence(true)
             .page_numbers([page]);
-        let result = process_pdf_with_ocr_mem(&bytes, options)
+        let result = process_pdf_with_ocr_mem(bytes, options)
             .map_err(|error| ImportError::OcrFailed(OcrFailure::Engine(error.to_string())))?;
         let review = result.pages.iter().any(|fused| {
             fused.provenance.hosted_recommended || !fused.provenance.warnings.is_empty()
@@ -298,7 +286,6 @@ pub fn prepare_resumable(
         Imported {
             ocr_configuration: Some(installed.config.clone()),
             source,
-            stamp,
             markdown,
             warning,
             left_out,
@@ -306,6 +293,7 @@ pub fn prepare_resumable(
             annotations,
             is_pdf: true,
             is_docx: false,
+            decrypted: false,
         },
         Some(Completed {
             kept: kept.clone(),
@@ -854,12 +842,12 @@ mod tests {
         let pdf = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/import/handmade-partly-scanned.pdf");
         let cancel = AtomicBool::new(false);
-        let result = prepare_resumable(&pdf, None, false, &cancel, &kept, &|_, _| {});
+        let result = prepare_resumable(&pdf, None, None, false, &cancel, &kept, &|_, _| {});
         assert!(matches!(result, Err(ImportError::NeedsOcr(..))));
         let (native, completed) =
-            prepare_resumable(&pdf, None, true, &cancel, &kept, &|_, _| {}).unwrap();
+            prepare_resumable(&pdf, None, None, true, &cancel, &kept, &|_, _| {}).unwrap();
         assert!(completed.is_none());
-        let desktop = crate::import::prepare_cancellable(&pdf, None, true, &cancel).unwrap();
+        let desktop = crate::import::prepare_cancellable(&pdf, None, None, true, &cancel).unwrap();
         assert_eq!(native.markdown, desktop.markdown);
         assert_eq!(native.warning, desktop.warning);
         assert_eq!(native.left_out, desktop.left_out);
@@ -943,9 +931,16 @@ mod tests {
             }
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));
-            let (whole, completed) =
-                prepare_resumable(&pdf, Some(&installed), false, &never, &kept, &|_, _| {})
-                    .unwrap();
+            let (whole, completed) = prepare_resumable(
+                &pdf,
+                None,
+                Some(&installed),
+                false,
+                &never,
+                &kept,
+                &|_, _| {},
+            )
+            .unwrap();
             // Kept until the caller takes the result.
             assert!(dir.path().join("imports").read_dir().unwrap().any(|_| true));
             completed.unwrap().remove();
@@ -957,13 +952,20 @@ mod tests {
 
             let cancel = AtomicBool::new(false);
             let first = std::sync::Mutex::new(Vec::new());
-            let stopped =
-                prepare_resumable(&pdf, Some(&installed), false, &cancel, &kept, &|page, _| {
+            let stopped = prepare_resumable(
+                &pdf,
+                None,
+                Some(&installed),
+                false,
+                &cancel,
+                &kept,
+                &|page, _| {
                     first.lock().unwrap().push(page);
                     if page == stop_after {
                         cancel.store(true, Ordering::Relaxed);
                     }
-                });
+                },
+            );
             assert!(matches!(stopped, Err(ImportError::Cancelled)), "{name}");
             let first = first.into_inner().unwrap();
             assert_eq!(first, (1..=stop_after).collect::<Vec<_>>(), "{name}");
@@ -971,6 +973,7 @@ mod tests {
             let second = std::sync::Mutex::new(Vec::new());
             let (resumed, completed) = prepare_resumable(
                 &pdf,
+                None,
                 Some(&installed),
                 false,
                 &never,

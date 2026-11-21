@@ -97,8 +97,3 @@ class KeystoreCaseKeyStore(
         const val TAG_BITS = 128
     }
 }
-
-/** A fixed key for tests and previews. */
-class FixedCaseKeyStore(private val bytes: ByteArray = ByteArray(32) { 42 }) : CaseKeyStore {
-    override fun key(): ByteArray = bytes.copyOf()
-}

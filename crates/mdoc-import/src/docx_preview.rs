@@ -19,13 +19,17 @@ mod fonts;
 mod glyph_fallback;
 pub use comments::{AnchorRect, COMMENT_SCHEME, CommentAnchor, LinkMark};
 
-use crate::comments::Comment;
+use crate::{comments::Comment, import::Source};
 
 /// The comments a preview's cards show: `known`, an import's of the same
 /// source, else AnyDoc's reading of it as an import reads it. The worker
 /// reads none; the cards meet its anchors by comment id.
-fn cards(path: &Path, known: Option<Arc<Vec<Comment>>>, cancel: &AtomicBool) -> Arc<Vec<Comment>> {
-    known.unwrap_or_else(|| Arc::new(crate::import::source_comments_cancellable(path, cancel)))
+fn cards(
+    source: &Source,
+    known: Option<Arc<Vec<Comment>>>,
+    cancel: &AtomicBool,
+) -> Arc<Vec<Comment>> {
+    known.unwrap_or_else(|| Arc::new(crate::import::source_comments_cancellable(source, cancel)))
 }
 
 /// Reads the `/Link` annotations whose URI starts with [`COMMENT_SCHEME`] from
@@ -43,7 +47,8 @@ pub struct RenderOptions {
 /// The worker's argument for [`RenderOptions::show_hidden_text`].
 pub const SHOW_HIDDEN_ARG: &str = "--show-hidden";
 
-const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
+/// The largest document the preview renders.
+pub const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
 const MAX_PART_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_TOTAL_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
@@ -183,30 +188,57 @@ impl PreviewError {
     }
 }
 
+/// The file at `path`, for a preview no import holds the bytes of: refused
+/// past the preview's limit before it is read.
+pub fn read_source(path: &Path) -> Result<Source, PreviewError> {
+    let path = std::path::absolute(path)?;
+    let file = fs::File::open(&path)?;
+    let metadata = file.metadata()?;
+    if metadata.len() > MAX_INPUT_BYTES {
+        return Err(PreviewError::InputTooLarge);
+    }
+    let bytes = read_within_limit(file)?;
+    Ok(Source::new(
+        path,
+        Some(crate::import::SourceStamp::from(&metadata)),
+        bytes,
+    ))
+}
+
+/// At most the preview's limit from `input`, or `InputTooLarge`.
+fn read_within_limit(input: impl Read) -> Result<Vec<u8>, PreviewError> {
+    let mut bytes = Vec::new();
+    input.take(MAX_INPUT_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INPUT_BYTES {
+        return Err(PreviewError::InputTooLarge);
+    }
+    Ok(bytes)
+}
+
 /// Render in this process instead of a supervised worker. Headless UI tests
 /// cannot launch the Rust test harness as an app worker; integration tests
 /// exercise the real executable and supervisor separately.
 pub fn render_in_process(
-    path: &Path,
+    source: &Source,
     cancelled: Arc<AtomicBool>,
     read_marks: MarkReader,
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
     check_cancel(&cancelled)?;
-    render_direct(path, read_marks, options, comments)
+    render_direct(source, read_marks, options, comments)
 }
 
 /// Render in a supervised worker: this executable, run as the DOCX worker.
 /// `comments` are an import's of the same source, if the caller has them.
 pub fn render_with_cancel(
-    path: &Path,
+    source: &Source,
     cancelled: Arc<AtomicBool>,
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
     render_with_executable(
-        path,
+        source,
         cancelled,
         &std::env::current_exe()?,
         MAX_CONVERSION_TIME,
@@ -223,8 +255,10 @@ fn check_cancel(cancelled: &AtomicBool) -> Result<(), PreviewError> {
     }
 }
 
+/// Renders `source` in `executable`'s DOCX worker mode, which reads the
+/// document's bytes from stdin: the worker never opens the user's file.
 pub fn render_with_executable(
-    path: &Path,
+    source: &Source,
     cancelled: Arc<AtomicBool>,
     executable: &Path,
     timeout: Duration,
@@ -244,10 +278,9 @@ pub fn render_with_executable(
     let mut command = Command::new(executable);
     command
         .arg("--mdoc-docx-worker")
-        .arg(path)
         .arg(&pdf_path)
         .args(options.show_hidden_text.then_some(SHOW_HIDDEN_ARG))
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     // docxide refuses to convert while a variable with its old prefix is set.
@@ -266,6 +299,17 @@ pub fn render_with_executable(
             .spawn()
             .map_err(|e| PreviewError::Render(e.to_string()))?,
     );
+    // Fed from a thread of its own, so a worker that stops reading cannot
+    // stall supervision; the write fails once the worker is gone.
+    let stdin = child.0.stdin.take();
+    let input = source.shared_bytes();
+    thread::Builder::new()
+        .spawn(move || {
+            if let Some(mut stdin) = stdin {
+                let _ = std::io::Write::write_all(&mut stdin, input.as_ref());
+            }
+        })
+        .map_err(|e| PreviewError::Render(format!("no thread to feed the worker: {e}")))?;
     loop {
         check_cancel(&cancelled)?;
         if started.elapsed() >= timeout {
@@ -286,7 +330,7 @@ pub fn render_with_executable(
                 .map(str::to_owned)
                 .collect();
             let metadata = read_metadata(&pdf_path)?;
-            let comments = cards(path, comments, &cancelled);
+            let comments = cards(source, comments, &cancelled);
             check_cancel(&cancelled)?;
             return Ok(DocxPreview {
                 comments,
@@ -305,11 +349,16 @@ pub fn render_with_executable(
 /// A reader for tests in this crate, which cannot parse the PDF: no anchors.
 #[cfg(test)]
 pub fn render_for_test(path: &Path) -> Result<DocxPreview, PreviewError> {
-    render_direct(path, |_| Ok(Vec::new()), RenderOptions::default(), None)
+    render_direct(
+        &read_source(path)?,
+        |_| Ok(Vec::new()),
+        RenderOptions::default(),
+        None,
+    )
 }
 
-pub fn run_worker(
-    input: &Path,
+fn run_worker(
+    input: &[u8],
     output: &Path,
     read_marks: MarkReader,
     options: RenderOptions,
@@ -317,17 +366,18 @@ pub fn run_worker(
     render_direct_to(input, output, read_marks, options)
 }
 
-/// Runs the worker and, on failure, leaves the error report beside `output`
-/// for `render_with_executable`.
+/// The DOCX worker mode: renders the document on stdin to `output` and, on
+/// failure, leaves the error report beside it for `render_with_executable`.
 pub fn run_worker_reporting(
-    input: &Path,
     output: &Path,
     read_marks: MarkReader,
     options: RenderOptions,
 ) -> Result<(), PreviewError> {
-    run_worker(input, output, read_marks, options).inspect_err(|error| {
-        let _ = fs::write(output.with_extension("error"), error.report());
-    })
+    read_within_limit(std::io::stdin().lock())
+        .and_then(|input| run_worker(&input, output, read_marks, options))
+        .inspect_err(|error| {
+            let _ = fs::write(output.with_extension("error"), error.report());
+        })
 }
 
 /// Render in this process into a new folder under `parent`, for the iOS app,
@@ -337,36 +387,36 @@ pub fn run_worker_reporting(
 /// protection. The cards are AnyDoc's, read again as the import read them.
 pub fn render_in(
     parent: &Path,
-    path: &Path,
+    source: &Source,
     read_marks: MarkReader,
     options: RenderOptions,
 ) -> Result<DocxPreview, PreviewError> {
     let directory = tempfile::tempdir_in(parent)
         .map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
-    std::panic::catch_unwind(|| run_worker(path, &pdf_path, read_marks, options))
+    std::panic::catch_unwind(|| run_worker(source.bytes(), &pdf_path, read_marks, options))
         .unwrap_or_else(|_| Err(PreviewError::Render("the renderer stopped".into())))?;
-    finish(directory, pdf_path, path, options, None)
+    finish(directory, pdf_path, source, options, None)
 }
 
 fn render_direct(
-    path: &Path,
+    source: &Source,
     read_marks: MarkReader,
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
-    run_worker(path, &pdf_path, read_marks, options)?;
-    finish(directory, pdf_path, path, options, comments)
+    run_worker(source.bytes(), &pdf_path, read_marks, options)?;
+    finish(directory, pdf_path, source, options, comments)
 }
 
 /// The preview of the PDF and metadata the worker steps left in `directory`,
-/// with `path`'s cards: `comments` if the caller has them.
+/// with `source`'s cards: `comments` if the caller has them.
 fn finish(
     directory: TempDir,
     pdf_path: PathBuf,
-    path: &Path,
+    source: &Source,
     options: RenderOptions,
     comments: Option<Arc<Vec<Comment>>>,
 ) -> Result<DocxPreview, PreviewError> {
@@ -376,7 +426,7 @@ fn finish(
         .collect();
     let metadata = read_metadata(&pdf_path)?;
     Ok(DocxPreview {
-        comments: cards(path, comments, &AtomicBool::new(false)),
+        comments: cards(source, comments, &AtomicBool::new(false)),
         anchors: Arc::new(metadata.anchors),
         hidden_text: metadata.hidden,
         options,
@@ -389,28 +439,22 @@ fn finish(
 // Validation and rendering share one bounded snapshot inside the terminable
 // worker. The deadline therefore includes package inflation and validation.
 fn render_direct_to(
-    path: &Path,
+    bytes: &[u8],
     output: &Path,
     read_marks: MarkReader,
     options: RenderOptions,
 ) -> Result<(), PreviewError> {
-    let file = fs::File::open(path)?;
-    if file.metadata()?.len() > MAX_INPUT_BYTES {
-        return Err(PreviewError::InputTooLarge);
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_INPUT_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_INPUT_BYTES {
         return Err(PreviewError::InputTooLarge);
     }
-    let warnings = inspect_package(&bytes)?;
+    let warnings = inspect_package(bytes)?;
     let comments::Prepared {
         render: render_input,
         ids,
         markers,
         hidden,
-    } = comments::prepare(&bytes, options.show_hidden_text)?;
-    let mut render_input = render_input.unwrap_or(bytes);
+    } = comments::prepare(bytes, options.show_hidden_text)?;
+    let mut render_input = render_input.unwrap_or_else(|| bytes.to_vec());
     if let Some(fallback) = glyph_fallback::platform_fallback()
         && let Some(copy) = glyph_fallback::prepare(&render_input, fallback)?
     {
@@ -720,7 +764,7 @@ mod tests {
     #[test]
     fn cancelled_job_never_starts_a_worker() {
         let result = render_with_executable(
-            Path::new("unused"),
+            &Source::new("unused".into(), None, Vec::new()),
             Arc::new(AtomicBool::new(true)),
             Path::new("no-such-executable"),
             MAX_CONVERSION_TIME,

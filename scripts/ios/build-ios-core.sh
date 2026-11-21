@@ -13,12 +13,12 @@ source "$(dirname "$0")/../lib.sh"
 [ "$(platform)" = macos-arm64 ] || die "the iOS core builds only on Apple Silicon macOS"
 
 # Microsoft's iOS build of ONNX Runtime 1.27.0. Desktop and Android ship
-# 1.32.0 (#925), but download.onnxruntime.ai has no pod archive after 1.30.0;
-# the iOS app links its own copy, so the versions need not match.
-ort_url="https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.27.0.zip"
-# The storage behind that host, for when it fails: on 2026-11-21 it served
-# an *.azureedge.net certificate (#997). The same file, the same checksum.
-ort_origin="https://onnxruntimepackages.z14.web.core.windows.net/pod-archive-onnxruntime-c-1.27.0.zip"
+# 1.32.0 (#925), but Microsoft publishes no pod archive after 1.30.0; the
+# iOS app links its own copy, so the versions need not match. Microsoft
+# stopped serving the archive on 2026-11-21 (#1029), so it comes from a
+# byte-identical copy published as a prerelease asset of this repository;
+# the checksum pins the same bytes Microsoft served.
+ort_url="https://github.com/lawkitt/mdoc/releases/download/deps-onnxruntime-ios-1.27.0/pod-archive-onnxruntime-c-1.27.0.zip"
 ort_sha="8c74edd600eafc3055de9e8f7a9602afee44ed516913cb5e132bca02cc34622c"
 # PDFium 7988, the version desktop ships, from bblanchon/pdfium-binaries: no
 # static iOS build exists there, so it embeds as a framework.
@@ -35,20 +35,16 @@ deps=$out/deps
 rm -rf "$out/MdocCore.xcframework" "$out/pdfium.xcframework" "$out/swift" "$out/stage"
 mkdir -p "$deps" "$out/swift" "$out/stage"
 
-# fetch <url> <sha256> <file> [fallback url]: downloads unless a verified
-# copy is there, from the fallback if the first fails.
+# fetch <url> <sha256> <file>: downloads unless a verified copy is there.
 fetch() {
   if ! [ -f "$3" ] || ! echo "$2  $3" | shasum -a 256 -c --status; then
-    curl --fail --silent --show-error --location --retry 3 --output "$3.part" "$1" ||
-      { [ -n "${4:-}" ] && echo "trying $4" >&2 &&
-        curl --fail --silent --show-error --location --retry 3 --output "$3.part" "$4"; } ||
-      die "could not download $1"
+    curl --fail --silent --show-error --location --retry 3 --output "$3.part" "$1"
     echo "$2  $3.part" | shasum -a 256 -c --status || die "$1 failed its checksum"
     mv "$3.part" "$3"
   fi
 }
 
-fetch "$ort_url" "$ort_sha" "$deps/onnxruntime.zip" "$ort_origin"
+fetch "$ort_url" "$ort_sha" "$deps/onnxruntime.zip"
 rm -rf "$deps/onnxruntime" && mkdir "$deps/onnxruntime"
 unzip -q "$deps/onnxruntime.zip" -d "$deps/onnxruntime"
 ort=$deps/onnxruntime/onnxruntime.xcframework

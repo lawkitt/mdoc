@@ -63,7 +63,16 @@ data class DocumentState(
     val notice: Int? = null,
     /** Recognition or Find names needs a model that is not downloaded. */
     val needsSetup: JobKind? = null,
+    /** A locked DOCX waits for its password: the password card shows. */
+    val passwordPrompt: PasswordPrompt? = null,
 )
+
+enum class PasswordPrompt {
+    Needed,
+
+    /** The last password didn't unlock it. */
+    Wrong,
+}
 
 /**
  * One document screen: the core's latest snapshot and view state only;
@@ -111,17 +120,32 @@ class DocumentViewModel(
 
     // Long jobs
 
-    fun recognize(title: String) = viewModelScope.launch {
+    fun recognize() = recognize(password = null)
+
+    /** Unlock on the password card: the import runs again with [password], for this one call. */
+    fun unlock(password: String) {
+        if (password.isNotEmpty()) recognize(password)
+    }
+
+    private fun recognize(password: String?) = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
-        finish(JobKind.Recognize, jobs.run(JobKind.Recognize, jobId, title) { session.recognize(it) })
+        val outcome = jobs.run(JobKind.Recognize, jobId) { session.recognize(it, password) }
+        when ((outcome as? JobOutcome.Failed)?.error) {
+            is AppError.NeedsPassword -> mutable.update { it.copy(passwordPrompt = PasswordPrompt.Needed) }
+            is AppError.WrongPassword -> mutable.update { it.copy(passwordPrompt = PasswordPrompt.Wrong) }
+            else -> {
+                if (outcome is JobOutcome.Finished) mutable.update { it.copy(passwordPrompt = null) }
+                finish(JobKind.Recognize, outcome)
+            }
+        }
     }
 
     /** Minutes a scan takes on this phone, when more than about one. */
     fun scanEstimate(): Int? = if (findsNames) session.scanEstimate() else null
 
-    fun findNames(title: String) = viewModelScope.launch {
+    fun findNames() = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
-        val outcome = jobs.run(JobKind.Scan, jobId, title) { session.scan(it) }
+        val outcome = jobs.run(JobKind.Scan, jobId) { session.scan(it) }
         finish(JobKind.Scan, outcome)
         // A scan that finds nothing says so, rather than going quietly to Share.
         if (outcome is JobOutcome.Finished && outcome.value.candidates.isEmpty()) {

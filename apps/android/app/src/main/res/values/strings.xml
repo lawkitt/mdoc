@@ -60,8 +60,7 @@
     <string name="recognizing_text">Recognizing text</string>
     <string name="reading_the_file">Reading the file</string>
     <string name="converting">Converting</string>
-    <string name="recognizing_title">Recognizing %1$s</string>
-    <string name="finding_names_in">Finding names in %1$s</string>
+    <string name="recognizing_document">Recognizing a document</string>
     <string name="replace_all">Replace all</string>
     <string name="replace_count">Replace %1$d</string>
     <string name="another_job_running">Another job is running. Try again when it finishes.</string>
@@ -71,6 +70,7 @@
     <string name="recognition_runs_body">mdoc reads the text when recognition runs.</string>
     <string name="recognition_resumes_body">Recognition stopped. Finished pages are kept, and resuming reads the rest.</string>
     <string name="import_not_finished_body">The import stopped before mdoc read the text. Finish import reads it now.</string>
+    <string name="import_not_finished_locked_body">The import stopped before mdoc read the text.</string>
     <string name="recognition_stopped_background">Recognition stopped when mdoc left the screen. Finished pages are kept.</string>
     <string name="finding_stopped_background">Finding names stopped when mdoc left the screen.</string>
     <string name="resume">Resume</string>
@@ -169,6 +169,11 @@
     <string name="download_and_continue">Download %1$s &amp; continue</string>
     <string name="cancel_download">Cancel download</string>
     <string name="not_now">Not now</string>
+    <string name="password_title">This document is password-protected</string>
+    <string name="password_body">Enter its password to import it. mdoc unlocks it in memory and never keeps the password or an unlocked copy.</string>
+    <string name="password_wrong">The password is incorrect. Check it and try again.</string>
+    <string name="password_label">Password</string>
+    <string name="unlock">Unlock</string>
     <string name="downloading_models">Downloading models</string>
 
     <!-- Restore with mdoc -->

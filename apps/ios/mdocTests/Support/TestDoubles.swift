@@ -29,9 +29,9 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     var id: DocumentID { base.id }
     func snapshot() -> DocumentSnapshot { base.snapshot() }
 
-    func recognize(observer: any JobObserver) throws -> DocumentSnapshot {
+    func recognize(observer: any JobObserver, password: String?) throws -> DocumentSnapshot {
         try wait(observer, stage: .recognizing)
-        return try base.recognize(observer: observer)
+        return try base.recognize(observer: observer, password: password)
     }
 
     func scan(observer: any JobObserver) throws -> DocumentSnapshot {

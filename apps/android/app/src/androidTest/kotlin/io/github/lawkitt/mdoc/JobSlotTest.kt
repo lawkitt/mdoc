@@ -27,7 +27,7 @@ class JobSlotTest {
             // On screen: a job's foreground service starts only from a visible app.
             val release = CountDownLatch(1)
             val started = CountDownLatch(1)
-            val other = app.jobs.start(JobKind.Recognize, null, "Another document") {
+            val other = app.jobs.start(JobKind.Recognize, null) {
                 started.countDown()
                 release.await()
             }!!

@@ -22,11 +22,12 @@ pub fn run(pdf: &Path, expected: &Path) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     let cancel = std::sync::atomic::AtomicBool::new(false);
-    let imported = mdoc_import::import::prepare_cancellable(pdf, Some(&installed), false, &cancel)
-        .map_err(|e| match e {
-            mdoc_import::import::ImportError::NeedsOcr(..) => "OCR did not run.".into(),
-            other => other.to_string(),
-        })?;
+    let imported =
+        mdoc_import::import::prepare_cancellable(pdf, None, Some(&installed), false, &cancel)
+            .map_err(|e| match e {
+                mdoc_import::import::ImportError::NeedsOcr(..) => "OCR did not run.".into(),
+                other => other.to_string(),
+            })?;
     if imported.ocr_configuration.is_none() {
         return Err("The document converted without OCR.".into());
     }

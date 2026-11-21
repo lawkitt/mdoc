@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -191,17 +193,18 @@ fun DocumentScreen(
             )
         },
         bottomBar = {
-            ActionBar(
+            // The password card's Unlock is the way on while it asks, as on iOS.
+            if (state.passwordPrompt == null || job != null) ActionBar(
                 action = model.primaryAction(state, job),
                 hasReply = snapshot.reply != null,
                 showsReply = state.showsReply,
                 onRecognize = {
                     beforeJob()
-                    model.recognize(context.getString(R.string.recognizing_title, snapshot.title))
+                    model.recognize()
                 },
                 onFindNames = {
                     beforeJob()
-                    model.findNames(context.getString(R.string.finding_names_in, snapshot.title))
+                    model.findNames()
                 },
                 onCancel = model::cancelJob,
                 onReplaceAll = model::replaceAll,
@@ -228,7 +231,9 @@ fun DocumentScreen(
             )
         },
     ) { padding ->
-        BoxWithConstraints(Modifier.padding(padding).fillMaxSize()) {
+        // The keyboard takes its height from the screen (edge to edge draws
+        // under it otherwise), so the password card's field stays above it.
+        BoxWithConstraints(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
         // The panes take the height the notices leave; the notices and the
         // setup card take at most half of it and scroll on their own, so their
         // buttons stay reachable on a short screen or at large text.
@@ -257,7 +262,17 @@ fun DocumentScreen(
             }
             snapshot.warning?.let { Notice(it) }
             val needs = state.needsSetup
-            if (needs != null && setup != null) {
+            val prompt = state.passwordPrompt
+            if (prompt != null && job == null) {
+                PasswordCard(
+                    prompt,
+                    onUnlock = {
+                        beforeJob()
+                        model.unlock(it)
+                    },
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else if (needs != null && setup != null) {
                 val setupState by setup.state.collectAsStateWithLifecycle()
                 // Download & continue: the job that asked for setup runs again.
                 SetupCard(
@@ -267,9 +282,9 @@ fun DocumentScreen(
                         beforeJob()
                         setup.download {
                             if (needs == JobKind.Scan) {
-                                model.findNames(context.getString(R.string.finding_names_in, snapshot.title))
+                                model.findNames()
                             } else {
-                                model.recognize(context.getString(R.string.recognizing_title, snapshot.title))
+                                model.recognize()
                             }
                         }
                     },
@@ -318,6 +333,9 @@ fun DocumentScreen(
                     when {
                         !snapshot.kind.needsRecognition && reading ->
                             RecognizingPane(R.string.no_text_yet, R.string.reading_the_file_body, paneModifier)
+                        // The password card is the way on, not Finish import.
+                        !snapshot.kind.needsRecognition && state.passwordPrompt != null ->
+                            RecognizingPane(R.string.status_import_not_finished, R.string.import_not_finished_locked_body, paneModifier)
                         !snapshot.kind.needsRecognition ->
                             RecognizingPane(R.string.status_import_not_finished, R.string.import_not_finished_body, paneModifier)
                         snapshot.resumesOcr ->

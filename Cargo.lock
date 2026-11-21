@@ -1574,6 +1574,84 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-cfb"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+
+[[package]]
+name = "craft-codepage"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+
+[[package]]
+name = "craft-doc-binary"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "chrono",
+ "craft-cfb",
+ "craft-codepage",
+ "craft-wordmodel",
+ "image",
+ "log",
+ "md4",
+ "miniz_oxide 0.9.1",
+ "sha1",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-math"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "craft-xml",
+ "roxmltree 0.21.2",
+ "serde",
+]
+
+[[package]]
+name = "craft-offcrypto"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "aes 0.9.3",
+ "base64 0.23.1",
+ "craft-cfb",
+ "craft-xml",
+ "getrandom 0.3.4",
+ "hmac 0.13.0",
+ "sha1",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "zeroize",
+]
+
+[[package]]
+name = "craft-wordmodel"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "base64 0.23.1",
+ "craft-math",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "craft-xml"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs.git?rev=712b35379b17e442921c03855d4a5c2a2699968e#712b35379b17e442921c03855d4a5c2a2699968e"
+dependencies = [
+ "quick-xml",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3637,7 +3715,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -4497,10 +4575,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "md4"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd76fb0fd6b2e4be62a73f8e0858ca97f81babcb1af322dcaca196f735f17f80"
+dependencies = [
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "mdoc"
 version = "0.4.0-rc.3"
 dependencies = [
  "chrono",
+ "craft-offcrypto",
  "dirs 7.0.0",
  "dunce",
  "embed-resource",
@@ -4530,6 +4618,7 @@ dependencies = [
  "ureq",
  "url",
  "windows-sys 0.61.2",
+ "zeroize",
  "zip",
 ]
 
@@ -4602,6 +4691,9 @@ name = "mdoc-import"
 version = "0.1.0"
 dependencies = [
  "anydoc",
+ "craft-cfb",
+ "craft-doc-binary",
+ "craft-offcrypto",
  "docxide-pdf",
  "flate2",
  "libloading 0.9.0",
@@ -4611,6 +4703,7 @@ dependencies = [
  "roxmltree 0.21.2",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.0",
  "tar",
  "tempfile",
@@ -4618,6 +4711,7 @@ dependencies = [
  "ureq",
  "url",
  "windows-sys 0.61.2",
+ "zeroize",
  "zip",
 ]
 
@@ -5668,7 +5762,7 @@ dependencies = [
 [[package]]
 name = "pdf-inspector"
 version = "1.26.1"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=2c1b44d7fea1b6fac820c68029294b378ec898cc#2c1b44d7fea1b6fac820c68029294b378ec898cc"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=7e35e4daaafee464727a5bab952e9d3859f3cc7f#7e35e4daaafee464727a5bab952e9d3859f3cc7f"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
@@ -7131,6 +7225,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "sha1_smol"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7335,7 +7440,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a"
 dependencies = [
  "foldhash",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]

@@ -206,7 +206,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                 if (readAfterOpen) {
                     readAfterOpen = false
                     beforeJob()
-                    model.recognize(context.getString(R.string.recognizing_title, session.snapshot().title))
+                    model.recognize()
                 }
             }
             DocumentScreen(

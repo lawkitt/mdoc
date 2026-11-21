@@ -137,6 +137,16 @@ final class DocumentViewModel {
         snapshot.phase == nil && !snapshot.kind.needsRecognition && runningJob == nil
     }
 
+    /// A locked DOCX waits for its password: the password card shows in
+    /// place of the action bar until Unlock imports it.
+    private(set) var passwordPrompt: PasswordPrompt?
+
+    enum PasswordPrompt: Equatable {
+        case needed
+        /// The last password didn't unlock it.
+        case wrong
+    }
+
     /// Recognition or the scan needs a model the device has not downloaded.
     var needsSetup: Bool { waitingForSetup != nil }
     /// The job that asked for setup, run again once the models are in.
@@ -206,16 +216,43 @@ final class DocumentViewModel {
 
     // MARK: Jobs
 
+    /// The system's task UI shows a job's title outside the app, so it
+    /// never names the document: titles hold client names.
+    static let recognizeTaskTitle = String(localized: "Recognizing a document")
+    static let findNamesTaskTitle = String(localized: "Finding names")
+
     func recognize() async {
+        await recognize(password: nil)
+    }
+
+    /// Unlock on the password card: the import runs again with `password`,
+    /// which goes no further than this one call.
+    func unlock(password: String) async {
+        guard !password.isEmpty else { return }
+        await recognize(password: password)
+    }
+
+    private func recognize(password: String?) async {
         waitingForSetup = nil
         let session = session
-        let outcome = await jobs.run(.recognize, documentID: id, title: String(localized: "Recognizing \(snapshot.title)")) { observer in
-            try session.recognize(observer: observer)
+        let outcome = await jobs.run(.recognize, documentID: id, title: Self.recognizeTaskTitle) { observer in
+            try session.recognize(observer: observer, password: password)
         }
-        if case .failed(CoreError.modelMissing) = outcome {
+        switch outcome {
+        case .failed(CoreError.modelMissing):
             // Scans, photos and text-less PDFs need OCR.
             waitingForSetup = .recognize
             return
+        case .failed(CoreError.needsPassword):
+            passwordPrompt = .needed
+            return
+        case .failed(CoreError.wrongPassword):
+            passwordPrompt = .wrong
+            return
+        case .finished:
+            passwordPrompt = nil
+        case .cancelled, .failed, .busy:
+            break
         }
         finish(outcome)
     }
@@ -223,7 +260,7 @@ final class DocumentViewModel {
     func findNames() async {
         waitingForSetup = nil
         let session = session
-        let outcome = await jobs.run(.scan, documentID: id, title: String(localized: "Finding names in \(snapshot.title)")) { observer in
+        let outcome = await jobs.run(.scan, documentID: id, title: Self.findNamesTaskTitle) { observer in
             try session.scan(observer: observer)
         }
         if case .failed(CoreError.modelMissing) = outcome {

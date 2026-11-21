@@ -75,12 +75,34 @@ pub trait JobProgress: Send + Sync {
 }
 
 /// How to import a file.
-#[derive(Clone, Debug, Default, PartialEq, uniffi::Record)]
+#[derive(Clone, Default, PartialEq, uniffi::Record)]
 pub struct ImportOptions {
     /// Recognize pages without a text layer, and images, with these.
     pub ocr: Option<OcrPaths>,
     /// Take a PDF's text layer only, skipping pages that need OCR.
     pub native_text_only: bool,
+    /// A locked DOCX's password, for this import only: never kept, and
+    /// wiped once the import returns.
+    #[uniffi(default = None)]
+    pub password: Option<String>,
+}
+
+/// Never the password.
+impl std::fmt::Debug for ImportOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportOptions")
+            .field("ocr", &self.ocr)
+            .field("native_text_only", &self.native_text_only)
+            .field("password", &self.password.as_ref().map(|_| ".."))
+            .finish()
+    }
+}
+
+impl ImportOptions {
+    /// Moves the password out into one that wipes itself when dropped.
+    fn take_password(&mut self) -> Option<mdoc_import::import::Password> {
+        self.password.take().map(mdoc_import::import::Password::new)
+    }
 }
 
 /// A candidate found by something other than the core's scan: the parity
@@ -202,17 +224,21 @@ impl DocumentSession {
     /// Import `path`: PDF, DOCX (in-process) and the other formats desktop
     /// opens, Markdown and plain text as they are, and JPEG images (camera
     /// scans, photos) through OCR. A PDF with pages that need OCR fails with
-    /// `CoreError::NeedsOcr` unless `options` say how to treat them.
+    /// `CoreError::NeedsOcr` unless `options` say how to treat them; a
+    /// locked DOCX, with `CoreError::NeedsPassword` or `WrongPassword`
+    /// until `options` carry its password.
     pub fn import_file(
         &self,
         path: String,
-        options: ImportOptions,
+        mut options: ImportOptions,
         progress: Option<Box<dyn JobProgress>>,
     ) -> Result<ReviewSnapshot, CoreError> {
         let cancel = self.start_job();
+        let password = options.take_password();
         let imported = intake::import_file(
             std::path::Path::new(&path),
             &options,
+            password.as_ref(),
             &cancel,
             progress.as_deref(),
             None,
@@ -230,13 +256,15 @@ impl DocumentSession {
         &self,
         library: Arc<Library>,
         path: String,
-        options: ImportOptions,
+        mut options: ImportOptions,
         progress: Option<Box<dyn JobProgress>>,
     ) -> Result<ReviewSnapshot, CoreError> {
         let cancel = self.start_job();
+        let password = options.take_password();
         let imported = intake::import_file(
             std::path::Path::new(&path),
             &options,
+            password.as_ref(),
             &cancel,
             progress.as_deref(),
             Some(&library.kept_pages()),
@@ -1282,10 +1310,11 @@ mod tests {
             "import/text_annotations.pdf",
         ] {
             let path = fixture(name);
-            let comments: Vec<_> = mdoc_import::import::source_comments(Path::new(&path))
+            let source = mdoc_import::import::Source::read(Path::new(&path)).unwrap();
+            let comments: Vec<_> = mdoc_import::import::source_comments(&source)
                 .into_iter()
                 .chain(
-                    mdoc_import::import::source_annotations(Path::new(&path))
+                    mdoc_import::import::source_annotations(&source)
                         .unwrap_or_default()
                         .iter()
                         .enumerate()
@@ -1315,6 +1344,80 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A locked DOCX, saved by Word and by LibreOffice: no password asks for
+    /// one, a wrong one asks again, and the right one gives what its
+    /// unlocked twin gives. Nothing is written beside it or into the library.
+    #[test]
+    fn a_locked_docx_imports_with_its_password_only() {
+        const PASSWORD: &str = "Petrov-2026";
+        fn files(root: &Path) -> Vec<std::path::PathBuf> {
+            let mut found = Vec::new();
+            for entry in std::fs::read_dir(root).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    found.extend(files(&path));
+                } else {
+                    found.push(path);
+                }
+            }
+            found.sort();
+            found
+        }
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        for app in ["word", "libreoffice"] {
+            let locked = scratch.path().join(format!("{app}-locked.docx"));
+            std::fs::copy(
+                fixture(&format!("locked-office/{app}-locked.docx")),
+                &locked,
+            )
+            .unwrap();
+            let before = files(scratch.path());
+            let import = |password: Option<&str>| {
+                DocumentSession::new().import_file_in(
+                    library.clone(),
+                    locked.display().to_string(),
+                    ImportOptions {
+                        password: password.map(Into::into),
+                        ..ImportOptions::default()
+                    },
+                    None,
+                )
+            };
+            assert!(
+                matches!(import(None), Err(CoreError::NeedsPassword)),
+                "{app}"
+            );
+            assert!(
+                matches!(import(Some("petrov-2026")), Err(CoreError::WrongPassword)),
+                "{app}"
+            );
+            let unlocked = import(Some(PASSWORD)).unwrap();
+            let open = DocumentSession::new()
+                .import_file(
+                    fixture(&format!("locked-office/{app}-open.docx")),
+                    ImportOptions::default(),
+                    None,
+                )
+                .unwrap();
+            assert_eq!(unlocked.text, open.text, "{app}");
+            assert_eq!(unlocked.warning, open.warning, "{app}");
+            assert_eq!(unlocked.left_out, open.left_out, "{app}");
+            assert_eq!(files(scratch.path()), before, "{app}");
+        }
+    }
+
+    /// Import options never show their password.
+    #[test]
+    fn import_options_never_show_the_password() {
+        let options = ImportOptions {
+            password: Some("Petrov-2026".into()),
+            ..ImportOptions::default()
+        };
+        let shown = format!("{options:?} {options:#?}");
+        assert!(!shown.contains("Petrov"), "{shown}");
     }
 
     /// Without OCR, importing into a library is `import_file`, and keeps
@@ -1422,7 +1525,7 @@ mod tests {
         };
         let options = ImportOptions {
             ocr: Some(paths.clone()),
-            native_text_only: false,
+            ..ImportOptions::default()
         };
         let pdf = fixture("import/handmade-partly-scanned.pdf");
         let uninterrupted = DocumentSession::new()
@@ -1435,6 +1538,7 @@ mod tests {
             let cancel = AtomicBool::new(false);
             let stopped = mdoc_import::resume::prepare_resumable(
                 Path::new(&pdf),
+                None,
                 Some(&paths.installed().unwrap()),
                 false,
                 &cancel,
@@ -1584,6 +1688,65 @@ mod tests {
             .unwrap();
         assert_eq!(reopened.identities.len(), 2);
         assert!(reopened.link_hints.is_empty());
+    }
+
+    /// A merge hint only suggests: replacing, saving and reopening leave
+    /// the two people apart until the user merges them.
+    #[test]
+    fn a_merge_hint_never_merges_on_its_own() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = session("Maya Bennett met Ms Bennett.", "Letter");
+        select(&session, "Maya Bennett");
+        select(&session, "Ms Bennett");
+        let mut snapshot = session.snapshot().unwrap();
+        if snapshot.identities.len() == 1 {
+            // Propagation joined the short form: split it off.
+            snapshot = session
+                .new_alias(range_of(&snapshot, "Ms Bennett", 0))
+                .unwrap();
+        }
+        assert_eq!(snapshot.link_hints.len(), 1);
+        let replaced = session.replace_all().unwrap();
+        assert_eq!(replaced.identities.len(), 2);
+        let saved = session.save(library.clone()).unwrap();
+        assert_eq!(saved.review.identities.len(), 2);
+        assert_eq!(library.load(&saved.case.id).unwrap().identities.len(), 2);
+        let reopened = DocumentSession::new()
+            .open_document(library.clone(), saved.path)
+            .unwrap();
+        assert_eq!(reopened.identities.len(), 2);
+        assert_eq!(reopened.link_hints.len(), 1);
+    }
+
+    /// Undo history belongs to one document: opening another in the same
+    /// session leaves nothing to undo, so Undo never reaches the first
+    /// document's step.
+    #[test]
+    fn opening_another_document_starts_its_own_undo_history() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let first = session("Ann Lee wrote.", "First");
+        select(&first, "Ann Lee");
+        first.replace_all().unwrap();
+        let first_saved = first.save(library.clone()).unwrap();
+        let second = saved(&library, "Mia Fox replied.", &["Mia Fox"], "Second");
+
+        let session = DocumentSession::new();
+        session
+            .open_document(library.clone(), first_saved.path.clone())
+            .unwrap();
+        select(&session, "wrote");
+        assert!(session.snapshot().unwrap().can_undo);
+        let opened = session
+            .open_document(library.clone(), second.path.clone())
+            .unwrap();
+        assert!(!opened.can_undo);
+        assert_eq!(session.undo().unwrap().text, opened.text);
+        let first_again = DocumentSession::new()
+            .open_document(library.clone(), first_saved.path)
+            .unwrap();
+        assert_eq!(first_again.text, "PERSON_1 wrote.");
     }
 
     /// The identity tools through the session: the category menu, owner,

@@ -105,7 +105,8 @@ fn read_marks(pdf: &Path) -> Result<Vec<LinkMark>, String> {
 /// left-out line, so nothing is lost without a note.
 #[uniffi::export]
 pub fn docx_comments_not_shown(source: String) -> Option<String> {
-    mdoc_import::import::source_comments_not_shown(Path::new(&source))
+    let source = mdoc_import::import::Source::read(Path::new(&source)).ok()?;
+    mdoc_import::import::source_comments_not_shown(&source)
 }
 
 #[uniffi::export]
@@ -122,15 +123,22 @@ impl DocxOriginal {
         let _one = RENDER.lock().unwrap_or_else(|e| e.into_inner());
         MARKS.set(Some(marks));
         // Phones offer no hidden text: the page as Word prints it.
-        let preview = docx_preview::render_in(
-            Path::new(&folder),
-            Path::new(&source),
-            read_marks,
-            RenderOptions::default(),
-        );
+        let preview = docx_preview::read_source(Path::new(&source)).and_then(|source| {
+            docx_preview::render_in(
+                Path::new(&folder),
+                &source,
+                read_marks,
+                RenderOptions::default(),
+            )
+        });
         MARKS.set(None);
-        let preview = preview.map_err(|error| CoreError::Import {
-            message: error.to_string(),
+        let preview = preview.map_err(|error| match error {
+            // docxide renders to a file, which would be an unlocked copy; the
+            // import already counted the comments.
+            docx_preview::PreviewError::Encrypted => CoreError::OriginalLocked,
+            error => CoreError::Import {
+                message: error.to_string(),
+            },
         })?;
         Ok(Arc::new(Self { preview }))
     }
@@ -265,6 +273,29 @@ mod tests {
             docx_comments_not_shown(source.to_string_lossy().into_owned()).as_deref(),
             Some("2 comments not shown.")
         );
+    }
+
+    /// A locked DOCX's original never renders, since the render would be an
+    /// unlocked copy on disk, and the pane says so.
+    #[test]
+    fn a_locked_docx_has_no_original_and_says_why() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/locked-office/word-locked.docx");
+        let folder = Scratch::new();
+        let error = DocxOriginal::render(
+            source.to_string_lossy().into_owned(),
+            folder.path().to_string_lossy().into_owned(),
+            Box::new(OneMark),
+        )
+        .err()
+        .unwrap();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Password-protected DOCX files"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_dir(folder.path()).unwrap().count(), 0);
     }
 
     #[test]

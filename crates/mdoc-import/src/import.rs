@@ -3,7 +3,10 @@ use crate::comments::Comment;
 use std::{
     io::Read,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// Whether a file dragged from the OS looks openable by its extension alone;
@@ -75,10 +78,8 @@ pub fn supported_source(path: &Path) -> bool {
 #[derive(Clone, Debug)]
 pub struct Imported {
     pub ocr_configuration: Option<mdoc_store::settings::OcrConfig>,
-    pub source: PathBuf,
-    /// The source's size and modification time as the import opened it:
-    /// its comments describe the file only while the file still has them.
-    pub stamp: Option<SourceStamp>,
+    /// The bytes this import converted: the DOCX preview renders these.
+    pub source: Source,
     pub markdown: String,
     /// The notice: a partial import (pages OCR skipped, or may have read
     /// badly).
@@ -93,7 +94,200 @@ pub struct Imported {
     pub annotations: Vec<pdf_inspector::PdfAnnotation>,
     pub is_pdf: bool,
     pub is_docx: bool,
+    /// The file was password-protected and this import unlocked it in
+    /// memory. No rendering shows it (that would write it to disk), so the
+    /// left-out line counts its comments.
+    pub decrypted: bool,
 }
+
+/// A document's bytes, read from its file once: the import converts them,
+/// and its comments and the DOCX preview read them too, never the file
+/// again, so bytes that differ from the file's (an unlocked copy of a
+/// locked one) never have to be written anywhere.
+#[derive(Clone)]
+pub struct Source {
+    /// Where the bytes came from (absolute when an import read them); its
+    /// extension names the format when the content does not.
+    pub path: PathBuf,
+    /// The file's size and modification time when it was read: what the
+    /// bytes say about the file holds only while the stamp still matches.
+    pub stamp: Option<SourceStamp>,
+    bytes: SharedBytes,
+    /// The bytes are a locked file's, unlocked in memory: they differ from
+    /// the file's and must never be written anywhere.
+    unlocked: bool,
+}
+
+/// A document's bytes, shared rather than copied, and wiped when the last
+/// holder drops them: they may be a locked document's, unlocked.
+#[derive(Clone)]
+pub(crate) struct SharedBytes(Arc<zeroize::Zeroizing<Vec<u8>>>);
+
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Source {
+    /// The file at `path`, read as an import reads it: a PDF (by its header,
+    /// so a renamed one counts) within the import limit, anything else
+    /// whole, since AnyDoc applies its own limits.
+    pub fn read(path: &Path) -> Result<Self, ImportError> {
+        let path = std::path::absolute(path).map_err(ImportError::Read)?;
+        let file = std::fs::File::open(&path).map_err(ImportError::Read)?;
+        let stamp = file
+            .metadata()
+            .ok()
+            .map(|metadata| SourceStamp::from(&metadata));
+        let mut file = file.take(MAX_PDF_BYTES + 1);
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).map_err(ImportError::Io)?;
+        if is_pdf(&bytes) {
+            if bytes.len() as u64 > MAX_PDF_BYTES {
+                return Err(ImportError::PdfTooLarge);
+            }
+        } else {
+            file.into_inner()
+                .read_to_end(&mut bytes)
+                .map_err(ImportError::Io)?;
+        }
+        Ok(Self::new(path, stamp, bytes))
+    }
+
+    /// `bytes`, said to come from `path` as `stamp` stood.
+    pub fn new(path: PathBuf, stamp: Option<SourceStamp>, bytes: Vec<u8>) -> Self {
+        Self {
+            path,
+            stamp,
+            bytes: SharedBytes(Arc::new(zeroize::Zeroizing::new(bytes))),
+            unlocked: false,
+        }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        self.bytes.as_ref()
+    }
+
+    /// The bytes, shared rather than copied: for the workers (Android has
+    /// neither).
+    #[cfg(not(target_os = "android"))]
+    pub(crate) fn shared_bytes(&self) -> SharedBytes {
+        self.bytes.clone()
+    }
+
+    /// The bytes are a password-protected file's, unlocked in memory: no
+    /// copy of them may be written, so the DOCX preview, which renders to a
+    /// temporary file, leaves them alone.
+    pub fn unlocked(&self) -> bool {
+        self.unlocked
+    }
+
+    /// The bytes as an import converts them: a password-protected DOCX,
+    /// XLSX, PPTX or DOC unlocked in memory with `password`, anything else
+    /// as it is (a password it doesn't need is ignored). Without a password
+    /// a locked file is `PasswordRequired`, so the caller knows to ask; a
+    /// scheme no password opens here is `EncryptionUnsupported` (DOCX, XLSX,
+    /// PPTX) or `Encrypted` (DOC).
+    pub fn unlock(self, password: Option<&Password>) -> Result<Self, ImportError> {
+        if self.unlocked {
+            return Ok(self);
+        }
+        if craft_doc_binary::is_encrypted(self.bytes()) {
+            let document = unlock_doc(self.bytes(), password.map(Password::expose))?;
+            return Ok(Self {
+                unlocked: true,
+                ..Self::new(self.path, self.stamp, document)
+            });
+        }
+        if !craft_offcrypto::is_encrypted(self.bytes()) {
+            return Ok(self);
+        }
+        let package = craft_offcrypto::decrypt(self.bytes(), password.map(Password::expose))
+            .map_err(|error| match error {
+                craft_offcrypto::Error::PasswordRequired => ImportError::PasswordRequired,
+                craft_offcrypto::Error::WrongPassword => ImportError::WrongPassword,
+                craft_offcrypto::Error::Unsupported(scheme) => {
+                    ImportError::EncryptionUnsupported(scheme)
+                }
+                // Malformed, TooLarge, and whatever a later revision adds.
+                _ => ImportError::Damaged,
+            })?;
+        Ok(Self {
+            unlocked: true,
+            ..Self::new(self.path, self.stamp, package)
+        })
+    }
+
+    fn extension(&self) -> Option<&str> {
+        self.path
+            .extension()
+            .and_then(|extension| extension.to_str())
+    }
+}
+
+/// Never the bytes: they are the user's document.
+impl std::fmt::Debug for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Source")
+            .field("path", &self.path)
+            .field("stamp", &self.stamp)
+            .field("len", &self.bytes().len())
+            .field("unlocked", &self.unlocked)
+            .finish()
+    }
+}
+
+/// A password-protected DOC (XOR obfuscation, RC4 or RC4 CryptoAPI)
+/// unlocked in memory with `password`, as the file AnyDoc converts: its
+/// scheme is checked first, so a file no password opens here is `Encrypted`
+/// before any password is asked for; then a missing password is
+/// `PasswordRequired` and one that fails the file's verifier `WrongPassword`.
+/// The unlocked bytes go straight into the source, whose wiping covers them.
+fn unlock_doc(bytes: &[u8], password: Option<&str>) -> Result<Vec<u8>, ImportError> {
+    let mut unlocked = crate::doc_crypt::decrypt(bytes, password)?;
+    Ok(std::mem::take(&mut *unlocked))
+}
+
+/// The password for one import of a password-protected document. It lives
+/// only as long as that import: never stored, logged or shown, and wiped
+/// from memory when dropped.
+pub struct Password(zeroize::Zeroizing<String>);
+
+impl Password {
+    /// Takes `text` without copying it.
+    pub fn new(text: String) -> Self {
+        Self(zeroize::Zeroizing::new(text))
+    }
+
+    fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<zeroize::Zeroizing<String>> for Password {
+    fn from(text: zeroize::Zeroizing<String>) -> Self {
+        Self(text)
+    }
+}
+
+/// Never the password.
+impl std::fmt::Debug for Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Password(..)")
+    }
+}
+
+/// Every PDF goes to pdf-inspector: AnyDoc, built without its `pdf`
+/// feature, would refuse one, and detects a PDF by the same window.
+pub(crate) fn is_pdf(bytes: &[u8]) -> bool {
+    bytes[..bytes.len().min(1024)]
+        .windows(5)
+        .any(|window| window == b"%PDF-")
+}
+
+/// The largest PDF an import reads.
+const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
 
 /// A file's size and modification time: a later reading of the same path
 /// is taken to be of the same bytes while its stamp matches.
@@ -134,6 +328,10 @@ pub struct LeftOut {
     pub hidden_text: u64,
     /// AcroForm field names; the fields' values stay.
     pub field_names: u64,
+    /// Files attached to a PDF (its embedded files, a portfolio's files,
+    /// file attachment annotations), each once. Only the count: their names
+    /// are personal data too, and their content is never read.
+    pub attached_files: u64,
     /// A PDF's running header and footer rows left out as exact repeats of
     /// a row kept on an earlier page.
     pub repeated_lines: u64,
@@ -170,6 +368,7 @@ impl LeftOut {
             hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches)
                 + sum(&native.hidden_text_by_page, |page| page.stretches),
             field_names: sum(&native.form_field_names_by_page, |page| page.names),
+            attached_files: native.attached_files.len() as u64,
             repeated_lines: 0,
             comments: native.annotations.len() as u64,
             comments_unread: 0,
@@ -177,11 +376,12 @@ impl LeftOut {
     }
 
     /// The note's lines for the counts other than comments, in order.
-    fn counts(&self) -> [Option<String>; 4] {
+    fn counts(&self) -> [Option<String>; 5] {
         [
             pictures_note(self.pictures),
             hidden_text_note(self.hidden_text),
             left_out_note(self.field_names, "form field name", "form field names"),
+            left_out_note(self.attached_files, "attached file", "attached files"),
             repeated_lines_note(self.repeated_lines),
         ]
     }
@@ -190,12 +390,13 @@ impl LeftOut {
     /// count only where no rendering of the document shows them
     /// (`comments_shown` false); comments only counted always do.
     pub fn line(&self, comments_shown: bool) -> Option<String> {
-        let [pictures, hidden, field_names, repeated] = self.counts();
+        let [pictures, hidden, field_names, attached, repeated] = self.counts();
         let comments = self.comments_unread + if comments_shown { 0 } else { self.comments };
         join_notes([
             pictures,
             hidden,
             field_names,
+            attached,
             repeated,
             not_shown_note(comments),
         ])
@@ -213,7 +414,7 @@ impl Imported {
     /// they show the left-out line (ROADMAP Comments item 4): the order the
     /// note had before the split.
     pub fn note(&self) -> Option<String> {
-        let [pictures, hidden, field_names, repeated] = self.left_out.counts();
+        let [pictures, hidden, field_names, attached, repeated] = self.left_out.counts();
         join_notes([
             self.warning.clone(),
             left_out_note(
@@ -224,6 +425,7 @@ impl Imported {
             pictures,
             hidden,
             field_names,
+            attached,
             repeated,
         ])
     }
@@ -238,34 +440,36 @@ fn not_shown_note(count: u64) -> Option<String> {
     }
 }
 
-/// The comments of the office document at `path`, read as its import reads
+/// The comments of the office document `source`, read as its import reads
 /// them: the Source's cards for a document this session did not import.
 /// None when AnyDoc cannot convert it.
-pub fn source_comments(path: &Path) -> Vec<Comment> {
-    source_comments_cancellable(path, &AtomicBool::new(false))
+pub fn source_comments(source: &Source) -> Vec<Comment> {
+    source_comments_cancellable(source, &AtomicBool::new(false))
 }
 
-pub(crate) fn source_comments_cancellable(path: &Path, cancel: &AtomicBool) -> Vec<Comment> {
-    convert_document(path, cancel)
+pub(crate) fn source_comments_cancellable(source: &Source, cancel: &AtomicBool) -> Vec<Comment> {
+    convert_document(source, cancel)
         .map(|converted| converted.comments)
         .unwrap_or_default()
 }
 
-/// The left-out line's phrase for the comments of the office document at
-/// `path` that its rendering would show: for an original that could not
+/// The left-out line's phrase for the comments of the office document
+/// `source` that its rendering would show: for an original that could not
 /// render, whose import counted them there instead of in the line.
-pub fn source_comments_not_shown(path: &Path) -> Option<String> {
-    not_shown_note(source_comments(path).len() as u64)
+pub fn source_comments_not_shown(source: &Source) -> Option<String> {
+    not_shown_note(source_comments(source).len() as u64)
 }
 
-/// The annotations of the PDF at `path` that carry text, read by the same
+/// The annotations of the PDF `source` that carry text, read by the same
 /// native pass its import makes: the Source's cards for a PDF this session
-/// did not import. `None` when the pass cannot read it (unreadable, past
-/// the import's size limit, encrypted or damaged).
-pub fn source_annotations(path: &Path) -> Option<Vec<pdf_inspector::PdfAnnotation>> {
+/// did not import. `None` when the pass cannot read it (past the import's
+/// size limit, encrypted or damaged).
+pub fn source_annotations(source: &Source) -> Option<Vec<pdf_inspector::PdfAnnotation>> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
-    let bytes = read_pdf(path).ok()?;
-    process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new())
+    if source.bytes().len() as u64 > MAX_PDF_BYTES {
+        return None;
+    }
+    process_pdf_with_ocr_mem(source.bytes(), OcrPdfOptions::new())
         .ok()
         .map(|native| native.annotations)
 }
@@ -286,8 +490,20 @@ pub enum ImportError {
     PdfTooLarge,
     #[error("This PDF is password-protected. Import an unlocked copy.")]
     PdfEncrypted,
+    /// A password-protected file mdoc can't unlock: an ODT, or a DOC whose
+    /// encryption no password opens here.
     #[error("This document is password-protected. Import an unlocked copy.")]
     Encrypted,
+    /// A locked DOCX, XLSX, PPTX or DOC and no password: the app asks for
+    /// one.
+    #[error("This document is password-protected. Enter its password to import it.")]
+    PasswordRequired,
+    #[error("The password is incorrect. Check it and try again.")]
+    WrongPassword,
+    /// A locked DOCX, XLSX or PPTX whose encryption no password opens here,
+    /// named to complete "uses {0} encryption" (`RC4`, `rights-management`).
+    #[error("This document uses {0} encryption, which mdoc can’t unlock. Import an unlocked copy.")]
+    EncryptionUnsupported(String),
     #[error("This format is not supported. Choose a {} file.", supported_formats())]
     Unsupported,
     #[error("{DAMAGED}")]
@@ -351,37 +567,43 @@ pub fn prepare(
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
 ) -> Result<Imported, ImportError> {
-    prepare_cancellable(path, installed, skip_ocr, &AtomicBool::new(false))
+    prepare_cancellable(path, None, installed, skip_ocr, &AtomicBool::new(false))
 }
 
+/// Imports the file at `path`. `password` unlocks a password-protected
+/// DOCX, XLSX, PPTX or DOC in memory for this import only; without it such a
+/// file is `PasswordRequired`, and a wrong one `WrongPassword`.
 pub fn prepare_cancellable(
     path: &Path,
+    password: Option<&Password>,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     check_cancel(cancel)?;
-    let source = std::path::absolute(path).map_err(ImportError::Read)?;
-    // Detect PDFs by their header, preserving renamed-file import support.
-    // Only PDF conversion reads the complete buffer here; AnyDoc retains its
-    // format detection and resource limits for all other inputs.
-    let mut file = std::fs::File::open(&source).map_err(ImportError::Read)?;
-    let stamp = file
-        .metadata()
-        .ok()
-        .map(|metadata| SourceStamp::from(&metadata));
-    let mut header = [0; 1024];
-    let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
-    // Every PDF goes to pdf-inspector: AnyDoc, built without its `pdf`
-    // feature, would refuse one, and detects a PDF by the same window.
-    if header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
-        return convert_pdf(source, stamp, installed, skip_ocr, cancel);
+    let source = Source::read(path)?.unlock(password)?;
+    check_cancel(cancel)?;
+    import_source(source, installed, skip_ocr, cancel)
+}
+
+/// Imports `source`'s bytes: the one conversion every import makes after it
+/// has read them.
+pub(crate) fn import_source(
+    source: Source,
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    if is_pdf(source.bytes()) {
+        return convert_pdf(source, installed, skip_ocr, cancel);
     }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
     let is_docx = source
+        .path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
+    let decrypted = source.unlocked();
     // Comments never reach the Markdown: AnyDoc reports them beside it, read
     // (DOCX, ODT, RTF) or only counted (DOC, PPTX, XLSX, ODS, ODP), and the
     // left-out line says how many.
@@ -390,7 +612,7 @@ pub fn prepare_cancellable(
     let comments_unread = u64::from(converted.comments_left_out).saturating_sub(read);
     // Nor do Word's pictures: embedded ones render as their alt text at
     // most (ROADMAP Vision item 1).
-    let format = anydoc::Format::from_path(&source);
+    let format = anydoc::Format::from_path(&source.path);
     let pictures = if matches!(format, Some(anydoc::Format::Docx) | None) {
         u64::from(converted.images_left_out)
     } else {
@@ -399,7 +621,6 @@ pub fn prepare_cancellable(
     Ok(Imported {
         ocr_configuration: None,
         source,
-        stamp,
         markdown: converted.markdown,
         // Only a PDF's import can be partial.
         warning: None,
@@ -409,6 +630,7 @@ pub fn prepare_cancellable(
             // elsewhere).
             hidden_text: u64::from(converted.hidden_text_left_out),
             field_names: 0,
+            attached_files: 0,
             repeated_lines: 0,
             comments: read,
             comments_unread,
@@ -417,6 +639,7 @@ pub fn prepare_cancellable(
         annotations: Vec::new(),
         is_pdf: false,
         is_docx,
+        decrypted,
     })
 }
 
@@ -454,13 +677,12 @@ pub const CONVERSION_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 /// app installed one (desktop, `conversion_worker::supervise`), otherwise in
 /// this process with a converter panic contained (the phones, whose
 /// profile unwinds, and tests).
-fn convert_document(source: &Path, cancel: &AtomicBool) -> Result<Converted, ImportError> {
-    let bytes = std::fs::read(source).map_err(ImportError::Read)?;
-    let extension = source.extension().and_then(|extension| extension.to_str());
+fn convert_document(source: &Source, cancel: &AtomicBool) -> Result<Converted, ImportError> {
+    let (bytes, extension) = (source.bytes(), source.extension());
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if let Some(executable) = crate::conversion_worker::installed() {
         return crate::conversion_worker::convert_with_executable(
-            bytes,
+            source.shared_bytes(),
             extension,
             cancel,
             executable,
@@ -468,7 +690,7 @@ fn convert_document(source: &Path, cancel: &AtomicBool) -> Result<Converted, Imp
         );
     }
     check_cancel(cancel)?;
-    contained(|| convert_bytes(&bytes, extension))
+    contained(|| convert_bytes(bytes, extension))
 }
 
 /// Converts a document other than a PDF from its bytes, as the worker and
@@ -511,20 +733,19 @@ pub(crate) fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
 }
 
 fn convert_pdf(
-    source: PathBuf,
-    stamp: Option<SourceStamp>,
+    source: Source,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
-    let bytes = read_pdf(&source)?;
-    let mut native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
+    let bytes = pdf_bytes(&source)?;
+    let mut native = process_pdf_with_ocr_mem(bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(
-            source,
+            source.path,
             native.pages_recommended_for_ocr.clone(),
             crate::recognition::text_languages(&native.markdown),
             native.page_count,
@@ -545,7 +766,7 @@ fn convert_pdf(
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
         crate::ocr::load_onnx_runtime(&installed.onnx)
             .map_err(|e| ImportError::OcrFailed(e.into()))?;
-        match process_pdf_with_ocr_mem(&bytes, installed.options()) {
+        match process_pdf_with_ocr_mem(bytes, installed.options()) {
             Ok(result) => (result, true),
             Err(error) => {
                 return Err(ImportError::OcrFailed(OcrFailure::Engine(
@@ -580,7 +801,6 @@ fn convert_pdf(
             None
         },
         source,
-        stamp,
         markdown: result.markdown,
         warning,
         left_out,
@@ -588,23 +808,16 @@ fn convert_pdf(
         annotations,
         is_pdf: true,
         is_docx: false,
+        decrypted: false,
     })
 }
 
 /// A PDF's bytes, within the import limit.
-pub(crate) fn read_pdf(source: &Path) -> Result<Vec<u8>, ImportError> {
-    const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
-    let file = std::fs::File::open(source).map_err(ImportError::Read)?;
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::io::Read::take(file, MAX_PDF_BYTES + 1),
-        &mut bytes,
-    )
-    .map_err(ImportError::Io)?;
-    if bytes.len() as u64 > MAX_PDF_BYTES {
+pub(crate) fn pdf_bytes(source: &Source) -> Result<&[u8], ImportError> {
+    if source.bytes().len() as u64 > MAX_PDF_BYTES {
         return Err(ImportError::PdfTooLarge);
     }
-    Ok(bytes)
+    Ok(source.bytes())
 }
 
 /// The warning for a converted PDF's `markdown`: the pages OCR may have
@@ -847,6 +1060,239 @@ mod tests {
         }
     }
 
+    /// A password-protected DOCX, XLSX or PPTX, agile (Office 2010 and
+    /// later) or standard (Office 2007): no password asks for one, a wrong
+    /// one is refused, and the right one imports what the unlocked file
+    /// imports. Nothing but the locked file is ever in its folder.
+    #[test]
+    fn a_locked_office_document_imports_only_with_its_password() {
+        const PASSWORD: &str = "Пароль-2026";
+        for name in ["text.docx", "sheet.xlsx", "handmade-comments.pptx"] {
+            let unlocked = convert(&fixture(name)).unwrap();
+            assert!(!unlocked.decrypted, "{name}");
+            let plain = std::fs::read(fixture(name)).unwrap();
+            for (scheme, locked) in [
+                (
+                    "agile",
+                    craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap(),
+                ),
+                (
+                    "standard",
+                    craft_offcrypto::encrypt_standard(&plain, PASSWORD, 128).unwrap(),
+                ),
+            ] {
+                let case = format!("{name}, {scheme}");
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join(format!("locked-{name}"));
+                std::fs::write(&path, locked).unwrap();
+                let import = |password: Option<&str>| {
+                    let password = password.map(|text| Password::new(text.into()));
+                    prepare_cancellable(
+                        &path,
+                        password.as_ref(),
+                        None,
+                        true,
+                        &AtomicBool::new(false),
+                    )
+                };
+                assert!(
+                    matches!(import(None), Err(ImportError::PasswordRequired)),
+                    "{case}"
+                );
+                assert!(
+                    matches!(import(Some("пароль-2026")), Err(ImportError::WrongPassword)),
+                    "{case}"
+                );
+                let imported = import(Some(PASSWORD)).unwrap();
+                assert!(imported.decrypted && imported.source.unlocked(), "{case}");
+                assert_eq!(imported.markdown, unlocked.markdown, "{case}");
+                assert_eq!(imported.left_out, unlocked.left_out, "{case}");
+                assert_eq!(imported.comments, unlocked.comments, "{case}");
+                assert_eq!(imported.is_docx, unlocked.is_docx, "{case}");
+                let left: Vec<_> = std::fs::read_dir(dir.path())
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect();
+                assert_eq!(left, [path.file_name().unwrap()], "{case}");
+            }
+        }
+    }
+
+    /// Files locked by real Word, Excel, PowerPoint (agile encryption) and
+    /// LibreOffice (standard encryption) import only with their password,
+    /// as their unlocked twins do, and the folder never gains a file. Their
+    /// DOCs (RC4 CryptoAPI from Word, RC4 from LibreOffice) ask for the
+    /// password and refuse a wrong one (#1007 item 5).
+    #[test]
+    fn office_files_locked_by_word_excel_powerpoint_and_libreoffice_import() {
+        // The fixtures' published test password (their README).
+        const PASSWORD: &str = "Petrov-2026";
+        let folder =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/locked-office");
+        let files = || {
+            let mut names: Vec<_> = std::fs::read_dir(&folder)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            names.sort();
+            names
+        };
+        let before = files();
+        let import = |name: &str, password: Option<&str>| {
+            let password = password.map(|text| Password::new(text.into()));
+            prepare_cancellable(
+                &folder.join(name),
+                password.as_ref(),
+                None,
+                true,
+                &AtomicBool::new(false),
+            )
+        };
+        for (app, extension) in [
+            ("word", "docx"),
+            ("excel", "xlsx"),
+            ("powerpoint", "pptx"),
+            ("libreoffice", "docx"),
+            ("libreoffice", "xlsx"),
+            ("libreoffice", "pptx"),
+        ] {
+            let locked = format!("{app}-locked.{extension}");
+            assert!(
+                matches!(import(&locked, None), Err(ImportError::PasswordRequired)),
+                "{locked}"
+            );
+            assert!(
+                matches!(
+                    import(&locked, Some("petrov-2026")),
+                    Err(ImportError::WrongPassword)
+                ),
+                "{locked}"
+            );
+            let imported = import(&locked, Some(PASSWORD)).unwrap();
+            let open = import(&format!("{app}-open.{extension}"), None).unwrap();
+            assert!(imported.decrypted && !open.decrypted, "{locked}");
+            assert!(
+                imported.markdown.contains("Petrov"),
+                "{locked}: {}",
+                imported.markdown
+            );
+            assert_eq!(imported.markdown, open.markdown, "{locked}");
+            assert_eq!(imported.left_out, open.left_out, "{locked}");
+        }
+        for app in ["word", "libreoffice"] {
+            let doc = format!("{app}-locked.doc");
+            assert!(
+                matches!(import(&doc, None), Err(ImportError::PasswordRequired)),
+                "{doc}"
+            );
+            assert!(
+                matches!(
+                    import(&doc, Some("petrov-2026")),
+                    Err(ImportError::WrongPassword)
+                ),
+                "{doc}"
+            );
+            let imported = import(&doc, Some(PASSWORD)).unwrap();
+            let open = import(&format!("{app}-open.doc"), None).unwrap();
+            assert!(imported.decrypted && !open.decrypted, "{doc}");
+            assert!(
+                imported.markdown.contains("Petrov"),
+                "{doc}: {}",
+                imported.markdown
+            );
+            assert_eq!(imported.markdown, open.markdown, "{doc}");
+            assert_eq!(imported.left_out, open.left_out, "{doc}");
+        }
+        assert_eq!(files(), before);
+    }
+
+    /// A password given for a file that isn't locked changes nothing.
+    #[test]
+    fn a_password_an_unlocked_document_does_not_need_is_ignored() {
+        for name in ["text.docx", "text.pdf", "text.doc"] {
+            let password = Password::new("unused".into());
+            let imported = prepare_cancellable(
+                &fixture(name),
+                Some(&password),
+                None,
+                true,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert!(!imported.decrypted, "{name}");
+            assert_eq!(
+                imported.markdown,
+                convert(&fixture(name)).unwrap().markdown,
+                "{name}"
+            );
+        }
+    }
+
+    /// A locked package whose encryption no password opens here is named,
+    /// before any password is asked for or tried.
+    #[test]
+    fn a_locked_office_document_names_encryption_it_cannot_unlock() {
+        let plain = std::fs::read(fixture("text.docx")).unwrap();
+        let mut locked = craft_offcrypto::encrypt_standard(&plain, "secret", 128).unwrap();
+        // EncryptionInfo's version: 3.2 (standard, with its CryptoAPI and
+        // AES flags) becomes 4.3, the extensible scheme.
+        let at = locked
+            .windows(8)
+            .position(|bytes| bytes == [3, 0, 2, 0, 0x24, 0, 0, 0])
+            .unwrap();
+        locked[at..at + 4].copy_from_slice(&[4, 0, 3, 0]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("locked.docx");
+        std::fs::write(&path, locked).unwrap();
+        for password in [None, Some(Password::new("secret".into()))] {
+            let error = prepare_cancellable(
+                &path,
+                password.as_ref(),
+                None,
+                true,
+                &AtomicBool::new(false),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(&error, ImportError::EncryptionUnsupported(scheme) if scheme == "Extensible"),
+                "{error:?}"
+            );
+            assert_eq!(
+                error.to_string(),
+                "This document uses Extensible encryption, which mdoc can’t unlock. Import an unlocked copy."
+            );
+        }
+    }
+
+    /// A password never shows: not in its own `Debug`, nor in a source's.
+    #[test]
+    fn a_password_never_shows() {
+        let password = Password::new("Секрет".into());
+        assert_eq!(format!("{password:?}"), "Password(..)");
+        let source = Source::new("locked.docx".into(), None, "Секрет".as_bytes().to_vec());
+        assert!(!format!("{source:?}").contains("Секрет"));
+    }
+
+    /// An import converts the bytes it holds: a document and a PDF held
+    /// under a name no file has import as their files do, comments and
+    /// annotations included.
+    #[test]
+    fn an_import_converts_held_bytes_without_their_file() {
+        for name in ["handmade-comments.docx", "text_annotations.pdf"] {
+            let from_file = convert(&fixture(name)).unwrap();
+            let held = Source::new(
+                format!("never-written-{name}").into(),
+                None,
+                std::fs::read(fixture(name)).unwrap(),
+            );
+            let imported = import_source(held, None, true, &AtomicBool::new(false)).unwrap();
+            assert_eq!(imported.markdown, from_file.markdown, "{name}");
+            assert_eq!(imported.left_out, from_file.left_out, "{name}");
+            assert_eq!(imported.comments, from_file.comments, "{name}");
+            assert_eq!(imported.annotations, from_file.annotations, "{name}");
+        }
+    }
+
     /// A converter panic is an import error where the profile unwinds (the
     /// phones and tests), never a crash.
     #[test]
@@ -1033,6 +1479,93 @@ mod tests {
         assert_eq!(imported.left_out.pictures, 1, "{:?}", imported.note());
     }
 
+    /// #1004's PDF: one line outside any layer, one in layer L1, which the
+    /// default configuration turns off (`/D /OFF`), and one in layer L2,
+    /// which it turns on; and an attached file. Fictional names.
+    fn pdf_with_an_off_layer() -> Vec<u8> {
+        fn stream(dictionary: &str, data: &[u8]) -> Vec<u8> {
+            let mut object =
+                format!("<< {dictionary}/Length {} >>\nstream\n", data.len()).into_bytes();
+            object.extend_from_slice(data);
+            object.extend_from_slice(b"\nendstream");
+            object
+        }
+        let content = b"BT /F1 14 Tf 72 720 Td (Visible paragraph on the page.) Tj ET\n\
+/OC /L1 BDC\n\
+BT /F1 14 Tf 72 690 Td (Off layer: Ivan Petrov, 12 Baker Street) Tj ET\n\
+EMC\n\
+/OC /L2 BDC\n\
+BT /F1 14 Tf 72 660 Td (On layer: second visible line.) Tj ET\n\
+EMC\n";
+        let attachment = b"Client notes: Ivan Petrov phoned on Monday.\n";
+        let objects: Vec<Vec<u8>> = vec![
+            b"<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [6 0 R 7 0 R] \
+              /D << /Order [6 0 R 7 0 R] /ON [7 0 R] /OFF [6 0 R] >> >> \
+              /Names << /EmbeddedFiles << /Names [(client-notes.txt) 8 0 R] >> >> >>"
+                .to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+              /Resources << /Font << /F1 5 0 R >> /Properties << /L1 6 0 R /L2 7 0 R >> >> >>"
+                .to_vec(),
+            stream("", content),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+            b"<< /Type /OCG /Name (Hidden notes) >>".to_vec(),
+            b"<< /Type /OCG /Name (Visible layer) >>".to_vec(),
+            b"<< /Type /Filespec /F (client-notes.txt) /UF (client-notes.txt) /EF << /F 9 0 R >> >>"
+                .to_vec(),
+            stream("/Type /EmbeddedFile ", attachment),
+        ];
+        let mut pdf = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+            pdf.extend_from_slice(object);
+            pdf.extend_from_slice(b"\nendobj\n");
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    /// Text in a PDF layer the default configuration turns off is in no
+    /// reader: it stays out of the Markdown and counts with the other
+    /// hidden passages, while the lines outside any layer and in a layer
+    /// that is on stay (#1004).
+    #[test]
+    fn text_in_an_off_pdf_layer_is_left_out_and_counted_as_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdf = dir.path().join("layers.pdf");
+        std::fs::write(&pdf, pdf_with_an_off_layer()).unwrap();
+        let imported = convert(&pdf).unwrap();
+        for hidden in ["Off layer", "Ivan Petrov", "Baker Street"] {
+            assert!(!imported.markdown.contains(hidden), "{}", imported.markdown);
+        }
+        for kept in [
+            "Visible paragraph on the page.",
+            "On layer: second visible line.",
+        ] {
+            assert!(imported.markdown.contains(kept), "{}", imported.markdown);
+        }
+        assert_eq!(imported.warning, None);
+        assert_eq!(imported.left_out.hidden_text, 1);
+        let note = imported.note().unwrap_or_default();
+        assert!(note.contains("1 hidden passage not imported."), "{note}");
+        assert!(!note.contains("Ivan Petrov"), "{note}");
+    }
+
     /// Invisible PDF text and form field names never reach the Markdown;
     /// the note counts them after the pictures (#925 decision 9). The
     /// fields' values stay.
@@ -1066,6 +1599,132 @@ mod tests {
             )
         );
         assert_eq!(LeftOut::default().line(false), None);
+    }
+
+    /// A PDF from `objects`, object 1 its catalog, with a cross-reference
+    /// table.
+    fn write_pdf(objects: &[String]) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", index + 1).as_bytes());
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", offsets.len() + 1).as_bytes(),
+        );
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn stream_object(dict: &str, content: &str) -> String {
+        format!(
+            "<< {dict} /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        )
+    }
+
+    /// Files attached to a PDF are counted in the note, each once, and
+    /// neither their names nor their content reach the Markdown, the note or
+    /// the left-out line (#1005): #1004's PDF with `client-notes.txt` in its
+    /// embedded files, a file attachment annotation, and a portfolio.
+    #[test]
+    fn the_note_counts_attached_files_and_never_names_them() {
+        const NOTE: &str = "Client notes: Ivan Petrov phoned on Monday.";
+        let font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned();
+        let page_text = "BT /F1 14 Tf 72 720 Td (Visible paragraph on the page.) Tj ET";
+        // A paperclip on the page carrying its own file, and a second one
+        // pointing at the same file specification, which adds nothing.
+        let annotated = write_pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> /Annots [6 0 R 9 0 R] >>"
+                .to_owned(),
+            stream_object("", page_text),
+            font.clone(),
+            "<< /Type /Annot /Subtype /FileAttachment /Rect [72 600 90 618] /FS 7 0 R \
+             /Contents (witness-statement.txt) >>"
+                .to_owned(),
+            "<< /Type /Filespec /F (witness-statement.txt) /EF << /F 8 0 R >> >>".to_owned(),
+            stream_object("/Type /EmbeddedFile", NOTE),
+            "<< /Type /Annot /Subtype /FileAttachment /Rect [100 600 118 618] /FS 7 0 R >>"
+                .to_owned(),
+        ]);
+        // A portfolio keeps its files in the name tree, here across kids.
+        let portfolio = write_pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /Collection << /Type /Collection /View /D >> \
+             /Names << /EmbeddedFiles 6 0 R >> >>"
+                .to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>"
+                .to_owned(),
+            stream_object("", page_text),
+            font,
+            "<< /Kids [7 0 R 8 0 R] >>".to_owned(),
+            "<< /Limits [(a) (a)] /Names [(exhibit-a.pdf) 9 0 R] >>".to_owned(),
+            "<< /Limits [(b) (c)] /Names [(exhibit-b.xlsx) 10 0 R (exhibit-c.docx) 11 0 R] >>"
+                .to_owned(),
+            "<< /Type /Filespec /UF (exhibit-a.pdf) /EF << /F 12 0 R >> >>".to_owned(),
+            "<< /Type /Filespec /UF (exhibit-b.xlsx) /EF << /F 13 0 R >> >>".to_owned(),
+            "<< /Type /Filespec /UF (exhibit-c.docx) /EF << /F 14 0 R >> >>".to_owned(),
+            stream_object("/Type /EmbeddedFile", NOTE),
+            stream_object("/Type /EmbeddedFile", NOTE),
+            stream_object("/Type /EmbeddedFile", NOTE),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        // #1004's PDF also has a line in an off layer: one hidden passage.
+        let embedded_note = "1 hidden passage not imported. 1 attached file not imported.";
+        for (name, pdf, files, expected) in [
+            ("embedded.pdf", pdf_with_an_off_layer(), 1, embedded_note),
+            (
+                "annotated.pdf",
+                annotated,
+                1,
+                "1 attached file not imported.",
+            ),
+            (
+                "portfolio.pdf",
+                portfolio,
+                3,
+                "3 attached files not imported.",
+            ),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, pdf).unwrap();
+            let imported = convert(&path).unwrap();
+            assert_eq!(imported.left_out.attached_files, files, "{name}");
+            assert!(
+                imported.markdown.contains("Visible paragraph on the page."),
+                "{name}: {}",
+                imported.markdown
+            );
+            let note = imported.note().unwrap();
+            let line = imported.left_out.line(false).unwrap();
+            assert_eq!(note, expected, "{name}");
+            assert_eq!(line, expected, "{name}");
+            for text in [&imported.markdown, &note, &line] {
+                for leaked in [
+                    "client-notes",
+                    "witness-statement",
+                    "exhibit-",
+                    "phoned on Monday",
+                ] {
+                    assert!(!text.contains(leaked), "{name}: {leaked} in {text}");
+                }
+            }
+        }
     }
 
     /// A running header stays on its first page and its exact repeats are
@@ -1296,7 +1955,7 @@ mod tests {
     fn source_cards_read_what_the_import_counted() {
         let path = fixture("handmade-comments.docx");
         let imported = convert(&path).unwrap();
-        assert_eq!(source_comments(&path), imported.comments);
+        assert_eq!(source_comments(&read(&path)), imported.comments);
         let row = |id: &str| {
             let c = imported.comments.iter().find(|c| c.id == id).unwrap();
             (
@@ -1339,8 +1998,8 @@ mod tests {
         );
         assert_eq!(imported.comments[0].date, "2026-11-18T09:30:00Z");
         // A PDF has no office comments; one AnyDoc can't convert has none.
-        assert!(source_comments(&fixture("text_annotations.pdf")).is_empty());
-        assert!(source_comments(&fixture("missing.docx")).is_empty());
+        assert!(source_comments(&read(&fixture("text_annotations.pdf"))).is_empty());
+        assert!(source_comments(&damaged("damaged.docx")).is_empty());
     }
 
     /// A Source shown without an import reads the annotations the import
@@ -1350,9 +2009,18 @@ mod tests {
         let path = fixture("text_annotations.pdf");
         let imported = convert(&path).unwrap();
         assert_eq!(imported.annotations.len(), 8);
-        assert_eq!(source_annotations(&path), Some(imported.annotations));
-        assert_eq!(source_annotations(&fixture("missing.pdf")), None);
-        assert_eq!(source_annotations(&fixture("text.docx")), None);
+        assert_eq!(source_annotations(&read(&path)), Some(imported.annotations));
+        assert_eq!(source_annotations(&damaged("damaged.pdf")), None);
+        assert_eq!(source_annotations(&read(&fixture("text.docx"))), None);
+    }
+
+    fn read(path: &Path) -> Source {
+        Source::read(path).unwrap()
+    }
+
+    /// Bytes no converter reads, named `name`.
+    fn damaged(name: &str) -> Source {
+        Source::new(name.into(), None, b"%PDF-1.7 not a document".to_vec())
     }
 
     /// Pictures never reach the Markdown, so the note counts them, for PDF
@@ -1414,6 +2082,7 @@ mod tests {
             pictures: 1,
             hidden_text: 2,
             field_names: 3,
+            attached_files: 5,
             repeated_lines: 4,
             comments: 2,
             comments_unread: 0,
@@ -1422,8 +2091,8 @@ mod tests {
             all.line(false).as_deref(),
             Some(
                 "1 picture not imported. 2 hidden passages not imported. \
-                 3 form field names not imported. 4 repeated header and footer lines removed. \
-                 2 comments not shown."
+                 3 form field names not imported. 5 attached files not imported. \
+                 4 repeated header and footer lines removed. 2 comments not shown."
             )
         );
         // Hidden text is left out of the Markdown whether or not the Source
@@ -1444,7 +2113,7 @@ mod tests {
             Some(
                 "2 comments not imported. 1 picture not imported. \
                  2 hidden passages not imported. 3 form field names not imported. \
-                 4 repeated header and footer lines removed."
+                 5 attached files not imported. 4 repeated header and footer lines removed."
             )
         );
     }

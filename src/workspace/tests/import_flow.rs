@@ -691,3 +691,91 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
     });
     assert!(!cx.has_pending_prompt());
 }
+
+/// A locked DOCX opened in a tab: its conversion card asks for the
+/// password, Enter with a wrong one asks again with the field emptied, and
+/// Unlock with the right one imports it. No preview renders the unlocked
+/// document, so its comments count in the left-out line, and nothing but
+/// the locked file is ever in its folder (#1007).
+#[gpui::test]
+fn a_locked_docx_asks_for_its_password_and_imports_unlocked(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked comments.docx");
+    let plain = std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/import/handmade-comments.docx"),
+    )
+    .unwrap();
+    let locked = craft_offcrypto::encrypt_with_spin_count(&plain, "fictional-pass", 1000).unwrap();
+    std::fs::write(&source, locked).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    if cx.update(|_, cx| view.read(cx).import.password_prompt().is_none()) {
+        cx.dispatch_action(Import);
+        cx.run_until_parked();
+    }
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(
+            view.import.password_prompt(),
+            Some(crate::document_view::PasswordPrompt::Asking)
+        );
+        assert!(view.lifecycle.source_only() && view.error.is_none());
+        assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
+    });
+    assert!(cx.debug_bounds("document-password").is_some());
+    assert!(cx.debug_bounds("primary-convert").is_none());
+
+    let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+    let type_password = |text: &str, cx: &mut VisualTestContext| {
+        field.update_in(cx, |field, window, cx| {
+            field.set_value(text.into(), cx);
+            field.move_to_end(cx);
+            window.focus(&field.focus_handle(cx), cx);
+        });
+    };
+    type_password("wrong-pass", cx);
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).import.password_prompt(),
+            Some(crate::document_view::PasswordPrompt::Wrong)
+        );
+        assert_eq!(
+            field.read(cx).value(),
+            "",
+            "the field never keeps a password"
+        );
+    });
+
+    type_password("fictional-pass", cx);
+    let unlock = cx.debug_bounds("unlock-document").unwrap();
+    cx.simulate_click(unlock.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(!view.lifecycle.source_only());
+        assert_eq!(view.import.password_prompt(), None);
+        assert!(view.editor.read(cx).text().contains("Intro with commented words here."));
+        assert_eq!(
+            view.preview.message().map(String::as_str),
+            Some("Password-protected DOCX files aren’t previewed, so no unlocked copy is written to disk.")
+        );
+        assert!(view.left_out().unwrap().contains("not shown"), "{:?}", view.left_out());
+        assert_eq!(field.read(cx).value(), "");
+    });
+    let left: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, [source.file_name().unwrap()]);
+}
