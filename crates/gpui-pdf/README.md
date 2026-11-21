@@ -10,6 +10,9 @@ the mdoc workspace (`publish = false`).
 - Form-field appearances are normalized with `lopdf` before rendering so
   filled values and checkboxes display; the viewer never edits forms.
 - PDF link actions reach the OS opener only for `http(s)` URLs.
-- Encrypted documents report `is_locked`; the app shows a notice instead.
+- Opens a file or bytes in memory (`PdfSource`) with an optional password.
+  An encrypted document gets the form fixes and hidden comments in memory
+  once lopdf opens it; without the right password it reports `is_locked`,
+  and encryption no password opens reports `is_unsupported_encryption`.
 
 MIT-licensed (see [LICENSE](LICENSE)), derived from Zorite.

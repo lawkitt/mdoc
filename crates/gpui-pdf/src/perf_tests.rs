@@ -246,8 +246,8 @@ fn fit_width_converges_without_render_storm(cx: &mut gpui::TestAppContext) {
 fn initial_fit_waits_for_measured_viewport(cx: &mut gpui::TestAppContext) {
     let file = blank_document(4);
     let document = prepare(
-        Arc::new(std::fs::read(file.path()).unwrap()),
-        "",
+        Arc::new(std::fs::read(file.path()).unwrap()).into(),
+        None,
         ViewOptions::default(),
     )
     .unwrap();

@@ -73,6 +73,8 @@ pdf-comments-resolved
 pdf-comments-rotated
 pdf-comments-markers
 pdf-comments-hidden
+pdf-encrypted-twin
+pdf-encrypted
 docx-source
 shelf
 shelf-demos

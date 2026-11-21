@@ -9,7 +9,7 @@ use crate::{
     workspace,
 };
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
-use gpui_pdf::{HeaderToggle, PdfView, ViewOptions};
+use gpui_pdf::{HeaderToggle, PdfSource, PdfView, ViewOptions};
 use mdoc_import::{
     comments::Comment,
     docx_preview::{self, PreviewError},
@@ -778,11 +778,24 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.load_preview_source(path.clone(), PdfSource::Path(path), docx, window, cx);
+    }
+
+    /// [`Self::load_preview`] drawing `source`, which may be bytes in memory
+    /// with a password, for the document at `path`.
+    pub(super) fn load_preview_source(
+        &mut self,
+        path: PathBuf,
+        source: PdfSource,
+        docx: Option<docx_preview::DocxPreview>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let theme = self.theme.clone();
         let hide = self.preview.unread_annotations.as_ref() != Some(&path);
         let pdf = cx.new(|cx| {
             PdfView::with_options(
-                path,
+                source,
                 Rc::new(move || theme.get().pdf_style()),
                 Rc::new(|| 1.0),
                 // The rail shows a PDF's comment annotations; the page
