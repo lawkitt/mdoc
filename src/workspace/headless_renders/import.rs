@@ -363,7 +363,6 @@ fn heic(d: &mut Driver) -> Result<()> {
         is_pdf: true,
         is_docx: false,
         is_image: true,
-        decrypted: false,
     };
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
