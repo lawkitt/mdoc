@@ -40,7 +40,6 @@ mod document_lifecycle;
 use document_lifecycle::LifecycleEffect;
 mod import_flow;
 use import_flow::ImportEffect;
-#[cfg(test)]
 pub(crate) use import_flow::PasswordPrompt;
 pub(crate) mod save_prompt;
 #[cfg(test)]
@@ -1073,12 +1072,15 @@ impl DocumentView {
         self.error.as_deref() == Some(&*mdoc_import::import::ImportError::Cancelled.to_string())
     }
 
-    /// The conversion card for a locked document: its password, asked for
-    /// first or again after a wrong one. Unlocking converts it in memory.
+    /// The card for a locked document: its password, asked for first or
+    /// again after a wrong one. On the conversion card, unlocking converts
+    /// it in memory; on the Original's, of a locked PDF a reopened tab has
+    /// no password for (#1024 decision 6), it opens its page in memory.
     fn password_card(
         &mut self,
         card: gpui::Stateful<gpui::Div>,
         prompt: import_flow::PasswordPrompt,
+        original: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -1090,10 +1092,21 @@ impl DocumentView {
             let focus = field_focus.clone();
             window.defer(cx, move |window, cx| window.focus(&focus, cx));
         }
-        let can_unlock = self.import.can_unlock();
+        let can_unlock = original || self.import.can_unlock();
+        let unlock = move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
+            if original {
+                this.unlock_original(window, cx);
+            } else {
+                this.unlock_document(window, cx);
+            }
+        };
         card.child(ui::card_title("This document is password-protected"))
             .child(ui::card_text(
-                "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy.",
+                if original {
+                    "Enter its password to see it here. mdoc opens it in memory while this tab is open and never saves the password or an unlocked copy."
+                } else {
+                    "Enter its password to convert it. mdoc unlocks it in memory while this tab is open and never saves the password or an unlocked copy."
+                },
                 theme,
             ))
             .when(prompt == import_flow::PasswordPrompt::Wrong, |v| {
@@ -1120,21 +1133,30 @@ impl DocumentView {
                             .px_2()
                             .py_1()
                             // Enter unlocks, as the button does.
-                            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                            .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, window, cx| {
                                 let keystroke = &event.keystroke;
                                 if keystroke.key == "enter" && !keystroke.modifiers.modified() {
                                     cx.stop_propagation();
-                                    this.unlock_document(window, cx);
+                                    unlock(this, window, cx);
                                 }
                             }))
                             .child(self.password_field.clone()),
                     )
                     .child(
-                        ui::primary_button("unlock-document", "Unlock", theme, can_unlock)
-                            .when(cfg!(test), |v| v.debug_selector(|| "unlock-document".into()))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.unlock_document(window, cx);
-                            })),
+                        ui::primary_button(
+                            if original { "unlock-original" } else { "unlock-document" },
+                            "Unlock",
+                            theme,
+                            can_unlock,
+                        )
+                        .when(cfg!(test), move |v| {
+                            v.debug_selector(move || {
+                                if original { "unlock-original" } else { "unlock-document" }.into()
+                            })
+                        })
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            unlock(this, window, cx);
+                        })),
                     ),
             )
             .into_any_element()
@@ -1174,7 +1196,7 @@ impl DocumentView {
             .password_prompt()
             .filter(|_| !self.import.busy())
         {
-            return self.password_card(card, prompt, window, cx);
+            return self.password_card(card, prompt, false, window, cx);
         }
         let Some(pages) = self.import.ocr_required().map(<[u32]>::to_vec) else {
             let cancelled = self.conversion_cancelled();
@@ -1511,6 +1533,33 @@ impl DocumentView {
 
     /// The preview pane without a page: progress, or one plain message with
     /// Retry only when another attempt can succeed.
+    /// The Original pane without a page: a locked PDF's password card, or
+    /// its status. While the conversion card asks for the password, the
+    /// Original only points there: one card asks at a time.
+    fn original_status(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        match self.preview.locked() {
+            Some(_) if self.import.password_prompt().is_some() || self.import.busy() => div()
+                .id("preview-status")
+                .max_w(px(360.))
+                .px_6()
+                .text_center()
+                .text_size(px(14.))
+                .child("Enter the document’s password on its card to see it here.")
+                .into_any_element(),
+            Some(prompt) => {
+                let card = ui::state_card("original-card", theme)
+                    .when(cfg!(test), |v| v.debug_selector(|| "original-card".into()))
+                    .max_w(px(420.));
+                div()
+                    .p_6()
+                    .child(self.password_card(card, prompt, true, window, cx))
+                    .into_any_element()
+            }
+            None => self.preview_status(theme),
+        }
+    }
+
     fn preview_status(&self, theme: Theme) -> gpui::AnyElement {
         if self.preview.loading() {
             return ui::activity("preview-activity", "Preparing preview…", theme)
@@ -2287,6 +2336,8 @@ impl Render for DocumentView {
         let show_original = self.preview.visible() && (!narrow_preview || self.original_selected);
         let show_markdown = !narrow_preview || !self.original_selected;
         self.panes_drawn.set((show_markdown, show_original));
+        let original_status = (show_original && self.preview.pdf().is_none())
+            .then(|| self.original_status(window, cx));
         // The conversion card states a conversion error itself, and the OCR
         // card its recognition error; a notice would only repeat it.
         let card_shows_error = self.lifecycle.source_only()
@@ -2393,9 +2444,9 @@ impl Render for DocumentView {
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
                 .when(show_original && self.preview.pdf().is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
-                    .child(self.preview_status(theme))))
+                    .children(original_status)))
                 .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).on_action(cx.listener(Self::next_comment)).on_action(cx.listener(Self::previous_comment)).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
-                    .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
+                    .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Enter its password to see it here.").into_any_element() } else { pdf.into_any_element() }))
                     .children(preview_notice)))
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice)

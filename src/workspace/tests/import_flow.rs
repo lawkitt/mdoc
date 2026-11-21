@@ -994,8 +994,14 @@ fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut 
         assert!(unlock.current_source().is_none(), "never the bytes");
     });
 
-    // The Original opens with the tab's password, from memory, and so does
-    // every reload, with the annotations' rail.
+    // The import reopened the Original with the tab's password, from
+    // memory, and every reload does, with the annotations' rail.
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None);
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
+    });
     for _ in 0..2 {
         tabs.update_in(cx, |_, window, cx| {
             view.update(cx, |view, cx| {
@@ -1056,4 +1062,85 @@ fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut 
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert_eq!(left, [source.file_name().unwrap()]);
+}
+
+/// A reopened tab has a locked PDF's Markdown and no password (#1024
+/// decision 6): its Original asks on its own card, says when a password is
+/// wrong, and opens in memory with the right one, which the tab then keeps
+/// for every later call.
+#[gpui::test]
+fn a_reopened_locked_pdf_s_original_asks_for_its_password(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Locked agreement.pdf");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/pdf-source/comments-aes128.pdf"),
+        &source,
+    )
+    .unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let view = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        let view = tabs.active_view().unwrap();
+        view.update(cx, |view, cx| view.open_pdf(source.clone(), window, cx));
+        view
+    });
+    cx.run_until_parked();
+    draw(cx);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).preview.locked()),
+        Some(crate::document_view::PasswordPrompt::Asking)
+    );
+    assert!(cx.debug_bounds("original-card").is_some());
+    let unlock = |password: &str, cx: &mut gpui::VisualTestContext| {
+        let field = cx.update(|_, cx| view.read(cx).password_field.clone());
+        field.update_in(cx, |field, _, cx| field.set_value(password.into(), cx));
+        view.update_in(cx, |view, window, cx| view.unlock_original(window, cx));
+        cx.run_until_parked();
+        draw(cx);
+    };
+    unlock("petrov-2026", cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(
+            view.preview.locked(),
+            Some(crate::document_view::PasswordPrompt::Wrong)
+        );
+        assert!(view.import.unlock().is_none());
+    });
+    unlock("Petrov-2026", cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None);
+        let pdf = view.preview.pdf().expect("the Original").read(cx);
+        assert!(pdf.is_loaded() && !pdf.is_locked());
+        assert!(
+            view.preview.comment_rail().is_some(),
+            "read with the password"
+        );
+        let unlock = view.import.unlock().expect("the tab keeps it");
+        assert_eq!(unlock.password().map(|p| p.expose()), Some("Petrov-2026"));
+        assert!(
+            view.password_field.read(cx).value().is_empty(),
+            "the field is wiped"
+        );
+    });
+    // A reload opens it with the kept password, without asking.
+    tabs.update_in(cx, |_, window, cx| {
+        view.update(cx, |view, cx| {
+            view.toggle_preview(window, cx);
+            view.toggle_preview(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.preview.locked(), None);
+        assert!(
+            view.preview
+                .pdf()
+                .is_some_and(|pdf| pdf.read(cx).is_loaded())
+        );
+    });
 }

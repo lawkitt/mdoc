@@ -3,7 +3,7 @@
 //! before deleting its temporary DOCX backing file.
 use crate::{
     comment_rail::CommentRail,
-    document_view::{Background, DocumentView},
+    document_view::{Background, DocumentView, PasswordPrompt},
     markdown_search,
     style::Theme,
     workspace,
@@ -141,9 +141,17 @@ pub(super) struct PreviewState {
     /// Reads a locked PDF's bytes for its page, which opens them in memory
     /// with the tab's password.
     locked_read: Option<gpui::Task<()>>,
+    /// The shown PDF is locked and the tab has no password that opens it:
+    /// the Original asks on its own card (#1024 decision 6).
+    locked: Option<PasswordPrompt>,
+    /// A password typed on the Original's card, tried by the current load:
+    /// the tab keeps it once the page opens with it.
+    trial: Option<import::Password>,
     /// A PDF whose annotations could not be read: its page keeps its own
     /// drawing of them, since no rail shows them.
-    unread_annotations: Option<PathBuf>,
+    /// Whether the read had a password: a locked PDF read without one
+    /// reads again once the tab has its password.
+    unread_annotations: Option<(PathBuf, bool)>,
     pending: Option<PendingPreview>,
     /// The current request shows the source as a PDF, whatever its name
     /// (an import found a PDF in a `.docx`): its annotations' rail shows
@@ -235,7 +243,11 @@ impl PreviewState {
         comments: Vec<Comment>,
         annotations: Vec<PdfAnnotation>,
     ) {
-        if self.unread_annotations.as_ref() == Some(&source.path) {
+        if self
+            .unread_annotations
+            .as_ref()
+            .is_some_and(|(path, _)| *path == source.path)
+        {
             self.unread_annotations = None;
         }
         // Past its limit the preview refuses the file, so none are kept;
@@ -453,6 +465,8 @@ impl PreviewState {
         self.cancel_job();
         self.annotation_read = None;
         self.locked_read = None;
+        self.locked = None;
+        self.trial = None;
         self.pending = None;
         self.generation = self.generation.wrapping_add(1);
         self.message = None;
@@ -475,6 +489,29 @@ impl PreviewState {
 
     fn is_current(&self, generation: u64) -> bool {
         self.loading && self.generation == generation
+    }
+
+    /// The PDF is locked and the tab has no password that opens it: the
+    /// Original asks for one with `prompt`, first or after a wrong one.
+    fn lock(&mut self, generation: u64, prompt: PasswordPrompt) -> bool {
+        if !self.is_current(generation) {
+            return false;
+        }
+        self.cancel_job();
+        self.pending = None;
+        self.loading = false;
+        self.queued = false;
+        self.retryable = false;
+        self.failed = false;
+        self.message = None;
+        self.locked = Some(prompt);
+        self.trial = None;
+        true
+    }
+
+    /// The Original asks for the shown PDF's password.
+    pub(super) fn locked(&self) -> Option<PasswordPrompt> {
+        self.locked
     }
 
     /// Ends the current request with one plain `message`; Retry shows only
@@ -796,7 +833,18 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         let theme = self.theme.clone();
-        let hide = self.preview.unread_annotations.as_ref() != Some(&path);
+        let hide = self
+            .preview
+            .unread_annotations
+            .as_ref()
+            .is_none_or(|(unread, _)| *unread != path);
+        let with_password = matches!(
+            source,
+            PdfSource::Bytes {
+                password: Some(_),
+                ..
+            }
+        );
         let pdf = cx.new(|cx| {
             PdfView::with_options(
                 source,
@@ -844,12 +892,22 @@ impl DocumentView {
                 };
                 this.preview.fail(generation, message.into(), retryable);
             } else if pdf.read(cx).is_locked() {
-                this.preview.fail(
-                    generation,
-                    "This PDF is password-protected. Open an unlocked copy to preview it.".into(),
-                    false,
-                );
+                // A password tried here and refused is a wrong one.
+                let prompt = if with_password {
+                    PasswordPrompt::Wrong
+                } else {
+                    PasswordPrompt::Asking
+                };
+                this.preview.lock(generation, prompt);
             } else if pdf.read(cx).is_loaded() {
+                // A password typed on the Original's card opened it: the tab
+                // keeps it, as it keeps one its import was unlocked with.
+                if let Some(password) = this.preview.trial.take() {
+                    this.import.keep_password(import::Unlock::Password {
+                        path: path.clone(),
+                        password,
+                    });
+                }
                 let region = this.comments_region.clone();
                 if this
                     .preview
@@ -889,6 +947,56 @@ impl DocumentView {
     pub(crate) fn pdf_password(&self, path: &Path) -> Option<import::Password> {
         let unlock = self.import.unlock()?;
         unlock.opens(path).then(|| unlock.password().cloned())?
+    }
+
+    /// Unlock on the Original's card: the field's text opens the locked PDF
+    /// shown, in memory, and is wiped from the field; the tab keeps it once
+    /// the page opens with it.
+    pub(crate) fn unlock_original(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self
+            .preview
+            .source
+            .clone()
+            .filter(|_| self.preview.locked().is_some())
+        else {
+            return;
+        };
+        let password = self
+            .password_field
+            .update(cx, |field, cx| field.take_secret(cx));
+        if password.is_empty() {
+            return;
+        }
+        // Another password: annotations a wrong one couldn't read, it may.
+        if self
+            .preview
+            .unread_annotations
+            .as_ref()
+            .is_some_and(|(unread, with_password)| *unread == path && *with_password)
+        {
+            self.preview.unread_annotations = None;
+        }
+        self.open_locked_pdf(path, import::Password::from(password), true, window, cx);
+    }
+
+    /// [`Self::open_pdf`] of the locked PDF at `path` with `password`: the
+    /// tab's, or one typed on the Original's card (`trial`), which the tab
+    /// keeps once the page opens with it.
+    fn open_locked_pdf(
+        &mut self,
+        path: PathBuf,
+        password: import::Password,
+        trial: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.begin_preview(path.clone());
+        self.preview.pdf_source = true;
+        if trial {
+            self.preview.trial = Some(password.clone());
+        }
+        self.read_annotations(path.clone(), Some(password.clone()), window, cx);
+        self.load_locked_pdf(path, password, window, cx);
     }
 
     /// The page of the locked PDF at `path`: its bytes read off-thread, then
@@ -941,9 +1049,11 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.preview.unread_annotations.as_ref() == Some(&path) {
+        let read_with = password.is_some();
+        if self.preview.unread_annotations == Some((path.clone(), read_with)) {
             return;
         }
+        let reopen_with = password.clone();
         let known = self.preview.imported_comments(&path);
         let read = cx.background_executor().spawn({
             let path = path.clone();
@@ -968,8 +1078,16 @@ impl DocumentView {
                     if let Some(task) = this.preview.annotation_read.take() {
                         task.detach();
                     }
-                    this.preview.unread_annotations = Some(path.clone());
-                    this.open_pdf(path, window, cx);
+                    this.preview.unread_annotations = Some((path.clone(), read_with));
+                    // Again with the password it was read with, so a typed
+                    // one still meets the page.
+                    match reopen_with {
+                        Some(password) => {
+                            let trial = this.preview.trial.is_some();
+                            this.open_locked_pdf(path, password, trial, window, cx);
+                        }
+                        None => this.open_pdf(path, window, cx),
+                    }
                     return;
                 };
                 this.preview.annotations = Some((path, annotations));
@@ -1322,7 +1440,7 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdf-source/comments.pdf");
         let (app, cx) = crate::document_view::tests::boot(cx);
         app.update_in(cx, |app, window, cx| {
-            app.preview.unread_annotations = Some(source.clone());
+            app.preview.unread_annotations = Some((source.clone(), false));
             app.open_pdf(source.clone(), window, cx);
         });
         cx.run_until_parked();
