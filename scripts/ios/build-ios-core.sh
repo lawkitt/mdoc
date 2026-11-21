@@ -14,8 +14,13 @@ source "$(dirname "$0")/../lib.sh"
 
 # Microsoft's iOS build of ONNX Runtime 1.27.0. Desktop and Android ship
 # 1.32.0 (#925), but download.onnxruntime.ai has no pod archive after 1.30.0;
-# the iOS app links its own copy, so the versions need not match.
-ort_url="https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.27.0.zip"
+# the iOS app links its own copy, so the versions need not match. Its CDN
+# name, download.onnxruntime.ai, served a certificate for another host on
+# 2026-11-21, so the Azure origin it points at follows as a fallback; the
+# checksum pins the bytes either way.
+ort_file="pod-archive-onnxruntime-c-1.27.0.zip"
+ort_urls=("https://download.onnxruntime.ai/$ort_file"
+  "https://onnxruntimepackages.z14.web.core.windows.net/$ort_file")
 ort_sha="8c74edd600eafc3055de9e8f7a9602afee44ed516913cb5e132bca02cc34622c"
 # PDFium 7988, the version desktop ships, from bblanchon/pdfium-binaries: no
 # static iOS build exists there, so it embeds as a framework.
@@ -32,16 +37,26 @@ deps=$out/deps
 rm -rf "$out/MdocCore.xcframework" "$out/pdfium.xcframework" "$out/swift" "$out/stage"
 mkdir -p "$deps" "$out/swift" "$out/stage"
 
-# fetch <url> <sha256> <file>: downloads unless a verified copy is there.
+# fetch <sha256> <file> <url>...: downloads unless a verified copy is there,
+# trying each URL in turn until one gives the pinned bytes.
 fetch() {
-  if ! [ -f "$3" ] || ! echo "$2  $3" | shasum -a 256 -c --status; then
-    curl --fail --silent --show-error --location --retry 3 --output "$3.part" "$1"
-    echo "$2  $3.part" | shasum -a 256 -c --status || die "$1 failed its checksum"
-    mv "$3.part" "$3"
+  local sha=$1 file=$2 url
+  shift 2
+  if [ -f "$file" ] && echo "$sha  $file" | shasum -a 256 -c --status; then
+    return
   fi
+  for url in "$@"; do
+    if curl --fail --silent --show-error --location --retry 3 --output "$file.part" "$url" &&
+      echo "$sha  $file.part" | shasum -a 256 -c --status; then
+      mv "$file.part" "$file"
+      return
+    fi
+    echo "warning: $url failed or did not match its checksum" >&2
+  done
+  die "no source gave $(basename "$file") with its pinned checksum"
 }
 
-fetch "$ort_url" "$ort_sha" "$deps/onnxruntime.zip"
+fetch "$ort_sha" "$deps/onnxruntime.zip" "${ort_urls[@]}"
 rm -rf "$deps/onnxruntime" && mkdir "$deps/onnxruntime"
 unzip -q "$deps/onnxruntime.zip" -d "$deps/onnxruntime"
 ort=$deps/onnxruntime/onnxruntime.xcframework
@@ -60,7 +75,7 @@ slice() {
   libtool -static -no_warning_for_no_symbols -o "$stage/lib/libMdocCore.a" \
     "target/$target/mobile/libmdoc_ffi.a" "$stage/onnxruntime.a"
 
-  fetch "$pdfium_base/$3" "$4" "$deps/$3"
+  fetch "$4" "$deps/$3" "$pdfium_base/$3"
   rm -rf "$stage/pdfium" && mkdir "$stage/pdfium"
   tar -xzf "$deps/$3" -C "$stage/pdfium"
   cp "$stage/pdfium/lib/libpdfium.dylib" "$stage/pdfium.framework/pdfium"
