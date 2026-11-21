@@ -15,7 +15,9 @@
 #   ios-ui   the slowest iOS UI shard's time on hosted macOS, per queue
 #            commit whose `ci/ios (ui N)` jobs all passed (or,
 #            before the second shard, whose single `ci/ios (ui)` did): median
-#            15 minutes or less;
+#            20 minutes or less (a job; its `Tests` step takes about 17 on
+#            `macos-26`, which the maintainer accepted over a test sweep,
+#            #1041);
 #   drops    queue drops not caused by the PR: at most 1 a week.
 #
 # A queue commit's class comes from the jobs its Queue run started (not
@@ -83,7 +85,7 @@ quarantine=${CI_STATS_QUARANTINE:-$(dirname "${BASH_SOURCE[0]}")/../../.config/q
 queue_min=${CI_STATS_QUEUE_MIN:-25}
 core_min=${CI_STATS_CORE_MIN:-30}
 desktop_min=${CI_STATS_DESKTOP_MIN:-15}
-ios_ui_min=${CI_STATS_IOS_UI_MIN:-15}
+ios_ui_min=${CI_STATS_IOS_UI_MIN:-20}
 drops_week=${CI_STATS_DROPS_WEEK:-1}
 drill=${CI_STATS_DRILL:-}
 # The repeat rule's reach either side of a drop.
@@ -104,10 +106,10 @@ repeat_s=$((14 * 86400))
 #   drops    the queue-speed and quarantine rollout
 target_start() { # target
   case "$1" in
-    core) echo pending ;;
+    core) echo 2026-11-21T16:45:12Z ;;
     desktop) echo 2026-11-13T07:07:50Z ;;
     queue) echo 2026-11-12T15:21:00Z ;;
-    ios-ui) echo pending ;;
+    ios-ui) echo 2026-11-21T16:45:12Z ;;
     drops) echo 2026-11-12T15:21:00Z ;;
     *) die "unknown target: $1" ;;
   esac
