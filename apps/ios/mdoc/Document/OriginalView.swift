@@ -23,8 +23,10 @@ struct OriginalView: View {
     var onDarkPageOn: () -> Void = {}
     /// A locked PDF, unlocked in memory (`DocumentViewModel.unlockedOriginal`).
     var unlockedPDF: PDFDocument?
-    /// When import needs a password, its card takes the place of the page.
+    /// The import's password prompt takes the place of the page.
     var importPrompt: DocumentViewModel.PasswordPrompt?
+    /// The pane hosts the card when it covers Text and import isn't running.
+    var importCardInPane = false
     var onImportUnlock: @MainActor (String) async -> Void = { _ in }
     /// The pane's own card unlocks a locked PDF; false for a wrong password.
     var onUnlockPDF: @MainActor (String) -> Bool = { _ in false }
@@ -48,8 +50,11 @@ struct OriginalView: View {
     var body: some View {
         Group {
             if let importPrompt {
-                OriginalPasswordCard(
-                    prompt: importPrompt, purpose: .importing, waits: jobRuns, unlock: onImportUnlock)
+                if importCardInPane {
+                    OriginalPasswordCard(prompt: importPrompt, purpose: .importing, unlock: onImportUnlock)
+                } else {
+                    ContentUnavailableView("This document is password-protected", systemImage: "lock")
+                }
             } else {
                 page
             }
@@ -87,9 +92,7 @@ struct OriginalView: View {
                 systemImage: "doc.plaintext",
                 description: Text("Pasted text shows its text only."))
         case .pdf(let url):
-            PDFOriginal(
-                url: url, unlocked: unlockedPDF, waits: jobRuns, importPending: importPending,
-                unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
+            PDFOriginal(url: url, unlocked: unlockedPDF, unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
         case .docx(let url):
             DocxOriginalView(
                 source: url, unlocked: $unlockedDocx, importPending: importPending, waits: jobRuns,
@@ -115,8 +118,6 @@ struct OriginalView: View {
 private struct PDFOriginal: View {
     let url: URL
     let unlocked: PDFDocument?
-    let waits: Bool
-    let importPending: Bool
     let unlock: @MainActor (String) -> Bool
     let viewport: PageViewport
     let darkPage: Bool
@@ -131,7 +132,7 @@ private struct PDFOriginal: View {
     var body: some View {
         Group {
             if document?.isLocked == true {
-                OriginalPasswordCard(prompt: prompt, waits: waits, importPending: importPending) { password in
+                OriginalPasswordCard(prompt: prompt) { password in
                     if !unlock(password) { prompt = .wrong }
                 }
             } else {

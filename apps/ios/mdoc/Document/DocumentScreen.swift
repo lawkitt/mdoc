@@ -192,6 +192,7 @@ struct DocumentScreen: View {
             activeComment: model.commentSheet?.thread?.id,
             onOpenComment: openComment, onDarkPageOn: darkPageToast,
             unlockedPDF: model.unlockedOriginal, importPrompt: model.passwordPrompt,
+            importCardInPane: model.originalCoversText && model.runningJob == nil,
             onImportUnlock: model.importUnlockAction, onUnlockPDF: model.pdfUnlockAction)
     }
 
@@ -653,10 +654,7 @@ struct DocumentScreen: View {
                 noticeLabel(notice)
             }
             if let prompt = model.passwordPrompt, model.runningJob == nil {
-                // The Original pane hosts this card whenever it is visible.
-                if !originalShows {
-                    PasswordCard(prompt: prompt, unlock: model.importUnlockAction)
-                }
+                PasswordCard(prompt: prompt, unlock: model.importUnlockAction)
             } else if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {
                 // The card's download, of the model this job needs, is the
                 // one prominent button; Not now brings Find names back.
