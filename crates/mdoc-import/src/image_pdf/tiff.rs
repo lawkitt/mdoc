@@ -464,6 +464,22 @@ fn decoded(decoder: &mut TiffDecoder, width: u32, height: u32) -> Result<Page, I
         }
         (1, stride)
     };
+    // The common case, 8-bit gray or RGB without alpha as the decoder lays
+    // it out interleaved, is the image as it is.
+    if layout.planes == 1
+        && stride == usize::from(colors)
+        && alpha == Alpha::None
+        && matches!(model, Model::Gray | Model::Rgb)
+        && let Values::U8(mut samples) = values
+    {
+        samples.truncate(pixels * stride);
+        let image = if let Model::Gray = model {
+            image::GrayImage::from_raw(width, height, samples).map(image::DynamicImage::ImageLuma8)
+        } else {
+            image::RgbImage::from_raw(width, height, samples).map(image::DynamicImage::ImageRgb8)
+        };
+        return super::encode(image.ok_or(ImageError::Unreadable)?, 1, false);
+    }
     // Sample `index` of `pixel`: planes one after another, or interleaved.
     let sample = |pixel: usize, index: usize| values.get(index * plane + pixel * stride);
     let opacity = |pixel| {
