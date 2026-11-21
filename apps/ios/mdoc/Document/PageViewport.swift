@@ -5,19 +5,24 @@ import UIKit
 /// The Original's one control: back to fit once zoomed, or back to the
 /// first page once past it at fit.
 enum PageControl: Equatable {
+    /// Zoomed in: shrink back to fit.
     case fit
+    /// Below fit, which zoom never allows, after a fit gone stale: grow
+    /// back to fit (#1036).
+    case grow
     case top
 
     var symbol: String {
         switch self {
         case .fit: "arrow.down.right.and.arrow.up.left"
+        case .grow: "arrow.up.left.and.arrow.down.right"
         case .top: "arrow.up"
         }
     }
 
     var label: LocalizedStringKey {
         switch self {
-        case .fit: "Fit page"
+        case .fit, .grow: "Fit page"
         case .top: "Back to top"
         }
     }
@@ -94,7 +99,8 @@ final class FittingPDFView: PDFView {
     static let doubleTapZoom: CGFloat = 2
 
     var onControl: (PageControl?) -> Void = { _ in }
-    private var fittedWidth: CGFloat = 0
+    private var fittedSize: CGSize = .zero
+    private weak var fittedDocument: PDFDocument?
     private var fit: CGFloat = 0
     private var shownControl: PageControl??
     private var scrollObservation: NSKeyValueObservation?
@@ -120,8 +126,19 @@ final class FittingPDFView: PDFView {
         super.layoutSubviews()
         takeOverDoubleTap()
         observeScrolling()
-        guard bounds.width > 0, bounds.width != fittedWidth, document != nil else { return }
-        fittedWidth = bounds.width
+        // Fit again whenever it may have gone stale: a new width, a new
+        // height (a bar came or went as the pane appeared), a document
+        // set after the first layout. A fit taken mid-change left a long
+        // DOCX at half the width, below the fit zoom can't go under (#1036).
+        guard bounds.width > 0, bounds.height > 0, let document,
+              bounds.size != fittedSize || document !== fittedDocument else { return }
+        // A new height alone keeps a reader's zoom: only a page at fit or
+        // under it fits again.
+        let zoomedIn = fit > 0 && (scaleFactor - fit) / fit > Self.fitTolerance
+        let refit = bounds.width != fittedSize.width || document !== fittedDocument || !zoomedIn
+        fittedSize = bounds.size
+        fittedDocument = document
+        guard refit else { return }
         // The page the reader was on, and the point of it at the view's top:
         // PDFKit's destinations land mid-page after a new scale, so the
         // scroll offset puts that point back at the top (hiding the iPad's
@@ -159,6 +176,11 @@ final class FittingPDFView: PDFView {
         fit > 0 && abs(scaleFactor - fit) / fit > Self.fitTolerance
     }
 
+    /// More than 2% under fit: a stale fit's doing, never a pinch's.
+    var isBelowFit: Bool {
+        fit > 0 && (fit - scaleFactor) / fit > Self.fitTolerance
+    }
+
     /// At fit, the first page's end is above the view's top.
     var isPastFirstPage: Bool {
         guard let first = document?.page(at: 0) else { return false }
@@ -168,7 +190,7 @@ final class FittingPDFView: PDFView {
 
     func perform(_ control: PageControl) {
         switch control {
-        case .fit: zoomToFit()
+        case .fit, .grow: zoomToFit()
         case .top: scrollToTop()
         }
     }
@@ -233,7 +255,7 @@ final class FittingPDFView: PDFView {
     }
 
     @objc private func viewportChanged() {
-        let control: PageControl? = isZoomed ? .fit : isPastFirstPage ? .top : nil
+        let control: PageControl? = isBelowFit ? .grow : isZoomed ? .fit : isPastFirstPage ? .top : nil
         guard shownControl != .some(control) else { return }
         shownControl = .some(control)
         onControl(control)

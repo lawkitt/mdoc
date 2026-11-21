@@ -15,11 +15,44 @@ struct OriginalView: View {
     /// The comment sheet's thread, and opening it (`DocxOriginalView`).
     var activeComment: String?
     var onOpenComment: (String) -> Void = { _ in }
+    /// Dark page was turned on from its hint, for a toast saying where the
+    /// toggle lives.
+    var onDarkPageOn: () -> Void = {}
     @State private var viewport = PageViewport()
     @State private var bottomInset: CGFloat = 0
+    @Environment(\.preferences) private var preferences
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var dark: DarkPageState {
+        DarkPageState(preference: preferences.darkPage, colorScheme: colorScheme)
+    }
+
+    /// The Dark page hint: the app dark, a page to darken, the page still
+    /// light (dark already, it has nothing to teach), and the hints'
+    /// one-at-a-time rule letting it show.
+    private var hintShows: Bool {
+        dark.offered && !preferences.darkPage && original != .none
+            && Hints.shared.teachable.contains(.darkPage)
+    }
 
     var body: some View {
         page
+            .overlay(alignment: .bottom) {
+                ZStack {
+                    if hintShows {
+                        DarkPageHintCapsule(
+                            onTurnOn: {
+                                preferences.darkPage = true
+                                ReviewHint.darkPage.learn()
+                                onDarkPageOn()
+                            },
+                            onClose: { Hints.shared.learn(.darkPage, closed: true) })
+                        .padding(Space.m)
+                        .padding(.bottom, reachesBottom ? bottomInset : 0)
+                    }
+                }
+                .animation(Motion.snappy, value: hintShows)
+            }
             // The page goes under the home indicator; its control stays
             // above it.
             .environment(\.pageControlInset, reachesBottom ? bottomInset : 0)
@@ -38,16 +71,17 @@ struct OriginalView: View {
                 description: Text("Pasted text shows its text only."))
         case .pdf(let url):
             PDFKitView(url: url, viewport: viewport)
+                .darkPage(dark.isOn)
                 .accessibilityLabel(Text("Original PDF"))
                 .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
         case .docx(let url):
             DocxOriginalView(
-                source: url, waits: jobRuns, onComments: onComments, activeComment: activeComment,
-                onOpenComment: onOpenComment)
+                source: url, waits: jobRuns, darkPage: dark.isOn, onComments: onComments,
+                activeComment: activeComment, onOpenComment: onOpenComment)
         case .images(let urls):
             TabView {
                 ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
-                    ZoomablePage(url: url)
+                    ZoomablePage(url: url, darkPage: dark.isOn)
                         .accessibilityLabel(Text("Original page \(index + 1) of \(urls.count)"))
                 }
             }
@@ -84,10 +118,12 @@ struct PDFKitView: UIViewRepresentable {
 /// turned sideways has no "top" to go back to.
 private struct ZoomablePage: View {
     let url: URL
+    let darkPage: Bool
     @State private var viewport = PageViewport()
 
     var body: some View {
         ZoomableImageView(url: url, viewport: viewport)
+            .darkPage(darkPage)
             .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
     }
 }
@@ -119,7 +155,9 @@ struct ZoomableImageView: UIViewRepresentable {
             image.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
             image.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
             image.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
-            image.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
+            // At least the view's height, so a wide page sits in its middle;
+            // a tall one grows past it (`fitWidth`) and scrolls.
+            image.heightAnchor.constraint(greaterThanOrEqualTo: scroll.frameLayoutGuide.heightAnchor),
         ])
         context.coordinator.imageView = image
         context.coordinator.viewport = viewport
@@ -133,7 +171,9 @@ struct ZoomableImageView: UIViewRepresentable {
     func updateUIView(_ scroll: UIScrollView, context: Context) {
         guard context.coordinator.url != url else { return }
         context.coordinator.url = url
-        context.coordinator.imageView?.image = UIImage(contentsOfFile: url.path)
+        let image = UIImage(contentsOfFile: url.path)
+        context.coordinator.imageView?.image = image
+        context.coordinator.fitWidth(image)
         scroll.zoomScale = 1
     }
 
@@ -141,6 +181,20 @@ struct ZoomableImageView: UIViewRepresentable {
         var imageView: UIImageView?
         var url: URL?
         weak var viewport: PageViewport?
+        private var ratio: NSLayoutConstraint?
+
+        /// Zoom 1 is the page at the view's width, as a PDF's fit is: a
+        /// tall scan or receipt is never smaller than the width (#1036).
+        func fitWidth(_ image: UIImage?) {
+            ratio?.isActive = false
+            ratio = nil
+            guard let imageView, let image, image.size.width > 0 else { return }
+            let constraint = imageView.heightAnchor.constraint(
+                equalTo: imageView.widthAnchor, multiplier: image.size.height / image.size.width)
+            constraint.priority = .defaultHigh
+            constraint.isActive = true
+            ratio = constraint
+        }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             imageView
