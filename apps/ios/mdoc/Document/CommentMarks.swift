@@ -1,6 +1,7 @@
 import Foundation
 import MdocFFI
 import PDFKit
+import Synchronization
 
 /// The core's PDF reader for a rendered DOCX original: the link
 /// annotations to `mdoc-comment:` that mark each comment's passage, in
@@ -9,7 +10,17 @@ import PDFKit
 final class CommentMarks: MdocFFI.CommentMarkReader, Sendable {
     static let scheme = "mdoc-comment:"
 
+    private let receivedPDF = Mutex<Data?>(nil)
+
+    /// Reuse the bytes delivered for comment placement when opening the page.
+    var renderedPDF: Data? { receivedPDF.withLock { $0 } }
+
     func commentMarks(pdf: Data) -> [CommentMark] {
+        receivedPDF.withLock { $0 = pdf }
+        return autoreleasepool { Self.readMarks(pdf) }
+    }
+
+    private static func readMarks(_ pdf: Data) -> [CommentMark] {
         guard let document = PDFDocument(data: pdf) else { return [] }
         var marks: [CommentMark] = []
         for index in 0..<document.pageCount {

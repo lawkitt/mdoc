@@ -71,11 +71,11 @@ struct DocxOriginalView: View {
         let current = UUID()
         request = current
         rendering = .working
-        let result = await RenderedDocx.render(source, unlocked: unlocked, password: password)
+        let (result, newUnlock) = await RenderedDocx.render(source, unlocked: unlocked, password: password)
         guard !Task.isCancelled, request == current else { return }
         rendering = result
         if case .ready(let rendered) = result {
-            if let source = rendered.unlocked { unlocked = source }
+            if let newUnlock { unlocked = newUnlock }
             onComments(rendered.comments)
         }
     }
@@ -129,29 +129,30 @@ final class RenderedDocx: Sendable {
     let source: URL
     let pdf: Data
     let comments: DocxComments
-    let unlocked: UnlockedDocx?
 
-    private init(original: DocxOriginal, source: URL) {
+    private init(original: DocxOriginal, source: URL, pdf: Data) {
         self.source = source
-        pdf = original.pdfBytes()
+        self.pdf = pdf
         comments = DocxComments(comments: original.comments(), anchors: original.anchors())
-        unlocked = original.unlockedSource()
     }
 
     static func render(
         _ source: URL, unlocked: UnlockedDocx? = nil, password: String? = nil
-    ) async -> DocxOriginalView.Rendering {
+    ) async -> (rendering: DocxOriginalView.Rendering, unlocked: UnlockedDocx?) {
         await Task.detached(priority: .userInitiated) {
             do {
                 let input = try unlocked.map { DocxInput.unlocked(source: $0) } ?? .file(
                     bytes: readSource(source), password: password)
-                let original = try DocxOriginal.render(input: input, marks: CommentMarks())
-                return .ready(RenderedDocx(original: original, source: source))
+                let marks = CommentMarks()
+                let original = try DocxOriginal.render(input: input, marks: marks)
+                // The callback only runs for a document with marks to place.
+                let pdf = marks.renderedPDF ?? original.pdfBytes()
+                return (.ready(RenderedDocx(original: original, source: source, pdf: pdf)), original.unlockedSource())
             } catch {
                 switch CoreError(error) {
-                case .needsPassword: return .password(.needed)
-                case .wrongPassword: return .password(.wrong)
-                case let failure: return .failed(failure.localizedDescription)
+                case .needsPassword: return (.password(.needed), nil)
+                case .wrongPassword: return (.password(.wrong), nil)
+                case let failure: return (.failed(failure.localizedDescription), nil)
                 }
             }
         }.value

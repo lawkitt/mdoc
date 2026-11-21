@@ -181,7 +181,7 @@ mod tests {
     fn a_docx_counts_its_comments_when_the_app_has_no_original_pane() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/import/handmade-comments.docx");
-        let mut imported = mdoc_import::import::prepare_cancellable(
+        let imported = mdoc_import::import::prepare_cancellable(
             &path,
             None,
             None,
@@ -191,11 +191,6 @@ mod tests {
         .unwrap();
         assert!(!imported.comments.is_empty());
         let counted = |line: Option<String>| line.is_some_and(|line| line.contains("not shown"));
-        assert_eq!(
-            counted(ImportNote::of(&imported).left_out),
-            cfg!(target_os = "android")
-        );
-        imported.decrypted = true;
         assert_eq!(
             counted(ImportNote::of(&imported).left_out),
             cfg!(target_os = "android")

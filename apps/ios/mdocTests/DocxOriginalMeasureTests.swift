@@ -32,7 +32,7 @@ final class DocxOriginalMeasureTests: XCTestCase {
             defer { _ = sampler.stop() }
             let clock = ContinuousClock()
             let started = clock.now
-            let result = await RenderedDocx.render(source)
+            let result = await RenderedDocx.render(source).rendering
             guard case .ready(let rendered) = result else {
                 XCTFail("The Original did not render: \(result)")
                 return

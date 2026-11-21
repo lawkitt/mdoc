@@ -1600,15 +1600,25 @@ mod tests {
     #[cfg(not(target_os = "android"))]
     #[test]
     fn a_locked_docx_original_leaves_the_temp_folder_empty() {
-        use crate::original::{CommentMark, CommentMarkReader, DocxInput, DocxOriginal};
+        use crate::original::{CommentMark, CommentMarkReader, DocxInput, DocxOriginal, PageRect};
 
         const CHILD: &str = "MDOC_FFI_LOCKED_ORIGINAL_TEST";
+        const FIXTURE: &str = "MDOC_FFI_LOCKED_ORIGINAL_FIXTURE";
         if std::env::var_os(CHILD).is_some() {
             struct Marks;
             impl CommentMarkReader for Marks {
                 fn comment_marks(&self, pdf: Vec<u8>) -> Vec<CommentMark> {
                     assert!(pdf.starts_with(b"%PDF-"));
-                    Vec::new()
+                    vec![CommentMark {
+                        page: 0,
+                        rect: PageRect {
+                            x: 0.1,
+                            y: 0.1,
+                            w: 0.2,
+                            h: 0.02,
+                        },
+                        target: "0".into(),
+                    }]
                 }
             }
 
@@ -1616,7 +1626,20 @@ mod tests {
                 std::env::temp_dir(),
                 Path::new(&std::env::var_os("TMPDIR").unwrap())
             );
-            let fixture = fixture("locked-office/word-locked.docx");
+            let fixture = std::env::var(FIXTURE).unwrap();
+            let check_original = |original: &DocxOriginal| {
+                assert!(original.pdf_bytes().starts_with(b"%PDF-"));
+                let anchor = &original.anchors()[0];
+                assert_eq!(anchor.id, "0");
+                assert_eq!(anchor.page, 0);
+                assert_eq!(anchor.rects[0].x, 0.1);
+                assert!(
+                    std::fs::read_dir(std::env::temp_dir())
+                        .unwrap()
+                        .next()
+                        .is_none()
+                );
+            };
             let session = DocumentSession::new();
             session
                 .import_file(
@@ -1634,13 +1657,8 @@ mod tests {
             assert!(session.take_unlocked_docx().is_none());
             let original =
                 DocxOriginal::render(DocxInput::Unlocked { source }, Box::new(Marks)).unwrap();
-            assert!(original.pdf_bytes().starts_with(b"%PDF-"));
-            assert!(
-                std::fs::read_dir(std::env::temp_dir())
-                    .unwrap()
-                    .next()
-                    .is_none()
-            );
+            check_original(&original);
+            assert!(original.unlocked_source().is_none());
 
             let render_reopened = |password: Option<String>| {
                 DocxOriginal::render(
@@ -1660,17 +1678,19 @@ mod tests {
                 Err(CoreError::WrongPassword)
             ));
             let original = render_reopened(Some(PASSWORD.into())).unwrap();
-            assert!(original.pdf_bytes().starts_with(b"%PDF-"));
+            check_original(&original);
             assert!(original.unlocked_source().is_some());
-            assert!(
-                std::fs::read_dir(std::env::temp_dir())
-                    .unwrap()
-                    .next()
-                    .is_none()
-            );
             return;
         }
 
+        let input = Scratch::new();
+        let encrypted = input.path().join("comments.docx");
+        let plain = std::fs::read(fixture("docx-preview/comments.docx")).unwrap();
+        std::fs::write(
+            &encrypted,
+            craft_offcrypto::encrypt_with_spin_count(&plain, PASSWORD, 1000).unwrap(),
+        )
+        .unwrap();
         let empty = Scratch::new();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -1679,6 +1699,7 @@ mod tests {
                 "--nocapture",
             ])
             .env(CHILD, "1")
+            .env(FIXTURE, encrypted)
             .env("TMPDIR", empty.path())
             .env("TEMP", empty.path())
             .env("TMP", empty.path())

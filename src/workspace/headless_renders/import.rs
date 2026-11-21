@@ -261,7 +261,6 @@ fn photo(d: &mut Driver) -> Result<()> {
             is_pdf: true,
             is_docx: false,
             is_image: true,
-            decrypted: false,
         };
         d.change(|w, window, cx| {
             w.new_tab(window, cx);
@@ -308,7 +307,6 @@ fn fax(d: &mut Driver) -> Result<()> {
         is_pdf: true,
         is_docx: false,
         is_image: true,
-        decrypted: false,
     };
     let view = d.change(|w, window, cx| {
         w.new_tab(window, cx);

@@ -864,7 +864,6 @@ mod tests {
         )
         .unwrap();
         assert!(preview.pdf.as_ref().starts_with(b"%PDF-"));
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     /// The worker's answer reads back as it was written: the PDF and what

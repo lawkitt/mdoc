@@ -147,7 +147,6 @@ private struct PDFOriginal: View {
             }
         }
     }
-
 }
 
 struct PDFKitView: UIViewRepresentable {

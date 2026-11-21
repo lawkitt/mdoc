@@ -4681,6 +4681,7 @@ dependencies = [
 name = "mdoc-ffi"
 version = "0.1.0"
 dependencies = [
+ "craft-offcrypto",
  "mdoc-detect",
  "mdoc-editor-core",
  "mdoc-history",

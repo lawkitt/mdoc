@@ -106,9 +106,6 @@ pub struct Imported {
     /// The source is an image, imported as the PDF the image builder made
     /// of it: `source` holds that PDF's bytes, which the Original shows.
     pub is_image: bool,
-    /// The file was password-protected and this import unlocked it in
-    /// memory.
-    pub decrypted: bool,
 }
 
 /// A document's bytes, read from its file once: the import converts them,
@@ -897,7 +894,6 @@ fn import_opening(
         .path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
-    let decrypted = source.unlocked();
     // Comments never reach the Markdown: AnyDoc reports them beside it, read
     // (DOCX, ODT, RTF) or only counted (DOC, PPTX, XLSX, ODS, ODP), and the
     // left-out line says how many.
@@ -940,7 +936,6 @@ fn import_opening(
         is_pdf: false,
         is_docx,
         is_image: false,
-        decrypted,
     })
 }
 
@@ -1120,7 +1115,6 @@ fn convert_pdf(
         is_pdf: true,
         is_docx: false,
         is_image: false,
-        decrypted: false,
     })
 }
 
@@ -1501,7 +1495,7 @@ mod tests {
         const PASSWORD: &str = "Пароль-2026";
         for name in ["text.docx", "sheet.xlsx", "handmade-comments.pptx"] {
             let unlocked = convert(&fixture(name)).unwrap();
-            assert!(!unlocked.decrypted, "{name}");
+            assert!(!unlocked.source.unlocked(), "{name}");
             let plain = std::fs::read(fixture(name)).unwrap();
             for (scheme, locked) in [
                 (
@@ -1536,7 +1530,7 @@ mod tests {
                     "{case}"
                 );
                 let imported = import(Some(PASSWORD)).unwrap();
-                assert!(imported.decrypted && imported.source.unlocked(), "{case}");
+                assert!(imported.source.unlocked(), "{case}");
                 assert_eq!(imported.markdown, unlocked.markdown, "{case}");
                 assert_eq!(imported.left_out, unlocked.left_out, "{case}");
                 assert_eq!(imported.comments, unlocked.comments, "{case}");
@@ -1602,7 +1596,10 @@ mod tests {
             );
             let imported = import(&locked, Some(PASSWORD)).unwrap();
             let open = import(&format!("{app}-open.{extension}"), None).unwrap();
-            assert!(imported.decrypted && !open.decrypted, "{locked}");
+            assert!(
+                imported.source.unlocked() && !open.source.unlocked(),
+                "{locked}"
+            );
             assert!(
                 imported.markdown.contains("Petrov"),
                 "{locked}: {}",
@@ -1626,7 +1623,10 @@ mod tests {
             );
             let imported = import(&doc, Some(PASSWORD)).unwrap();
             let open = import(&format!("{app}-open.doc"), None).unwrap();
-            assert!(imported.decrypted && !open.decrypted, "{doc}");
+            assert!(
+                imported.source.unlocked() && !open.source.unlocked(),
+                "{doc}"
+            );
             assert!(
                 imported.markdown.contains("Petrov"),
                 "{doc}: {}",
@@ -1651,7 +1651,7 @@ mod tests {
                 &AtomicBool::new(false),
             )
             .unwrap();
-            assert!(!imported.decrypted, "{name}");
+            assert!(!imported.source.unlocked(), "{name}");
             assert_eq!(
                 imported.markdown,
                 convert(&fixture(name)).unwrap().markdown,
@@ -1740,7 +1740,7 @@ mod tests {
             for _ in 0..2 {
                 let imported = run(&mut unlock, &path).unwrap();
                 assert_eq!(imported.markdown, expected, "{name}");
-                assert!(imported.decrypted, "{name}");
+                assert!(imported.source.unlocked(), "{name}");
                 let again = unlock
                     .as_ref()
                     .and_then(Unlock::current_source)
@@ -2676,7 +2676,7 @@ EMC\n";
             assert_eq!(imported.markdown, open.markdown, "{name}");
             assert_eq!(imported.left_out, open.left_out, "{name}");
             assert_eq!(imported.annotations, open.annotations, "{name}");
-            assert!(imported.is_pdf && !imported.decrypted, "{name}");
+            assert!(imported.is_pdf && !imported.source.unlocked(), "{name}");
         }
         let owner_only = import_with(&pdf_source("comments-owner-only.pdf"), None).unwrap();
         assert_eq!(owner_only.markdown, open.markdown);

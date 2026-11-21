@@ -113,16 +113,16 @@ impl DocxOriginal {
         marks: Box<dyn CommentMarkReader>,
     ) -> Result<Arc<Self>, CoreError> {
         let _one = RENDER.lock().unwrap_or_else(|e| e.into_inner());
-        let source = match input {
+        let (source, opened_file) = match input {
             DocxInput::File { bytes, password } => {
                 let password = password.map(Password::new);
                 let source = Source::new("original.docx".into(), None, bytes);
                 if source.bytes().len() as u64 > docx_preview::MAX_INPUT_BYTES {
                     return Err(render_error(PreviewError::InputTooLarge, &source));
                 }
-                source.unlock(password.as_ref())?
+                (source.unlock(password.as_ref())?, true)
             }
-            DocxInput::Unlocked { source } => source.0.clone(),
+            DocxInput::Unlocked { source } => (source.0.clone(), false),
         };
         // Phones offer no hidden-text toggle: the page is as Word prints it.
         let preview = catch_unwind(AssertUnwindSafe(|| {
@@ -153,7 +153,7 @@ impl DocxOriginal {
         .map_err(|error| render_error(error, &source))?;
         Ok(Arc::new(Self {
             preview,
-            unlocked: source.unlocked().then(|| UnlockedDocx::new(source)),
+            unlocked: (opened_file && source.unlocked()).then(|| UnlockedDocx::new(source)),
         }))
     }
 
@@ -214,9 +214,8 @@ impl DocxOriginal {
 fn render_error(error: PreviewError, source: &Source) -> CoreError {
     let mut message = error.to_string();
     // The Original normally shows comments omitted from the Markdown.
-    // If an ordinary DOCX can't draw, its failure still gives their count.
-    if !source.unlocked()
-        && !matches!(error, PreviewError::InputTooLarge)
+    // If a DOCX can't draw, its failure still gives their count.
+    if !matches!(error, PreviewError::InputTooLarge)
         && let Some(count) = mdoc_import::import::source_comments_not_shown(source)
     {
         message.push('\n');
@@ -270,12 +269,23 @@ mod tests {
 
     #[test]
     fn an_ordinary_docx_that_cannot_render_still_counts_its_comments() {
-        let result = render(
-            include_bytes!("../../../tests/fixtures/import/handmade-hidden-content.docx").to_vec(),
-        );
-        assert!(
-            matches!(result, Err(CoreError::Import { message }) if message.contains("2 comments not shown."))
-        );
+        let plain = include_bytes!("../../../tests/fixtures/import/handmade-hidden-content.docx");
+        let counts_comments = |result: Result<Arc<DocxOriginal>, CoreError>| {
+            assert!(
+                matches!(result, Err(CoreError::Import { message }) if message.contains("2 comments not shown."))
+            );
+        };
+        counts_comments(render(plain.to_vec()));
+
+        let password = "fictional-pass";
+        let bytes = craft_offcrypto::encrypt_with_spin_count(plain, password, 1000).unwrap();
+        counts_comments(DocxOriginal::render(
+            DocxInput::File {
+                bytes,
+                password: Some(password.into()),
+            },
+            Box::new(OneMark),
+        ));
     }
 
     #[test]
