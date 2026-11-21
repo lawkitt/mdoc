@@ -1443,16 +1443,10 @@ mod kept_copy {
             let strip = out.len() as u32;
             out.extend_from_slice(&pixels(page));
             // The EXIF and GPS blocks, which the page's directory points at.
-            let (exif, _) = write_ifd(
-                &mut out,
-                &vec![(0x9003, 2, ascii("2031:03:14 09:26:53"))],
-            );
+            let (exif, _) = write_ifd(&mut out, &vec![(0x9003, 2, ascii("2031:03:14 09:26:53"))]);
             let (gps, _) = write_ifd(
                 &mut out,
-                &vec![
-                    (0x0001, 2, ascii("N")),
-                    (0x0002, 5, LATITUDE.to_vec()),
-                ],
+                &vec![(0x0001, 2, ascii("N")), (0x0002, 5, LATITUDE.to_vec())],
             );
             let mut entries: Entries = vec![
                 (256, 4, long(width)),
@@ -1497,7 +1491,10 @@ mod kept_copy {
         let mut decoder = ::tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
         let mut pages = Vec::new();
         loop {
-            let orientation = decoder.find_tag(Tag::Orientation).unwrap().map(|value| value.into_u32().unwrap());
+            let orientation = decoder
+                .find_tag(Tag::Orientation)
+                .unwrap()
+                .map(|value| value.into_u32().unwrap());
             let DecodingResult::U8(pixels) = decoder.read_image().unwrap() else {
                 panic!("8-bit pages");
             };
@@ -1518,12 +1515,12 @@ mod kept_copy {
         assert!(contains(&tagged, LATITUDE.as_slice()) && contains(&tagged, b"FictionalCam"));
         let kept = without_metadata(&tagged).unwrap();
         assert_no_metadata(&kept);
-        for needle in [
-            b"Model F1".as_slice(),
-            b"2031:03:14",
-            b"Ann Fictive",
-        ] {
-            assert!(!contains(&kept, needle), "{}", String::from_utf8_lossy(needle));
+        for needle in [b"Model F1".as_slice(), b"2031:03:14", b"Ann Fictive"] {
+            assert!(
+                !contains(&kept, needle),
+                "{}",
+                String::from_utf8_lossy(needle)
+            );
         }
         let (before, after) = (tiff_pages(&tagged), tiff_pages(&kept));
         assert_eq!(after.len(), 2);
@@ -1532,7 +1529,12 @@ mod kept_copy {
         // The builder makes the same pages of it.
         let pages = |bytes: &[u8]| {
             let pdf = build(&[bytes], DEFAULT_DPI).unwrap();
-            (pdf.pages, String::from_utf8_lossy(&pdf.pdf).matches("/MediaBox").count())
+            (
+                pdf.pages,
+                String::from_utf8_lossy(&pdf.pdf)
+                    .matches("/MediaBox")
+                    .count(),
+            )
         };
         assert_eq!(pages(&kept), pages(&tagged));
         assert_eq!(pages(&kept).0, 2);
@@ -1559,7 +1561,8 @@ mod kept_copy {
     #[test]
     #[ignore = "writes a committed fixture"]
     fn write_tagged_tiff_fixture() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tiff/tagged-gps.tif");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tiff/tagged-gps.tif");
         std::fs::write(path, tagged_tiff()).unwrap();
     }
 }

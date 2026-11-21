@@ -232,7 +232,10 @@ impl Directory {
             }
             let entry = self.entries.iter_mut().find(|entry| entry.tag == offsets)?;
             entry.kind = 4;
-            entry.value = moved.iter().flat_map(|&offset| order.u32_bytes(offset)).collect();
+            entry.value = moved
+                .iter()
+                .flat_map(|&offset| order.u32_bytes(offset))
+                .collect();
         }
         // Values that don't fit in their entry go before the directory.
         let mut placed = Vec::with_capacity(self.entries.len());
