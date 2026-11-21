@@ -1,5 +1,6 @@
 //! Conversion boundary for AnyDoc and PDF extraction. Conversion performs no writes.
 use crate::comments::Comment;
+use crate::image_pdf::{self, ImageFormat};
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -12,13 +13,16 @@ use std::{
 /// Whether a file dragged from the OS looks openable by its extension alone;
 /// drag feedback cannot afford `supported_source`'s content reads.
 pub fn supported_extension(path: &Path) -> bool {
-    mdoc_store::document::is_markdown(path) || anydoc::Format::from_path(path).is_some()
+    mdoc_store::document::is_markdown(path)
+        || anydoc::Format::from_path(path).is_some()
+        || ImageFormat::from_path(path).is_some()
 }
 
 /// The formats mdoc opens, as hints name them: one entry per converter
-/// family, then Markdown, which opens without conversion. `format_family`
+/// family, then images (JPEG, PNG, WebP and GIF, which become a PDF for
+/// OCR), then Markdown, which opens without conversion. `format_family`
 /// keeps this list in step with AnyDoc's formats.
-const FORMAT_NAMES: [&str; 9] = [
+const FORMAT_NAMES: [&str; 10] = [
     "PDF",
     "Word",
     "Excel",
@@ -27,6 +31,7 @@ const FORMAT_NAMES: [&str; 9] = [
     "RTF",
     "EPUB",
     "CSV",
+    "image",
     "Markdown",
 ];
 
@@ -62,7 +67,7 @@ pub fn droppable(path: &Path) -> bool {
 /// Admission does not convert documents. Unknown extensions retain AnyDoc's
 /// content detection, with bounded reads performed on the background executor.
 pub fn supported_source(path: &Path) -> bool {
-    if anydoc::Format::from_path(path).is_some() {
+    if anydoc::Format::from_path(path).is_some() || ImageFormat::from_path(path).is_some() {
         return true;
     }
     let Ok(file) = std::fs::File::open(path) else {
@@ -72,7 +77,8 @@ pub fn supported_source(path: &Path) -> bool {
     const LIMIT: u64 = 256 * 1024 * 1024;
     file.take(LIMIT + 1).read_to_end(&mut bytes).is_ok()
         && bytes.len() as u64 <= LIMIT
-        && anydoc::Format::from_bytes(&bytes).is_some()
+        && (anydoc::Format::from_bytes(&bytes).is_some()
+            || ImageFormat::from_bytes(&bytes).is_some())
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +100,9 @@ pub struct Imported {
     pub annotations: Vec<pdf_inspector::PdfAnnotation>,
     pub is_pdf: bool,
     pub is_docx: bool,
+    /// The source is an image, imported as the PDF the image builder made
+    /// of it: `source` holds that PDF's bytes, which the Original shows.
+    pub is_image: bool,
     /// The file was password-protected and this import unlocked it in
     /// memory. No rendering shows it (that would write it to disk), so the
     /// left-out line counts its comments.
@@ -224,6 +233,23 @@ impl Source {
             .extension()
             .and_then(|extension| extension.to_str())
     }
+
+    /// An image source as the PDF the image builder makes of it, sized for
+    /// `dpi`, with the frames of an animation it leaves out; `None` for any
+    /// other source. The path and stamp stay the image file's.
+    pub(crate) fn image_pdf(&self, dpi: u16) -> Option<Result<(Self, u64), ImportError>> {
+        ImageFormat::from_bytes(self.bytes())?;
+        Some(
+            image_pdf::build(&[self.bytes()], dpi)
+                .map(|built| {
+                    (
+                        Self::new(self.path.clone(), self.stamp, built.pdf),
+                        built.frames_left_out,
+                    )
+                })
+                .map_err(ImportError::Image),
+        )
+    }
 }
 
 /// Never the bytes: they are the user's document.
@@ -321,6 +347,9 @@ pub struct LeftOut {
     /// Pictures: the Markdown carries their alt text at most, and OCR reads
     /// the text drawn in a picture, not the picture.
     pub pictures: u64,
+    /// Frames of an animated GIF or WebP after the first, which is the
+    /// only one imported.
+    pub animation_frames: u64,
     /// Passages of hidden-formatted Word text, or stretches of PDF text no
     /// reader sees: invisible (render mode 3, a scan's hidden OCR layer
     /// included), or drawn in its background's colour or covered by a
@@ -374,6 +403,7 @@ impl LeftOut {
             }),
             hidden_text: sum(&native.invisible_text_by_page, |page| page.stretches)
                 + sum(&native.hidden_text_by_page, |page| page.stretches),
+            animation_frames: 0,
             hidden_sheets: 0,
             hidden_rows: 0,
             hidden_columns: 0,
@@ -386,9 +416,10 @@ impl LeftOut {
     }
 
     /// The note's lines for the counts other than comments, in order.
-    fn counts(&self) -> [Option<String>; 8] {
+    fn counts(&self) -> [Option<String>; 9] {
         [
             pictures_note(self.pictures),
+            left_out_note(self.animation_frames, "animation frame", "animation frames"),
             hidden_text_note(self.hidden_text),
             left_out_note(self.hidden_sheets, "hidden sheet", "hidden sheets"),
             left_out_note(self.hidden_rows, "hidden row", "hidden rows"),
@@ -405,6 +436,7 @@ impl LeftOut {
     pub fn line(&self, comments_shown: bool) -> Option<String> {
         let [
             pictures,
+            frames,
             hidden,
             sheets,
             rows,
@@ -416,6 +448,7 @@ impl LeftOut {
         let comments = self.comments_unread + if comments_shown { 0 } else { self.comments };
         join_notes([
             pictures,
+            frames,
             hidden,
             sheets,
             rows,
@@ -441,6 +474,7 @@ impl Imported {
     pub fn note(&self) -> Option<String> {
         let [
             pictures,
+            frames,
             hidden,
             sheets,
             rows,
@@ -457,6 +491,7 @@ impl Imported {
                 "comments",
             ),
             pictures,
+            frames,
             hidden,
             sheets,
             rows,
@@ -525,6 +560,9 @@ pub enum ImportError {
     Io(std::io::Error),
     #[error("This PDF exceeds the 256 MiB import limit.")]
     PdfTooLarge,
+    /// An image too large to decode, damaged, or in a form mdoc can't read.
+    #[error(transparent)]
+    Image(image_pdf::ImageError),
     #[error("This PDF is password-protected. Import an unlocked copy.")]
     PdfEncrypted,
     /// A password-protected file mdoc can't unlock: an ODT, or a DOC whose
@@ -634,6 +672,18 @@ pub(crate) fn import_source(
     if is_pdf(source.bytes()) {
         return convert_pdf(source, installed, skip_ocr, cancel);
     }
+    // An image becomes a PDF in memory, which OCR reads like a scanned
+    // page; the page is sized for OCR's render resolution.
+    let dpi = installed.map_or(image_pdf::DEFAULT_DPI, |installed| installed.config.dpi);
+    if let Some(built) = source.image_pdf(dpi) {
+        let (pdf, frames) = built?;
+        check_cancel(cancel)?;
+        let mut imported = convert_pdf(pdf, installed, skip_ocr, cancel)?;
+        imported.left_out.animation_frames = frames;
+        imported.warning = image_warning(imported.warning);
+        imported.is_image = true;
+        return Ok(imported);
+    }
     let converted = convert_document(&source, cancel)?;
     check_cancel(cancel)?;
     let is_docx = source
@@ -663,6 +713,7 @@ pub(crate) fn import_source(
         warning: None,
         left_out: LeftOut {
             pictures,
+            animation_frames: 0,
             // Nor does hidden-formatted text (DOCX, RTF and DOC; 0
             // elsewhere).
             hidden_text: u64::from(converted.hidden_text_left_out),
@@ -681,6 +732,7 @@ pub(crate) fn import_source(
         annotations: Vec::new(),
         is_pdf: false,
         is_docx,
+        is_image: false,
         decrypted,
     })
 }
@@ -856,8 +908,15 @@ fn convert_pdf(
         annotations,
         is_pdf: true,
         is_docx: false,
+        is_image: false,
         decrypted: false,
     })
+}
+
+/// A PDF warning as an image's import gives it: compare with the image,
+/// not a PDF the reader never chose.
+pub(crate) fn image_warning(warning: Option<String>) -> Option<String> {
+    warning.map(|warning| warning.replace("the source PDF", "the source image"))
 }
 
 /// A PDF's bytes, within the import limit.
@@ -987,7 +1046,7 @@ mod tests {
     fn format_hint_names_every_converter_format() {
         assert_eq!(
             supported_formats(),
-            "PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, CSV or Markdown"
+            "PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, CSV, image or Markdown"
         );
         // Every extension the pinned AnyDoc accepts, with the family a hint
         // names it by.
@@ -2181,6 +2240,7 @@ EMC\n";
             Some("1 hidden passage not imported. 6 comments not shown.")
         );
         let all = LeftOut {
+            animation_frames: 0,
             pictures: 1,
             hidden_text: 2,
             hidden_sheets: 2,

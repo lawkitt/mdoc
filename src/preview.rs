@@ -13,6 +13,7 @@ use gpui_pdf::{HeaderToggle, PdfSource, PdfView, ViewOptions};
 use mdoc_import::{
     comments::Comment,
     docx_preview::{self, PreviewError},
+    image_pdf,
     import::{self, Source, SourceStamp},
 };
 use mdoc_store::{session_store, settings};
@@ -113,7 +114,8 @@ pub(super) const UNREADABLE_SOURCE: &str =
     "mdoc could not read this file. Check that it is still there.";
 
 /// The preview pane's message for a format it can't show.
-pub(super) const NO_PREVIEW: &str = "No preview for this format. mdoc previews PDF and DOCX files.";
+pub(super) const NO_PREVIEW: &str =
+    "No preview for this format. mdoc previews PDF, DOCX and image files.";
 
 #[derive(Default)]
 pub(super) struct PreviewState {
@@ -869,6 +871,66 @@ impl DocumentView {
         cx.notify();
     }
 
+    /// An image's Original: the PDF the import's image builder makes of
+    /// it, built in memory off the UI thread and drawn from bytes. Nothing
+    /// is written anywhere.
+    pub(super) fn open_image(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let generation = self.begin_preview(path.clone());
+        let build = cx.background_executor().spawn({
+            let path = path.clone();
+            async move {
+                let source = Source::read(&path)?;
+                image_pdf::build(&[source.bytes()], image_pdf::DEFAULT_DPI)
+                    .map(|built| built.pdf)
+                    .map_err(import::ImportError::Image)
+            }
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let built = build.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if !this.preview.is_current(generation) {
+                    return;
+                }
+                match built {
+                    Ok(pdf) => this.show_image_pdf(path, pdf, window, cx),
+                    Err(error) => {
+                        // A file that can't be read now may be readable
+                        // later; a damaged image won't be.
+                        let retryable = matches!(
+                            error,
+                            import::ImportError::Read(_) | import::ImportError::Io(_)
+                        );
+                        this.preview.fail(generation, error.to_string(), retryable);
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Draw `pdf`, the image builder's PDF of the image at `path`, as the
+    /// current preview request's page.
+    pub(super) fn show_image_pdf(
+        &mut self,
+        path: PathBuf,
+        pdf: Vec<u8>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let source = PdfSource::Bytes {
+            bytes: Arc::new(pdf).into(),
+            password: None,
+        };
+        self.load_preview_source(path, source, None, window, cx);
+    }
+
     pub(super) fn open_pdf(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.begin_preview(path.clone());
         self.preview.pdf_source = true;
@@ -1050,8 +1112,94 @@ pub(crate) fn docx_message(error: &PreviewError) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// A photo `width` by `height`, white, with a black block in its stored
+    /// top-left corner and a grey one in its stored top-right, saved as a
+    /// JPEG carrying EXIF `orientation` and nothing else.
+    pub(crate) fn marked_photo(orientation: u16) -> Vec<u8> {
+        let image = image::RgbImage::from_fn(40, 20, |x, y| {
+            image::Rgb(match (x, y) {
+                (0..10, 0..10) => [0, 0, 0],
+                (30..40, 0..10) => [128, 128, 128],
+                _ => [255, 255, 255],
+            })
+        });
+        let mut jpeg = Vec::new();
+        image::DynamicImage::ImageRgb8(image)
+            .write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
+                &mut jpeg, 95,
+            ))
+            .unwrap();
+        let mut exif = b"Exif\x00\x00II*\x00\x08\x00\x00\x00\x01\x00".to_vec();
+        exif.extend_from_slice(&0x0112u16.to_le_bytes());
+        exif.extend_from_slice(&3u16.to_le_bytes());
+        exif.extend_from_slice(&1u32.to_le_bytes());
+        exif.extend_from_slice(&u32::from(orientation).to_le_bytes());
+        exif.extend_from_slice(&0u32.to_le_bytes());
+        let mut segment = vec![0xff, 0xe1];
+        segment.extend_from_slice(&u16::try_from(exif.len() + 2).unwrap().to_be_bytes());
+        segment.extend_from_slice(&exif);
+        [&jpeg[..2], &segment, &jpeg[2..]].concat()
+    }
+
+    /// The Original draws every EXIF orientation upright: rendered by the
+    /// pane's own renderer, the stored corners land where a viewer shows
+    /// them, and a quarter turn makes the page tall.
+    #[test]
+    fn the_original_draws_every_orientation_upright() {
+        // (orientation, black block lands, grey block lands)
+        let expected = [
+            (1, "top-left", "top-right"),
+            (2, "top-right", "top-left"),
+            (3, "bottom-right", "bottom-left"),
+            (4, "bottom-left", "bottom-right"),
+            (5, "top-left", "bottom-left"),
+            (6, "top-right", "bottom-right"),
+            (7, "bottom-right", "top-right"),
+            (8, "bottom-left", "top-left"),
+        ];
+        for (orientation, black, grey) in expected {
+            let built = image_pdf::build(&[&marked_photo(orientation)], 72).unwrap();
+            let document = gpui_pdf::parse(Arc::new(built.pdf)).unwrap();
+            let (width, height, luma) = gpui_pdf::page_luma(&document, 0, 1.0).unwrap();
+            assert_eq!(
+                (width, height),
+                if orientation >= 5 { (20, 40) } else { (40, 20) },
+                "orientation {orientation}"
+            );
+            // The mean luminance of a 4×4 patch inside each display corner.
+            let patch = |left: bool, top: bool| {
+                let x0 = if left { 2 } else { width - 6 };
+                let y0 = if top { 2 } else { height - 6 };
+                let sum: u32 = (y0..y0 + 4)
+                    .flat_map(|y| (x0..x0 + 4).map(move |x| (x, y)))
+                    .map(|(x, y)| u32::from(luma[(y * width + x) as usize]))
+                    .sum();
+                sum / 16
+            };
+            for (name, left, top) in [
+                ("top-left", true, true),
+                ("top-right", false, true),
+                ("bottom-left", true, false),
+                ("bottom-right", false, false),
+            ] {
+                let value = patch(left, top);
+                let wanted = if name == black {
+                    0..60
+                } else if name == grey {
+                    90..170
+                } else {
+                    215..256
+                };
+                assert!(
+                    wanted.contains(&value),
+                    "orientation {orientation}: {name} is {value}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn newer_request_cancels_old_job_and_rejects_stale_failure() {

@@ -12,9 +12,10 @@
 //! caller removes the file's kept pages once it has taken the result
 //! ([`Completed`]). Desktop imports stay on
 //! [`crate::import::prepare_cancellable`].
+use crate::image_pdf::ImageFormat;
 use crate::import::{
-    ImportError, Imported, LeftOut, OcrFailure, Password, Source, check_cancel, import_source,
-    is_pdf, pdf_bytes, pdf_error, pdf_warning, repeated_lines,
+    ImportError, Imported, LeftOut, OcrFailure, Password, Source, check_cancel, image_warning,
+    import_source, is_pdf, pdf_bytes, pdf_error, pdf_warning, repeated_lines,
 };
 use pdf_inspector::{MarkdownOptions, vision::OcrRepeatEvidence};
 use sha2::{Digest, Sha256};
@@ -228,8 +229,17 @@ pub fn prepare_resumable(
     check_cancel(cancel)?;
     let source = Source::read(path)?.unlock(password)?;
     check_cancel(cancel)?;
-    let Some(installed) = installed.filter(|_| !skip_ocr && is_pdf(source.bytes())) else {
+    let image = ImageFormat::from_bytes(source.bytes()).is_some();
+    let Some(installed) = installed.filter(|_| !skip_ocr && (image || is_pdf(source.bytes())))
+    else {
         return import_source(source, installed, skip_ocr, cancel).map(|imported| (imported, None));
+    };
+    // Pages are kept under the file's digest: an image's, not the PDF built
+    // from it, so `KeptPages::discard` finds them by the file.
+    let digest = digest(source.bytes());
+    let (source, frames) = match source.image_pdf(installed.config.dpi) {
+        Some(built) => built?,
+        None => (source, 0),
     };
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     let bytes = pdf_bytes(&source)?;
@@ -240,7 +250,6 @@ pub fn prepare_resumable(
     let annotations = std::mem::take(&mut native.annotations);
     drop(native);
     check_cancel(cancel)?;
-    let digest = digest(bytes);
     let folder = kept.folder(&digest, &installed.config);
     folder.open();
     let markdown_options = installed.options().markdown;
@@ -277,7 +286,11 @@ pub fn prepare_resumable(
     strip_repeats(&mut pages, &markdown_options)
         .map_err(|error| ImportError::OcrFailed(OcrFailure::Engine(error.to_string())))?;
     let (markdown, review) = assemble(&pages);
-    let warning = pdf_warning(&markdown, review, page_count, true)?;
+    let mut warning = pdf_warning(&markdown, review, page_count, true)?;
+    if image {
+        warning = image_warning(warning);
+    }
+    left_out.animation_frames = frames;
     left_out.repeated_lines = pages
         .iter()
         .map(|page| u64::from(page.repeated_lines))
@@ -293,6 +306,7 @@ pub fn prepare_resumable(
             annotations,
             is_pdf: true,
             is_docx: false,
+            is_image: image,
             decrypted: false,
         },
         Some(Completed {
@@ -414,6 +428,42 @@ mod tests {
 
     fn config() -> mdoc_store::settings::OcrConfig {
         mdoc_store::settings::OcrConfig::default()
+    }
+
+    /// An image's pages are kept under its file's digest, not the digest of
+    /// the PDF built from it, so discarding them by the file finds them.
+    #[test]
+    fn an_image_keeps_its_pages_under_the_file_s_digest() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = crate::image_pdf::tests::write_photo(dir.path(), "scan.jpg");
+        let kept = KeptPages::new(dir.path().join("kept"));
+        let missing = dir.path().join("not installed");
+        let installed = crate::ocr::Installed {
+            config: config(),
+            models: missing.clone(),
+            pdfium: missing.clone(),
+            onnx: missing,
+        };
+        // No OCR runtime here: the run stops at loading it, after keeping
+        // its folder ready.
+        let result = prepare_resumable(
+            &photo,
+            None,
+            Some(&installed),
+            false,
+            &AtomicBool::new(false),
+            &kept,
+            &|_, _| {},
+        );
+        assert!(
+            matches!(result, Err(ImportError::OcrFailed(_))),
+            "{result:?}"
+        );
+        let file_digest = digest(&std::fs::read(&photo).unwrap());
+        let folder = kept.folder(&file_digest, &installed.config);
+        assert!(folder.0.is_dir());
+        kept.discard(&photo).unwrap();
+        assert!(!folder.0.exists());
     }
 
     /// Pages kept before a format change (form field names in their text,

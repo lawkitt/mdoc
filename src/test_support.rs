@@ -19,6 +19,7 @@ pub fn converted(source: PathBuf) -> Imported {
         annotations: Vec::new(),
         is_pdf: false,
         is_docx: false,
+        is_image: false,
         decrypted: false,
     }
 }

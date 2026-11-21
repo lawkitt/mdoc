@@ -34,6 +34,16 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 - The currency-sign fallback stays until a test shows the bundled fonts draw
   ₽ and the newer signs.
 
+## Images
+
+- An image's Original is the PDF the import's image builder makes of it
+  (`mdoc-import`'s `image_pdf`), the same PDF that OCR reads, so the page
+  shown is the page read. It is built and drawn in memory, never written.
+- The EXIF orientation turns the page through its content matrix; a JPEG of
+  4,500 pixels or less is embedded as it is, without its metadata segments.
+- Metadata (EXIF, GPS, XMP, camera, dates, ICC profiles, comments) never
+  reaches the PDF, so it never reaches the Markdown and isn't counted.
+
 ## Phones
 
 - Android follows iOS as it reaches the Original pane; TalkBack reaches each
