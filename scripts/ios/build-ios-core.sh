@@ -13,9 +13,11 @@ source "$(dirname "$0")/../lib.sh"
 [ "$(platform)" = macos-arm64 ] || die "the iOS core builds only on Apple Silicon macOS"
 
 # Microsoft's iOS build of ONNX Runtime 1.27.0. Desktop and Android ship
-# 1.32.0 (#925), but download.onnxruntime.ai has no pod archive after 1.30.0;
-# the iOS app links its own copy, so the versions need not match.
-ort_url="https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.27.0.zip"
+# 1.32.0 (#925), but Microsoft publishes no pod archive after 1.30.0; the
+# iOS app links its own copy, so the versions need not match. The archive
+# comes from the storage origin behind download.onnxruntime.ai, whose Azure
+# CDN front stopped serving it (#1029); the checksum pins the same bytes.
+ort_url="https://onnxruntimepackages.z14.web.core.windows.net/pod-archive-onnxruntime-c-1.27.0.zip"
 ort_sha="8c74edd600eafc3055de9e8f7a9602afee44ed516913cb5e132bca02cc34622c"
 # PDFium 7988, the version desktop ships, from bblanchon/pdfium-binaries: no
 # static iOS build exists there, so it embeds as a framework.
