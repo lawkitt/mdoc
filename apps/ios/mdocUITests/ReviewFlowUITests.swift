@@ -9,6 +9,39 @@ final class ReviewFlowUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// The scope chip, All N / This one, shows from two mentions: one
+    /// mention leaves nothing to choose (#1036).
+    @MainActor
+    func testTheScopeChipShowsFromTwoMentions() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("scope-chip", isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("Two mentions.md")
+        try """
+            # Two mentions
+
+            Write to \(MdocUITest.email) about the lease.
+
+            Copies go to \(MdocUITest.email) as well.
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_SEED_FILE"] = file.path
+        app.launch()
+        let row = MdocUITest.anyDocumentRow(app)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        let email = text.links[MdocUITest.email].firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 30))
+        MdocUITest.tapAboveBottomBar(email, in: text, app)
+        XCTAssertTrue(app.buttons["review-replace"].waitForExistence(timeout: MdocUITest.timeout))
+        let scope = app.descendants(matching: .any)["review-scope"].firstMatch
+        XCTAssertTrue(scope.waitForExistence(timeout: MdocUITest.timeout), "two mentions: the scope chip")
+        XCTAssertTrue(scope.label.contains("2"), "it counts both: \(scope.label)")
+    }
+
     @MainActor
     func testOpenReviewShareRestore() throws {
         let app = MdocUITest.launch()

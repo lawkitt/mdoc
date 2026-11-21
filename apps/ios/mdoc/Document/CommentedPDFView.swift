@@ -49,6 +49,8 @@ struct CommentedPDFView: UIViewRepresentable {
 final class CommentedPDFContainer: UIView {
     static let railWidth: CGFloat = 260
     private static let markerSize: CGFloat = 24
+    /// A marker that holds several threads: the bubble and the count.
+    private static let groupWidth: CGFloat = 38
     /// The touch target around a marker on each side: 44 pt in all.
     static let markerTouchSlop: CGFloat = 10
 
@@ -335,6 +337,13 @@ final class CommentedPDFContainer: UIView {
                 id: leader.marker.id, page: leader.marker.page, line: leader.marker.line,
                 threads: group.flatMap { placed[$0].button.marker.threads })
             regrouped = leader.show(merged) || regrouped
+            // Threads that share a marker: a tag wide enough for the bubble
+            // and the count, around the same centre.
+            if leader.shown.threads.count > 1 {
+                let centre = CGPoint(x: leader.frame.midX, y: leader.frame.midY)
+                leader.frame.size.width = Self.groupWidth
+                leader.center = centre
+            }
             for (offset, index) in group.enumerated() {
                 let button = placed[index].button
                 let hidden = offset > 0
@@ -634,6 +643,9 @@ final class CommentMarkerButton: UIButton {
         configuration.background.backgroundColor = .white
         configuration.background.cornerRadius = 7
         if shown.threads.count > 1 {
+            configuration.image = UIImage(systemName: "text.bubble")?
+                .applyingSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
+            configuration.imagePadding = 2
             configuration.title = String(shown.threads.count)
             configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
                 var attributes = $0

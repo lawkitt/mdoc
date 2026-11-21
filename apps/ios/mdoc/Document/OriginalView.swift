@@ -28,10 +28,11 @@ struct OriginalView: View {
     }
 
     /// The Dark page hint: the app dark, a page to darken, the page still
-    /// light, and TipKit letting it show.
+    /// light (dark already, it has nothing to teach), and the hints'
+    /// one-at-a-time rule letting it show.
     private var hintShows: Bool {
         dark.offered && !preferences.darkPage && original != .none
-            && Hints.shared.available.contains(.darkPage)
+            && Hints.shared.teachable.contains(.darkPage)
     }
 
     var body: some View {
@@ -154,7 +155,9 @@ struct ZoomableImageView: UIViewRepresentable {
             image.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
             image.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
             image.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
-            image.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
+            // At least the view's height, so a wide page sits in its middle;
+            // a tall one grows past it (`fitWidth`) and scrolls.
+            image.heightAnchor.constraint(greaterThanOrEqualTo: scroll.frameLayoutGuide.heightAnchor),
         ])
         context.coordinator.imageView = image
         context.coordinator.viewport = viewport
@@ -168,7 +171,9 @@ struct ZoomableImageView: UIViewRepresentable {
     func updateUIView(_ scroll: UIScrollView, context: Context) {
         guard context.coordinator.url != url else { return }
         context.coordinator.url = url
-        context.coordinator.imageView?.image = UIImage(contentsOfFile: url.path)
+        let image = UIImage(contentsOfFile: url.path)
+        context.coordinator.imageView?.image = image
+        context.coordinator.fitWidth(image)
         scroll.zoomScale = 1
     }
 
@@ -176,6 +181,20 @@ struct ZoomableImageView: UIViewRepresentable {
         var imageView: UIImageView?
         var url: URL?
         weak var viewport: PageViewport?
+        private var ratio: NSLayoutConstraint?
+
+        /// Zoom 1 is the page at the view's width, as a PDF's fit is: a
+        /// tall scan or receipt is never smaller than the width (#1036).
+        func fitWidth(_ image: UIImage?) {
+            ratio?.isActive = false
+            ratio = nil
+            guard let imageView, let image, image.size.width > 0 else { return }
+            let constraint = imageView.heightAnchor.constraint(
+                equalTo: imageView.widthAnchor, multiplier: image.size.height / image.size.width)
+            constraint.priority = .defaultHigh
+            constraint.isActive = true
+            ratio = constraint
+        }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             imageView

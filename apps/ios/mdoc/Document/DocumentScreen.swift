@@ -193,11 +193,16 @@ struct DocumentScreen: View {
         }
     }
 
-    /// The Original is in view, with a page to show: its pane on iPhone,
-    /// the right column on iPad.
+    /// The Original is in view, with a page to show: its pane on iPhone;
+    /// on iPad the right column whenever it holds neither Identities nor
+    /// the reply, as `content` lays it out.
     private var originalShows: Bool {
-        model.pane == .original && model.snapshot.original != .none
-            && !(isRegular && identitiesInPane && model.wantsIdentities)
+        guard model.snapshot.original != .none else { return false }
+        if isRegular && hasRightPane {
+            return !(identitiesInPane && model.wantsIdentities)
+                && !(model.pane == .reply && model.snapshot.reply != nil)
+        }
+        return model.pane == .original
     }
 
     /// The title menu's Dark page: switching it teaches what its hint
