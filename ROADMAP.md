@@ -328,7 +328,7 @@ Items 16–31 shipped (ADR 0112 and 0113, retired; item 30 dropped, #857).
 Items 32–37 come from the third grill, #1041: a core change's queue time
 went from a median of 32 minutes to 51 when iOS moved to the `xcode-27`
 image, and every iOS part builds the core itself. Items 32–35 edit
-`ci-ios.yml` and go in order; 36 and 37 are independent.
+`ci-ios.yml`; 36 (#1046) and 37 (#1045) have shipped.
 
 32. **[CI] The iOS core once per run.** One job builds or restores the iOS
     core and hands it to the unit and UI parts as an artifact. *Done when:*
@@ -345,12 +345,6 @@ image, and every iOS part builds the core itself. Items 32–35 edit
     unit part or the UI shards holding the touched classes by default, one
     branch iOS run at a time. *Done when:* a UI-only branch dispatch runs
     one shard.
-36. **[CI] Detection's model budget warns in the queue.** The nightly
-    still fails on it; the queue and PR heads run 4 shards instead of 12.
-    *Done when:* a queue commit runs 4 detection shards.
-37. **[CI] A core change's target is 30 minutes** in `ci-stats.sh`;
-    missing it reopens a self-hosted Mac (#1041). *Done when:* the nightly
-    reports it.
 
 ## Desktop GPUI
 
