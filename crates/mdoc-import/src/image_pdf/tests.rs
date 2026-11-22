@@ -498,7 +498,7 @@ fn cmyk_becomes_rgb() {
     );
 }
 
-fn gif(colors: &[[u8; 4]]) -> Vec<u8> {
+pub(crate) fn gif(colors: &[[u8; 4]]) -> Vec<u8> {
     let mut bytes = Vec::new();
     {
         let mut encoder = image::codecs::gif::GifEncoder::new(&mut bytes);
