@@ -100,24 +100,71 @@ extension MarkdownTextView.Coordinator {
         }
     }
 
-    // MARK: Fix the words
+    /// `menu` over the selection of `view`, shown by this view's own
+    /// interaction (`SelectionMenuPresenter`).
+    private func presentMenu(on view: UITextView, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
+        guard let shown = view.selectedTextRange else { return }
+        let rect = view.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
+        guard !rect.isNull, !rect.isInfinite else { return }
+        let presenter = menuPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
+        menuPresenter = presenter
+        presenter.present(on: view, over: rect, menu: menu)
+    }
+}
+
+/// What Fix the words works in: the text the coordinator shows now and
+/// the model's request.
+struct WordsFixText {
+    var offsets: TextOffsets
+    /// The name whose words are fixed; nil otherwise.
+    var request: WordsFixRequest?
+    var actions: WordsFixActions?
+    var editing: Bool
+    /// The draft's text shows, nothing held back: its offsets map the
+    /// request.
+    var showsDraft: Bool
+    /// Inside a render, which resets the selection on its own.
+    var rendering: Bool
+}
+
+/// Fix the words as the view shows it (ADR 0114, 0115): the request taken,
+/// the words the handles last held, the text view whose selection holds
+/// them, the table held still around it, and a selection set here (not by
+/// the reader). The coordinator says when the request or the text changed
+/// and when the holder's selection moved or it lost the focus.
+@MainActor
+final class WordsFixSelection {
+    /// The text now; the coordinator sets it once.
+    var text: () -> WordsFixText? = { nil }
+    /// The request the handles show.
+    private(set) var shown: WordsFixRequest?
+    /// The words the handles last held.
+    private var words: SourceRange?
+    /// The text view (the text or a table cell) whose selection holds them.
+    private(set) weak var holder: UITextView?
+    /// The table held still around a cell's words.
+    private(set) weak var table: MarkdownTableView?
+    /// Adjust Words' demo ghost while it glides.
+    private weak var ghost: UIView?
+    /// A selection set here, not by the reader.
+    private var settling = false
 
     /// Begins or ends Fix the words as the model asks, once the draft
     /// shows.
-    func followWordsFix(_ view: CandidateTextView) {
-        guard parent.wordsFix != shownFix else { return }
-        guard let request = parent.wordsFix else {
-            shownFix = nil
-            endFixSelection()
+    func follow(_ view: CandidateTextView) {
+        guard let text = text(), text.request != shown else { return }
+        guard let request = text.request else {
+            shown = nil
+            end()
             return
         }
         // The draft's text must show first: its offsets map the request.
-        guard pending == nil, content?.textRevision == parent.snapshot.textRevision else { return }
-        fixWords = nil
-        select(request.wording, for: request, in: view)
-        guard let holder = fixHolder else { return }
+        guard text.showsDraft else { return }
+        words = nil
+        select(request.wording, for: request, offsets: text.offsets, in: view)
+        guard let holder else { return }
         keepClear(holder, in: view)
-        if parent.wordsFixActions?.demo() == true, !UIAccessibility.isReduceMotionEnabled {
+        if text.actions?.demo() == true, !UIAccessibility.isReduceMotionEnabled {
             playHandleDemo(on: holder, tint: holder.tintColor)
         }
     }
@@ -127,12 +174,12 @@ extension MarkdownTextView.Coordinator {
     /// caption over it) and below the top bar.
     private func keepClear(_ holder: UITextView, in view: CandidateTextView) {
         guard let range = holder.selectedTextRange else { return }
-        let words = holder.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
-        guard !words.isNull, !words.isInfinite else { return }
+        let selection = holder.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
+        guard !selection.isNull, !selection.isInfinite else { return }
         // Room for the end knob and the demo's caption, which shows over
         // the bar after this layout.
         let room: CGFloat = 88
-        let rect = holder.convert(words, to: view)
+        let rect = holder.convert(selection, to: view)
         let visible = view.bounds.inset(by: view.adjustedContentInset)
         var y = view.contentOffset.y
         if rect.maxY + room > visible.maxY {
@@ -151,28 +198,28 @@ extension MarkdownTextView.Coordinator {
     /// size, width or appearance change): its cells may be new views, so
     /// the handles go back on the words they last held, and a table holds
     /// still again.
-    func restoreWordsFix(_ view: CandidateTextView) {
-        guard let request = shownFix, parent.wordsFix == request, !parent.editing else { return }
-        fixTable?.isScrollEnabled = true
-        fixTable = nil
-        select(fixWords ?? request.wording, for: request, in: view)
+    func restore(_ view: CandidateTextView) {
+        guard let request = shown, let text = text(), text.request == request, !text.editing else { return }
+        table?.isScrollEnabled = true
+        table = nil
+        select(words ?? request.wording, for: request, offsets: text.offsets, in: view)
     }
 
     /// Selects `words` of the draft for `request`, in the cell or text
     /// that holds them.
-    private func select(_ words: SourceRange, for request: WordsFixRequest, in view: CandidateTextView) {
+    private func select(_ words: SourceRange, for request: WordsFixRequest, offsets: TextOffsets, in view: CandidateTextView) {
         let range = offsets.nsRange(words)
-        guard let (holder, local) = holder(of: range, in: view) else { return }
-        shownFix = request
+        guard let (holder, local) = view.holder(of: range) else { return }
+        shown = request
         if let cell = holder as? CellTextView, let table = cell.superview as? MarkdownTableView {
             hold(table, around: cell, words: local)
         }
-        fixSettling = true
-        holder.tintColor = request.category?.uiColor ?? Self.selectionTint
+        settling = true
+        holder.tintColor = request.category?.uiColor ?? MarkdownTextView.Coordinator.selectionTint
         holder.becomeFirstResponder()
         holder.selectedRange = local
-        fixSettling = false
-        fixHolder = holder
+        settling = false
+        self.holder = holder
     }
 
     /// In a table the cell shows whole and the table holds still, so a
@@ -192,34 +239,34 @@ extension MarkdownTextView.Coordinator {
         }
         table.reveal(cell.frame)
         table.isScrollEnabled = false
-        fixTable = table
+        self.table = table
     }
 
     /// The selection of a name being fixed changed: kept inside the
     /// bounds, reported to the model, and gone means Cancel.
-    func fixSelectionChanged(_ textView: UITextView) {
+    func selectionChanged(_ textView: UITextView) {
         // A rebuild (rotation, text size, appearance) resets the selection
         // on its own; only the reader's change counts.
-        guard let request = shownFix, !fixSettling, !rendering, parent.wordsFix != nil,
-              textView === fixHolder else { return }
+        guard let request = shown, !settling, let text = text(), !text.rendering, text.request != nil,
+              textView === holder else { return }
         let base = (textView as? CellTextView)?.location ?? 0
         let selected = textView.selectedRange
         guard textView.selectedTextRange != nil, selected.length > 0 else {
-            parent.wordsFixActions?.cancel()
+            text.actions?.cancel()
             return
         }
-        let bounds = offsets.nsRange(request.bounds)
-        let shown = NSRange(location: selected.location + base, length: selected.length)
-        let kept = NSIntersectionRange(shown, bounds)
-        if kept != shown, kept.length > 0 {
+        let bounds = text.offsets.nsRange(request.bounds)
+        let chosen = NSRange(location: selected.location + base, length: selected.length)
+        let kept = NSIntersectionRange(chosen, bounds)
+        if kept != chosen, kept.length > 0 {
             // A handle stops where a drag would break the name.
-            fixSettling = true
+            settling = true
             textView.selectedRange = NSRange(location: kept.location - base, length: kept.length)
-            fixSettling = false
+            settling = false
         }
-        let words = offsets.sourceRange(kept.length > 0 ? kept : shown)
-        fixWords = words
-        parent.wordsFixActions?.selected(words)
+        let words = text.offsets.sourceRange(kept.length > 0 ? kept : chosen)
+        self.words = words
+        text.actions?.selected(words)
     }
 
     /// The view holding a fixed name's words lost the focus to a touch
@@ -228,36 +275,13 @@ extension MarkdownTextView.Coordinator {
     /// the handles moving to another view resign it too: those are not
     /// the reader's. Checked once this turn of the run loop is over, as a
     /// resign may come inside SwiftUI's update of the view.
-    func fixHolderResigned(_ view: UITextView) {
-        guard view === fixHolder, shownFix != nil, !fixSettling, !rendering, parent.wordsFix != nil else { return }
+    func holderResigned(_ view: UITextView) {
+        guard view === holder, shown != nil, !settling, let text = text(), !text.rendering, text.request != nil else { return }
         DispatchQueue.main.async { [weak self, weak view] in
-            guard let self, let view, view === self.fixHolder, !view.isFirstResponder, !self.rendering,
-                  let request = self.shownFix, self.parent.wordsFix == request else { return }
-            self.parent.wordsFixActions?.cancel()
+            guard let self, let view, view === self.holder, !view.isFirstResponder, let text = self.text(), !text.rendering,
+                  let request = self.shown, text.request == request else { return }
+            text.actions?.cancel()
         }
-    }
-
-    /// The view and its own range that hold `range` of the text: a table
-    /// cell for a name in one, else the text itself.
-    private func holder(of range: NSRange, in view: CandidateTextView) -> (UITextView, NSRange)? {
-        for table in view.tableViews where NSLocationInRange(range.location, table.table.range) {
-            guard let cell = table.cells.joined().first(where: {
-                $0.location <= range.location && NSMaxRange(range) <= $0.location + $0.textStorage.length
-            }) else { return nil }
-            return (cell, NSRange(location: range.location - cell.location, length: range.length))
-        }
-        return (view, range)
-    }
-
-    /// `menu` over the selection of `view`, shown by this view's own
-    /// interaction (`SelectionMenuPresenter`).
-    private func presentMenu(on view: UITextView, menu: @escaping (UITextView, SourceRange) -> UIMenu?) {
-        guard let shown = view.selectedTextRange else { return }
-        let rect = view.selectionRects(for: shown).reduce(CGRect.null) { $0.union($1.rect) }
-        guard !rect.isNull, !rect.isInfinite else { return }
-        let presenter = menuPresenter ?? SelectionMenuPresenter(offsets: { [weak self] in self?.offsets })
-        menuPresenter = presenter
-        presenter.present(on: view, over: rect, menu: menu)
     }
 
     // MARK: The demo
@@ -277,9 +301,9 @@ extension MarkdownTextView.Coordinator {
         let ghost = HandleGhost(height: end.height, tint: tint)
         ghost.center = CGPoint(x: end.midX, y: end.minY + ghost.bounds.height / 2)
         ghost.alpha = 0
-        handleGhost?.removeFromSuperview()
+        self.ghost?.removeFromSuperview()
         holder.addSubview(ghost)
-        handleGhost = ghost
+        self.ghost = ghost
         // timing: the handles settle first; the glide then takes about 2 s (ADR 0115)
         UIView.animateKeyframes(withDuration: 2.2, delay: 0.4, options: [.calculationModeCubic]) {
             UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.12) { ghost.alpha = 0.7 }
@@ -293,20 +317,35 @@ extension MarkdownTextView.Coordinator {
         }
     }
 
-    private func endFixSelection() {
-        handleGhost?.removeFromSuperview()
-        handleGhost = nil
-        fixWords = nil
-        fixTable?.isScrollEnabled = true
-        fixTable = nil
-        guard let holder = fixHolder else { return }
-        fixHolder = nil
-        fixSettling = true
+    private func end() {
+        ghost?.removeFromSuperview()
+        ghost = nil
+        words = nil
+        table?.isScrollEnabled = true
+        table = nil
+        guard let holder else { return }
+        self.holder = nil
+        settling = true
         if holder.selectedRange.length > 0 { holder.selectedTextRange = nil }
-        holder.tintColor = Self.selectionTint
-        fixSettling = false
+        holder.tintColor = MarkdownTextView.Coordinator.selectionTint
+        settling = false
     }
 }
+
+private extension CandidateTextView {
+    /// The view and its own range that hold `range` of the text: a table
+    /// cell for a name in one, else the text itself.
+    func holder(of range: NSRange) -> (UITextView, NSRange)? {
+        for table in tableViews where NSLocationInRange(range.location, table.table.range) {
+            guard let cell = table.cells.joined().first(where: {
+                $0.location <= range.location && NSMaxRange(range) <= $0.location + $0.textStorage.length
+            }) else { return nil }
+            return (cell, NSRange(location: range.location - cell.location, length: range.length))
+        }
+        return (self, range)
+    }
+}
+
 
 /// Shows a selection's menu from mdoc's own interaction: Hide name's menu
 /// again once the selection snapped to whole words. UIKit's own edit menu

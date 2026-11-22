@@ -188,18 +188,9 @@ struct MarkdownTextView: UIViewRepresentable {
         var restyleAfterComposing = false
         /// The find bar request last shown.
         var shownFindBar = 0
-        /// Fix the words as the view shows it (ADR 0114): the request
-        /// taken, the words the handles last held, the text view whose
-        /// selection holds them, the table held still around it, and a
-        /// selection set here (not by the reader). The presenter shows
-        /// mdoc's own selection menus.
-        var shownFix: WordsFixRequest?
-        var fixWords: SourceRange?
-        weak var fixHolder: UITextView?
-        weak var fixTable: MarkdownTableView?
-        /// Adjust Words' demo ghost while it glides.
-        weak var handleGhost: UIView?
-        var fixSettling = false
+        /// Fix the words as the view shows it (ADR 0114).
+        let fixSelection = WordsFixSelection()
+        /// Shows mdoc's own selection menus (Hide name).
         var menuPresenter: SelectionMenuPresenter?
         /// A name's long-press menu is closing: UIKit carries the name it
         /// lifted back into the text and keeps its picture there until the
@@ -249,6 +240,7 @@ struct MarkdownTextView: UIViewRepresentable {
             reveal = TextReveal(taken: parent.reveal?.id)
             super.init()
             reveal.text = { [weak self] in self?.revealText }
+            fixSelection.text = { [weak self] in self?.fixText }
         }
 
         /// What the reveal measures in now.
@@ -256,6 +248,13 @@ struct MarkdownTextView: UIViewRepresentable {
             RevealText(
                 offsets: offsets, snapshot: parent.snapshot, selected: decoration.selected, editing: parent.editing,
                 settled: !rendering && pending == nil)
+        }
+
+        /// What Fix the words works in now.
+        private var fixText: WordsFixText {
+            WordsFixText(
+                offsets: offsets, request: parent.wordsFix, actions: parent.wordsFixActions, editing: parent.editing,
+                showsDraft: pending == nil && content?.textRevision == parent.snapshot.textRevision, rendering: rendering)
         }
 
         deinit {
@@ -276,11 +275,11 @@ struct MarkdownTextView: UIViewRepresentable {
                 cell.allowsCopy = false
                 cell.tintColor = Self.selectionTint
                 cell.onResign = { [weak self, weak cell] in
-                    if let self, let cell { self.fixHolderResigned(cell) }
+                    if let self, let cell { self.fixSelection.holderResigned(cell) }
                 }
             }
             view.onResign = { [weak self, weak view] in
-                if let self, let view { self.fixHolderResigned(view) }
+                if let self, let view { self.fixSelection.holderResigned(view) }
             }
             view.onWidth = { [weak self, weak view] width in
                 // Held-back text is built at the new width once it shows;
@@ -345,12 +344,12 @@ struct MarkdownTextView: UIViewRepresentable {
             if reveal.isOwed { view.setNeedsLayout() }
             // Outside edit mode a selection is tinted, not the ink's grey
             // (ADR 0114); the caret keeps the ink while editing.
-            if fixHolder !== view { view.tintColor = parent.editing ? nil : Self.selectionTint }
-            if parent.wordsFix != shownFix {
+            if fixSelection.holder !== view { view.tintColor = parent.editing ? nil : Self.selectionTint }
+            if parent.wordsFix != fixSelection.shown {
                 // After this update: the draft's text is shown by then.
                 DispatchQueue.main.async { [weak self, weak view] in
                     guard let self, let view else { return }
-                    self.followWordsFix(view)
+                    self.fixSelection.follow(view)
                 }
             }
             if inViewUpdate {
@@ -435,7 +434,7 @@ struct MarkdownTextView: UIViewRepresentable {
                     guard let self, let view, let content = self.pending, content != self.content else { return }
                     self.rebuild(content, view)
                     if self.reveal.isOwed { view.setNeedsLayout() }
-                    self.followWordsFix(view)
+                    self.fixSelection.follow(view)
                 }
             }
         }
@@ -536,12 +535,12 @@ struct MarkdownTextView: UIViewRepresentable {
                 }
             }
             view.rotorItems = items.sorted { $0.order < $1.order }
-            if shownFix != nil {
+            if fixSelection.shown != nil {
                 // Built again while a name's words are fixed: the handles
                 // come back once this update is over (ADR 0115).
                 DispatchQueue.main.async { [weak self, weak view] in
                     guard let self, let view else { return }
-                    self.restoreWordsFix(view)
+                    self.fixSelection.restore(view)
                 }
             }
             let ranges = shownRanges
@@ -716,7 +715,7 @@ struct MarkdownTextView: UIViewRepresentable {
                   view.window?.windowScene?.activationState != .background else { return }
             rebuild(content, view)
             if reveal.isOwed { view.setNeedsLayout() }
-            followWordsFix(view)
+            fixSelection.follow(view)
         }
 
         /// Only Hide name, and nothing while a name's words are fixed (its

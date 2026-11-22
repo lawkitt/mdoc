@@ -296,7 +296,7 @@ extension MarkdownTextView.Coordinator {
     /// A caret moved by the reader: out of a hidden marker run (live
     /// preview), the typing step ends, and the reveal follows it.
     func textViewDidChangeSelection(_ textView: UITextView) {
-        if !textView.isEditable { fixSelectionChanged(textView) }
+        if !textView.isEditable { fixSelection.selectionChanged(textView) }
         guard textView.isEditable, let view = textView as? CandidateTextView else { return }
         let moved = !bridge.isChanging && view.markedTextRange == nil
         // The reader moved the caret (⌘↓ scrolls to it): Done keeps the
