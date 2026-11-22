@@ -1,6 +1,5 @@
 package io.github.lawkitt.mdoc
 
-import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.home.HomeViewModel
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -90,15 +89,4 @@ class ImageIntakeTest {
         }
     }
 
-    /** A TIFF among photos keeps every page of the Original, each in its place. */
-    @Test
-    fun aMixedOriginalKeepsEveryPage() {
-        val folder = Files.createTempDirectory("original").toFile()
-        try {
-            val pages = listOf("page-1.jpg", "page-2.tiff", "page-3.png").map { File(folder, it).apply { writeText("x") } }
-            assertEquals(OriginalSource.Images(pages), OriginalSource.of(pages))
-        } finally {
-            folder.deleteRecursively()
-        }
-    }
 }

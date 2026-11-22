@@ -60,9 +60,8 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
 - A photo's or camera page's Original is the image itself, drawn natively
   and upright. The copy kept is the core's `without_metadata` rewrite
   (JPEG, PNG, WebP, GIF: same pixels, only the orientation left) or, for
-  HEIC and what the core doesn't read, the phone's own upright JPEG. A
-  TIFF is kept as it came (its tags hold its layout); the core reads every
-  page, and its tags reach neither the PDF nor the Markdown.
+  HEIC and what the core doesn't read, the phone's own upright JPEG. The
+  phones refuse TIFF for now (#1064).
   On Android, picked photo bytes are sanitized in memory before mdoc
   writes the kept copies. The camera writes its shot to a raw file under
   `no_backup/capture/`, outside `originals/`, which is cleaned into the

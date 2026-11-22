@@ -158,7 +158,7 @@ private fun ImagePages(files: List<File>, modifier: Modifier) {
     }
 }
 
-/** A page being drawn, drawn, or one Android can't draw. */
+/** A page being drawn, drawn, or one that couldn't be drawn. */
 private sealed interface PageImage {
     data object Loading : PageImage
 
@@ -168,9 +168,9 @@ private sealed interface PageImage {
 }
 
 /**
- * One photo or page, drawn upright off the main thread; a placeholder the
- * size of a page while it is drawn, and in its place when Android can't
- * draw it (a TIFF), so every other page keeps its position.
+ * One photo or page, drawn upright off the main thread, and a placeholder
+ * the size of a page until it is (or in its place if it can't be), so a
+ * list lays out only the pages it shows.
  */
 @Composable
 private fun ImagePage(file: File, number: Int, count: Int, scale: ContentScale, modifier: Modifier) {
@@ -192,17 +192,7 @@ private fun ImagePage(file: File, number: Int, count: Int, scale: ContentScale, 
                 .background(MaterialTheme.colorScheme.surface)
                 .semantics { contentDescription = description }
                 .then(if (shown == PageImage.Loading) Modifier.testTag(PAGE_PLACEHOLDER) else Modifier),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (shown == PageImage.Unavailable) {
-                Text(
-                    stringResource(R.string.no_page_preview),
-                    modifier = Modifier.padding(16.dp),
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        )
     }
 }
 

@@ -32,7 +32,7 @@ mod pdf;
 pub(crate) mod tests;
 mod tiff;
 
-pub use metadata::{kept_copy, without_metadata};
+pub use metadata::without_metadata;
 use std::{io::Cursor, path::Path};
 
 /// The longest side, in pixels, an image keeps: larger ones are scaled down.

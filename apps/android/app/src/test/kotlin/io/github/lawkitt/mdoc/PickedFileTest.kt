@@ -60,12 +60,12 @@ class PickedFileTest {
         assertEquals(SourceKind.Image, kind("image/gif"))
     }
 
-    /** The core reads every page of a TIFF (#1024 item 8). */
+    /** TIFF on the phones is #1064: refused with the formats mdoc opens, never taken for a JPEG. */
     @Test
-    fun aTiffIsATiff() {
-        assertEquals("tiff", HomeViewModel.extensionFor("image/tiff"))
-        assertEquals(SourceKind.Image, kind("image/tiff"))
-        assertEquals(SourceKind.Image, HomeViewModel.kindOf(File("Fax.tif")))
+    fun aTiffIsRefused() {
+        assertNull(HomeViewModel.extensionFor("image/tiff"))
+        assertNull(HomeViewModel.kindOf(File("Fax.tif")))
+        assertNull(HomeViewModel.kindOf(File("Fax.tiff")))
     }
 
     /** Anything else is refused with the supported formats, never taken for a JPEG. */

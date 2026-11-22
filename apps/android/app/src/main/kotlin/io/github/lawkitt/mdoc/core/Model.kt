@@ -150,15 +150,11 @@ sealed interface OriginalSource {
 
     data class Pdf(val file: java.io.File) : OriginalSource
 
-    /**
-     * Photos or camera pages, a page each, in order: each page is drawn on
-     * its own, and one Android can't draw (a TIFF) keeps its place with a
-     * placeholder.
-     */
+    /** Photos or camera pages, a page each, in order, each drawn on its own. */
     data class Images(val files: List<java.io.File>) : OriginalSource
 
     companion object {
-        private val images = setOf("jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "tif", "tiff")
+        private val images = setOf("jpg", "jpeg", "png", "webp", "gif", "heic", "heif")
 
         fun of(files: List<java.io.File>): OriginalSource {
             val first = files.firstOrNull { it.exists() } ?: return None

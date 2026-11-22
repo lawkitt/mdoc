@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
@@ -69,9 +68,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import uniffi.mdoc_ffi.CoreException
-import uniffi.mdoc_ffi.DocumentSession
-import uniffi.mdoc_ffi.ImportOptions
 
 @RunWith(AndroidJUnit4::class)
 class PhotoImportTest {
@@ -462,19 +458,6 @@ class PhotoImportTest {
         }
     }
 
-    /** A BigTIFF isn't taken: the core can't yet keep it without its metadata. */
-    @Test
-    fun aBigTiffIsRefused() {
-        val originals = Originals(core.storage)
-        val folder = originals.newStage()
-        val bigTiff = byteArrayOf(0x49, 0x49, 0x2b, 0, 8, 0, 0, 0) + ByteArray(32)
-        val error = assertThrows(IllegalStateException::class.java) {
-            originals.stageImage(File(folder, "scan.tif"), bigTiff)
-        }
-        assertEquals("BigTIFF images can't be imported.", error.message)
-        assertTrue(folder.listFiles()!!.isEmpty())
-    }
-
     /** Shots no scan waits for go when a process starts. */
     @Test
     fun leftoverShotsAreSweptAtStart() = runBlocking {
@@ -502,37 +485,6 @@ class PhotoImportTest {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(page.path, bounds)
             assertEquals(name, 1200 to 1600, bounds.outWidth to bounds.outHeight)
-        }
-    }
-
-    /** A TIFF is staged without its metadata and the core reads every page of it. */
-    @Test
-    fun aTiffImportsEveryPageThroughTheCore() = runBlocking {
-        val share = File(core.app.cacheDir, "hand-off").apply { mkdirs() }
-        val fax = File(share, "fax.tif")
-        try {
-            InstrumentationRegistry.getInstrumentation().context.assets.open("tagged-gps.tif").use { input ->
-                fax.outputStream().use(input::copyTo)
-            }
-            val uri = FileProvider.getUriForFile(core.app, "${core.app.packageName}.files", fax)
-            val staged = withContext(Dispatchers.Main) {
-                home.also { it.received(resolver, listOf(uri), null, "Title") }
-            }.let { home -> withTimeout(15_000) { home.state.first { it.adding != null || it.refused != null } } }
-            assertNull(staged.refused)
-            val page = ((staged.adding as PendingAdd.Received).source as ImportSource.Pages).pages.single()
-            assertEquals("tiff", page.extension)
-            // Kept without its GPS position, camera, software or private tags (#1021).
-            val kept = String(page.readBytes(), Charsets.ISO_8859_1)
-            assertTrue(String(fax.readBytes(), Charsets.ISO_8859_1).contains("FictionalCam"))
-            for (needle in listOf("FictionalCam", "Fictional Studio", "xmpmeta", "A fictional comment", "2031:03:14")) {
-                assertFalse(needle, kept.contains(needle))
-            }
-            val error = assertThrows(CoreException.NeedsOcr::class.java) {
-                DocumentSession().importImagesIn(core.app.core.library, listOf(page.path), "Fax", ImportOptions(null, false, null), null)
-            }
-            assertEquals(2u, error.pageCount)
-        } finally {
-            fax.delete()
         }
     }
 
@@ -606,24 +558,6 @@ class PhotoImportTest {
 
     private fun discard(uri: Uri) {
         CameraCapture.file(core.app, uri)?.delete()
-    }
-
-    /** A TIFF in a mixed Original keeps its place with a placeholder; the JPEG still shows. */
-    @Test
-    fun aMixedOriginalShowsEveryPageItCan() {
-        val originals = Originals(core.storage)
-        val folder = originals.newStage()
-        val jpeg = originals.stageImage(File(folder, "page-1"), taggedJpeg(1))
-        val tiff = originals.stageImage(
-            File(folder, "page-2"),
-            InstrumentationRegistry.getInstrumentation().context.assets.open("tagged-gps.tif").use { it.readBytes() },
-        )
-        val original = OriginalSource.of(listOf(jpeg, tiff))
-        assertEquals(OriginalSource.Images(listOf(jpeg, tiff)), original)
-        compose.setContent { MdocTheme { OriginalView(original, Modifier.fillMaxSize()) } }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag(PAGE_PLACEHOLDER)).fetchSemanticsNodes().isEmpty() }
-        compose.onNodeWithContentDescription("Original page 1 of 2").assertExists()
-        compose.onNodeWithText("No preview for this page").assertExists()
     }
 
     /** Twenty photos: the list lays out and decodes only what it shows, not every page at once. */

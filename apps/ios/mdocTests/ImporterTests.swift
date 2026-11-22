@@ -1,8 +1,5 @@
 import Foundation
 import ImageIO
-import class MdocFFI.DocumentSession
-import enum MdocFFI.CoreFailure
-import struct MdocFFI.ImportOptions
 import UIKit
 import UniformTypeIdentifiers
 import XCTest
@@ -143,34 +140,6 @@ final class ImporterTests: XCTestCase {
         XCTAssertEqual(left.count, 1, "\(left)")
     }
 
-    /// A TIFF is kept as a TIFF without its GPS position, camera or private
-    /// tags (#1021), and the core reads every page of it.
-    func testATIFFImportsEveryPageThroughTheCore() throws {
-        let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
-        let library = try XCTUnwrap(core.library as? RealLibrary)
-        let tagged = try Data(contentsOf: Fixture.repository.appendingPathComponent("tests/fixtures/tiff/tagged-gps.tif"))
-        XCTAssertNotNil(tagged.range(of: Data("FictionalCam".utf8)))
-        let pending = try XCTUnwrap(try Importer(storage: storage).images([tagged], scanned: false))
-        guard case .photos(let pages) = pending.source else { return XCTFail("\(pending.source)") }
-        let page = try XCTUnwrap(pages.first)
-        XCTAssertEqual(page.pathExtension, "tiff")
-        let kept = try Data(contentsOf: page)
-        for needle in ["FictionalCam", "Fictional Studio", "xmpmeta", "A fictional comment", "2031:03:14"] {
-            XCTAssertNil(kept.range(of: Data(needle.utf8)), needle)
-        }
-        let source = try XCTUnwrap(CGImageSourceCreateWithData(kept as CFData, nil))
-        XCTAssertEqual(CGImageSourceGetCount(source), 2)
-        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-        XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
-        XCTAssertEqual(properties[kCGImagePropertyOrientation] as? Int, 6)
-        XCTAssertThrowsError(
-            try MdocFFI.DocumentSession().importImagesIn(
-                library: library.ffi, images: [page.path], title: "Fax",
-                options: MdocFFI.ImportOptions(ocr: nil, nativeTextOnly: false, password: nil), progress: nil)
-        ) { error in
-            XCTAssertEqual(CoreFailure(error), .needsOcr(pages: [1, 2], pageCount: 2))
-        }
-    }
     /// A two-page 8-bit gray BigTIFF, 4 × 4 pixels a page, little-endian.
     private func bigTIFF() -> Data {
         var out = Data([0x49, 0x49, 0x2b, 0x00, 0x08, 0x00, 0x00, 0x00])
@@ -198,13 +167,25 @@ final class ImporterTests: XCTestCase {
         return out
     }
 
-    /// A BigTIFF isn't taken: the core can't yet keep it without its
-    /// metadata, and iOS would draw only its first page.
-    func testABigTIFFIsRefused() throws {
-        let big = bigTIFF()
-        let source = try XCTUnwrap(CGImageSourceCreateWithData(big as CFData, nil))
+    /// A TIFF isn't taken on the phones (#1064): from Photos it refuses the
+    /// batch, and from Files it's refused by its name and by its bytes.
+    func testATIFFIsRefused() throws {
+        let tiff = bigTIFF()
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(tiff as CFData, nil))
         XCTAssertEqual(CGImageSourceGetCount(source), 2)
-        XCTAssertThrowsError(try Importer(storage: storage).images([big], scanned: false))
+        XCTAssertThrowsError(try Importer(storage: storage).images([tiff], scanned: false))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for name in ["fax.tif", "fax.tiff", "fax.png"] {
+            let url = folder.appendingPathComponent(name)
+            try tiff.write(to: url)
+            XCTAssertThrowsError(try Importer(storage: storage).file(url), name) { error in
+                XCTAssertEqual(error.localizedDescription, "mdoc opens PDF, DOCX and image files.", name)
+            }
+        }
+        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        XCTAssertTrue(left.isEmpty, "\(left)")
     }
 
     /// A page the camera couldn't encode or Photos couldn't load arrives as

@@ -408,7 +408,7 @@ class HomeViewModel(
         fun kindOf(file: File): SourceKind? = when (file.extension.lowercase()) {
             "pdf" -> SourceKind.Pdf
             "docx" -> SourceKind.Docx
-            "jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "tif", "tiff" -> SourceKind.Image
+            "jpg", "jpeg", "png", "heic", "heif", "webp", "gif" -> SourceKind.Image
             else -> null
         }
 
@@ -427,7 +427,7 @@ class HomeViewModel(
             "image/gif" -> "gif"
             "image/heic" -> "heic"
             "image/heif" -> "heif"
-            "image/tiff" -> "tiff"
+            // TIFF on the phones is #1064: refused with the formats mdoc opens.
             else -> null
         }
 

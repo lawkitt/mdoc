@@ -90,15 +90,12 @@ class Originals(private val storage: MdocStorage) {
 
     /**
      * Clean pages only. The picker and camera both supply the source bytes in
-     * memory. The core rewrites JPEG, PNG, WebP, GIF and TIFF (every page)
-     * without their metadata; anything else Android draws upright as a JPEG,
-     * or the page is refused.
+     * memory. The core rewrites JPEG, PNG, WebP and GIF without their
+     * metadata; anything else Android draws upright as a JPEG, or the page
+     * is refused (a TIFF: #1064).
      */
     fun stageImage(file: File, bytes: ByteArray): File {
         try {
-            // BigTIFF: the core reads it but can't yet keep it without its
-            // metadata, and Android can't draw it, so it isn't taken.
-            check(!isBigTiff(bytes)) { "BigTIFF images can't be imported." }
             imageWithoutMetadata(bytes)?.let { clean ->
                 val target = imageFile(file, checkNotNull(imageExtension(clean)))
                 writeAtomically(target) {
@@ -237,12 +234,6 @@ class Originals(private val storage: MdocStorage) {
         /** Written once the unowned intake folders of older versions were swept. */
         private const val SWEPT_MARKER = ".originals-swept"
 
-        internal fun isBigTiff(bytes: ByteArray): Boolean {
-            if (bytes.size < 4) return false
-            val head = bytes.copyOfRange(0, 4).map { it.toInt() and 0xff }
-            return head == listOf(0x49, 0x49, 0x2b, 0) || head == listOf(0x4d, 0x4d, 0, 0x2b)
-        }
-
         private fun isUuid(name: String) = runCatching { UUID.fromString(name).toString() == name }.getOrDefault(false)
 
 
@@ -255,7 +246,6 @@ class Originals(private val storage: MdocStorage) {
                 has(0, "\u0089PNG\r\n\u001a\n") -> "png"
                 has(0, "RIFF") && has(8, "WEBP") -> "webp"
                 has(0, "GIF87a") || has(0, "GIF89a") -> "gif"
-                has(0, "II*\u0000") || has(0, "MM\u0000*") -> "tiff"
                 else -> null
             }
         }

@@ -14,7 +14,6 @@ Russian pages, so OCR's language choice is exercised too.
 | `fax-g4-strips.tif` | 2 | CCITT Group 4 (T.6) | 2550 × 3300, 300 dpi | min-is-white | 1 | `fax-g4.tif` rewritten in 800-row strips (5 per page) |
 | `scan-lzw-gray.tif` | 2 | LZW, horizontal predictor | 1275 × 1650, 150 dpi, 8-bit gray | min-is-black | 1 | several strips |
 | `scan-lzw-rgb.tif` | 1 | LZW, horizontal predictor | 1275 × 1650, 150 dpi, 8-bit RGB | RGB | 1 | pale yellow paper |
-| `tagged-gps.tif` | 2 | none | 16 × 8, 300 dpi, 8-bit gray | min-is-black | 1 | every descriptive and private tag filled with fictional values (camera `FictionalCam`, software `Fictional Studio`, dates `2031:03:14`, artist, description, EXIF and GPS blocks, XMP, private tag 65000); page 1 says orientation 6. The phones keep it without any of them (#1021); `image_pdf::tests::kept_copy::write_tagged_tiff_fixture` rebuilds it |
 
 The pages, in order:
 

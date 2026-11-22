@@ -4,45 +4,22 @@
 //! the one tag of a minimal EXIF block, so a viewer and the image builder
 //! still draw the image upright.
 
-pub(super) mod tags;
-
-use super::{ImageError, ImageFormat, jpeg};
+use super::{ImageFormat, jpeg};
 
 /// `bytes` without metadata, in their own format: EXIF (GPS, camera,
 /// dates), XMP, ICC profiles, text chunks, comments and appended data go;
-/// the orientation stays. A TIFF keeps every page, with only the tags that
-/// say how to draw it ([`tags`]). `None` for a format or a file this can't
-/// rewrite (HEIC, BigTIFF, a JPEG the passthrough doesn't parse), which the
-/// phone then has its operating system draw as an upright JPEG instead, or
-/// refuses.
+/// the orientation stays. `None` for a format or a file this can't rewrite
+/// (HEIC, TIFF, a JPEG the passthrough doesn't parse): a phone has its
+/// operating system draw a HEIC as an upright JPEG, and refuses a TIFF
+/// (TIFF on the phones is #1064).
 pub fn without_metadata(bytes: &[u8]) -> Option<Vec<u8>> {
-    kept_copy(bytes).ok().flatten()
-}
-
-/// [`without_metadata`], saying when an image is too large to keep: a TIFF
-/// whose rewrite would outgrow the import limit.
-pub fn kept_copy(bytes: &[u8]) -> Result<Option<Vec<u8>>, ImageError> {
-    kept_copy_within(bytes, crate::import::MAX_PDF_BYTES as usize)
-}
-
-/// [`kept_copy`], a TIFF's rewrite writing `budget` bytes at most.
-pub(crate) fn kept_copy_within(bytes: &[u8], budget: usize) -> Result<Option<Vec<u8>>, ImageError> {
-    let Some(format) = ImageFormat::from_bytes(bytes) else {
-        return Ok(None);
-    };
-    Ok(match format {
+    match ImageFormat::from_bytes(bytes)? {
         ImageFormat::Jpeg => jpeg_without_metadata(bytes),
         ImageFormat::Png => png_without_metadata(bytes),
         ImageFormat::WebP => webp_without_metadata(bytes),
         ImageFormat::Gif => gif_without_metadata(bytes),
-        ImageFormat::Tiff => match tags::without_metadata(bytes, budget) {
-            Ok(kept) => Some(kept),
-            Err(tags::Rewrite::TooLarge) => return Err(ImageError::TooLarge),
-            Err(tags::Rewrite::Unreadable) => None,
-        },
-        // The phone's operating system draws a HEIC as an upright JPEG.
-        ImageFormat::Heic => None,
-    })
+        ImageFormat::Tiff | ImageFormat::Heic => None,
+    }
 }
 
 /// A big-endian TIFF block holding only `orientation` (tag 0x0112), as

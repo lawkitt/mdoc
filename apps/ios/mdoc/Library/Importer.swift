@@ -14,15 +14,12 @@ struct Importer {
     enum Failure: LocalizedError {
         /// Not a PDF, DOCX or image, or an image that cannot be read.
         case unsupported
-        /// The core refused the image, in its words (too large to keep).
-        case refused(String)
         /// No page the camera or Photos handed over could be read.
         case unread(Int)
 
         var errorDescription: String? {
             switch self {
             case .unsupported: String(localized: "mdoc opens PDF, DOCX and image files.")
-            case .refused(let message): message
             case .unread(let count): Importer.unreadNote(count)
             }
         }
@@ -80,7 +77,7 @@ struct Importer {
         let urls: [URL]
         do {
             urls = try images.enumerated().map { index, data -> URL in
-                guard let (page, format) = try Self.page(data) else { throw Failure.unsupported }
+                guard let (page, format) = Self.page(data) else { throw Failure.unsupported }
                 let url = folder.appendingPathComponent("page-\(index + 1).\(format)")
                 try page.write(to: url, options: [.atomic, .completeFileProtection])
                 return url
@@ -117,24 +114,15 @@ struct Importer {
 
     /// An image as mdoc keeps it, which the core reads and the Original
     /// shows (#1021), with its file extension: the core rewrites JPEG, PNG,
-    /// WebP, GIF and TIFF (every page) without their metadata (GPS
-    /// position, camera, dates), the pixels and orientation as they were; HEIC and anything else iOS
+    /// WebP and GIF without their metadata (GPS position, camera, dates),
+    /// the pixels and orientation as they were; HEIC and anything else iOS
     /// reads is drawn upright as a JPEG without metadata. Nil when neither
-    /// can read it.
-    static func page(_ data: Data) throws -> (Data, String)? {
-        let kept: Data?
-        do {
-            kept = try imageWithoutMetadata(image: data)
-        } catch {
-            if case .importFailed(let message) = CoreFailure(error) { throw Failure.refused(message) }
-            throw error
-        }
-        if let kept, let format = coreFormat(kept) {
+    /// can read it, and for a TIFF (TIFF on the phones is #1064).
+    static func page(_ data: Data) -> (Data, String)? {
+        if isTIFF(data) { return nil }
+        if let kept = imageWithoutMetadata(image: data), let format = coreFormat(kept) {
             return (kept, format)
         }
-        // A TIFF the core can't keep without its metadata (BigTIFF) isn't
-        // taken: iOS would draw only its first page.
-        if isTIFF(data) { return nil }
         return uprightJPEG(data).map { ($0, "jpg") }
     }
 
@@ -144,7 +132,6 @@ struct Importer {
         if bytes.starts(with: [0xff, 0xd8, 0xff]) { return "jpg" }
         if bytes.starts(with: [0x89, 0x50, 0x4e, 0x47]) { return "png" }
         if bytes.starts(with: Array("GIF8".utf8)) { return "gif" }
-        if bytes.starts(with: [0x49, 0x49, 0x2a, 0]) || bytes.starts(with: [0x4d, 0x4d, 0, 0x2a]) { return "tiff" }
         if bytes.count == 12, bytes.starts(with: Array("RIFF".utf8)), Array(bytes[8...]) == Array("WEBP".utf8) {
             return "webp"
         }
@@ -168,7 +155,10 @@ struct Importer {
         let zip = bytes.starts(with: [0x50, 0x4b, 0x03, 0x04])
         // A password-protected Office file is an OLE compound file.
         let compound = bytes.starts(with: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
-        let image = coreFormat(header) != nil || isTIFF(header)
+        // A TIFF, named as one or not, is refused (TIFF on the phones is
+        // #1064).
+        if isTIFF(header) { return nil }
+        let image = coreFormat(header) != nil
             || (bytes.count >= 12 && Array(bytes[4..<8]) == Array("ftyp".utf8))
         // An image's signature wins: a photo with `%PDF-` in an early
         // comment is a photo, as the core reads it.
@@ -205,6 +195,8 @@ struct Importer {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return nil }
         if type.conforms(to: .pdf) { return .pdf }
         if type.conforms(to: docx) || url.pathExtension.lowercased() == "docx" { return .docx }
+        // TIFF on the phones is #1064.
+        if type.conforms(to: .tiff) { return nil }
         if type.conforms(to: .image) { return .image }
         return nil
     }

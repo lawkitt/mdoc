@@ -49,51 +49,6 @@ pub(super) fn without_metadata(jpeg: &[u8]) -> Option<(Vec<u8>, u8)> {
     Some((segments.kept, segments.orientation))
 }
 
-/// `jpeg`, a whole or abbreviated JPEG stream (a TIFF's strip or tile, or
-/// its `JPEGTables`), without the segments [`passthrough`] drops: APPn but
-/// APP14, and comments. The coding tables and scan data stay. `None` for a
-/// stream that doesn't parse.
-pub(super) fn without_markers(jpeg: &[u8]) -> Option<Vec<u8>> {
-    if !jpeg.starts_with(&[0xff, 0xd8]) {
-        return None;
-    }
-    let mut kept = Vec::with_capacity(jpeg.len());
-    kept.extend_from_slice(&jpeg[..2]);
-    let mut at = 2;
-    loop {
-        while jpeg.get(at) == Some(&0xff) && jpeg.get(at + 1) == Some(&0xff) {
-            at += 1;
-        }
-        if *jpeg.get(at)? != 0xff {
-            return None;
-        }
-        let marker = *jpeg.get(at + 1)?;
-        match marker {
-            0xd9 => {
-                kept.extend_from_slice(&[0xff, 0xd9]);
-                return Some(kept);
-            }
-            0xd0..=0xd8 | 0x01 => return None,
-            _ => {}
-        }
-        let length = usize::from(u16::from_be_bytes([*jpeg.get(at + 2)?, *jpeg.get(at + 3)?]));
-        if length < 2 {
-            return None;
-        }
-        let end = at + 2 + length;
-        let segment = jpeg.get(at..end)?;
-        if !matches!(marker, 0xe0..=0xed | 0xef | 0xfe) {
-            kept.extend_from_slice(segment);
-        }
-        at = end;
-        if marker == 0xda {
-            let data_end = scan_end(jpeg, at)?;
-            kept.extend_from_slice(&jpeg[at..data_end]);
-            at = data_end;
-        }
-    }
-}
-
 struct Frame {
     precision: u8,
     height: u16,
