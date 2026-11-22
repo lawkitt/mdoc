@@ -217,6 +217,22 @@ Features are frozen until items 13–19 land (Q4).
     and Android follow (Later). One TestFlight build after. *Done when:*
     both merged and checked on the iPhone 17 Pro.
 
+30. **[Mobile] The audit's bugs, test cleanup and the Coordinator.** *From
+    the [iOS audit grill](https://github.com/lawkitt/mdoc/issues/1076).*
+    Slices, one PR each: (A) iOS 27 menu lookups, the quarantine file and
+    the UI class times, before 2026-11-26; (B1) core and storage bugs;
+    (B2) UI and Restore extension bugs; (C) one text-view test harness and
+    the real coverage gaps; (D) UI test cleanup that keeps what #829 kept;
+    (E) `MarkdownTextView.Coordinator` split into owned pieces. *Done
+    when:* all merged; the comment rail and Restore checked on the iPhone
+    17 Pro from the next TestFlight build.
+31. **[Mobile] To grill: Document Vault and case and document tabs.** The
+    next big milestone: secure, well-organized local document storage and
+    a reorganized case and tabs UI, folding in item 22. Facts going in:
+    #1076 decision 2 (`DocumentID`, the one-document `Navigator`, the case
+    filter, the indexes, `SideDrawer`'s forwarded environment). *Done
+    when:* grilled.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
@@ -330,6 +346,13 @@ went from a median of 32 minutes to 51 when iOS moved to the `xcode-27`
 image, and every iOS part builds the core itself. Items 32 (#1044), 33
 (#1052), 34 (#1053; its shards take about 17 minutes of tests, accepted
 over a test sweep), 35 (#1050), 36 (#1046) and 37 (#1045) have shipped.
+
+38. **[CI] Build the iOS app once per run.** *From the
+    [iOS audit grill](https://github.com/lawkitt/mdoc/issues/1076)
+    (decision 8).* Each UI part runs `build-for-testing` itself (about 1.8
+    minutes); only the core is shared. Build once, pass the products to
+    the parts and run `test-without-building`. *Done when:* no UI part
+    builds the app, and the queue's iOS time is measured before and after.
 
 ## Desktop GPUI
 
