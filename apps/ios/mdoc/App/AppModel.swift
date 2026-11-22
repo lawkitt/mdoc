@@ -154,7 +154,7 @@ final class AppModel {
     /// A case's row: the Documents page filtered to that case.
     func openCase(_ id: CaseID) {
         open(.documents)
-        library.caseFilter = id
+        if library.cases.contains(where: { $0.id == id }) { library.caseFilter = id }
     }
 
     /// Start: no document and no section.
