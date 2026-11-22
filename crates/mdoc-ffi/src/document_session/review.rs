@@ -21,6 +21,7 @@ use mdoc_pii::{
     Category, Detection, IdentitySnapshot, Review,
     merge_hints::MergeHint,
     restore::{ExportedIdentity, plan_join},
+    saved::SavedReview,
     tracking::ReplacementPlan,
 };
 use std::{
@@ -114,6 +115,28 @@ impl ReviewText {
         let text = document.text.clone();
         document.review.refresh(&text);
         document
+    }
+
+    /// The review as the document keeps it (`mdoc_pii::saved`).
+    pub(crate) fn saved_review(&self) -> SavedReview {
+        self.review.save()
+    }
+
+    /// The review `saved` from this text in place of the one here, with no
+    /// rescan: undo starts afresh and the mentions take new ids, as in a
+    /// document just opened; hints dismissed here stay dismissed.
+    pub(crate) fn reopen(&mut self, saved: SavedReview) -> Result<(), CoreError> {
+        let review = Review::restore(saved, &self.text)
+            .map_err(|error| CoreError::review(error.to_string()))?;
+        *self = Self {
+            text: std::mem::take(&mut self.text),
+            review,
+            dismissed: std::mem::take(&mut self.dismissed),
+            text_revision: self.text_revision,
+            ..Default::default()
+        };
+        self.sync_ids();
+        Ok(())
     }
 
     /// Every mention's range, proposed, replaced or kept, in source order.
