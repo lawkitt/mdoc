@@ -4,11 +4,11 @@
 # in for the `ios-test` recipe's xcodebuild, failing or passing as each case
 # plans and leaving an .xcresult whose tests a fake xcrun prints, the
 # checked-in sample of a runner that failed to start
-# (scripts/ios/fixtures/ios-runner-failed.json) or a failed test. A UI part
-# whose runner failed, then passed, retries once without building on its
-# erased device and is green with a warning; one whose runner fails twice
-# fails; a failed test, the unit part, and a device that cannot be found or
-# erased never retry. The `ios-test` recipe's own line, on a fake
+# (scripts/ios/fixtures/ios-runner-failed.json) or a failed test. Every part
+# tests without building (the core job built the app, #1076). A UI part
+# whose runner failed, then passed, retries once on its erased device and is
+# green with a warning; one whose runner fails twice fails; a failed test,
+# the unit part, and a device that cannot be found or erased never retry. The `ios-test` recipe's own line, on a fake
 # xcodebuild, runs the action MDOC_IOS_TEST_ACTION names. Skipped on Windows:
 # the script runs only on macOS runners (ci-ios.yml). Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
@@ -105,8 +105,8 @@ run() {
   out="$dir/out" rc=0
   (cd "$dir" && bash "$root/scripts/ios/ios-test-part.sh" "$part" mdocUITests/AUITests mdocUITests/BUITests) >"$out" 2>&1 || rc=$?
 }
-first='|--no-deps ios-app ios-test iPhone 17 mdocUITests/AUITests mdocUITests/BUITests'
-again='test-without-building|--no-deps ios-test iPhone 17 mdocUITests/AUITests mdocUITests/BUITests'
+# Every run, the first and the retry, tests the core job's app.
+first='test-without-building|--no-deps ios-test iPhone 17 mdocUITests/AUITests mdocUITests/BUITests'
 warning='::warning::ci/ios (ui 1): UI test runner failed to start; retried once'
 
 # A green part: one run, nothing more.
@@ -121,8 +121,7 @@ run green 'ui 1' pass
 # attempt's .xcresult out of the later steps' folder.
 run retried 'ui 1' "fail $runner_json" pass
 [ "$rc" = 0 ] || fail "a pass on the retry failed the part: $(cat "$out")"
-has "$JUST_LOG" "$first"
-has "$JUST_LOG" "$again"
+[ "$(sort -u "$JUST_LOG")" = "$first" ] || fail "the retry ran something else: $(cat "$JUST_LOG")"
 [ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 2 ] || fail "not one retry: $(cat "$JUST_LOG")"
 has "$XCRUN_LOG" 'simctl shutdown all'
 has "$XCRUN_LOG" 'simctl erase 4AD2086B-7B8F-4608-A742-AA422A0B8D74'
@@ -139,7 +138,7 @@ has "$GITHUB_STEP_SUMMARY" '### ci/ios (ui 1): UI test runner failed to start; r
 run twice 'ui 1' "fail $runner_json" "fail $tmp/runner-ax.json"
 [ "$rc" = 65 ] || fail "two runner failures exited $rc: $(cat "$out")"
 [ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 2 ] || fail "not one retry: $(cat "$JUST_LOG")"
-has "$JUST_LOG" "$again"
+[ "$(sort -u "$JUST_LOG")" = "$first" ] || fail "the retry ran something else: $(cat "$JUST_LOG")"
 grep -q '^::warning::' "$out" && fail "a failed retry warned: $(cat "$out")"
 [ -s "$GITHUB_STEP_SUMMARY" ] && fail "a failed retry wrote the summary: $(cat "$GITHUB_STEP_SUMMARY")"
 [ -d "$dir/target/ios/DerivedData/Logs/Test/Test-mdoc-2.xcresult" ] || fail "the retry's xcresult is missing"
