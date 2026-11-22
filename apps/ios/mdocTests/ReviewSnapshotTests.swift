@@ -53,4 +53,37 @@ final class ReviewSnapshotTests: XCTestCase {
             Snapshot.assert(lines, named: "review-lines", appearance: appearance)
         }
     }
+
+    /// The card's chips under the strip: the scope chip, All N / This one,
+    /// shows from two mentions, and one mention leaves nothing to choose
+    /// (#1036). Moved from `ReviewFlowUITests` (#1076); its share-restore
+    /// run still checks on the real screen that one mention shows none.
+    func testTheScopeChipShowsFromTwoMentions() throws {
+        Hints.shared.setAvailableForTesting([])
+        let (core, _) = try Fixture.core()
+        let session = try core.library.importDocument(
+            .text("Maya Bennett signs for Daniel Okafor.\n\nLater Maya Bennett signs again.\n"),
+            title: "Agreement", into: .newCase(name: "Bennett"))
+        _ = try session.recognize(observer: TestObserver())
+        _ = try session.propose([
+            SampleDocument.Name(wording: "Maya Bennett", category: .person),
+            SampleDocument.Name(wording: "Daniel Okafor", category: .person),
+        ])
+        let model = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()),
+            storage: try Fixture.temporaryStorage(), findsNames: false)
+        let twice = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Bennett" })
+        let once = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Daniel Okafor" })
+        let chips = VStack(alignment: .leading, spacing: Space.m) {
+            ReviewCard(model: model, candidate: twice, part: .controls)
+            Divider()
+            ReviewCard(model: model, candidate: once, part: .controls)
+        }
+        .padding()
+        .background(Palette.background)
+        // The chips scroll, which `ImageRenderer` leaves blank.
+        for appearance in Snapshot.Appearance.allCases {
+            Snapshot.assert(chips, named: "review-scope-chip", appearance: appearance, inWindow: true)
+        }
+    }
 }

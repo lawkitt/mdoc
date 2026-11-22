@@ -9,9 +9,22 @@ final class ThemeUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// The sidebar's button from Automatic, then Settings' picker, then
+    /// Automatic after Dark: one launch (three tests with a launch each
+    /// until #1076's cleanup). The button's part comes first, while the
+    /// theme is still Automatic, and tells the system's appearance.
     @MainActor
-    func testTheThemePickedShowsInTheOpenSettingsSheet() throws {
+    func testTheThemeFromTheSidebarAndSettings() throws {
         let app = MdocUITest.launch()
+        let systemDark = try sidebarThemeButtonFlipsLightAndDark(app)
+        themePickedShowsInTheOpenSettingsSheet(app)
+        automaticFollowsTheSystemAfterDark(app, systemDark: systemDark)
+    }
+
+    /// Each theme picked shows in the open Settings sheet at once, the
+    /// last one Dark.
+    @MainActor
+    private func themePickedShowsInTheOpenSettingsSheet(_ app: XCUIApplication) {
         MdocUITest.revealSidebar(app)
         let settings = app.buttons["settings-button"].firstMatch
         XCTAssertTrue(settings.waitUntilHittable(timeout: MdocUITest.timeout))
@@ -30,20 +43,15 @@ final class ThemeUITests: XCTestCase {
         }
     }
 
-    /// Automatic after Dark shows the system's appearance at once: light
-    /// on the Simulator, whose appearance a test leaves alone.
+    /// Automatic after Dark, in the Settings sheet still open, shows the
+    /// system's appearance at once: light on the Simulator, whose
+    /// appearance a test leaves alone.
     @MainActor
-    func testAutomaticFollowsTheSystemAfterDark() throws {
-        let app = MdocUITest.launch()
-        MdocUITest.revealSidebar(app)
-        let settings = app.buttons["settings-button"].firstMatch
-        XCTAssertTrue(settings.waitUntilHittable(timeout: MdocUITest.timeout))
-        settings.tap()
+    private func automaticFollowsTheSystemAfterDark(_ app: XCUIApplication, systemDark: Bool) {
         let theme = app.descendants(matching: .any)["settings-theme"].firstMatch
         XCTAssertTrue(theme.waitForExistence(timeout: MdocUITest.timeout))
         let frame = theme.frame
         let point = CGPoint(x: frame.minX + frame.width * 0.75, y: frame.minY - 10)
-        let systemDark = try XCTUnwrap(MdocUITest.isDark(at: point), "the sheet as the system draws it")
         theme.buttons[systemDark ? "Light" : "Dark"].tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { MdocUITest.isDark(at: point) == !systemDark }, "the other theme")
         theme.buttons["Automatic"].tap()
@@ -59,10 +67,10 @@ final class ThemeUITests: XCTestCase {
     }
 
     /// The sidebar's theme button flips to the other theme, and its value
-    /// says which is chosen.
+    /// says which is chosen. Returns whether the system's appearance, which
+    /// Automatic shows first, is dark.
     @MainActor
-    func testTheSidebarThemeButtonFlipsLightAndDark() throws {
-        let app = MdocUITest.launch()
+    private func sidebarThemeButtonFlipsLightAndDark(_ app: XCUIApplication) throws -> Bool {
         MdocUITest.revealSidebar(app)
         let button = app.buttons["theme-button"].firstMatch
         XCTAssertTrue(button.waitUntilHittable(timeout: MdocUITest.timeout))
@@ -76,6 +84,7 @@ final class ThemeUITests: XCTestCase {
         button.tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { MdocUITest.isDark(at: beside) == startsDark }, "flipped back")
         XCTAssertEqual(button.value as? String, startsDark ? "Dark" : "Light")
+        return startsDark
     }
 }
 

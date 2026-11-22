@@ -211,7 +211,8 @@ final class SurveyUITests: XCTestCase {
         shot("27-pdf-original")
     }
 
-    /// The Markdown-rich fixture, and the review at a large text size.
+    /// The Markdown-rich fixture, the review at a large text size, and a
+    /// partial import's notice card.
     @MainActor
     func test4Markdown() throws {
         let app = launch(seed: MdocUITest.markdownFixture)
@@ -240,6 +241,15 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(largeText.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         scroll(largeText, toReveal: largeText.links[MdocUITest.markdownEmail].firstMatch)
         shot("30-review-ax-text")
+
+        // A partial import's notice card over the text (what it does is
+        // NoticeCardUITests').
+        let partial = launch(seed: MdocUITest.markdownFixture, notice: NoticeCardUITests.notice)
+        let partialRow = MdocUITest.anyDocumentRow(partial)
+        XCTAssertTrue(partialRow.waitForExistence(timeout: 60))
+        partialRow.tap()
+        XCTAssertTrue(partial.descendants(matching: .any)["import-warning"].firstMatch.waitForExistence(timeout: 30))
+        shot("68-notice-card")
     }
 
     /// Edit mode with Show Markdown on (ADR 0109): the keyboard up, the
@@ -550,7 +560,9 @@ final class SurveyUITests: XCTestCase {
     private static let replyText = "Thanks. Write to EMAIL_1 today about the payment. EMAIL_9 is new.\n\n## Next steps\n\n- Confirm the **£18,500** figure\n- Send the draft to EMAIL_1"
 
     @MainActor
-    private func launch(seed: String?, detectorTier: Bool = false, contentSize: String? = nil) -> XCUIApplication {
+    private func launch(
+        seed: String?, detectorTier: Bool = false, contentSize: String? = nil, notice: String? = nil
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mdoc-ui-testing"]
         if let contentSize {
@@ -561,6 +573,9 @@ final class SurveyUITests: XCTestCase {
         }
         if detectorTier {
             app.launchEnvironment["MDOC_UI_DETECTOR_TIER"] = "1"
+        }
+        if let notice {
+            app.launchEnvironment["MDOC_UI_NOTICE"] = notice
         }
         app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1"
         app.launch()

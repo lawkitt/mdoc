@@ -94,7 +94,8 @@ final class EditModeTests: XCTestCase {
     /// Two steps made in one turn of the run loop (Return, then the next
     /// letter, typed fast) are two steps on the window's undo stack too: ⌘Z
     /// takes back one. Grouped by event, they joined one group and one ⌘Z
-    /// undid both (the hosted runner's `testAListTypedWithReturnAndUndone`).
+    /// undid both (the hosted runner's
+    /// `testTheCaretOnAnEmptyLineThenAListTypedWithReturnAndUndone`).
     /// Inside SwiftUI's update the switch waits for the update to end:
     /// making the view editable resigns the first responder, and a
     /// hosting view asked to take over reads the view graph being updated

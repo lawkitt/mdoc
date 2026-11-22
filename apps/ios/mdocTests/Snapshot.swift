@@ -41,6 +41,9 @@ enum Snapshot {
         return folder.appendingPathComponent("\(base).png")
     }
 
+    /// `inWindow` draws the view in a window on the app's scene, as the
+    /// screen does, for what `ImageRenderer` leaves blank: a scroll view
+    /// and what it holds (the review card's chips).
     @MainActor
     static func assert(
         _ view: some View,
@@ -48,6 +51,7 @@ enum Snapshot {
         width: CGFloat = 390,
         appearance: Appearance = .light,
         size: DynamicTypeSize = .large,
+        inWindow: Bool = false,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -66,9 +70,15 @@ enum Snapshot {
         var rendered: (image: UIImage, png: Data)?
         for attempt in 1...3 where rendered == nil {
             if attempt > 1 { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
-            let renderer = ImageRenderer(content: content)
-            renderer.scale = 2
-            if let image = renderer.uiImage, let png = image.pngData() { rendered = (image, png) }
+            let image: UIImage?
+            if inWindow {
+                image = drawnInWindow(content, width: width, appearance: appearance)
+            } else {
+                let renderer = ImageRenderer(content: content)
+                renderer.scale = 2
+                image = renderer.uiImage
+            }
+            if let image, let png = image.pngData() { rendered = (image, png) }
         }
         guard let rendered else {
             XCTFail("\(name): nothing rendered after 3 tries", file: file, line: line)
@@ -90,6 +100,33 @@ enum Snapshot {
             try? png.write(to: actual)
             add(png, named: "\(name)-actual")
             XCTFail("\(name): \(difference) (actual image attached and at \(actual.path))", file: file, line: line)
+        }
+    }
+
+    /// `content` laid out at `width` in a window on the app's scene and
+    /// drawn as the screen draws it, at 2× and 8 bits a channel; nil
+    /// without a scene.
+    @MainActor
+    private static func drawnInWindow(_ content: some View, width: CGFloat, appearance: Appearance) -> UIImage? {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return nil }
+        // The window's first scroll view takes the screen's edge effects,
+        // which iOS 27 draws as a blur over it; in the app a screen's own
+        // scroll view has them.
+        let host = UIHostingController(rootView: content.scrollEdgeEffectHidden())
+        host.safeAreaRegions = []
+        let height = ceil(host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height)
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = appearance == .dark ? .dark : .light
+        window.frame = CGRect(x: 0, y: 0, width: width, height: max(height, 1))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        format.preferredRange = .standard
+        return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
     }
 

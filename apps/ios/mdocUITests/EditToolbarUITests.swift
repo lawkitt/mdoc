@@ -32,9 +32,12 @@ final class EditToolbarUITests: XCTestCase {
         MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "the toolbar above the keyboard")
         // A fresh Simulator's keyboard first shows its slide-to-type tip
-        // over the keys and the toolbar.
+        // over the keys and the toolbar, with the keyboard: up by now if
+        // at all. Only while something covers the toolbar is it waited for.
         let tip = app.buttons["Continue"]
-        if tip.waitForExistence(timeout: 2) { tip.tap() }
+        if tip.exists || !app.buttons["toolbar-bold"].isHittable {
+            if tip.waitForExistence(timeout: 2) { tip.tap() }
+        }
         // A key sent while edit mode is still settling can be lost: check
         // the caret reached the end with a letter typed there.
         var there = false
