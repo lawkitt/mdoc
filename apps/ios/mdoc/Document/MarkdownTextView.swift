@@ -168,9 +168,9 @@ struct MarkdownTextView: UIViewRepresentable {
         /// without a rebuild, so the map follows the text, not the key.
         private var offsetsRevision: UInt64?
         /// False until the first text is shown, so a new document starts at the top.
-        var keepsScroll = false
+        private var keepsScroll = false
         /// The content the view waits to show until mdoc is back on screen.
-        private(set) var pending: ContentKey?
+        private var pending: ContentKey?
         /// The reveals and the place across a change of mode.
         let reveal: TextReveal
         /// Where each candidate is in the shown text (UTF-16), as last
@@ -180,14 +180,14 @@ struct MarkdownTextView: UIViewRepresentable {
         private(set) var runs: [CandidateID: [DecoratedRun]] = [:]
         /// Inside `render`, whose own layout pass shows a scroll it will
         /// undo: no reveal runs there.
-        private(set) var rendering = false
+        private var rendering = false
         nonisolated(unsafe) private var foreground: NSObjectProtocol?
         /// Edit mode's typing path to the core (ADR 0109).
         let bridge = TypingBridge()
         /// A restyle that waits for marked (IME) text to be committed.
         var restyleAfterComposing = false
         /// The find bar request last shown.
-        var shownFindBar = 0
+        private var shownFindBar = 0
         /// Fix the words as the view shows it (ADR 0114).
         let fixSelection = WordsFixSelection()
         /// Shows mdoc's own selection menus (Hide name).
@@ -204,7 +204,7 @@ struct MarkdownTextView: UIViewRepresentable {
         private var responderWaits = false
         /// Whether the text last showed in edit mode; nil before it first
         /// showed. A change keeps the place and the selection (ADR 0110).
-        var shownEditing: Bool?
+        private var shownEditing: Bool?
         /// The keyboard went when the Original covered the text in edit
         /// mode: it comes back with the text.
         var focusOnReturn = false
@@ -213,7 +213,7 @@ struct MarkdownTextView: UIViewRepresentable {
         /// selected in the text once the grids switch (`connectTables`).
         var enteringCellSelection: NSRange?
         /// The width the text was last styled for.
-        var renderedWidth: CGFloat?
+        private var renderedWidth: CGFloat?
         /// Edit mode's restyling and reveal (ADR 0109).
         let livePreview = LivePreview()
         /// The selection before the latest move, for snapping the caret.
@@ -506,42 +506,12 @@ struct MarkdownTextView: UIViewRepresentable {
                 if let anchor { view.scroll(to: anchor) }
                 return
             }
-            let text = NSMutableAttributedString(attributedString: document.text)
-            var cells: [DecoratedRun.Place: NSMutableAttributedString] = [:]
-            for (table, rendered) in document.tables.enumerated() {
-                for (row, rowCells) in rendered.rows.enumerated() {
-                    for (column, cell) in rowCells.enumerated() {
-                        cells[.cell(table: table, row: row, column: column)] = NSMutableAttributedString(attributedString: cell.text)
-                    }
-                }
-            }
-            func string(_ place: DecoratedRun.Place) -> NSMutableAttributedString? {
-                place == .text ? text : cells[place]
-            }
-            collectRuns(text: text, cells: cells)
-            decoration = DecorationKey(selected: nil, scoped: [])
-            decorate(DecorationKey(selected: parent.selected, scoped: parent.scoped), dark: view.traitCollection.userInterfaceStyle == .dark, in: string)
-            document.text = text
-            for (place, cell) in cells {
-                if case .cell(let table, let row, let column) = place { document.tables[table].rows[row][column].text = cell }
-            }
+            decorateBuilt(&document, dark: view.traitCollection.userInterfaceStyle == .dark)
             view.show(document, width: width)
             // A review scrolls to names all over the text: laid out whole,
             // no place in it is an estimate that a later pass corrects.
             if keepsScroll { view.layOutAll() }
-            var items: [CandidateTextView.RotorItem] = []
-            for (order, candidate) in snapshot.candidates.enumerated() {
-                let range = offsets.nsRange(candidate.range)
-                let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
-                    NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
-                }
-                if let cell {
-                    items.append(.init(view: cell, range: NSRange(location: range.location - cell.location, length: range.length), order: order))
-                } else {
-                    items.append(.init(view: view, range: range, order: order))
-                }
-            }
-            view.rotorItems = items.sorted { $0.order < $1.order }
+            pointRotor(of: view, at: snapshot.candidates)
             if fixSelection.shown != nil {
                 // Built again while a name's words are fixed: the handles
                 // come back once this update is over (ADR 0115).
@@ -560,31 +530,82 @@ struct MarkdownTextView: UIViewRepresentable {
             if let anchor {
                 view.scroll(to: anchor)
             } else if keepsScroll {
-                view.layoutIfNeeded()
-                // Replacing can shorten the text below the old place; left
-                // there, a text that now fits is stuck, as it doesn't pan.
-                let insets = view.adjustedContentInset
-                let lowest = max(-insets.top, view.laidOutContentHeight + insets.bottom - view.bounds.height)
-                view.setContentOffset(CGPoint(x: offset.x, y: min(max(offset.y, -insets.top), lowest)), animated: false)
-                switch held {
-                case .name(let id, let above):
-                    guard let candidate = snapshot.candidate(id) else { break }
-                    let range = offsets.nsRange(candidate.range)
-                    hold(above, in: view) { view.place(of: range, onlyShown: $0)?.rect }
-                    // A name that grew may run past its table's edge.
-                    if let place = view.place(of: range, onlyShown: true), let cell = place.cell,
-                       let table = cell.superview as? MarkdownTableView {
-                        table.reveal(cell.convert(place.local, to: table))
+                keep(held, from: offset, ranges: ranges, in: view)
+            }
+        }
+
+        /// Notes where each candidate's stretches are in the text and the
+        /// cells just built, and decorates the name under review and its
+        /// scope as a selection change recolours them.
+        private func decorateBuilt(_ document: inout RenderedDocument, dark: Bool) {
+            let text = NSMutableAttributedString(attributedString: document.text)
+            var cells: [DecoratedRun.Place: NSMutableAttributedString] = [:]
+            for (table, rendered) in document.tables.enumerated() {
+                for (row, rowCells) in rendered.rows.enumerated() {
+                    for (column, cell) in rowCells.enumerated() {
+                        cells[.cell(table: table, row: row, column: column)] = NSMutableAttributedString(attributedString: cell.text)
                     }
-                case .line(let line):
-                    let location = Self.moved(line.location, from: ranges, to: shownRanges)
-                    guard location <= view.textStorage.length else { break }
-                    hold(line.delta + insets.top, in: view) {
-                        view.laidOutRect(of: NSRange(location: location, length: 0), onlyShown: $0)
-                    }
-                case nil:
-                    break
                 }
+            }
+            func string(_ place: DecoratedRun.Place) -> NSMutableAttributedString? {
+                place == .text ? text : cells[place]
+            }
+            collectRuns(text: text, cells: cells)
+            decoration = DecorationKey(selected: nil, scoped: [])
+            decorate(DecorationKey(selected: parent.selected, scoped: parent.scoped), dark: dark, in: string)
+            document.text = text
+            for (place, cell) in cells {
+                if case .cell(let table, let row, let column) = place { document.tables[table].rows[row][column].text = cell }
+            }
+        }
+
+        /// Points the Candidates rotor at each candidate's text, in the
+        /// text or in the table cell that draws it, in document order.
+        private func pointRotor(of view: CandidateTextView, at candidates: [Candidate]) {
+            var items: [CandidateTextView.RotorItem] = []
+            for (order, candidate) in candidates.enumerated() {
+                let range = offsets.nsRange(candidate.range)
+                let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
+                    NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
+                }
+                if let cell {
+                    items.append(.init(view: cell, range: NSRange(location: range.location - cell.location, length: range.length), order: order))
+                } else {
+                    items.append(.init(view: view, range: range, order: order))
+                }
+            }
+            view.rotorItems = items.sorted { $0.order < $1.order }
+        }
+
+        /// Puts the text back where it was before the rebuild (`offset`),
+        /// then keeps `held` where it was on screen: the name under review,
+        /// or the line at the top, found by where the candidates moved
+        /// (`ranges`, as built before).
+        private func keep(_ held: Held?, from offset: CGPoint, ranges: [CandidateID: NSRange], in view: CandidateTextView) {
+            view.layoutIfNeeded()
+            // Replacing can shorten the text below the old place; left
+            // there, a text that now fits is stuck, as it doesn't pan.
+            let insets = view.adjustedContentInset
+            let lowest = max(-insets.top, view.laidOutContentHeight + insets.bottom - view.bounds.height)
+            view.setContentOffset(CGPoint(x: offset.x, y: min(max(offset.y, -insets.top), lowest)), animated: false)
+            switch held {
+            case .name(let id, let above):
+                guard let candidate = parent.snapshot.candidate(id) else { break }
+                let range = offsets.nsRange(candidate.range)
+                hold(above, in: view) { view.place(of: range, onlyShown: $0)?.rect }
+                // A name that grew may run past its table's edge.
+                if let place = view.place(of: range, onlyShown: true), let cell = place.cell,
+                   let table = cell.superview as? MarkdownTableView {
+                    table.reveal(cell.convert(place.local, to: table))
+                }
+            case .line(let line):
+                let location = Self.moved(line.location, from: ranges, to: shownRanges)
+                guard location <= view.textStorage.length else { break }
+                hold(line.delta + insets.top, in: view) {
+                    view.laidOutRect(of: NSRange(location: location, length: 0), onlyShown: $0)
+                }
+            case nil:
+                break
             }
         }
 
