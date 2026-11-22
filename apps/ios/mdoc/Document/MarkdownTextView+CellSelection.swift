@@ -265,6 +265,7 @@ final class CellHandleDragger: NSObject, UIGestureRecognizerDelegate {
     /// Takes hold of the handle under a finger down at `point`, if any.
     func begin(at point: CGPoint) {
         guard let view, let handle = view.cellHandle(at: point) else { return }
+        release()
         held = (handle.end, CGVector(dx: handle.line.x - point.x, dy: handle.line.y - point.y))
         finger = view.convert(point, to: nil)
         stops = CandidateTextView.CellStops(view.textStorage.string)
@@ -289,6 +290,13 @@ final class CellHandleDragger: NSObject, UIGestureRecognizerDelegate {
     /// The finger lifted, or the touch was cancelled.
     func end() {
         guard held != nil else { return }
+        release()
+        view?.showCellMenu()
+    }
+
+    /// Lets go of the handle, its loupe and the display link, which keeps
+    /// this gesture alive while it runs.
+    private func release() {
         held = nil
         stops = nil
         scroller?.invalidate()
@@ -297,10 +305,11 @@ final class CellHandleDragger: NSObject, UIGestureRecognizerDelegate {
         scrolledTo = nil
         loupe?.invalidate()
         loupe = nil
-        view?.showCellMenu()
     }
 
     @objc private func nextFrame(_ link: CADisplayLink) {
+        // The text view went, or the drag ended some other way.
+        guard view != nil, held != nil else { return release() }
         defer { lastFrame = link.timestamp }
         guard let lastFrame else { return }
         scroll(for: link.timestamp - lastFrame)

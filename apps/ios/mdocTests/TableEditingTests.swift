@@ -672,6 +672,7 @@ final class TableEditingTests: XCTestCase {
         let knob = CGPoint(x: lines.end.midX, y: lines.end.maxY + 8)
         let built = CandidateTextView.CellStops.built
         dragger.begin(at: knob)
+        defer { dragger.end() }
         XCTAssertTrue(dragger.isDragging)
         for step in 1...6 {
             dragger.move(to: CGPoint(x: knob.x + CGFloat(step) * 8, y: knob.y + CGFloat(step) * 4))

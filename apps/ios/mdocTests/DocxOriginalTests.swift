@@ -217,10 +217,14 @@ final class DocxOriginalTests: XCTestCase {
     }
 
     /// The rail's cards keep a height for each expansion: an expanded card
-    /// gets its taller height, and its old one back when it folds.
+    /// gets its taller height, and its old one back when it folds; a larger
+    /// text size measures and places them again at once.
     func testRailCardsKeepTheirHeightForTheirExpansion() async throws {
         let rendered = try await render("comments.docx")
-        let view = CommentedPDFContainer(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = CommentedPDFContainer(frame: window.bounds)
+        window.addSubview(view)
+        window.isHidden = false
         view.load(rendered)
         view.update(showsComments: true, rail: true, active: nil)
         func cards() -> [CommentRailCard] {
@@ -254,6 +258,11 @@ final class DocxOriginalTests: XCTestCase {
         XCTAssertEqual(card.frame.height, open, accuracy: 0.5, "expanded, its own height")
         view.update(showsComments: true, rail: true, active: nil)
         XCTAssertEqual(card.frame.height, closed, accuracy: 0.5, "folded again")
+        // No scroll or zoom follows a new text size: the trait change
+        // alone lays the rail out again.
+        view.traitOverrides.preferredContentSizeCategory = .accessibilityExtraLarge
+        view.layoutIfNeeded()
+        XCTAssertGreaterThan(card.frame.height, closed + 10, "measured again at the larger size")
     }
 
     private func comment(

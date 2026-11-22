@@ -126,6 +126,12 @@ final class CommentedPDFContainer: UIView {
             self, selector: #selector(voiceOverChanged), name: UIAccessibility.voiceOverStatusDidChangeNotification,
             object: nil)
         voiceOverChanged()
+        // The cards' text grows or shrinks: measure and place them again.
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitLegibilityWeight.self]) {
+            (view: CommentedPDFContainer, _: UITraitCollection) in
+            view.cards.forEach { $0.forgetHeights() }
+            view.setNeedsLayout()
+        }
     }
 
     @available(*, unavailable)
@@ -709,6 +715,11 @@ final class CommentRailCard: UIControl {
     /// on every scroll frame, and a card's text never changes.
     private var heights: [Fit: CGFloat] = [:]
 
+    /// A new text size or Bold Text: the next layout measures again.
+    func forgetHeights() {
+        heights = [:]
+    }
+
     /// The card's height at `width`.
     func height(fitting width: CGFloat) -> CGFloat {
         let fit = Fit(width: width, expanded: expanded)
@@ -794,11 +805,6 @@ final class CommentRailCard: UIControl {
         ])
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         showExpanded()
-        // A new text size or Bold Text measures again.
-        registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitLegibilityWeight.self]) {
-            (card: CommentRailCard, _: UITraitCollection) in
-            card.heights = [:]
-        }
         isAccessibilityElement = true
         accessibilityLabel = thread.spokenLabel
         accessibilityTraits = .button
