@@ -225,6 +225,7 @@ struct DocumentScreen: View {
     /// moon put on screen with the hint bounces too.
     private func bounceDarkPage() {
         Task {
+            // timing: a beat after the moon shows, so it is on screen to bounce (#1070)
             try? await Task.sleep(for: .milliseconds(400))
             darkPageBounces += 1
         }
