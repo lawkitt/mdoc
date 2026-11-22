@@ -139,6 +139,10 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(toast.waitForExistence(timeout: MdocUITest.timeout), "a change on this visit: All reviewed · Undo")
         toast.tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        // Undo opens the bar on what it undid: end it, so the next part
+        // sees Find's Hide name open it.
+        if bar.exists { app.buttons["review-end"].tap() }
+        XCTAssertTrue(bar.waitForNonExistence(timeout: MdocUITest.timeout))
     }
 
     /// Adjust Words from the alias chip's menu (ADR 0114, 0115), after

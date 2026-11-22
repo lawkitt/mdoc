@@ -32,13 +32,13 @@ final class EditModeUITests: XCTestCase {
         edit.tap()
 
         // Done shows and the review bar stays away; with no selection the
-        // keyboard waits for a tap in the text (ADR 0110). The text view
-        // takes the keyboard or not as edit mode turns on, with Done, and
-        // XCUITest waits for the keyboard's slide before it looks.
+        // keyboard waits for a tap in the text (ADR 0110). Once the screen
+        // has settled, a keyboard on its way would have slid in.
         let done = app.buttons["done-editing"]
         XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertEqual(done.label, "Done editing")
         XCTAssertFalse(app.descendants(matching: .any)["review-bar"].firstMatch.exists)
+        MdocUITest.settledScreen()
         XCTAssertFalse(app.keyboards.firstMatch.exists, "the keyboard waits for a tap")
         MdocUITest.tapIntoText(app)
 
@@ -139,7 +139,8 @@ final class EditModeUITests: XCTestCase {
         let done = app.buttons["done-editing"]
         XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         // No selection: nothing moves and the keyboard waits for a tap
-        // (decided as Done shows, as above).
+        // (checked on the settled screen, as above).
+        MdocUITest.settledScreen()
         XCTAssertFalse(app.buttons["toolbar-bold"].exists, "the keyboard waits for a tap")
         done.tap()
         XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
