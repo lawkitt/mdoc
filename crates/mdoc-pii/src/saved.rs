@@ -230,10 +230,12 @@ impl Review {
         }
     }
 
-    /// The review `saved` holds, over `source`, the text it was saved with.
-    /// Nothing is scanned or discovered again; undo starts afresh, as for a
-    /// document just opened.
-    pub fn restore(saved: SavedReview, source: &str) -> Result<Self, RestoreError> {
+    /// The review `saved` holds, over `source`, the text it was saved with,
+    /// at editor history state `history` (as `relink` takes it), so its
+    /// replacements can be reverted at once. Nothing is scanned again, and
+    /// discovery runs only for a review saved while it waited for discovery;
+    /// undo starts afresh, as for a document just opened.
+    pub fn restore(saved: SavedReview, source: &str, history: u64) -> Result<Self, RestoreError> {
         if saved.format > FORMAT {
             return Err(RestoreError::Newer(saved.format));
         }
@@ -287,7 +289,7 @@ impl Review {
                 range: candidate.range,
             })
             .collect();
-        Ok(Self {
+        let mut review = Self {
             source: source.into(),
             candidates: Candidates::restored(
                 saved
@@ -303,6 +305,7 @@ impl Review {
                 assignments,
                 exclusions,
                 saved.provenance_id,
+                history,
             ),
             identities: IdentityStore::restored(saved.identities, saved.policy, saved.normalized),
             occupied_tokens: saved.occupied_tokens.into_iter().collect(),
@@ -313,7 +316,11 @@ impl Review {
             manual_priority: saved.manual_priority,
             revision: Default::default(),
             awaiting_discovery: saved.awaiting_discovery,
-        })
+        };
+        if review.awaiting_discovery {
+            review.refresh(source);
+        }
+        Ok(review)
     }
 }
 
@@ -389,29 +396,60 @@ impl SavedVariant {
 }
 
 impl SavedReview {
-    /// Every range lies on `source`'s character boundaries, lists the review
-    /// searches by position are in source order, and every step reference
-    /// points back: what restoring needs not to misread or panic.
+    /// Every range lies on `source`'s character boundaries and holds what the
+    /// review says is there, lists the review searches by position are in
+    /// source order, and every reference points at something saved, with no
+    /// loop: what restoring needs not to misread, panic or hang.
     fn check(&self, source: &str) -> Result<(), RestoreError> {
-        let fits = |range: &Range<usize>| fits(source, range);
+        let holds = |range: &Range<usize>, text: &str| {
+            fits(source, range) && source.get(range.clone()) == Some(text)
+        };
         let ordered = |ranges: Vec<&Range<usize>>| {
-            ranges.iter().all(|range| fits(range))
+            ranges.iter().all(|range| fits(source, range))
                 && ranges.windows(2).all(|pair| pair[0].start <= pair[1].start)
+        };
+        let variants: HashMap<u64, &SavedVariant> =
+            self.variants.iter().map(|v| (v.id, v)).collect();
+        // A wording's spelling lineage ends within as many steps as there
+        // are wordings.
+        let lineage_ends = |variant: &SavedVariant| {
+            let mut at = variant.source_variant;
+            for _ in 0..variants.len() {
+                match at.and_then(|id| variants.get(&id)) {
+                    Some(seed) => at = seed.source_variant,
+                    None => return true,
+                }
+            }
+            false
         };
         let steps_point_back = self
             .steps
             .iter()
             .enumerate()
             .all(|(at, step)| step.predecessor.is_none_or(|index| index < at));
-        let ok = steps_point_back
+        let ok = variants.len() == self.variants.len()
+            && steps_point_back
+            && self.variants.iter().all(|variant| {
+                lineage_ends(variant)
+                    && variant
+                        .mentions
+                        .iter()
+                        .all(|range| holds(range, &variant.original))
+            })
+            && self.pending.iter().all(|candidate| {
+                variants
+                    .get(&candidate.variant)
+                    .is_some_and(|variant| holds(&candidate.range, &variant.original))
+            })
+            && self.applied.iter().all(|applied| {
+                self.steps
+                    .get(applied.step)
+                    .is_some_and(|step| holds(&applied.range, &step.after))
+            })
             && self
-                .applied
+                .exclusions
                 .iter()
-                .all(|applied| applied.step < self.steps.len())
-            && self
-                .variants
-                .iter()
-                .all(|variant| variant.mentions.iter().all(fits))
+                .all(|exclusion| holds(&exclusion.range, &exclusion.original))
             && ordered(self.pending.iter().map(|c| &c.range).collect())
             && ordered(self.applied.iter().map(|a| &a.range).collect())
             && ordered(self.assignments.iter().map(|a| &a.range).collect())

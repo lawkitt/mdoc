@@ -126,15 +126,15 @@ impl ReviewText {
     /// rescan: undo starts afresh and the mentions take new ids, as in a
     /// document just opened; hints dismissed here stay dismissed.
     pub(crate) fn reopen(&mut self, saved: SavedReview) -> Result<(), CoreError> {
-        let review = Review::restore(saved, &self.text)
-            .map_err(|error| CoreError::review(error.to_string()))?;
-        *self = Self {
-            text: std::mem::take(&mut self.text),
-            review,
-            dismissed: std::mem::take(&mut self.dismissed),
+        let mut reopened = Self {
+            text: self.text.clone(),
             text_revision: self.text_revision,
             ..Default::default()
         };
+        reopened.review = Review::restore(saved, &reopened.text, reopened.history)
+            .map_err(|error| CoreError::review(error.to_string()))?;
+        reopened.dismissed = std::mem::take(&mut self.dismissed);
+        *self = reopened;
         self.sync_ids();
         Ok(())
     }

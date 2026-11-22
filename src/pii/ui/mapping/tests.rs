@@ -3533,7 +3533,8 @@ fn a_saved_review_reopens_as_it_was(cx: &mut gpui::TestAppContext) {
     reopened.update(cx, |view, cx| {
         view.editor.update(cx, |e, cx| e.set_text(&text, cx));
         let saved = serde_json::from_str(&saved).unwrap();
-        view.pii.review = Review::restore(saved, &text).unwrap();
+        let history = view.editor.read(cx).history_id();
+        view.pii.review = Review::restore(saved, &text, history).unwrap();
         view.pii.reviewing = true;
         view.review_changed(cx);
     });
@@ -3546,7 +3547,28 @@ fn a_saved_review_reopens_as_it_was(cx: &mut gpui::TestAppContext) {
         );
     });
 
-    // Both carry on alike: Apply all replaces the same mentions the same way.
+    // Both carry on alike: the replacement goes back to its original at
+    // once, then Apply all replaces the same mentions the same way.
+    for view in [&app, &reopened] {
+        view.update_in(cx, |view, window, cx| {
+            let id = view.pii.review.applied()[0].id;
+            view.activate_annotation(APPLIED_ID | id, window, cx);
+            view.pii.mapping.set_scope(Scope::Mention);
+            view.keep_originals(window, cx);
+            assert!(view.pii.review.applied().is_empty());
+            assert!(view.editor.read(cx).text().contains("Bob Hart"));
+        });
+        cx.run_until_parked();
+    }
+    let kept = app.update(cx, |app, cx| {
+        (app.editor.read(cx).text().to_owned(), panel_text(app, cx))
+    });
+    reopened.update(cx, |view, cx| {
+        assert_eq!(
+            (view.editor.read(cx).text().to_owned(), panel_text(view, cx)),
+            kept
+        );
+    });
     for view in [&app, &reopened] {
         view.update(cx, |view, cx| view.apply_aliases(cx));
     }

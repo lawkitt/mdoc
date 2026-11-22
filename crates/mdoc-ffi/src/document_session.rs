@@ -1159,11 +1159,20 @@ mod tests {
         let after = reopened
             .reopen_review(serde_json::from_str(&json).unwrap(), true)
             .unwrap();
-        assert_eq!(reopened_view(after), reopened_view(before));
+        assert_eq!(reopened_view(after), reopened_view(before.clone()));
         assert_eq!(reopened.saved_review().unwrap(), saved);
         assert!(!reopened.snapshot().unwrap().can_undo);
 
-        // Both carry on alike.
+        // Both carry on alike: the replacement reverts at once, then the
+        // rest is replaced.
+        for each in [&session, &reopened] {
+            each.keep(before.mentions[1].range, Scope::This).unwrap();
+        }
+        assert_eq!(
+            reopened_view(reopened.snapshot().unwrap()),
+            reopened_view(session.snapshot().unwrap())
+        );
+        assert!(reopened.snapshot().unwrap().text.contains("Bob Hart"));
         session.replace_all().unwrap();
         reopened.replace_all().unwrap();
         assert_eq!(

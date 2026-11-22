@@ -210,19 +210,22 @@ impl Tracking {
     pub(crate) fn last_id(&self) -> u64 {
         self.next_id
     }
-    /// Provenance from a saved review: no journal, so the first transaction
-    /// starts it as it does for a review that never saw one.
+    /// Provenance from a saved review at editor history state `history`, the
+    /// current one: no journal, so Undo never reaches past it.
     pub(crate) fn restored(
         applied: Vec<Applied>,
         assignments: Vec<Assignment>,
         exclusions: Vec<Exclusion>,
         next_id: u64,
+        history: u64,
     ) -> Self {
         let mut tracking = Self {
             applied,
             assignments,
             exclusions,
             next_id,
+            current: Some(history),
+            head: history,
             ..Default::default()
         };
         tracking.index();
