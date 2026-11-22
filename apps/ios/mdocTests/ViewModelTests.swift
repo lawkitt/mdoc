@@ -1,4 +1,5 @@
 import PDFKit
+import UIKit
 import XCTest
 @testable import mdoc
 
@@ -622,6 +623,59 @@ final class RestoreViewModelTests: XCTestCase {
         XCTAssertNil(model.selectedCase)
         XCTAssertNil(model.result)
         XCTAssertEqual(model.errorMessage, CoreError.noCase.errorDescription)
+    }
+
+    /// Copied says the restored text shown was copied: another case's
+    /// restored text is not, so the button reads Copy again.
+    func testCopiedGoesWhenTheCaseChanges() throws {
+        let (seeded, alias) = try seeded()
+        let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
+        let pasteboard = UIPasteboard.withUniqueName()
+        defer { UIPasteboard.remove(withName: pasteboard.name) }
+        XCTAssertFalse(model.copied)
+        model.copy(to: pasteboard)
+        XCTAssertTrue(model.copied)
+        XCTAssertEqual(pasteboard.string, "Maya Ellison agrees.")
+        model.save(to: seeded.letter)
+        XCTAssertTrue(model.copied, "saving copies nothing new")
+        model.selectCase(seeded.ellison)
+        XCTAssertTrue(model.copied, "the same case, the same text")
+        model.selectCase(seeded.harbour)
+        XCTAssertFalse(model.copied)
+        model.copy(to: pasteboard)
+        XCTAssertEqual(pasteboard.string, "\(alias) agrees.")
+    }
+
+    /// A save that failed says why until a save goes through.
+    func testAGoodSaveClearsTheLastError() throws {
+        let (seeded, alias) = try seeded()
+        let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
+        XCTAssertNil(model.errorMessage)
+        model.save(to: DocumentID(rawValue: "deleted since"))
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNil(model.savedTo)
+        XCTAssertNotNil(model.result, "the restored text stays")
+        model.save(to: seeded.quotation)
+        XCTAssertEqual(model.savedTo, seeded.quotation)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// The sheet says which of its three states it is in: nothing shared
+    /// as text, mdoc's storage failing with the error's own words, or the
+    /// reply restored.
+    func testTheSheetSaysWhenRestoreFailed() throws {
+        guard case .noText = RestoreSheet.make(text: nil, library: { throw CoreError.notFound }) else {
+            return XCTFail("no text")
+        }
+        guard case .failed(let message) = RestoreSheet.make(text: "PERSON_1", library: { throw CoreError.notFound }) else {
+            return XCTFail("the store failed: not nothing to restore")
+        }
+        XCTAssertEqual(message, CoreError.notFound.errorDescription)
+        let (seeded, alias) = try seeded()
+        guard case .ready(let model) = RestoreSheet.make(text: "\(alias) agrees.", library: { seeded.library }) else {
+            return XCTFail("ready")
+        }
+        XCTAssertEqual(model.result?.text, "Maya Ellison agrees.")
     }
 }
 

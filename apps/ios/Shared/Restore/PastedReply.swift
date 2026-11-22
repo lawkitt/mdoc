@@ -35,6 +35,20 @@ enum PastedReply {
         return nil
     }
 
+    /// What the Restore with mdoc extension was shared: the first item's
+    /// attachment with text, or that item's own text.
+    static func sharedText(in items: [NSExtensionItem]) async -> String? {
+        for item in items {
+            if let text = await text(from: item.attachments ?? []) {
+                return text
+            }
+            if let text = item.attributedContentText?.string, !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
     private static func html(from provider: NSItemProvider) async -> String? {
         guard provider.hasItemConformingToTypeIdentifier(UTType.html.identifier) else { return nil }
         return await withCheckedContinuation { continuation in

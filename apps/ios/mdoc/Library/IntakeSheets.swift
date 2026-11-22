@@ -145,6 +145,8 @@ struct DocumentScanner: UIViewControllerRepresentable {
     /// importer refuses the scan rather than drop it.
     let onScan: ([Data?]) -> Void
     let onCancel: () -> Void
+    /// The camera failed, as when another app holds it: not a cancel.
+    let onFail: (Error) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -177,7 +179,7 @@ struct DocumentScanner: UIViewControllerRepresentable {
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
-            parent.onCancel()
+            parent.onFail(error)
         }
     }
 }

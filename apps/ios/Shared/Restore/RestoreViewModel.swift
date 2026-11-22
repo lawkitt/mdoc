@@ -1,5 +1,26 @@
 import Foundation
 import Observation
+import UIKit
+
+/// What the Restore with mdoc sheet shows.
+enum RestoreSheet {
+    case ready(RestoreViewModel)
+    /// Nothing was shared as text.
+    case noText
+    /// mdoc's storage or its case key could not be opened: the error's own
+    /// words.
+    case failed(String)
+
+    @MainActor
+    static func make(text: String?, library: () throws -> any Library) -> RestoreSheet {
+        guard let text else { return .noText }
+        do {
+            return .ready(RestoreViewModel(library: try library(), reply: text))
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+}
 
 /// Restores a shared AI reply in place for the Restore with mdoc extension.
 /// It uses one case at a time, the case of the document shared last unless
@@ -15,6 +36,8 @@ final class RestoreViewModel {
     private(set) var result: RestoreResult?
     private(set) var errorMessage: String?
     private(set) var savedTo: DocumentID?
+    /// The restored text shown was copied.
+    private(set) var copied = false
 
     init(library: any Library, reply: String) {
         self.library = library
@@ -44,6 +67,7 @@ final class RestoreViewModel {
         guard id != selectedCase else { return }
         selectedCase = id
         savedTo = nil
+        copied = false
         restore()
     }
 
@@ -67,10 +91,17 @@ final class RestoreViewModel {
         do {
             try library.saveReply(reply, to: document)
             savedTo = document
+            errorMessage = nil
             snapshot = library.snapshot()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func copy(to pasteboard: UIPasteboard = .general) {
+        guard let result else { return }
+        RestoredPasteboard.copy(result.text, to: pasteboard)
+        copied = true
     }
 
     func title(of document: DocumentID) -> String? {

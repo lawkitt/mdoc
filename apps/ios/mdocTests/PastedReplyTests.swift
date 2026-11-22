@@ -44,6 +44,36 @@ final class PastedReplyTests: XCTestCase {
         XCTAssertEqual(text, "Just text")
     }
 
+    /// What Restore with mdoc is shared: an attachment's text, as Markdown
+    /// from its HTML, before the item's own text; else the item's own text;
+    /// else the next item's.
+    func testTheRestoreExtensionTakesTheFirstSharedText() async {
+        func item(_ providers: [NSItemProvider], text: String? = nil) -> NSExtensionItem {
+            let item = NSExtensionItem()
+            item.attachments = providers
+            item.attributedContentText = text.map { NSAttributedString(string: $0) }
+            return item
+        }
+        let webPage = NSItemProvider()
+        webPage.registerDataRepresentation(forTypeIdentifier: UTType.html.identifier, visibility: .all) { done in
+            done(Data(self.html.utf8), nil)
+            return nil
+        }
+        webPage.registerObject(flat as NSString, visibility: .all)
+        let image = NSItemProvider(item: Data([0xFF, 0xD8]) as NSData, typeIdentifier: UTType.jpeg.identifier)
+
+        let fromHTML = await PastedReply.sharedText(in: [item([image, webPage], text: "The post's caption")])
+        XCTAssertEqual(fromHTML, markdown)
+        let ownText = await PastedReply.sharedText(in: [item([image], text: "PERSON_1 agrees.")])
+        XCTAssertEqual(ownText, "PERSON_1 agrees.")
+        let next = await PastedReply.sharedText(in: [item([image], text: ""), item([NSItemProvider(object: "Second" as NSString)])])
+        XCTAssertEqual(next, "Second")
+        let nothing = await PastedReply.sharedText(in: [item([image]), item([], text: "")])
+        XCTAssertNil(nothing)
+        let empty = await PastedReply.sharedText(in: [])
+        XCTAssertNil(empty)
+    }
+
     /// The box's own Paste, as the edit menu or ⌘V calls it.
     func testTheBoxsPasteReadsTheHTML() throws {
         let pasteboard = UIPasteboard.general

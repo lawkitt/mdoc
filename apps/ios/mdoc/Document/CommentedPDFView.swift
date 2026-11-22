@@ -356,9 +356,7 @@ final class CommentedPDFContainer: UIView {
         guard width > 0 else { return }
         for card in cards {
             guard let marker = comments.marker(of: card.commentID), let frames = lineFrame(marker) else { continue }
-            let height = card.systemLayoutSizeFitting(
-                CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
-                withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+            let height = card.height(fitting: width)
             let top = max(convert(frames.line, to: railView).minY - Space.xs, bottom + Space.xs)
             card.frame = CGRect(x: Space.xs, y: top, width: width, height: height)
             bottom = top + height
@@ -440,16 +438,28 @@ final class CommentedPDFContainer: UIView {
     @objc private func tapped(_ gesture: UITapGestureRecognizer) {
         guard showsComments, let page = pdfView.page(for: gesture.location(in: pdfView), nearest: false) else { return }
         let point = pdfView.convert(gesture.location(in: pdfView), to: page)
-        guard let index = pdfView.document?.index(for: page) else { return }
-        let hit = comments.passages.first { _, places in
-            places.contains { $0.page == index && Self.pageRect($0.rect, on: page).insetBy(dx: -2, dy: -2).contains(point) }
-        }
-        guard let id = hit?.key else { return }
+        guard let index = pdfView.document?.index(for: page),
+            let id = Self.thread(at: point, page: index, in: comments, rect: { Self.pageRect($0, on: page) })
+        else { return }
         if rail {
             onCard(id)
         } else {
             onPassage(id)
         }
+    }
+
+    /// The thread whose passage holds `point`, in page space, on page
+    /// `index`. Where passages overlap, the first in reading order wins,
+    /// the order the comment sheet steps through, so a tap there always
+    /// opens the same thread.
+    static func thread(
+        at point: CGPoint, page index: Int, in comments: DocxComments, rect: (PageRect) -> CGRect
+    ) -> String? {
+        comments.ordered.first { thread in
+            comments.passages[thread.id]?.contains {
+                $0.page == index && rect($0.rect).insetBy(dx: -2, dy: -2).contains(point)
+            } ?? false
+        }?.id
     }
 
     // MARK: Accessibility
@@ -690,6 +700,26 @@ final class CommentRailCard: UIControl {
         didSet { showExpanded() }
     }
 
+    private struct Fit: Hashable {
+        let width: CGFloat
+        let expanded: Bool
+    }
+
+    /// Heights measured, by width and expansion: the rail places its cards
+    /// on every scroll frame, and a card's text never changes.
+    private var heights: [Fit: CGFloat] = [:]
+
+    /// The card's height at `width`.
+    func height(fitting width: CGFloat) -> CGFloat {
+        let fit = Fit(width: width, expanded: expanded)
+        if let known = heights[fit] { return known }
+        let height = systemLayoutSizeFitting(
+            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+        heights[fit] = height
+        return height
+    }
+
     private func showExpanded() {
         body.textContainer.maximumNumberOfLines = expanded ? 0 : 2
         // Expanded, the text selects and copies like the page's.
@@ -764,6 +794,11 @@ final class CommentRailCard: UIControl {
         ])
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         showExpanded()
+        // A new text size or Bold Text measures again.
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitLegibilityWeight.self]) {
+            (card: CommentRailCard, _: UITraitCollection) in
+            card.heights = [:]
+        }
         isAccessibilityElement = true
         accessibilityLabel = thread.spokenLabel
         accessibilityTraits = .button

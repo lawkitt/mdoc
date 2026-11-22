@@ -186,6 +186,76 @@ final class DocxOriginalTests: XCTestCase {
         }
     }
 
+    /// A tap where passages overlap opens the first of them in reading
+    /// order, every time: not whichever the passages' dictionary yields.
+    func testATapOnOverlappingPassagesOpensTheFirstInReadingOrder() {
+        // Twelve passages over one stretch of a line, each starting a
+        // little further right; their ids run backwards to that order.
+        let ids = (0..<12).map { String(11 - $0) }
+        let comments = DocxComments(
+            comments: ids.map { comment($0, "Note \($0).") },
+            anchors: ids.enumerated().map { index, id in
+                CommentAnchor(
+                    id: id, page: 0, rects: [PageRect(x: 0.1 + 0.01 * Float(index), y: 0.2, w: 0.5, h: 0.02)],
+                    point: false)
+            })
+        XCTAssertEqual(comments.ordered.first?.id, "11")
+        // A page 1000 pt square.
+        func rect(_ place: PageRect) -> CGRect {
+            CGRect(x: CGFloat(place.x), y: CGFloat(place.y), width: CGFloat(place.w), height: CGFloat(place.h))
+                .applying(CGAffineTransform(scaleX: 1000, y: 1000))
+        }
+        func hit(_ x: CGFloat, page: Int = 0) -> String? {
+            CommentedPDFContainer.thread(at: CGPoint(x: x, y: 210), page: page, in: comments, rect: rect)
+        }
+        for _ in 0..<5 {
+            XCTAssertEqual(hit(300), "11", "all twelve overlap here")
+        }
+        XCTAssertEqual(hit(650), "6", "the first one that reaches this far")
+        XCTAssertNil(hit(300, page: 1))
+        XCTAssertNil(hit(50))
+    }
+
+    /// The rail's cards keep a height for each expansion: an expanded card
+    /// gets its taller height, and its old one back when it folds.
+    func testRailCardsKeepTheirHeightForTheirExpansion() async throws {
+        let rendered = try await render("comments.docx")
+        let view = CommentedPDFContainer(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.load(rendered)
+        view.update(showsComments: true, rail: true, active: nil)
+        func cards() -> [CommentRailCard] {
+            (view.accessibilityElements ?? []).compactMap { $0 as? CommentRailCard }
+        }
+        for _ in 0..<200 {
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            if cards().contains(where: { $0.frame.height > 0 }), view.pdfView.scaleFactor > 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let all = cards()
+        XCTAssertFalse(all.isEmpty)
+        let width = try XCTUnwrap(all.first?.frame.width)
+        let folded = Dictionary(uniqueKeysWithValues: all.map { ($0.commentID, $0.frame.height) })
+        // The card that grows most when it opens: its replies or more text.
+        func openHeight(_ card: CommentRailCard) -> CGFloat {
+            guard let thread = rendered.comments.ordered.first(where: { $0.id == card.commentID }) else { return 0 }
+            let probe = CommentRailCard(thread: thread)
+            probe.expanded = true
+            return probe.systemLayoutSizeFitting(
+                CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+                withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+        }
+        let grown = all.map { ($0, openHeight($0)) }
+            .max { $0.1 - (folded[$0.0.commentID] ?? 0) < $1.1 - (folded[$1.0.commentID] ?? 0) }
+        let (card, open) = try XCTUnwrap(grown)
+        let closed = try XCTUnwrap(folded[card.commentID])
+        XCTAssertGreaterThan(open, closed + 1, "a card that grows when it opens")
+        view.update(showsComments: true, rail: true, active: card.commentID)
+        XCTAssertEqual(card.frame.height, open, accuracy: 0.5, "expanded, its own height")
+        view.update(showsComments: true, rail: true, active: nil)
+        XCTAssertEqual(card.frame.height, closed, accuracy: 0.5, "folded again")
+    }
+
     private func comment(
         _ id: String, _ text: String, quote: String = "", parent: String? = nil, resolved: Bool = false
     ) -> OriginalComment {

@@ -22,6 +22,9 @@ struct Presenter: ViewModifier {
                     app.receiveImages(images, scanned: true)
                 } onCancel: {
                     navigator.dismiss()
+                } onFail: { error in
+                    // The error replaces the camera, which closes.
+                    app.present(error)
                 }
                 .ignoresSafeArea()
             }

@@ -96,10 +96,16 @@ extension CandidateTextView {
     /// The caret stops of the text in table cells, as the editor core
     /// has them (`editor_table_selection`): an offset inside an escape
     /// (`\\|`) or a `<br>` is no stop, and goes to the one after it.
-    private struct CellStops {
+    /// Built from the whole text, so a handle's drag builds it once.
+    struct CellStops {
         private let text: String
         private let string: NSString
         private let map: UTF8Map
+
+        #if DEBUG
+        /// How many were built: for tests.
+        nonisolated(unsafe) static var built = 0
+        #endif
 
         init(_ source: String) {
             var text = source
@@ -107,7 +113,13 @@ extension CandidateTextView {
             self.text = text
             string = text as NSString
             map = UTF8Map(text)
+            #if DEBUG
+            Self.built += 1
+            #endif
         }
+
+        /// The UTF-16 length of the text they were built from.
+        var length: Int { string.length }
 
         /// The stop at `offset` (UTF-16), or the next one.
         func at(_ offset: Int) -> Int {
@@ -140,10 +152,11 @@ extension CandidateTextView {
     /// caret stops, and they never cross: one stop's worth stays selected
     /// (a letter, a whole `\\|` or `<br>`), so nothing corrects the
     /// selection after it is set. Nil with no selection in one cell.
-    func cellSelection(moving end: SelectionEnd, to point: CGPoint) -> NSRange? {
+    /// `stops` are the text's, when a drag has them already.
+    func cellSelection(moving end: SelectionEnd, to point: CGPoint, stops: CellStops? = nil) -> NSRange? {
         let selected = selectedRange
         guard editsCells, selected.length > 0, let cell = cellText(holding: selected) else { return nil }
-        let stops = CellStops(textStorage.string)
+        let stops = stops.flatMap { $0.length == textStorage.length ? $0 : nil } ?? CellStops(textStorage.string)
         let offset = stops.at(cell.table.offset(at: convert(point, to: cell.table), in: cell.view))
         let range: NSRange
         switch end {
@@ -164,8 +177,8 @@ extension CandidateTextView {
     /// change, or none when the end stays on its character. Where the
     /// moved handle stands then, in this view's coordinates.
     @discardableResult
-    func dragCellHandle(_ end: SelectionEnd, to point: CGPoint) -> CGRect? {
-        guard let range = cellSelection(moving: end, to: point) else { return nil }
+    func dragCellHandle(_ end: SelectionEnd, to point: CGPoint, stops: CellStops? = nil) -> CGRect? {
+        guard let range = cellSelection(moving: end, to: point, stops: stops) else { return nil }
         if range != selectedRange {
             selectedRange = range
             // The highlight and the handles move with the finger, not a
@@ -195,8 +208,19 @@ final class CellHandleDragger: NSObject, UIGestureRecognizerDelegate {
     let press = UILongPressGestureRecognizer()
     /// The handle held, and from the finger to the point on its line.
     private var held: (end: CandidateTextView.SelectionEnd, reach: CGVector)?
+    /// The finger, in the window's coordinates: it stays put there while
+    /// the text scrolls under it.
+    private var finger: CGPoint = .zero
+    /// The text's caret stops, taken when the drag begins: the text does
+    /// not change while a handle moves.
+    private var stops: CandidateTextView.CellStops?
     private var loupe: UITextLoupeSession?
     private var scroller: CADisplayLink?
+    private var lastFrame: CFTimeInterval?
+    /// Where the scroll has reached, unrounded: the scroll view rounds its
+    /// offset to whole pixels, which would round away a 120 Hz frame's
+    /// step or double it.
+    private var scrolledTo: CGFloat?
 
     /// A handle is being dragged: the text scrolls only under the finger.
     var isDragging: Bool { held != nil }
@@ -231,56 +255,82 @@ final class CellHandleDragger: NSObject, UIGestureRecognizerDelegate {
         guard let view else { return }
         let point = recognizer.location(in: view)
         switch recognizer.state {
-        case .began:
-            guard let handle = view.cellHandle(at: point) else { return }
-            held = (handle.end, CGVector(dx: handle.line.x - point.x, dy: handle.line.y - point.y))
-            view.cellMenu.dismissMenu()
-            loupe = UITextLoupeSession.begin(at: handle.line, fromSelectionWidgetView: view.handleView(for: handle.end), in: view)
-            let link = CADisplayLink(target: self, selector: #selector(scrollUnderFinger))
-            link.add(to: .main, forMode: .common)
-            scroller = link
-        case .changed:
-            move(to: point)
-        case .ended, .cancelled, .failed:
-            guard held != nil else { return }
-            held = nil
-            scroller?.invalidate()
-            scroller = nil
-            loupe?.invalidate()
-            loupe = nil
-            view.showCellMenu()
-        default:
-            break
+        case .began: begin(at: point)
+        case .changed: move(to: point)
+        case .ended, .cancelled, .failed: end()
+        default: break
         }
     }
 
-    private func move(to finger: CGPoint) {
+    /// Takes hold of the handle under a finger down at `point`, if any.
+    func begin(at point: CGPoint) {
+        guard let view, let handle = view.cellHandle(at: point) else { return }
+        held = (handle.end, CGVector(dx: handle.line.x - point.x, dy: handle.line.y - point.y))
+        finger = view.convert(point, to: nil)
+        stops = CandidateTextView.CellStops(view.textStorage.string)
+        view.cellMenu.dismissMenu()
+        loupe = UITextLoupeSession.begin(at: handle.line, fromSelectionWidgetView: view.handleView(for: handle.end), in: view)
+        let link = CADisplayLink(target: self, selector: #selector(nextFrame(_:)))
+        link.add(to: .main, forMode: .common)
+        scroller = link
+    }
+
+    /// The finger moved to `point`: the handle follows.
+    func move(to point: CGPoint) {
         guard let view, let held else { return }
-        let point = CGPoint(x: finger.x + held.reach.dx, y: finger.y + held.reach.dy)
-        guard let caret = view.dragCellHandle(held.end, to: point) else { return }
+        finger = view.convert(point, to: nil)
+        let target = CGPoint(x: point.x + held.reach.dx, y: point.y + held.reach.dy)
+        guard let caret = view.dragCellHandle(held.end, to: target, stops: stops) else { return }
         // The loupe shows the handle, which may have stopped at its
         // cell's edge with the finger beyond it.
         loupe?.move(to: CGPoint(x: caret.midX, y: caret.midY), withCaretRect: caret, trackingCaret: true)
     }
 
-    /// A finger held at the top or bottom edge of the text scrolls it, and
-    /// the handle follows.
-    @objc private func scrollUnderFinger() {
-        guard let view, held != nil else { return }
-        let finger = press.location(in: view)
-        let visible = view.bounds.inset(by: view.adjustedContentInset)
+    /// The finger lifted, or the touch was cancelled.
+    func end() {
+        guard held != nil else { return }
+        held = nil
+        stops = nil
+        scroller?.invalidate()
+        scroller = nil
+        lastFrame = nil
+        scrolledTo = nil
+        loupe?.invalidate()
+        loupe = nil
+        view?.showCellMenu()
+    }
+
+    @objc private func nextFrame(_ link: CADisplayLink) {
+        defer { lastFrame = link.timestamp }
+        guard let lastFrame else { return }
+        scroll(for: link.timestamp - lastFrame)
+    }
+
+    /// How fast the text scrolls with the finger at `y`, in points a
+    /// second, up negative: nothing away from the edges of `visible`,
+    /// faster the further into an edge's strip, up to 240.
+    static func scrollSpeed(at y: CGFloat, visible: CGRect) -> CGFloat {
         let edge: CGFloat = 28
-        var step: CGFloat = 0
-        if finger.y < visible.minY + edge {
-            step = -min(4, (visible.minY + edge - finger.y) / 6)
-        } else if finger.y > visible.maxY - edge {
-            step = min(4, (finger.y - visible.maxY + edge) / 6)
-        }
+        if y < visible.minY + edge { return -min(240, (visible.minY + edge - y) * 10) }
+        if y > visible.maxY - edge { return min(240, (y - visible.maxY + edge) * 10) }
+        return 0
+    }
+
+    /// A finger held at the top or bottom edge of the text scrolls it for
+    /// `elapsed` seconds, as far at 120 frames a second as at 60, and the
+    /// handle follows.
+    func scroll(for elapsed: CFTimeInterval) {
+        guard let view, held != nil else { return }
+        let visible = view.bounds.inset(by: view.adjustedContentInset)
+        let step = Self.scrollSpeed(at: view.convert(finger, from: nil).y, visible: visible) * CGFloat(elapsed)
         let top = -view.adjustedContentInset.top
         let bottom = max(top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
-        let y = min(max(view.contentOffset.y + step, top), bottom)
-        guard abs(y - view.contentOffset.y) > 0.1 else { return }
+        // Scrolled some other way since, the scroll starts from there.
+        let from = scrolledTo.flatMap { abs($0 - view.contentOffset.y) < 1 ? $0 : nil } ?? view.contentOffset.y
+        let y = min(max(from + step, top), bottom)
+        guard y != from else { return }
+        scrolledTo = y
         view.contentOffset.y = y
-        move(to: press.location(in: view))
+        move(to: view.convert(finger, from: nil))
     }
 }
