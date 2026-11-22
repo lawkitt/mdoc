@@ -339,25 +339,33 @@ class HomeViewModel(
             declared: Long,
             limit: Long = MAX_IMAGE_BYTES,
             free: () -> Long = ::freeMemory,
+            unlink: (File) -> Boolean = File::delete,
         ): ByteArray {
             if (declared < 0) {
                 // Unknown size: spilled to a file unlinked before any byte is
                 // written, read back through its open descriptor, so nothing
-                // of the image is left on disk however the process ends.
+                // of the image is left on disk however the process ends. A
+                // host that can't unlink an open file (a Windows test host,
+                // never a phone) deletes it right after the readback, and the
+                // start sweep ([sweepSpills]) catches a stopped process.
                 val spill = File.createTempFile(SPILL_PREFIX, ".image")
-                return RandomAccessFile(spill, "rw").use { file ->
-                    check(spill.delete()) { "mdoc could not read the image." }
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var total = 0L
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        total += read
-                        check(total <= limit) { TOO_LARGE }
-                        file.write(buffer, 0, read)
+                try {
+                    return RandomAccessFile(spill, "rw").use { file ->
+                        unlink(spill)
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            check(total <= limit) { TOO_LARGE }
+                            file.write(buffer, 0, read)
+                        }
+                        file.seek(0)
+                        readImage(FileInputStream(file.fd), total, limit, free)
                     }
-                    file.seek(0)
-                    readImage(FileInputStream(file.fd), total, limit, free)
+                } finally {
+                    spill.delete()
                 }
             }
             check(declared <= limit) { TOO_LARGE }
@@ -382,7 +390,7 @@ class HomeViewModel(
          * folder, once a process (they are unlinked at once now; a version
          * before that left them named).
          */
-        internal fun sweepSpills(folder: File = File(System.getProperty("java.io.tmpdir"))) {
+        internal fun sweepSpills(folder: File = File(checkNotNull(System.getProperty("java.io.tmpdir")))) {
             folder.listFiles()?.forEach { if (it.name.startsWith(SPILL_PREFIX)) it.delete() }
         }
 
