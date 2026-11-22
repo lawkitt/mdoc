@@ -16,6 +16,28 @@ pub(super) struct Candidates {
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
 impl Candidates {
+    /// Variants with their pending mentions, from a saved review; the
+    /// discovery matcher is built again when first needed.
+    pub(super) fn restored(
+        variants: Vec<Variant>,
+        occurrences: Vec<Candidate>,
+        counters: HashMap<u64, u64>,
+    ) -> Self {
+        let mut candidates = Self {
+            occurrences,
+            counters,
+            ..Default::default()
+        };
+        for variant in variants {
+            candidates.push(variant);
+        }
+        candidates.reindex();
+        candidates
+    }
+    /// Each variant's next occurrence number, which a saved review keeps.
+    pub(super) fn counters(&self) -> &HashMap<u64, u64> {
+        &self.counters
+    }
     pub(super) fn forget(&mut self, ids: &std::collections::HashSet<u64>) {
         self.variants.retain(|variant| !ids.contains(&variant.id));
         self.occurrences

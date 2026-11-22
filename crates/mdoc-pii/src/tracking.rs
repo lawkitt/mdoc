@@ -1,4 +1,5 @@
-//! Live occurrence provenance and a reversible metadata journal. Never serialized.
+//! Live occurrence provenance and a reversible metadata journal. A saved
+//! review (`saved`) keeps the provenance, never the journal.
 use super::Category;
 use mdoc_history::{EditorTransaction, SourceEdit, inverse_edits};
 use std::{
@@ -204,6 +205,28 @@ impl Tracking {
     fn id(&mut self) -> u64 {
         self.next_id += 1;
         self.next_id
+    }
+    /// The last id handed out, which a saved review keeps (`saved`).
+    pub(crate) fn last_id(&self) -> u64 {
+        self.next_id
+    }
+    /// Provenance from a saved review: no journal, so the first transaction
+    /// starts it as it does for a review that never saw one.
+    pub(crate) fn restored(
+        applied: Vec<Applied>,
+        assignments: Vec<Assignment>,
+        exclusions: Vec<Exclusion>,
+        next_id: u64,
+    ) -> Self {
+        let mut tracking = Self {
+            applied,
+            assignments,
+            exclusions,
+            next_id,
+            ..Default::default()
+        };
+        tracking.index();
+        tracking
     }
     fn index(&mut self) {
         self.lookup.clear();

@@ -1,13 +1,14 @@
 //! Document-local identities. Policy history shares immutable values and follows
-//! editor history; typing never clones the mapping index. Nothing is serialized.
-use super::{Category, Review, exact_boundary, valid_replacement};
+//! editor history; typing never clones the mapping index. A saved review
+//! (`saved`) keeps the current policy, never its history.
+use super::{Category, Review, exact_boundary, saved::SavedPolicy, valid_replacement};
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
     sync::Arc,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Identity {
     pub id: u64,
     pub alias: String,
@@ -34,6 +35,12 @@ pub struct IdentityPolicy {
     every_mention: HashSet<u64>,
 }
 pub type IdentitySnapshot = Arc<IdentityPolicy>;
+/// `HashMap` entries sorted by key.
+fn sorted_pairs<V: Clone>(map: &HashMap<u64, V>) -> Vec<(u64, V)> {
+    let mut pairs: Vec<_> = map.iter().map(|(id, value)| (*id, value.clone())).collect();
+    pairs.sort_unstable_by_key(|(id, _)| *id);
+    pairs
+}
 #[derive(Default)]
 pub(super) struct IdentityStore {
     definitions: HashMap<u64, Arc<Identity>>,
@@ -42,6 +49,84 @@ pub(super) struct IdentityStore {
     history: HashMap<u64, IdentitySnapshot>,
 }
 impl IdentityStore {
+    /// Definitions, the current policy and the wording index, as a saved
+    /// review keeps them, sorted so equal stores save equal values.
+    pub(super) fn saved(&self) -> (Vec<Identity>, SavedPolicy, Vec<(Category, String, u64)>) {
+        let mut definitions: Vec<_> = self
+            .definitions
+            .values()
+            .map(|identity| identity.as_ref().clone())
+            .collect();
+        definitions.sort_by_key(|identity| identity.id);
+        let policy = &self.policy;
+        let mut edited: Vec<_> = policy
+            .edited
+            .values()
+            .map(|identity| identity.as_ref().clone())
+            .collect();
+        edited.sort_by_key(|identity| identity.id);
+        let sorted = |set: &HashSet<u64>| {
+            let mut ids: Vec<_> = set.iter().copied().collect();
+            ids.sort_unstable();
+            ids
+        };
+        let policy = SavedPolicy {
+            edited,
+            variants: sorted_pairs(&policy.variants),
+            kept: sorted_pairs(&policy.kept),
+            retired: sorted_pairs(&policy.retired),
+            primary: sorted_pairs(&policy.primary)
+                .into_iter()
+                .map(|(id, wording)| (id, wording.to_string()))
+                .collect(),
+            automatic: sorted(&policy.automatic),
+            every_mention: sorted(&policy.every_mention),
+        };
+        let mut normalized: Vec<_> = self
+            .normalized
+            .iter()
+            .map(|((category, key), id)| (*category, key.clone(), *id))
+            .collect();
+        normalized.sort_by(|a, b| (a.0 as u8, &a.1, a.2).cmp(&(b.0 as u8, &b.1, b.2)));
+        (definitions, policy, normalized)
+    }
+    /// A store from a saved review, with no policy history: undo starts
+    /// afresh.
+    pub(super) fn restored(
+        definitions: Vec<Identity>,
+        policy: SavedPolicy,
+        normalized: Vec<(Category, String, u64)>,
+    ) -> Self {
+        let edited = policy
+            .edited
+            .into_iter()
+            .map(|identity| (identity.id, Arc::new(identity)))
+            .collect();
+        Self {
+            definitions: definitions
+                .into_iter()
+                .map(|identity| (identity.id, Arc::new(identity)))
+                .collect(),
+            policy: Arc::new(IdentityPolicy {
+                edited,
+                variants: policy.variants.into_iter().collect(),
+                kept: policy.kept.into_iter().collect(),
+                retired: policy.retired.into_iter().collect(),
+                primary: policy
+                    .primary
+                    .into_iter()
+                    .map(|(id, wording)| (id, Arc::from(wording)))
+                    .collect(),
+                automatic: policy.automatic.into_iter().collect(),
+                every_mention: policy.every_mention.into_iter().collect(),
+            }),
+            normalized: normalized
+                .into_iter()
+                .map(|(category, key, id)| ((category, key), id))
+                .collect(),
+            history: HashMap::new(),
+        }
+    }
     pub(super) fn primary_wording(&self, id: u64) -> Option<&Arc<str>> {
         self.policy.primary.get(&id)
     }
