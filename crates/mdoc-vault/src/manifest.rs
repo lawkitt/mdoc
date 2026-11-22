@@ -5,7 +5,7 @@
 //! manifest costs one read of the files it got wrong.
 use crate::{
     ObjectKind, is_id,
-    records::{Document, DocumentSummary, Project, ProjectSummary},
+    records::{Document, DocumentSummary, Project, ProjectSummary, Reply, ReplySummary},
     seal::{Sealer, Unseal, read_limited},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -141,7 +141,7 @@ impl Checked {
 }
 
 /// A record kind stored as its own sealed file and summarized in the
-/// manifest. Later kinds (AI Replies) implement it too.
+/// manifest.
 pub(crate) trait Record: Clone + Serialize + DeserializeOwned {
     type Summary: Clone + PartialEq;
     const KIND: ObjectKind;
@@ -211,6 +211,31 @@ impl Record for Document {
         self.created = stored.created;
         self.revision = revision;
         self.updated = now;
+    }
+}
+
+impl Record for Reply {
+    type Summary = ReplySummary;
+    const KIND: ObjectKind = ObjectKind::Reply;
+    fn id(&self) -> &str {
+        &self.id
+    }
+    /// A reply is written once.
+    fn revision(&self) -> u64 {
+        1
+    }
+    fn summary(&self) -> ReplySummary {
+        ReplySummary::of(self)
+    }
+    fn path(root: &Path, id: &str) -> PathBuf {
+        reply_path(root, id)
+    }
+    fn table(manifest: &mut Manifest) -> &mut Table<ReplySummary> {
+        &mut manifest.replies
+    }
+    fn settle(&mut self, stored: &Self, _revision: u64, _now: u64) {
+        self.id.clone_from(&stored.id);
+        self.created = stored.created;
     }
 }
 
@@ -318,6 +343,8 @@ pub(crate) struct Manifest {
     format: u32,
     pub projects: Table<ProjectSummary>,
     pub documents: Table<DocumentSummary>,
+    #[serde(default)]
+    pub replies: Table<ReplySummary>,
 }
 
 impl Default for Manifest {
@@ -326,6 +353,7 @@ impl Default for Manifest {
             format: FORMAT,
             projects: Table::default(),
             documents: Table::default(),
+            replies: Table::default(),
         }
     }
 }
@@ -361,8 +389,10 @@ impl Manifest {
     /// A folder that can't be listed leaves the cache as it was.
     pub fn check(&mut self, sealer: &Sealer, root: &Path) -> io::Result<Checked> {
         let (projects, documents) = (project_files(root)?, document_files(root)?);
+        let replies = reply_files(root)?;
         let mut checked = self.projects.check::<Project>(sealer, projects);
         checked.add(self.documents.check::<Document>(sealer, documents));
+        checked.add(self.replies.check::<Reply>(sealer, replies));
         Ok(checked)
     }
 }
@@ -388,9 +418,23 @@ fn entries(dir: &Path) -> io::Result<Vec<std::fs::DirEntry>> {
     }
 }
 
+pub(crate) fn reply_path(root: &Path, id: &str) -> PathBuf {
+    root.join("replies").join(format!("{id}.enc"))
+}
+
 /// `projects/<id>.enc`, by id.
 fn project_files(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
-    Ok(entries(&root.join("projects"))?
+    sealed_files(&root.join("projects"))
+}
+
+/// `replies/<id>.enc`, by id.
+fn reply_files(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
+    sealed_files(&root.join("replies"))
+}
+
+/// `<dir>/<id>.enc`, by id.
+fn sealed_files(dir: &Path) -> io::Result<Vec<(String, PathBuf)>> {
+    Ok(entries(dir)?
         .into_iter()
         .filter_map(|entry| {
             let name = entry.file_name();
@@ -415,7 +459,11 @@ fn document_files(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
 
 /// Every folder a write may leave a temp file in.
 pub(crate) fn write_dirs(root: &Path) -> Vec<PathBuf> {
-    let mut dirs = vec![root.to_path_buf(), root.join("projects")];
+    let mut dirs = vec![
+        root.to_path_buf(),
+        root.join("projects"),
+        root.join("replies"),
+    ];
     if let Ok(entries) = std::fs::read_dir(root.join("docs")) {
         dirs.extend(
             entries

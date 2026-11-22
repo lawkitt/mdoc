@@ -2,7 +2,10 @@
 //! Unfiled Document keeps for itself. The case store's rules
 //! (`mdoc_store::cases::Case`), with stable identity ids and Document ids
 //! where a case kept member paths.
-use mdoc_pii::{Category, restore::ExportedIdentity};
+use mdoc_pii::{
+    Category,
+    restore::{ExportedIdentity, RestoreMap},
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -28,6 +31,11 @@ pub struct Identity {
     /// only its undo gives them back, a reserved alias included.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_a_name_by: Option<String>,
+    /// Ids of identities folded into this one: merged into it, or a moved
+    /// document's names matched to it. A reply bound to one of them
+    /// restores with this identity (#1091 Decision 18).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folded: Vec<String>,
 }
 
 impl Identity {
@@ -40,6 +48,22 @@ impl Identity {
             custom: e.custom,
             originals: e.originals.iter().map(|o| o.to_string()).collect(),
             not_a_name_by: None,
+            folded: Vec::new(),
+        }
+    }
+
+    /// Its id, then the ids folded into it.
+    pub fn ids(&self) -> impl Iterator<Item = &String> {
+        std::iter::once(&self.id).chain(&self.folded)
+    }
+
+    /// Note `ids` as folded into this identity, but its own and those it
+    /// has already.
+    fn fold<'a>(&mut self, ids: impl IntoIterator<Item = &'a String>) {
+        for id in ids {
+            if *id != self.id && !self.folded.contains(id) {
+                self.folded.push(id.clone());
+            }
         }
     }
 
@@ -65,6 +89,21 @@ impl Identity {
     }
 }
 
+/// An alias a saved reply uses and the identity it meant then (#1091
+/// Decision 18): the reply restores with that identity's originals as they
+/// are now, whatever alias it has since or whoever has the alias.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Binding {
+    /// The alias as the mapping had it, current or earlier; the reply's
+    /// tokens may be reshaped (`Person 1`).
+    pub alias: String,
+    /// The identity's id.
+    pub identity: String,
+    /// The alias was a custom one, matched exactly.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub custom: bool,
+}
+
 /// A wording a Document took off as Not a name that the mapping keeps for
 /// another Document's sake: that Document leaves it off when it opens.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +119,16 @@ pub struct Mapping {
     pub identities: Vec<Identity>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub not_names: Vec<NotName>,
+}
+
+/// `identity` named by `alias` alone.
+fn single(identity: &ExportedIdentity, alias: &str, custom: bool) -> ExportedIdentity {
+    ExportedIdentity {
+        alias: alias.to_string(),
+        previous: Vec::new(),
+        custom,
+        ..identity.clone()
+    }
 }
 
 /// A new random identity id.
@@ -100,6 +149,14 @@ impl Mapping {
         self.identities.iter().find(|i| i.id == id)
     }
 
+    /// The identity a reply bound to `id` restores with: the one with that
+    /// id, else the one it was folded into.
+    pub fn bound(&self, id: &str) -> Option<&Identity> {
+        self.identity(id).or_else(|| {
+            (self.identities.iter()).find(|i| i.folded.iter().any(|folded| folded == id))
+        })
+    }
+
     /// The identity `alias` names now or named before.
     pub fn identity_named(&self, alias: &str) -> Option<&Identity> {
         self.identities.iter().find(|i| i.names(alias))
@@ -111,6 +168,58 @@ impl Mapping {
             .iter()
             .filter_map(Identity::exported)
             .collect()
+    }
+
+    /// What each alias token of `reply` means in this mapping, read as a
+    /// [`RestoreMap`] of it reads them: current aliases before earlier ones,
+    /// forgotten identities left out. One binding per alias, in the order
+    /// the reply first uses it.
+    pub fn bindings(&self, reply: &str) -> Vec<Binding> {
+        let live: Vec<(&Identity, ExportedIdentity)> = (self.identities.iter())
+            .filter_map(|identity| Some((identity, identity.exported()?)))
+            .collect();
+        // One entry per alias, so a token tells which alias it read.
+        let current = live
+            .iter()
+            .map(|(identity, e)| (identity, e, &identity.alias, identity.custom));
+        let earlier = live.iter().flat_map(|(identity, e)| {
+            (identity.previous.iter()).map(move |alias| (identity, e, alias, false))
+        });
+        let entries: Vec<_> = current.chain(earlier).collect();
+        let map = RestoreMap::new(
+            (entries.iter())
+                .map(|(_, e, alias, custom)| single(e, alias, *custom))
+                .collect(),
+        );
+        let mut bindings: Vec<Binding> = Vec::new();
+        for token in map.tokens(reply) {
+            let Some((identity, _, alias, custom)) = token.identity.map(|at| entries[at]) else {
+                continue;
+            };
+            if !bindings.iter().any(|b| b.alias == *alias) {
+                bindings.push(Binding {
+                    alias: alias.clone(),
+                    identity: identity.id.clone(),
+                    custom,
+                });
+            }
+        }
+        bindings
+    }
+
+    /// What a reply saved with `bindings` restores with: each bound
+    /// identity's originals now, under the alias it was bound by. An
+    /// identity gone or forgotten restores nothing, and an alias the reply
+    /// did not bind is never read with another identity that has it now.
+    pub fn reply_map(&self, bindings: &[Binding]) -> RestoreMap {
+        RestoreMap::new(
+            (bindings.iter())
+                .filter_map(|binding| {
+                    let identity = self.bound(&binding.identity)?.exported()?;
+                    Some(single(&identity, &binding.alias, binding.custom))
+                })
+                .collect(),
+        )
     }
 
     /// The next generated alias of `category` that no identity has ever used.
@@ -224,17 +333,19 @@ impl Mapping {
     /// [`Self::merge`] from `document`, whose undo of a saved Not a name
     /// may give the identity it emptied its wordings again.
     pub fn merge_from(&mut self, exported: &[ExportedIdentity], document: Option<&str>) {
-        let ids = vec![None; exported.len()];
+        let ids = vec![Vec::new(); exported.len()];
         self.merge_with_ids(exported, &ids, document);
     }
 
-    /// [`Self::merge_from`] where each new identity takes the id beside it
-    /// in `ids`, when no identity here has it: a moved document's names
-    /// keep their ids.
+    /// [`Self::merge_from`] where each entry brings the ids beside it in
+    /// `ids`, its own first: a new identity takes that one when no identity
+    /// here answers to it and keeps the rest as folded; an identity the
+    /// entry matches keeps them all as folded. A moved document's names
+    /// keep their ids, so replies bound to them still find them.
     pub(crate) fn merge_with_ids(
         &mut self,
         exported: &[ExportedIdentity],
-        ids: &[Option<String>],
+        ids: &[Vec<String>],
         document: Option<&str>,
     ) {
         for (e, id) in exported.iter().zip(ids) {
@@ -303,9 +414,16 @@ impl Mapping {
                         .retain(|p| *p != incoming.alias && !incoming.previous.contains(p));
                 }
             }
+            // Replies bound to what it absorbed, or to the moved document's
+            // identity, restore with it now.
+            let folded: Vec<String> = (absorbed.iter())
+                .flat_map(|a| a.ids().cloned().collect::<Vec<_>>())
+                .chain(id.iter().cloned())
+                .collect();
             match found {
                 Some(index) => {
                     let stored = &mut self.identities[index];
+                    stored.fold(&folded);
                     if stored.alias != incoming.alias && !stored.previous.contains(&stored.alias) {
                         let old = std::mem::take(&mut stored.alias);
                         stored.previous.push(old);
@@ -337,10 +455,13 @@ impl Mapping {
                     stored.originals = originals;
                 }
                 None => {
-                    incoming.id = id
-                        .clone()
-                        .filter(|id| self.identity(id).is_none())
-                        .unwrap_or_else(identity_id);
+                    // An id another identity here answers to stays with it.
+                    let free: Vec<&String> = (folded.iter())
+                        .filter(|id| self.bound(id).is_none())
+                        .collect();
+                    let own = id.first().filter(|own| free.contains(own));
+                    incoming.id = own.cloned().unwrap_or_else(identity_id);
+                    incoming.fold(free);
                     self.identities.push(incoming);
                 }
             }

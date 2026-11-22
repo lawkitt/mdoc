@@ -4,6 +4,7 @@
 //! never writes a revision older than the last it wrote.
 mod moves;
 mod readiness;
+mod replies;
 
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
 pub use readiness::Readiness;
@@ -17,7 +18,8 @@ use crate::{
     mapping::Mapping,
     new_id,
     records::{
-        Document, DocumentSummary, NewDocument, NewProject, Project, ProjectSummary, UserLists, now,
+        Document, DocumentSummary, NewDocument, NewProject, Project, ProjectSummary, ReplyOwner,
+        UserLists, now,
     },
     seal::{MAX_FILE, Sealer, TEMP_PREFIX, Unseal, read_limited, temp_beside},
 };
@@ -255,7 +257,9 @@ impl Vault {
             (state.manifest.projects.damaged.keys()).map(|id| (ObjectKind::Project, id.clone()));
         let documents =
             (state.manifest.documents.damaged.keys()).map(|id| (ObjectKind::Document, id.clone()));
-        projects.chain(documents).collect()
+        let replies =
+            (state.manifest.replies.damaged.keys()).map(|id| (ObjectKind::Reply, id.clone()));
+        projects.chain(documents).chain(replies).collect()
     }
 
     /// Pick up what other handles wrote: check the summaries against the
@@ -373,8 +377,8 @@ impl Vault {
         self.save(document)
     }
 
-    /// Delete the Document and everything in its folder. Later saves of it
-    /// by this handle are skipped.
+    /// Delete the Document, everything in its folder and the AI Replies
+    /// saved for it. Later saves of it by this handle are skipped.
     pub fn delete_document(&self, id: &str) -> Result<(), VaultError> {
         if !is_id(id) {
             return Err(VaultError::InvalidId);
@@ -383,8 +387,11 @@ impl Vault {
         self.delete_document_locked(&lock, id)
     }
 
-    fn delete_document_locked(&self, _lock: &WriteLock<'_>, id: &str) -> Result<(), VaultError> {
+    fn delete_document_locked(&self, lock: &WriteLock<'_>, id: &str) -> Result<(), VaultError> {
         self.check_alive()?;
+        // Replies first: a delete stopped part way is finished by deleting
+        // again.
+        self.delete_replies_of(lock, &ReplyOwner::Document(id.to_string()))?;
         remove_sealed(&document_path(&self.root, id))?;
         match std::fs::remove_dir_all(document_dir(&self.root, id)) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),

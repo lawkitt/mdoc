@@ -6,7 +6,7 @@ use super::{Vault, WriteLock};
 use crate::{
     VaultError, is_id,
     mapping::{Identity, Mapping},
-    records::{Document, NewProject, Project, now},
+    records::{Document, NewProject, Project, ReplyOwner, now},
 };
 use mdoc_pii::{
     Review,
@@ -123,8 +123,9 @@ impl Vault {
     }
 
     /// Delete a Project, first moving its Documents to Unfiled or deleting
-    /// them. Later saves of it by this handle are skipped. A crash part way
-    /// leaves the Project with the Documents not yet done; deleting again
+    /// them, then its own AI Replies; a Document's replies follow it. Later
+    /// saves of it by this handle are skipped. A crash part way leaves the
+    /// Project with the Documents and replies not yet done; deleting again
     /// finishes. A Document that cannot be read for now refuses the delete,
     /// as it may be in the Project; one that never will (another key,
     /// damaged) is passed over.
@@ -152,6 +153,8 @@ impl Vault {
                 ProjectDocuments::Delete => self.delete_document_locked(&lock, &document.id)?,
             }
         }
+        // Its own replies go with its mapping; its Documents' follow them.
+        self.delete_replies_of(&lock, &ReplyOwner::Project(id.to_string()))?;
         self.check_alive()?;
         super::remove_sealed(&crate::manifest::project_path(&self.root, id))?;
         self.forget_deleted::<Project>(id)
@@ -366,17 +369,17 @@ impl Vault {
 /// joined to `to` (`plan_join`), so names `to` knows take its aliases,
 /// clashing aliases its next free numbers, and the text is rewritten with
 /// them. The identities carry no earlier aliases: those name `from`'s
-/// history, which can mean other people in `to`. Beside each, the id of
-/// the identity it came from, in `from` or in `to`.
+/// history, which can mean other people in `to`. Beside each, the ids of the identity it came from, in `from` or in `to`: its own
+/// first, then those folded into it.
 #[allow(clippy::type_complexity)]
 fn realias(
     document: &Document,
     from: &Mapping,
     to: &Mapping,
-) -> Result<(String, Vec<ExportedIdentity>, Vec<Option<String>>), String> {
-    let live = |mapping: &Mapping| -> (Vec<String>, Vec<ExportedIdentity>) {
+) -> Result<(String, Vec<ExportedIdentity>, Vec<Vec<String>>), String> {
+    let live = |mapping: &Mapping| -> (Vec<Vec<String>>, Vec<ExportedIdentity>) {
         (mapping.identities.iter())
-            .filter_map(|i: &Identity| Some((i.id.clone(), i.exported()?)))
+            .filter_map(|i: &Identity| Some((i.ids().cloned().collect(), i.exported()?)))
             .unzip()
     };
     let (from_ids, from_exported) = live(from);
@@ -403,14 +406,15 @@ fn realias(
         .map(|(id, mut identity)| {
             identity.previous.clear();
             let source = match seeded.iter().position(|s| *s == id) {
-                Some(at) => Some(from_ids[at].clone()),
+                Some(at) => from_ids[at].clone(),
                 None => (proposed.iter().position(|p| *p == id))
                     .and_then(|at| {
                         to_exported
                             .iter()
                             .position(|e| e.alias == unmatched[at].alias)
                     })
-                    .map(|at| to_ids[at].clone()),
+                    .map(|at| to_ids[at].clone())
+                    .unwrap_or_default(),
             };
             (source, identity)
         })
