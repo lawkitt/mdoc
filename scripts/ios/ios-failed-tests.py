@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Usage: scripts/ios/ios-failed-tests.py part <part> <status> <xcresult folder>
           scripts/ios/ios-failed-tests.py summary <result> <part>...
+          scripts/ios/ios-failed-tests.py runner <xcresult folder>
 
 A failed hosted iOS job names its failing tests, as the PC's
 status does (scripts/queue-runner.sh): an error annotation
@@ -32,9 +33,18 @@ summary  in ci/ios, with `needs.ios.outputs` as JSON in $IOS_OUTPUTS
          never ran), else each part that did not pass, with its tests, or
          its status when it did not fail (cancelled, or "did not finish"
          when it wrote none), and exits 1.
+runner   in a UI part's Tests step (scripts/ios/ios-test-part.sh), after
+         it failed: exits 0 when its test runner failed to start, so the
+         step may run once more (#1065), otherwise 1. That is, the folder
+         has an .xcresult, each reads, and its only test cases are the
+         runner's own errors (xcresulttool's "System Failures" suite),
+         `mdocUITests-Runner (<pid>) encountered an error`, each failure
+         message of which says the runner crashed while preparing to run
+         tests or failed to initialize for UI testing: no test case ran.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +86,39 @@ def test_results(tree):
         walk(node, "?")
     # A case retried on one device and failed on another is a failure.
     return sorted(failed), sorted(retried - failed)
+
+
+# A test runner's own error, which xcresulttool lists as a test case of its
+# target's "System Failures" suite, and the failures it reports when it
+# never started: run 44940648698's `ci/ios (ui 1)` hit both (#1065).
+RUNNER_ERROR = re.compile(r"\S+-Runner \(\d+\) encountered an error")
+RUNNER_START = ("crashed while preparing to run tests", "failed to initialize for UI testing")
+
+
+def runner_failed(tree):
+    """Whether the test runner failed to start: in xcresulttool's
+    `test-results tests` JSON, every test case is a runner's own error
+    (RUNNER_ERROR) with failure messages, each saying it never started
+    (RUNNER_START), and there is at least one."""
+    cases = []
+
+    def walk(node):
+        if node.get("nodeType") == "Test Case":
+            cases.append(node)
+            return
+        for child in node.get("children", []):
+            walk(child)
+
+    for node in tree["testNodes"]:
+        walk(node)
+    for case in cases:
+        if not RUNNER_ERROR.fullmatch(case.get("nodeIdentifier", "")):
+            return False
+        # Its failure messages, the only children it has.
+        messages = [child.get("name", "") for child in case.get("children", [])]
+        if not messages or not all(any(start in message for start in RUNNER_START) for message in messages):
+            return False
+    return bool(cases)
 
 
 def escape(text):
@@ -121,18 +164,28 @@ def report_retried(job, names):
             summary.write("\n")
 
 
+# What reading an .xcresult's tests can raise: xcresulttool missing or
+# failing, or JSON that is not its tree.
+UNREADABLE = (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError, AttributeError)
+
+
+def tests_tree(bundle):
+    """xcresulttool's `test-results tests` JSON for an .xcresult."""
+    out = subprocess.run(
+        ["xcrun", "xcresulttool", "get", "test-results", "tests", "--path", str(bundle), "--compact"],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    return json.loads(out)
+
+
 def part(name, status, folder):
     failed, retried = set(), set()
     for bundle in sorted(Path(folder).glob("*.xcresult")):
         try:
-            out = subprocess.run(
-                ["xcrun", "xcresulttool", "get", "test-results", "tests", "--path", str(bundle), "--compact"],
-                check=True, capture_output=True, text=True,
-            ).stdout
-            bad, again = test_results(json.loads(out))
+            bad, again = test_results(tests_tree(bundle))
             failed.update(bad)
             retried.update(again)
-        except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError, AttributeError) as error:
+        except UNREADABLE as error:
             detail = getattr(error, "stderr", None) or error
             print(f"::warning::{escape(f'could not read {bundle.name}: {detail}'.strip())}")
     failed, retried = sorted(failed), sorted(retried - failed)
@@ -176,12 +229,23 @@ def summary(result, parts):
     return 1
 
 
+def runner(folder):
+    bundles = sorted(Path(folder).glob("*.xcresult"))
+    try:
+        never_started = bool(bundles) and all(runner_failed(tests_tree(bundle)) for bundle in bundles)
+    except UNREADABLE:
+        never_started = False
+    return 0 if never_started else 1
+
+
 def main(args):
     if len(args) == 4 and args[0] == "part":
         part(args[1], args[2], args[3])
         return 0
     if len(args) >= 3 and args[0] == "summary":
         return summary(args[1], args[2:])
+    if len(args) == 2 and args[0] == "runner":
+        return runner(args[1])
     sys.exit(__doc__.split("\n\n")[0])
 
 
