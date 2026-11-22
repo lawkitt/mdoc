@@ -65,7 +65,7 @@ struct CasesView: View {
         }
     }
 
-    private func count(_ summary: CaseSummary) -> String {
+    func count(_ summary: CaseSummary) -> String {
         let documents = library.documents.filter { $0.caseID == summary.id }
         let toReview = documents.filter { $0.phase == .reviewing }.count
         let base = documents.count == 1 ? String(localized: "1 document") : String(localized: "\(documents.count) documents")

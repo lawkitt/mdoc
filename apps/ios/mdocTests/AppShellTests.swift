@@ -149,6 +149,60 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(app.openModel === waiting, "the same model, with its setup card")
     }
 
+    /// A document whose job still runs keeps its model when another opens,
+    /// so the job's result lands on it; once the job ended, the next move
+    /// lets it go.
+    func testARunningJobKeepsItsModel() async throws {
+        let app = try app()
+        app.open(seeded.letter)
+        let letter = try XCTUnwrap(app.openModel)
+        let running = Task {
+            await app.jobs.run(.scan, documentID: seeded.letter, title: "Busy") { observer in
+                while !observer.isCancelled() { Thread.sleep(forTimeInterval: 0.01) }
+                throw CoreError.cancelled
+            }
+        }
+        let started = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in MainActor.assumeIsolated { app.jobs.current != nil } }, object: nil)
+        await fulfillment(of: [started], timeout: 10)
+
+        app.open(seeded.quotation)
+        XCTAssertTrue(app.documents.model(for: seeded.letter) === letter, "kept while its job runs")
+        app.jobs.cancel()
+        _ = await running.value
+        app.showStart()
+        XCTAssertNil(app.documents.model(for: seeded.letter), "the job ended: let go")
+    }
+
+    /// A document with something still to say keeps its model when left:
+    /// Find names' "No names found", or a save that failed. The error, once
+    /// seen and put away, no longer holds it.
+    func testAModelWithSomethingToSayIsKeptUntilSeen() async throws {
+        let app = try app()
+        let note = try seeded.library.importDocument(
+            .text("# Note\n\nNothing to hide here."), title: "Note", into: .existing(seeded.ellison))
+        _ = try note.recognize(observer: TestObserver())
+        app.open(note.id)
+        let found = try XCTUnwrap(app.openModel)
+        await found.findNames()
+        XCTAssertNotNil(found.notice)
+        app.open(seeded.letter)
+        app.showStart()
+        XCTAssertTrue(app.documents.model(for: note.id) === found, "its notice waits to be seen")
+
+        app.open(seeded.letter)
+        let letter = try XCTUnwrap(app.openModel)
+        app.saved(.failed(seeded.letter, .fileFailed("The disk is full.")))
+        XCTAssertNotNil(letter.errorMessage)
+        app.open(seeded.quotation)
+        XCTAssertTrue(app.documents.model(for: seeded.letter) === letter, "its error waits to be seen")
+        app.open(seeded.letter)
+        XCTAssertTrue(app.openModel === letter)
+        letter.errorMessage = nil
+        app.open(seeded.quotation)
+        XCTAssertNil(app.documents.model(for: seeded.letter), "seen: let go")
+    }
+
     /// Share from a menu makes a model for a document not open, and lets
     /// it go again.
     func testShareFromAMenuKeepsNoModel() throws {
