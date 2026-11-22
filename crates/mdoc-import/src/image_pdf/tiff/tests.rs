@@ -953,6 +953,9 @@ mod qualification {
         ] {
             let imported = crate::import::prepare(&fixture(name), Some(&installed), false).unwrap();
             assert!(imported.is_image && imported.is_pdf, "{name}");
+            // OCR read every page; the pages are the TIFF's, not pictures
+            // left out (#1070).
+            assert_eq!(imported.left_out.pictures, 0, "{name}");
             let markdown = imported.markdown.to_uppercase();
             let mut from = 0;
             for heading in pages {

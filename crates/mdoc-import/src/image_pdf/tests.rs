@@ -498,7 +498,7 @@ fn cmyk_becomes_rgb() {
     );
 }
 
-fn gif(colors: &[[u8; 4]]) -> Vec<u8> {
+pub(crate) fn gif(colors: &[[u8; 4]]) -> Vec<u8> {
     let mut bytes = Vec::new();
     {
         let mut encoder = image::codecs::gif::GifEncoder::new(&mut bytes);
@@ -799,6 +799,37 @@ mod import_seam {
             Err(ImportError::NoNativeText)
         ));
         assert_eq!(names(dir.path()), ["Lease photo.jpg"]);
+    }
+
+    /// Each page of a PDF built from photos is one of the photos, so the
+    /// import note never counts them as pictures left out (#1070), as a
+    /// PDF's own count does once OCR reads its pages.
+    #[test]
+    fn photos_are_never_pictures_left_out() {
+        use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
+        let dir = tempfile::tempdir().unwrap();
+        let first = write_photo(dir.path(), "page-1.jpg");
+        let second = dir.path().join("page-2.png");
+        std::fs::write(&second, super::small_png()).unwrap();
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let (pdf, frames) = crate::import::build_images_pdf(
+            &[first, second],
+            super::super::DEFAULT_DPI,
+            &cancel,
+            |_| {},
+        )
+        .unwrap();
+        let native = process_pdf_with_ocr_mem(pdf.bytes(), OcrPdfOptions::new()).unwrap();
+        let read_as_a_pdf = LeftOut::of_pdf(&native, &[]);
+        assert_eq!(
+            read_as_a_pdf.pictures, 2,
+            "a PDF's pages OCR reads count their pictures"
+        );
+        assert_eq!(
+            read_as_a_pdf.of_images(frames),
+            LeftOut::default(),
+            "the photos themselves are not left out"
+        );
     }
 
     /// Photos picked together import as one document, a page each, as a

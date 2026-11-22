@@ -406,7 +406,11 @@ fn recognize_resumable(
     if image {
         warning = image_warning(warning);
     }
-    left_out.animation_frames = frames;
+    if image {
+        left_out = left_out.of_images(frames);
+    } else {
+        left_out.animation_frames = frames;
+    }
     left_out.repeated_lines = pages
         .iter()
         .map(|page| u64::from(page.repeated_lines))
@@ -607,9 +611,78 @@ mod tests {
         assert_eq!(recognized.get(), 0);
         assert!(imported.is_image && imported.is_pdf);
         assert_eq!(imported.markdown.trim(), "Kept text of the scanned page.");
+        // The photo is the page OCR read, not a picture left out (#1070).
+        assert_eq!(imported.left_out, LeftOut::default());
+        assert_eq!(imported.note(), None);
         assert!(completed.is_some());
         kept.discard(&photo).unwrap();
         assert!(!folder.0.exists());
+    }
+
+    /// An animated GIF's recognized import counts the frames left out and
+    /// never its first frame, the page (#1070).
+    #[test]
+    fn an_animated_image_counts_its_frames_not_its_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let animated = dir.path().join("animated.gif");
+        std::fs::write(
+            &animated,
+            crate::image_pdf::tests::gif(&[[200, 0, 0, 255], [0, 200, 0, 255], [0, 0, 200, 255]]),
+        )
+        .unwrap();
+        let kept = KeptPages::new(dir.path().join("kept"));
+        let missing = dir.path().join("not installed");
+        let installed = crate::ocr::Installed {
+            config: config(),
+            models: missing.clone(),
+            pdfium: missing.clone(),
+            onnx: missing,
+        };
+        let never = AtomicBool::new(false);
+        // No OCR runtime: the first run stops at loading it; a kept page
+        // then stands in for what it would have read.
+        let first = prepare_resumable(
+            &animated,
+            None,
+            Some(&installed),
+            false,
+            &never,
+            &kept,
+            &|_, _| {},
+        );
+        assert!(matches!(first, Err(ImportError::OcrFailed(_))), "{first:?}");
+        kept.folder(
+            &digest(&std::fs::read(&animated).unwrap()),
+            &installed.config,
+        )
+        .store(&Page {
+            page: 1,
+            markdown: "Kept text of the first frame.\n".into(),
+            review: false,
+            repeated_lines: 0,
+            repeat_evidence: Vec::new(),
+        });
+        let (imported, _) = prepare_resumable(
+            &animated,
+            None,
+            Some(&installed),
+            false,
+            &never,
+            &kept,
+            &|_, _| {},
+        )
+        .unwrap();
+        assert_eq!(
+            imported.left_out,
+            LeftOut {
+                animation_frames: 2,
+                ..LeftOut::default()
+            }
+        );
+        assert_eq!(
+            imported.note().as_deref(),
+            Some("2 animation frames not imported.")
+        );
     }
 
     /// Photos imported together keep their pages under their digests
