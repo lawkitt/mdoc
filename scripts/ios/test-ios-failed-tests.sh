@@ -8,7 +8,10 @@
 # and every retried case, from those outputs; a part with no xcresult, an
 # unreadable one or no failed case names none. Skipped on Windows: the
 # script runs only on macOS and Linux runners (ci-ios.yml), and Python there
-# cannot run the fake xcrun, a bash script. Bash 3.2 compatible.
+# cannot run the fake xcrun, a bash script. `runner` reads a UI part whose
+# test runner failed to start, before any test, from the checked-in sample
+# (scripts/ios/fixtures/ios-runner-failed.json, from the xcresult of run
+# 44940648698's ui 1) and its variants. Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
 if [ "$(platform)" = windows-x64 ]; then
   echo "skip: ios-failed-tests.py runs only on macOS and Linux"
@@ -187,6 +190,48 @@ has "$tmp/out" '::error::Failed in ci/ios (core)'
 [ "$(grep -c '^::error::' "$tmp/out")" = 1 ] || fail "summary after a failed core named its parts: $(cat "$tmp/out")"
 if CORE_RESULT=cancelled IOS_OUTPUTS='' run summary skipped unit; then fail 'summary after a cancelled core passed'; fi
 has "$tmp/out" '::error::ci/ios (core): cancelled'
+
+# runner: 0 only when every .xcresult's test cases are its runner's own
+# errors from before any test ran (the sample is ui 1's on run 44940648698,
+# both of its messages); 1 when a test ran beside one, or the runner's
+# error says something else or nothing, or a failure message is elsewhere,
+# or with no case, no .xcresult, or an unreadable one.
+runner_json=$PWD/scripts/ios/fixtures/ios-runner-failed.json
+runner() { python3 scripts/ios/ios-failed-tests.py runner "$@" >"$tmp/out" 2>&1; }
+# variant <name> <python on d, the sample, and case, its runner error>
+variant() {
+  python3 -c "import json, sys; d = json.load(open(sys.argv[1])); case = d['testNodes'][0]['children'][0]['children'][0]['children'][0]; $2; print(json.dumps(d))" \
+    "$runner_json" >"$tmp/$1.json" || fail "variant $1"
+}
+XCRUN_JSON="$runner_json" runner "$tmp/results" || fail "a runner that failed to start reads as not: $(cat "$tmp/out")"
+[ -s "$tmp/out" ] && fail "runner said something: $(cat "$tmp/out")"
+variant ax "case['children'][0]['name'] = 'The test runner failed to initialize for UI testing. (Underlying Error: Timed out waiting for AX loaded notification)'"
+XCRUN_JSON="$tmp/ax.json" runner "$tmp/one-result" || fail "the AX time-out reads as started"
+variant other "case['children'][0]['name'] = 'Lost connection to the test manager service.'"
+if XCRUN_JSON="$tmp/other.json" runner "$tmp/one-result"; then fail 'another runner error reads as a failed start'; fi
+variant both "case['children'].append({'nodeType': 'Failure Message', 'name': 'Lost connection to the test manager service.'})"
+if XCRUN_JSON="$tmp/both.json" runner "$tmp/one-result"; then fail 'a second runner error reads as a failed start'; fi
+variant stray "d['testNodes'][0]['children'][0]['children'][0]['children'].append({'nodeType': 'Failure Message', 'name': 'Lost connection to the test manager service.'})"
+if XCRUN_JSON="$tmp/stray.json" runner "$tmp/one-result"; then fail 'a failure message outside the runner error reads as a failed start'; fi
+variant silent "case['children'] = []"
+if XCRUN_JSON="$tmp/silent.json" runner "$tmp/one-result"; then fail 'a runner error with no message reads as a failed start'; fi
+variant ran "d['testNodes'][0]['children'][0]['children'].append({'nodeType': 'Test Suite', 'name': 'S', 'children': [{'nodeType': 'Test Case', 'name': 'testA()', 'nodeIdentifier': 'S/testA()', 'result': 'Passed'}]})"
+if XCRUN_JSON="$tmp/ran.json" runner "$tmp/one-result"; then fail 'a runner error after a test ran reads as a failed start'; fi
+if runner "$tmp/one-result"; then fail 'failed tests read as a failed start'; fi
+if XCRUN_JSON="$tmp/none.json" runner "$tmp/one-result"; then fail 'no test case reads as a failed start'; fi
+if XCRUN_JSON="$runner_json" runner "$tmp/empty"; then fail 'no xcresult reads as a failed start'; fi
+if XCRUN_JSON="$runner_json" XCRUN_FAIL=1 runner "$tmp/results"; then fail 'an unreadable xcresult reads as a failed start'; fi
+# One of two .xcresults with a test that ran: started.
+mkdir -p "$tmp/two-results/a.xcresult" "$tmp/two-results/b.xcresult" "$tmp/two-bin"
+cat >"$tmp/two-bin/xcrun" <<'EOF2'
+#!/usr/bin/env bash
+case "$6" in */a.xcresult) cat "$XCRUN_A" ;; *) cat "$XCRUN_B" ;; esac
+EOF2
+chmod +x "$tmp/two-bin/xcrun"
+if PATH="$tmp/two-bin:$PATH" XCRUN_A="$runner_json" XCRUN_B="$tmp/ran.json" runner "$tmp/two-results"; then
+  fail 'a test that ran in one xcresult reads as a failed start'
+fi
+PATH="$tmp/two-bin:$PATH" XCRUN_A="$runner_json" XCRUN_B="$tmp/ax.json" runner "$tmp/two-results" || fail "two failed starts read as started"
 
 # Usage.
 if run nonsense; then fail 'a bad command passed'; fi

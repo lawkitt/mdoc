@@ -26,13 +26,14 @@ How a PR reaches `main`. The machinery and the PC's runners:
   within 14 days, or the failing test is outside the PR's areas. Anything
   else goes back to the PR's author.
 - After an unrelated failure the hub re-queues the PR once, naming the
-  matching rule in a comment. A second drop goes to the maintainer.
+  rule in a comment. A second drop goes to the maintainer.
 - A red `main` stops enqueueing until fixed.
 
 ## Quarantine
 
 - A pass on the hosted iOS UI tests' one retry counts as an unrelated
-  failure.
+  failure. A UI part whose runner failed before any test reruns once, warned,
+  as infrastructure.
 - After a test's second unrelated failure, the hub quarantines it in
   `.config/quarantine.txt` by PR, without asking.
 - Tests that measure speed, take screenshots or survey layouts stay off the
@@ -43,12 +44,11 @@ How a PR reaches `main`. The machinery and the PC's runners:
 - Detection's model budget fails only the nightly, because a shared VM's
   wall clock must not decide merges.
 - Never commit your own `--refresh-snapshots` output, because a developer
-  machine's scores differ from hosted `windows-latest`'s in the fourth
-  decimal: commit what `just snapshots-fetch <PR>` takes from the head's
-  failed gate, reviewed.
+  machine's scores differ from hosted `windows-latest`'s: commit what
+  `just snapshots-fetch <PR>` takes from the head's failed gate, reviewed.
 - After a runtime or model pin change, record every snapshot
-  (`ci-detection.yml`'s `record`), because scores can shift within the
-  gate's tolerance.
+  (`ci-detection.yml`'s `record`), because scores shift within the gate's
+  tolerance.
 
 ## Changing CI
 
@@ -63,11 +63,10 @@ How a PR reaches `main`. The machinery and the PC's runners:
 
 - On the Mac, test only the classes you touched
   (`just ios-test "iPhone 17" mdocUITests/<Class>`), one build at a time
-  after checking `uptime`, because the full suite takes 25–30 minutes and
-  parallel runs overheat the fanless Air.
-- The queue tests with Xcode 26.2 on iOS 26.2, the nightly with Xcode 27.2 on
-  iOS 27.2 (ADR 0124); a test passes on both. Reproduce a queue failure with
-  Xcode 27.2 on the iOS 26.2 Simulator runtime: Xcode 26.2's test runner hangs
-  on macOS 27.
+  after checking `uptime`: the full suite takes 25–30 minutes and parallel
+  runs overheat the Air.
+- The queue tests on Xcode and iOS 26.2, the nightly on 27.2 (ADR 0124); a
+  test passes on both. Reproduce a queue failure with Xcode 27.2 on the
+  iOS 26.2 runtime, because Xcode 26.2's runner hangs on macOS 27.
 - Branch `ci-ios.yml` dispatches test what they touched, one at a time,
   because they took 13% of macOS minutes.
