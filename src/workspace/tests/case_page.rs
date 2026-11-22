@@ -57,7 +57,10 @@ fn dropped_document_join_uses_the_open_tabs_identity_and_live_mentions(cx: &mut 
         let member = case.members[0].clone();
         assert_ne!(member, path);
         assert_eq!(member, session_store::identity(&path));
-        assert_eq!(w.tabs.get(tab).unwrap().identity(), Some(&member));
+        assert_eq!(
+            w.tabs.get(tab).unwrap().document(),
+            Some(&mdoc_store::document_id::DocumentId::File(member.clone()))
+        );
         assert_eq!(
             w.find_path(&member, None, cx),
             Some(tab),
