@@ -98,7 +98,7 @@ impl Vault {
     }
 
     /// [`Self::move_document`] into a new Project. A move that fails leaves
-    /// no new Project behind.
+    /// no new Project behind; a crash may leave it, empty.
     pub fn move_document_to_new_project(
         &self,
         document: &str,
@@ -125,7 +125,9 @@ impl Vault {
     /// Delete a Project, first moving its Documents to Unfiled or deleting
     /// them. Later saves of it by this handle are skipped. A crash part way
     /// leaves the Project with the Documents not yet done; deleting again
-    /// finishes.
+    /// finishes. A Document that cannot be read for now refuses the delete,
+    /// as it may be in the Project; one that never will (another key,
+    /// damaged) is passed over.
     pub fn delete_project(&self, id: &str, documents: ProjectDocuments) -> Result<(), VaultError> {
         if !is_id(id) {
             return Err(VaultError::InvalidId);
@@ -133,6 +135,14 @@ impl Vault {
         let lock = self.write_lock()?;
         self.load_record::<Project>(id)?;
         self.refresh()?;
+        let unopened: Vec<String> =
+            (self.state().manifest.documents.damaged.keys().cloned()).collect();
+        for document in unopened {
+            match self.load_record::<Document>(&document) {
+                Err(VaultError::Io(error)) => return Err(VaultError::Io(error)),
+                _ => continue,
+            }
+        }
         for document in self.documents_in(Some(id)) {
             match documents {
                 ProjectDocuments::MoveToUnfiled => {
@@ -180,6 +190,7 @@ impl Vault {
         };
         let moved = self.move_into(lock, &stored, from, &to, take_back);
         if moved.is_err()
+            && self.check_alive().is_ok()
             && let Some(made) = made
         {
             let _ = super::remove_sealed(&crate::manifest::project_path(&self.root, &made));
@@ -199,7 +210,7 @@ impl Vault {
     ) -> Result<Moved, VaultError> {
         let from_mapping = from.as_ref().map_or(&stored.mapping, |p| &p.mapping);
         let (text, exported, ids) =
-            realias(&stored.markdown, from_mapping, to.mapping()).map_err(VaultError::Names)?;
+            realias(stored, from_mapping, to.mapping()).map_err(VaultError::Names)?;
         let mut added = Vec::new();
         let mut gather = |before: &Mapping, after: &Mapping| {
             added = (after.identities.iter())
@@ -300,7 +311,8 @@ impl Vault {
 
     /// Take out of `project` the identities named by `ids` (a move added
     /// them) that nothing there uses: no other Document's text holds their
-    /// alias. A Document that cannot be read counts as using them. The
+    /// alias. A Document that cannot be read counts as using them, and so
+    /// does one that does not open, as it may be in the Project. The
     /// Project as stored after.
     fn drop_unused(
         &self,
@@ -319,6 +331,9 @@ impl Vault {
         let map = RestoreMap::new(candidates.iter().map(|(_, e)| e.clone()).collect());
         let mut used = vec![false; candidates.len()];
         self.refresh()?;
+        if !self.state().manifest.documents.damaged.is_empty() {
+            return Ok(project.clone());
+        }
         for summary in self.documents_in(Some(&project.id)) {
             if summary.id == leaving {
                 continue;
@@ -346,7 +361,8 @@ impl Vault {
 }
 
 /// A Document's text and the identities it brings, moving from mapping
-/// `from` into `to`: opened in `from` as a saved document reopens, then
+/// `from` into `to`: opened in `from` as a saved document reopens, its
+/// Not a name wordings `from` keeps for others left off, then
 /// joined to `to` (`plan_join`), so names `to` knows take its aliases,
 /// clashing aliases its next free numbers, and the text is rewritten with
 /// them. The identities carry no earlier aliases: those name `from`'s
@@ -354,7 +370,7 @@ impl Vault {
 /// the identity it came from, in `from` or in `to`.
 #[allow(clippy::type_complexity)]
 fn realias(
-    text: &str,
+    document: &Document,
     from: &Mapping,
     to: &Mapping,
 ) -> Result<(String, Vec<ExportedIdentity>, Vec<Option<String>>), String> {
@@ -365,12 +381,14 @@ fn realias(
     };
     let (from_ids, from_exported) = live(from);
     let (to_ids, to_exported) = live(to);
+    let text = document.markdown.as_str();
     let reserved = to.reserved_aliases();
     let mut review = Review::default();
     review.refresh(text);
     review.reserve_aliases(&from.reserved_aliases());
     let seeded = review.seed(&from_exported, text);
     review.relink(text, &from_exported, &seeded, 0);
+    review.leave_off(&from.not_names_of(&document.id));
     let document = review.export_identities_with_ids();
     let plan = plan_join(&to_exported, &document, &reserved);
     review.reserve_aliases(&reserved);

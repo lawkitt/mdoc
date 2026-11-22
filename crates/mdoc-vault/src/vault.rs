@@ -180,7 +180,13 @@ impl Vault {
                     Err(()) => (Manifest::default(), ManifestCheck::Damaged),
                 };
             let checked = manifest.check(&vault.sealer, &vault.root)?;
-            if opened != ManifestCheck::Current && checked.opened == 0 && checked.rejected > 0 {
+            // The user-wide lists are an object too, kept outside the manifest.
+            let lists = vault.user_lists_open();
+            let (any_opened, any_rejected) = (
+                checked.opened > 0 || lists == Some(true),
+                checked.rejected > 0 || lists == Some(false),
+            );
+            if opened != ManifestCheck::Current && !any_opened && any_rejected {
                 return Err(VaultError::WrongKey);
             }
             if opened == ManifestCheck::Current && checked.changed {
@@ -419,6 +425,18 @@ impl Vault {
             .open(ObjectKind::UserLists, USER_LISTS_ID, &bytes)
             .map_err(|_| damaged())?;
         serde_json::from_slice(&plain).map_err(|_| damaged())
+    }
+
+    /// Whether `user-lists.enc` opens with this key: `None` when there is
+    /// none, or it is not a sealed file at all.
+    fn user_lists_open(&self) -> Option<bool> {
+        let mut file = File::open(self.user_lists_path()).ok()?;
+        let bytes = read_limited(&mut file).ok()?;
+        match (self.sealer).open(ObjectKind::UserLists, USER_LISTS_ID, &bytes) {
+            Ok(_) => Some(true),
+            Err(Unseal::Rejected) => Some(false),
+            Err(_) => None,
+        }
     }
 
     /// Load the user-wide lists, change them with `change`, and save them

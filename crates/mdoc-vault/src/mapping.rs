@@ -425,6 +425,8 @@ impl Mapping {
         if identity.originals.is_empty() {
             return None;
         }
+        // No Document's undo of a Not a name may give its wordings back.
+        identity.not_a_name_by = None;
         Some(std::mem::take(&mut identity.originals))
     }
 }

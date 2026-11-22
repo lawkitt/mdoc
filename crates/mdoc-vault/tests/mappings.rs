@@ -567,6 +567,30 @@ fn not_a_name_drops_one_identitys_wording_and_its_undo_refills_it() {
     );
 }
 
+/// A forgotten identity stays forgotten even for the Document whose Not a
+/// name emptied part of it: its undo gives nothing back.
+#[test]
+fn a_forgotten_identity_is_not_refilled_by_a_not_a_name_undo() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let names = [person("PERSON_1", &["Alex Kim", "A. Kim"])];
+    let (project, document) = saved(&vault, "PERSON_1 wrote.", &names, "Case");
+    let dropped = [("PERSON_1".to_string(), "A. Kim".to_string())];
+    let mut forgot = false;
+    let project = vault
+        .update_project(&project, |p| {
+            p.mapping.drop_wordings(&dropped, &document, |_| false);
+            forgot = p.forget_identity("PERSON_1");
+        })
+        .unwrap();
+    assert!(forgot);
+    let mut mapping = project.mapping.clone();
+    mapping.merge_from(&names, Some(&document));
+    mapping.refill(&dropped, &document);
+    assert!(mapping.identities[0].originals.is_empty());
+    assert!((mapping.reserved_aliases_for(&document)).contains(&"PERSON_1".to_string()));
+}
+
 /// A note kept for another Document follows a rename of its identity; the
 /// Document is named by its id, which no rename or move changes.
 #[test]
@@ -626,16 +650,42 @@ fn user_lists_are_sealed_and_survive_a_reopen() {
     // They are no Project or Document.
     let vault = folder.open();
     assert!(vault.projects().is_empty() && vault.documents().is_empty());
-    let other = Vault::open(&folder.root, &[8; 32]).unwrap();
+    // With only the lists in it, another key opens nothing and writes
+    // nothing.
+    let manifest = std::fs::read(folder.root.join("manifest.enc")).unwrap();
     assert!(matches!(
-        other.user_lists(),
+        Vault::open(&folder.root, &[8; 32]),
+        Err(VaultError::WrongKey)
+    ));
+    assert_eq!(
+        std::fs::read(folder.root.join("manifest.enc")).unwrap(),
+        manifest
+    );
+    // Lists sealed under another key in a Vault that opens are damaged,
+    // and never overwritten.
+    let foreign = Folder::new();
+    Vault::open(&foreign.root, &[8; 32])
+        .unwrap()
+        .update_user_lists(|lists| {
+            lists.add_never("Elsewhere");
+        })
+        .unwrap();
+    let other = Folder::new();
+    new_project(&other.open(), "Matter", &[]);
+    let copied = std::fs::read(foreign.root.join("user-lists.enc")).unwrap();
+    std::fs::write(other.root.join("user-lists.enc"), &copied).unwrap();
+    let other_vault = other.open();
+    assert!(matches!(
+        other_vault.user_lists(),
         Err(VaultError::Damaged {
             kind: ObjectKind::UserLists,
             ..
         })
     ));
-    assert!(
-        other.update_user_lists(|_| {}).is_err(),
+    assert!(other_vault.update_user_lists(|_| {}).is_err());
+    assert_eq!(
+        std::fs::read(other.root.join("user-lists.enc")).unwrap(),
+        copied,
         "never overwritten"
     );
     // An older revision never overwrites a newer one.
@@ -1171,7 +1221,186 @@ fn a_document_moved_to_unfiled_keeps_the_names_it_uses() {
     assert_eq!(vault.project(&project).unwrap().mapping, before);
 }
 
+/// A wording a Document took off as Not a name, kept in the Project for
+/// another Document, does not come back as a name when it moves.
+#[test]
+fn a_moved_document_leaves_its_not_a_name_wordings_off() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let (project, _) = saved(
+        &vault,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Alex Kim"])],
+        "Case",
+    );
+    let street = new_document(&vault, Some(&project), "Street", "Alex Kim Street is long.");
+    let pair = [("PERSON_1".to_string(), "Alex Kim".to_string())];
+    vault
+        .update_project(&project, |p| {
+            p.mapping.drop_wordings(&pair, &street, |_| true)
+        })
+        .unwrap();
+    let moved = vault.move_document(&street, None).unwrap();
+    assert!(
+        moved.document.mapping.is_empty(),
+        "{:?}",
+        moved.document.mapping
+    );
+    assert_eq!(moved.document.markdown, "Alex Kim Street is long.");
+}
+
+/// A Document that does not open may be in the Project, so moving back
+/// keeps the names the move added.
+#[test]
+fn moving_back_keeps_added_names_while_a_document_does_not_open() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let (_, letter) = saved(
+        &vault,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Ann Lee"])],
+        "Letter",
+    );
+    let (memo_project, _) = saved(
+        &vault,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Bob Hart"])],
+        "Memo",
+    );
+    let moved = vault.move_document(&letter, Some(&memo_project)).unwrap();
+    let note = new_document(&vault, Some(&memo_project), "Note", "PERSON_2 called.");
+    let file = folder.root.join("docs").join(&note).join("doc.enc");
+    let mut bytes = std::fs::read(&file).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 1;
+    std::fs::write(&file, bytes).unwrap();
+    vault.undo_move(&moved.undo).unwrap();
+    assert_eq!(restored_in(&vault, &memo_project, "PERSON_2"), "Ann Lee");
+}
+
+/// A crash part way through moving into a new Project leaves the document
+/// where it was; at most the new Project stays, empty.
+#[test]
+fn a_crash_moving_into_a_new_project_loses_nothing() {
+    let folder = Folder::new();
+    let (project, letter) = {
+        let vault = folder.open();
+        saved(
+            &vault,
+            "PERSON_1 wrote.",
+            &[person("PERSON_1", &["Ann Lee"])],
+            "Letter",
+        )
+    };
+    let hook: FaultHook = {
+        let letter = letter.clone();
+        Arc::new(move |step| {
+            if step.kind == ObjectKind::Document && step.id == letter {
+                return Fault::Crash;
+            }
+            Fault::Continue
+        })
+    };
+    let vault = Vault::open_with_hook(&folder.root, &KEY, hook).unwrap();
+    let new = NewProject {
+        name: "New".into(),
+        ..NewProject::default()
+    };
+    assert!(matches!(
+        vault.move_document_to_new_project(&letter, new),
+        Err(VaultError::Crashed)
+    ));
+    drop(vault);
+    let vault = folder.open();
+    assert_eq!(text(&vault, &letter), "PERSON_1 wrote.");
+    assert_eq!(
+        ids_in(&vault, Some(&project)),
+        std::slice::from_ref(&letter)
+    );
+    for other in vault.projects().into_iter().filter(|p| p.id != project) {
+        assert_eq!(other.name, "New");
+        assert!(ids_in(&vault, Some(&other.id)).is_empty());
+    }
+}
+
 // Deleting a Project.
+
+/// A crash part way through deleting a Project keeps it with the
+/// Documents not yet moved; deleting again finishes.
+#[test]
+fn a_crash_deleting_a_project_is_finished_by_deleting_again() {
+    let folder = Folder::new();
+    let (project, documents) = {
+        let vault = folder.open();
+        let names = [person("PERSON_1", &["Ann Lee"])];
+        let (project, first) = saved(&vault, "PERSON_1 wrote.", &names, "Case");
+        let second = new_document(&vault, Some(&project), "Second", "PERSON_1 called.");
+        let mut documents = vec![first, second];
+        documents.sort();
+        (project, documents)
+    };
+    let writes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hook: FaultHook = {
+        let writes = writes.clone();
+        Arc::new(move |step| {
+            let document = step.kind == ObjectKind::Document && step.stage == Stage::BeforeRename;
+            if document && writes.fetch_add(1, Ordering::SeqCst) == 1 {
+                return Fault::Crash;
+            }
+            Fault::Continue
+        })
+    };
+    let vault = Vault::open_with_hook(&folder.root, &KEY, hook).unwrap();
+    assert!(matches!(
+        vault.delete_project(&project, ProjectDocuments::MoveToUnfiled),
+        Err(VaultError::Crashed)
+    ));
+    drop(vault);
+    let vault = folder.open();
+    assert!(vault.project(&project).is_ok());
+    assert_eq!(ids_in(&vault, Some(&project)).len(), 1);
+    assert_eq!(ids_in(&vault, None).len(), 1);
+    vault
+        .delete_project(&project, ProjectDocuments::MoveToUnfiled)
+        .unwrap();
+    assert!(vault.projects().is_empty());
+    assert_eq!(ids_in(&vault, None), documents);
+    for document in &documents {
+        let document = vault.document(document).unwrap();
+        assert_eq!(restored(&document.mapping, "PERSON_1"), "Ann Lee");
+    }
+}
+
+/// A Document that cannot be read for now may be in the Project: the
+/// delete is refused and nothing goes.
+#[test]
+#[cfg(unix)]
+fn a_document_unreadable_for_now_refuses_a_project_delete() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = Folder::new();
+    let vault = folder.open();
+    let (project, document) = saved(
+        &vault,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Ann Lee"])],
+        "Case",
+    );
+    let file = folder.root.join("docs").join(&document).join("doc.enc");
+    let mode =
+        |mode| std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();
+    mode(0o000);
+    if std::fs::read(&file).is_ok() {
+        mode(0o644);
+        return; // Running as root: permissions do not apply.
+    }
+    let deleted = vault.delete_project(&project, ProjectDocuments::Delete);
+    mode(0o644);
+    assert!(matches!(deleted, Err(VaultError::Io(_))), "{deleted:?}");
+    drop(vault);
+    let vault = folder.open();
+    assert!(vault.project(&project).is_ok());
+    assert_eq!(ids_in(&vault, Some(&project)), [document]);
+}
 
 #[test]
 fn deleting_a_project_moves_its_documents_to_unfiled_or_deletes_them() {
