@@ -18,7 +18,7 @@ struct TextViewHarness {
 
     var shown: String { view.textStorage.string }
     var string: NSString { view.textStorage.string as NSString }
-    var toolbar: EditToolbarModel { coordinator.toolbar }
+    var toolbar: EditToolbarModel { coordinator.keyboard.toolbar }
 
     /// The view SwiftUI makes from the model now.
     static func textView(_ model: DocumentViewModel, rendered: Bool) -> MarkdownTextView {

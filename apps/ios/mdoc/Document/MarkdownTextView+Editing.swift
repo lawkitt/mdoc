@@ -151,7 +151,7 @@ extension MarkdownTextView.Coordinator {
         lastSelection = view.selectedRange
         view.invalidateSpoken()
         updateTypingAttributes(view)
-        toolbarChanged(view)
+        keyboard.changed(view)
         // A cell typed into was laid out again: its caret moves with it.
         view.redrawCaret()
     }
@@ -345,7 +345,7 @@ extension MarkdownTextView.Coordinator {
         lastSelection = view.selectedRange
         livePreview.selectionChanged(in: view, look: look(view))
         view.invalidateSpoken()
-        toolbarChanged(view)
+        keyboard.changed(view)
         updateTypingAttributes(view)
         view.redrawCaret()
         view.revealCaretCell()

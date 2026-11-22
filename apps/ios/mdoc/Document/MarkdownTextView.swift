@@ -221,17 +221,7 @@ struct MarkdownTextView: UIViewRepresentable {
         /// Setting a snapped selection: its own change is not snapped again.
         var snapping = false
         /// Edit mode's toolbar and formatting keyboard (ADR 0109).
-        let toolbar = EditToolbarModel()
-        /// The toolbar's caret state waits for the end of this turn of the
-        /// run loop, so a burst of caret moves asks the core once.
-        var toolbarPending = false
-        /// The system keyboard's height with the toolbar, as it last showed.
-        var keyboardHeight: CGFloat?
-        nonisolated(unsafe) var keyboardObserver: NSObjectProtocol?
-        nonisolated(unsafe) var keyboardMoved: NSObjectProtocol?
-        /// The room added below the text in edit mode so that no line
-        /// rests under the floating toolbar (ADR 0110).
-        var toolbarRoom: CGFloat = 0
+        let keyboard = EditKeyboard()
 
         init(parent: MarkdownTextView) {
             self.parent = parent
@@ -241,6 +231,10 @@ struct MarkdownTextView: UIViewRepresentable {
             super.init()
             reveal.text = { [weak self] in self?.revealText }
             fixSelection.text = { [weak self] in self?.fixText }
+            keyboard.editing = { [weak self] in
+                guard let self, let actions = self.parent.edit else { return nil }
+                return (actions, self.parent.rendered)
+            }
         }
 
         /// What the reveal measures in now.
@@ -260,9 +254,6 @@ struct MarkdownTextView: UIViewRepresentable {
         deinit {
             if let foreground {
                 NotificationCenter.default.removeObserver(foreground)
-            }
-            for observer in [keyboardObserver, keyboardMoved].compactMap({ $0 }) {
-                NotificationCenter.default.removeObserver(observer)
             }
         }
 

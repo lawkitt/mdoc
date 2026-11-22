@@ -1,38 +1,41 @@
 import MdocFFI
 import UIKit
 
-/// Edit mode's toolbar, formatting keyboard, links and shortcuts (ADR
-/// 0109) on the text view: each button or key asks the editor core for its
-/// change and applies it through the typing path (`TypingBridge.command`),
-/// one edit and one "Formatting" undo step.
-extension MarkdownTextView.Coordinator {
-    /// Puts the toolbar above the keyboard in edit mode and points its
-    /// buttons and the shortcuts at this view; takes them away in review.
-    func connectToolbar(_ view: CandidateTextView) {
-        guard let actions = parent.edit else {
-            view.onCommand = nil
-            view.onLinkKey = nil
-            if view.inputAccessoryView != nil || view.inputView != nil {
-                view.inputAccessoryView = nil
-                view.inputView = nil
-                toolbar.formatting = false
-                view.reloadInputViews()
-            }
-            setToolbarRoom(0, in: view)
-            return
+/// Edit mode's toolbar and formatting keyboard below the text (ADR 0109,
+/// 0110): the toolbar's model, the system keyboard's height, the room left
+/// below the text for the floating toolbar, and the keyboard observers,
+/// which it removes as it goes. The buttons and keys run their commands
+/// through the coordinator's typing path.
+@MainActor
+final class EditKeyboard {
+    /// Edit mode's actions and whether the text is drawn (Show Markdown
+    /// off), now; nil in review. The coordinator sets it once.
+    var editing: () -> (actions: EditActions, rendered: Bool)? = { nil }
+    let toolbar = EditToolbarModel()
+    /// The toolbar's caret state waits for the end of this turn of the
+    /// run loop, so a burst of caret moves asks the core once.
+    private var refreshQueued = false
+    /// The system keyboard's height with the toolbar, as it last showed.
+    private var keyboardHeight: CGFloat?
+    nonisolated(unsafe) private var keyboardShows: NSObjectProtocol?
+    nonisolated(unsafe) private var keyboardMoved: NSObjectProtocol?
+    /// The room added below the text in edit mode so that no line rests
+    /// under the floating toolbar (ADR 0110).
+    private(set) var toolbarRoom: CGFloat = 0
+
+    deinit {
+        for observer in [keyboardShows, keyboardMoved].compactMap({ $0 }) {
+            NotificationCenter.default.removeObserver(observer)
         }
-        view.onCommand = { [weak self, weak view] command in
-            guard let self, let view else { return }
-            self.perform(command, in: view)
-        }
-        view.onLinkKey = { [weak self, weak view] in
-            guard let self, let view else { return }
-            self.editLink(in: view)
-        }
-        toolbar.run = view.onCommand ?? { _ in }
-        toolbar.editLink = view.onLinkKey ?? {}
-        toolbar.undo = actions.undo
-        toolbar.redo = actions.redo
+    }
+
+    /// Edit mode began: the toolbar goes above the keyboard, its buttons
+    /// run `run` and `editLink`, and the keyboard is watched.
+    func install(on view: CandidateTextView, run: @escaping (EditCommand) -> Void, editLink: @escaping () -> Void) {
+        toolbar.run = run
+        toolbar.editLink = editLink
+        toolbar.undo = { [weak self] in self?.editing()?.actions.undo() }
+        toolbar.redo = { [weak self] in self?.editing()?.actions.redo() }
         toolbar.setFormatting = { [weak self, weak view] on in
             guard let self, let view else { return }
             self.setFormatting(on, in: view)
@@ -42,10 +45,10 @@ extension MarkdownTextView.Coordinator {
             self.setFormatting(false, in: view, reload: false)
             view.resignFirstResponder()
         }
-        if keyboardObserver == nil {
+        if keyboardShows == nil {
             // The system keyboard's height as it shows, for the formatting
             // keyboard to take its place at its size.
-            keyboardObserver = NotificationCenter.default.addObserver(
+            keyboardShows = NotificationCenter.default.addObserver(
                 forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main
             ) { [weak self] note in
                 guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
@@ -67,25 +70,26 @@ extension MarkdownTextView.Coordinator {
             view.inputAccessoryView = EditToolbarHost(model: toolbar)
             if view.isFirstResponder { view.reloadInputViews() }
         }
-        toolbar.canUndo = actions.canUndo()
-        toolbar.canRedo = actions.canRedo()
-        toolbarChanged(view)
     }
 
-    /// Runs `command` at the selection: the core's change, made in the view
-    /// and sent as one step.
-    func perform(_ command: EditCommand, in view: CandidateTextView) {
-        guard view.isEditMode else { return }
-        let rendered = parent.rendered
-        bridge.command(in: view) { text, selection in
-            command.change(text: text, selection: selection, rendered: rendered)
+    /// Review: the toolbar and the formatting keyboard go, and the room
+    /// below the text with them.
+    func remove(from view: CandidateTextView) {
+        if view.inputAccessoryView != nil || view.inputView != nil {
+            view.inputAccessoryView = nil
+            view.inputView = nil
+            toolbar.formatting = false
+            view.reloadInputViews()
         }
-        // A table control's cell stays in view, and the caret's line
-        // above the toolbar (a heading or a list grows it).
-        view.revealCaretCell()
-        view.redrawCaret()
-        refreshToolbar(view)
-        keepCaretInView(view, settled: false)
+        setToolbarRoom(0, in: view)
+    }
+
+    /// The model changed in edit mode: Undo and Redo as the core has them
+    /// now, and the caret state once this turn is over.
+    func follow(_ view: CandidateTextView, actions: EditActions) {
+        toolbar.canUndo = actions.canUndo()
+        toolbar.canRedo = actions.canRedo()
+        changed(view)
     }
 
     /// Swaps the formatting keyboard in for the system one, or back.
@@ -173,6 +177,77 @@ extension MarkdownTextView.Coordinator {
         toolbarRoom = room
     }
 
+    /// The selection moved or the text changed: the toolbar asks the core
+    /// once this turn of the run loop is over.
+    func changed(_ view: CandidateTextView) {
+        guard view.isEditMode, !refreshQueued else { return }
+        refreshQueued = true
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view else { return }
+            self.refreshQueued = false
+            self.refresh(view)
+        }
+    }
+
+    /// The toolbar's state for the selection now (`editor_caret_state`),
+    /// and Undo and Redo as the core has them.
+    func refresh(_ view: CandidateTextView) {
+        guard view.isEditMode, let (actions, rendered) = editing() else { return }
+        var text = view.textStorage.string
+        text.makeContiguousUTF8()
+        let string = text as NSString
+        let selected = view.selectedRange.clamped(to: string.length)
+        let state = editorCaretState(
+            text: text, selection: TypingBridge.sourceRange(selected, in: string).textRange, rendered: rendered)
+        if toolbar.state != state { toolbar.state = state }
+        let canUndo = actions.canUndo(), canRedo = actions.canRedo()
+        if toolbar.canUndo != canUndo { toolbar.canUndo = canUndo }
+        if toolbar.canRedo != canRedo { toolbar.canRedo = canRedo }
+    }
+}
+
+/// Edit mode's toolbar, formatting keyboard, links and shortcuts (ADR
+/// 0109) on the text view: each button or key asks the editor core for its
+/// change and applies it through the typing path (`TypingBridge.command`),
+/// one edit and one "Formatting" undo step.
+extension MarkdownTextView.Coordinator {
+    /// Puts the toolbar above the keyboard in edit mode and points its
+    /// buttons and the shortcuts at this view; takes them away in review.
+    func connectToolbar(_ view: CandidateTextView) {
+        guard let actions = parent.edit else {
+            view.onCommand = nil
+            view.onLinkKey = nil
+            keyboard.remove(from: view)
+            return
+        }
+        view.onCommand = { [weak self, weak view] command in
+            guard let self, let view else { return }
+            self.perform(command, in: view)
+        }
+        view.onLinkKey = { [weak self, weak view] in
+            guard let self, let view else { return }
+            self.editLink(in: view)
+        }
+        keyboard.install(on: view, run: view.onCommand ?? { _ in }, editLink: view.onLinkKey ?? {})
+        keyboard.follow(view, actions: actions)
+    }
+
+    /// Runs `command` at the selection: the core's change, made in the view
+    /// and sent as one step.
+    func perform(_ command: EditCommand, in view: CandidateTextView) {
+        guard view.isEditMode else { return }
+        let rendered = parent.rendered
+        bridge.command(in: view) { text, selection in
+            command.change(text: text, selection: selection, rendered: rendered)
+        }
+        // A table control's cell stays in view, and the caret's line
+        // above the toolbar (a heading or a list grows it).
+        view.revealCaretCell()
+        view.redrawCaret()
+        refreshToolbar(view)
+        keyboard.keepCaretInView(view, settled: false)
+    }
+
     /// The link sheet for the link at the caret, or for the selection: Done
     /// makes it one edit at the selection the sheet opened with.
     func editLink(in view: CandidateTextView) {
@@ -180,7 +255,7 @@ extension MarkdownTextView.Coordinator {
         refreshToolbar(view)
         let selection = view.selectedRange
         let text = view.textStorage.string as NSString
-        let link = toolbar.state?.link
+        let link = keyboard.toolbar.state?.link
         let selected = selection.length > 0 && NSMaxRange(selection) <= text.length ? text.substring(with: selection) : ""
         let draft = LinkDraft(
             text: link?.text ?? selected, url: link?.url ?? "", editing: link != nil,
@@ -201,31 +276,9 @@ extension MarkdownTextView.Coordinator {
         actions.editLink(draft)
     }
 
-    /// The selection moved or the text changed: the toolbar asks the core
-    /// once this turn of the run loop is over.
-    func toolbarChanged(_ view: CandidateTextView) {
-        guard view.isEditMode, !toolbarPending else { return }
-        toolbarPending = true
-        DispatchQueue.main.async { [weak self, weak view] in
-            guard let self, let view else { return }
-            self.toolbarPending = false
-            self.refreshToolbar(view)
-        }
-    }
-
     /// The toolbar's state for the selection now (`editor_caret_state`),
     /// and Undo and Redo as the core has them.
     func refreshToolbar(_ view: CandidateTextView) {
-        guard view.isEditMode, let actions = parent.edit else { return }
-        var text = view.textStorage.string
-        text.makeContiguousUTF8()
-        let string = text as NSString
-        let selected = view.selectedRange.clamped(to: string.length)
-        let state = editorCaretState(
-            text: text, selection: TypingBridge.sourceRange(selected, in: string).textRange, rendered: parent.rendered)
-        if toolbar.state != state { toolbar.state = state }
-        let canUndo = actions.canUndo(), canRedo = actions.canRedo()
-        if toolbar.canUndo != canUndo { toolbar.canUndo = canUndo }
-        if toolbar.canRedo != canRedo { toolbar.canRedo = canRedo }
+        keyboard.refresh(view)
     }
 }
