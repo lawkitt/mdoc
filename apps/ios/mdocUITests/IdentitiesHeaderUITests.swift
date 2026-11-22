@@ -10,14 +10,67 @@ final class IdentitiesHeaderUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Home's Continue card and the document menu while names are left,
+    /// then the header, whose Replace all decides them all, then the menu
+    /// once all are decided: one launch of the demo agreement (two tests
+    /// with a launch each until #1076's cleanup; the menu's first look
+    /// decides nothing, so the header still starts at 0 of 2).
     @MainActor
-    func testTheHeaderSearchesFiltersAndReplacesAll() throws {
+    func testCopyForAIWaitsWhileTheHeaderSearchesFiltersAndReplacesAll() throws {
         let app = MdocUITest.launch()
+        continueCardReadsItsCount(app)
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 30))
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
+        let (copy, share) = copyForAIAndShareWaitWithTheirReason(app)
+
+        headerSearchesFiltersAndReplacesAll(app)
+
+        MdocUITest.closeIdentities(app)
+        app.buttons["title-menu"].tap()
+        XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(copy.isEnabled, "ready: Copy for AI")
+        XCTAssertTrue(share.isEnabled, "ready: Share")
+    }
+
+    /// Home's Continue card: "N left" reads as words, never "Error".
+    @MainActor
+    private func continueCardReadsItsCount(_ app: XCUIApplication) {
+        let card = app.buttons["continue-card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 60))
+        XCTAssertTrue(card.wait(until: NSPredicate(format: "label ENDSWITH 'names left to review' OR label ENDSWITH '1 name left to review'"), timeout: MdocUITest.timeout),
+                      "the card reads \(card.label)")
+        XCTAssertFalse(card.label.contains("Error"))
+    }
+
+    /// Copy for AI and Share are in the document menu while names are left,
+    /// disabled with the reason under them. Returns the two menu items.
+    @MainActor
+    private func copyForAIAndShareWaitWithTheirReason(_ app: XCUIApplication) -> (XCUIElement, XCUIElement) {
+        app.buttons["title-menu"].tap()
+        // The menu's items; once ready the action bar has a Copy for AI too.
+        let copy = MdocUITest.menuItem("Copy for AI", app)
+        let share = MdocUITest.menuItem("Share", app)
+        XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout), "Copy for AI is listed while names are left")
+        XCTAssertTrue(share.exists, "so is Share")
+        XCTAssertFalse(copy.isEnabled)
+        XCTAssertFalse(share.isEnabled)
+        // The reason under the title ("1 name left to decide") is the
+        // menu item's subtitle, which XCUITest doesn't expose: the PR's
+        // screenshots show it.
+        // Close the menu.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
+        XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
+        return (copy, share)
+    }
+
+    /// The header with two names: search, the filter, and Replace all,
+    /// which Select's bar replaces while it shows.
+    @MainActor
+    private func headerSearchesFiltersAndReplacesAll(_ app: XCUIApplication) {
         // The agreement's email, and its surname marked from Find: two
         // names, in two categories.
         MdocUITest.hideFromFind("Bennett", app)
@@ -75,52 +128,5 @@ final class IdentitiesHeaderUITests: XCTestCase {
         replaceAll.tap()
         XCTAssertTrue(summary.wait(until: NSPredicate(format: "label == %@", "2 names · all decided ✓"), timeout: MdocUITest.timeout))
         XCTAssertTrue(replaceAll.waitForNonExistence(timeout: 5), "nothing left to replace")
-    }
-
-    /// Copy for AI and Share are in the document menu while names are left,
-    /// disabled with the reason under them; once all are decided, enabled.
-    /// Home's Continue card reads its count as words.
-    @MainActor
-    func testCopyForAIAndShareWaitWithTheirReason() throws {
-        let app = MdocUITest.launch()
-        // Home's Continue card: "N left" reads as words, never "Error".
-        let card = app.buttons["continue-card"].firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 60))
-        XCTAssertTrue(card.wait(until: NSPredicate(format: "label ENDSWITH 'names left to review' OR label ENDSWITH '1 name left to review'"), timeout: MdocUITest.timeout),
-                      "the card reads \(card.label)")
-        XCTAssertFalse(card.label.contains("Error"))
-        let document = MdocUITest.documentRow(app)
-        XCTAssertTrue(document.waitForExistence(timeout: 60))
-        document.tap()
-        let text = app.textViews["document-text"]
-        XCTAssertTrue(text.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 30))
-        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
-
-        app.buttons["title-menu"].tap()
-        // The menu's items; once ready the action bar has a Copy for AI too.
-        let copy = MdocUITest.menuItem("Copy for AI", app)
-        let share = MdocUITest.menuItem("Share", app)
-        XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout), "Copy for AI is listed while names are left")
-        XCTAssertTrue(share.exists, "so is Share")
-        XCTAssertFalse(copy.isEnabled)
-        XCTAssertFalse(share.isEnabled)
-        // The reason under the title ("1 name left to decide") is the
-        // menu item's subtitle, which XCUITest doesn't expose: the PR's
-        // screenshots show it.
-        // Close the menu.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
-        XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
-
-        XCTAssertTrue(MdocUITest.showIdentities(app))
-        let replaceAll = app.buttons["identities-replace-all"].firstMatch
-        XCTAssertTrue(replaceAll.waitUntilHittable(timeout: MdocUITest.timeout))
-        replaceAll.tap()
-        XCTAssertTrue(replaceAll.waitForNonExistence(timeout: 10))
-        MdocUITest.closeIdentities(app)
-
-        app.buttons["title-menu"].tap()
-        XCTAssertTrue(copy.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertTrue(copy.isEnabled, "ready: Copy for AI")
-        XCTAssertTrue(share.isEnabled, "ready: Share")
     }
 }

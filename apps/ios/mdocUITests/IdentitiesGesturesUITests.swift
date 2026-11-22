@@ -103,13 +103,6 @@ final class IdentitiesGesturesUITests: XCTestCase {
             .waitForExistence(timeout: MdocUITest.timeout), "the row is as it was")
     }
 
-    /// Both drawers close from the sliver, the panel's inner edge and, toward
-    /// their side, anywhere over the panel (ADR 0115); a swipe the other way
-    /// over the panel, or in its search field, leaves them open. With
-    /// Identities open, a swipe right from the screen's left edge closes
-    /// Identities and shows the document; it never opens the sidebar, whose
-    /// edge lay under Identities' sliver (its own test until ADR 0112's
-    /// sweep, which saved the launch).
     /// Whether `element` stops moving: its frame the same 0.2 s apart.
     @MainActor
     private func settles(_ element: XCUIElement) -> Bool {
@@ -121,9 +114,29 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
     }
 
+    /// The drawers on one document: they close as they open, a swipe over
+    /// a sidebar row closes the sidebar, and a swipe anywhere on the
+    /// document opens one. Three tests with a launch each until #1076's
+    /// cleanup: each part leaves both drawers shut and every name to
+    /// review, so none needs a fresh app.
     @MainActor
-    func testTheDrawersCloseAsTheyOpen() throws {
+    func testTheDrawersOpenBySwipesAndCloseAsTheyOpen() throws {
         let app = try openDocument()
+        drawersCloseAsTheyOpen(app)
+        swipeOverASidebarRowClosesItAndOpensNothing(app)
+        swipeAnywhereOnTheDocumentOpensADrawer(app)
+    }
+
+    /// Both drawers close from the sliver, the panel's inner edge and, toward
+    /// their side, anywhere over the panel (ADR 0115); a swipe the other way
+    /// over the panel leaves them open. With Identities open, a swipe right
+    /// from the screen's left edge closes Identities and shows the
+    /// document; it never opens the sidebar, whose edge lay under
+    /// Identities' sliver (its own test until ADR 0112's sweep, which saved
+    /// the launch). A drag in the sidebar's search field is the field's:
+    /// `DrawerDragTests` hit-tests text input (#1076).
+    @MainActor
+    private func drawersCloseAsTheyOpen(_ app: XCUIApplication) {
         let width = app.frame.width
 
         // Identities: the panel on the right; its inner edge on the left.
@@ -139,10 +152,12 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
         openIdentities()
         let edge = panel.frame.minX
-        // Over the header, where no row's swipe answers a drag left.
+        // Over the header, where no row's swipe answers a drag left. The
+        // drawer decides during the drag, and XCUITest waits for its slide
+        // to end before it looks again: no wait for it to go.
         let header = close.frame.midY
         drag(app, fromX: edge + 200, y: header, by: -150)
-        XCTAssertFalse(close.waitForNonExistence(timeout: 2), "a drag left over the panel leaves it open")
+        XCTAssertTrue(close.isHittable, "a drag left over the panel leaves it open")
         drag(app, fromX: edge + 120, y: header, by: 200)
         XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a drag right over the panel closes it")
         openIdentities()
@@ -175,13 +190,8 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
         openSidebar()
         let inner = sidebar.frame.maxX
-        // A drag in the search field is the field's: the sidebar stays.
-        let search = app.descendants(matching: .any)["sidebar-search"].firstMatch
-        XCTAssertTrue(search.waitUntilHittable(timeout: MdocUITest.timeout))
-        drag(app, fromX: min(search.frame.maxX - 20, inner - 30), y: search.frame.midY, by: -150)
-        XCTAssertFalse(sidebar.waitForNonExistence(timeout: 2), "a drag left in the search field leaves it open")
         drag(app, fromX: inner - 200, by: 150)
-        XCTAssertFalse(sidebar.waitForNonExistence(timeout: 2), "a drag right over the sidebar leaves it open")
+        XCTAssertTrue(sidebar.isHittable, "a drag right over the sidebar leaves it open")
         drag(app, fromX: inner - 120, by: -200)
         XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "a drag left over the sidebar closes it")
         openSidebar()
@@ -196,8 +206,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
     /// (#1070): the row stays under the finger the whole way, which a tap
     /// would take for a press, so its tap gives way to the drawer's swipe.
     @MainActor
-    func testASwipeOverASidebarRowClosesItAndOpensNothing() throws {
-        let app = try openDocument()
+    private func swipeOverASidebarRowClosesItAndOpensNothing(_ app: XCUIApplication) {
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
         let text = app.textViews["document-text"]
         for identifier in ["sidebar-documents", "document-row"] {
@@ -219,11 +228,11 @@ final class IdentitiesGesturesUITests: XCTestCase {
 
     /// A sideways swipe anywhere on the document opens a drawer (ADR 0114):
     /// right the sidebar, left Identities; up and down scroll the text. The
-    /// review card keeps its sideways swipe, and while editing only the
-    /// screen's edge opens the sidebar.
+    /// review card keeps its sideways swipe (what keeps one is hit-tested
+    /// in `DrawerDragTests`; these drags check the real card is marked),
+    /// and while editing only the screen's edge opens the sidebar.
     @MainActor
-    func testASwipeAnywhereOnTheDocumentOpensADrawer() throws {
-        let app = try openDocument()
+    private func swipeAnywhereOnTheDocumentOpensADrawer(_ app: XCUIApplication) {
         let width = app.frame.width
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
         let identities = app.descendants(matching: .any)["identities-panel"].firstMatch
@@ -250,9 +259,11 @@ final class IdentitiesGesturesUITests: XCTestCase {
         MdocUITest.tapAboveBottomBar(email, in: text, app)
         let card = app.descendants(matching: .any)["review-card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: MdocUITest.timeout))
+        // A drawer decides during the drag, and XCUITest waits for its
+        // slide to end before it looks: each is checked at once.
         drag(app, fromX: width * 0.5, y: card.frame.midY, by: 160)
+        XCTAssertFalse(sidebar.exists, "a swipe on the card opens no sidebar")
         drag(app, fromX: width * 0.5, y: card.frame.midY, by: -160)
-        XCTAssertFalse(sidebar.waitForExistence(timeout: 1), "a swipe on the card opens no sidebar")
         XCTAssertFalse(identities.exists, "a swipe on the card opens no Identities")
         app.buttons["review-end"].firstMatch.tap()
 
@@ -262,7 +273,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         edit.tap()
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
         drag(app, fromX: width * 0.4, by: 200)
-        XCTAssertFalse(sidebar.waitForExistence(timeout: 2), "editing, a swipe in the text opens no sidebar")
+        XCTAssertFalse(sidebar.exists, "editing, a swipe in the text opens no sidebar")
         drag(app, fromX: 6, by: 200)
         XCTAssertTrue(sidebar.waitUntilHittable(timeout: 5), "editing, the left edge opens the sidebar")
     }
@@ -286,17 +297,15 @@ final class IdentitiesGesturesUITests: XCTestCase {
         XCTAssertTrue(cell.waitForExistence(timeout: MdocUITest.timeout), "the table shows")
         let width = app.frame.width
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
-        let identities = app.descendants(matching: .any)["identities-panel"].firstMatch
 
-        // At its left edge, then scrolled along and back: the table's. The
-        // row's height, taken once: scrolled along, the cell leaves the screen.
+        // At its left edge: the table's. What keeps a sideways swipe (a
+        // table scrolled along, either drawer's way) is hit-tested in
+        // `DrawerDragTests` (#1076); this real drag checks the drawn table
+        // is such a view. A drawer decides during the drag, and XCUITest
+        // waits for its slide to end before it looks.
         let tableRow = cell.frame.midY
         drag(app, fromX: width * 0.4, y: tableRow, by: 200)
-        XCTAssertFalse(sidebar.waitForExistence(timeout: 2), "a swipe right on the table opens no sidebar")
-        drag(app, fromX: width * 0.6, y: tableRow, by: -200)
-        XCTAssertFalse(identities.waitForExistence(timeout: 2), "a swipe left on the table opens no Identities")
-        drag(app, fromX: width * 0.4, y: tableRow, by: 240)
-        XCTAssertFalse(sidebar.waitForExistence(timeout: 2), "back at its edge, still the table's")
+        XCTAssertFalse(sidebar.exists, "a swipe right on the table opens no sidebar")
 
         // The text above the table opens the sidebar.
         let heading = app.textViews["document-text"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))

@@ -29,6 +29,15 @@ final class TableEditingUITests: XCTestCase {
         edit.tap()
         // No selection: the keyboard waits for the tap in the cell (ADR 0110).
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
+        return (app, tapCell(cell, app))
+    }
+
+    /// Taps the cell holding `cell` past its text's end, the text dragged
+    /// up first while the cell is under a bar: the caret goes to the end
+    /// of the cell's text and the keyboard comes up.
+    @MainActor
+    @discardableResult
+    static func tapCell(_ cell: String, _ app: XCUIApplication) -> XCUIElement {
         let target = Self.cell(app, cell)
         // The cells take no touches in edit mode (the grid does): the
         // cell is found, and the grid under it tapped.
@@ -45,7 +54,7 @@ final class TableEditingUITests: XCTestCase {
         // Past the text's end: the caret at the end of the cell's text.
         target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "the keyboard comes back")
-        return (app, target)
+        return target
     }
 
     /// The pencil after a word selected in a cell partway down a long table
@@ -97,14 +106,28 @@ final class TableEditingUITests: XCTestCase {
         app.textViews.matching(NSPredicate(format: "value == %@", text)).firstMatch
     }
 
+    /// Typing in a cell, then the ⋯ menu in the header, on one edit of the
+    /// Markdown fixture: two tests with a launch each until #1076's
+    /// cleanup. The typing part leaves the table as it found it but for
+    /// " paid" and "!", and the header's cell takes the caret from there.
+    /// (Aa in a cell stays a launch of its own: after the menu deleted a
+    /// column, a tap back in the first cell lost the keyboard once in five
+    /// local runs.)
+    @MainActor
+    func testTypingInACellThenTheTableMenu() throws {
+        let (app, target) = Self.editCell("Депозит")
+        typingIntoACellAndAddingARow(app, target)
+        Self.tapCell("Сумма", app)
+        theTableMenu(app)
+    }
+
     /// Done, then edit mode again with the caret still in the cell: the new
     /// toolbar starts scrolled to ⋯ as well (review finding on #783; its own
     /// test until ADR 0112's sweep, which saved the launch). Then typing
     /// goes into the cell, Tab moves to the next, Row below adds a row
     /// with the caret in it, and the toolbar's Undo takes both back.
     @MainActor
-    func testTypingIntoACellAndAddingARow() throws {
-        let (app, target) = Self.editCell("Депозит")
+    private func typingIntoACellAndAddingARow(_ app: XCUIApplication, _ target: XCUIElement) {
         let more = app.buttons["table-more"]
         let shown = { more.exists && more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 }
         XCTAssertTrue(MdocUITest.wait(timeout: MdocUITest.timeout, until: shown), "⋯ shows whole")
@@ -112,7 +135,8 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "exists == false"), timeout: 5))
         app.buttons["edit-button"].tap()
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: MdocUITest.timeout))
-        if !app.buttons["toolbar-bold"].waitForExistence(timeout: 2) {
+        // The keyboard comes up, or not, as edit mode turns on with Done.
+        if !app.buttons["toolbar-bold"].exists {
             target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         }
         XCTAssertTrue(app.buttons["table-row-below"].waitForExistence(timeout: 10), "the caret is in the cell again")
@@ -169,8 +193,7 @@ final class TableEditingUITests: XCTestCase {
     /// column's alignment checked in Align column, and Delete column
     /// taking the caret's column.
     @MainActor
-    func testTheTableMenu() throws {
-        let (app, _) = Self.editCell("Сумма")
+    private func theTableMenu(_ app: XCUIApplication) {
         let more = app.buttons["table-more"]
         XCTAssertTrue(more.waitForExistence(timeout: MdocUITest.timeout))
         more.tap()

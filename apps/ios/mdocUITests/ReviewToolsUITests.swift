@@ -83,21 +83,27 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: MdocUITest.timeout), "Undo for the selection")
     }
 
-    /// Adjust Words from the alias chip's menu (ADR 0114, 0115), after
-    /// Rename…: its bar takes the review bar's place with the name's words
-    /// and Done, no menu shows over the selection, Cancel brings the bar
-    /// back, and Done with the words as they were changes nothing.
-    /// Done on a document reviewed before closes the bar with no toast,
-    /// whose Undo would reach an earlier decision; after a change on this
-    /// visit, "All N reviewed · Undo" shows and undoes that change (ADR 0116).
+    /// Done on a reviewed document, then Adjust Words from the card, on one
+    /// launch of the demo agreement: two tests with a launch each until
+    /// #1076's cleanup. Done's part ends with the bar closed and no toast,
+    /// and Find marks a new name for Adjust Words' part.
     @MainActor
-    func testDoneOnAReviewedDocumentShowsNoToast() throws {
+    func testDoneOnAReviewedDocumentThenFixTheWordsFromTheCard() throws {
         let app = MdocUITest.launch()
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        doneOnAReviewedDocumentShowsNoToast(app)
+        fixTheWordsFromTheCard(app)
+    }
+
+    /// Done on a document reviewed before closes the bar with no toast,
+    /// whose Undo would reach an earlier decision; after a change on this
+    /// visit, "All N reviewed · Undo" shows and undoes that change (ADR 0116).
+    @MainActor
+    private func doneOnAReviewedDocumentShowsNoToast(_ app: XCUIApplication) {
         let text = app.textViews["document-text"]
-        XCTAssertTrue(text.waitForExistence(timeout: 10))
 
         // Every proposal replaced, from the bottom bar.
         let primary = app.buttons["primary-action"]
@@ -118,7 +124,8 @@ final class ReviewToolsUITests: XCTestCase {
         next.tap()
         let bar = app.descendants(matching: .any)["review-bar"].firstMatch
         XCTAssertTrue(bar.waitForNonExistence(timeout: MdocUITest.timeout))
-        XCTAssertFalse(toast.waitForExistence(timeout: 2), "Done on a reviewed document shows no toast")
+        // A toast would show in the same step that closed the bar.
+        XCTAssertFalse(toast.exists, "Done on a reviewed document shows no toast")
 
         // This visit changes something: Done shows All reviewed, and its
         // Undo takes back this visit's change.
@@ -132,15 +139,18 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(toast.waitForExistence(timeout: MdocUITest.timeout), "a change on this visit: All reviewed · Undo")
         toast.tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        // Undo opens the bar on what it undid: end it, so the next part
+        // sees Find's Hide name open it.
+        if bar.exists { app.buttons["review-end"].tap() }
+        XCTAssertTrue(bar.waitForNonExistence(timeout: MdocUITest.timeout))
     }
 
+    /// Adjust Words from the alias chip's menu (ADR 0114, 0115), after
+    /// Rename…: its bar takes the review bar's place with the name's words
+    /// and Done, no menu shows over the selection, Cancel brings the bar
+    /// back, and Done with the words as they were changes nothing.
     @MainActor
-    func testFixTheWordsFromTheCard() throws {
-        let app = MdocUITest.launch()
-        let document = MdocUITest.documentRow(app)
-        XCTAssertTrue(document.waitForExistence(timeout: 60))
-        document.tap()
-        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+    private func fixTheWordsFromTheCard(_ app: XCUIApplication) {
         openFind(app)
         typeInFindField(app, "Bennett")
         let mark = app.buttons["find-hide-name"]

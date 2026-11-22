@@ -32,12 +32,14 @@ final class EditModeUITests: XCTestCase {
         edit.tap()
 
         // Done shows and the review bar stays away; with no selection the
-        // keyboard waits for a tap in the text (ADR 0110).
+        // keyboard waits for a tap in the text (ADR 0110). Once the screen
+        // has settled, a keyboard on its way would have slid in.
         let done = app.buttons["done-editing"]
         XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertEqual(done.label, "Done editing")
         XCTAssertFalse(app.descendants(matching: .any)["review-bar"].firstMatch.exists)
-        XCTAssertFalse(app.keyboards.firstMatch.waitForExistence(timeout: 2), "the keyboard waits for a tap")
+        MdocUITest.settledScreen()
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "the keyboard waits for a tap")
         MdocUITest.tapIntoText(app)
 
         app.typeText(Self.marker)
@@ -136,8 +138,10 @@ final class EditModeUITests: XCTestCase {
         edit.tap()
         let done = app.buttons["done-editing"]
         XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
-        // No selection: nothing moves and the keyboard waits for a tap.
-        XCTAssertFalse(app.buttons["toolbar-bold"].waitForExistence(timeout: 2), "the keyboard waits for a tap")
+        // No selection: nothing moves and the keyboard waits for a tap
+        // (checked on the settled screen, as above).
+        MdocUITest.settledScreen()
+        XCTAssertFalse(app.buttons["toolbar-bold"].exists, "the keyboard waits for a tap")
         done.tap()
         XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         let after = text.links[label].firstMatch
@@ -179,11 +183,12 @@ final class EditModeUITests: XCTestCase {
         let done = app.buttons["done-editing"]
         XCTAssertTrue(done.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertFalse(identities.exists, "no Identities button while editing")
-        // The right edge's swipe opens nothing.
+        // The right edge's swipe opens nothing: the drawer decides during
+        // the drag, and XCUITest waits for a slide to end before it looks.
         let window = app.windows.firstMatch
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.995, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)))
-        XCTAssertFalse(app.staticTexts["Identities"].firstMatch.waitForExistence(timeout: 2), "no drawer while editing")
+        XCTAssertFalse(app.staticTexts["Identities"].firstMatch.exists, "no drawer while editing")
         XCTAssertTrue(done.isHittable)
         MdocUITest.tapIntoText(app)
         app.typeText("Zephyrine ")

@@ -43,9 +43,21 @@ final class LivePreviewUITests: XCTestCase {
         return (app, text)
     }
 
+    /// The caret on an empty line, then a list typed and undone, in one
+    /// edit of the Markdown fixture: two tests with a launch each until
+    /// #1076's cleanup. The caret's part leaves the caret on a line of its
+    /// own at the end, and the list's part types after it.
     @MainActor
-    func testAListTypedWithReturnAndUndone() throws {
+    func testTheCaretOnAnEmptyLineThenAListTypedWithReturnAndUndone() throws {
         let (app, text) = edit(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
+        try caretOnAnEmptyLineIsABodyLineTall(app, text)
+        aListTypedWithReturnAndUndone(app, text)
+    }
+
+    /// Return ends a paragraph and continues a list; ⌘Z takes back the
+    /// last step, as the system groups real typing.
+    @MainActor
+    private func aListTypedWithReturnAndUndone(_ app: XCUIApplication, _ text: XCUIElement) {
         toTheEnd(app, text)
         // Return ends the paragraph; Return in the list continues it. The
         // value is what VoiceOver hears: a line's hidden `- ` is silent,
@@ -69,8 +81,7 @@ final class LivePreviewUITests: XCTestCase {
     /// line of text before it, and stays above the floating toolbar (ADR
     /// 0110). The caret is found where the screen changes as it blinks.
     @MainActor
-    func testTheCaretOnAnEmptyLineIsABodyLineTall() throws {
-        let (app, text) = edit(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
+    private func caretOnAnEmptyLineIsABodyLineTall(_ app: XCUIApplication, _ text: XCUIElement) throws {
         toTheEnd(app, text)
         // The hardware keys moved it: the toolbar shows at the bottom edge.
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
@@ -108,8 +119,9 @@ final class LivePreviewUITests: XCTestCase {
     /// Edit mode in live preview at the largest accessibility text size: it
     /// opens, Done takes taps and typing reaches the text (ADR 0109's
     /// acceptance). A list continued with Return is the same at any size:
-    /// `testAListTypedWithReturnAndUndone` and LivePreviewTests type one
-    /// (ADR 0112's sweep took it, and moving the caret to the end, out).
+    /// `testTheCaretOnAnEmptyLineThenAListTypedWithReturnAndUndone` and
+    /// LivePreviewTests type one (ADR 0112's sweep took it, and moving the
+    /// caret to the end, out).
     @MainActor
     func testEditingAtAnAccessibilitySize() throws {
         let (app, text) = edit(

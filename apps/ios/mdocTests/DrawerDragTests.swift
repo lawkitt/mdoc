@@ -121,4 +121,157 @@ final class DrawerDragTests: XCTestCase {
         XCTAssertFalse(controller.panelIsHidden(.leading), "shut again: the sidebar is drawn")
         XCTAssertFalse(controller.panelIsHidden(.trailing))
     }
+
+    // MARK: What keeps its own sideways swipes (`DrawerSwipes`)
+
+    // Hit-testing moved here from `IdentitiesGesturesUITests` (#1076),
+    // which keeps real drags on a wide table and on the review card, and
+    // the drawers' own drags.
+
+    /// A screen-sized view in a window, as the drawer's container is.
+    @MainActor
+    private func container() -> (UIWindow, UIView) {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: 874))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        root.view.frame = window.bounds
+        return (window, root.view)
+    }
+
+    /// Over a text field (the panels' search) or an editable text view, a
+    /// swipe is the text's: it moves the caret, and closing the panel
+    /// would clear it. Read-only text and other views are not.
+    @MainActor
+    func testATextFieldOrEditableTextTakesTheSwipe() {
+        let (window, view) = container()
+        let field = UITextField(frame: CGRect(x: 16, y: 20, width: 300, height: 44))
+        let editable = UITextView(frame: CGRect(x: 16, y: 100, width: 300, height: 120))
+        editable.isEditable = true
+        let readOnly = UITextView(frame: CGRect(x: 16, y: 260, width: 300, height: 120))
+        readOnly.isEditable = false
+        let plain = UIView(frame: CGRect(x: 16, y: 420, width: 300, height: 120))
+        [field, editable, readOnly, plain].forEach(view.addSubview)
+        window.layoutIfNeeded()
+        XCTAssertTrue(DrawerSwipes.isTextInput(at: CGPoint(x: 100, y: 42), in: view), "the search field")
+        XCTAssertTrue(DrawerSwipes.isTextInput(at: CGPoint(x: 100, y: 160), in: view), "editable text")
+        XCTAssertFalse(DrawerSwipes.isTextInput(at: CGPoint(x: 100, y: 320), in: view), "read-only text")
+        XCTAssertFalse(DrawerSwipes.isTextInput(at: CGPoint(x: 100, y: 480), in: view), "a plain view")
+        XCTAssertFalse(DrawerSwipes.isTextInput(at: CGPoint(x: 100, y: 700), in: view), "nothing but the container")
+    }
+
+    /// While a row shows its swipe actions, a swipe over the panel is the
+    /// row's: laid out and visible, nested anywhere in the panel. Hidden,
+    /// see-through or squeezed shut (put away), they show nothing.
+    @MainActor
+    func testARowShowingItsSwipeActionsKeepsTheSwipe() {
+        let list = UIView(frame: CGRect(x: 0, y: 0, width: panel, height: 874))
+        let row = UIView(frame: CGRect(x: 0, y: 100, width: list.bounds.width, height: 60))
+        list.addSubview(row)
+        XCTAssertFalse(DrawerSwipes.showsSwipeActions(in: list), "no actions")
+        let pull = UISwipeActionPullView(frame: CGRect(x: 200, y: 0, width: 130, height: 60))
+        row.addSubview(pull)
+        XCTAssertTrue(DrawerSwipes.showsSwipeActions(in: list), "a row's actions showing")
+        pull.isHidden = true
+        XCTAssertFalse(DrawerSwipes.showsSwipeActions(in: list), "hidden")
+        pull.isHidden = false
+        pull.alpha = 0
+        XCTAssertFalse(DrawerSwipes.showsSwipeActions(in: list), "see-through")
+        pull.alpha = 1
+        pull.frame.size.width = 0
+        XCTAssertFalse(DrawerSwipes.showsSwipeActions(in: list), "put away")
+        pull.removeFromSuperview()
+        row.addSubview(UISwipeActionStandardButton(frame: CGRect(x: 260, y: 0, width: 70, height: 60)))
+        XCTAssertTrue(DrawerSwipes.showsSwipeActions(in: list), "an action's button")
+    }
+
+    /// Content wider than its scroll view, insets counted, scrolls
+    /// sideways (a table wider than the screen, a zoomed page) wherever it
+    /// is scrolled to; content that fits, or a scroll view that doesn't
+    /// scroll, does not.
+    @MainActor
+    func testWhatScrollsSidewaysIsWiderThanItsView() {
+        let scroll = UIScrollView(frame: CGRect(x: 0, y: 0, width: width, height: 300))
+        scroll.contentSize = CGSize(width: width, height: 900)
+        XCTAssertFalse(DrawerSwipes.scrollsSideways(scroll), "as wide as its view")
+        scroll.contentSize.width = 800
+        XCTAssertTrue(DrawerSwipes.scrollsSideways(scroll), "wider")
+        scroll.contentOffset.x = 800 - width
+        XCTAssertTrue(DrawerSwipes.scrollsSideways(scroll), "scrolled to its end")
+        scroll.isScrollEnabled = false
+        XCTAssertFalse(DrawerSwipes.scrollsSideways(scroll), "not scrolling")
+        scroll.isScrollEnabled = true
+        scroll.contentOffset = .zero
+        scroll.contentSize.width = width - 6
+        XCTAssertFalse(DrawerSwipes.scrollsSideways(scroll), "narrower")
+        scroll.contentInset = UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
+        XCTAssertTrue(DrawerSwipes.scrollsSideways(scroll), "wider with its insets")
+    }
+
+    /// A drawer swipe never starts on a view marked `keepsSideSwipes()`
+    /// inside the screen (the review bar's cards), on what scrolls
+    /// sideways, or on a selection's handle; elsewhere, and on a marked
+    /// view outside the screen, it does.
+    @MainActor
+    func testWhatKeepsSideSwipesInsideTheScreen() {
+        let (window, view) = container()
+        let content = UIView(frame: view.bounds)
+        view.addSubview(content)
+        // The review card, marked; a mark outside the screen (a panel's).
+        let keeper = SideSwipeKeeperView(frame: CGRect(x: 0, y: 700, width: width, height: 100))
+        content.addSubview(keeper)
+        let outside = SideSwipeKeeperView(frame: CGRect(x: 0, y: 20, width: width, height: 60))
+        view.addSubview(outside)
+        // A table wider than the screen, a cell's view inside it.
+        let table = UIScrollView(frame: CGRect(x: 0, y: 100, width: width, height: 200))
+        table.contentSize = CGSize(width: 800, height: 200)
+        let cell = UIView(frame: CGRect(x: 0, y: 0, width: 200, height: 44))
+        table.addSubview(cell)
+        content.addSubview(table)
+        window.layoutIfNeeded()
+
+        func keeps(_ x: CGFloat, _ y: CGFloat) -> Bool {
+            DrawerSwipes.keepsSideSwipes(at: CGPoint(x: x, y: y), in: view, within: content)
+        }
+        XCTAssertTrue(keeps(200, 750), "the marked card")
+        XCTAssertFalse(keeps(200, 50), "a mark outside the screen")
+        XCTAssertTrue(keeps(100, 120), "a cell in the wide table")
+        XCTAssertTrue(keeps(300, 250), "the wide table")
+        table.contentSize.width = width
+        XCTAssertFalse(keeps(300, 250), "a table that fits")
+        XCTAssertFalse(keeps(200, 500), "the text")
+        keeper.removeFromSuperview()
+        XCTAssertFalse(keeps(200, 750), "the card gone")
+    }
+
+    /// A touch within reach of a selection's either end is on its handle;
+    /// a caret has none.
+    @MainActor
+    func testATouchByASelectionsEndIsOnItsHandle() throws {
+        let (window, view) = container()
+        let text = UITextView(frame: CGRect(x: 0, y: 300, width: width, height: 300))
+        text.isEditable = false
+        text.font = .systemFont(ofSize: 17)
+        text.text = "Maya Bennett signs for Daniel Okafor on the first page."
+        view.addSubview(text)
+        window.layoutIfNeeded()
+        text.selectedRange = NSRange(location: 5, length: 7)
+        let range = try XCTUnwrap(text.selectedTextRange)
+        let start = text.caretRect(for: range.start)
+        let end = text.caretRect(for: range.end)
+        XCTAssertTrue(DrawerSwipes.onSelectionHandle(text, at: CGPoint(x: start.midX, y: start.midY)), "the start's handle")
+        XCTAssertTrue(DrawerSwipes.onSelectionHandle(text, at: CGPoint(x: end.maxX + 20, y: end.maxY + 20)), "within reach of the end")
+        XCTAssertFalse(DrawerSwipes.onSelectionHandle(text, at: CGPoint(x: end.maxX + 60, y: end.midY)), "past its reach")
+        XCTAssertFalse(DrawerSwipes.onSelectionHandle(text, at: CGPoint(x: start.midX, y: start.maxY + 120)), "lines below")
+        // Through the screen: the handle keeps the swipe.
+        let onHandle = text.convert(CGPoint(x: start.midX, y: start.midY), to: view)
+        XCTAssertTrue(DrawerSwipes.keepsSideSwipes(at: onHandle, in: view, within: view), "a selection's handle keeps the swipe")
+        text.selectedRange = NSRange(location: 5, length: 0)
+        XCTAssertFalse(DrawerSwipes.onSelectionHandle(text, at: CGPoint(x: start.midX, y: start.midY)), "a caret has no handle")
+    }
 }
+
+/// Stand-ins named as UIKit's private swipe action views are, which
+/// `DrawerSwipes.showsSwipeActions` finds by name.
+final class UISwipeActionPullView: UIView {}
+final class UISwipeActionStandardButton: UIButton {}

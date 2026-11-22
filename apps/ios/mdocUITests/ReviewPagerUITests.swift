@@ -76,10 +76,9 @@ final class ReviewPagerUITests: XCTestCase {
             let start = progress.label
             // A slow drag of a fifth of the card: back where it was.
             drag(app, by: direction * width * 0.22, velocity: 60, hold: 0)
-            XCTAssertFalse(
-                progress.wait(until: NSPredicate(format: "label != %@", start), timeout: 2),
-                "a short slow drag springs back (\(direction)): \(start) → \(progress.label)")
+            // Once the strip has come to rest, sprung back or stepped.
             MdocUITest.settledScreen()
+            XCTAssertEqual(progress.label, start, "a short slow drag springs back (\(direction))")
 
             // A fling of a few points: on to the neighbor.
             drag(app, by: direction * 50, velocity: 3000, hold: 0)

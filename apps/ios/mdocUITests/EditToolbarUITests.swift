@@ -11,6 +11,10 @@ final class EditToolbarUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Whether a keyboard in this test run has been watched for the
+    /// slide-to-type tip, which a Simulator shows only once.
+    @MainActor private static var lookedForTheTip = false
+
     /// Opens the Markdown fixture and enters edit mode in live preview,
     /// with the caret at the end of the text on a new line of its own.
     @MainActor
@@ -32,9 +36,15 @@ final class EditToolbarUITests: XCTestCase {
         MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "the toolbar above the keyboard")
         // A fresh Simulator's keyboard first shows its slide-to-type tip
-        // over the keys and the toolbar.
+        // over the keys and the toolbar, once: the first keyboard in this
+        // test run waits for it, the next ones look once.
         let tip = app.buttons["Continue"]
-        if tip.waitForExistence(timeout: 2) { tip.tap() }
+        if Self.lookedForTheTip {
+            if tip.exists { tip.tap() }
+        } else if tip.waitForExistence(timeout: 2) {
+            tip.tap()
+        }
+        Self.lookedForTheTip = true
         // A key sent while edit mode is still settling can be lost: check
         // the caret reached the end with a letter typed there.
         var there = false
