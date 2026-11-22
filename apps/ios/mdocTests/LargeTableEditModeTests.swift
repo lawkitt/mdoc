@@ -7,7 +7,7 @@ import XCTest
 /// update, ends a cell's selection on the way in, touches the cells only
 /// when the mode changes, and keeps the line at the top of the view.
 @MainActor
-final class LargeTableEditModeTests: XCTestCase {
+final class LargeTableEditModeTests: XCTestCase, TextViewHarnessTests {
     /// A two-column contract table long enough to scroll through, between
     /// paragraphs, as the rc.9 contract (invented text).
     static func text(rows: Int = 40, paragraphs: Int = 30) -> String {
@@ -25,36 +25,17 @@ final class LargeTableEditModeTests: XCTestCase {
         return lines.joined(separator: "\n")
     }
 
-    typealias Harness = EditToolbarTests.Harness
-
     /// The document shown in review, Show Markdown off.
     private func harness() throws -> Harness {
-        let (core, storage) = try Fixture.core()
-        let session = try core.library.importDocument(.text(Self.text()), title: "Contract", into: .newCase(name: "Contract"))
-        _ = try session.recognize(observer: TestObserver())
-        let model = DocumentViewModel(
-            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        let view = CandidateTextView()
-        view.frame = window.bounds
-        window.addSubview(view)
-        window.isHidden = false
-        let coordinator = MarkdownTextView.Coordinator(parent: LivePreviewTests.textView(model, rendered: true))
-        coordinator.attach(to: view)
-        view.delegate = coordinator
-        let harness = Harness(
-            session: session, model: model, window: window, view: view, coordinator: coordinator, rendered: true)
-        update(harness, inViewUpdate: false)
-        XCTAssertFalse(view.isEditMode)
+        let harness = try textViewHarness(
+            text: Self.text(), title: "Contract", caseName: "Contract", rendered: true, editing: false)
+        XCTAssertFalse(harness.view.isEditMode)
         return harness
     }
 
-    /// What SwiftUI does when the model changes.
-    private func update(_ harness: Harness, inViewUpdate: Bool = true) {
-        harness.coordinator.update(
-            harness.view, with: LivePreviewTests.textView(harness.model, rendered: true), dynamicTypeSize: .large,
-            colorScheme: .light, inViewUpdate: inViewUpdate)
-        harness.view.layoutIfNeeded()
+    /// What SwiftUI does when the model changes, inside its update.
+    private func update(_ harness: Harness) {
+        show(harness, inViewUpdate: true)
     }
 
     /// Lets what waits for the end of SwiftUI's update run.

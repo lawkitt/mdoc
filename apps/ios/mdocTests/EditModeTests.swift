@@ -9,50 +9,13 @@ import XCTest
 /// saved file's), an edited alias hints once, and the clipboard and edit
 /// menu keep text inside mdoc.
 @MainActor
-final class EditModeTests: XCTestCase {
+final class EditModeTests: XCTestCase, TextViewHarnessTests {
     private static let text = "# Agreement\n\nMaya Bennett signs first.\n\nThe tenant, Maya Bennett, pays rent.\n"
 
-    private struct Harness {
-        let session: any mdoc.DocumentSession
-        let model: DocumentViewModel
-        let window: UIWindow
-        let view: CandidateTextView
-        let coordinator: MarkdownTextView.Coordinator
-
-        var shown: String { view.textStorage.string }
-    }
-
     private func harness(text: String = text) throws -> Harness {
-        let (core, storage) = try Fixture.core()
-        let session = try core.library.importDocument(.text(text), title: "Agreement", into: .newCase(name: "Bennett"))
-        _ = try session.recognize(observer: TestObserver())
-        _ = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
-        let model = DocumentViewModel(
-            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        let view = CandidateTextView()
-        view.frame = window.bounds
-        window.addSubview(view)
-        window.isHidden = false
-        let coordinator = MarkdownTextView.Coordinator(parent: textView(model))
-        coordinator.attach(to: view)
-        view.delegate = coordinator
-        let harness = Harness(session: session, model: model, window: window, view: view, coordinator: coordinator)
-        show(harness)
-        return harness
-    }
-
-    private func textView(_ model: DocumentViewModel) -> MarkdownTextView {
-        MarkdownTextView(
-            snapshot: model.snapshot, selected: nil, rendered: false,
-            onCandidate: { _ in }, onReplace: { _ in }, onReviewNext: {},
-            edit: model.isEditing ? EditActions(model) : nil)
-    }
-
-    /// What SwiftUI does when the model changes.
-    private func show(_ harness: Harness) {
-        harness.coordinator.update(harness.view, with: textView(harness.model), dynamicTypeSize: .large, colorScheme: .light)
-        harness.view.layoutIfNeeded()
+        try textViewHarness(text: text, title: "Agreement", caseName: "Bennett", rendered: false, editing: false) {
+            _ = try $0.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
+        }
     }
 
     private func edit(_ harness: Harness) {
@@ -60,33 +23,6 @@ final class EditModeTests: XCTestCase {
         XCTAssertTrue(harness.model.isEditing)
         show(harness)
         XCTAssertTrue(harness.view.isEditable)
-    }
-
-    /// One change as UIKit makes it: announced, applied, then reported. A
-    /// structural key (Return, ⌫ or ⌦ of one character) the editor core
-    /// made itself is refused, and UIKit applies nothing.
-    private func change(_ harness: Harness, _ range: NSRange, _ text: String, announced: Bool = true) {
-        let view = harness.view
-        if announced, !harness.coordinator.textView(view, shouldChangeTextIn: range, replacementText: text) {
-            return
-        }
-        view.textStorage.replaceCharacters(in: range, with: text)
-        view.selectedRange = NSRange(location: range.location + (text as NSString).length, length: 0)
-        harness.coordinator.textViewDidChange(view)
-    }
-
-    /// Types `text` a character at a time at `location`.
-    private func type(_ harness: Harness, _ text: String, at location: Int) {
-        var at = location
-        for character in text {
-            let typed = String(character)
-            change(harness, NSRange(location: at, length: 0), typed)
-            at += (typed as NSString).length
-        }
-    }
-
-    private func coreText(_ harness: Harness) -> String {
-        harness.session.snapshot().markdown
     }
 
     // MARK: Typing and undo
@@ -103,7 +39,7 @@ final class EditModeTests: XCTestCase {
         let harness = try harness()
         func update() {
             harness.coordinator.update(
-                harness.view, with: textView(harness.model), dynamicTypeSize: .large, colorScheme: .light,
+                harness.view, with: Harness.textView(harness.model, rendered: false), dynamicTypeSize: .large, colorScheme: .light,
                 inViewUpdate: true)
         }
         // First responder in review, as after a long press on a name.
