@@ -228,8 +228,8 @@ struct MarkdownTextView: UIViewRepresentable {
         /// What the coordinator's closures (on the view, the typing path
         /// and the toolbar) were wired for. They read the coordinator when
         /// they run, so a SwiftUI update wires them again only for a change
-        /// of mode, of the model the edit actions reach, or of the viewport
-        /// the ↑ control is on.
+        /// of mode, of the model the edit actions reach (or its typing
+        /// started anew), or of the viewport the ↑ control is on.
         private struct Wiring {
             var editing: Bool?
             weak var model: DocumentViewModel?
@@ -309,7 +309,11 @@ struct MarkdownTextView: UIViewRepresentable {
             self.parent = parent
             connectTop(view, attach: parent.viewport !== wired.viewport)
             wired.viewport = parent.viewport
-            let rewire = parent.editing != wired.editing || parent.edit?.model !== wired.model
+            // Done and Edit within one update start the model's typing
+            // anew, without what Done runs in the view: it is handed over
+            // again, as for a new session.
+            let handedOver = parent.edit.map { $0.model?.typing.flush != nil } ?? true
+            let rewire = parent.editing != wired.editing || parent.edit?.model !== wired.model || !handedOver
             wired.editing = parent.editing
             wired.model = parent.edit?.model
             connectEditing(view, rewire: rewire)
