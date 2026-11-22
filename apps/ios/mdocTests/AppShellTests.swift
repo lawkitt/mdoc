@@ -80,11 +80,11 @@ final class AppShellTests: XCTestCase {
 
     /// Something brought in waits in the import sheet; adding it opens the
     /// document and closes the sheet. A failure presents the error.
-    func testAFileWaitsForItsTitleThenOpens() throws {
+    func testAFileWaitsForItsTitleThenOpens() async throws {
         let app = try app()
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
         try FileManager.default.copyItem(at: Fixture.repository.appendingPathComponent("tests/fixtures/import/text.pdf"), to: file)
-        app.receiveFile(file)
+        await app.receiveFile(file).value
         guard case .importing(let pending) = app.navigator.presentation else {
             return XCTFail("no import sheet: \(String(describing: app.navigator.presentation))")
         }
@@ -93,7 +93,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(app.navigator.openDocument, model.id)
         XCTAssertTrue(app.openModel === model)
 
-        app.receiveFile(FileManager.default.temporaryDirectory.appendingPathComponent("notes.xyz"))
+        await app.receiveFile(FileManager.default.temporaryDirectory.appendingPathComponent("notes.xyz")).value
         guard case .error = app.navigator.presentation else {
             return XCTFail("no error for an unknown file")
         }
@@ -306,6 +306,21 @@ final class AppShellTests: XCTestCase {
         XCTAssertNotNil(app.toast)
         app.leftForeground()
         XCTAssertNil(app.toast)
+    }
+
+    /// A job on the document stops when the delete happens: a scan that
+    /// finished later would save the document again.
+    func testDeleteStopsTheDocumentsJob() async throws {
+        let app = try app()
+        let slow = SlowJobs(try seeded.session(seeded.letter), seconds: 30)
+        let job = Task { await app.jobs.run(.scan, documentID: seeded.letter, title: "Find names") { try slow.scan(observer: $0) } }
+        while app.jobs.current == nil { await Task.yield() }
+        app.delete(seeded.letter)
+        XCTAssertNotNil(app.jobs.current, "Undo is still offered: the job runs on")
+        app.toastEnded(try XCTUnwrap(app.toast).id)
+        guard case .cancelled(.user) = await job.value else { return XCTFail("the job was not stopped") }
+        XCTAssertNil(app.jobs.current)
+        XCTAssertFalse(app.library.documents.contains { $0.id == seeded.letter })
     }
 
     /// Undo puts the document back, but opens it again only if nothing

@@ -92,6 +92,23 @@ final class ScanTimeTests: XCTestCase {
         XCTAssertTrue(document.showsBelowFloorNote)
     }
 
+    /// The lists' "Ready to mark names" follows the tier too: a phone timed
+    /// too slow after launch stops listing documents as ready to find names.
+    func testTheLibraryFollowsATierTimedAfterLaunch() async throws {
+        let setup = FakeSetup(memory: Fixture.detectorTier)
+        setup.timesTooSlow = true
+        let (core, storage) = try Fixture.core()
+        let app = AppModel(
+            core: Core(library: core.library, setup: setup), storage: storage,
+            background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
+            network: FakeNetwork(.wifi), preferences: Fixture.preferences())
+        XCTAssertTrue(app.library.findsNames)
+        app.setup.download()
+        await app.setup.waitForDownload()
+        XCTAssertEqual(app.setup.snapshot.belowFloor, .speed)
+        XCTAssertFalse(app.library.findsNames)
+    }
+
     /// A phone timed within the ceiling keeps its speed for Settings.
     func testATimedPhoneShowsItsSpeed() async {
         let model = SetupViewModel(

@@ -153,6 +153,40 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(session.snapshot().reply?.aliasText, "Reply to \(alias).")
     }
 
+    /// The reply and the case's name are read once, not on every review
+    /// tap; a reply saved here or by the Restore extension, a cleared reply
+    /// and a renamed case still show at once.
+    @MainActor
+    func testTheReplyAndCaseNameFollowEveryChange() throws {
+        let core = try core()
+        let session = try reviewed(core)
+        let ready = try session.replaceAllPending()
+        _ = try session.copyForAI()
+        let alias = try XCTUnwrap(ready.candidates.first { $0.category == .email }?.alias)
+        XCTAssertNil(session.snapshot().reply)
+
+        let restored = try session.restoreReply("Write to \(alias).")
+        XCTAssertEqual(restored.reply?.restored.text, "Write to maya.ellison@example.com.")
+        XCTAssertEqual(session.snapshot().reply, restored.reply, "the same reply from the cache")
+        // A tap that changes the names restores the reply again.
+        let email = try XCTUnwrap(ready.candidates.first { $0.category == .email })
+        let kept = try session.decide(email.id, .keep, scope: .all)
+        XCTAssertEqual(kept.reply?.aliasText, "Write to \(alias).")
+        XCTAssertEqual(try session.undo().reply?.restored.text, "Write to maya.ellison@example.com.")
+
+        // The extension opens its own library on the same folder and key.
+        let library = try RealCore.library(storage: storage, keys: FixedCaseKeyStore())
+        let model = RestoreViewModel(library: library, reply: "Reply to \(alias).")
+        model.save(to: try XCTUnwrap(model.defaultSaveTarget).id)
+        XCTAssertEqual(session.snapshot().reply?.aliasText, "Reply to \(alias).")
+        XCTAssertNil(try session.clearReply().reply)
+        XCTAssertNil(session.snapshot().reply)
+
+        XCTAssertEqual(session.snapshot().caseName, "Ellison")
+        try core.library.renameCase(try XCTUnwrap(ready.caseID), to: "Ellison v Brightwater")
+        XCTAssertEqual(session.snapshot().caseName, "Ellison v Brightwater")
+    }
+
     /// A scan that found nothing is still a scan (#673): after mdoc
     /// restarts the document is ready, not offered Find names again.
     func testAScanThatFoundNothingStaysScannedAfterARestart() throws {

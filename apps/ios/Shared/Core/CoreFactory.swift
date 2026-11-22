@@ -13,16 +13,22 @@ enum CoreFactory {
     /// launched for UI tests, or the Restore extension while the app runs
     /// for them.
     static var opensUITestLibrary: Bool {
+        #if DEBUG
         if Bundle.main.bundleURL.pathExtension == "appex" {
             return UserDefaults(suiteName: MdocStorage.appGroup)?.bool(forKey: uiTestingKey) ?? false
         }
         return LaunchConfiguration.current.isUITesting
+        #else
+        // The UI tests and the device scripts run Debug builds.
+        return false
+        #endif
     }
 
     /// The app's storage. UI tests get a fresh folder of their own; a normal
     /// launch clears the test flag.
     static func appStorage(_ launch: LaunchConfiguration = .current) throws -> MdocStorage {
         let defaults = UserDefaults(suiteName: MdocStorage.appGroup)
+        #if DEBUG
         if launch.isUITesting {
             let storage = try MdocStorage.shared(folder: uiTestingFolder)
             if !launch.keepsLibrary { clearKeepingDetector(storage) }
@@ -32,10 +38,12 @@ enum CoreFactory {
             defaults?.set(true, forKey: uiTestingKey)
             return storage
         }
+        #endif
         defaults?.removeObject(forKey: uiTestingKey)
         return try MdocStorage.shared()
     }
 
+    #if DEBUG
     /// A fresh test library, all but a downloaded name detector: only the
     /// device tests need one (hundreds of megabytes), cloned from the phone's
     /// own library or downloaded, and their next run keeps it. Text
@@ -88,6 +96,7 @@ enum CoreFactory {
             }
         }
     }
+    #endif
 
     static func appCore(storage: MdocStorage, _ launch: LaunchConfiguration = .current) throws -> Core {
         try RealCore.make(

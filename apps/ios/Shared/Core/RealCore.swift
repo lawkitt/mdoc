@@ -1,5 +1,6 @@
 import Foundation
 import MdocFFI
+import notify
 import os
 
 /// The app's `Core` over `crates/mdoc-ffi` (ADR 0085). The Rust objects own
@@ -55,7 +56,7 @@ extension RestoreResult {
                 segments.append(.text(String(decoding: bytes[cursor..<mark.range.lowerBound], as: UTF8.self)))
             }
             let piece = String(decoding: bytes[mark.range], as: UTF8.self)
-            segments.append(mark.restored ? .restored(value: piece, alias: "") : .unresolved(piece))
+            segments.append(mark.restored ? .restored(piece) : .unresolved(piece))
             cursor = mark.range.upperBound
         }
         if cursor < bytes.count {
@@ -200,6 +201,14 @@ final class RealLibrary: Library, @unchecked Sendable {
     private let pending: PendingImports
     /// Saves that wait for the phone to unlock, by document.
     private var unsaved: [DocumentID: () throws -> Void] = [:]
+    /// Case names by id, read once each: every snapshot shows its case's
+    /// name, and reading it opens the case.
+    private var caseNames: [String: String] = [:]
+    /// Told of each reply saved, here or in the Restore extension, so the
+    /// sessions read their kept reply again (`replyGeneration`).
+    private var replyToken: Int32 = 0
+    private let replyWatch: Bool
+    private var replyGenerationValue = 0
     /// Where the saves that follow taps run (ADR 0104).
     fileprivate let saveQueue = DispatchQueue(label: "io.github.lawkitt.mdoc.save", qos: .utility)
     /// How long taps pause before their save; the tests shorten it.
@@ -216,6 +225,7 @@ final class RealLibrary: Library, @unchecked Sendable {
         originals = OriginalsIndex(storage: storage)
         pending = PendingImports(storage: storage)
         ffi = try core { try MdocFFI.Library(root: storage.root.path, caseKey: try keys.key()) }
+        replyWatch = notify_register_check(Self.replySaved, &replyToken) == NOTIFY_STATUS_OK
         // Imports not yet read when mdoc last stopped come back, ready to
         // recognize again.
         for entry in pending.all() {
@@ -224,6 +234,10 @@ final class RealLibrary: Library, @unchecked Sendable {
                 ocrStarted: entry.ocrStarted)
             sessions[entry.id] = session
         }
+    }
+
+    deinit {
+        if replyWatch { notify_cancel(replyToken) }
     }
 
     /// The saved documents from the core's summaries, which open none of
@@ -310,8 +324,10 @@ final class RealLibrary: Library, @unchecked Sendable {
         // its file.
         let path = session.map(\.path) ?? (FileManager.default.fileExists(atPath: document.rawValue) ? document.rawValue : nil)
         guard session != nil || path != nil else { throw CoreError.notFound }
-        // No save after the taps writes it again once it is gone.
-        session?.cancelScheduledSave()
+        // Nothing writes it again once it is gone: not its taps' save, its
+        // job's, or a save that waits for the phone to unlock; its job stops.
+        session?.end()
+        lock.withLock { _ = unsaved.removeValue(forKey: document) }
         if let path {
             // The core takes it out of its case (and the reply kept for it),
             // then removes the file; a case it cannot save keeps it.
@@ -335,8 +351,9 @@ final class RealLibrary: Library, @unchecked Sendable {
         guard let session = lock.withLock({ sessions[document] }) else { return false }
         let path = session.path
         guard try session.discardIfEmpty() else { return false }
-        // Gone in the core: its save has nothing left to write.
-        session.cancelScheduledSave()
+        // Gone in the core: its saves have nothing left to write.
+        session.end()
+        lock.withLock { _ = unsaved.removeValue(forKey: document) }
         if let path {
             lock.withLock { _ = ids.removeValue(forKey: path) }
             originals.remove(for: path)
@@ -365,6 +382,7 @@ final class RealLibrary: Library, @unchecked Sendable {
 
     func renameCase(_ caseID: CaseID, to name: String) throws {
         _ = try core { try ffi.renameCase(caseId: caseID.rawValue, name: name) }
+        lock.withLock { _ = caseNames.removeValue(forKey: caseID.rawValue) }
     }
 
     func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove {
@@ -417,6 +435,30 @@ final class RealLibrary: Library, @unchecked Sendable {
             throw CoreError.noCase
         }
         try core { try ffi.saveReply(caseId: caseID, document: path, reply: reply) }
+        replySaved()
+    }
+
+    /// Posted with each reply saved, in this process or the other (the app
+    /// and its Restore extension share the library).
+    private static let replySaved = "io.github.lawkitt.mdoc.reply-saved"
+
+    /// A reply was saved: every session reads its kept reply again.
+    fileprivate func replySaved() {
+        lock.withLock { replyGenerationValue += 1 }
+        notify_post(Self.replySaved)
+    }
+
+    /// Changes with each reply saved, here or in the Restore extension. If
+    /// the system cannot tell, it changes on every call: nothing is cached.
+    fileprivate func replyGeneration() -> Int {
+        lock.withLock {
+            var posted: Int32 = 1
+            if replyWatch {
+                notify_check(replyToken, &posted)
+            }
+            if posted != 0 { replyGenerationValue += 1 }
+            return replyGenerationValue
+        }
     }
 
     /// A save that waits for the phone to unlock. A job's save replaces
@@ -556,7 +598,11 @@ final class RealLibrary: Library, @unchecked Sendable {
 
     fileprivate func caseName(_ id: String?) -> String? {
         guard let id else { return nil }
-        return try? ffi.caseInfo(id: id).name
+        if let name = lock.withLock({ caseNames[id] }) { return name }
+        // Not kept when it cannot be read now (the phone locked).
+        guard let name = try? ffi.caseInfo(id: id).name else { return nil }
+        lock.withLock { caseNames[id] = name }
+        return name
     }
 }
 
@@ -606,6 +652,27 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// Held while a save records its file, and while a rename moves it:
     /// the file a save records is the session's.
     private let saving = NSLock()
+    /// Deleted or discarded (`end`): nothing saves it again.
+    private var ended = false
+    /// The core's id of the long job running now, which `end` stops.
+    private var runningJob: UInt64?
+    /// The reply kept for the document, read from its case again only
+    /// once a reply was saved or the document moved.
+    private var keptReply: (key: KeptReplyKey, text: String?)?
+    /// The kept reply as restored, while its text and the names stay.
+    private var restoredReply: (key: RestoredReplyKey, reply: ReplySnapshot?)?
+
+    private struct KeptReplyKey: Equatable {
+        let caseID: String
+        let path: String
+        let generation: Int
+    }
+
+    private struct RestoredReplyKey: Equatable {
+        let text: String
+        let textRevision: UInt64
+        let identities: [Identity]
+    }
 
     fileprivate init(
         id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?,
@@ -650,8 +717,13 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     /// `RealLibrary.discardIfEmpty`: the core removes the file and its case.
+    /// A save waiting for the lock writes nothing after it.
     fileprivate func discardIfEmpty() throws -> Bool {
-        try saving.withLock { try core { try ffi.discardIfEmpty(library: library.ffi) } }
+        try saving.withLock {
+            guard try core({ try ffi.discardIfEmpty(library: library.ffi) }) else { return false }
+            lock.withLock { ended = true }
+            return true
+        }
     }
 
     func followFirstLine() throws -> String? {
@@ -715,7 +787,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             return DocumentSnapshot(
                 id: id, title: chosen.title, caseID: chosen.caseID.map(CaseID.init), caseName: library.caseName(chosen.caseID),
                 kind: kind, phase: nil, markdown: "", styling: .empty, candidates: [], identities: [],
-                original: original, pagesDone: 0, pageCount: 0, reply: nil, resumesOCR: ocrStarted, origin: origin)
+                original: original, reply: nil, resumesOCR: ocrStarted, origin: origin)
         }
         return snapshot(of: review, path: ffi.info()?.path)
     }
@@ -728,12 +800,6 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         // saved document is always in one.
         let caseID = review.caseId ?? chosen.caseID
         let (kind, original) = lock.withLock { (self.kind, self.original) }
-        let reply: ReplySnapshot? = {
-            guard let caseID, let path,
-                  let text = try? library.ffi.reply(caseId: caseID, document: path),
-                  let restored = try? ffi.restoreReply(reply: text) else { return nil }
-            return ReplySnapshot(aliasText: text, restored: RestoreResult(restored))
-        }()
         let candidates = review.mentions.map { mention in
             Candidate(
                 id: CandidateID(rawValue: String(mention.id)),
@@ -749,16 +815,46 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 primaryWording: row.originals.first ?? row.alias, variants: row.originals,
                 mentionCount: Int(row.mentionCount), state: row.state, owner: row.owner.map(IdentityID.init))
         }
+        let reply = reply(caseID: caseID, path: path, textRevision: review.textRevision, identities: identities)
         return DocumentSnapshot(
             id: id, title: review.title, caseID: caseID.map(CaseID.init),
             caseName: library.caseName(caseID), kind: kind, phase: review.phase,
             markdown: review.text, styling: styling(review), textRevision: review.textRevision,
             candidates: candidates, identities: identities, original: original,
-            pagesDone: 0, pageCount: 0, reply: reply, notice: review.notice, leftOut: review.leftOut,
+            reply: reply, notice: review.notice, leftOut: review.leftOut,
             mergeHints: review.linkHints, canUndo: review.canUndo, canRedo: review.canRedo,
             undoStep: review.undoStep, redoStep: review.redoStep,
             counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)),
             origin: ffi.info()?.origin ?? .ordinary)
+    }
+
+    /// The reply kept for the document and its restored reading. Reading
+    /// it opens the case, so it is read again only once a reply was saved
+    /// (here or in the Restore extension) or the document's case or file
+    /// changed; it is restored again only once its text or the names did.
+    private func reply(caseID: String?, path: String?, textRevision: UInt64, identities: [Identity]) -> ReplySnapshot? {
+        guard let caseID, let path else { return nil }
+        let key = KeptReplyKey(caseID: caseID, path: path, generation: library.replyGeneration())
+        let text: String?
+        if let kept = lock.withLock({ keptReply }), kept.key == key {
+            text = kept.text
+        } else {
+            // No reply is kept too: most documents have none.
+            do {
+                text = try library.ffi.reply(caseId: caseID, document: path)
+            } catch {
+                return nil
+            }
+            lock.withLock { keptReply = (key, text) }
+        }
+        guard let text else { return nil }
+        let restoredKey = RestoredReplyKey(text: text, textRevision: textRevision, identities: identities)
+        if let restored = lock.withLock({ restoredReply }), restored.key == restoredKey {
+            return restored.reply
+        }
+        let reply = (try? ffi.restoreReply(reply: text)).map { ReplySnapshot(aliasText: text, restored: RestoreResult($0)) }
+        lock.withLock { restoredReply = (restoredKey, reply) }
+        return reply
     }
 
     /// The text's Markdown styling, parsed again only when the text changed.
@@ -777,7 +873,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private func job<T>(_ observer: any JobObserver, _ call: () throws -> T) throws -> T {
         let job = ffi.nextJob()
         observer.onCancel { [ffi] in ffi.cancelJob(job: job) }
-        return try core(call)
+        // A document deleted before or while its job runs: the job stops,
+        // and what it finished is not saved.
+        let ended = lock.withLock {
+            runningJob = job
+            return self.ended
+        }
+        defer { lock.withLock { runningJob = nil } }
+        if ended { throw CoreError.cancelled }
+        let value = try core(call)
+        if lock.withLock({ self.ended }) { throw CoreError.cancelled }
+        return value
     }
 
     func takeUnlockedDocx() -> UnlockedDocx? { ffi.takeUnlockedDocx() }
@@ -863,7 +969,12 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 throw CoreError.findNamesFailed(
                     String(localized: "The name finder is too slow on this phone. Select text to mark a name."))
             }
+            #if DEBUG
             detector = nil
+            #else
+            // The seed runs only in Debug builds, as the UI tests do.
+            throw CoreError.modelMissing
+            #endif
         }
         _ = try job(observer) { try ffi.scan(detector: detector, progress: StageReporter(observer, device: library.device)) }
         try saveAfterJob { [self] in try save() }
@@ -915,12 +1026,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         guard let info = ffi.info(), let caseID = info.caseId, let path = info.path else { throw CoreError.noCase }
         _ = try core { try ffi.restoreReply(reply: reply) }
         try core { try library.ffi.saveReply(caseId: caseID, document: path, reply: reply) }
+        library.replySaved()
         return snapshot()
     }
 
     func clearReply() throws -> DocumentSnapshot {
         guard let info = ffi.info(), let caseID = info.caseId, let path = info.path else { throw CoreError.noCase }
         try core { try library.ffi.saveReply(caseId: caseID, document: path, reply: "") }
+        library.replySaved()
         return snapshot()
     }
 
@@ -1093,6 +1206,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     private func savePendingNow() throws {
         let saved = try saving.withLock {
+            guard !lock.withLock({ ended }) else { return nil as SavedChange? }
             let saved = try core { try ffi.savePending(library: library.ffi) }
             if let saved { recordSaved(path: saved.path) }
             return saved
@@ -1101,15 +1215,23 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         library.report(.saved(id, rejoined: saved.rejoined))
     }
 
-    /// The document goes: its scheduled save does not run, and one running
-    /// now ends first.
-    fileprivate func cancelScheduledSave() {
+    /// The document goes (deleted or discarded): its scheduled save does
+    /// not run, one running now ends first and no later save writes it; its
+    /// running job stops.
+    fileprivate func end() {
         saver.cancel()
-        saving.withLock {}
+        let job = saving.withLock {
+            lock.withLock {
+                ended = true
+                return runningJob
+            }
+        }
+        if let job { ffi.cancelJob(job: job) }
     }
 
     private func save() throws {
         try saving.withLock {
+            guard !lock.withLock({ ended }) else { return }
             let saved = try core { try ffi.save(library: library.ffi) }
             recordSaved(path: saved.path)
         }

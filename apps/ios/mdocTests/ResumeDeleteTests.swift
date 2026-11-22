@@ -102,6 +102,75 @@ final class ResumeDeleteTests: XCTestCase {
         XCTAssertEqual(model.primaryAction, .finishImport)
     }
 
+    /// The library's folders as a locked phone leaves them (Data Protection
+    /// Complete): unwritable, and `ProtectedData` says so.
+    private func lock() throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: storage.url(.documents).path)
+        ProtectedData.isAvailable = false
+    }
+
+    /// The folders writable again; `ProtectedData` still says locked until
+    /// the test unlocks.
+    private func makeWritable() throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: storage.url(.documents).path)
+    }
+
+    /// A document deleted while its scan's save waits for the phone to
+    /// unlock: the unlock writes nothing, so it does not come back.
+    func testADeletedDocumentsSaveOnUnlockIsDropped() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .newCase(name: "Lee"))
+        _ = try session.recognize(observer: TestObserver())
+        defer {
+            try? makeWritable()
+            ProtectedData.isAvailable = true
+        }
+        try lock()
+        XCTAssertEqual(try session.scan(observer: TestObserver()).phase, .reviewing, "saved on unlock")
+        try makeWritable()
+        try core.library.deleteDocument(session.id)
+        ProtectedData.isAvailable = true
+        XCTAssertEqual(try core.library.saveDeferred(), [])
+        XCTAssertTrue(core.library.snapshot().documents.isEmpty)
+        XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty, "not saved again")
+    }
+
+    /// A new document emptied and left while its typing's save waits for
+    /// the phone to unlock: discarded, it stays gone after the unlock.
+    func testADiscardedDocumentsSaveOnUnlockIsDropped() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.newDocument, title: "New document", into: .newCase(name: "New document"))
+        _ = try session.recognize(observer: TestObserver())
+        _ = try session.type(SourceRange(start: 0, end: 0), "Hello")
+        try session.saveChanges()
+        defer {
+            try? makeWritable()
+            ProtectedData.isAvailable = true
+        }
+        try lock()
+        _ = try session.type(SourceRange(start: 5, end: 5), " there")
+        try session.saveChanges()
+        try makeWritable()
+        _ = try session.type(SourceRange(start: 0, end: 11), "")
+        XCTAssertTrue(try core.library.discardIfEmpty(session.id))
+        ProtectedData.isAvailable = true
+        XCTAssertEqual(try core.library.saveDeferred(), [])
+        XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty, "not saved again")
+    }
+
+    /// A job on a deleted document stops as it starts, and what it would
+    /// have found is not saved: the document does not come back.
+    func testAJobOnADeletedDocumentSavesNothing() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .newCase(name: "Lee"))
+        _ = try session.recognize(observer: TestObserver())
+        try core.library.deleteDocument(session.id)
+        XCTAssertThrowsError(try session.scan(observer: TestObserver())) { error in
+            XCTAssertEqual(error as? CoreError, .cancelled)
+        }
+        XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty, "not saved again")
+    }
+
     func testTheCoreKeepsOCRPagesInTheProtectedImportsFolder() throws {
         XCTAssertEqual(MdocStorage.Area.imports.rawValue, "imports")
         XCTAssertEqual(MdocStorage.Area.imports.protection, .complete)

@@ -1,5 +1,7 @@
 import Foundation
 
+#if DEBUG
+
 /// UI tests' seed (`LaunchConfiguration.seedFile`): a fixture imported
 /// through the core at launch and scanned with the structured rules, so the
 /// review has candidates without a model. This is the only scan below the
@@ -63,3 +65,4 @@ enum UITestSeed {
         return .file(copy, kind)
     }
 }
+#endif

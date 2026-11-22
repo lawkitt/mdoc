@@ -47,9 +47,8 @@ final class AppModel {
         self.storage = storage
         self.preferences = preferences
         let jobs = LongJobRunner(background: background)
-        let findsNames = core.setup.snapshot().tier == .detector
-        let library = LibraryModel(library: core.library, findsNames: findsNames)
         let setup = SetupViewModel(setup: core.setup, downloader: downloader, network: network, jobs: jobs, preferences: preferences)
+        let library = LibraryModel(library: core.library) { [weak setup] in setup?.snapshot.tier == .detector }
         self.jobs = jobs
         self.library = library
         self.setup = setup
@@ -91,9 +90,11 @@ final class AppModel {
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
                 downloader: models, network: NetworkMonitor(), preferences: preferences)
+            #if DEBUG
             if let seed = launch.seedFile {
                 UITestSeed.run(UITestSeed.fixture(seed), in: app)
             }
+            #endif
             return app
         } catch {
             let storage = MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-unavailable"))
@@ -341,28 +342,42 @@ final class AppModel {
     }
 
     /// A file from Files or "Open in mdoc", waiting for its title and case.
-    func receiveFile(_ url: URL) {
-        do {
-            if let pending = try importer.file(url) {
-                navigator.present(.importing(pending))
+    /// It is copied (an image read, stripped and encoded) off the main
+    /// actor; the task ends once it waits.
+    @discardableResult
+    func receiveFile(_ url: URL) -> Task<Void, Never> {
+        let importer = importer
+        return Task {
+            do {
+                if let pending = try await Task.detached(priority: .userInitiated, operation: { try importer.file(url) }).value {
+                    navigator.present(.importing(pending))
+                }
+            } catch {
+                present(error)
             }
-        } catch {
-            present(error)
         }
     }
 
-    /// Pages from the document camera or Photos.
-    func receiveImages(_ images: [Data?], scanned: Bool) {
-        do {
-            if let pending = try importer.images(images, scanned: scanned) {
-                navigator.present(.importing(pending))
-                // Never silent: the pages left out are counted.
-                if pending.unreadPages > 0 {
-                    show(ToastMessage(text: Importer.unreadNote(pending.unreadPages)))
+    /// Pages from the document camera or Photos, each read, stripped and
+    /// encoded off the main actor; the task ends once they wait.
+    @discardableResult
+    func receiveImages(_ images: [Data?], scanned: Bool) -> Task<Void, Never> {
+        let importer = importer
+        return Task {
+            do {
+                let pending = try await Task.detached(priority: .userInitiated) {
+                    try importer.images(images, scanned: scanned)
+                }.value
+                if let pending {
+                    navigator.present(.importing(pending))
+                    // Never silent: the pages left out are counted.
+                    if pending.unreadPages > 0 {
+                        show(ToastMessage(text: Importer.unreadNote(pending.unreadPages)))
+                    }
                 }
+            } catch {
+                present(error)
             }
-        } catch {
-            present(error)
         }
     }
 
@@ -523,6 +538,9 @@ final class AppModel {
         guard let pending = pendingDelete else { return }
         pendingDelete = nil
         if toast?.id == pending.toast { toast = nil }
+        // Its job stops: a scan or import that finished later would save
+        // the document again.
+        if jobs.current?.documentID == pending.id { jobs.cancel() }
         documents.remove(pending.id)
         do {
             try library.delete(pending.id)
