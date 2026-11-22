@@ -217,11 +217,6 @@ Features are frozen until items 13–19 land (Q4).
     and Android follow (Later). One TestFlight build after. *Done when:*
     both merged and checked on the iPhone 17 Pro.
 
-36. **[Mobile] `MarkdownTextView.Coordinator` split into owned pieces.**
-    *From #1076 (E).* Text reveal and scroll, Fix the words, and toolbar
-    and keyboard each get an owner; closures re-wire only when the mode or
-    action changes. Behaviour unchanged (ADR 0069). *Blocked by:* items 32,
-    33. *Done when:* merged with the editing tests green and unchanged.
 37. **[Mobile] To grill: Document Vault and case and document tabs.** The
     next big milestone: secure, well-organized local document storage and
     a reorganized case and tabs UI, folding in item 22. Facts going in:
