@@ -1,4 +1,4 @@
-# The UI test classes' times on hosted macos-26 (ADR 0113), which
+# The UI test classes' times on hosted macos-26, which
 # scripts/ios/ios-ui-shards.sh packs into ci-ios.yml's UI shards, longest first,
 # each into the shard with less so far. Per class: the median, over the green
 # UI parts of the last 14 days (the `ios-ui-times-tests-*` artifacts), of its
@@ -6,27 +6,28 @@
 # it. Written by scripts/ios/ios-ui-class-times.py; the nightly refreshes it
 # (scripts/ios/ios-ui-class-times.sh), replacing a row only with 3 parts or more.
 # A class missing here counts as the median.
-# These rows: the green UI parts of #1052's shadow run 44904951067 (1 part
-# each). ReviewFlowUITests' one test is quarantined (#638), so it has none.
-CommentsOnPageUITests	82	1
-DeviceBelowFloorUITests	0	1
-DeviceLongJobsUITests	3	1
-DeviceTapTimingUITests	7	1
-EditModeUITests	136	1
-EditToolbarUITests	101	1
-IdentitiesGesturesUITests	321	1
-IdentitiesHeaderUITests	127	1
-IdentitiesSelectUITests	64	1
-LivePreviewUITests	111	1
-NewDocumentUITests	40	1
-NoticeCardUITests	40	1
-OCRResumeUITests	1	1
-OriginalChromeUITests	47	1
-OriginalSidebarUITests	0	1
-PanesRowUITests	49	1
-RenderedMarkdownUITests	0	1
-ReviewPagerUITests	88	1
-ReviewToolsUITests	188	1
-SidebarSearchUITests	36	1
-SurveyUITests	2	1
-TableEditingUITests	299	1
+CommentsOnPageUITests	114	23
+DarkPageUITests	62	18
+DeviceBelowFloorUITests	0	22
+DeviceLongJobsUITests	0	22
+DeviceTapTimingUITests	0	22
+EditModeUITests	168	25
+EditToolbarUITests	96	25
+IdentitiesGesturesUITests	315	23
+IdentitiesHeaderUITests	144	23
+IdentitiesSelectUITests	68	23
+LivePreviewUITests	114	23
+NewDocumentUITests	62	25
+NoticeCardUITests	38	24
+OCRResumeUITests	0	23
+OriginalChromeUITests	78	22
+OriginalSidebarUITests	0	22
+PanesRowUITests	51	23
+RenderedMarkdownUITests	0	22
+ReviewFlowUITests	20	21
+ReviewPagerUITests	80	25
+ReviewToolsUITests	167	25
+SidebarSearchUITests	22	25
+SurveyUITests	2	22
+TableEditingUITests	312	23
+ThemeUITests	28	19

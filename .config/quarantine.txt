@@ -32,11 +32,6 @@ ios:mdocUITests/ReviewToolsUITests/testFindMarkAndTheBarsTools  #700  2026-12-08
 # 2026-11-10 (#775, #778): a doubled keystroke in Identities' search.
 ios:mdocUITests/IdentitiesGesturesUITests/testDraggingAHandleOntoAnotherNameMakesThemOne  #781  2026-12-10
 
-# Failed on hosted ci/ios in the merge queue on an unrelated change,
-# 2026-11-11 (#814), and twice locally under load (#812, #813): ⌘Z after
-# typing did not undo; the first hardware key can be lost.
-ios:mdocUITests/EditModeUITests/testTypeUndoLeaveAndRelaunch  #818  2026-11-25
-
 # Failed the PC's Android job on unrelated queue commits at least 5 times,
 # 2026-11-11/12 (ADR 0112's sweep, ROADMAP CI speed item 18).
 android:io.github.lawkitt.mdoc.IdentitiesTest#aLongPressKeepsAllOfAnIdentity  #709  2026-12-10
@@ -47,7 +42,6 @@ android:io.github.lawkitt.mdoc.ReviewFlowTest#openReviewShareRestore  #827  2026
 
 # Fail in the shared edit() setup on unrelated changes, 2026-11-09 to 11-13;
 # EditToolbarUITests runs first on a cold Simulator in ci/ios (ui 1) (#836).
-ios:mdocUITests/EditToolbarUITests/testToolbarBoldAndTheFormattingKeyboard  #837  2026-12-11
 ios:mdocUITests/EditToolbarUITests/testHardwareKeys  #837  2026-12-11
 
 # Flaked on hosted ci/ios in the merge queue on unrelated changes after the

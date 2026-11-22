@@ -48,11 +48,13 @@ final class PanesRowUITests: XCTestCase {
             XCTAssertTrue(original.wait(until: NSPredicate(format: "isSelected == true"), timeout: 15))
             XCTAssertTrue(picker.exists, "the row stays over the Original")
             // Over the Original, Show Markdown is not the page's; Dark page
-            // only while the app is dark (#1036).
+            // is the moon's, only while the app is dark (#1036, #1070).
+            // Menu items by their words: iOS 27 drops their identifiers.
+            XCTAssertFalse(app.buttons["dark-page"].exists, "no moon in a light app")
             title.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
-            XCTAssertFalse(app.descendants(matching: .any)["show-markdown"].firstMatch.exists)
-            XCTAssertFalse(app.descendants(matching: .any)["dark-page"].firstMatch.exists)
+            XCTAssertTrue(MdocUITest.menuItem("Find in document", app).waitForExistence(timeout: MdocUITest.timeout))
+            XCTAssertFalse(MdocUITest.menuItem("Show Markdown", app).exists)
+            XCTAssertFalse(MdocUITest.menuItem("Dark page", app).exists)
             dismissMenu(app)
             picker.buttons["Text"].tap()
         }

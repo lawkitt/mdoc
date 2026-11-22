@@ -49,21 +49,31 @@ final class DarkPageUITests: XCTestCase {
         let hint = app.buttons["dark-page-hint"]
         XCTAssertTrue(hint.waitForExistence(timeout: MdocUITest.timeout))
         XCTAssertTrue(moon.waitUntilHittable(timeout: MdocUITest.timeout))
-        XCTAssertEqual(moon.value as? String, "On")
+        assertMoon(moon, is: "On")
         moon.tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { MdocUITest.isDark(at: paper) == false }, "the page is light")
-        XCTAssertEqual(moon.value as? String, "Off")
+        assertMoon(moon, is: "Off")
         XCTAssertTrue(hint.waitForNonExistence(timeout: MdocUITest.timeout), "the moon teaches what the hint would")
         moon.tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { MdocUITest.isDark(at: paper) == true }, "dark again")
 
         // The title menu has no Dark page, nor Show Markdown over the
-        // Original.
+        // Original. Menu items by their words: iOS 27 drops their
+        // identifiers.
         let title = app.buttons["title-menu"]
         title.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertEqual(app.switches.matching(identifier: "dark-page").count, 0, "no Dark page in the menu")
-        XCTAssertFalse(app.descendants(matching: .any)["show-markdown"].firstMatch.exists)
+        XCTAssertTrue(MdocUITest.menuItem("Find in document", app).waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertFalse(MdocUITest.menuItem("Dark page", app).exists, "no Dark page in the menu")
+        XCTAssertFalse(MdocUITest.menuItem("Show Markdown", app).exists)
+    }
+
+    /// The moon's On or Off. iOS 27 drops a toolbar button's accessibility
+    /// value, which iOS 26 kept (it reads "" either way), so there the
+    /// page's own dark or light tells alone.
+    @MainActor
+    private func assertMoon(_ moon: XCUIElement, is state: String, file: StaticString = #filePath, line: UInt = #line) {
+        guard #unavailable(iOS 27) else { return }
+        XCTAssertEqual(moon.value as? String, state, file: file, line: line)
     }
 
     /// A tap on the hint closes it, the page as it was.
