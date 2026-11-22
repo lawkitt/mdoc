@@ -157,13 +157,13 @@ struct MarkdownTextView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
-        var parent: MarkdownTextView
+        private(set) var parent: MarkdownTextView
         /// What the view shows.
         private(set) var content: ContentKey?
         private(set) var decoration = DecorationKey(selected: nil, scoped: [])
         /// How many times the styled document was built: a test hook.
         private(set) var rebuilds = 0
-        var offsets = TextOffsets("")
+        private(set) var offsets = TextOffsets("")
         /// The text revision `offsets` maps: typing moves the shown text on
         /// without a rebuild, so the map follows the text, not the key.
         private var offsetsRevision: UInt64?
@@ -199,7 +199,7 @@ struct MarkdownTextView: UIViewRepresentable {
         /// over each other.
         var menuClosing = false
         /// The text this coordinator styles, for work that waits on a menu.
-        weak var shownView: CandidateTextView?
+        private(set) weak var shownView: CandidateTextView?
         /// A `followResponder` waits for SwiftUI's update to end.
         private var responderWaits = false
         /// Whether the text last showed in edit mode; nil before it first
@@ -225,10 +225,11 @@ struct MarkdownTextView: UIViewRepresentable {
         /// What the view's closures were last wired for.
         private var wired = Wiring()
 
-        /// The closures the coordinator gives the view, the typing path and
-        /// the toolbar read it when they run, so a SwiftUI update wires
-        /// them again only for a change of mode, of the model the edit
-        /// actions reach, or of the viewport the ↑ control is on.
+        /// What the coordinator's closures (on the view, the typing path
+        /// and the toolbar) were wired for. They read the coordinator when
+        /// they run, so a SwiftUI update wires them again only for a change
+        /// of mode, of the model the edit actions reach, or of the viewport
+        /// the ↑ control is on.
         private struct Wiring {
             var editing: Bool?
             weak var model: DocumentViewModel?
