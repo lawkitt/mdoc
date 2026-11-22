@@ -4787,6 +4787,8 @@ name = "mdoc-vault"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "mdoc-pii",
+ "mdoc-store",
  "serde",
  "serde_json",
  "tempfile",

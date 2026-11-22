@@ -1,7 +1,9 @@
 //! Project and Document records (#1091 Decision 16), stored as JSON.
-//! Later items add their fields with `#[serde(default)]`: identities and
-//! the Always and Never lists (item 4), the review state (item 2), the
-//! source hash and the original's metadata (item 3).
+//! Later items add their fields with `#[serde(default)]`: the review state
+//! (item 2), the source hash and the original's metadata (item 3).
+use crate::mapping::Mapping;
+use mdoc_pii::Category;
+use mdoc_store::lists::Lists;
 use serde::{Deserialize, Serialize};
 
 /// Seconds since the Unix epoch.
@@ -28,6 +30,42 @@ pub struct Project {
     /// Bumped on every change; a handle never writes one older than the
     /// last it wrote.
     pub revision: u64,
+    /// The identities its Documents share.
+    #[serde(default)]
+    pub mapping: Mapping,
+    /// Its Always and Never lists, from its Documents' manual marks and
+    /// Keeps; they win over the user-wide ones (`Lists::effective`).
+    #[serde(default)]
+    pub lists: Lists,
+    /// Category tokens scans in its Documents skip.
+    #[serde(default)]
+    pub skip: Vec<String>,
+    /// Dismissed merge hints, as the identities' primary wordings (shorter,
+    /// fuller).
+    #[serde(default)]
+    pub dismissed_hints: Vec<(String, String)>,
+}
+
+impl Project {
+    /// The categories its scans skip.
+    pub fn skipped(&self) -> std::collections::HashSet<Category> {
+        Category::ALL
+            .into_iter()
+            .filter(|c| self.skip.iter().any(|s| s == c.token()))
+            .collect()
+    }
+
+    /// Irreversibly discard the originals of the identity `alias` names,
+    /// and the merge hints dismissed for them; its aliases stay reserved.
+    /// `false` when there was nothing to forget.
+    pub fn forget_identity(&mut self, alias: &str) -> bool {
+        let Some(originals) = self.mapping.forget(alias) else {
+            return false;
+        };
+        self.dismissed_hints
+            .retain(|(from, into)| !originals.contains(from) && !originals.contains(into));
+        true
+    }
 }
 
 /// What a new Project starts with.
@@ -66,6 +104,10 @@ pub struct Document {
     /// The SHA-256, in hex, of the text last saved while Ready.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ready_fingerprint: Option<String>,
+    /// Its own identities while Unfiled; empty in a Project, whose mapping
+    /// it shares.
+    #[serde(default, skip_serializing_if = "Mapping::is_empty")]
+    pub mapping: Mapping,
 }
 
 /// What a new Document starts with.
@@ -217,4 +259,14 @@ impl DocumentSummary {
             updated: document.updated,
         }
     }
+}
+
+/// The user-wide Always and Never lists (Settings › Detection), sealed in
+/// `user-lists.enc`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserLists {
+    /// Bumped on every change; a handle never writes one older than the
+    /// last it wrote.
+    pub revision: u64,
+    pub lists: Lists,
 }

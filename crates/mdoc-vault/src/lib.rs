@@ -6,26 +6,31 @@
 //! <vault root>/
 //!   .lock                    advisory lock, held only for a write
 //!   manifest.enc             cache of summaries
+//!   user-lists.enc           user-wide Always and Never lists
 //!   projects/<id>.enc        Project record
 //!   docs/<id>/doc.enc        Document record
 //! ```
 //!
-//! Originals (`docs/<id>/original.enc`), replies (`replies/<id>.enc`) and
-//! the user-wide lists (`user-lists.enc`) join in later items, each with
-//! its own [`ObjectKind`]. The caller supplies the key; this crate never
-//! asks the OS for one.
+//! Originals (`docs/<id>/original.enc`) and replies (`replies/<id>.enc`)
+//! join in later items, each with its own [`ObjectKind`]. The caller
+//! supplies the key; this crate never asks the OS for one.
 #![forbid(unsafe_code)]
 
 mod manifest;
+mod mapping;
 mod records;
 mod seal;
 mod vault;
 
+pub use mapping::{Identity, Mapping, NotName};
 pub use records::{
     Colour, Document, DocumentOrigin, DocumentSummary, NewDocument, NewProject, Project,
-    ProjectSummary, SourceKind,
+    ProjectSummary, SourceKind, UserLists,
 };
-pub use vault::{Fault, FaultHook, ManifestCheck, Saved, Stage, Vault, WriteStep};
+pub use vault::{
+    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Saved, Stage, Vault,
+    WriteStep,
+};
 
 use std::io;
 
@@ -35,16 +40,18 @@ pub enum ObjectKind {
     Manifest,
     Project,
     Document,
+    UserLists,
 }
 
 impl ObjectKind {
-    /// The header byte. Reserved for later items: 4 AI Reply, 5 user-wide
-    /// lists, 6 an original's wrapped key.
+    /// The header byte. Reserved for later items: 4 AI Reply, 6 an
+    /// original's wrapped key.
     pub(crate) fn byte(self) -> u8 {
         match self {
             Self::Manifest => 1,
             Self::Project => 2,
             Self::Document => 3,
+            Self::UserLists => 5,
         }
     }
 
@@ -53,6 +60,7 @@ impl ObjectKind {
             Self::Manifest => "manifest",
             Self::Project => "Project",
             Self::Document => "Document",
+            Self::UserLists => "user-wide lists",
         }
     }
 }
@@ -76,6 +84,13 @@ pub enum VaultError {
     NotFound { kind: ObjectKind, id: String },
     #[error("The {kind} {id} is damaged or was saved with a different key.")]
     Damaged { kind: ObjectKind, id: String },
+    /// A move into the Project, or into Unfiled, the document is in.
+    #[error("The document is there already.")]
+    AlreadyThere,
+    /// A move could not line the document's names up with its new
+    /// mapping; nothing was written.
+    #[error("The document's names could not be lined up: {0}")]
+    Names(String),
     /// A fault hook stopped a write; the handle writes nothing more.
     #[error("The Vault handle stopped at an injected fault.")]
     Crashed,
