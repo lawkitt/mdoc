@@ -144,6 +144,8 @@ run build 'ui 3' 'exit 65' pass
 [ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a build failure retried: $(cat "$JUST_LOG")"
 
 # Usage.
-rc=0 && bash scripts/ios/ios-test-part.sh >"$tmp/usage" 2>&1 || rc=$?
-[ "$rc" = 2 ] && grep -q '^usage: scripts/ios/ios-test-part.sh <part>' "$tmp/usage" || fail "no usage: $(cat "$tmp/usage")"
+rc=0
+bash scripts/ios/ios-test-part.sh >"$tmp/usage" 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "usage exited $rc"
+grep -q '^usage: scripts/ios/ios-test-part.sh <part>' "$tmp/usage" || fail "no usage: $(cat "$tmp/usage")"
 echo "test-ios-test-part: ok"
