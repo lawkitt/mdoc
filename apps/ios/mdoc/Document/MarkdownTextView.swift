@@ -222,6 +222,18 @@ struct MarkdownTextView: UIViewRepresentable {
         var snapping = false
         /// Edit mode's toolbar and formatting keyboard (ADR 0109).
         let keyboard = EditKeyboard()
+        /// What the view's closures were last wired for.
+        private var wired = Wiring()
+
+        /// The closures the coordinator gives the view, the typing path and
+        /// the toolbar read it when they run, so a SwiftUI update wires
+        /// them again only for a change of mode, of the model the edit
+        /// actions reach, or of the viewport the ↑ control is on.
+        private struct Wiring {
+            var editing: Bool?
+            weak var model: DocumentViewModel?
+            weak var viewport: PageViewport?
+        }
 
         init(parent: MarkdownTextView) {
             self.parent = parent
@@ -283,6 +295,7 @@ struct MarkdownTextView: UIViewRepresentable {
                 guard let self, let view else { return }
                 self.reveal.layoutDone(view)
             }
+            view.onReviewNext = { [weak self] in self?.parent.onReviewNext() }
         }
 
         /// `inViewUpdate` is true from SwiftUI's own update of the view:
@@ -293,9 +306,12 @@ struct MarkdownTextView: UIViewRepresentable {
             colorScheme: ColorScheme, inViewUpdate: Bool = false
         ) {
             self.parent = parent
-            view.onReviewNext = parent.onReviewNext
-            connectTop(view)
-            connectEditing(view)
+            connectTop(view, attach: parent.viewport !== wired.viewport)
+            wired.viewport = parent.viewport
+            let rewire = parent.editing != wired.editing || parent.edit?.model !== wired.model
+            wired.editing = parent.editing
+            wired.model = parent.edit?.model
+            connectEditing(view, rewire: rewire)
             let content = ContentKey(parent, dynamicTypeSize: dynamicTypeSize, colorScheme: colorScheme)
             let decoration = DecorationKey(selected: parent.selected, scoped: parent.scoped)
             reveal.take(parent.reveal, selected: parent.selected)

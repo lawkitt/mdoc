@@ -28,6 +28,9 @@ struct EditActions {
     var setFlush: (@escaping @MainActor () -> Void) -> Void
     /// Hands the model what leaves edit mode in the view, for Done.
     var setLeave: (@escaping @MainActor () -> Void) -> Void = { _ in }
+    /// The model these reach: the text view wires its typing path again
+    /// for another one, not for each new copy of the same actions.
+    weak var model: DocumentViewModel?
 }
 
 extension EditActions {
@@ -45,6 +48,7 @@ extension EditActions {
             revision: { [weak model] in model?.typing.revision },
             setFlush: { [weak model] in model?.typing.flush = $0 },
             setLeave: { [weak model] in model?.typing.leave = $0 })
+        self.model = model
     }
 }
 
@@ -72,11 +76,20 @@ final class CoreUndoManager: UndoManager {
 }
 
 extension MarkdownTextView.Coordinator {
-    /// Points the typing path at this render's edit actions.
-    func connectEditing(_ view: CandidateTextView) {
+    /// Points the typing path at this update's edit actions. Its closures
+    /// read the edit actions and the look when they run, so they are wired
+    /// again (`rewire`) only when the mode or the model changes; that also
+    /// hands the model what Done runs in the view.
+    func connectEditing(_ view: CandidateTextView, rewire: Bool) {
         let actions = parent.edit
         view.editActions = actions
         view.coreUndo.actions = actions
+        if rewire { wireTyping(view) }
+        connectToolbar(view, rewire: rewire)
+        view.hidesMarkers = parent.rendered
+    }
+
+    private func wireTyping(_ view: CandidateTextView) {
         view.onEdited = { [weak self, weak view] in
             guard let self, let view else { return }
             self.bridge.didChange(view)
@@ -85,20 +98,19 @@ extension MarkdownTextView.Coordinator {
             guard let self, let view else { return }
             self.bridge.storageEdited(storage, in: view)
         }
-        bridge.send = { range, text in actions?.typed(range, text) }
-        bridge.sendCommand = { edits in actions?.formatted(edits) }
-        connectToolbar(view)
-        bridge.endTyping = { actions?.caretMoved() }
-        actions?.setFlush { [weak self, weak view] in
+        bridge.send = { [weak self] range, text in self?.parent.edit?.typed(range, text) }
+        bridge.sendCommand = { [weak self] edits in self?.parent.edit?.formatted(edits) }
+        bridge.endTyping = { [weak self] in self?.parent.edit?.caretMoved() }
+        parent.edit?.setFlush { [weak self, weak view] in
             guard let self, let view else { return }
             // Marked text is committed as typed, then sent.
             if view.markedTextRange != nil { view.unmarkText() }
             self.bridge.didChange(view)
         }
-        actions?.setLeave { [weak view] in view?.setEditMode(false) }
+        parent.edit?.setLeave { [weak view] in view?.setEditMode(false) }
         bridge.onTyped = { [weak self] typed in self?.shownTextChanged(to: typed.textRevision) }
         bridge.onResync = { [weak self, weak view] in
-            guard let self, let view, let actions else { return }
+            guard let self, let view, let actions = self.parent.edit else { return }
             self.resync(view, core: actions.coreText())
         }
         bridge.onApplied = { [weak self, weak view] edits in
@@ -109,9 +121,9 @@ extension MarkdownTextView.Coordinator {
             guard let self, let view else { return }
             self.followSelection(view)
         }
-        let rendered = parent.rendered
-        bridge.structural = { [weak view] key, range, selection in
-            guard let view else { return .native }
+        bridge.structural = { [weak self, weak view] key, range, selection in
+            guard let self, let view else { return .native }
+            let rendered = self.parent.rendered
             // In a cell the core keeps the key inside it (ADR 0109).
             let inCell = view.cell(at: NSMaxRange(selection))?.table
             return StructuralKeys.outcome(
@@ -122,7 +134,6 @@ extension MarkdownTextView.Coordinator {
                     ? view.tableViews.filter { $0 !== inCell }.map { Self.protected($0.table.range, in: view.textStorage.length) }
                     : [])
         }
-        view.hidesMarkers = parent.rendered
     }
 
     /// A table's range and the line breaks either side of it, within the

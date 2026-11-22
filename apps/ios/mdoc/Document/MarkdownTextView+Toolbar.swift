@@ -213,22 +213,27 @@ final class EditKeyboard {
 extension MarkdownTextView.Coordinator {
     /// Puts the toolbar above the keyboard in edit mode and points its
     /// buttons and the shortcuts at this view; takes them away in review.
-    func connectToolbar(_ view: CandidateTextView) {
+    /// Only a change of mode or model wires them (`rewire`); each update
+    /// in edit mode brings Undo, Redo and the caret state up to date.
+    func connectToolbar(_ view: CandidateTextView, rewire: Bool) {
         guard let actions = parent.edit else {
+            guard rewire else { return }
             view.onCommand = nil
             view.onLinkKey = nil
             keyboard.remove(from: view)
             return
         }
-        view.onCommand = { [weak self, weak view] command in
-            guard let self, let view else { return }
-            self.perform(command, in: view)
+        if rewire {
+            view.onCommand = { [weak self, weak view] command in
+                guard let self, let view else { return }
+                self.perform(command, in: view)
+            }
+            view.onLinkKey = { [weak self, weak view] in
+                guard let self, let view else { return }
+                self.editLink(in: view)
+            }
+            keyboard.install(on: view, run: view.onCommand ?? { _ in }, editLink: view.onLinkKey ?? {})
         }
-        view.onLinkKey = { [weak self, weak view] in
-            guard let self, let view else { return }
-            self.editLink(in: view)
-        }
-        keyboard.install(on: view, run: view.onCommand ?? { _ in }, editLink: view.onLinkKey ?? {})
         keyboard.follow(view, actions: actions)
     }
 
