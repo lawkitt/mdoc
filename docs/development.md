@@ -201,11 +201,11 @@ fragment = "add `changes/{slug}.md`, or `changes/ios/{slug}.md` / `changes/andro
 
 [ci]
 scarce = { macos = { slots = 5, labels = ["macos-26", "xcode-27"] } }
-shadow = "one shadow run on `ci-shadow/main/<name>` before the hub enqueues them (`docs/specs/ci.md`, Changing CI), plus a twin that must fail only when the change adds a new red path; delete both branches afterwards."
+shadow = "they pass a shadow run on `ci-shadow/main/<name>` before the hub enqueues them (`docs/specs/ci.md`, Changing CI). A change that adds or alters a red path also needs a deliberately broken twin that must fail. Delete both branches afterwards."
 targets = "`scripts/ci/ci-stats.sh` (the nightly's CI targets): a core change's queue median 30 minutes or less; missing it reopens a self-hosted Mac (#1041)."
 notes = [
   "`docs/specs/ci.md` has a 500-word ceiling (docs-lint; count with `LC_ALL=en_US.UTF-8`): make room by tightening lines that restate the code, never by raising it.",
-  "On the Mac, a hosted iOS failure is reproduced with Xcode 27.2 and the iOS 26.2 Simulator runtime (ADR 0124).",
+  "On the Mac, reproduce a hosted iOS failure with Xcode 27.2 (ADR 0124): a queue or branch failure on the iOS 26.2 Simulator runtime (the default), a nightly one with `MDOC_XCODE=builds` (iOS 27.2).",
 ]
 
 [machines.macbook-air]
