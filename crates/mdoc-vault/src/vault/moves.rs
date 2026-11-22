@@ -6,7 +6,7 @@ use super::{Vault, WriteLock};
 use crate::{
     VaultError, is_id,
     mapping::{Identity, Mapping},
-    records::{Document, NewProject, Project, ReplyOwner, now},
+    records::{Document, NewProject, Project, Reply, ReplyOwner, now},
 };
 use mdoc_pii::{
     Review,
@@ -214,6 +214,9 @@ impl Vault {
         let from_mapping = from.as_ref().map_or(&stored.mapping, |p| &p.mapping);
         let (text, exported, ids) =
             realias(stored, from_mapping, to.mapping()).map_err(VaultError::Names)?;
+        // Its replies follow it, so the names they are bound to come along
+        // even where its text no longer uses them.
+        let bound = self.reply_identities(&stored.id, from_mapping, &ids)?;
         let mut added = Vec::new();
         let mut gather = |before: &Mapping, after: &Mapping| {
             added = (after.identities.iter())
@@ -226,6 +229,7 @@ impl Vault {
                 let joined = self.update_locked::<Project>(lock, &project.id, |joined| {
                     let before = joined.mapping.clone();
                     joined.mapping.merge_with_ids(&exported, &ids, None);
+                    joined.mapping.adopt(&bound);
                     gather(&before, &joined.mapping);
                 })?;
                 (Some(joined), Mapping::default())
@@ -233,6 +237,7 @@ impl Vault {
             Landing::Unfiled(mapping) => {
                 let mut local = mapping.clone();
                 local.merge_with_ids(&exported, &ids, None);
+                local.adopt(&bound);
                 gather(mapping, &local);
                 (None, local)
             }
@@ -314,9 +319,10 @@ impl Vault {
 
     /// Take out of `project` the identities named by `ids` (a move added
     /// them) that nothing there uses: no other Document's text holds their
-    /// alias. A Document that cannot be read counts as using them, and so
-    /// does one that does not open, as it may be in the Project. The
-    /// Project as stored after.
+    /// alias and no reply restoring there is bound to them. A Document or
+    /// reply that cannot be read counts as using them, and so does one that
+    /// does not open, as it may be the Project's. The Project as stored
+    /// after.
     fn drop_unused(
         &self,
         lock: &WriteLock<'_>,
@@ -337,16 +343,43 @@ impl Vault {
         if !self.state().manifest.documents.damaged.is_empty() {
             return Ok(project.clone());
         }
-        for summary in self.documents_in(Some(&project.id)) {
-            if summary.id == leaving {
-                continue;
-            }
-            let Ok(document) = self.load_record::<Document>(&summary.id) else {
+        let members: Vec<String> = (self.documents_in(Some(&project.id)).into_iter())
+            .map(|summary| summary.id)
+            .filter(|id| id != leaving)
+            .collect();
+        for member in &members {
+            let Ok(document) = self.load_record::<Document>(member) else {
                 return Ok(project.clone());
             };
             for token in map.tokens(&document.markdown) {
                 if let Some(index) = token.identity {
                     used[index] = true;
+                }
+            }
+        }
+        // A reply that restores here and is bound to one uses it too; one
+        // that does not open, or cannot be read, may be such a reply.
+        let (replies, unopened) = self.current_replies()?;
+        if unopened {
+            return Ok(project.clone());
+        }
+        for summary in replies {
+            let restores_here = match &summary.owner {
+                ReplyOwner::Project(id) => *id == project.id,
+                ReplyOwner::Document(id) => members.contains(id),
+            };
+            if !restores_here {
+                continue;
+            }
+            let Ok(reply) = self.load_record::<Reply>(&summary.id) else {
+                return Ok(project.clone());
+            };
+            for binding in &reply.bindings {
+                let Some(identity) = project.mapping.bound(&binding.identity) else {
+                    continue;
+                };
+                if let Some(at) = candidates.iter().position(|(id, _)| *id == identity.id) {
+                    used[at] = true;
                 }
             }
         }

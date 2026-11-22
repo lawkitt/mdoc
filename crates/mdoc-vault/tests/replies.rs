@@ -530,3 +530,138 @@ fn a_reply_file_under_another_id_does_not_open() {
     assert_eq!(vault.damaged(), [(ObjectKind::Reply, other)]);
     assert_eq!(ids(&vault.replies()), [reply.id]);
 }
+
+/// Review 1: a Document's replies bring the names they are bound to when
+/// it moves, even names its text no longer uses: into a Project, back by
+/// undo, and out to Unfiled when its Project is deleted.
+#[test]
+fn a_moved_document_brings_the_names_its_replies_need() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    // The reply was saved when the note named both; now it names Ann only.
+    let note = unfiled(
+        &vault,
+        "PERSON_1 met PERSON_2.",
+        &[
+            person("PERSON_1", &["Ann Lee"]),
+            person("PERSON_2", &["Bob Hart"]),
+        ],
+    );
+    let reply = save(
+        &vault,
+        ReplyOwner::Document(note.clone()),
+        "PERSON_1, PERSON_2.",
+    );
+    vault
+        .update_document(&note, |d| d.markdown = "PERSON_1 wrote.".into())
+        .unwrap();
+    let memo = new_project(&vault, "Memo", &[person("PERSON_1", &["Carl Diaz"])]);
+    let moved = vault.move_document(&note, Some(&memo.id)).unwrap();
+    assert_eq!(moved.document.markdown, "PERSON_2 wrote.");
+    assert_eq!(restored(&vault, &reply.id), "Ann Lee, Bob Hart.");
+    let joined = moved.project.clone().unwrap();
+    let bob = (joined.mapping.identities.iter()).find(|i| i.originals == ["Bob Hart"]);
+    assert_eq!(bob.unwrap().alias, "PERSON_3", "a fresh alias there");
+    vault.undo_move(&moved.undo).unwrap();
+    assert_eq!(restored(&vault, &reply.id), "Ann Lee, Bob Hart.");
+    // Out of a Project by deleting it: the names its reply needs come along.
+    let brief = new_project(
+        &vault,
+        "Brief",
+        &[
+            person("PERSON_1", &["Ann Lee"]),
+            person("PERSON_2", &["Bob Hart"]),
+        ],
+    );
+    let letter = new_document(&vault, Some(&brief.id), "PERSON_1 and PERSON_2.");
+    let letter_reply = save(&vault, ReplyOwner::Document(letter.clone()), "PERSON_2.");
+    vault
+        .update_document(&letter, |d| d.markdown = "PERSON_1.".into())
+        .unwrap();
+    vault
+        .delete_project(&brief.id, ProjectDocuments::MoveToUnfiled)
+        .unwrap();
+    assert_eq!(restored(&vault, &letter_reply.id), "Bob Hart.");
+}
+
+/// Review 2: an id a forgotten identity still answers to is not folded
+/// into another identity, so a reply bound to it stays unrestored.
+#[test]
+fn an_id_a_forgotten_identity_keeps_is_not_folded_elsewhere() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let project = new_project(
+        &vault,
+        "Lee",
+        &[
+            person("PERSON_1", &["A. Lee"]),
+            person("PERSON_2", &["Ann Lee"]),
+        ],
+    );
+    let note = unfiled(&vault, "PERSON_1.", &[person("PERSON_1", &["Ann Lee"])]);
+    let reply = save(&vault, ReplyOwner::Document(note.clone()), "PERSON_1.");
+    let moved = vault.move_document(&note, Some(&project.id)).unwrap();
+    assert_eq!(moved.document.markdown, "PERSON_2.");
+    vault.move_document(&note, None).unwrap();
+    vault
+        .update_project(&project.id, |p| {
+            assert!(p.forget_identity("PERSON_2"));
+            p.mapping.identities[0].originals.push("Ann Lee".into());
+        })
+        .unwrap();
+    vault.move_document(&note, Some(&project.id)).unwrap();
+    assert_eq!(restored(&vault, &reply.id), "PERSON_1.");
+}
+
+/// Review 3: undoing a move keeps a name it added while a reply saved for
+/// the Project meanwhile is bound to it.
+#[test]
+fn undoing_a_move_keeps_names_a_project_reply_is_bound_to() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let note = unfiled(
+        &vault,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Ann Lee"])],
+    );
+    let memo = new_project(&vault, "Memo", &[person("PERSON_1", &["Bob Hart"])]);
+    let moved = vault.move_document(&note, Some(&memo.id)).unwrap();
+    assert_eq!(moved.document.markdown, "PERSON_2 wrote.");
+    let reply = save(
+        &vault,
+        ReplyOwner::Project(memo.id.clone()),
+        "PERSON_2 agreed.",
+    );
+    vault.undo_move(&moved.undo).unwrap();
+    assert_eq!(restored(&vault, &reply.id), "Ann Lee agreed.");
+}
+
+/// Review 4: a reply that cannot be read for now may be the owner's, so
+/// deleting the owner is refused and nothing goes.
+#[test]
+#[cfg(unix)]
+fn a_reply_unreadable_for_now_refuses_deleting_its_owner() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = Folder::new();
+    let vault = folder.open();
+    let note = unfiled(&vault, "PERSON_1.", &[person("PERSON_1", &["Ann Lee"])]);
+    let reply = save(&vault, ReplyOwner::Document(note.clone()), "PERSON_1.");
+    let file = folder
+        .root
+        .join("replies")
+        .join(format!("{}.enc", reply.id));
+    let mode =
+        |mode| std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();
+    mode(0o000);
+    if std::fs::read(&file).is_ok() {
+        mode(0o644);
+        return; // Running as root: permissions do not apply.
+    }
+    // Another handle, which has not read it yet.
+    let other = folder.open();
+    let deleted = other.delete_document(&note);
+    mode(0o644);
+    assert!(matches!(deleted, Err(VaultError::Io(_))), "{deleted:?}");
+    assert!(vault.document(&note).is_ok());
+    assert_eq!(restored(&vault, &reply.id), "Ann Lee.");
+}

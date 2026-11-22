@@ -5,7 +5,7 @@ use super::{Vault, WriteLock};
 use crate::{
     ObjectKind, VaultError, is_id,
     manifest::{Entry, Record, reply_path},
-    mapping::Mapping,
+    mapping::{Identity, Mapping},
     new_id,
     records::{Document, NewReply, Project, Reply, ReplyOwner, ReplySummary, now},
 };
@@ -59,26 +59,29 @@ impl Vault {
         let mut replies: Vec<_> = (self.state().manifest.replies.ok.values())
             .map(|entry| entry.summary.clone())
             .collect();
-        replies.sort_by(|a, b| {
-            b.created
-                .cmp(&a.created)
-                .then_with(|| a.title.cmp(&b.title))
-                .then_with(|| a.id.cmp(&b.id))
-        });
+        sort_newest_first(&mut replies);
         replies
     }
 
     /// A Project's AI Replies, newest first: its own and those of the
     /// Documents in it now, which followed them there.
     pub fn project_replies(&self, project: &str) -> Vec<ReplySummary> {
-        let documents: Vec<String> = (self.documents_in(Some(project)).into_iter())
-            .map(|document| document.id)
-            .collect();
-        let mut replies = self.replies();
-        replies.retain(|reply| match &reply.owner {
-            ReplyOwner::Project(id) => id == project,
-            ReplyOwner::Document(id) => documents.contains(id),
-        });
+        // One look at the cache, so a move meanwhile cannot split the two.
+        let mut replies: Vec<ReplySummary> = {
+            let state = self.state();
+            let in_project = |document: &str| {
+                (state.manifest.documents.ok.get(document))
+                    .is_some_and(|entry| entry.summary.project.as_deref() == Some(project))
+            };
+            (state.manifest.replies.ok.values())
+                .filter(|entry| match &entry.summary.owner {
+                    ReplyOwner::Project(id) => id == project,
+                    ReplyOwner::Document(id) => in_project(id),
+                })
+                .map(|entry| entry.summary.clone())
+                .collect()
+        };
+        sort_newest_first(&mut replies);
         replies
     }
 
@@ -102,24 +105,72 @@ impl Vault {
 
     /// Delete the replies `owner` has, as the case store dropped a case's
     /// replies with it and a member's with the member. Replies another
-    /// handle saved are found first; one that does not open is passed
-    /// over, as its owner is unknown.
+    /// handle saved are found first. A reply that cannot be read for now
+    /// refuses the delete, as it may be `owner`'s; one that never will
+    /// (another key, damaged) is passed over.
     pub(super) fn delete_replies_of(
         &self,
         _lock: &WriteLock<'_>,
         owner: &ReplyOwner,
     ) -> Result<(), VaultError> {
-        self.refresh()?;
-        let owned: Vec<String> = (self.state().manifest.replies.ok.values())
-            .filter(|entry| entry.summary.owner == *owner)
-            .map(|entry| entry.summary.id.clone())
-            .collect();
-        for id in owned {
+        let (replies, _) = self.current_replies()?;
+        for reply in replies.into_iter().filter(|r| r.owner == *owner) {
             self.check_alive()?;
-            super::remove_sealed(&reply_path(&self.root, &id))?;
-            self.forget_deleted::<Reply>(&id)?;
+            super::remove_sealed(&reply_path(&self.root, &reply.id))?;
+            self.forget_deleted::<Reply>(&reply.id)?;
         }
         Ok(())
+    }
+
+    /// Every reply as the folder holds it now, other handles' included,
+    /// and whether any does not open. An I/O error reading one is passed
+    /// on: it may open later.
+    pub(super) fn current_replies(&self) -> Result<(Vec<ReplySummary>, bool), VaultError> {
+        self.refresh()?;
+        let unopened: Vec<String> =
+            (self.state().manifest.replies.damaged.keys().cloned()).collect();
+        for id in &unopened {
+            if let Err(VaultError::Io(error)) = self.load_record::<Reply>(id) {
+                return Err(VaultError::Io(error));
+            }
+        }
+        Ok((self.replies(), !unopened.is_empty()))
+    }
+
+    /// The identities in `from` that `document`'s replies are bound to and
+    /// that the move did not carry with its text (`carried`): they go along
+    /// too, so the replies still restore where the document goes.
+    pub(super) fn reply_identities(
+        &self,
+        document: &str,
+        from: &Mapping,
+        carried: &[Vec<String>],
+    ) -> Result<Vec<Identity>, VaultError> {
+        let (replies, _) = self.current_replies()?;
+        let mut identities: Vec<Identity> = Vec::new();
+        for summary in replies {
+            if !matches!(&summary.owner, ReplyOwner::Document(id) if id == document) {
+                continue;
+            }
+            let reply = match self.load_record::<Reply>(&summary.id) {
+                Err(VaultError::Io(error)) => return Err(VaultError::Io(error)),
+                Err(_) => continue,
+                Ok(reply) => reply,
+            };
+            for binding in &reply.bindings {
+                let Some(identity) = from.bound(&binding.identity) else {
+                    continue;
+                };
+                let known = |id: &String| {
+                    carried.iter().flatten().any(|c| c == id)
+                        || identities.iter().any(|i| i.id == *id)
+                };
+                if identity.exported().is_some() && !known(&identity.id) {
+                    identities.push(identity.clone());
+                }
+            }
+        }
+        Ok(identities)
     }
 
     /// The mapping a reply of `owner` binds and restores with.
@@ -149,4 +200,13 @@ impl Vault {
         table.ok.insert(reply.id.clone(), Entry { summary, stamp });
         Ok(())
     }
+}
+
+fn sort_newest_first(replies: &mut [ReplySummary]) {
+    replies.sort_by(|a, b| {
+        b.created
+            .cmp(&a.created)
+            .then_with(|| a.title.cmp(&b.title))
+            .then_with(|| a.id.cmp(&b.id))
+    });
 }

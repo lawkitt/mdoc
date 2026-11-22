@@ -415,10 +415,12 @@ impl Mapping {
                 }
             }
             // Replies bound to what it absorbed, or to the moved document's
-            // identity, restore with it now.
+            // identity, restore with it now; an id another identity here
+            // answers to stays with that one.
             let folded: Vec<String> = (absorbed.iter())
                 .flat_map(|a| a.ids().cloned().collect::<Vec<_>>())
                 .chain(id.iter().cloned())
+                .filter(|id| self.bound(id).is_none())
                 .collect();
             match found {
                 Some(index) => {
@@ -455,16 +457,58 @@ impl Mapping {
                     stored.originals = originals;
                 }
                 None => {
-                    // An id another identity here answers to stays with it.
-                    let free: Vec<&String> = (folded.iter())
-                        .filter(|id| self.bound(id).is_none())
-                        .collect();
-                    let own = id.first().filter(|own| free.contains(own));
+                    let own = id.first().filter(|own| folded.contains(own));
                     incoming.id = own.cloned().unwrap_or_else(identity_id);
-                    incoming.fold(free);
+                    incoming.fold(&folded);
                     self.identities.push(incoming);
                 }
             }
+        }
+    }
+
+    /// Take in identities of another mapping that a moving document's
+    /// replies are bound to but its text does not use, so the replies still
+    /// restore here. Each is folded into the identity here that answers to
+    /// one of its ids or shares an original with it, or else comes in with
+    /// its ids, no earlier aliases, and an alias no identity here has used:
+    /// its custom one when free, otherwise the next of its category.
+    pub(crate) fn adopt(&mut self, identities: &[Identity]) {
+        for identity in identities {
+            let free: Vec<String> = (identity.ids())
+                .filter(|id| self.bound(id).is_none())
+                .cloned()
+                .collect();
+            let answering = (identity.ids()).find_map(|id| self.bound(id).map(|i| i.id.clone()));
+            let same = match answering {
+                Some(id) => self.identities.iter().position(|i| i.id == id),
+                None => (self.identities.iter())
+                    .position(|i| identity.originals.iter().any(|o| i.originals.contains(o))),
+            };
+            if let Some(index) = same {
+                self.identities[index].fold(&free);
+                continue;
+            }
+            let Some(category) =
+                (Category::ALL.into_iter()).find(|c| c.token() == identity.category)
+            else {
+                continue;
+            };
+            let custom = identity.custom && self.identity_named(&identity.alias).is_none();
+            let alias = match custom {
+                true => identity.alias.clone(),
+                false => self.next_alias(category),
+            };
+            let mut adopted = Identity {
+                id: free.first().cloned().unwrap_or_else(identity_id),
+                alias,
+                previous: Vec::new(),
+                custom,
+                not_a_name_by: None,
+                folded: Vec::new(),
+                ..identity.clone()
+            };
+            adopted.fold(&free);
+            self.identities.push(adopted);
         }
     }
 
