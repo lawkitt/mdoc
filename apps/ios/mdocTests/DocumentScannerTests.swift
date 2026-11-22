@@ -1,4 +1,3 @@
-import VisionKit
 import XCTest
 @testable import mdoc
 
@@ -16,7 +15,7 @@ final class DocumentScannerTests: XCTestCase {
         var failed: Error?
         let scanner = DocumentScanner(onScan: { _ in XCTFail("no scan") }, onCancel: { cancelled = true }, onFail: { failed = $0 })
         let coordinator = scanner.makeCoordinator()
-        coordinator.documentCameraViewController(VNDocumentCameraViewController(), didFailWithError: CameraBusy())
+        coordinator.cameraFailed(CameraBusy())
         XCTAssertFalse(cancelled)
         XCTAssertEqual(failed?.localizedDescription, "The camera is in use by another app.")
 

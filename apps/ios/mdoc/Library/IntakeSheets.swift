@@ -179,6 +179,13 @@ struct DocumentScanner: UIViewControllerRepresentable {
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
+            cameraFailed(error)
+        }
+
+        /// The camera failed, as when another app holds it: not a cancel.
+        /// Apart from the delegate call so tests need no camera controller,
+        /// which the Simulator has no camera for.
+        func cameraFailed(_ error: Error) {
             parent.onFail(error)
         }
     }
