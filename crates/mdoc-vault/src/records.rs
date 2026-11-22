@@ -2,7 +2,7 @@
 //! Later items add their fields with `#[serde(default)]`: identities and
 //! the Always and Never lists (item 4), the review state (item 2), the
 //! source hash and the original's metadata (item 3).
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 /// Seconds since the Unix epoch.
 pub(crate) fn now() -> u64 {
@@ -79,8 +79,10 @@ pub struct NewDocument {
     pub markdown: String,
 }
 
-/// How a document began in mdoc.
+/// How a document began in mdoc; the mobile core's `DocumentOrigin`, in
+/// its wire form.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DocumentOrigin {
     /// Imported, pasted or scanned, or a new document the user renamed.
     #[default]
@@ -91,63 +93,22 @@ pub enum DocumentOrigin {
     Sample,
 }
 
-/// What a Document was made from: the iOS app's kinds, Markdown, and any
-/// other format by its lowercase file extension. Stored as one lowercase
-/// string (`"pdf"`, `"other:xlsx"`).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// The file family a Document was made from, stored as a lowercase string.
+/// The exact format comes from the original's file name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SourceKind {
     Pdf,
-    Docx,
+    Word,
+    Spreadsheet,
+    Presentation,
+    Ebook,
     Image,
     Scan,
-    /// Plain or pasted text.
-    Text,
     Markdown,
-    /// Another format, by its lowercase extension.
-    Other(String),
-}
-
-impl SourceKind {
-    pub fn as_str(&self) -> std::borrow::Cow<'_, str> {
-        match self {
-            Self::Pdf => "pdf".into(),
-            Self::Docx => "docx".into(),
-            Self::Image => "image".into(),
-            Self::Scan => "scan".into(),
-            Self::Text => "text".into(),
-            Self::Markdown => "markdown".into(),
-            Self::Other(extension) => format!("other:{extension}").into(),
-        }
-    }
-
-    pub fn parse(text: &str) -> Self {
-        match text {
-            "pdf" => Self::Pdf,
-            "docx" => Self::Docx,
-            "image" => Self::Image,
-            "scan" => Self::Scan,
-            "text" => Self::Text,
-            "markdown" => Self::Markdown,
-            other => Self::Other(
-                other
-                    .strip_prefix("other:")
-                    .unwrap_or(other)
-                    .to_ascii_lowercase(),
-            ),
-        }
-    }
-}
-
-impl Serialize for SourceKind {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for SourceKind {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self::parse(&String::deserialize(deserializer)?))
-    }
+    /// Plain text, and pasted and new documents; [`DocumentOrigin`] tells
+    /// them apart.
+    Text,
 }
 
 /// The eight Project swatches, in hue order: the case store's.
@@ -248,7 +209,7 @@ impl DocumentSummary {
             id: document.id.clone(),
             project: document.project.clone(),
             title: document.title.clone(),
-            source_kind: document.source_kind.clone(),
+            source_kind: document.source_kind,
             origin: document.origin,
             exclude_from_ai: document.exclude_from_ai,
             scanned: document.scanned,

@@ -114,7 +114,7 @@ fn a_project_and_a_document_survive_a_reopen() {
             .create_document(NewDocument {
                 project: Some(project.id.clone()),
                 title: "Statement of claim".into(),
-                source_kind: SourceKind::Other("xlsx".into()),
+                source_kind: SourceKind::Spreadsheet,
                 origin: DocumentOrigin::Sample,
                 markdown: "# Claim\n\nPERSON_1 owes PERSON_2.".into(),
             })
@@ -136,7 +136,7 @@ fn a_project_and_a_document_survive_a_reopen() {
     assert_eq!(vault.projects(), vec![ProjectSummary::of(&project)]);
     let listed = vault.documents_in(Some(&project.id));
     assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].source_kind, SourceKind::Other("xlsx".into()));
+    assert_eq!(listed[0].source_kind, SourceKind::Spreadsheet);
     assert!(listed[0].scanned && listed[0].exclude_from_ai);
     assert_eq!(vault.documents_in(None), vec![]);
 }
@@ -646,7 +646,7 @@ fn a_document_goes_only_into_an_existing_project() {
     let result = vault.create_document(NewDocument {
         project: Some("0".repeat(32)),
         title: "Brief".into(),
-        source_kind: SourceKind::Docx,
+        source_kind: SourceKind::Word,
         origin: DocumentOrigin::New,
         markdown: String::new(),
     });
@@ -676,20 +676,63 @@ fn ids_that_are_not_vault_ids_are_refused() {
 }
 
 #[test]
-fn source_kinds_are_stored_as_lowercase_strings() {
+fn source_kinds_and_origins_are_stored_as_lowercase_strings() {
     let kinds = [
         (SourceKind::Pdf, "pdf"),
-        (SourceKind::Docx, "docx"),
+        (SourceKind::Word, "word"),
+        (SourceKind::Spreadsheet, "spreadsheet"),
+        (SourceKind::Presentation, "presentation"),
+        (SourceKind::Ebook, "ebook"),
         (SourceKind::Image, "image"),
         (SourceKind::Scan, "scan"),
-        (SourceKind::Text, "text"),
         (SourceKind::Markdown, "markdown"),
-        (SourceKind::Other("xlsx".into()), "other:xlsx"),
+        (SourceKind::Text, "text"),
     ];
     for (kind, text) in kinds {
-        assert_eq!(kind.as_str(), text);
-        assert_eq!(SourceKind::parse(text), kind);
+        let json = format!("\"{text}\"");
+        assert_eq!(serde_json::to_string(&kind).unwrap(), json);
+        assert_eq!(serde_json::from_str::<SourceKind>(&json).unwrap(), kind);
     }
+    let origins = [
+        (DocumentOrigin::Ordinary, "\"ordinary\""),
+        (DocumentOrigin::New, "\"new\""),
+        (DocumentOrigin::Sample, "\"sample\""),
+    ];
+    for (origin, json) in origins {
+        assert_eq!(serde_json::to_string(&origin).unwrap(), json);
+    }
+}
+
+#[test]
+fn a_document_folder_without_its_record_is_ignored() {
+    let folder = Folder::new();
+    let kept = {
+        let vault = folder.open();
+        document(&vault, None, "Brief", "one")
+    };
+    // What a crash between an original's write and its record's leaves.
+    let orphan = "f".repeat(32);
+    let orphan_dir = folder.root.join("docs").join(&orphan);
+    std::fs::create_dir_all(&orphan_dir).unwrap();
+    std::fs::write(orphan_dir.join("original.enc"), b"sealed source").unwrap();
+    let vault = folder.open();
+    assert_eq!(vault.opened(), ManifestCheck::Current);
+    assert_eq!(vault.damaged(), vec![]);
+    let ids: Vec<_> = vault.documents().into_iter().map(|d| d.id).collect();
+    assert_eq!(ids, vec![kept.id]);
+    assert!(matches!(
+        vault.document(&orphan),
+        Err(VaultError::NotFound { .. })
+    ));
+    drop(vault);
+    std::fs::remove_file(folder.manifest()).unwrap();
+    let vault = folder.open();
+    assert_eq!(vault.opened(), ManifestCheck::Missing);
+    assert_eq!(vault.documents().len(), 1);
+    assert!(
+        orphan_dir.join("original.enc").exists(),
+        "an orphan is left for its owner"
+    );
 }
 
 #[test]
