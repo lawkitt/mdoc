@@ -65,6 +65,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,6 +80,12 @@ class PhotoImportTest {
 
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
+
+    /** Each test's scan starts without another test's record. */
+    @Before
+    fun noScanRecord() {
+        File(CameraCapture.dir(core.app).parentFile, "scan.json").delete()
+    }
 
     private val resolver get() = core.app.contentResolver
     private val home get() = core.app.core.let { isolated -> HomeViewModel({ isolated }) }
@@ -401,6 +408,54 @@ class PhotoImportTest {
         assertNotNull(CameraCapture.file(core.app, second))
         withContext(Dispatchers.Main) { restored.cameraResult(true) }
         withTimeout(15_000) { restored.state.first { it.scanPageCount == 2 } }
+        withContext(Dispatchers.Main) {
+            restored.finishScan("Scan")
+            restored.cancelAdd()
+        }
+    }
+
+    /**
+     * A first page that can't be staged leaves no record naming a page:
+     * its raw shot stays for the next start's sweep instead of going at
+     * once, and Home says why.
+     */
+    @Test
+    fun aFirstPageThatCantBeStagedKeepsItsShot() = runBlocking {
+        val scan = ScanSession(CameraCapture.dir(core.app))
+        val home = withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, scan, SavedStateHandle()) }
+        val shot = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
+        writePhoto(shot, "Not a photo at all.".toByteArray())
+        try {
+            withContext(Dispatchers.Main) { home.cameraResult(true) }
+            withTimeout(15_000) { home.state.first { it.refused != null } }
+            assertTrue(scan.state.value.pages.isEmpty())
+            assertNotNull(CameraCapture.file(core.app, shot))
+        } finally {
+            discard(shot)
+        }
+    }
+
+    /**
+     * A record newer than an empty saved snapshot (saved before the scan
+     * began) is where the scan stands: the restore takes it, and doesn't
+     * delete it.
+     */
+    @Test
+    fun aNewerRecordOutlivesAnEmptySnapshot() = runBlocking {
+        val scan = ScanSession(CameraCapture.dir(core.app))
+        val saved = SavedStateHandle()
+        val home = withContext(Dispatchers.Main) { HomeViewModel({ core.app.core }, null, scan, saved) }
+        // The activity stops before the scan begins: an empty snapshot.
+        val snapshot = withContext(Dispatchers.Main) { saved.keys().associateWith { saved.get<Any?>(it) } }
+        val shot = withContext(Dispatchers.Main) { home.takePage(core.app) }!!
+        writePhoto(shot, taggedJpeg(1))
+        withContext(Dispatchers.Main) { home.cameraResult(true) }
+        withTimeout(15_000) { scan.state.first { it.pages.size == 1 && it.capture == null } }
+        val restored = withContext(Dispatchers.Main) {
+            HomeViewModel({ core.app.core }, null, ScanSession(CameraCapture.dir(core.app)), SavedStateHandle(snapshot))
+        }
+        assertEquals(1, restored.state.value.scanPageCount)
+        assertTrue(File(CameraCapture.dir(core.app).parentFile, "scan.json").isFile)
         withContext(Dispatchers.Main) {
             restored.finishScan("Scan")
             restored.cancelAdd()

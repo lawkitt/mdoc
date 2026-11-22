@@ -32,11 +32,11 @@ struct Presenter: ViewModifier {
                 guard !items.isEmpty else { return }
                 photoItems = []
                 Task {
-                    var images: [Data] = []
+                    // A photo Photos can't hand over stays in the batch as
+                    // nil, so the importer says so instead of dropping it.
+                    var images: [Data?] = []
                     for item in items {
-                        if let data = try? await item.loadTransferable(type: Data.self) {
-                            images.append(data)
-                        }
+                        images.append((try? await item.loadTransferable(type: Data.self)) ?? nil)
                     }
                     app.receiveImages(images, scanned: false)
                 }

@@ -58,20 +58,27 @@ class ScanSession(
     private var swept = false
 
     /**
-     * A scan a stopped process left, when this process has none: the
-     * record where it stands, for a `saved` state that holds a scan; a shot
-     * the camera had returned is cleaned again. Without a saved scan the
-     * record is an abandoned one's, and goes.
+     * A scan a stopped process left, when this process has none. The
+     * record and Home's `saved` state are compared first, and the later
+     * one is where the scan stands; a shot the camera had returned is
+     * cleaned again. A record newer than the saved state is never deleted:
+     * with no saved state at all (a fresh start, `sequence` below 0) it
+     * waits, this session counting on from it so that its own saves come
+     * later; only a record older than an empty saved scan goes.
      */
     fun restore(saved: State, originals: () -> Originals) {
         if (!mutable.value.empty) return
-        if (saved.empty) {
-            record?.delete()
+        val recorded = readRecord()
+        if (saved.sequence < 0) {
+            mutable.value = State(sequence = recorded?.sequence ?: 0)
             return
         }
-        // The later of the two: a record a failed write left behind is
-        // older than the saved state that followed it.
-        val restored = readRecord()?.takeIf { it.sequence >= saved.sequence } ?: saved
+        val restored = recorded?.takeIf { it.sequence >= saved.sequence } ?: saved
+        if (restored.empty) {
+            record?.delete()
+            mutable.value = State(sequence = saved.sequence)
+            return
+        }
         val pages = restored.pages.filter { it.isFile }
         val capture = restored.capture?.takeIf { it.isFile }
         mutable.value = State(pages, capture, returned = false, sequence = restored.sequence)
@@ -135,12 +142,13 @@ class ScanSession(
                         ?: mutable.value.refused,
                 ),
             )
-            if (recorded) {
-                raw.delete()
-            } else {
-                // The raw shot stays (outside `originals/`, swept at the next
-                // start) while nothing on disk says its page was kept.
-                mutable.update { it.copy(refused = NOT_RECORDED) }
+            when {
+                // A record names the clean page: the raw shot can go.
+                page != null && recorded -> raw.delete()
+                // Otherwise it stays (outside `originals/`, swept at the
+                // next start) while no record names a page made of it.
+                page != null -> mutable.update { it.copy(refused = NOT_RECORDED) }
+                else -> {}
             }
         }
     }

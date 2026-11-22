@@ -232,6 +232,9 @@
     "A letter, contract or note. Select the names in it to replace them, then share it with an AI." : {
 
     },
+    "A page couldn't be read, so nothing was imported. Try again." : {
+
+    },
     "A short agreement with made-up names, to try review without your own documents." : {
 
     },

@@ -16,11 +16,15 @@ struct Importer {
         case unsupported
         /// The core refused the image, in its words (too large to keep).
         case refused(String)
+        /// A page the camera or Photos couldn't hand over: the batch is
+        /// refused rather than imported without it.
+        case unreadablePage
 
         var errorDescription: String? {
             switch self {
             case .unsupported: String(localized: "mdoc opens PDF, DOCX and image files.")
             case .refused(let message): message
+            case .unreadablePage: String(localized: "A page couldn't be read, so nothing was imported. Try again.")
             }
         }
     }
@@ -63,8 +67,14 @@ struct Importer {
     /// one document, each kept as `page` keeps it. A page that can't be
     /// kept refuses the whole batch (`Failure.unsupported`): no page is
     /// left out without a word.
-    func images(_ images: [Data], scanned: Bool, title: String? = nil) throws -> PendingImport? {
-        guard !images.isEmpty else { return nil }
+    /// A page that arrives as nil (the camera couldn't encode it, Photos
+    /// couldn't load it) refuses the batch too (`Failure.unreadablePage`).
+    func images(_ pages: [Data?], scanned: Bool, title: String? = nil) throws -> PendingImport? {
+        guard !pages.isEmpty else { return nil }
+        let images = try pages.map { page -> Data in
+            guard let page else { throw Failure.unreadablePage }
+            return page
+        }
         let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let urls: [URL]

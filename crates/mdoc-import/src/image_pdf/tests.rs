@@ -1138,7 +1138,7 @@ fn a_large_animation_is_refused_before_decoding() {
 /// orientation kept as the one tag left.
 mod kept_copy {
     use super::*;
-    use crate::image_pdf::metadata::{kept_copy_within, tags};
+    use crate::image_pdf::metadata::{kept_copy, kept_copy_within, tags};
 
     const XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/\x00<x:xmpmeta>Fictional Studio</x:xmpmeta>";
 
@@ -1743,28 +1743,12 @@ mod kept_copy {
         );
     }
 
-    /// Each page's first strip, in page order.
-    fn page_strips(bytes: &[u8]) -> Vec<Vec<u8>> {
-        use ::tiff::tags::Tag;
-        let mut decoder = ::tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
-        let mut strips = Vec::new();
-        loop {
-            let offset = decoder.get_tag_u32(Tag::StripOffsets).unwrap() as usize;
-            let size = decoder.get_tag_u32(Tag::StripByteCounts).unwrap() as usize;
-            strips.push(bytes[offset..offset + size].to_vec());
-            if !decoder.more_images() {
-                return strips;
-            }
-            decoder.next_image().unwrap();
-        }
-    }
-
     /// An uncompressed page and a JPEG page sharing one strip, in either
-    /// order: the JPEG page's stream loses its EXIF and comment, and the
-    /// uncompressed page keeps every byte of its pixels. Each page's strip
-    /// is cleaned as its own compression says before anything is shared.
+    /// order: the raw page's copy would keep the JPEG's EXIF and comment,
+    /// and cleaning it would change its pixels, so the file isn't kept at
+    /// all; nothing of its metadata comes out.
     #[test]
-    fn a_strip_shared_by_pages_of_different_compression_is_cleaned_per_page() {
+    fn a_strip_shared_by_a_jpeg_page_and_a_raw_page_is_refused() {
         let comment = segment(0xfe, b"A fictional comment");
         let strip = with_segments(&jpeg(16, 8, [90, 160, 60]), &[app1_exif(Some(1)), comment]);
         let raw = |at: u32| {
@@ -1812,27 +1796,63 @@ mod kept_copy {
                 out[link..link + 4].copy_from_slice(&ifd.to_le_bytes());
                 link = next;
             }
-            let kept = without_metadata(&out).unwrap();
-            let strips = page_strips(&kept);
-            let (raw_strip, coded_strip) = if raw_first {
-                (&strips[0], &strips[1])
-            } else {
-                (&strips[1], &strips[0])
-            };
-            assert_eq!(raw_strip, &strip, "raw first: {raw_first}");
+            // Nothing kept: no output holds the EXIF or the comment.
+            assert_eq!(without_metadata(&out), None, "raw first: {raw_first}");
             assert!(
-                !contains(coded_strip, b"Exif\0\0"),
+                matches!(kept_copy(&out), Ok(None)),
                 "raw first: {raw_first}"
             );
-            assert!(
-                !contains(coded_strip, b"A fictional comment"),
-                "raw first: {raw_first}"
-            );
-            assert_eq!(
-                pixels(coded_strip),
-                pixels(&strip),
-                "raw first: {raw_first}"
-            );
+        }
+    }
+
+    /// Pages of two different non-JPEG compressions referencing one strip
+    /// each get their own copy: sharing is only between pages compressed
+    /// alike.
+    #[test]
+    fn a_strip_is_shared_only_between_pages_compressed_alike() {
+        let strip: Vec<u8> = (0..200u32).map(|i| (i % 251) as u8).collect();
+        let mut out = b"II*\0".to_vec();
+        out.extend_from_slice(&[0; 4]);
+        let at = out.len() as u32;
+        out.extend_from_slice(&strip);
+        let page = |compression: u16| {
+            vec![
+                (256, 4, long(20)),
+                (257, 4, long(10)),
+                (258, 3, short(8)),
+                (259, 3, short(compression)),
+                (262, 3, short(1)),
+                (273, 4, long(at)),
+                (277, 3, short(1)),
+                (278, 4, long(10)),
+                (279, 4, long(200)),
+            ]
+        };
+        let mut link = 4;
+        // Uncompressed, PackBits, uncompressed again.
+        for compression in [1, 32773, 1] {
+            let (ifd, next) = write_ifd(&mut out, &page(compression));
+            out[link..link + 4].copy_from_slice(&ifd.to_le_bytes());
+            link = next;
+        }
+        let kept = tags::without_metadata(&out, usize::MAX).unwrap();
+        let offsets = strip_offsets(&kept);
+        assert_eq!(offsets.len(), 3);
+        assert_ne!(offsets[0], offsets[1]);
+        assert_eq!(offsets[0], offsets[2]);
+    }
+
+    /// Each page's first strip offset, in page order.
+    fn strip_offsets(bytes: &[u8]) -> Vec<u32> {
+        use ::tiff::tags::Tag;
+        let mut decoder = ::tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut offsets = Vec::new();
+        loop {
+            offsets.push(decoder.get_tag_u32(Tag::StripOffsets).unwrap());
+            if !decoder.more_images() {
+                return offsets;
+            }
+            decoder.next_image().unwrap();
         }
     }
 }

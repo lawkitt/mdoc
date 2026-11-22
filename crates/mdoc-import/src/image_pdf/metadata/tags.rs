@@ -93,6 +93,7 @@ pub(crate) fn without_metadata(bytes: &[u8], budget: usize) -> Result<Vec<u8>, R
     out.push(&[0; 4])?;
     let mut next = order.u32(bytes, 4).ok_or(Unreadable)? as usize;
     let mut seen = Vec::new();
+    let mut pages = Vec::new();
     while next != 0 {
         // A directory read twice is a loop.
         if seen.contains(&next) || seen.len() >= MAX_PAGES {
@@ -100,7 +101,14 @@ pub(crate) fn without_metadata(bytes: &[u8], budget: usize) -> Result<Vec<u8>, R
         }
         seen.push(next);
         let page = Directory::read(bytes, order, next).ok_or(Unreadable)?;
-        let (entries, following) = (page.entries.len(), page.next);
+        next = page.next as usize;
+        pages.push(page);
+    }
+    if pages.is_empty() || shares_jpeg_bytes(&pages, order)? {
+        return Err(Unreadable);
+    }
+    for page in pages {
+        let entries = page.entries.len();
         let at = page.write(bytes, order, &mut out)?;
         order.put_u32(
             &mut out.bytes,
@@ -108,12 +116,42 @@ pub(crate) fn without_metadata(bytes: &[u8], budget: usize) -> Result<Vec<u8>, R
             u32::try_from(at).map_err(|_| Rewrite::TooLarge)?,
         );
         link = at + 2 + 12 * entries;
-        next = following as usize;
-    }
-    if seen.is_empty() {
-        return Err(Unreadable);
     }
     Ok(out.bytes)
+}
+
+/// Whether bytes a JPEG page's streams or tables hold are also copied as
+/// they are for something else (another page's raw strip, a tag's value):
+/// that copy would keep the JPEG's EXIF or comments, and cleaning it would
+/// change the other page's pixels, so such a file isn't rewritten.
+fn shares_jpeg_bytes(pages: &[Directory], order: Order) -> Result<bool, Rewrite> {
+    let mut cleaned = Vec::new();
+    let mut verbatim = Vec::new();
+    for page in pages {
+        let jpeg_coded = page.compression(order) == Some(JPEG);
+        for range in page.data_ranges(order).ok_or(Rewrite::Unreadable)? {
+            if jpeg_coded {
+                cleaned.push(range);
+            } else {
+                verbatim.push(range);
+            }
+        }
+        for entry in &page.entries {
+            let Some(range) = entry.source else { continue };
+            match entry.tag {
+                // Rewritten, never copied.
+                STRIP_OFFSETS | STRIP_BYTE_COUNTS | TILE_OFFSETS | TILE_BYTE_COUNTS => {}
+                JPEG_TABLES if jpeg_coded => cleaned.push(range),
+                _ => verbatim.push(range),
+            }
+        }
+    }
+    let overlap = |(a, a_len): (usize, usize), (b, b_len): (usize, usize)| {
+        a < b.saturating_add(b_len) && b < a.saturating_add(a_len)
+    };
+    Ok(cleaned
+        .iter()
+        .any(|&jpeg| verbatim.iter().any(|&other| overlap(jpeg, other))))
 }
 
 /// The rewritten file, charged before each write, and the image data
@@ -129,8 +167,9 @@ struct Output {
 struct Copied {
     offset: usize,
     size: usize,
-    /// Cleaned as a JPEG stream (a JPEG-compressed page's).
-    jpeg: bool,
+    /// The compression of the page it was copied for, which says how it
+    /// was cleaned.
+    compression: Option<u32>,
     at: u32,
     written: u32,
 }
@@ -205,6 +244,8 @@ struct Entry {
     kind: u16,
     count: u32,
     value: Vec<u8>,
+    /// Where an out-of-line value was read from: (offset, size).
+    source: Option<(usize, usize)>,
 }
 
 impl Entry {
@@ -260,17 +301,21 @@ impl Directory {
             let kind = order.u16(bytes, entry + 2)?;
             let count = order.u32(bytes, entry + 4)?;
             let size = type_size(kind)?.checked_mul(count as usize)?;
-            let value = if size <= 4 {
-                bytes.get(entry + 8..entry + 8 + size)?.to_vec()
+            let (value, source) = if size <= 4 {
+                (bytes.get(entry + 8..entry + 8 + size)?.to_vec(), None)
             } else {
                 let offset = order.u32(bytes, entry + 8)? as usize;
-                bytes.get(offset..offset.checked_add(size)?)?.to_vec()
+                (
+                    bytes.get(offset..offset.checked_add(size)?)?.to_vec(),
+                    Some((offset, size)),
+                )
             };
             entries.push(Entry {
                 tag,
                 kind,
                 count,
                 value,
+                source,
             });
         }
         let next = order.u32(bytes, at + 2 + 12 * count)?;
@@ -281,16 +326,43 @@ impl Directory {
         self.entries.iter().find(|entry| entry.tag == tag)
     }
 
+    /// The page's compression, as its tag says.
+    fn compression(&self, order: Order) -> Option<u32> {
+        self.get(COMPRESSION)
+            .and_then(|entry| entry.numbers(order))
+            .and_then(|values| values.first().copied())
+    }
+
+    /// The (offset, size) of every strip and tile the page draws from.
+    fn data_ranges(&self, order: Order) -> Option<Vec<(usize, usize)>> {
+        let mut ranges = Vec::new();
+        for (offsets, counts) in [
+            (STRIP_OFFSETS, STRIP_BYTE_COUNTS),
+            (TILE_OFFSETS, TILE_BYTE_COUNTS),
+        ] {
+            let Some(at) = self.get(offsets).and_then(|entry| entry.numbers(order)) else {
+                continue;
+            };
+            let sizes = self.get(counts)?.numbers(order)?;
+            if sizes.len() != at.len() {
+                return None;
+            }
+            ranges.extend(
+                at.into_iter()
+                    .zip(sizes)
+                    .map(|(at, size)| (at as usize, size as usize)),
+            );
+        }
+        Some(ranges)
+    }
+
     /// Writes the page's image data (each strip or tile once, however many
     /// directories share it), its values and then its directory at the end
     /// of `out`, the offsets and counts pointing at the copies; gives where
     /// the directory starts.
     fn write(mut self, bytes: &[u8], order: Order, out: &mut Output) -> Result<usize, Rewrite> {
         use Rewrite::Unreadable;
-        let compression = self
-            .get(COMPRESSION)
-            .and_then(|entry| entry.numbers(order))
-            .and_then(|values| values.first().copied());
+        let compression = self.compression(order);
         if compression == Some(OLD_JPEG) {
             return Err(Unreadable);
         }
@@ -332,8 +404,9 @@ impl Directory {
                 } else {
                     std::borrow::Cow::Borrowed(data)
                 };
+                // Shared only between pages of the same compression.
                 let shared = out.copied.iter().find(|copy| {
-                    (copy.offset, copy.size, copy.jpeg) == (offset, size, jpeg_coded)
+                    (copy.offset, copy.size, copy.compression) == (offset, size, compression)
                         && out
                             .bytes
                             .get(copy.at as usize..(copy.at + copy.written) as usize)
@@ -351,7 +424,7 @@ impl Directory {
                 out.copied.push(Copied {
                     offset,
                     size,
-                    jpeg: jpeg_coded,
+                    compression,
                     at,
                     written,
                 });

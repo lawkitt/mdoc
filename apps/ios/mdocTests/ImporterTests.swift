@@ -207,6 +207,19 @@ final class ImporterTests: XCTestCase {
         XCTAssertThrowsError(try Importer(storage: storage).images([big], scanned: false))
     }
 
+    /// A page the camera couldn't encode or Photos couldn't load arrives as
+    /// nil: the batch is refused, saying so, and nothing is kept.
+    func testABatchWithAPageThatCouldntBeReadIsRefused() throws {
+        let jpeg = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).jpegData(withCompressionQuality: 0.9) { _ in })
+        for scanned in [true, false] {
+            XCTAssertThrowsError(try Importer(storage: storage).images([jpeg, nil], scanned: scanned)) { error in
+                XCTAssertEqual(error.localizedDescription, "A page couldn't be read, so nothing was imported. Try again.")
+            }
+        }
+        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        XCTAssertTrue(left.isEmpty, "\(left)")
+    }
+
     /// A batch with a page that can't be kept is refused whole, with the
     /// formats mdoc opens: no page goes missing without a word.
     func testAMixedBatchWithAPageItCantKeepIsRefusedWhole() throws {

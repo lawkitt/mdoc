@@ -352,7 +352,7 @@ final class AppModel {
     }
 
     /// Pages from the document camera or Photos.
-    func receiveImages(_ images: [Data], scanned: Bool) {
+    func receiveImages(_ images: [Data?], scanned: Bool) {
         do {
             if let pending = try importer.images(images, scanned: scanned) {
                 navigator.present(.importing(pending))

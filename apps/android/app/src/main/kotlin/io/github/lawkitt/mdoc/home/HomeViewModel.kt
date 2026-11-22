@@ -88,7 +88,8 @@ class HomeViewModel(
                 pages = saved.get<ArrayList<String>>(SCAN_PAGES).orEmpty().map(::File),
                 capture = saved.get<String>(SCAN_CAPTURE)?.let(::File),
                 returned = saved.get<Boolean>(SCAN_RETURNED) == true,
-                sequence = saved.get<Long>(SCAN_SEQUENCE) ?: 0,
+                // No saved state at all: a fresh start.
+                sequence = saved.get<Long>(SCAN_SEQUENCE) ?: -1,
             ),
         ) { Originals(core().storage) }
         scan.sweep()
