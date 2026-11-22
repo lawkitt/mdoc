@@ -490,12 +490,6 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     objects and their storage code go. *Blocked by:* items 10, 12. *Done
     when:* nothing in the core, iOS or Android names them, and the bindings
     are regenerated.
-15. **[Desktop] Prefactor: a live view's document identity is one type.**
-    *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Tabs, the
-    session and lookups name a document through one identity type instead of a
-    path, and the tab set becomes the set of live views. Behaviour unchanged;
-    lands on `main`. *Done when:* the workspace tests and headless renders are
-    unchanged.
 16. **[Desktop] Documents live in the Vault and save themselves.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The Vault opens at
     launch through the existing key flow. Every import, paste, new document
