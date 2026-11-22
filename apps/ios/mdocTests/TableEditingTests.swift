@@ -9,7 +9,7 @@ import XCTest
 /// row in place; Return, Tab and the arrows move between cells; each table
 /// control is one core edit and one undo step.
 @MainActor
-final class TableEditingTests: XCTestCase {
+final class TableEditingTests: XCTestCase, TextViewHarnessTests {
     static let text = """
         # Rent
 
@@ -21,91 +21,10 @@ final class TableEditingTests: XCTestCase {
         After the table.
         """
 
-    typealias Harness = EditToolbarTests.Harness
-
     func harness(text: String = text, rendered: Bool = true) throws -> Harness {
-        let (core, storage) = try Fixture.core()
-        let session = try core.library.importDocument(.text(text), title: "Rent", into: .newCase(name: "Rent"))
-        _ = try session.recognize(observer: TestObserver())
-        let model = DocumentViewModel(
-            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        let view = CandidateTextView()
-        view.frame = window.bounds
-        window.addSubview(view)
-        window.isHidden = false
-        let coordinator = MarkdownTextView.Coordinator(parent: LivePreviewTests.textView(model, rendered: rendered))
-        coordinator.attach(to: view)
-        view.delegate = coordinator
-        let harness = Harness(
-            session: session, model: model, window: window, view: view, coordinator: coordinator, rendered: rendered)
-        show(harness)
-        model.enterEditMode()
-        show(harness)
-        XCTAssertTrue(view.isEditMode)
+        let harness = try textViewHarness(text: text, title: "Rent", caseName: "Rent", rendered: rendered, editing: true)
+        XCTAssertTrue(harness.view.isEditMode)
         return harness
-    }
-
-    func show(_ harness: Harness) {
-        harness.coordinator.update(
-            harness.view, with: LivePreviewTests.textView(harness.model, rendered: harness.rendered),
-            dynamicTypeSize: .large, colorScheme: .light)
-        harness.view.layoutIfNeeded()
-    }
-
-    func select(_ harness: Harness, _ range: NSRange) {
-        harness.view.selectedRange = range
-        harness.coordinator.textViewDidChangeSelection(harness.view)
-        harness.coordinator.refreshToolbar(harness.view)
-    }
-
-    /// `act` is one core edit and one Formatting step: Undo takes back
-    /// exactly it, Redo brings it again.
-    func assertOneStep(_ harness: Harness, file: StaticString = #filePath, line: UInt = #line, _ act: () -> Void) {
-        let before = harness.shown
-        let sent = harness.coordinator.bridge.sent
-        act()
-        let after = harness.shown
-        XCTAssertNotEqual(after, before, "nothing changed", file: file, line: line)
-        XCTAssertEqual(harness.coordinator.bridge.sent, sent + 1, "one core edit", file: file, line: line)
-        XCTAssertEqual(coreText(harness), after, file: file, line: line)
-        XCTAssertEqual(harness.session.snapshot().undoStep?.label, "Formatting", file: file, line: line)
-        harness.model.undoTapped()
-        show(harness)
-        XCTAssertEqual(harness.shown, before, "one undo step", file: file, line: line)
-        harness.model.redoTapped()
-        show(harness)
-        XCTAssertEqual(harness.shown, after, file: file, line: line)
-    }
-
-    func caret(_ harness: Harness, at needle: String, offset: Int = 0) {
-        select(harness, NSRange(location: harness.string.range(of: needle).location + offset, length: 0))
-    }
-
-    func coreText(_ harness: Harness) -> String {
-        harness.session.snapshot().markdown
-    }
-
-    /// One change as UIKit makes it; false when edit mode made it itself.
-    @discardableResult
-    func change(_ harness: Harness, _ range: NSRange, _ text: String) -> Bool {
-        let view = harness.view
-        guard harness.coordinator.textView(view, shouldChangeTextIn: range, replacementText: text) else { return false }
-        view.textStorage.replaceCharacters(in: range, with: text)
-        view.selectedRange = NSRange(location: range.location + (text as NSString).length, length: 0)
-        harness.coordinator.textViewDidChange(view)
-        return true
-    }
-
-    func type(_ harness: Harness, _ text: String) {
-        for character in text {
-            change(harness, harness.view.selectedRange, String(character))
-        }
-    }
-
-    func backspace(_ harness: Harness) {
-        let caret = harness.view.selectedRange.location
-        change(harness, harness.string.rangeOfComposedCharacterSequence(at: caret - 1), "")
     }
 
     var grid: (Harness) throws -> MarkdownTableView = { harness in

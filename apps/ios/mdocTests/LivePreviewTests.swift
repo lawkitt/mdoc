@@ -11,7 +11,7 @@ import XCTest
 /// core's, one core edit each; and each keystroke restyles only its block,
 /// to exactly what a whole restyle draws.
 @MainActor
-final class LivePreviewTests: XCTestCase {
+final class LivePreviewTests: XCTestCase, TextViewHarnessTests {
     static let text = """
         # Lease
 
@@ -37,85 +37,10 @@ final class LivePreviewTests: XCTestCase {
         Last line.
         """
 
-    struct Harness {
-        let session: any mdoc.DocumentSession
-        let model: DocumentViewModel
-        let window: UIWindow
-        let view: CandidateTextView
-        let coordinator: MarkdownTextView.Coordinator
-        let rendered: Bool
-
-        var shown: String { view.textStorage.string }
-        var string: NSString { view.textStorage.string as NSString }
-    }
-
     func harness(text: String = text, rendered: Bool = true) throws -> Harness {
-        let (core, storage) = try Fixture.core()
-        let session = try core.library.importDocument(.text(text), title: "Lease", into: .newCase(name: "Lease"))
-        _ = try session.recognize(observer: TestObserver())
-        let model = DocumentViewModel(
-            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        let view = CandidateTextView()
-        view.frame = window.bounds
-        window.addSubview(view)
-        window.isHidden = false
-        let coordinator = MarkdownTextView.Coordinator(parent: Self.textView(model, rendered: rendered))
-        coordinator.attach(to: view)
-        view.delegate = coordinator
-        let harness = Harness(
-            session: session, model: model, window: window, view: view, coordinator: coordinator, rendered: rendered)
-        show(harness)
-        harness.model.enterEditMode()
-        show(harness)
-        XCTAssertTrue(view.isEditable)
+        let harness = try textViewHarness(text: text, title: "Lease", caseName: "Lease", rendered: rendered, editing: true)
+        XCTAssertTrue(harness.view.isEditable)
         return harness
-    }
-
-    static func textView(_ model: DocumentViewModel, rendered: Bool) -> MarkdownTextView {
-        MarkdownTextView(
-            snapshot: model.snapshot, selected: nil, rendered: rendered,
-            onCandidate: { _ in }, onReplace: { _ in }, onReviewNext: {},
-            edit: model.isEditing ? EditActions(model) : nil)
-    }
-
-    func show(_ harness: Harness, rendered: Bool? = nil) {
-        harness.coordinator.update(
-            harness.view, with: Self.textView(harness.model, rendered: rendered ?? harness.rendered), dynamicTypeSize: .large,
-            colorScheme: .light)
-        harness.view.layoutIfNeeded()
-    }
-
-    /// The reader puts the caret at `location`.
-    func caret(_ harness: Harness, at location: Int) {
-        harness.view.selectedRange = NSRange(location: location, length: 0)
-        harness.coordinator.textViewDidChangeSelection(harness.view)
-    }
-
-    /// One change as UIKit makes it, at the caret; refused when the core
-    /// made it itself.
-    @discardableResult
-    func change(_ harness: Harness, _ range: NSRange, _ text: String) -> Bool {
-        let view = harness.view
-        guard harness.coordinator.textView(view, shouldChangeTextIn: range, replacementText: text) else { return false }
-        view.textStorage.replaceCharacters(in: range, with: text)
-        view.selectedRange = NSRange(location: range.location + (text as NSString).length, length: 0)
-        harness.coordinator.textViewDidChange(view)
-        return true
-    }
-
-    func type(_ harness: Harness, _ text: String) {
-        for character in text {
-            let at = harness.view.selectedRange
-            change(harness, at, String(character))
-        }
-    }
-
-    /// ⌫ as UIKit sends it: the character before the caret.
-    func backspace(_ harness: Harness) {
-        let caret = harness.view.selectedRange.location
-        let range = harness.string.rangeOfComposedCharacterSequence(at: caret - 1)
-        change(harness, range, "")
     }
 
     func location(of needle: String, in harness: Harness) -> Int {
@@ -128,10 +53,6 @@ final class LivePreviewTests: XCTestCase {
 
     func decoration(_ harness: Harness, at location: Int) -> LineDecoration? {
         harness.view.textStorage.attribute(.mdocDecoration, at: location, effectiveRange: nil) as? LineDecoration
-    }
-
-    func coreText(_ harness: Harness) -> String {
-        harness.session.snapshot().markdown
     }
 
     // MARK: The caret on an empty line (ADR 0110)
@@ -290,7 +211,7 @@ final class LivePreviewTests: XCTestCase {
         for size in [DynamicTypeSize.large, .accessibility5] {
             let harness = try harness(text: text)
             harness.coordinator.update(
-                harness.view, with: Self.textView(harness.model, rendered: true), dynamicTypeSize: size, colorScheme: .light)
+                harness.view, with: Harness.textView(harness.model, rendered: true), dynamicTypeSize: size, colorScheme: .light)
             harness.view.layoutIfNeeded()
             func x(of word: String) throws -> CGFloat {
                 harness.view.layoutIfNeeded()

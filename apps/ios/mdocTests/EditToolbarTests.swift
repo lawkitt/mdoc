@@ -9,7 +9,7 @@ import XCTest
 /// buttons show on where the caret is in what they make and off where they
 /// cannot apply.
 @MainActor
-final class EditToolbarTests: XCTestCase {
+final class EditToolbarTests: XCTestCase, TextViewHarnessTests {
     static let text = """
         # Lease
 
@@ -25,96 +25,22 @@ final class EditToolbarTests: XCTestCase {
         Last line.
         """
 
-    struct Harness {
-        let session: any mdoc.DocumentSession
-        let model: DocumentViewModel
-        let window: UIWindow
-        let view: CandidateTextView
-        let coordinator: MarkdownTextView.Coordinator
-        let rendered: Bool
-
-        var shown: String { view.textStorage.string }
-        var string: NSString { view.textStorage.string as NSString }
-        var toolbar: EditToolbarModel { coordinator.toolbar }
-    }
-
     /// `scanned`: the names are found and the first is replaced, so the
     /// text holds an alias and a proposed name.
     func harness(text: String = text, rendered: Bool = true, scanned: Bool = false) throws -> Harness {
-        let (core, storage) = try Fixture.core()
-        let session = try core.library.importDocument(.text(text), title: "Lease", into: .newCase(name: "Lease"))
-        _ = try session.recognize(observer: TestObserver())
-        if scanned, let first = try session.scan(observer: TestObserver()).candidates.first {
-            _ = try session.decide(first.id, .replace, scope: .this)
+        let harness = try textViewHarness(
+            text: text, title: "Lease", caseName: "Lease", rendered: rendered, editing: true
+        ) { session in
+            if scanned, let first = try session.scan(observer: TestObserver()).candidates.first {
+                _ = try session.decide(first.id, .replace, scope: .this)
+            }
         }
-        let model = DocumentViewModel(
-            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        let view = CandidateTextView()
-        view.frame = window.bounds
-        window.addSubview(view)
-        window.isHidden = false
-        let coordinator = MarkdownTextView.Coordinator(parent: LivePreviewTests.textView(model, rendered: rendered))
-        coordinator.attach(to: view)
-        view.delegate = coordinator
-        let harness = Harness(
-            session: session, model: model, window: window, view: view, coordinator: coordinator, rendered: rendered)
-        show(harness)
-        model.enterEditMode()
-        show(harness)
-        XCTAssertTrue(view.isEditMode)
+        XCTAssertTrue(harness.view.isEditMode)
         return harness
-    }
-
-    func show(_ harness: Harness) {
-        harness.coordinator.update(
-            harness.view, with: LivePreviewTests.textView(harness.model, rendered: harness.rendered),
-            dynamicTypeSize: .large, colorScheme: .light)
-        harness.view.layoutIfNeeded()
-    }
-
-    /// The reader puts the caret (or a selection) at `range`; the toolbar
-    /// asks the core.
-    func select(_ harness: Harness, _ range: NSRange) {
-        harness.view.selectedRange = range
-        harness.coordinator.textViewDidChangeSelection(harness.view)
-        harness.coordinator.refreshToolbar(harness.view)
-    }
-
-    func caret(_ harness: Harness, at needle: String, offset: Int = 0) {
-        select(harness, NSRange(location: harness.string.range(of: needle).location + offset, length: 0))
     }
 
     func run(_ harness: Harness, _ command: EditCommand) {
         harness.toolbar.run(command)
-    }
-
-    func coreText(_ harness: Harness) -> String {
-        harness.session.snapshot().markdown
-    }
-
-    /// `act` is one core edit and one Formatting step: the view's string is
-    /// the core's, Undo takes back exactly it, Redo brings it again.
-    func assertOneStep(
-        _ harness: Harness, file: StaticString = #filePath, line: UInt = #line, _ act: () -> Void
-    ) {
-        let before = harness.shown
-        let sent = harness.coordinator.bridge.sent
-        act()
-        let after = harness.shown
-        let selection = harness.view.selectedRange
-        // The command's own selection again, once undone and redone.
-        defer { select(harness, selection) }
-        XCTAssertNotEqual(after, before, "nothing changed", file: file, line: line)
-        XCTAssertEqual(harness.coordinator.bridge.sent, sent + 1, "one core edit", file: file, line: line)
-        XCTAssertEqual(coreText(harness), after, file: file, line: line)
-        XCTAssertEqual(harness.session.snapshot().undoStep?.label, "Formatting", file: file, line: line)
-        harness.model.undoTapped()
-        show(harness)
-        XCTAssertEqual(harness.shown, before, "one undo step", file: file, line: line)
-        harness.model.redoTapped()
-        show(harness)
-        XCTAssertEqual(harness.shown, after, file: file, line: line)
     }
 
     // MARK: The toolbar
