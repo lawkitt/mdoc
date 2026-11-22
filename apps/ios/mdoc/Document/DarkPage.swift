@@ -25,6 +25,23 @@ private struct DarkPageEffect: ViewModifier {
     }
 }
 
+/// A page of the Original is on screen: the PDF, the rendered Word file
+/// or a picture, not a password card or "Rendering…". The Dark page hint
+/// waits for it, so it never speaks of a page nobody sees.
+struct OriginalPageShowsKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+extension View {
+    /// This view is one of the Original's pages (`OriginalPageShowsKey`).
+    func originalPage() -> some View {
+        preference(key: OriginalPageShowsKey.self, value: true)
+    }
+}
+
 /// Whether the Original's page shows dark: the preference (on by default,
 /// #1070), only while the app is dark.
 struct DarkPageState {

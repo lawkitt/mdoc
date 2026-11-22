@@ -11,10 +11,10 @@ final class DarkPageUITests: XCTestCase {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "an iPad shows the Original beside the text")
     }
 
-    /// The app in Dark from its own Settings: the device's appearance, set
-    /// from a test, did not reach the app on the hosted runner.
+    /// The app in `theme` from its own Settings: the device's appearance,
+    /// set from a test, did not reach the app on the hosted runner.
     @MainActor
-    private func launchDark(showsTips: Bool) -> XCUIApplication {
+    private func launchDark(showsTips: Bool, theme choice: String = "Dark") -> XCUIApplication {
         let app = MdocUITest.launch(showsTips: showsTips)
         MdocUITest.revealSidebar(app)
         let settings = app.buttons["settings-button"].firstMatch
@@ -22,7 +22,7 @@ final class DarkPageUITests: XCTestCase {
         settings.tap()
         let theme = app.descendants(matching: .any)["settings-theme"].firstMatch
         XCTAssertTrue(theme.waitForExistence(timeout: MdocUITest.timeout))
-        theme.buttons["Dark"].tap()
+        theme.buttons[choice].tap()
         app.buttons["Done"].firstMatch.tap()
         XCTAssertTrue(theme.waitForNonExistence(timeout: MdocUITest.timeout))
         let document = MdocUITest.documentRow(app)
@@ -81,5 +81,18 @@ final class DarkPageUITests: XCTestCase {
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { MdocUITest.isDark(at: paper) == true }, "still dark")
         // For good is TipKit's (`Hints.learn`): UI tests show every tip,
         // closed ones too, so a second look would find it again.
+    }
+
+    /// In a light app the page is light and no moon shows over it.
+    @MainActor
+    func testALightAppHasNoMoon() throws {
+        let app = launchDark(showsTips: true, theme: "Light")
+        app.segmentedControls["pane-picker"].buttons["Original"].tap()
+        let page = app.descendants(matching: .any)["docx-original"].firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 60))
+        let paper = CGPoint(x: page.frame.minX + 16, y: page.frame.minY + 120)
+        XCTAssertTrue(MdocUITest.wait(timeout: 10) { MdocUITest.isDark(at: paper) == false }, "a light page")
+        XCTAssertFalse(app.buttons["dark-page"].exists, "no moon")
+        XCTAssertFalse(app.buttons["dark-page-hint"].exists, "no hint")
     }
 }

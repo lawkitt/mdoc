@@ -27,8 +27,12 @@ struct OriginalView: View {
     var onImportUnlock: @MainActor (String) async -> Void = { _ in }
     /// The pane's own card unlocks a locked PDF; false for a wrong password.
     var onUnlockPDF: @MainActor (String) -> Bool = { _ in false }
+    /// The Dark page hint shows, for the moon's one bounce.
+    var onDarkPageHint: () -> Void = {}
     @State private var viewport = PageViewport()
     @State private var bottomInset: CGFloat = 0
+    /// A page is on screen (`OriginalPageShowsKey`).
+    @State private var pageShows = false
     @Environment(\.preferences) private var preferences
     @Environment(\.colorScheme) private var colorScheme
 
@@ -36,11 +40,11 @@ struct OriginalView: View {
         DarkPageState(preference: preferences.darkPage, colorScheme: colorScheme)
     }
 
-    /// The Dark page hint (#1070): the page shown dark, as it is by default
-    /// in a dark app, and the hints' one-at-a-time rule letting it show. It
-    /// says where the moon is that switches it.
+    /// The Dark page hint (#1070): a page on screen shown dark, as it is by
+    /// default in a dark app, and the hints' one-at-a-time rule letting it
+    /// show. It says where the moon is that switches it.
     private var hintShows: Bool {
-        dark.isOn && original != .none && importPrompt == nil
+        dark.isOn && pageShows && importPrompt == nil
             && Hints.shared.teachable.contains(.darkPage)
     }
 
@@ -72,6 +76,10 @@ struct OriginalView: View {
             .ignoresSafeArea(.container, edges: reachesBottom ? .bottom : [])
             // Read outside the page, where the home indicator is still unsafe.
             .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { bottomInset = $0 }
+            .onPreferenceChange(OriginalPageShowsKey.self) { pageShows = $0 }
+            .onChange(of: hintShows, initial: true) { _, shows in
+                if shows { onDarkPageHint() }
+            }
     }
 
     @ViewBuilder
@@ -129,6 +137,7 @@ private struct PDFOriginal: View {
             } else {
                 PDFKitView(document: document, viewport: viewport)
                     .darkPage(darkPage)
+                    .originalPage()
                     .accessibilityLabel(Text("Original PDF"))
                     .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
             }
@@ -173,6 +182,7 @@ private struct ZoomablePage: View {
     var body: some View {
         ZoomableImageView(url: url, viewport: viewport)
             .darkPage(darkPage)
+            .originalPage()
             .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
     }
 }
