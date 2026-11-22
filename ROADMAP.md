@@ -219,7 +219,7 @@ Features are frozen until items 13–19 land (Q4).
 
 37. **[Mobile] Vault, Projects and navigation redesign.** *Promoted from the
     2026-11-22 grill ([ADR 0125](docs/adr/0125-unified-encrypted-vault-and-projects.md));
-    folds in item 22.* Implemented as part of **Vault, Projects & Tabs
+    folds in item 22.* Implemented as part of **Vault & Projects
     (Milestone 1)** below. *Done when:* Milestone 1's mobile slices land and
     pass device checks.
 
@@ -376,86 +376,134 @@ to the maintainer, never a raised ceiling.
     *Blocked by:* item 7. *Done when:* #1021's Android half and #1022 are
     fixed and camera JPEG import is no slower.
 
-## Vault, Projects & Tabs (Milestone 1)
+## Vault & Projects (Milestone 1)
 
-Unified encrypted Vault and redesigned Project/Document/Tab workspace across
-desktop, iOS, and Android ([ADR 0125](docs/adr/0125-unified-encrypted-vault-and-projects.md)).
-Clean break from legacy `.case` files and loose mobile files (early
-development, no backwards-compatibility migrator).
+Unified encrypted Vault and redesigned Project and Document workspace across
+desktop, iOS, and Android ([ADR 0125](docs/adr/0125-unified-encrypted-vault-and-projects.md));
+spec and grill record in [#1091](https://github.com/lawkitt/mdoc/issues/1091).
+No migrator: a build with the Vault leaves the old `cases` folder, key and
+mobile files untouched, and its release notes say to restore outstanding
+replies before updating.
 
-1. **[Core] `crates/mdoc-vault`.** *From the 2026-11-22 grill (ADR 0125).*
-   Pure-Rust file-per-object + encrypted `manifest.enc` store under the
-   existing 32-byte OS key: single-shot `AES-256-GCM` for structured files
-   (`manifest.enc`, `projects/`, `docs/*/doc.enc`, `replies/`), 1 MiB chunked
-   `AES-256-GCM` for `original.enc` (locked source files kept locked),
-   per-mention Keep/Not-a-name state, document-local mappings for Unfiled docs,
-   cached `ready_snapshot`, alias reconciliation on move, and safe Project
-   deletion. *Done when:* `mdoc-vault` passes unit, concurrency, and stress
-   tests and replaces `mdoc_store::cases` and `mdoc_ffi::library` storage.
-2. **[Desktop] Persistent Vault sidebar, horizontal tab bar and Project overview.**
-   *From the 2026-11-22 grill (ADR 0125).* Rename Case → Project everywhere;
-   left sidebar becomes a stable Vault tree (Projects expandable to open and
-   closed docs, Unfiled, open External `.md`); horizontal top tab bar holds
-   Documents, AI Replies, and 3-segment Project Overview tabs (`Documents` ·
-   `Replies` · `Names`); Vault docs autosave; `session.json` stores opaque
-   UUIDs; Home becomes a focused launcher; drag-onto-Project moves docs;
-   menu bar Shelf reads `ready_snapshot`. *Done when:* headless renders and
-   GUI tests pass on macOS and Windows.
+1. **[Core] `crates/mdoc-vault`.** *From the 2026-11-22 grills (ADR 0125).*
+   One `AES-256-GCM` file per object under the existing OS key, random
+   32-hex names, JSON records. Object files are the only truth:
+   `manifest.enc` is a cache checked at open against the directory and
+   per-file stamps, rewritten (debounced) only when a summary changes, and
+   never written by the Restore extension. Each `original.enc` has its own
+   random key wrapped in its header, counter nonces, 1 MiB chunks, and no
+   metadata in the stream (locked sources stay locked). Identities carry
+   stable ids; members and Not-a-name owners are `DocumentId`s; a saved AI
+   Reply records the identity each alias token meant. Readiness is today's
+   `scanned && proposed == 0` kept as a fingerprint, with the AI text
+   computed on demand and re-checked against the Project's names on every
+   outbound read; no stored snapshot. Also per-mention Keep/Not-a-name
+   state, document-local mappings for Unfiled, alias reconciliation on move,
+   safe Project deletion, and each document's SHA-256 of its source bytes,
+   so a repeated import offers Open existing (default) or Import again. *Done when:* `mdoc-vault` passes unit, concurrency,
+   crash-between-writes and stress tests and replaces `mdoc_store::cases`
+   and `mdoc_ffi::library` storage.
+2. **[Desktop] Vault tree, Project page and recovery.** *From the 2026-11-22
+   grills (ADR 0125).* Rename Case → Project everywhere. The sidebar becomes
+   a stable Vault tree and the only document navigation: no tab bar, no
+   open/closed state; the 8 most recently viewed documents keep undo and
+   scroll, `⌃Tab` switches by recency, back/forward stay, and `⌘W` returns
+   to Home. A Reply is reached from the Project page and Home's Continue
+   strip. Projects start collapsed and
+   remember expansion; Unfiled shows its 7 most recent and Show all. A
+   3-segment Project page (`Documents` · `Replies` · `Names`); Vault
+   documents autosave; opening a `.md` imports a copy (no External mode, no
+   save prompts); Pseudonymize clipboard creates no document; Unfiled has
+   multi-select delete; `session.json` stores opaque ids; Home becomes a
+   focused launcher; drag-onto-Project moves documents. Settings › Vault
+   shows a recovery key (52 base32 characters in groups, and a QR; never
+   written to disk; one dismissible nudge after the first Project; no
+   rotation), the wrong-key screen accepts one and stores it as the Vault
+   key, and Export Project… writes Markdown and originals to a folder. *Done when:* headless
+   renders and GUI tests pass on macOS and Windows, and a Vault copied to a
+   fresh profile opens with its recovery key.
 3. **[Mobile] Vault sidebar, true Project page and Unfiled intake.** *From the
-   2026-11-22 grill (ADR 0125); folds in iOS items 22 and 37.* Rename Case →
+   2026-11-22 grills (ADR 0125); folds in iOS items 22 and 37.* Rename Case →
    Project; mirror desktop's Vault tree in the sidebar (`Home`, `To review`,
    inline `Projects`, `Unfiled` / `All Documents`); replace filtered-Documents
    drill-down with a true 3-segment Project page (`Documents` · `Replies` ·
    `Names`, plus safe Delete); default intake to Unfiled (or active Project);
+   Unfiled gets multi-select delete; an original is decrypted for viewing
+   into a cache wiped on close and at launch (in memory under about 16 MiB);
    keep iPhone single-doc nav and update `RestoreExtension` to read/save
    replies via `mdoc-vault`. *Done when:* iOS builds and passes device checks
    (Android follows on the shared FFI).
+4. **[Desktop] Later: a horizontal tab strip.** *From the 2026-11-22 second
+   grill.* Only if the tree proves short for working sets; needs no schema
+   change. It would take the existing title row, with a 36-pt document
+   header and no breadcrumb.
 
 ## Desktop AI Connector — MCP (Milestone 2)
 
-Local MCP connector for Claude Desktop and ChatGPT Desktop
+Local MCP connector for Claude Desktop and ChatGPT's desktop app
 ([ADR 0126](docs/adr/0126-local-mcp-ai-connector.md)). *Blocked by:* Milestone 1.
 
-1. **[Desktop] Authenticated local IPC and `mdoc-mcp` server.** *From the
-   2026-11-22 grill (ADR 0126); promotes Later's Agent access item.* Desktop
-   `mdoc` hosts a local IPC listener (`0600` Unix socket on macOS, user-SID
-   Named Pipe on Windows, per-install random token); thin `mdoc-mcp` binary
-   exposes 5 tools (`list_projects`, `list_documents`, `get_document`,
-   `get_project_aliases`, `deliver_reply`) over `stdio` (and optional
-   `127.0.0.1` Streamable-HTTP/SSE; candidate base: `craft-mcp-server`).
-   *Done when:* integration tests prove Unfiled exclusion, opt-in Project
-   gating, pseudonymized metadata, Ready-only reads, one-way restore (zero
-   originals in MCP responses), and closed/locked error handling.
-2. **[Desktop] Claude Desktop `.mcpb` bundle, ChatGPT Desktop setup and UI.**
-   *From the 2026-11-22 grill (ADR 0126).* Per-Project "Allow AI access"
-   toggle (off by default) with per-document exclude switch, live activity
-   indicator, non-focus-stealing `deliver_reply` banner/notification + open
-   Reply tab, one-click `.mcpb` bundle for Claude Desktop, and documented
-   validation on ChatGPT Desktop. *Done when:* end-to-end flows pass on both
-   Claude Desktop and ChatGPT Desktop.
+1. **[Desktop] Local IPC and `mdoc-mcp` shim.** *From the 2026-11-22 grills
+   (ADR 0126); promotes Later's Agent access item.* Desktop `mdoc` listens
+   on an owner-only Unix socket (macOS) or named pipe (Windows), with no
+   token; a thin `mdoc-mcp` shim, shipped inside the app, speaks MCP on
+   stdio only and exposes `list_documents`, `get_document` and
+   `deliver_reply` for the one AI project chosen in mdoc; `deliver_reply`
+   must name a document it read and is refused when that document is not
+   in the current AI project (candidate base: `craft-mcp-server`). *Done when:* integration tests prove that no tool
+   reaches another Project or Unfiled, only Ready documents are read and
+   each read re-checks the Project's names, the AI's label never comes from
+   the stored title, no response carries an original, and a closed or locked
+   app returns an error without launching.
+2. **[Desktop] AI project selector, registration and UI.** *From the
+   2026-11-22 grills (ADR 0126).* An always-visible AI project selector (off
+   by default) with a per-document exclude switch, live activity indicator,
+   non-focus-stealing `deliver_reply` notification that opens the Reply
+   and badges its Project's row,
+   and Settings › AI connector with Add to Claude Desktop and Add to
+   ChatGPT, which register the installed shim. Check then whether ChatGPT's
+   ordinary chats (not only its Codex host) call local servers, and whether
+   an `.mcpb` manifest can point at an installed binary. *Done when:*
+   end-to-end flows pass on both apps.
 
 ## Cross-Device Vault Transfer (Milestone 3)
 
-On-demand, zero-account encrypted transfer of Projects and Documents between
-desktop and mobile over pure-Rust `iroh`
-([ADR 0127](docs/adr/0127-cross-device-p2p-vault-transfer.md)). *Blocked by:*
-Milestone 1.
+On-demand transfer of a Document, a Project or everything between devices,
+as a bundle sealed under a one-time pairing key
+([ADR 0127](docs/adr/0127-cross-device-p2p-vault-transfer.md)): no accounts,
+servers, relays or new dependencies. *Blocked by:* Milestone 1.
 
-1. **[Core] `iroh` P2P transfer engine and non-destructive merge.** *From the
-   2026-11-22 grill (ADR 0127).* Versioned, chunked Project/Document bundle
-   double-encrypted with an ephemeral `AES-256-GCM` key from a one-time
-   QR/short-code ticket; includes Source Originals by default (opt-out
-   toggle); auto-expires after 1 transfer, cancel, or 5 minutes; merges
-   re-transferred `ProjectId` non-destructively (stable alias union +
-   conflict copy on diverged `DocumentId`); LAN/P2P first with configurable
-   "Local network only" relay opt-out. *Done when:* core tests cover full
-   round-trip, originals toggle, expiry, and conflict merge.
-2. **[Desktop & Mobile] Send / Receive QR and code UX.** *From the 2026-11-22
-   grill (ADR 0127).* Send sheet (QR + short code + total size + "Include
-   original files" toggle) and Receive flow (camera QR scan on mobile, code
-   entry on desktop, confirmation preview with size and merge/new choice) on
-   macOS, Windows, iOS, and Android, plus updated [privacy.md](docs/privacy.md).
-   *Done when:* real iPhone ↔ Mac transfers pass on LAN and cellular.
+1. **[Core] Sealed bundle and merge.** *From the 2026-11-22 grills (ADR
+   0127).* A versioned, chunked bundle sealed under the pairing key (a
+   128-bit one-time secret); scopes Document, Project and everything (all
+   Projects, Unfiled, the user-wide lists); originals included by default,
+   with a toggle. A Project merges only when no alias, current or earlier,
+   points at two identity ids, and otherwise arrives as a separate copy;
+   nothing rewrites aliases. Each document records the content hash of its
+   last send or receive: local unchanged means replace, incoming unchanged
+   means skip, both changed means a conflict copy. Replies union by id.
+   *Done when:* file round-trips with no network cover each scope, the
+   originals toggle, tampering and truncation, a compatible merge, the
+   collision copy and the three hash cases.
+2. **[Core] Local-network carrier.** *From the 2026-11-22 grills (ADR
+   0127).* A direct TCP connection; the device that shows the code listens,
+   and the code carries its addresses. A code is good for one connection
+   made within 5 minutes; a transfer in flight runs to completion or cancel.
+   Check the Windows and macOS firewall prompts and the iOS Local Network
+   permission. *Done when:* two processes complete a transfer on loopback and
+   an expired or used code is refused.
+3. **[Desktop & Mobile] Send and receive.** *From the 2026-11-22 grills (ADR
+   0127).* Either device shows the QR and a phone scans it; two desktops
+   paste the pairing code (80–100 characters, never typed); Save bundle to
+   file and Open bundle file; the receiver previews names, counts and size,
+   and whether it merges or arrives as a copy, and why;
+   [privacy.md](docs/privacy.md) updated. *Done when:* real iPhone ↔ Mac and
+   iPhone ↔ Windows transfers pass on one network, and a file transfer
+   passes with networking off.
+4. **[Core] Later: transfers across networks.** `iroh` carrying the same
+   bundle through a relay mdoc runs or pays for: no default features (they
+   use private Apple APIs), no `iroh-blobs`, and three scoped `Unlicense`
+   exceptions in `deny.toml` for its browser-only crates.
 
 ## Later
 

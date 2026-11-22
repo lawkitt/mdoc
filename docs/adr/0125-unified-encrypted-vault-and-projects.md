@@ -4,17 +4,20 @@ Status: Accepted, 2026-11-22.
 
 ## Why
 
-Desktop's loose-file model left source documents and Markdown scattered across folders with brittle paths in `.case` files, while mobile left Markdown and originals unencrypted in its sandbox and auto-created throwaway cases on every import. Renaming **Case** to **Project** ends the collision with `Case number` (`CASE_1`) and makes Projects explicit multi-document containers.
+Desktop scattered documents and originals behind brittle paths in `.case` files; mobile made a throwaway case per import and encrypted only mappings. **Project** replaces **Case**, ending the clash with `Case number`.
 
-A shared GUI-free crate (`crates/mdoc-vault`) becomes the single store for desktop, iOS, Android, the menu bar shelf, MCP, and device transfer. Everything at rest is encrypted with `AES-256-GCM` under the existing 32-byte OS Keychain/DPAPI key using opaque UUID filenames: single-shot `AES-256-GCM` for structured files (`manifest.enc`, `projects/`, `docs/*/doc.enc`, `replies/`) and 1 MiB chunked `AES-256-GCM` for `original.enc` so large scans never OOM phones. Each Project holds **Documents** (one editable Markdown, per-mention review state, cached `ready_snapshot`, optional immutable Source Original) and **AI Replies**; standalone documents live **Unfiled** with document-local mappings. Vault docs autosave; desktop keeps external `.md` open/export.
+`crates/mdoc-vault` is the one store for desktop, mobile, the shelf, MCP and transfer: an `AES-256-GCM` file per object under the existing OS-held key. Object files are the only truth; `manifest.enc` is a cache rebuilt from them, so a crash between writes costs nothing. Each Source Original has its own wrapped random key, so chunk nonces are plain counters. Identities carry stable ids, and a saved AI Reply records which identity each alias meant. Readiness is re-checked against the Project's names whenever text leaves.
+
+Costs accepted: mdoc keeps every import, original and mapping until deleted, where a case was the consent to store; the key is the only way in, so desktop offers a recovery key and Export Project.
 
 ## Rejected
 
-- **SQLCipher / SQLite:** adds C cross-compilation across four platforms and risks iOS App Group `0xdead10cc` lock kills in `RestoreExtension`.
-- **HKDF + per-object DEK envelope:** unnecessary complexity for a single-user local threat model; a future passphrase only wraps the single 32-byte key.
-- **Reference Attachments (3rd item type):** turns mdoc into a generic file cabinet outside AI preparation.
-- **Legacy `.case` migration:** early development with no production users; clean break.
+- **SQLite / SQLCipher:** C cross-compilation; lock kills in the iOS Restore extension.
+- **One key with random nonce prefixes for originals:** passes NIST's collision bound near 92,000 files.
+- **Editing external `.md` in place:** a second document model; a `.md` imports a copy.
+- **A desktop tab bar at first:** tabs restore the open/closed split the tree removes.
+- **Migrating `.case` files:** few installs; old folders stay untouched.
 
 ## Revisit when
 
-Multi-user shared vaults or full-text search across thousands of encrypted documents require a database index or per-project key sharing.
+Shared vaults or full-text search over thousands of documents need an index or per-Project keys.
