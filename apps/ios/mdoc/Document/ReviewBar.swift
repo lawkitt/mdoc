@@ -80,6 +80,13 @@ struct ReviewBar: View {
                 }
                 ReviewPager(model: model, candidate: candidate, nudge: drag)
                     .simultaneousGesture(cardPullGesture)
+                // The chips stay put while the names swipe (#1070), lined up
+                // with the card's words; a new card's cross-fade in.
+                ReviewCard(model: model, candidate: candidate, part: .controls)
+                    .id(candidate.id)
+                    .transition(.opacity)
+                    .padding(.horizontal, ReviewBarMetrics.cardInset + Space.s)
+                    .simultaneousGesture(cardPullGesture)
                 VStack(spacing: 0) {
                     // Always built, at no height while the bar is compact, so
                     // the bar knows where full is before it opens; spaced

@@ -24,6 +24,15 @@ enum AppTheme: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The sidebar's theme button and its menu (#1070).
+    var symbol: String {
+        switch self {
+        case .automatic: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
     var interfaceStyle: UIUserInterfaceStyle {
         switch self {
         case .automatic: .unspecified

@@ -111,6 +111,7 @@ struct DocxOriginalView: View {
                 onPassage: onOpenComment,
                 viewport: viewport)
             .darkPage(darkPage)
+            .originalPage()
             .accessibilityLabel(Text("Original document"))
             .accessibilityIdentifier("docx-original")
             .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }

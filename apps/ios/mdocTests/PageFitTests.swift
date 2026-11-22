@@ -1,4 +1,5 @@
 import PDFKit
+import SwiftUI
 import UIKit
 import XCTest
 @testable import mdoc
@@ -99,4 +100,51 @@ final class PageFitTests: XCTestCase {
         XCTAssertNotEqual(control(), .grow)
         _ = window
     }
+
+    // MARK: Pictures
+
+    /// A tall picture, as a phone screenshot is (1320 × 2868 px), written
+    /// to a file the view reads.
+    private static func pictureFile() throws -> URL {
+        let size = CGSize(width: 1320, height: 2868)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: size.width, height: 200))
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("page-fit-\(UUID().uuidString).png")
+        try XCTUnwrap(image.pngData()).write(to: url)
+        return url
+    }
+
+    private func imageViews(in view: UIView) -> [UIImageView] {
+        (view as? UIImageView).map { [$0] } ?? view.subviews.flatMap(imageViews)
+    }
+
+    /// A picture's page is the width-fit height, never the picture's own
+    /// pixel height: tied with it, a re-layout (Dark page switching) could
+    /// take 2868 pt and leave the page in a screen of blank (#1070).
+    func testAPicturePageKeepsTheWidthFitHeight() throws {
+        let url = try Self.pictureFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let host = UIHostingController(rootView: ZoomableImageView(url: url, viewport: PageViewport()))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        window.rootViewController = host
+        window.isHidden = false
+        settle(host.view)
+        let image = try XCTUnwrap(imageViews(in: host.view).first)
+        let fit = image.bounds.width * 2868 / 1320
+        XCTAssertGreaterThan(image.bounds.width, 300)
+        XCTAssertFalse(image.hasAmbiguousLayout, "the height has one answer")
+        for height: CGFloat in [650, 700, 800] {
+            window.frame.size.height = height
+            settle(host.view)
+            XCTAssertEqual(image.bounds.height, fit, accuracy: 1, "at a \(height) pt window")
+        }
+        _ = window
+    }
 }
+

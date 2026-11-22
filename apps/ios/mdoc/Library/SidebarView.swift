@@ -273,8 +273,8 @@ struct SidebarView: View {
 
     // MARK: Bottom
 
-    /// Settings as a clear glass circle, New as the sidebar's primary
-    /// button, floating over a fade.
+    /// Settings and the theme as clear glass circles, New as the sidebar's
+    /// primary button, floating over a fade.
     private var bottomBar: some View {
         HStack {
             Button {
@@ -285,6 +285,7 @@ struct SidebarView: View {
             .secondaryAction(circle: true)
             .accessibilityLabel(Text("Settings"))
             .accessibilityIdentifier("settings-button")
+            ThemeButton()
             Spacer()
             Menu {
                 NewMenuItems(app: app)

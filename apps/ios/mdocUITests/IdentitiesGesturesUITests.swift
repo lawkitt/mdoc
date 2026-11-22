@@ -192,6 +192,31 @@ final class IdentitiesGesturesUITests: XCTestCase {
         XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "a drag from the inner edge closes it")
     }
 
+    /// A swipe left over a sidebar row closes the sidebar and opens nothing
+    /// (#1070): the row stays under the finger the whole way, which a tap
+    /// would take for a press, so its tap gives way to the drawer's swipe.
+    @MainActor
+    func testASwipeOverASidebarRowClosesItAndOpensNothing() throws {
+        let app = try openDocument()
+        let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
+        let text = app.textViews["document-text"]
+        for identifier in ["sidebar-documents", "document-row"] {
+            MdocUITest.revealSidebar(app)
+            XCTAssertTrue(sidebar.waitUntilHittable(timeout: MdocUITest.timeout))
+            XCTAssertTrue(settles(sidebar), "the sidebar at rest")
+            let row = app.descendants(matching: .any)[identifier].firstMatch
+            XCTAssertTrue(row.waitUntilHittable(timeout: MdocUITest.timeout), identifier)
+            // Right to left inside the row, as a thumb closes it.
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: row.frame.maxX - 40, dy: row.frame.midY))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -(row.frame.width - 80), dy: 0)),
+                        withVelocity: 400, thenHoldForDuration: 0.05)
+            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "\(identifier): the swipe closes the sidebar")
+            XCTAssertTrue(text.waitUntilHittable(timeout: 5), "\(identifier): the document stays open")
+            XCTAssertFalse(app.descendants(matching: .any)["add-menu"].exists, "\(identifier): the Documents page never opens")
+        }
+    }
+
     /// A sideways swipe anywhere on the document opens a drawer (ADR 0114):
     /// right the sidebar, left Identities; up and down scroll the text. The
     /// review card keeps its sideways swipe, and while editing only the

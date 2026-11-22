@@ -338,6 +338,19 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(belowFloor.physicalMemory, LaunchConfiguration.belowFloorMemory)
     }
 
+    /// Dark page is on until turned off (#1070): a store with no choice
+    /// says on, and an off chosen before stays off.
+    func testDarkPageIsOnUntilTurnedOff() throws {
+        let store = try XCTUnwrap(UserDefaults(suiteName: "mdoc-tests-\(UUID().uuidString)"))
+        XCTAssertTrue(Preferences(store: store).darkPage)
+        Preferences(store: store).darkPage = false
+        XCTAssertFalse(Preferences(store: store).darkPage, "the choice stays")
+        let state = DarkPageState(preference: Preferences(store: store).darkPage, colorScheme: .dark)
+        XCTAssertTrue(state.offered)
+        XCTAssertFalse(state.isOn)
+        XCTAssertFalse(DarkPageState(preference: true, colorScheme: .light).isOn, "a light app shows a light page")
+    }
+
     /// One store for every preference; UI tests keep theirs apart and clear
     /// them; what the app kept in its own defaults moves in once.
     func testPreferencesKeepOneStore() throws {
