@@ -16,19 +16,27 @@ in [CONTEXT.md](../../CONTEXT.md).
   a unique propagated one.
 - 2 MiB with 20,000 occurrences is the stress benchmark, not a cap.
 
-## Cases
+## Projects and Vault
 
-- Creating a case (Save as Case, or opening a folder as a case) is the
-  consent to store originals; without one, no mapping outlives its tab.
+- Projects (formerly Cases), Vault documents, AI replies, Source Originals, and
+  the Vault manifest are encrypted at rest with `AES-256-GCM` under the single
+  32-byte OS-held key using opaque UUID filenames ([ADR 0125](../adr/0125-unified-encrypted-vault-and-projects.md));
+  `original.enc` uses 1 MiB chunked `AES-256-GCM`, and password-protected
+  originals stay locked on disk.
 - Never write a plaintext key file or a plaintext fallback, not for dev
-  builds and not as an opt-in; without a keyring, cases are off.
-- There is no case-wide undo: a change reaches other open members as an edit
+  builds and not as an opt-in; without a keyring, the Vault is unavailable.
+- Desktop `session.json` stores opaque Vault UUIDs only (plus external `.md`
+  paths), never Project or Document titles.
+- Moving a document into a Project reconciles matching originals to the target
+  Project's aliases and updates the document text undoably; deleting a non-empty
+  Project always asks whether to move documents to Unfiled or delete them.
+- There is no project-wide undo: a change reaches other open members as an edit
   in each one's own history.
 - Encryption at rest protects against other people and casual inspection,
   not against malware running as the same user.
-- Pseudonymized text is still personal data; never call a case or its output
+- Pseudonymized text is still personal data; never call a Project or its output
   anonymous.
-- A case colour marks the case, never a state.
+- A Project colour marks the Project, never a state.
 
 ## Case key access
 
@@ -50,9 +58,15 @@ in [CONTEXT.md](../../CONTEXT.md).
 
 ## What never leaves the device
 
-- Detection, conversion, recognition and cases run on the device.
-- mdoc goes online only for the update check, a download the user chose,
-  and a page the user opens in the browser.
+- Detection, conversion, recognition, and the Vault run on the device.
+- mdoc goes online only for the update check, a model download the user chose,
+  a page the user opens in the browser, or an explicit user-initiated P2P vault
+  transfer ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md)) which
+  prefers direct LAN/P2P and allows a "Local network only" opt-out of relays.
+- The desktop MCP connector ([ADR 0126](../adr/0126-local-mcp-ai-connector.md))
+  exposes only `Ready` documents in opt-in Projects with pseudonymized titles;
+  Unfiled documents stay hidden, and `deliver_reply` restores exclusively inside
+  mdoc's UI without returning real names to the AI.
 - The update check is one unauthenticated GET to the GitHub Releases API
   with an mdoc User-Agent; it sends nothing but what the request itself
   carries.

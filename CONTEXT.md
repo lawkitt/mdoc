@@ -52,8 +52,7 @@ formatting** comes from several source ranges.
 **Document header**: the title-bar row above a document: breadcrumb, Source,
 panel toggle, ⋯ and the primary action.
 
-**Case section**: a collapsible sidebar group of one case's tabs; tabs
-without a case sit under "Open".
+**Project tree**: the persistent sidebar hierarchy of Projects (expandable to show all open or closed documents) and Unfiled documents; open tabs live in the desktop tab bar.
 
 ## Models and processing
 
@@ -99,13 +98,15 @@ kept apart from the Markdown handed off.
 **At-risk tab**: a tab that closing or quitting would lose something from:
 unsaved changes, an unsaved mapping, or both.
 
-**Case**: a named, saved mapping shared by a group of tabs, made with **Save
-as Case**. Avoid "matter" and "project".
+**Vault**: mdoc's encrypted local store (`crates/mdoc-vault`) holding Projects, Documents, AI Replies, and Source Originals under opaque UUID filenames.
 
-**Case key**: the 256-bit key encrypting saved cases, protected by the OS.
-The **quiet probe** is its launch read, which never shows a system dialog;
-the **dev key** is the one unsigned and debug macOS builds use, under its own
-Keychain service.
+**Unfiled**: a Vault document not assigned to any Project; keeps its own document-local mapping and replies.
+
+**AI reply**: a saved pseudonymized AI response linked to a Project or Unfiled document, viewable restored and promotable to a Document.
+
+**Project**: a named, encrypted workspace sharing one replacement mapping across its Documents and AI Replies. Avoid "case" and "matter".
+
+**Vault key**: the 256-bit OS-held key encrypting the Vault (macOS Keychain, Windows DPAPI, mobile Secure Enclave/Keystore). The **quiet probe** reads it at launch without dialogs; the **dev key** separates unsigned/debug macOS builds.
 
 **Keychain explainer**: the dialog shown before the first case-key access and
 after a denial.

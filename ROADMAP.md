@@ -217,12 +217,11 @@ Features are frozen until items 13–19 land (Q4).
     and Android follow (Later). One TestFlight build after. *Done when:*
     both merged and checked on the iPhone 17 Pro.
 
-37. **[Mobile] To grill: Document Vault and case and document tabs.** The
-    next big milestone: secure, well-organized local document storage and
-    a reorganized case and tabs UI, folding in item 22. Facts going in:
-    #1076 decision 2 (`DocumentID`, the one-document `Navigator`, the case
-    filter, the indexes, `SideDrawer`'s forwarded environment). *Done
-    when:* grilled.
+37. **[Mobile] Vault, Projects and navigation redesign.** *Promoted from the
+    2026-11-22 grill ([ADR 0125](docs/adr/0125-unified-encrypted-vault-and-projects.md));
+    folds in item 22.* Implemented as part of **Vault, Projects & Tabs
+    (Milestone 1)** below. *Done when:* Milestone 1's mobile slices land and
+    pass device checks.
 
 ## Android
 
@@ -376,6 +375,87 @@ to the maintainer, never a raised ceiling.
     refusal or scratch file; several picked photos stay one document.
     *Blocked by:* item 7. *Done when:* #1021's Android half and #1022 are
     fixed and camera JPEG import is no slower.
+
+## Vault, Projects & Tabs (Milestone 1)
+
+Unified encrypted Vault and redesigned Project/Document/Tab workspace across
+desktop, iOS, and Android ([ADR 0125](docs/adr/0125-unified-encrypted-vault-and-projects.md)).
+Clean break from legacy `.case` files and loose mobile files (early
+development, no backwards-compatibility migrator).
+
+1. **[Core] `crates/mdoc-vault`.** *From the 2026-11-22 grill (ADR 0125).*
+   Pure-Rust file-per-object + encrypted `manifest.enc` store under the
+   existing 32-byte OS key: single-shot `AES-256-GCM` for structured files
+   (`manifest.enc`, `projects/`, `docs/*/doc.enc`, `replies/`), 1 MiB chunked
+   `AES-256-GCM` for `original.enc` (locked source files kept locked),
+   per-mention Keep/Not-a-name state, document-local mappings for Unfiled docs,
+   cached `ready_snapshot`, alias reconciliation on move, and safe Project
+   deletion. *Done when:* `mdoc-vault` passes unit, concurrency, and stress
+   tests and replaces `mdoc_store::cases` and `mdoc_ffi::library` storage.
+2. **[Desktop] Persistent Vault sidebar, horizontal tab bar and Project overview.**
+   *From the 2026-11-22 grill (ADR 0125).* Rename Case → Project everywhere;
+   left sidebar becomes a stable Vault tree (Projects expandable to open and
+   closed docs, Unfiled, open External `.md`); horizontal top tab bar holds
+   Documents, AI Replies, and 3-segment Project Overview tabs (`Documents` ·
+   `Replies` · `Names`); Vault docs autosave; `session.json` stores opaque
+   UUIDs; Home becomes a focused launcher; drag-onto-Project moves docs;
+   menu bar Shelf reads `ready_snapshot`. *Done when:* headless renders and
+   GUI tests pass on macOS and Windows.
+3. **[Mobile] Vault sidebar, true Project page and Unfiled intake.** *From the
+   2026-11-22 grill (ADR 0125); folds in iOS items 22 and 37.* Rename Case →
+   Project; mirror desktop's Vault tree in the sidebar (`Home`, `To review`,
+   inline `Projects`, `Unfiled` / `All Documents`); replace filtered-Documents
+   drill-down with a true 3-segment Project page (`Documents` · `Replies` ·
+   `Names`, plus safe Delete); default intake to Unfiled (or active Project);
+   keep iPhone single-doc nav and update `RestoreExtension` to read/save
+   replies via `mdoc-vault`. *Done when:* iOS builds and passes device checks
+   (Android follows on the shared FFI).
+
+## Desktop AI Connector — MCP (Milestone 2)
+
+Local MCP connector for Claude Desktop and ChatGPT Desktop
+([ADR 0126](docs/adr/0126-local-mcp-ai-connector.md)). *Blocked by:* Milestone 1.
+
+1. **[Desktop] Authenticated local IPC and `mdoc-mcp` server.** *From the
+   2026-11-22 grill (ADR 0126); promotes Later's Agent access item.* Desktop
+   `mdoc` hosts a local IPC listener (`0600` Unix socket on macOS, user-SID
+   Named Pipe on Windows, per-install random token); thin `mdoc-mcp` binary
+   exposes 5 tools (`list_projects`, `list_documents`, `get_document`,
+   `get_project_aliases`, `deliver_reply`) over `stdio` (and optional
+   `127.0.0.1` Streamable-HTTP/SSE; candidate base: `craft-mcp-server`).
+   *Done when:* integration tests prove Unfiled exclusion, opt-in Project
+   gating, pseudonymized metadata, Ready-only reads, one-way restore (zero
+   originals in MCP responses), and closed/locked error handling.
+2. **[Desktop] Claude Desktop `.mcpb` bundle, ChatGPT Desktop setup and UI.**
+   *From the 2026-11-22 grill (ADR 0126).* Per-Project "Allow AI access"
+   toggle (off by default) with per-document exclude switch, live activity
+   indicator, non-focus-stealing `deliver_reply` banner/notification + open
+   Reply tab, one-click `.mcpb` bundle for Claude Desktop, and documented
+   validation on ChatGPT Desktop. *Done when:* end-to-end flows pass on both
+   Claude Desktop and ChatGPT Desktop.
+
+## Cross-Device Vault Transfer (Milestone 3)
+
+On-demand, zero-account encrypted transfer of Projects and Documents between
+desktop and mobile over pure-Rust `iroh`
+([ADR 0127](docs/adr/0127-cross-device-p2p-vault-transfer.md)). *Blocked by:*
+Milestone 1.
+
+1. **[Core] `iroh` P2P transfer engine and non-destructive merge.** *From the
+   2026-11-22 grill (ADR 0127).* Versioned, chunked Project/Document bundle
+   double-encrypted with an ephemeral `AES-256-GCM` key from a one-time
+   QR/short-code ticket; includes Source Originals by default (opt-out
+   toggle); auto-expires after 1 transfer, cancel, or 5 minutes; merges
+   re-transferred `ProjectId` non-destructively (stable alias union +
+   conflict copy on diverged `DocumentId`); LAN/P2P first with configurable
+   "Local network only" relay opt-out. *Done when:* core tests cover full
+   round-trip, originals toggle, expiry, and conflict merge.
+2. **[Desktop & Mobile] Send / Receive QR and code UX.** *From the 2026-11-22
+   grill (ADR 0127).* Send sheet (QR + short code + total size + "Include
+   original files" toggle) and Receive flow (camera QR scan on mobile, code
+   entry on desktop, confirmation preview with size and merge/new choice) on
+   macOS, Windows, iOS, and Android, plus updated [privacy.md](docs/privacy.md).
+   *Done when:* real iPhone ↔ Mac transfers pass on LAN and cellular.
 
 ## Later
 

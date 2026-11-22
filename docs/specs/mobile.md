@@ -79,11 +79,18 @@ in `apps/ios/README.md`.
 
 ## Navigation
 
-- The sidebar shows titles and case names only, never a document's text or
-  names.
-- Document text leaves the app only through Copy for AI and Share: no plain
-  Copy, Share, Look Up, Translate, Search Web or Writing Tools on it, in
-  edit mode too, where Copy writes a pasteboard only mdoc reads.
+- The sidebar mirrors desktop's Vault hierarchy (`Home`, `To review`, inline
+  `Projects`, and `Unfiled` / `All Documents`) and shows titles and project
+  names only, never a document's text or identities.
+- Tapping a Project opens a dedicated Project page titled with the Project's
+  name and color (`Documents` · `Replies` · `Names`), never an unlabeled
+  filtered Documents list.
+- New imports default to **Unfiled** (or the open Project when added from inside
+  one); iPhone keeps single-active-document navigation with no tab strip.
+- Document text leaves the app only through Copy for AI, Share, or explicit
+  user-initiated P2P transfer ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md)):
+  no plain Copy, Share, Look Up, Translate, Search Web or Writing Tools on it,
+  in edit mode too, where Copy writes a pasteboard only mdoc reads.
 - Copy for AI and Share are always in the title menu; until the document is
   ready they are off, with the reason under the title.
 - With more than one pane, a pinned row under the bar switches Text,
