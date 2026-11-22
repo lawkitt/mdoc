@@ -7,17 +7,29 @@ import XCTest
 /// and the app reads them. Each test fails with the Swift copy it replaced.
 final class CoreWiringTests: XCTestCase {
     private var storage: MdocStorage!
+    /// The cores a test opened, whose scheduled saves go before its storage.
+    private var cores: [Core] = []
 
     override func setUpWithError() throws {
         storage = try Fixture.temporaryStorage()
+        cores = []
     }
 
+    /// A decision schedules a save (`SaveScheduler.pause`): saved now, it
+    /// can't fire after the storage is gone and recreate its case lock in
+    /// the temporary folder while a later test watches that folder.
     override func tearDown() {
+        for core in cores {
+            try? core.library.saveChanges()
+        }
+        cores = []
         try? FileManager.default.removeItem(at: storage.root)
     }
 
     private func core() throws -> Core {
-        try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        cores.append(core)
+        return core
     }
 
     private static let letter = """
