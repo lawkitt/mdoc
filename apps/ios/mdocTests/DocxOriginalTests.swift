@@ -249,8 +249,12 @@ final class DocxOriginalTests: XCTestCase {
                 CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
                 withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
         }
-        let grown = all.map { ($0, openHeight($0)) }
-            .max { $0.1 - (folded[$0.0.commentID] ?? 0) < $1.1 - (folded[$1.0.commentID] ?? 0) }
+        func growth(_ card: CommentRailCard, _ open: CGFloat) -> CGFloat {
+            let closed: CGFloat = folded[card.commentID] ?? 0
+            return open - closed
+        }
+        let opened: [(CommentRailCard, CGFloat)] = all.map { card in (card, openHeight(card)) }
+        let grown: (CommentRailCard, CGFloat)? = opened.max { a, b in growth(a.0, a.1) < growth(b.0, b.1) }
         let (card, open) = try XCTUnwrap(grown)
         let closed = try XCTUnwrap(folded[card.commentID])
         XCTAssertGreaterThan(open, closed + 1, "a card that grows when it opens")
