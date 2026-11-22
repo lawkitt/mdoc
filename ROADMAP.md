@@ -385,58 +385,189 @@ No migrator: a build with the Vault leaves the old `cases` folder, key and
 mobile files untouched, and its release notes say to restore outstanding
 replies before updating.
 
-1. **[Core] `crates/mdoc-vault`.** *From the 2026-11-22 grills (ADR 0125).*
-   One `AES-256-GCM` file per object under the existing OS key, random
-   32-hex names, JSON records. Object files are the only truth:
-   `manifest.enc` is a cache checked at open against the directory and
-   per-file stamps, rewritten (debounced) only when a summary changes, and
-   never written by the Restore extension. Each `original.enc` has its own
-   random key wrapped in its header, counter nonces, 1 MiB chunks, and no
-   metadata in the stream (locked sources stay locked). Identities carry
-   stable ids; members and Not-a-name owners are `DocumentId`s; a saved AI
-   Reply records the identity each alias token meant. Readiness is today's
-   `scanned && proposed == 0` kept as a fingerprint, with the AI text
-   computed on demand and re-checked against the Project's names on every
-   outbound read; no stored snapshot. Also per-mention Keep/Not-a-name
-   state, document-local mappings for Unfiled, alias reconciliation on move,
-   safe Project deletion, and each document's SHA-256 of its source bytes,
-   so a repeated import offers Open existing (default) or Import again. *Done when:* `mdoc-vault` passes unit, concurrency,
-   crash-between-writes and stress tests and replaces `mdoc_store::cases`
-   and `mdoc_ffi::library` storage.
-2. **[Desktop] Vault tree, Project page and recovery.** *From the 2026-11-22
-   grills (ADR 0125).* Rename Case → Project everywhere. The sidebar becomes
-   a stable Vault tree and the only document navigation: no tab bar, no
-   open/closed state; the 8 most recently viewed documents keep undo and
-   scroll, `⌃Tab` switches by recency, back/forward stay, and `⌘W` returns
-   to Home. A Reply is reached from the Project page and Home's Continue
-   strip. Projects start collapsed and
-   remember expansion; Unfiled shows its 7 most recent and Show all. A
-   3-segment Project page (`Documents` · `Replies` · `Names`); Vault
-   documents autosave; opening a `.md` imports a copy (no External mode, no
-   save prompts); Pseudonymize clipboard creates no document; Unfiled has
-   multi-select delete; `session.json` stores opaque ids; Home becomes a
-   focused launcher; drag-onto-Project moves documents. Settings › Vault
-   shows a recovery key (52 base32 characters in groups, and a QR; never
-   written to disk; one dismissible nudge after the first Project; no
-   rotation), the wrong-key screen accepts one and stores it as the Vault
-   key, and Export Project… writes Markdown and originals to a folder. *Done when:* headless
-   renders and GUI tests pass on macOS and Windows, and a Vault copied to a
-   fresh profile opens with its recovery key.
-3. **[Mobile] Vault sidebar, true Project page and Unfiled intake.** *From the
-   2026-11-22 grills (ADR 0125); folds in iOS items 22 and 37.* Rename Case →
-   Project; mirror desktop's Vault tree in the sidebar (`Home`, `To review`,
-   inline `Projects`, `Unfiled` / `All Documents`); replace filtered-Documents
-   drill-down with a true 3-segment Project page (`Documents` · `Replies` ·
-   `Names`, plus safe Delete); default intake to Unfiled (or active Project);
-   Unfiled gets multi-select delete; an original is decrypted for viewing
-   into a cache wiped on close and at launch (in memory under about 16 MiB);
-   keep iPhone single-doc nav and update `RestoreExtension` to read/save
-   replies via `mdoc-vault`. *Done when:* iOS builds and passes device checks
-   (Android follows on the shared FFI).
-4. **[Desktop] Later: a horizontal tab strip.** *From the 2026-11-22 second
-   grill.* Only if the tree proves short for working sets; needs no schema
-   change. It would take the existing title row, with a 36-pt document
-   header and no breadcrumb.
+Items are in priority order: core, then mobile, then desktop; the mobile
+and desktop tracks can run side by side once the core items they need are
+done. Desktop items 16–22 share one integration branch, because the app is
+not coherent between them and `main` stays releasable; item 23 lands them.
+
+1. **[Core] The Vault opens and keeps Projects and Documents.** *From
+   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* A new GUI-free
+   crate, `mdoc-vault`, opened on a folder with an injected key: sealed
+   records in the case store's format, random 32-hex ids, JSON; Project and
+   Document records; the manifest as a cache checked against the directory and
+   per-file stamps; the write lock and the newest-revision rule. *Done when:*
+   through the Vault's interface, a Project and a Document survive a reopen; a
+   missing, stale or damaged manifest is rebuilt; a fault between two writes
+   loses nothing; a second handle on the folder sees the first's writes.
+2. **[Core] A review saves and comes back as it was.** *From
+   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The review model
+   serializes its per-mention state (applied spans, pending proposals, Keep,
+   Not a name, occurrence overrides), so a reopened document needs no rescan.
+   Nothing persists it today. *Done when:* a review holding each kind of
+   decision round-trips to an identical snapshot, in desktop's review and the
+   mobile core's.
+3. **[Core] Source Originals in the Vault.** *From
+   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Each original is
+   sealed under its own wrapped key, in 1 MiB chunks with counter nonces, and
+   streamed in and out without holding the file in memory. A viewing copy goes
+   to a folder the caller names; the source's SHA-256 is recorded and looked
+   up for repeated imports; a locked source stays locked. *Blocked by:* item
+   1. *Done when:* a 256 MiB original round-trips in bounded memory; a flipped
+   byte, a truncated file, swapped chunks and a file placed under another
+   document all fail to open; a second import of the same bytes finds the
+   first.
+4. **[Core] Mappings in the Vault.** *From
+   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Identities with
+   stable ids; an Unfiled document's local mapping; a move into or out of a
+   Project reconciles names to the target's aliases, rewrites the text and can
+   be undone; deleting a Project moves its documents to Unfiled or deletes
+   them; Project and user-wide Always and Never lists; members and Not-a-name
+   owners as Document ids. Ports the case's and the mobile move's rules.
+   *Blocked by:* item 1. *Done when:* the case store's and the mobile move's
+   behaviour tests pass against the Vault with ids in place of paths.
+5. **[Core] AI Replies bound to identities.** *From
+   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* A saved reply keeps
+   its text as received and, for each alias token, the identity id it meant;
+   restoring reads those identities' current originals; a reply on an Unfiled
+   document follows it into a Project. *Blocked by:* item 4. *Done when:* a
+   reply restores the same people after its document moves and its aliases are
+   rewritten; a forgotten identity stops restoring; a reply file written by a
+   second handle is picked up by the first.
+6. **[Core] Readiness checked when text leaves.** *From
+   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Ready stays
+   "scanned, and no proposals left", kept as a fingerprint; the AI text is
+   computed on demand and checked against the Project's known names on every
+   outbound read. *Blocked by:* item 4. *Done when:* a name another document
+   adds to the Project makes a closed Ready document not Ready, and the Vault
+   holds no stored copy of AI text.
+7. **[Mobile] The mobile core stores documents and Projects through the
+   Vault.** *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* New
+   exported objects beside the old ones, so both apps keep building until they
+   switch: documents and Projects by id, Unfiled intake, move, rename, delete,
+   summaries from the manifest, the review saved as item 2 defines, originals
+   as item 3 does. *Blocked by:* items 2, 3, 4, 6. *Done when:* the core's
+   tests and the parity goldens pass through the new objects, and the old
+   objects still pass theirs.
+8. **[Mobile] The mobile core saves and restores replies through the Vault.**
+   *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Saved replies
+   for a Project or an Unfiled document, restored through their bindings, and
+   the Restore extension's path: a handle that reads a Project and writes only
+   a reply. *Blocked by:* items 5, 7. *Done when:* a reply saved through a
+   second handle shows in the first's list and restores.
+9. **[iOS] iOS cuts over to the Vault with today's screens.** *From
+   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The app uses the new
+   objects. "Case" reads "Project"; a scan, file, paste or new document lands
+   in Unfiled, or in the Project it was started from, and no import makes a
+   Project; documents are known by id; an original is viewed from a cache
+   wiped on close and at launch; the old library's files stay untouched.
+   *Blocked by:* item 7. *Done when:* iOS unit and UI tests pass, and a device
+   check imports, reviews, shares and reopens a document.
+10. **[iOS] Restore extension and saved replies on the Vault.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Restore with mdoc
+    reads a Project and saves the reply through the Vault; the app lists it
+    and shows it restored. *Blocked by:* items 8, 9. *Done when:* a reply
+    shared to the extension on a device appears in the app, restored.
+11. **[iOS] Vault sidebar and Project page.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Sidebar: Search,
+    Home, To review, the top five Projects with All Projects and New Project,
+    Unfiled / All Documents. A Project page titled with its colour and name:
+    `Documents` · `Replies` · `Names`, a `+` that adds into it, and Delete
+    with the move-or-delete question. Unfiled has multi-select delete. Folds
+    in iOS items 22 and 37. *Blocked by:* items 9, 10. *Done when:* UI tests
+    cover the page, the delete question and multi-select delete, and a device
+    check passes.
+12. **[Android] Android cuts over to the Vault.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As items 9 and 10,
+    for the Android app and its Restore screen. *Blocked by:* items 7, 8.
+    *Done when:* the Android job passes, and an emulator run imports, reviews,
+    shares, reopens and restores.
+13. **[Android] Android sidebar and Project page.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As item 11.
+    *Blocked by:* item 12. *Done when:* the Android job passes with tests of
+    the Project page and the delete question.
+14. **[Mobile] Retire the old mobile library.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The old exported
+    objects and their storage code go. *Blocked by:* items 10, 12. *Done
+    when:* nothing in the core, iOS or Android names them, and the bindings
+    are regenerated.
+15. **[Desktop] Prefactor: a live view's document identity is one type.**
+    *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Tabs, the
+    session and lookups name a document through one identity type instead of a
+    path, and the tab set becomes the set of live views. Behaviour unchanged;
+    lands on `main`. *Done when:* the workspace tests and headless renders are
+    unchanged.
+16. **[Desktop] Documents live in the Vault and save themselves.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The Vault opens at
+    launch through the existing key flow. Every import, paste, new document
+    and opened `.md` becomes an Unfiled Vault document with its source kept as
+    the original. Documents autosave, with no dirty state, save prompt or quit
+    question; the session stores ids; a repeated import offers Open existing
+    or Import again. *Blocked by:* items 2, 3, 15. *Done when:* workspace
+    tests cover import, autosave across a restart and the repeated import;
+    headless renders of the repeated-import prompt.
+17. **[Desktop] Projects replace cases.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Projects on the
+    Vault with membership by id; a move reconciles aliases with an undoable
+    toast; deleting a non-empty Project asks move or delete; the user-wide
+    lists come from the Vault; "Project" in code and UI. *Blocked by:* items
+    4, 6, 16. *Done when:* the case flows' tests pass as Project flows;
+    headless renders of the delete question and the move toast.
+18. **[Desktop] The Vault tree is the navigation.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Sidebar: Search,
+    Home, Projects, Unfiled, with no Open section. Projects start collapsed
+    and remember expansion; Unfiled shows 7 recent, Show all and multi-select
+    delete; a drag onto a Project or Unfiled moves a document. The 8 most
+    recently viewed documents stay alive; `⌃Tab` switches by recency; `⌘W`
+    returns to Home. *Blocked by:* item 17. *Done when:* workspace tests cover
+    the tree staying put whatever is viewed, switching by recency and the
+    ninth view's eviction; headless renders of the tree.
+19. **[Desktop] Project page and saved Replies.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* A Project page
+    (header, `Documents` · `Replies` · `Names`) replaces the case page; a
+    pasted AI reply is saved and reopens restored. *Blocked by:* items 5, 17.
+    *Done when:* tests cover the three segments and a reply reopened after its
+    document moved; headless renders of each segment.
+20. **[Desktop] Home launcher and search over the Vault.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Home: drop zone,
+    quick actions and a Continue / Needs review strip, with no lists of
+    Projects or recents. The palette searches titles and Project names from
+    the manifest. Pseudonymize clipboard creates no document. *Blocked by:*
+    item 18. *Done when:* tests cover search and the clipboard action leaving
+    the Vault unchanged; headless renders of Home.
+21. **[Desktop] The menu bar shelf reads the Vault.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The shelf lists
+    Vault documents and shows one as ready only after the outbound check.
+    *Blocked by:* items 6, 17. *Done when:* the shelf's tests pass on the
+    Vault, and a name added by another document takes a row off ready.
+22. **[Desktop] Recovery key and Export Project.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Settings › Vault
+    shows the key as 52 base32 characters in groups and a QR, never written to
+    disk; one dismissible nudge after the first Project; the wrong-key screen
+    accepts a key and stores it as the Vault key; Export Project… writes
+    Markdown and originals to a folder. No rotation. *Blocked by:* items 3,
+    16. *Done when:* a Vault copied to a fresh profile opens with its recovery
+    key; an exported Project's files match its documents; headless renders of
+    the three screens.
+23. **[Desktop] Integrate and verify the desktop cut-over.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Items 16–22 merge
+    from their integration branch; the case store, recents and plain-file
+    persistence go; the old cases folder and key are never touched. *Blocked
+    by:* items 18, 19, 20, 21, 22. *Done when:* a test pins the old cases
+    folder untouched; headless renders of every screen pass on macOS and
+    Windows; native checks of drag-to-move, the recovery screens and autosave
+    across a quit pass on both.
+24. **[Docs] Words and release notes.** *From
+    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* `privacy.md` says
+    mdoc keeps what you import until you delete it; the glossary's tab and
+    case entries are rewritten; the release notes say to restore outstanding
+    replies before updating; no "Case" as a container remains in code, UI or
+    docs. *Blocked by:* items 14, 23. *Done when:* docs lint passes, and a
+    search for the old container term finds only the `CASE_1` category and
+    letter case.
+
+- **[Desktop] Later: a horizontal tab strip.** Only if the tree proves short
+  for working sets; needs no schema change. It would take the existing title
+  row, with a 36-pt document header and no breadcrumb.
 
 ## Desktop AI Connector — MCP (Milestone 2)
 
