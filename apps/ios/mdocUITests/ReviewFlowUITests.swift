@@ -13,6 +13,14 @@ final class ReviewFlowUITests: XCTestCase {
     /// mention leaves nothing to choose (#1036).
     @MainActor
     func testTheScopeChipShowsFromTwoMentions() throws {
+        // The document is written to the runner's own folder, which mdoc
+        // reads on the Simulator only; the device gate runs this class.
+        #if targetEnvironment(simulator)
+        let simulator = true
+        #else
+        let simulator = false
+        #endif
+        try XCTSkipUnless(simulator, "writes its document where only the Simulator's mdoc can read it")
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("scope-chip", isDirectory: true)
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
