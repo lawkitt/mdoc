@@ -314,7 +314,7 @@ final class MarkdownTextViewTests: XCTestCase {
         view.layoutIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         XCTAssertEqual(view.contentOffset.y, -view.adjustedContentInset.top, accuracy: 1, "still at the top")
-        XCTAssertNil(coordinator.pendingReveal)
+        XCTAssertNil(coordinator.reveal.pending)
     }
 
     /// Replacing can leave text that fits the screen. The scroll kept from
@@ -402,7 +402,7 @@ final class MarkdownTextViewTests: XCTestCase {
             // Where the name is drawn, after the pass the scroll's end brings.
             view.setNeedsLayout()
             view.layoutIfNeeded()
-            let rect = try XCTUnwrap(harness.coordinator.place(of: offsets.nsRange(sorted[index].range), in: view, onlyShown: true)?.rect)
+            let rect = try XCTUnwrap(view.place(of: offsets.nsRange(sorted[index].range), onlyShown: true)?.rect)
             let insets = view.adjustedContentInset
             let top = view.contentOffset.y + insets.top
             // Above the bar; room added below the end is no bar.
@@ -522,7 +522,7 @@ final class MarkdownTextViewTests: XCTestCase {
         let harness = try harness()
         let (request, draft) = try fixRequest(harness, inCell: false)
         show(harness, textView(draft, selected: request.candidate, wordsFix: request))
-        harness.coordinator.followWordsFix(harness.view)
+        harness.coordinator.fixSelection.follow(harness.view)
         let range = TextOffsets(draft.markdown).nsRange(request.wording)
         XCTAssertEqual(harness.view.selectedRange, range, "the name's words selected")
         let menu = harness.coordinator.textView(harness.view, editMenuForTextIn: range, suggestedActions: [])
@@ -543,8 +543,8 @@ final class MarkdownTextViewTests: XCTestCase {
         let table = try XCTUnwrap(harness.view.tableViews.first)
         XCTAssertGreaterThan(table.contentSize.width, table.bounds.width, "the table runs past the screen")
         table.setContentOffset(.zero, animated: false)
-        harness.coordinator.followWordsFix(harness.view)
-        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        harness.coordinator.fixSelection.follow(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixSelection.holder as? CellTextView)
         XCTAssertTrue(cell.superview === table)
         XCTAssertFalse(table.isScrollEnabled, "no sideways scroll while fixing")
         let shown = CGRect(origin: table.contentOffset, size: table.bounds.size)
@@ -552,9 +552,9 @@ final class MarkdownTextViewTests: XCTestCase {
         XCTAssertLessThanOrEqual(cell.frame.maxX, shown.maxX + 0.5, "the cell's end on screen")
 
         show(harness, textView(harness.session.snapshot()))
-        harness.coordinator.followWordsFix(harness.view)
+        harness.coordinator.fixSelection.follow(harness.view)
         XCTAssertTrue(table.isScrollEnabled, "the table scrolls again")
-        XCTAssertNil(harness.coordinator.fixHolder)
+        XCTAssertNil(harness.coordinator.fixSelection.holder)
     }
 
     /// A cell wider than the screen (a long identifier widens its column)
@@ -568,11 +568,11 @@ final class MarkdownTextViewTests: XCTestCase {
         show(harness, textView(draft, selected: request.candidate, wordsFix: request))
         let table = try XCTUnwrap(harness.view.tableViews.first)
         table.setContentOffset(.zero, animated: false)
-        harness.coordinator.followWordsFix(harness.view)
-        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        harness.coordinator.fixSelection.follow(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixSelection.holder as? CellTextView)
         XCTAssertGreaterThan(cell.frame.width, table.bounds.width, "the cell runs past the screen")
         XCTAssertTrue(table.isScrollEnabled, "the rest of the cell stays in reach")
-        XCTAssertNil(harness.coordinator.fixTable)
+        XCTAssertNil(harness.coordinator.fixSelection.table)
         let range = try XCTUnwrap(cell.selectedTextRange)
         let words = cell.selectionRects(for: range).reduce(CGRect.null) { $0.union($1.rect) }
         let shown = CGRect(origin: table.contentOffset, size: table.bounds.size)
@@ -591,12 +591,12 @@ final class MarkdownTextViewTests: XCTestCase {
         let (request, draft) = try fixRequest(harness, inCell: true)
         let fixing = textView(draft, selected: request.candidate, wordsFix: request)
         show(harness, fixing)
-        harness.coordinator.followWordsFix(harness.view)
-        let cell = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        harness.coordinator.fixSelection.follow(harness.view)
+        let cell = try XCTUnwrap(harness.coordinator.fixSelection.holder as? CellTextView)
         // The handles narrow onto the surname.
         let surname = (cell.textStorage.string as NSString).range(of: "Bennett")
         cell.selectedRange = surname
-        harness.coordinator.fixSelectionChanged(cell)
+        harness.coordinator.fixSelection.selectionChanged(cell)
 
         harness.coordinator.update(harness.view, with: fixing, dynamicTypeSize: .large, colorScheme: .dark)
         harness.view.layoutIfNeeded()
@@ -604,9 +604,9 @@ final class MarkdownTextViewTests: XCTestCase {
 
         let table = try XCTUnwrap(harness.view.tableViews.first)
         XCTAssertFalse(table.isScrollEnabled, "the table holds still again")
-        let holder = try XCTUnwrap(harness.coordinator.fixHolder as? CellTextView)
+        let holder = try XCTUnwrap(harness.coordinator.fixSelection.holder as? CellTextView)
         XCTAssertTrue(holder.superview === table)
         XCTAssertEqual(holder.selectedRange, surname, "the words the handles held")
-        XCTAssertNotNil(harness.coordinator.shownFix, "still fixing")
+        XCTAssertNotNil(harness.coordinator.fixSelection.shown, "still fixing")
     }
 }

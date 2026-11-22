@@ -112,7 +112,7 @@ final class LivePreviewTests: XCTestCase, TextViewHarnessTests {
         harness.window.makeKeyAndVisible()
         XCTAssertTrue(view.becomeFirstResponder())
         let inset = view.contentInset.bottom
-        coordinator.setToolbarRoom(300, in: view)
+        coordinator.keyboard.setToolbarRoom(300, in: view)
         XCTAssertEqual(view.contentInset.bottom, inset + 300)
         // The caret on a line the toolbar's room covers.
         view.layoutIfNeeded()
@@ -120,7 +120,7 @@ final class LivePreviewTests: XCTestCase, TextViewHarnessTests {
         caret(harness, at: view.offset(from: view.beginningOfDocument, to: hidden))
         XCTAssertGreaterThan(view.caretRect(for: try XCTUnwrap(view.selectedTextRange?.end)).maxY,
                              view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom, "the caret starts under the room")
-        coordinator.scrollCaretLineIntoView(view, animated: false)
+        coordinator.keyboard.scrollCaretLineIntoView(view, animated: false)
         view.layoutIfNeeded()
         let end = try XCTUnwrap(view.selectedTextRange?.end)
         let line = view.caretRect(for: end)
@@ -128,7 +128,7 @@ final class LivePreviewTests: XCTestCase, TextViewHarnessTests {
         XCTAssertLessThanOrEqual(line.maxY, bottom + 0.5, "the caret's line is above the room: \(line), \(bottom)")
         XCTAssertGreaterThan(line.minY, view.contentOffset.y + view.adjustedContentInset.top, "and still in view")
         // With no keyboard showing there is no room.
-        coordinator.updateToolbarRoom(view)
+        coordinator.keyboard.updateToolbarRoom(view)
         XCTAssertEqual(view.contentInset.bottom, inset)
     }
 

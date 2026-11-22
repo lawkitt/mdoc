@@ -3,14 +3,16 @@ import UIKit
 /// Back to the top: the ↑ control after one screen of text, and the status
 /// bar's tap while the text shows.
 extension MarkdownTextView.Coordinator {
-    /// Wires the control to this view, and gives the status bar's tap to
-    /// the text only while it shows: UIKit scrolls nothing when two views
-    /// claim it.
-    func connectTop(_ view: CandidateTextView) {
+    /// Wires the control to this view when the viewport is new
+    /// (`attach`), and gives the status bar's tap to the text only while
+    /// it shows: UIKit scrolls nothing when two views claim it.
+    func connectTop(_ view: CandidateTextView, attach: Bool) {
         view.scrollsToTop = parent.shown
-        parent.viewport?.attach { [weak view] _ in
-            guard let view else { return }
-            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: -view.adjustedContentInset.top), animated: true)
+        if attach {
+            parent.viewport?.attach { [weak view] _ in
+                guard let view else { return }
+                view.setContentOffset(CGPoint(x: view.contentOffset.x, y: -view.adjustedContentInset.top), animated: true)
+            }
         }
         // Not while SwiftUI updates the view.
         DispatchQueue.main.async { [weak self, weak view] in

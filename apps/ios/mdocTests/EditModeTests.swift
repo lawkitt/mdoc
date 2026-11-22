@@ -207,6 +207,32 @@ final class EditModeTests: XCTestCase, TextViewHarnessTests {
         XCTAssertEqual(harness.shown, coreText(harness))
     }
 
+    /// Done and Edit within one SwiftUI update (PR #1087's review): Edit
+    /// starts the model's typing anew, and the one update that follows
+    /// still hands it what Done runs in the view, so the next Done commits
+    /// marked text.
+    func testDoneAndEditInOneUpdateStillCommitMarkedText() throws {
+        let harness = try harness()
+        edit(harness)
+        harness.model.doneEditing()
+        harness.model.enterEditMode()
+        XCTAssertTrue(harness.model.isEditing)
+        show(harness)
+        XCTAssertNotNil(harness.model.typing.flush, "Done's flush handed over")
+        XCTAssertNotNil(harness.model.typing.leave, "Done's leave handed over")
+        let view = harness.view
+        XCTAssertTrue(view.isEditable)
+        XCTAssertTrue(view.becomeFirstResponder())
+        view.selectedRange = NSRange(location: 0, length: 0)
+        view.setMarkedText("日本", selectedRange: NSRange(location: 2, length: 0))
+        try XCTSkipIf(view.markedTextRange == nil, "this host does not mark text")
+        harness.coordinator.textViewDidChange(view)
+        harness.model.doneEditing()
+        show(harness)
+        XCTAssertTrue(coreText(harness).hasPrefix("日本"))
+        XCTAssertEqual(harness.shown, coreText(harness))
+    }
+
     /// After typing a multi-byte character, review maps selections with
     /// the typed text's offsets, not the ones from before the typing.
     func testReviewOffsetsFollowTypedText() async throws {
