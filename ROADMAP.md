@@ -217,6 +217,52 @@ Features are frozen until items 13–19 land (Q4).
     and Android follow (Later). One TestFlight build after. *Done when:*
     both merged and checked on the iPhone 17 Pro.
 
+30. **[Mobile] iOS 27 menu lookups and the quarantine file.** *From the
+    [iOS audit grill](https://github.com/lawkitt/mdoc/issues/1076) (A).*
+    The Panes row and Dark page UI tests find menu items through the shared
+    lookup, and their absence checks test something on iOS 27; the ghost
+    `#837` line goes and `#818` is retired or extended. *Done when:* merged
+    before 2026-11-26, the classes pass on iOS 26 and the next `xcode-27`
+    nightly, and the UI class times list every active class, measured.
+31. **[Mobile] Core and storage bugs from the audit.** *From #1076 (B1).*
+    Delete cancels the document's job, and delete and discard drop its
+    deferred save; the reply snapshot is cached; "finds names" follows the
+    tier; batch decisions use `perform`'s result; image imports encode off
+    the main actor; test hooks are Debug-only; dead core fields go.
+    *Done when:* merged, each fix with a real-core test.
+32. **[Mobile] UI and Restore extension bugs from the audit.** *From #1076
+    (B2).* Restore says when it failed, resets Copied and clears an old
+    error; a scanner error shows; the comment rail caches card heights and
+    hit-tests in comment order; a table cell drag builds its stops once and
+    auto-scrolls by time; dead UI code goes. *Done when:* merged, with
+    `sharedText`, Restore view and drag tests.
+33. **[Mobile] One text-view test harness.** *From #1076 (C1).* The 7
+    copied editing setups become one shared harness; `ReviewScrollTests`
+    and the read-only text view tests keep theirs. *Done when:* merged
+    with no test's assertions changed and the editing tests green.
+34. **[Mobile] Tests for cases, the library and Originals.** *From #1076
+    (C2).* Rename a case, library search, the case filter cleared when its
+    case is deleted, case colours, the Cases page counts, eviction rules,
+    and renaming a document that has an Original, at the real-core seam.
+    *Done when:* merged; a bug found becomes its own fix or issue.
+35. **[Mobile] UI test cleanup that keeps what #829 kept.** *From #1076
+    (D).* Notice card's screenshots leave the queue; same-fixture launches
+    merge; the scope chip moves to a snapshot and drawer swipe hit-testing
+    to `DrawerDragTests`, keeping one or two real drags; fixed 2 s negative
+    waits go. *Blocked by:* item 30. *Done when:* merged and the UI class
+    times measured again; no shard-count target.
+36. **[Mobile] `MarkdownTextView.Coordinator` split into owned pieces.**
+    *From #1076 (E).* Text reveal and scroll, Fix the words, and toolbar
+    and keyboard each get an owner; closures re-wire only when the mode or
+    action changes. Behaviour unchanged (ADR 0069). *Blocked by:* items 32,
+    33. *Done when:* merged with the editing tests green and unchanged.
+37. **[Mobile] To grill: Document Vault and case and document tabs.** The
+    next big milestone: secure, well-organized local document storage and
+    a reorganized case and tabs UI, folding in item 22. Facts going in:
+    #1076 decision 2 (`DocumentID`, the one-document `Navigator`, the case
+    filter, the indexes, `SideDrawer`'s forwarded environment). *Done
+    when:* grilled.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
@@ -330,6 +376,13 @@ went from a median of 32 minutes to 51 when iOS moved to the `xcode-27`
 image, and every iOS part builds the core itself. Items 32 (#1044), 33
 (#1052), 34 (#1053; its shards take about 17 minutes of tests, accepted
 over a test sweep), 35 (#1050), 36 (#1046) and 37 (#1045) have shipped.
+
+38. **[CI] Build the iOS app once per run.** *From the
+    [iOS audit grill](https://github.com/lawkitt/mdoc/issues/1076)
+    (decision 8).* Each UI part runs `build-for-testing` itself (about 1.8
+    minutes); only the core is shared. Build once, pass the products to
+    the parts and run `test-without-building`. *Done when:* no UI part
+    builds the app, and the queue's iOS time is measured before and after.
 
 ## Desktop GPUI
 
