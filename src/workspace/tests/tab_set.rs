@@ -1,4 +1,4 @@
-//! Tabs: opening, switching, reordering and closing them, placeholders and Recents (`TabSet`).
+//! Tabs: opening, switching, reordering and closing them, placeholders and Recents (`LiveViews`).
 use super::*;
 
 #[gpui::test]

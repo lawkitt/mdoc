@@ -6,6 +6,7 @@
 use super::Workspace;
 use crate::ui;
 use gpui::{AnyElement, App, Context, Window, prelude::*};
+use mdoc_store::document_id::DocumentId;
 use std::{
     path::{Path, PathBuf},
     rc::Rc,
@@ -122,8 +123,10 @@ impl Workspace {
             // Not shown since launch: the restored record names it.
             None => {
                 let record = tab.record();
-                (!record.blank && !record.markdown.as_os_str().is_empty())
-                    .then(|| record.markdown.clone())
+                record
+                    .document()
+                    .filter(|_| !record.blank)
+                    .and_then(DocumentId::into_file)
             }
         }
     }
