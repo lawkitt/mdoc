@@ -156,11 +156,6 @@ struct MarkdownTextView: UIViewRepresentable {
         let base: [NSAttributedString.Key: Any]
     }
 
-    /// A reveal the model asked for, with the name then under review.
-    struct RevealOrigin {
-        let selected: CandidateID?
-    }
-
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextView
         /// What the view shows.
@@ -176,34 +171,16 @@ struct MarkdownTextView: UIViewRepresentable {
         var keepsScroll = false
         /// The content the view waits to show until mdoc is back on screen.
         private(set) var pending: ContentKey?
-        /// The last reveal request taken, so each runs once.
-        private var takenReveal: Int?
-        /// The scroll owed once the next layout is done: the model's
-        /// request, or a newly selected name.
-        var pendingReveal: RevealRequest.Target?
-        /// The pending reveal is the model's request, and the name that
-        /// was under review when it was made: a name selected later is a
-        /// newer wish, and takes its place.
-        var pendingRequest: RevealOrigin?
+        /// The reveals and the place across a change of mode.
+        let reveal: TextReveal
         /// Where each candidate is in the shown text (UTF-16), as last
         /// built: a rebuild finds the same place in the new text by it.
         private var shownRanges: [CandidateID: NSRange] = [:]
-        /// The room the text had at the last layout pass: the view's
-        /// height and the bars inside it.
-        var shownRoom: (height: CGFloat, insets: UIEdgeInsets)?
         /// Each candidate's stretches, as built, for recolouring in place.
         private(set) var runs: [CandidateID: [DecoratedRun]] = [:]
         /// Inside `render`, whose own layout pass shows a scroll it will
         /// undo: no reveal runs there.
         private(set) var rendering = false
-        /// A reveal's scroll on its way: once it lands, the name is measured
-        /// again and the scroll corrected once, if the layout the scroll
-        /// brought moved it out of view.
-        var landing: (range: SourceRange, offset: CGFloat)?
-        /// An animated reveal's scroll is running: it lands at its end.
-        var scrolling = false
-        /// A reveal waits for the end of this turn of the run loop.
-        var revealQueued = false
         nonisolated(unsafe) private var foreground: NSObjectProtocol?
         /// Edit mode's typing path to the core (ADR 0109).
         let bridge = TypingBridge()
@@ -240,11 +217,6 @@ struct MarkdownTextView: UIViewRepresentable {
         /// The keyboard went when the Original covered the text in edit
         /// mode: it comes back with the text.
         var focusOnReturn = false
-        /// Where the reader was when the mode last changed: on iPad
-        /// Identities come or go with it and the text's width changes a
-        /// moment later, and that layout and the next change return here
-        /// too, until the reader scrolls, types or a reveal moves the text.
-        var modeAnchor: CandidateTextView.ScrollAnchor?
         /// A word selected in a cell as the pencil was tapped, noted before
         /// the edit-mode render restyles the cell (which drops it) and
         /// selected in the text once the grids switch (`connectTables`).
@@ -274,7 +246,16 @@ struct MarkdownTextView: UIViewRepresentable {
             self.parent = parent
             // A request made before this view existed (another pane showed,
             // or the document was closed) is not this view's to run.
-            takenReveal = parent.reveal?.id
+            reveal = TextReveal(taken: parent.reveal?.id)
+            super.init()
+            reveal.text = { [weak self] in self?.revealText }
+        }
+
+        /// What the reveal measures in now.
+        private var revealText: RevealText {
+            RevealText(
+                offsets: offsets, snapshot: parent.snapshot, selected: decoration.selected, editing: parent.editing,
+                settled: !rendering && pending == nil)
         }
 
         deinit {
@@ -310,7 +291,7 @@ struct MarkdownTextView: UIViewRepresentable {
             }
             view.onLayout = { [weak self, weak view] in
                 guard let self, let view else { return }
-                self.layoutDone(view)
+                self.reveal.layoutDone(view)
             }
         }
 
@@ -327,11 +308,7 @@ struct MarkdownTextView: UIViewRepresentable {
             connectEditing(view)
             let content = ContentKey(parent, dynamicTypeSize: dynamicTypeSize, colorScheme: colorScheme)
             let decoration = DecorationKey(selected: parent.selected, scoped: parent.scoped)
-            if let reveal = parent.reveal, reveal.id != takenReveal {
-                takenReveal = reveal.id
-                pendingReveal = reveal.target
-                pendingRequest = RevealOrigin(selected: parent.selected)
-            }
+            reveal.take(parent.reveal, selected: parent.selected)
             if parent.editing, shownEditing == false {
                 // Read only: nothing here moves the first responder.
                 enteringCellSelection = view.cellSelection
@@ -362,10 +339,10 @@ struct MarkdownTextView: UIViewRepresentable {
                 if decoration != self.decoration {
                     let previous = self.decoration.selected
                     redecorate(to: decoration, in: view)
-                    afterSelection(from: previous, in: view)
+                    reveal.selectionChanged(from: previous, to: decoration.selected, in: view)
                 }
             }
-            if pendingReveal != nil { view.setNeedsLayout() }
+            if reveal.isOwed { view.setNeedsLayout() }
             // Outside edit mode a selection is tinted, not the ink's grey
             // (ADR 0114); the caret keeps the ink while editing.
             if fixHolder !== view { view.tintColor = parent.editing ? nil : Self.selectionTint }
@@ -445,7 +422,7 @@ struct MarkdownTextView: UIViewRepresentable {
             self.content = content
             render(view, width: view.textWidth, keepsScroll: !textChanged || keepsScroll)
             keepsScroll = true
-            afterSelection(from: previous, in: view)
+            reveal.selectionChanged(from: previous, to: decoration.selected, in: view)
         }
 
         func restyleOnReturn(_ content: ContentKey, _ view: CandidateTextView) {
@@ -457,7 +434,7 @@ struct MarkdownTextView: UIViewRepresentable {
                 MainActor.assumeIsolated {
                     guard let self, let view, let content = self.pending, content != self.content else { return }
                     self.rebuild(content, view)
-                    if self.pendingReveal != nil { view.setNeedsLayout() }
+                    if self.reveal.isOwed { view.setNeedsLayout() }
                     self.followWordsFix(view)
                 }
             }
@@ -481,8 +458,7 @@ struct MarkdownTextView: UIViewRepresentable {
             // Kept from the last change while the reader has not moved:
             // a wider text that fits whole sits at the top, and Done still
             // goes back to where they were.
-            if switching { modeAnchor = modeAnchor ?? view.scrollAnchor() }
-            let anchor = switching || widthChanged ? modeAnchor : nil
+            let anchor = reveal.anchor(switching: switching, widthChanged: widthChanged, in: view)
             // A decision changes the text: a name under review that shows
             // whole keeps its place on screen, and otherwise the line at
             // the top of the view does (ADR 0098, amended 2026-11-11).
@@ -588,9 +564,9 @@ struct MarkdownTextView: UIViewRepresentable {
                 case .name(let id, let above):
                     guard let candidate = snapshot.candidate(id) else { break }
                     let range = offsets.nsRange(candidate.range)
-                    hold(above, in: view) { self.place(of: range, in: view, onlyShown: $0)?.rect }
+                    hold(above, in: view) { view.place(of: range, onlyShown: $0)?.rect }
                     // A name that grew may run past its table's edge.
-                    if let place = place(of: range, in: view, onlyShown: true), let cell = place.cell,
+                    if let place = view.place(of: range, onlyShown: true), let cell = place.cell,
                        let table = cell.superview as? MarkdownTableView {
                         table.reveal(cell.convert(place.local, to: table))
                     }
@@ -739,7 +715,7 @@ struct MarkdownTextView: UIViewRepresentable {
             guard let view = shownView, let content = pending, content != self.content,
                   view.window?.windowScene?.activationState != .background else { return }
             rebuild(content, view)
-            if pendingReveal != nil { view.setNeedsLayout() }
+            if reveal.isOwed { view.setNeedsLayout() }
             followWordsFix(view)
         }
 

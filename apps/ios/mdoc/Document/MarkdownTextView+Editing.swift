@@ -144,7 +144,7 @@ extension MarkdownTextView.Coordinator {
         // Marked text reaches the core only once committed, and restyles then.
         guard view.markedTextRange == nil else { return }
         // Typing moved on from where the mode changed.
-        modeAnchor = nil
+        reveal.placeMoved()
         if !livePreview.edited(edits, in: view, look: look(view)) {
             restyleWhole(view)
         }
@@ -301,7 +301,7 @@ extension MarkdownTextView.Coordinator {
         let moved = !bridge.isChanging && view.markedTextRange == nil
         // The reader moved the caret (⌘↓ scrolls to it): Done keeps the
         // place they are at now, not where the mode changed.
-        if moved, view.selectedRange != lastSelection { modeAnchor = nil }
+        if moved, view.selectedRange != lastSelection { reveal.placeMoved() }
         if moved, parent.rendered, !snapping {
             // In a drawn table the caret stays in a cell (ADR 0109), and
             // a selection in a cell in that cell (ADR 0110).

@@ -314,7 +314,7 @@ final class MarkdownTextViewTests: XCTestCase {
         view.layoutIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         XCTAssertEqual(view.contentOffset.y, -view.adjustedContentInset.top, accuracy: 1, "still at the top")
-        XCTAssertNil(coordinator.pendingReveal)
+        XCTAssertNil(coordinator.reveal.pending)
     }
 
     /// Replacing can leave text that fits the screen. The scroll kept from
@@ -402,7 +402,7 @@ final class MarkdownTextViewTests: XCTestCase {
             // Where the name is drawn, after the pass the scroll's end brings.
             view.setNeedsLayout()
             view.layoutIfNeeded()
-            let rect = try XCTUnwrap(harness.coordinator.place(of: offsets.nsRange(sorted[index].range), in: view, onlyShown: true)?.rect)
+            let rect = try XCTUnwrap(view.place(of: offsets.nsRange(sorted[index].range), onlyShown: true)?.rect)
             let insets = view.adjustedContentInset
             let top = view.contentOffset.y + insets.top
             // Above the bar; room added below the end is no bar.

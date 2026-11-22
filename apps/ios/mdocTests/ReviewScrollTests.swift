@@ -214,15 +214,15 @@ final class ReviewScrollTests: XCTestCase {
 
         /// Nothing the coordinator owes or runs moves the text.
         private var idle: Bool {
-            coordinator.pendingReveal == nil && !coordinator.revealQueued && !coordinator.scrolling
-                && coordinator.landing == nil
+            coordinator.reveal.pending == nil && !coordinator.reveal.queued && !coordinator.reveal.scrolling
+                && coordinator.reveal.landing == nil
         }
 
         /// Where the candidate is drawn now, in the text view's coordinates.
         func drawnRect(of candidate: Candidate) -> CGRect? {
             view.setNeedsLayout()
             view.layoutIfNeeded()
-            return coordinator.place(of: TextOffsets(snapshot.markdown).nsRange(candidate.range), in: view, onlyShown: true)?.rect
+            return view.place(of: TextOffsets(snapshot.markdown).nsRange(candidate.range), onlyShown: true)?.rect
         }
 
         /// The candidate's top below the top bar, when it shows whole
@@ -239,7 +239,7 @@ final class ReviewScrollTests: XCTestCase {
         /// bar, so the names after it are in view too.
         func scrollTheNameNearTheTop() {
             guard let current = state.reviewedCandidate,
-                  let rect = coordinator.place(of: TextOffsets(snapshot.markdown).nsRange(current.range), in: view)?.rect else { return }
+                  let rect = view.place(of: TextOffsets(snapshot.markdown).nsRange(current.range))?.rect else { return }
             let highest = -ReviewScrollTests.topBar
             let lowest = max(highest, view.contentSize.height + ReviewScrollTests.bar - view.bounds.height)
             coordinator.scrollViewWillBeginDragging(view)
@@ -329,8 +329,8 @@ final class ReviewScrollTests: XCTestCase {
 
         /// What the coordinator still owes or runs, for a failure's message.
         var owed: String {
-            "pending reveal \(coordinator.pendingReveal.map { "\($0)" } ?? "none"), queued \(coordinator.revealQueued), "
-                + "scrolling \(coordinator.scrolling), landing \(coordinator.landing == nil ? "none" : "owed")"
+            "pending reveal \(coordinator.reveal.pending.map { "\($0)" } ?? "none"), queued \(coordinator.reveal.queued), "
+                + "scrolling \(coordinator.reveal.scrolling), landing \(coordinator.reveal.landing == nil ? "none" : "owed")"
         }
 
         /// The name under review, once the reveal the last steps owe has
@@ -431,7 +431,7 @@ final class ReviewScrollTests: XCTestCase {
             }
             let view = review.view
             let end = NSRange(location: view.textStorage.length - 1, length: 1)
-            let rect = try XCTUnwrap(review.coordinator.place(of: end, in: view)?.rect, "\(swap): the last line is laid out")
+            let rect = try XCTUnwrap(view.place(of: end)?.rect, "\(swap): the last line is laid out")
             let shownBottom = view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom
             XCTAssertLessThanOrEqual(
                 rect.maxY, shownBottom + 0.5,
@@ -463,7 +463,7 @@ final class ReviewScrollTests: XCTestCase {
         // before: each swipe alone scrolls.
         for swipes in [2, 3, 5] {
             for _ in 0..<swipes { try review.perform(.next) }
-            XCTAssertNotNil(review.coordinator.pendingReveal, "the reveal has not run")
+            XCTAssertNotNil(review.coordinator.reveal.pending, "the reveal has not run")
             try review.assertTheNameRests("\(swipes) swipes at once")
         }
         for _ in 0..<6 { try review.perform(.previous) }
