@@ -232,7 +232,7 @@ extension DocumentViewModel {
     /// a haptic say it, and an earlier toast's Undo goes, since it would
     /// reach one step further (ADR 0106). VoiceOver hears what was undone.
     /// Redo is on the Undo button's long press, ⇧⌘Z and VoiceOver.
-    func undo(fromSystem: Bool = false) {
+    func undo() {
         guard canUndo, !reviewWaitsForJob() else { return }
         guard perform(undoable: false, { try session.undo() }) else { return }
         Haptics.warning()
@@ -252,7 +252,7 @@ extension DocumentViewModel {
             argument: step.map { String(localized: "Undid \($0.label)") } ?? String(localized: "Undone"))
     }
 
-    func redo(fromSystem: Bool = false) {
+    func redo() {
         guard canRedo, !reviewWaitsForJob() else { return }
         guard perform(undoable: false, { try session.redo() }) else { return }
         let step = snapshot.undoStep
@@ -555,14 +555,14 @@ extension DocumentViewModel {
 
     private func undoFromSystem() {
         systemUndoSteps = max(systemUndoSteps - 1, 0)
-        undo(fromSystem: true)
+        undo()
         systemUndo?.registerUndo(withTarget: self) { $0.redoFromSystem() }
         systemUndo?.setActionName(snapshot.redoStep?.label ?? "")
     }
 
     private func redoFromSystem() {
         systemUndoSteps = min(systemUndoSteps + 1, Self.systemUndoLevels)
-        redo(fromSystem: true)
+        redo()
         systemUndo?.registerUndo(withTarget: self) { $0.undoFromSystem() }
         systemUndo?.setActionName(snapshot.undoStep?.label ?? "")
     }

@@ -79,11 +79,3 @@ extension String {
         }
     }
 }
-#Preview("Alias tags") {
-    VStack(alignment: .leading, spacing: Space.s) {
-        ForEach(Category.allCases, id: \.self) { category in
-            AliasTag(alias: "\(category.label.uppercased())_1", category: category)
-        }
-    }
-    .padding()
-}

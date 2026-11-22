@@ -461,8 +461,8 @@ final class TableEditingTests: XCTestCase, TextViewHarnessTests {
     /// The contract's table with a word selected in the first body row's
     /// left cell, on its third line: the grid, the cell, its text's range
     /// in the document and the cell's frame in the text view.
-    func wordInACell() throws -> (Harness, MarkdownTableView, CellTextView, NSRange, CGRect) {
-        let harness = try harness(text: Self.contract)
+    func wordInACell(text: String = contract) throws -> (Harness, MarkdownTableView, CellTextView, NSRange, CGRect) {
+        let harness = try harness(text: text)
         let table = try grid(harness)
         let cell = table.cells[1][0]
         XCTAssertGreaterThan(cell.frame.height, 100, "the cell wraps to several lines")
@@ -578,6 +578,77 @@ final class TableEditingTests: XCTestCase, TextViewHarnessTests {
         let typed = harness.string.substring(with: word)
         assertOneStep(harness) { harness.toolbar.run(.format(.bold)) }
         XCTAssertEqual(harness.shown, before.replacingOccurrences(of: typed, with: "**\(typed)**"))
+    }
+
+    /// The handle's gesture reads the text's caret stops once, when it
+    /// takes hold, not on every move: they come from the whole text.
+    func testAHandlesDragReadsTheCaretStopsOnce() throws {
+        let (harness, _, _, span, _) = try wordInACell()
+        let view = harness.view
+        let dragger = view.cellHandles
+        let word = view.selectedRange
+        let lines = try XCTUnwrap(view.cellHandleLines)
+        let knob = CGPoint(x: lines.end.midX, y: lines.end.maxY + 8)
+        let built = CandidateTextView.CellStops.built
+        dragger.begin(at: knob)
+        defer { dragger.end() }
+        XCTAssertTrue(dragger.isDragging)
+        for step in 1...6 {
+            dragger.move(to: CGPoint(x: knob.x + CGFloat(step) * 8, y: knob.y + CGFloat(step) * 4))
+        }
+        XCTAssertEqual(CandidateTextView.CellStops.built - built, 1, "one build for the drag")
+        let moved = view.selectedRange
+        XCTAssertEqual(moved.location, word.location)
+        XCTAssertGreaterThan(NSMaxRange(moved), NSMaxRange(word), "the end followed the finger")
+        XCTAssertEqual(NSIntersectionRange(moved, span), moved, "inside the cell")
+        dragger.end()
+        XCTAssertFalse(dragger.isDragging)
+        // The next drag reads them again: the text may have changed since.
+        let end = try XCTUnwrap(view.cellHandleLines).end
+        dragger.begin(at: CGPoint(x: end.midX, y: end.maxY + 8))
+        XCTAssertTrue(dragger.isDragging)
+        XCTAssertEqual(CandidateTextView.CellStops.built - built, 2)
+        dragger.end()
+    }
+
+    /// A finger held at the bottom edge scrolls the text by time, not by
+    /// frame: two frames at 120 Hz go as far as one at 60 Hz (ProMotion).
+    func testAHandleHeldAtTheEdgeScrollsAsFarAt120HzAsAt60() throws {
+        let after = (1...40).map { "Paragraph \($0) after the table, long enough to wrap onto a second line here." }
+        let (harness, _, _, _, _) = try wordInACell(text: Self.contract + "\n\n" + after.joined(separator: "\n\n"))
+        let view = harness.view
+        let dragger = view.cellHandles
+        XCTAssertGreaterThan(view.contentSize.height, view.bounds.height * 2, "the text scrolls")
+        let lines = try XCTUnwrap(view.cellHandleLines)
+        dragger.begin(at: CGPoint(x: lines.end.midX, y: lines.end.maxY + 8))
+        defer { dragger.end() }
+        let start = view.contentOffset.y
+        // 10 pt into the bottom edge's 28 pt strip.
+        func holdAtTheEdge() {
+            view.contentOffset.y = start
+            let visible = view.bounds.inset(by: view.adjustedContentInset)
+            dragger.move(to: CGPoint(x: lines.end.midX, y: visible.maxY - 18))
+        }
+        holdAtTheEdge()
+        dragger.scroll(for: 1.0 / 60)
+        let at60 = view.contentOffset.y - start
+        holdAtTheEdge()
+        dragger.scroll(for: 1.0 / 120)
+        dragger.scroll(for: 1.0 / 120)
+        let at120 = view.contentOffset.y - start
+        XCTAssertGreaterThan(at60, 1, "it scrolls down")
+        XCTAssertEqual(at120, at60, accuracy: 0.01)
+        // A second held still keeps going at that speed, 100 pt a second
+        // 10 pt into the strip, though each 120 Hz step is under a pixel.
+        holdAtTheEdge()
+        for _ in 0..<120 { dragger.scroll(for: 1.0 / 120) }
+        XCTAssertEqual(view.contentOffset.y - start, 100, accuracy: 0.5)
+        // In the middle of the text nothing scrolls.
+        let middle = view.bounds.inset(by: view.adjustedContentInset).midY
+        dragger.move(to: CGPoint(x: lines.end.midX, y: middle))
+        let held = view.contentOffset.y
+        dragger.scroll(for: 1.0 / 60)
+        XCTAssertEqual(view.contentOffset.y, held)
     }
 
     /// The two-column table whose first body row's left cell holds `cell`,

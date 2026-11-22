@@ -8,18 +8,14 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         Task { @MainActor in
-            let text = await Self.sharedText(from: extensionContext)
-            show(text: text)
+            let items = extensionContext?.inputItems.compactMap { $0 as? NSExtensionItem } ?? []
+            let text = await PastedReply.sharedText(in: items)
+            show(RestoreSheet.make(text: text, library: CoreFactory.restoreExtension))
         }
     }
 
-    private func show(text: String?) {
-        let library = try? CoreFactory.restoreExtension()
-        let root = RestoreExtensionView(
-            model: library.flatMap { library in
-                text.map { RestoreViewModel(library: library, reply: $0) }
-            },
-            close: { [weak self] in self?.close() })
+    private func show(_ sheet: RestoreSheet) {
+        let root = RestoreExtensionView(sheet: sheet, close: { [weak self] in self?.close() })
         let host = UIHostingController(rootView: root)
         addChild(host)
         host.view.frame = view.bounds
@@ -30,19 +26,5 @@ final class ShareViewController: UIViewController {
 
     private func close() {
         extensionContext?.completeRequest(returningItems: nil)
-    }
-
-    /// The first attachment with text, or the item's own text.
-    private static func sharedText(from context: NSExtensionContext?) async -> String? {
-        let items = context?.inputItems.compactMap { $0 as? NSExtensionItem } ?? []
-        for item in items {
-            if let text = await PastedReply.text(from: item.attachments ?? []) {
-                return text
-            }
-            if let text = item.attributedContentText?.string, !text.isEmpty {
-                return text
-            }
-        }
-        return nil
     }
 }

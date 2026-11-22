@@ -28,8 +28,6 @@ struct DocumentScreen: View {
     @State private var screenWidth: CGFloat = 0
     /// The long press's Same as… with a long list: the searchable picker.
     @State private var sameAsCandidate: CandidateID?
-    /// Identities' Same as…: the identity it starts from.
-    @State private var sameAsIdentity: IdentityID?
     /// This screen, for the window's undo: a size-class change builds a new
     /// one for the same document (#672).
     @State private var screenID = UUID()
@@ -88,9 +86,8 @@ struct DocumentScreen: View {
             .sheet(item: $model.linkDraft) { draft in
                 LinkSheet(draft: draft)
             }
-            .sheet(item: Binding(get: { sameAsCandidate.map(PickerSource.candidate) ?? sameAsIdentity.map(PickerSource.identity) },
-                                 set: { if $0 == nil { sameAsCandidate = nil; sameAsIdentity = nil } })) { source in
-                sameAsPicker(source)
+            .sheet(item: Binding(get: { sameAsCandidate.map(PickerSource.init) }, set: { if $0 == nil { sameAsCandidate = nil } })) {
+                sameAsPicker($0.id)
             }
             .sheet(isPresented: $model.showsReplySheet) {
                 ReplySheet(caseName: model.snapshot.caseName) { reply in
@@ -396,31 +393,18 @@ struct DocumentScreen: View {
         }
     }
 
-    private enum PickerSource: Identifiable, Hashable {
-        case candidate(CandidateID), identity(IdentityID)
-        var id: Self { self }
+    private struct PickerSource: Identifiable {
+        let id: CandidateID
     }
 
     @ViewBuilder
-    private func sameAsPicker(_ source: PickerSource) -> some View {
-        switch source {
-        case .candidate(let id):
-            if let candidate = model.snapshot.candidate(id) {
-                SameAsPicker(
-                    source: candidate.original, targets: model.sameAsTargets(for: candidate),
-                    categoryLabel: candidate.category.label) { target in
-                    model.select(id)
-                    model.sameAs(target)
-                }
-            }
-        case .identity(let id):
-            if let identity = model.snapshot.identities.first(where: { $0.id == id }) {
-                SameAsPicker(
-                    source: identity.primaryWording,
-                    targets: model.sameAsTargets(forIdentity: id, category: identity.category),
-                    categoryLabel: identity.category.label) { target in
-                    model.link(id, into: target)
-                }
+    private func sameAsPicker(_ id: CandidateID) -> some View {
+        if let candidate = model.snapshot.candidate(id) {
+            SameAsPicker(
+                source: candidate.original, targets: model.sameAsTargets(for: candidate),
+                categoryLabel: candidate.category.label) { target in
+                model.select(id)
+                model.sameAs(target)
             }
         }
     }
