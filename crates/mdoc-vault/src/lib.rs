@@ -14,6 +14,10 @@
 //! Originals (`docs/<id>/original.enc`) and replies (`replies/<id>.enc`)
 //! join in later items, each with its own [`ObjectKind`]. The caller
 //! supplies the key; this crate never asks the OS for one.
+//!
+//! No AI text is stored: [`Vault::text_for_ai`] computes it from a
+//! Document's Markdown on every outbound read, after checking it against
+//! its Project's names as they are then ([`Readiness`]).
 #![forbid(unsafe_code)]
 
 mod manifest;
@@ -28,8 +32,8 @@ pub use records::{
     ProjectSummary, SourceKind, UserLists,
 };
 pub use vault::{
-    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Saved, Stage, Vault,
-    WriteStep,
+    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, Saved, Stage,
+    Vault, WriteStep,
 };
 
 use std::io;
@@ -91,6 +95,13 @@ pub enum VaultError {
     /// mapping; nothing was written.
     #[error("The document's names could not be lined up: {0}")]
     Names(String),
+    /// Copy for AI, Share, the shelf or MCP asked for a Document marked
+    /// "exclude from AI".
+    #[error("The document is excluded from AI.")]
+    ExcludedFromAi,
+    /// An outbound read of a Document that is not Ready now.
+    #[error("The document is not ready for AI ({0:?}).")]
+    NotReady(Readiness),
     /// A fault hook stopped a write; the handle writes nothing more.
     #[error("The Vault handle stopped at an injected fault.")]
     Crashed,
