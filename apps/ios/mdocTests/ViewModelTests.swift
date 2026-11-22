@@ -276,14 +276,10 @@ final class DocumentViewModelTests: XCTestCase {
         // This URL has no file. Rendering the open document must use its
         // import's unlock, and the PDFKit page must have text.
         let missing = try XCTUnwrap(storage).root.appendingPathComponent("missing.docx")
-        let files = FileManager.default
-        func temporaryEntries() throws -> Set<String> {
-            let entries = try XCTUnwrap(files.enumerator(atPath: files.temporaryDirectory.path))
-            return Set(entries.compactMap { $0 as? String })
-        }
-        let before = try temporaryEntries()
+        let own = try XCTUnwrap(storage).root
+        let before = Self.temporaryFiles(keeping: own)
         let result = await RenderedDocx.render(missing, unlocked: unlocked)
-        XCTAssertEqual(try temporaryEntries(), before)
+        XCTAssertEqual(Self.temporaryFiles(keeping: own), before)
         XCTAssertNil(result.unlocked)
         guard case .ready(let original) = result.rendering else {
             return XCTFail("The unlocked document should render its Original")
@@ -304,9 +300,9 @@ final class DocumentViewModelTests: XCTestCase {
             return XCTFail("The Original should render after unlocking from its card")
         }
         XCTAssertNotNil(reopened.unlocked)
-        XCTAssertEqual(try temporaryEntries(), before)
+        XCTAssertEqual(Self.temporaryFiles(keeping: own), before)
         let root = try XCTUnwrap(storage).root
-        let savedFiles = files.enumerator(at: root, includingPropertiesForKeys: nil)?
+        let savedFiles = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
             .compactMap { $0 as? URL } ?? []
         for file in savedFiles where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
             let bytes = try Data(contentsOf: file)
@@ -353,12 +349,12 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(reopened.unlockedOriginal)
         XCTAssertFalse(reopened.unlockOriginal(password: "petrov-2026"))
         XCTAssertNil(reopened.unlockedOriginal)
-        let temporary = FileManager.default.temporaryDirectory
-        let before = Self.files(under: temporary)
+        let own = try XCTUnwrap(storage).root
+        let before = Self.temporaryFiles(keeping: own)
         XCTAssertTrue(reopened.pdfUnlockAction(password))
         let page = try XCTUnwrap(reopened.unlockedOriginal?.page(at: 0))
         XCTAssertGreaterThan(page.thumbnail(of: CGSize(width: 200, height: 280), for: .mediaBox).size.width, 0)
-        XCTAssertEqual(Self.files(under: temporary), before)
+        XCTAssertEqual(Self.temporaryFiles(keeping: own), before)
         let root = try XCTUnwrap(storage).root
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
             .compactMap { $0 as? URL } ?? []
@@ -383,10 +379,18 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
-    private static func files(under root: URL) -> Set<String> {
-        let found = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
-            .compactMap { ($0 as? URL)?.path } ?? []
-        return Set(found)
+    /// Every path under the temporary folder except other tests' libraries.
+    /// Test classes run at the same time and each writes its own library
+    /// under `mdoc-tests/`, so comparing the whole folder fails at random.
+    /// `own` (this test's library) stays in the set, so a file the render
+    /// writes anywhere it shouldn't still shows up.
+    private static func temporaryFiles(keeping own: URL) -> Set<String> {
+        let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        let libraries = temporary.appendingPathComponent("mdoc-tests", isDirectory: true).path + "/"
+        let ownPath = own.resolvingSymlinksInPath().path
+        let found = FileManager.default.enumerator(at: temporary, includingPropertiesForKeys: nil)?
+            .compactMap { ($0 as? URL)?.resolvingSymlinksInPath().path } ?? []
+        return Set(found.filter { !$0.hasPrefix(libraries) || $0.hasPrefix(ownPath) })
     }
 
     /// A PDF locked only against editing imports without the card and
