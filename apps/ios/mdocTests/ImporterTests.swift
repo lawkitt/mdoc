@@ -208,16 +208,27 @@ final class ImporterTests: XCTestCase {
     }
 
     /// A page the camera couldn't encode or Photos couldn't load arrives as
-    /// nil: the batch is refused, saying so, and nothing is kept.
-    func testABatchWithAPageThatCouldntBeReadIsRefused() throws {
+    /// nil: the pages that were read are imported, and the note counts the
+    /// one left out. With none read, nothing is kept and the note says so.
+    func testAnUnreadPageIsLeftOutAndCounted() throws {
         let jpeg = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).jpegData(withCompressionQuality: 0.9) { _ in })
         for scanned in [true, false] {
-            XCTAssertThrowsError(try Importer(storage: storage).images([jpeg, nil], scanned: scanned)) { error in
-                XCTAssertEqual(error.localizedDescription, "A page couldn't be read, so nothing was imported. Try again.")
+            let pending = try XCTUnwrap(try Importer(storage: storage).images([jpeg, nil, jpeg], scanned: scanned))
+            let pages: [URL] = switch pending.source {
+            case .scan(let pages), .photos(let pages): pages
+            default: []
             }
+            XCTAssertEqual(pages.count, 2)
+            XCTAssertEqual(pending.unreadPages, 1)
         }
-        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
-        XCTAssertTrue(left.isEmpty, "\(left)")
+        XCTAssertEqual(Importer.unreadNote(1), "1 page couldn't be read and wasn't imported.")
+        XCTAssertEqual(Importer.unreadNote(2), "2 pages couldn't be read and weren't imported.")
+        let before = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        XCTAssertThrowsError(try Importer(storage: storage).images([nil, nil], scanned: true)) { error in
+            XCTAssertEqual(error.localizedDescription, "2 pages couldn't be read and weren't imported.")
+        }
+        let after = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        XCTAssertEqual(after.count, before.count)
     }
 
     /// A batch with a page that can't be kept is refused whole, with the

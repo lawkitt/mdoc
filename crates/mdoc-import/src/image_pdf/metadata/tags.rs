@@ -68,7 +68,7 @@ const MAX_PAGES: usize = 5_000;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Rewrite {
     /// Not a classic TIFF this reads: BigTIFF, old-style JPEG, a loop of
-    /// directories, or damage.
+    /// directories, a kept tag given twice in one directory, or damage.
     Unreadable,
     /// The rewrite would outgrow its budget.
     TooLarge,
@@ -291,12 +291,18 @@ fn type_size(kind: u16) -> Option<usize> {
 impl Directory {
     fn read(bytes: &[u8], order: Order, at: usize) -> Option<Self> {
         let count = usize::from(order.u16(bytes, at)?);
-        let mut entries = Vec::new();
+        let mut entries: Vec<Entry> = Vec::new();
         for index in 0..count {
             let entry = at + 2 + 12 * index;
             let tag = order.u16(bytes, entry)?;
             if !KEPT.contains(&tag) {
                 continue;
+            }
+            // A kept tag twice: the rewrite and a decoder could read
+            // different ones (the first compression here, the last there),
+            // so such a page isn't rewritten.
+            if entries.iter().any(|kept| kept.tag == tag) {
+                return None;
             }
             let kind = order.u16(bytes, entry + 2)?;
             let count = order.u32(bytes, entry + 4)?;

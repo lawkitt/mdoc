@@ -6,6 +6,9 @@ struct PendingImport: Identifiable, Equatable {
     let id = UUID()
     var source: ImportSource
     var suggestedTitle: String
+    /// Pages of a camera or Photos batch that couldn't be read and were
+    /// left out; a note says so.
+    var unreadPages = 0
 }
 
 /// The library as the sidebar, Start, Cases and the Documents page show it

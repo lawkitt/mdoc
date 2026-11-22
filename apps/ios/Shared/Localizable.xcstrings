@@ -145,6 +145,29 @@
         }
       }
     },
+    "%lld pages couldn't be read and weren't imported." : {
+      "comment" : "The note when the camera or Photos couldn't hand over some pages of a batch.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld page couldn't be read and wasn't imported."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pages couldn't be read and weren't imported."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld replaced" : {
 
     },
@@ -230,9 +253,6 @@
 
     },
     "A letter, contract or note. Select the names in it to replace them, then share it with an AI." : {
-
-    },
-    "A page couldn't be read, so nothing was imported. Try again." : {
 
     },
     "A short agreement with made-up names, to try review without your own documents." : {

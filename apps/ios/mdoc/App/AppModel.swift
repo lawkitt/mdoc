@@ -356,6 +356,10 @@ final class AppModel {
         do {
             if let pending = try importer.images(images, scanned: scanned) {
                 navigator.present(.importing(pending))
+                // Never silent: the pages left out are counted.
+                if pending.unreadPages > 0 {
+                    show(ToastMessage(text: Importer.unreadNote(pending.unreadPages)))
+                }
             }
         } catch {
             present(error)

@@ -1855,4 +1855,58 @@ mod kept_copy {
             decoder.next_image().unwrap();
         }
     }
+
+    /// A directory giving a kept tag twice isn't rewritten: the rewrite and
+    /// a decoder could read different ones. A second `Compression` (JPEG
+    /// after none) and a second `JPEGTables` (one holding EXIF) both refuse
+    /// the file.
+    #[test]
+    fn a_kept_tag_given_twice_refuses_the_file() {
+        let comment = segment(0xfe, b"A fictional comment");
+        let strip = with_segments(
+            &jpeg(16, 8, [90, 160, 60]),
+            &[app1_exif(Some(1)), comment.clone()],
+        );
+        let tables = [&[0xff, 0xd8][..], &app1_exif(None), &comment, &[0xff, 0xd9]].concat();
+        let page = |extra: Vec<(u16, u16, Vec<u8>)>| {
+            let mut out = b"II*\0".to_vec();
+            out.extend_from_slice(&[0; 4]);
+            let at = out.len() as u32;
+            out.extend_from_slice(&strip);
+            if out.len() % 2 == 1 {
+                out.push(0);
+            }
+            let mut entries = vec![
+                (256, 4, long(16)),
+                (257, 4, long(8)),
+                (258, 3, [short(8), short(8), short(8)].concat()),
+                (259, 3, short(7)),
+            ];
+            entries.extend(extra);
+            entries.extend([
+                (262, 3, short(2)),
+                (273, 4, long(at)),
+                (277, 3, short(3)),
+                (278, 4, long(8)),
+                (279, 4, long(strip.len() as u32)),
+                (347, 7, b"\xff\xd8\xff\xd9".to_vec()),
+            ]);
+            let (ifd, _) = write_ifd(&mut out, &entries);
+            out[4..8].copy_from_slice(&ifd.to_le_bytes());
+            out
+        };
+        // Without a duplicate the page is kept.
+        assert!(without_metadata(&page(vec![])).is_some());
+        for (name, extra) in [
+            ("Compression", vec![(259, 3, short(1))]),
+            ("JPEGTables", vec![(347, 7, tables.clone())]),
+        ] {
+            assert_eq!(without_metadata(&page(extra.clone())), None, "{name}");
+            assert_eq!(
+                tags::without_metadata(&page(extra), usize::MAX),
+                Err(tags::Rewrite::Unreadable),
+                "{name}"
+            );
+        }
+    }
 }

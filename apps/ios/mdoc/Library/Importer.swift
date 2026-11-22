@@ -16,15 +16,14 @@ struct Importer {
         case unsupported
         /// The core refused the image, in its words (too large to keep).
         case refused(String)
-        /// A page the camera or Photos couldn't hand over: the batch is
-        /// refused rather than imported without it.
-        case unreadablePage
+        /// No page the camera or Photos handed over could be read.
+        case unread(Int)
 
         var errorDescription: String? {
             switch self {
             case .unsupported: String(localized: "mdoc opens PDF, DOCX and image files.")
             case .refused(let message): message
-            case .unreadablePage: String(localized: "A page couldn't be read, so nothing was imported. Try again.")
+            case .unread(let count): Importer.unreadNote(count)
             }
         }
     }
@@ -68,13 +67,14 @@ struct Importer {
     /// kept refuses the whole batch (`Failure.unsupported`): no page is
     /// left out without a word.
     /// A page that arrives as nil (the camera couldn't encode it, Photos
-    /// couldn't load it) refuses the batch too (`Failure.unreadablePage`).
+    /// couldn't load it) is left out, and the import counts it
+    /// (`unreadPages`) for the note that says so; with none read at all,
+    /// `Failure.unread`.
     func images(_ pages: [Data?], scanned: Bool, title: String? = nil) throws -> PendingImport? {
         guard !pages.isEmpty else { return nil }
-        let images = try pages.map { page -> Data in
-            guard let page else { throw Failure.unreadablePage }
-            return page
-        }
+        let images = pages.compactMap { $0 }
+        let unread = pages.count - images.count
+        guard !images.isEmpty else { throw Failure.unread(unread) }
         let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let urls: [URL]
@@ -92,7 +92,13 @@ struct Importer {
         let kind = scanned ? String(localized: "Scan") : String(localized: "Photo")
         return PendingImport(
             source: scanned ? .scan(urls) : .photos(urls),
-            suggestedTitle: title ?? "\(kind) \(Date.now.formatted(date: .abbreviated, time: .shortened))")
+            suggestedTitle: title ?? "\(kind) \(Date.now.formatted(date: .abbreviated, time: .shortened))",
+            unreadPages: unread)
+    }
+
+    /// The note for pages the camera or Photos couldn't hand over.
+    static func unreadNote(_ count: Int) -> String {
+        String(localized: "\(count) pages couldn't be read and weren't imported.")
     }
 
     /// Pasted text; nil when there is none.
