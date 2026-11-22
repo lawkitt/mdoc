@@ -105,7 +105,10 @@ run() {
   out="$dir/out" rc=0
   (cd "$dir" && bash "$root/scripts/ios/ios-test-part.sh" "$part" mdocUITests/AUITests mdocUITests/BUITests) >"$out" 2>&1 || rc=$?
 }
-# Every run, the first and the retry, tests the core job's app.
+# Every run, the first and the retry, tests the core job's app; ci-ios.yml
+# reads the line that says so to skip the core's download in a UI part.
+grep -qx 'export MDOC_IOS_TEST_ACTION=test-without-building' scripts/ios/ios-test-part.sh ||
+  fail "ios-test-part.sh lost the line ci-ios.yml looks for"
 first='test-without-building|--no-deps ios-test iPhone 17 mdocUITests/AUITests mdocUITests/BUITests'
 warning='::warning::ci/ios (ui 1): UI test runner failed to start; retried once'
 

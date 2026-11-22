@@ -149,11 +149,17 @@ jobs:
     # a new Cargo.lock the cargo cache too: the core then took 17-20 minutes
     # cold (#879, #1041), before the app's build of about 2.
     timeout-minutes: 40
+    # The commit it built, which the parts check out: a branch `ref` may move
+    # on before they start, and its tests would then run on this app.
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
 
       # The pinned Xcode, which builds the core and so is in its key; and,
       # for the app's build, the pinned Simulator runtime, downloaded in the
@@ -282,16 +288,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.core.outputs.sha }}
           persist-credentials: false
 
       # What `just ios-test` runs: the unit and parity tests, or a UI
       # shard's classes. First, so a UI test class in no shard or in two
-      # fails in seconds (as it fails `lint (ubuntu)`).
+      # fails in seconds (as it fails `lint (ubuntu)`). The core too for
+      # the unit part, or for a `ref` from before #1079, whose
+      # scripts/ios/ios-test-part.sh builds the app itself.
       - name: What to test
         id: part
         run: |
           echo "key=${PART// /}" >>"$GITHUB_OUTPUT"
+          if [ "$PART" = unit ]; then
+            echo core=true >>"$GITHUB_OUTPUT"
+          elif ! grep -q '^export MDOC_IOS_TEST_ACTION=test-without-building$' scripts/ios/ios-test-part.sh 2>/dev/null; then
+            echo "::warning title=iOS app::this commit's scripts/ios/ios-test-part.sh builds the app, so this part downloads the core"
+            echo core=true >>"$GITHUB_OUTPUT"
+          fi
           case "$PART" in
             unit) only=mdocTests ;;
             "ui "*) only=$(scripts/ios/ios-ui-shards.sh "${PART#ui }") ;;
@@ -317,13 +331,14 @@ jobs:
           name: ios-app
       - run: tar -xf ios-app.tar && rm ios-app.tar
 
-      # The core, for the unit part's Release build, which links its
-      # xcframeworks; Build.xcconfig names this commit.
-      - if: matrix.part == 'unit'
+      # The core, for the unit part's Release build (or an older commit's
+      # app build), which links its xcframeworks; Build.xcconfig names this
+      # commit.
+      - if: steps.part.outputs.core == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ios-core
-      - if: matrix.part == 'unit'
+      - if: steps.part.outputs.core == 'true'
         run: tar -xf ios-core.tar && rm ios-core.tar && scripts/ios/ios-build-info.sh
 
       - run: scripts/ios/ios-toolchain.sh --finish >/dev/null
@@ -412,7 +427,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.core.outputs.sha || inputs.ref }}
           persist-credentials: false
           sparse-checkout: scripts/ios/ios-failed-tests.py
           sparse-checkout-cone-mode: false

@@ -31,6 +31,8 @@ shift
 device="iPhone 17"
 logs=target/ios/DerivedData/Logs
 
+# ci-ios.yml looks for this line: a commit without it builds the app in
+# each part, which needs the core there.
 export MDOC_IOS_TEST_ACTION=test-without-building
 rc=0
 just --no-deps ios-test "$device" "$@" || rc=$?
