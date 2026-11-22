@@ -470,15 +470,15 @@ fn a_second_handle_sees_the_first_handles_writes() {
     // Records are read from their files.
     assert_eq!(second.document(&d.id).unwrap(), d);
     // Lists come from the cache until a refresh checks it.
-    assert!(second.refresh());
+    assert!(second.refresh().unwrap());
     assert_eq!(snapshot(&second), snapshot(&first));
-    assert!(!second.refresh());
+    assert!(!second.refresh().unwrap());
     let changed = second
         .update_document(&d.id, |d| d.markdown = "two".into())
         .unwrap();
     assert_eq!(changed.revision, d.revision + 1);
     let q = project(&second, "Beta");
-    assert!(first.refresh());
+    assert!(first.refresh().unwrap());
     assert_eq!(first.document(&d.id).unwrap().markdown, "two");
     assert!(first.projects().iter().any(|p| p.id == q.id));
     // Each handle's manifest takes in the other's writes.
@@ -567,6 +567,46 @@ fn a_handle_never_writes_an_older_revision() {
         .unwrap();
     assert_eq!(vault.save_project(&p).unwrap(), Saved::Skipped);
     assert_eq!(vault.project(&p.id).unwrap().name, renamed.name);
+}
+
+#[test]
+fn a_stale_copy_from_another_handle_is_not_saved() {
+    let folder = Folder::new();
+    let first = folder.open();
+    let second = folder.open();
+    let d = document(&first, None, "Brief", "one");
+    let stale = second.document(&d.id).unwrap();
+    first
+        .update_document(&d.id, |d| d.markdown = "two".into())
+        .unwrap();
+    let mut edited = stale.clone();
+    edited.markdown = "stale".into();
+    assert_eq!(second.save_document(&edited).unwrap(), Saved::Skipped);
+    let stored = second.document(&d.id).unwrap();
+    assert_eq!((stored.markdown.as_str(), stored.revision), ("two", 2));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_cannot_be_listed_fails_the_open_and_keeps_the_manifest() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = Folder::new();
+    {
+        let vault = folder.open();
+        project(&vault, "Alpha");
+    }
+    let manifest = std::fs::read(folder.manifest()).unwrap();
+    let projects = folder.root.join("projects");
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let listable = std::fs::read_dir(&projects).is_ok();
+    let opened = Vault::open(&folder.root, &KEY);
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if listable {
+        return; // Running as root: permissions do not apply.
+    }
+    assert!(matches!(opened, Err(VaultError::Io(_))));
+    assert_eq!(std::fs::read(folder.manifest()).unwrap(), manifest);
+    assert_eq!(folder.open().projects().len(), 1);
 }
 
 #[test]

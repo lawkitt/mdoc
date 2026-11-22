@@ -27,8 +27,12 @@ use std::{
 /// A summary change rewrites the manifest at most this often; the rest wait
 /// for the next write after it, [`Vault::flush`] or the handle's drop.
 const MANIFEST_DEBOUNCE: Duration = Duration::from_secs(2);
-/// The last revision written of an object this handle deleted.
-const DELETED: u64 = u64::MAX;
+/// What this handle last wrote of an object.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Last {
+    Revision(u64),
+    Deleted,
+}
 
 /// Where in replacing a file a [`FaultHook`] runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,7 +100,7 @@ pub struct Vault {
 struct State {
     manifest: Manifest,
     /// The last revision this handle wrote, by object id.
-    written: HashMap<String, u64>,
+    written: HashMap<String, Last>,
     /// A summary changed since the manifest was last written.
     dirty: bool,
     manifest_written: Option<Instant>,
@@ -164,7 +168,7 @@ impl Vault {
                     Ok(None) => (Manifest::default(), ManifestCheck::Missing),
                     Err(()) => (Manifest::default(), ManifestCheck::Damaged),
                 };
-            let checked = manifest.check(&vault.sealer, &vault.root);
+            let checked = manifest.check(&vault.sealer, &vault.root)?;
             if opened != ManifestCheck::Current && checked.opened == 0 && checked.rejected > 0 {
                 return Err(VaultError::WrongKey);
             }
@@ -237,11 +241,11 @@ impl Vault {
 
     /// Pick up what other handles wrote: check the summaries against the
     /// object files again. `true` when anything changed.
-    pub fn refresh(&self) -> bool {
+    pub fn refresh(&self) -> Result<bool, VaultError> {
         let mut state = self.state();
-        let changed = state.manifest.check(&self.sealer, &self.root).changed;
+        let changed = state.manifest.check(&self.sealer, &self.root)?.changed;
         state.dirty |= changed;
-        changed
+        Ok(changed)
     }
 
     /// Write the manifest now if a summary changed since it was written.
@@ -285,7 +289,8 @@ impl Vault {
         self.update(id, change)
     }
 
-    /// Save `project` unless this handle already wrote a newer revision.
+    /// Save `project` unless this handle wrote, or its file holds, a newer
+    /// revision.
     pub fn save_project(&self, project: &Project) -> Result<Saved, VaultError> {
         self.save(project)
     }
@@ -330,8 +335,8 @@ impl Vault {
         self.update(id, change)
     }
 
-    /// Save `document` unless this handle already wrote a newer revision.
-    /// Its Project stays as stored.
+    /// Save `document` unless this handle wrote, or its file holds, a newer
+    /// revision. Its Project stays as stored.
     pub fn save_document(&self, document: &Document) -> Result<Saved, VaultError> {
         self.save(document)
     }
@@ -343,19 +348,18 @@ impl Vault {
             return Err(VaultError::InvalidId);
         }
         let _lock = self.write_lock()?;
-        let mut state = self.state();
-        state.written.insert(id.to_string(), DELETED);
-        overwrite_and_remove(&document_path(&self.root, id))?;
+        remove_sealed(&document_path(&self.root, id))?;
         match std::fs::remove_dir_all(document_dir(&self.root, id)) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
             _ => {}
         }
+        let mut state = self.state();
+        state.written.insert(id.to_string(), Last::Deleted);
         let table = &mut state.manifest.documents;
         if table.ok.remove(id).is_some() | table.damaged.remove(id).is_some() {
             state.dirty = true;
         }
-        self.write_manifest_debounced(&mut state);
-        Ok(())
+        self.write_manifest_debounced(&mut state)
     }
 
     fn update<R: Record>(&self, id: &str, change: impl FnOnce(&mut R)) -> Result<R, VaultError> {
@@ -364,11 +368,13 @@ impl Vault {
         }
         let lock = self.write_lock()?;
         let stored: R = self.load_record(id)?;
-        let last = self.state().written.get(id).copied();
-        if last == Some(DELETED) {
-            return Err(not_found::<R>(id));
-        }
-        let revision = stored.revision().max(last.unwrap_or(0)) + 1;
+        let last = match self.state().written.get(id).copied() {
+            Some(Last::Deleted) => return Err(not_found::<R>(id)),
+            Some(Last::Revision(last)) => last,
+            None => 0,
+        };
+        let revision = (stored.revision().max(last).checked_add(1))
+            .ok_or_else(|| io::Error::other("A Vault revision overflowed"))?;
         let mut record = stored.clone();
         change(&mut record);
         record.settle(&stored, revision, now());
@@ -382,12 +388,18 @@ impl Vault {
             return Err(VaultError::InvalidId);
         }
         let lock = self.write_lock()?;
-        if (self.state().written.get(id))
-            .is_some_and(|&last| last > record.revision() || last == DELETED)
-        {
+        let last = self.state().written.get(id).copied();
+        if (last).is_some_and(|last| match last {
+            Last::Deleted => true,
+            Last::Revision(last) => last > record.revision(),
+        }) {
             return Ok(Saved::Skipped);
         }
         let stored: R = self.load_record(id)?;
+        // Another handle wrote a newer revision: the caller's copy is stale.
+        if stored.revision() > record.revision() {
+            return Ok(Saved::Skipped);
+        }
         let mut record = record.clone();
         record.settle(&stored, record.revision(), now());
         self.write_record(&lock, &record)?;
@@ -415,7 +427,9 @@ impl Vault {
         let id = record.id();
         let stamp = self.write_object(R::KIND, id, &R::path(&self.root, id), &json)?;
         let mut state = self.state();
-        state.written.insert(id.to_string(), record.revision());
+        state
+            .written
+            .insert(id.to_string(), Last::Revision(record.revision()));
         let table = R::table(&mut state.manifest);
         table.damaged.remove(id);
         let summary = record.summary();
@@ -429,8 +443,7 @@ impl Vault {
         if before.is_none_or(|entry| entry.summary != summary) {
             state.dirty = true;
         }
-        self.write_manifest_debounced(&mut state);
-        Ok(())
+        self.write_manifest_debounced(&mut state)
     }
 
     /// Replace `path` with `plain` sealed for `kind` and `id`; the new
@@ -453,22 +466,26 @@ impl Vault {
             return Err(VaultError::Crashed);
         }
         let metadata = std::fs::metadata(path)?;
-        Ok(Stamp::of(&metadata).unwrap_or_default())
+        Ok(Stamp::of(&metadata, &bytes).unwrap_or_default())
     }
 
     /// The manifest is a cache: a failed write leaves it to the next check.
-    fn write_manifest_debounced(&self, state: &mut State) {
-        if state.dirty
-            && (state.manifest_written).is_none_or(|at| at.elapsed() >= MANIFEST_DEBOUNCE)
-        {
-            let _ = self.write_manifest(state);
+    /// Only an injected crash is passed on.
+    fn write_manifest_debounced(&self, state: &mut State) -> Result<(), VaultError> {
+        let due = (state.manifest_written).is_none_or(|at| at.elapsed() >= MANIFEST_DEBOUNCE);
+        if !(state.dirty && due) {
+            return Ok(());
+        }
+        match self.write_manifest(state) {
+            Err(VaultError::Crashed) => Err(VaultError::Crashed),
+            Ok(()) | Err(_) => Ok(()),
         }
     }
 
     /// Check the cache against the folder, taking in other handles' writes,
     /// and seal it to `manifest.enc`. The caller holds the write lock.
     fn write_manifest(&self, state: &mut State) -> Result<(), VaultError> {
-        state.manifest.check(&self.sealer, &self.root);
+        state.manifest.check(&self.sealer, &self.root)?;
         let json = state.manifest.to_json()?;
         self.write_object(
             ObjectKind::Manifest,
@@ -528,19 +545,26 @@ fn not_found<R: Record>(id: &str) -> VaultError {
     }
 }
 
-/// Overwrite a file with zeros, then remove it, as the case store deletes.
-fn overwrite_and_remove(path: &Path) -> io::Result<()> {
-    let len = match std::fs::metadata(path) {
-        Ok(metadata) => metadata.len(),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e),
+/// Remove a sealed file as the case store deletes, overwriting it with
+/// zeros first. It is renamed to a temp name before that, so a reader
+/// without the lock sees the whole file or none, and a crash leaves a temp
+/// file the next open sweeps.
+fn remove_sealed(path: &Path) -> io::Result<()> {
+    let (Some(dir), true) = (path.parent(), path.try_exists()?) else {
+        return Ok(());
     };
+    let doomed = tempfile::Builder::new()
+        .prefix(TEMP_PREFIX)
+        .tempfile_in(dir)?
+        .into_temp_path();
+    std::fs::rename(path, &doomed)?;
+    let len = std::fs::metadata(&doomed)?.len();
     {
-        let mut file = File::options().write(true).open(path)?;
+        let mut file = File::options().write(true).open(&doomed)?;
         file.write_all(&vec![0; len.min(MAX_FILE) as usize])?;
         file.sync_all()?;
     }
-    std::fs::remove_file(path)
+    doomed.close()
 }
 
 /// Remove the temp files dead writes left.

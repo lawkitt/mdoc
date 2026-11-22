@@ -18,10 +18,18 @@ use std::{
 /// The manifest's format; another one is rebuilt.
 const FORMAT: u32 = 1;
 
+/// A sealed file's header (magic, kind, nonce) and tag: the nonce is new on
+/// every write, so a stamp tells two writes apart even within one tick of
+/// a coarse file clock (NTFS's 15.6 ms), and the tag changes with damage to
+/// it.
+const HEAD: usize = crate::seal::MAGIC.len() + 1 + 12;
+const TAIL: usize = 16;
+
 /// A file as it is: any write, replacement or copy over it changes this.
 /// On Unix its inode and status-change time too, which copying tools
-/// cannot set and an atomic save changes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// cannot set and an atomic save changes; everywhere, the sealed file's
+/// nonce and tag.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Stamp {
     /// Its modification time: seconds and nanoseconds since the Unix epoch.
     modified: u64,
@@ -31,12 +39,35 @@ pub(crate) struct Stamp {
     /// Its status-change time, seconds and nanoseconds.
     changed: i64,
     changed_nanos: i64,
+    /// The file's first [`HEAD`] and last [`TAIL`] bytes, in hex.
+    ends: String,
 }
 
 impl Stamp {
-    /// `None` when the system gives no modification time: such a file is
-    /// never taken as unchanged.
-    pub fn of(metadata: &std::fs::Metadata) -> Option<Self> {
+    /// The stamp of a file with `metadata` holding `bytes`; `None` when the
+    /// system gives no modification time: such a file is never taken as
+    /// unchanged.
+    pub fn of(metadata: &std::fs::Metadata, bytes: &[u8]) -> Option<Self> {
+        let head = &bytes[..bytes.len().min(HEAD)];
+        let tail = &bytes[bytes.len().saturating_sub(TAIL)..];
+        Self::from_parts(metadata, head, tail)
+    }
+
+    /// The stamp of the file at `path`, reading only its ends.
+    pub fn read(path: &Path) -> io::Result<Option<Self>> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = std::fs::File::open(path)?;
+        let metadata = file.metadata()?;
+        let mut head = Vec::with_capacity(HEAD);
+        (&mut file).take(HEAD as u64).read_to_end(&mut head)?;
+        let len = metadata.len();
+        file.seek(SeekFrom::Start(len.saturating_sub(TAIL as u64)))?;
+        let mut tail = Vec::with_capacity(TAIL);
+        file.take(TAIL as u64).read_to_end(&mut tail)?;
+        Ok(Self::from_parts(&metadata, &head, &tail))
+    }
+
+    fn from_parts(metadata: &std::fs::Metadata, head: &[u8], tail: &[u8]) -> Option<Self> {
         let since = metadata
             .modified()
             .ok()?
@@ -56,6 +87,11 @@ impl Stamp {
             inode,
             changed,
             changed_nanos,
+            ends: head
+                .iter()
+                .chain(tail)
+                .map(|b| format!("{b:02x}"))
+                .collect(),
         })
     }
 }
@@ -192,8 +228,9 @@ pub(crate) fn load<R: Record>(
 ) -> Result<(R, Option<Stamp>), LoadError> {
     let mut file = std::fs::File::open(path).map_err(LoadError::Io)?;
     // Stamped from the handle that is read, so the stamp is of these bytes.
-    let stamp = file.metadata().ok().as_ref().and_then(Stamp::of);
+    let metadata = file.metadata().ok();
     let bytes = read_limited(&mut file).map_err(unseal_error)?;
+    let stamp = metadata.and_then(|metadata| Stamp::of(&metadata, &bytes));
     let plain = sealer.open(R::KIND, id, &bytes).map_err(unseal_error)?;
     let record: R = serde_json::from_slice(&plain).map_err(|_| LoadError::Damaged)?;
     if record.id() != id {
@@ -212,8 +249,8 @@ fn unseal_error(error: Unseal) -> LoadError {
 
 impl<T: Clone + PartialEq> Table<T> {
     /// Bring the table in line with `found`, the files of its kind now in
-    /// the folder: keep entries whose stamp matches, read the rest, drop
-    /// entries whose file is gone.
+    /// the folder: keep entries whose stamp matches, read the rest (damaged
+    /// ones always), drop entries whose file is gone.
     fn check<R: Record<Summary = T>>(
         &mut self,
         sealer: &Sealer,
@@ -227,15 +264,16 @@ impl<T: Clone + PartialEq> Table<T> {
         self.damaged.retain(|id, _| present.contains(id.as_str()));
         checked.changed |= before != (self.ok.len(), self.damaged.len());
         for (id, path) in &found {
-            let stamp = std::fs::metadata(path).ok().as_ref().and_then(Stamp::of);
-            if stamp.is_some()
-                && (self.ok.get(id).map(|e| e.stamp) == stamp
-                    || self.damaged.get(id).copied() == stamp)
-            {
+            let stamp = Stamp::read(path).ok().flatten();
+            if stamp.is_some() && self.ok.get(id).map(|e| &e.stamp) == stamp.as_ref() {
                 continue;
             }
-            checked.changed = true;
-            match load::<R>(sealer, path, id) {
+            let loaded = load::<R>(sealer, path, id);
+            checked.changed |= !matches!(
+                (&loaded, self.damaged.get(id)),
+                (Err(LoadError::Rejected | LoadError::Damaged), Some(before)) if Some(before) == stamp.as_ref()
+            );
+            match loaded {
                 Ok((record, stamp)) => {
                     checked.opened += 1;
                     self.damaged.remove(id);
@@ -316,13 +354,12 @@ impl Manifest {
     }
 
     /// Bring the whole cache in line with the object files under `root`.
-    pub fn check(&mut self, sealer: &Sealer, root: &Path) -> Checked {
-        let mut checked = self.projects.check::<Project>(sealer, project_files(root));
-        checked.add(
-            self.documents
-                .check::<Document>(sealer, document_files(root)),
-        );
-        checked
+    /// A folder that can't be listed leaves the cache as it was.
+    pub fn check(&mut self, sealer: &Sealer, root: &Path) -> io::Result<Checked> {
+        let (projects, documents) = (project_files(root)?, document_files(root)?);
+        let mut checked = self.projects.check::<Project>(sealer, projects);
+        checked.add(self.documents.check::<Document>(sealer, documents));
+        Ok(checked)
     }
 }
 
@@ -338,35 +375,38 @@ pub(crate) fn document_path(root: &Path, id: &str) -> PathBuf {
     document_dir(root, id).join("doc.enc")
 }
 
+/// The entries of `dir`; none when it does not exist.
+fn entries(dir: &Path) -> io::Result<Vec<std::fs::DirEntry>> {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => entries.collect(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e),
+    }
+}
+
 /// `projects/<id>.enc`, by id.
-fn project_files(root: &Path) -> Vec<(String, PathBuf)> {
-    let Ok(entries) = std::fs::read_dir(root.join("projects")) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
+fn project_files(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
+    Ok(entries(&root.join("projects"))?
+        .into_iter()
         .filter_map(|entry| {
             let name = entry.file_name();
             let id = name.to_str()?.strip_suffix(".enc")?;
             is_id(id).then(|| (id.to_string(), entry.path()))
         })
-        .collect()
+        .collect())
 }
 
 /// `docs/<id>/doc.enc`, by id, for every document folder holding one.
-fn document_files(root: &Path) -> Vec<(String, PathBuf)> {
-    let Ok(entries) = std::fs::read_dir(root.join("docs")) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
+fn document_files(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
+    Ok(entries(&root.join("docs"))?
+        .into_iter()
         .filter_map(|entry| {
             let name = entry.file_name();
             let id = name.to_str().filter(|id| is_id(id))?;
             let path = entry.path().join("doc.enc");
             path.is_file().then(|| (id.to_string(), path))
         })
-        .collect()
+        .collect())
 }
 
 /// Every folder a write may leave a temp file in.
@@ -381,4 +421,30 @@ pub(crate) fn write_dirs(root: &Path) -> Vec<PathBuf> {
         );
     }
     dirs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Stamp;
+
+    /// Where the file clock is coarse and there is no inode (Windows), two
+    /// writes of one length in one tick still differ by their nonce and tag.
+    #[test]
+    fn equal_length_writes_in_one_tick_have_different_stamps() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("a.enc");
+        std::fs::write(&file, [1u8; 64]).unwrap();
+        let metadata = std::fs::metadata(&file).unwrap();
+        let mut other = [1u8; 64];
+        other[15] = 2;
+        let (a, b) = (
+            Stamp::of(&metadata, &[1u8; 64]),
+            Stamp::of(&metadata, &other),
+        );
+        assert!(a.is_some() && a != b);
+        let mut damaged_tag = [1u8; 64];
+        damaged_tag[63] = 0;
+        assert_ne!(a, Stamp::of(&metadata, &damaged_tag));
+        assert_eq!(a, Stamp::read(&file).unwrap());
+    }
 }
