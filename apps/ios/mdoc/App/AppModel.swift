@@ -352,10 +352,14 @@ final class AppModel {
     }
 
     /// Pages from the document camera or Photos.
-    func receiveImages(_ images: [Data], scanned: Bool) {
+    func receiveImages(_ images: [Data?], scanned: Bool) {
         do {
             if let pending = try importer.images(images, scanned: scanned) {
                 navigator.present(.importing(pending))
+                // Never silent: the pages left out are counted.
+                if pending.unreadPages > 0 {
+                    show(ToastMessage(text: Importer.unreadNote(pending.unreadPages)))
+                }
             }
         } catch {
             present(error)

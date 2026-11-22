@@ -24,6 +24,11 @@ class MdocApplication : Application() {
         setup.refresh()
     }
 
+    /** The camera scan in progress, which outlives Home's screen. */
+    val scan: io.github.lawkitt.mdoc.core.ScanSession by lazy {
+        io.github.lawkitt.mdoc.core.ScanSession(io.github.lawkitt.mdoc.core.CameraCapture.dir(this))
+    }
+
     /** The one long job. */
     val jobs: Jobs by lazy { Jobs(this) }
 

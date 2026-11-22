@@ -2,6 +2,8 @@ package io.github.lawkitt.mdoc.core
 
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
@@ -52,7 +54,11 @@ class Documents(
 
     init {
         // Imports not yet read when mdoc last stopped come back, ready to read again.
-        for (entry in pending.all()) {
+        val entries = pending.all()
+        // A pending list that couldn't be read says nothing of what it
+        // owned: no stage is cleared on its word.
+        if (!pending.setAside) originals.clearAbandonedStages(entries.flatMap { it.source.files })
+        for (entry in entries) {
             sessions[entry.id] = Session(entry.id, entry.title, entry.caseId, entry.source, entry.ocrStarted)
         }
     }
@@ -108,14 +114,17 @@ class Documents(
         // An import still being read must not save itself back afterwards.
         session.discard()
         val path = session.path
-        val source = session.sourceFile
+        val source = session.pendingSource
         if (path != null) {
             core { ffi.deleteDocument(path) }
             ids.remove(path)
             originals.remove(path)
         } else if (source != null) {
-            // OCR's kept pages go first, found by the source file's digest.
-            core { ffi.discardImport(source.path) }
+            // OCR's kept pages go first, found by the source files' digests.
+            when (source.input) {
+                is Originals.Input.Images -> core { ffi.discardImages(source.files.map { it.path }) }
+                else -> source.file?.let { core { ffi.discardImport(it.path) } }
+            }
         }
         sessions.remove(id)
         pending.remove(id)
@@ -155,7 +164,8 @@ class Documents(
         var path: String? = null
             private set
 
-        internal val sourceFile: File? get() = source?.file
+        /** The import not yet read, if any. */
+        internal val pendingSource: Originals.Prepared? get() = synchronized(this) { source }
 
         @Volatile private var discarded = false
 
@@ -172,7 +182,7 @@ class Documents(
             caseId = opened.caseId
             scanned = opened.mentions.isNotEmpty() || originals.scanned(path)
             kind = originals.kind(path)
-            originalFile = originals.file(path)
+            originalFiles = originals.files(path)
         }
 
         internal fun summary(updated: Long): DocumentSummary {
@@ -189,7 +199,7 @@ class Documents(
                 ?: return DocumentSnapshot(
                     id, title, caseId?.let(::CaseId), caseName(caseId), kind, DocumentPhase.Recognizing,
                     "", null, emptyList(), emptyList(), null, resumesOcr = ocrStarted,
-                    original = OriginalSource.of(source?.file ?: originalFile),
+                    original = OriginalSource.of(source?.files ?: originalFiles),
                 )
             val candidates = review.mentions.map(::candidate)
             val identities = review.identities.map { row ->
@@ -223,7 +233,7 @@ class Documents(
                 id, review.title, (review.caseId ?: caseId)?.let(::CaseId), caseName(review.caseId ?: caseId),
                 kind, phase, review.text, markdownStyling(review.text), candidates, identities, reply,
                 warning = review.warning,
-                original = OriginalSource.of(source?.file ?: originalFile),
+                original = OriginalSource.of(source?.files ?: originalFiles),
             )
         }
 
@@ -250,6 +260,20 @@ class Documents(
                         ffi.importFileIn(
                             this@Documents.ffi, input.file.path,
                             ImportOptions(ocr, nativeTextOnly = false, password = password), progress,
+                        )
+                    }
+                }
+                is Originals.Input.Images -> {
+                    val ocr = models?.ocrPaths() ?: throw AppError.ModelMissing()
+                    if (!ocrStarted) {
+                        ocrStarted = true
+                        pending.markOcrStarted(id)
+                    }
+                    // One document, a page each, built in memory by the core.
+                    core {
+                        ffi.importImagesIn(
+                            this@Documents.ffi, input.files.map { it.path }, title,
+                            ImportOptions(ocr, nativeTextOnly = false, password = null), progress,
                         )
                     }
                 }
@@ -370,11 +394,11 @@ class Documents(
                 review = saved.review
             }
             synchronized(this@Documents) { ids[saved.path] = id }
-            originals.record(saved.path, kind, source?.file ?: originalFile)
+            originals.record(saved.path, kind, source?.files ?: originalFiles)
             pending.remove(id, keepFiles = true)
         }
 
-        private var originalFile: File? = source?.file
+        private var originalFiles: List<File> = source?.files.orEmpty()
     }
 
     /** The core's job stages and a scan's time left, and what it asks about the phone. */
@@ -512,6 +536,20 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
 
     private val file = File(storage.root, "pending.json")
 
+    /**
+     * `pending.json` couldn't be read and was moved aside
+     * (`pending.json.corrupt`): imports start from an empty list. It stays
+     * true at every start while that copy is kept, since nothing else says
+     * which staged pages its imports owned: no stage is cleared meanwhile.
+     */
+    val setAside: Boolean get() = readFailed || corrupt.isFile
+
+    /** This process found `pending.json` unreadable, moved aside or not. */
+    @Volatile
+    private var readFailed = false
+
+    private val corrupt = File(storage.root, "pending.json.corrupt")
+
     @Synchronized
     fun all(): List<Entry> = load().values.toList()
 
@@ -532,15 +570,32 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
         save(entries - id.raw)
     }
 
-    private fun load(): Map<String, Entry> = runCatching {
-        val array = JSONArray(file.readText())
-        (0 until array.length()).associate { i ->
+    private fun load(): Map<String, Entry> {
+        if (!file.isFile) return emptyMap()
+        return runCatching { parse(file.readText()) }.getOrElse {
+            // One damaged list must not stop every later import, nor, if it
+            // can't even be moved aside, let a start clear its stages.
+            readFailed = true
+            runCatching {
+                Files.move(
+                    file.toPath(), corrupt.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE,
+                )
+            }
+            emptyMap()
+        }
+    }
+
+    private fun parse(text: String): Map<String, Entry> {
+        val array = JSONArray(text)
+        return (0 until array.length()).associate { i ->
             val item = array.getJSONObject(i)
             val kind = SourceKind.valueOf(item.getString("kind"))
-            val input = if (item.has("text")) {
-                Originals.Input.Text(item.getString("text"))
-            } else {
-                Originals.Input.File(File(item.getString("file")), item.getBoolean("needsOcr"))
+            val images = item.optJSONArray("images")
+            val input = when {
+                item.has("text") -> Originals.Input.Text(item.getString("text"))
+                images != null -> Originals.Input.Images((0 until images.length()).map { File(images.getString(it)) })
+                else -> Originals.Input.File(File(item.getString("file")), item.getBoolean("needsOcr"))
             }
             val id = item.getString("id")
             id to Entry(
@@ -548,7 +603,7 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
                 Originals.Prepared(input, kind), item.optBoolean("ocrStarted"),
             )
         }
-    }.getOrDefault(emptyMap())
+    }
 
     private fun save(entries: Map<String, Entry>) {
         val array = JSONArray()
@@ -559,12 +614,14 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
             when (val input = entry.source.input) {
                 is Originals.Input.Text -> item.put("text", input.text)
                 is Originals.Input.File -> item.put("file", input.file.path).put("needsOcr", input.needsOcr)
+                is Originals.Input.Images -> item.put("images", JSONArray().apply { input.files.forEach { put(it.path) } })
             }
             array.put(item)
         }
         file.parentFile?.mkdirs()
-        val temp = File(file.path + ".new")
-        temp.writeText(array.toString())
-        temp.renameTo(file)
+        Originals.writeAtomically(file) {
+            it.write(array.toString().toByteArray())
+            true
+        }
     }
 }

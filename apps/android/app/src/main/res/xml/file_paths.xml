@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only these folders can be handed to the camera or a share target. -->
+<!-- Only exports can be handed to a share target. -->
 <paths>
-    <files-path name="originals" path="mdoc/originals/" />
     <cache-path name="hand-off" path="hand-off/" />
 </paths>

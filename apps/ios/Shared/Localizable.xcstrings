@@ -145,6 +145,29 @@
         }
       }
     },
+    "%lld pages couldn't be read and weren't imported." : {
+      "comment" : "The note when the camera or Photos couldn't hand over some pages of a batch.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld page couldn't be read and wasn't imported."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pages couldn't be read and weren't imported."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld replaced" : {
 
     },

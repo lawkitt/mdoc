@@ -26,11 +26,13 @@
 
 pub mod heic;
 mod jpeg;
+mod metadata;
 mod pdf;
 #[cfg(test)]
 pub(crate) mod tests;
 mod tiff;
 
+pub use metadata::without_metadata;
 use std::{io::Cursor, path::Path};
 
 /// The longest side, in pixels, an image keeps: larger ones are scaled down.
@@ -144,6 +146,9 @@ pub enum ImageError {
     /// Larger than [`limits`] allow to decode.
     #[error("This image is too large to import.")]
     TooLarge,
+    /// The photos together make more than an import can hold.
+    #[error("These photos are too large to import together. Import fewer at a time.")]
+    PdfTooLarge,
     /// Not an image mdoc reads, damaged, or in a variant the decoder lacks.
     #[error("This image is damaged or in a form mdoc can't read.")]
     Unreadable,
@@ -192,27 +197,62 @@ pub fn build(images: &[&[u8]], dpi: u16) -> Result<ImagePdf, ImageError> {
 }
 
 /// [`build`], stopping with [`ImageError::Cancelled`] between pages, and
-/// before the PDF is written, once `cancelled` says so.
+/// before the PDF is finished, once `cancelled` says so.
 pub fn build_cancellable(
     images: &[&[u8]],
     dpi: u16,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<ImagePdf, ImageError> {
-    let mut budget = Budget::new(MAX_DOCUMENT, cancelled);
-    let mut built = Vec::with_capacity(images.len());
-    let mut frames_left_out = 0u64;
+    let mut builder = Builder::new(dpi, crate::import::MAX_PDF_BYTES as usize, cancelled)?;
     for bytes in images {
-        let format = ImageFormat::from_bytes(bytes).ok_or(ImageError::Unreadable)?;
-        frames_left_out += later_frames(format, bytes);
-        built.extend(pages(format, bytes, &mut budget)?);
+        builder.push(bytes)?;
     }
-    budget.check()?;
-    let pages = u32::try_from(built.len()).unwrap_or(u32::MAX);
-    Ok(ImagePdf {
-        pdf: pdf::write(&built, dpi),
-        pages,
-        frames_left_out,
-    })
+    builder.finish()
+}
+
+/// A PDF built an image at a time: only the PDF persists between images,
+/// each page written as it comes, and all their page data charged to one
+/// budget.
+pub(crate) struct Builder<'a> {
+    writer: pdf::Writer,
+    budget: Budget<'a>,
+    frames_left_out: u64,
+}
+
+impl<'a> Builder<'a> {
+    /// A builder whose PDF grows to `limit` bytes at most, stopping once
+    /// `cancelled` says so.
+    pub(crate) fn new(
+        dpi: u16,
+        limit: usize,
+        cancelled: &'a dyn Fn() -> bool,
+    ) -> Result<Self, ImageError> {
+        Ok(Self {
+            writer: pdf::Writer::new(dpi, limit)?,
+            budget: Budget::new(MAX_DOCUMENT, cancelled),
+            frames_left_out: 0,
+        })
+    }
+
+    /// The pages of the image in `bytes`, after those before.
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> Result<(), ImageError> {
+        let format = ImageFormat::from_bytes(bytes).ok_or(ImageError::Unreadable)?;
+        self.frames_left_out += later_frames(format, bytes);
+        for page in pages(format, bytes, &mut self.budget)? {
+            self.writer.push(page)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn finish(self) -> Result<ImagePdf, ImageError> {
+        self.budget.check()?;
+        let (pdf, pages) = self.writer.finish()?;
+        Ok(ImagePdf {
+            pdf,
+            pages,
+            frames_left_out: self.frames_left_out,
+        })
+    }
 }
 
 /// The decoder limits: dimensions and memory a decode may claim before any

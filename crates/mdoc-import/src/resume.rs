@@ -14,12 +14,14 @@
 //! [`crate::import::prepare_cancellable`].
 use crate::image_pdf::ImageFormat;
 use crate::import::{
-    ImportError, Imported, LeftOut, OcrFailure, Password, Source, check_cancel, image_warning,
-    import_source, is_pdf, pdf_bytes, pdf_error, pdf_warning, repeated_lines, with_password,
+    ImportError, Imported, LeftOut, OcrFailure, Password, Source, build_images_pdf, check_cancel,
+    image_warning, import_source, is_pdf, pdf_bytes, pdf_error, pdf_warning,
+    prepare_images_cancellable, repeated_lines, with_password,
 };
 use pdf_inspector::{MarkdownOptions, vision::OcrRepeatEvidence};
 use sha2::{Digest, Sha256};
 use std::{
+    io::Read,
     path::{Path, PathBuf},
     sync::atomic::AtomicBool,
 };
@@ -78,11 +80,33 @@ impl KeptPages {
     /// configuration. Call it while the file still exists: pages are found
     /// by its digest.
     pub fn discard(&self, source: &Path) -> std::io::Result<()> {
-        match std::fs::read(source) {
-            Ok(bytes) => self.remove_file_pages(&digest(&bytes)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error),
+        self.discard_images(&[source.to_path_buf()])
+    }
+
+    /// Remove every page kept for the images at `pages`, imported together
+    /// as one document ([`prepare_resumable_images`]). Call it while the
+    /// files still exist: pages are found by their digests.
+    pub fn discard_images(&self, pages: &[PathBuf]) -> std::io::Result<()> {
+        let mut digests = Vec::with_capacity(pages.len());
+        for page in pages {
+            match std::fs::File::open(page) {
+                Ok(mut file) => {
+                    let mut hash = Sha256::new();
+                    let mut buffer = zeroize::Zeroizing::new([0; 8192]);
+                    loop {
+                        let read = file.read(&mut *buffer)?;
+                        if read == 0 {
+                            break;
+                        }
+                        hash.update(&buffer[..read]);
+                    }
+                    digests.push(format_digest(&hash.finalize()));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(error),
+            }
         }
+        self.remove_file_pages(&images_digest(digests))
     }
 
     /// Remove the pages kept for the file with `digest`, under every OCR
@@ -203,10 +227,20 @@ fn remove_folder(path: &Path) -> std::io::Result<()> {
 }
 
 fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    format_digest(&Sha256::digest(bytes))
+}
+
+fn format_digest(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The key of images imported together, from each one's digest in order:
+/// one image's own digest, so a single photo's pages are found by its file.
+fn images_digest(digests: Vec<String>) -> String {
+    match <[String; 1]>::try_from(digests) {
+        Ok([one]) => one,
+        Err(several) => digest(several.concat().as_bytes()),
+    }
 }
 
 /// [`crate::import::prepare_cancellable`], keeping finished OCR pages in
@@ -248,6 +282,72 @@ pub fn prepare_resumable(
         Some(built) => built?,
         None => (source, 0),
     };
+    let document = Recognizable {
+        source,
+        frames,
+        image,
+        digest,
+    };
+    recognize_resumable(document, password, installed, cancel, kept, recognized)
+}
+
+/// [`crate::import::prepare_images_cancellable`], keeping finished OCR
+/// pages in `kept` as [`prepare_resumable`] does: several photos or camera
+/// pages imported as one document resume with the pages left. Their pages
+/// are kept under the images' digests together, which
+/// [`KeptPages::discard_images`] finds.
+pub fn prepare_resumable_images(
+    paths: &[PathBuf],
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+    kept: &KeptPages,
+    recognized: &dyn Fn(u32, u32),
+) -> Result<(Imported, Option<Completed>), ImportError> {
+    let Some(installed) = installed.filter(|_| !skip_ocr) else {
+        return prepare_images_cancellable(paths, installed, skip_ocr, cancel)
+            .map(|imported| (imported, None));
+    };
+    let mut digests = Vec::new();
+    let (source, frames) = build_images_pdf(paths, installed.config.dpi, cancel, |bytes| {
+        digests.push(digest(bytes));
+    })?;
+    let digest = images_digest(digests);
+    let document = Recognizable {
+        source,
+        frames,
+        image: true,
+        digest,
+    };
+    // The built PDF is never locked.
+    recognize_resumable(document, None, installed, cancel, kept, recognized)
+}
+
+/// A PDF to recognize page by page, and the key its pages are kept under.
+struct Recognizable {
+    source: Source,
+    /// The frames of animated images the PDF leaves out.
+    frames: u64,
+    /// The PDF was built from images.
+    image: bool,
+    digest: String,
+}
+
+/// OCR of `document` page by page, keeping each finished page in `kept`
+/// unless `password` opens it.
+fn recognize_resumable(
+    Recognizable {
+        source,
+        frames,
+        image,
+        digest,
+    }: Recognizable,
+    password: Option<&Password>,
+    installed: &crate::ocr::Installed,
+    cancel: &AtomicBool,
+    kept: &KeptPages,
+    recognized: &dyn Fn(u32, u32),
+) -> Result<(Imported, Option<Completed>), ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     let bytes = pdf_bytes(&source)?;
     // The native pass reads the page count and refuses damaged or locked
@@ -510,6 +610,60 @@ mod tests {
         assert!(completed.is_some());
         kept.discard(&photo).unwrap();
         assert!(!folder.0.exists());
+    }
+
+    /// Photos imported together keep their pages under their digests
+    /// together, in order: a different order, or one photo alone, is
+    /// another document. Discarding the same photos finds them.
+    #[test]
+    fn photos_imported_together_keep_their_pages_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = crate::image_pdf::tests::write_photo(dir.path(), "page-1.jpg");
+        let second = dir.path().join("page-2.png");
+        std::fs::write(&second, crate::image_pdf::tests::small_png()).unwrap();
+        let kept = KeptPages::new(dir.path().join("kept"));
+        let missing = dir.path().join("not installed");
+        let installed = crate::ocr::Installed {
+            config: config(),
+            models: missing.clone(),
+            pdfium: missing.clone(),
+            onnx: missing,
+        };
+        let pages = [first.clone(), second.clone()];
+        let result = prepare_resumable_images(
+            &pages,
+            Some(&installed),
+            false,
+            &AtomicBool::new(false),
+            &kept,
+            &|_, _| {},
+        );
+        assert!(
+            matches!(result, Err(ImportError::OcrFailed(_))),
+            "{result:?}"
+        );
+        let file_digest = |path: &Path| digest(&std::fs::read(path).unwrap());
+        let together = images_digest(vec![file_digest(&first), file_digest(&second)]);
+        let folder = kept.folder(&together, &installed.config);
+        assert!(folder.0.is_dir());
+        assert_ne!(
+            together,
+            images_digest(vec![file_digest(&second), file_digest(&first)])
+        );
+        assert_eq!(
+            images_digest(vec![file_digest(&first)]),
+            file_digest(&first)
+        );
+        // Another order, or one of them, finds nothing to discard.
+        kept.discard_images(&[second.clone(), first.clone()])
+            .unwrap();
+        kept.discard(&first).unwrap();
+        assert!(folder.0.is_dir());
+        kept.discard_images(&pages).unwrap();
+        assert!(!folder.0.exists());
+        // A photo gone since: nothing to find, and no error.
+        std::fs::remove_file(&second).unwrap();
+        kept.discard_images(&pages).unwrap();
     }
 
     /// Pages kept before a format change (form field names in their text,

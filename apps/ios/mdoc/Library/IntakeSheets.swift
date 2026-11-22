@@ -141,7 +141,9 @@ struct PasteTextSheet: View {
 
 /// VisionKit's document camera: capture only; recognition stays PP-OCR.
 struct DocumentScanner: UIViewControllerRepresentable {
-    let onScan: ([Data]) -> Void
+    /// Each page as a JPEG, nil for one that couldn't be encoded: the
+    /// importer refuses the scan rather than drop it.
+    let onScan: ([Data?]) -> Void
     let onCancel: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -166,7 +168,7 @@ struct DocumentScanner: UIViewControllerRepresentable {
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
-            let pages = (0..<scan.pageCount).compactMap { scan.imageOfPage(at: $0).jpegData(compressionQuality: 0.9) }
+            let pages = (0..<scan.pageCount).map { scan.imageOfPage(at: $0).jpegData(compressionQuality: 0.9) }
             parent.onScan(pages)
         }
 

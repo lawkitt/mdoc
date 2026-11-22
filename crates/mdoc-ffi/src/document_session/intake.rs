@@ -1,15 +1,29 @@
 //! Intake: files become Markdown through `mdoc_import` as on
-//! desktop. Markdown and plain text open as they are. A JPEG (a camera scan
-//! or a photo) goes through the import's shared image builder, which wraps
-//! it as a one-page PDF in memory, its metadata stripped and its EXIF
-//! orientation applied, so PP-OCR reads it through the same PDF path as a
-//! scanned document.
+//! desktop. Markdown and plain text open as they are. An image (JPEG, PNG,
+//! WebP or GIF: a camera page or a photo) goes through the import's shared
+//! image builder, which wraps it as a PDF page in memory, its metadata
+//! stripped and its EXIF orientation applied, so PP-OCR reads it through
+//! the same PDF path as a scanned document. Photos or camera pages picked
+//! together become one document, a page each. HEIC never comes here: each
+//! phone's operating system draws it as an upright JPEG first.
 use super::{ImportOptions, JobProgress, JobStage};
 use crate::CoreError;
+use mdoc_import::image_pdf::ImageFormat;
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
 };
+
+/// `image` as the copy a phone keeps for its Original: the same pixels
+/// without metadata (EXIF with its GPS position, camera and dates, XMP,
+/// profiles, comments), its orientation kept. `None` for a format the core
+/// doesn't rewrite (HEIC, TIFF) or a file it can't parse, which the phone's
+/// operating system then draws as an upright JPEG without metadata, or the
+/// phone refuses.
+#[uniffi::export]
+pub fn image_without_metadata(image: Vec<u8>) -> Option<Vec<u8>> {
+    mdoc_import::image_pdf::without_metadata(&image)
+}
 
 pub(super) struct Imported {
     pub title: String,
@@ -64,65 +78,103 @@ pub(super) fn import_file(
         .map(|ocr| ocr.installed())
         .transpose()?;
     let ocr = !options.native_text_only && installed.is_some();
-    let (imported, completed) = if matches!(extension.as_str(), "jpg" | "jpeg") {
-        stage(if ocr {
-            JobStage::Recognizing
-        } else {
-            JobStage::Converting
-        });
-        // The import wraps the photo in memory: no scratch file (#1021).
-        let imported = mdoc_import::import::prepare_cancellable(
-            path,
-            None,
-            installed.as_ref(),
-            false,
-            cancel,
-        )?;
-        (imported, None)
-    } else if matches!(
-        extension.as_str(),
-        "png" | "heic" | "heif" | "tif" | "tiff" | "gif"
-    ) {
-        return Err(CoreError::Import {
-            message: "Save the image as JPEG to recognize its text.".into(),
-        });
+    let image = ImageFormat::from_path(path).is_some();
+    stage(if ocr && (extension == "pdf" || image) {
+        JobStage::Recognizing
     } else {
-        stage(if ocr && extension == "pdf" {
-            JobStage::Recognizing
-        } else {
-            JobStage::Converting
-        });
-        let installed = installed.as_ref().filter(|_| ocr);
-        // A locked PDF opens with its password as a locked DOCX does; its
-        // recognized pages are never kept (#1024 decision 7).
-        match kept {
-            Some(kept) => mdoc_import::resume::prepare_resumable(
+        JobStage::Converting
+    });
+    let installed = installed.as_ref().filter(|_| ocr);
+    // A locked PDF opens with its password as a locked DOCX does; its
+    // recognized pages are never kept (#1024 decision 7). An image is
+    // wrapped in memory: no scratch file (#1021).
+    let (imported, completed) = match kept {
+        Some(kept) => mdoc_import::resume::prepare_resumable(
+            path,
+            password,
+            installed,
+            options.native_text_only,
+            cancel,
+            kept,
+            &|page, pages| advanced(progress, page, pages),
+        )?,
+        None => (
+            mdoc_import::import::prepare_cancellable(
                 path,
                 password,
                 installed,
                 options.native_text_only,
                 cancel,
-                kept,
-                // Each finished page: the bar shows it, and iOS keeps a
-                // background job only while it reports progress.
-                &|page, pages| {
-                    if let Some(progress) = progress {
-                        progress.advanced(u64::from(page), u64::from(pages));
-                    }
-                },
             )?,
-            None => (
-                mdoc_import::import::prepare_cancellable(
-                    path,
-                    password,
-                    installed,
-                    options.native_text_only,
-                    cancel,
-                )?,
-                None,
-            ),
-        }
+            None,
+        ),
     };
+    finish(title, imported, completed, cancel)
+}
+
+/// Import `images`, photos or camera pages picked together, as one
+/// document titled `title`, a page each in order; with `kept`, OCR keeps
+/// its finished pages there and resumes with the rest.
+pub(super) fn import_images(
+    images: &[PathBuf],
+    title: String,
+    options: &ImportOptions,
+    cancel: &AtomicBool,
+    progress: Option<&dyn JobProgress>,
+    kept: Option<&mdoc_import::resume::KeptPages>,
+) -> Result<Imported, CoreError> {
+    if let Some(progress) = progress {
+        progress.stage(JobStage::Reading);
+    }
+    let installed = options
+        .ocr
+        .as_ref()
+        .map(|ocr| ocr.installed())
+        .transpose()?
+        .filter(|_| !options.native_text_only);
+    if let Some(progress) = progress {
+        progress.stage(if installed.is_some() {
+            JobStage::Recognizing
+        } else {
+            JobStage::Converting
+        });
+    }
+    let (imported, completed) = match kept {
+        Some(kept) => mdoc_import::resume::prepare_resumable_images(
+            images,
+            installed.as_ref(),
+            options.native_text_only,
+            cancel,
+            kept,
+            &|page, pages| advanced(progress, page, pages),
+        )?,
+        None => (
+            mdoc_import::import::prepare_images_cancellable(
+                images,
+                installed.as_ref(),
+                options.native_text_only,
+                cancel,
+            )?,
+            None,
+        ),
+    };
+    finish(title, imported, completed, cancel)
+}
+
+/// Each finished page: the bar shows it, and iOS keeps a background job
+/// only while it reports progress.
+fn advanced(progress: Option<&dyn JobProgress>, page: u32, pages: u32) {
+    if let Some(progress) = progress {
+        progress.advanced(u64::from(page), u64::from(pages));
+    }
+}
+
+fn finish(
+    title: String,
+    imported: mdoc_import::import::Imported,
+    kept: Option<mdoc_import::resume::Completed>,
+    cancel: &AtomicBool,
+) -> Result<Imported, CoreError> {
     if cancel.load(Ordering::Relaxed) {
         return Err(CoreError::Cancelled);
     }
@@ -130,7 +182,7 @@ pub(super) fn import_file(
         title,
         note: ImportNote::of(&imported),
         markdown: imported.markdown,
-        kept: completed,
+        kept,
         #[cfg(not(target_os = "android"))]
         unlocked_docx: (imported.is_docx && imported.source.unlocked()).then_some(imported.source),
     })
@@ -286,19 +338,93 @@ mod tests {
         }
     }
 
+    /// A 1×1 PNG, as the phones' screenshots and saved images arrive.
+    const PNG: [u8; 70] = [
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64,
+        0x60, 0xf8, 0x5f, 0x0f, 0x00, 0x02, 0x87, 0x01, 0x80, 0xeb, 0x47, 0xba, 0x92, 0x00, 0x00,
+        0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    fn fixture(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures")
+            .join(name)
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Every image format goes through the core, never "save it as JPEG"
+    /// (#1024 decision 9); a renamed one is known by its content.
     #[test]
-    fn other_images_ask_for_jpeg() {
+    fn every_image_format_is_wrapped_like_a_scan() {
         let scratch = crate::test_support::Scratch::new();
-        let path = scratch.path().join("photo.heic");
-        std::fs::write(&path, b"....").unwrap();
-        let result = import_file(
-            &path,
+        for (name, bytes) in [("scan.png", PNG.as_slice()), ("scan.bin", PNG.as_slice())] {
+            let path = scratch.path().join(name);
+            std::fs::write(&path, bytes).unwrap();
+            let result = import_file(
+                &path,
+                &ImportOptions::default(),
+                None,
+                &AtomicBool::new(false),
+                None,
+                None,
+            );
+            match result {
+                Err(CoreError::NeedsOcr { page_count, .. }) => assert_eq!(page_count, 1),
+                Err(other) => panic!("{name}: {other}"),
+                Ok(_) => panic!("{name}: an image without text has none"),
+            }
+        }
+        assert_eq!(names(scratch.path()), ["scan.bin", "scan.png"]);
+    }
+
+    /// Photos picked together are one document, a page each, titled as the
+    /// phone chose; nothing is written beside them.
+    #[test]
+    fn photos_picked_together_are_one_document() {
+        let scratch = crate::test_support::Scratch::new();
+        let photo = scratch.path().join("page-1.jpg");
+        std::fs::copy(fixture("images/gps-rotated.jpg"), &photo).unwrap();
+        let screenshot = scratch.path().join("page-2.png");
+        std::fs::write(&screenshot, PNG).unwrap();
+        let result = import_images(
+            &[photo, screenshot],
+            "Lease".into(),
             &ImportOptions::default(),
-            None,
             &AtomicBool::new(false),
             None,
             None,
         );
-        assert!(matches!(result, Err(CoreError::Import { .. })));
+        match result {
+            Err(CoreError::NeedsOcr { pages, page_count }) => {
+                assert_eq!((pages, page_count), (vec![1, 2], 2));
+            }
+            Err(other) => panic!("{other}"),
+            Ok(_) => panic!("photos without text have none"),
+        }
+        assert_eq!(names(scratch.path()), ["page-1.jpg", "page-2.png"]);
+    }
+
+    /// The copy a phone keeps loses the photo's GPS position and camera but
+    /// keeps its orientation; HEIC is left to the phone's operating system.
+    #[test]
+    fn the_kept_copy_has_no_metadata() {
+        let photo = std::fs::read(fixture("images/gps-rotated.jpg")).unwrap();
+        let kept = image_without_metadata(photo.clone()).unwrap();
+        assert!(kept.len() < photo.len());
+        let contains = |needle: &[u8]| kept.windows(needle.len()).any(|w| w == needle);
+        assert!(contains(b"Exif\0\0"));
+        assert!(!contains(b"FictionalCam"));
+        let heic = std::fs::read(fixture("heic/page-gps.heic")).unwrap();
+        assert_eq!(image_without_metadata(heic), None);
     }
 }

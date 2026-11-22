@@ -1,10 +1,6 @@
 import Foundation
 import MdocFFI
 import os
-#if canImport(UIKit)
-import PDFKit
-import UIKit
-#endif
 
 /// The app's `Core` over `crates/mdoc-ffi` (ADR 0085). The Rust objects own
 /// documents, review, cases and restore; this file only converts their
@@ -322,10 +318,14 @@ final class RealLibrary: Library, @unchecked Sendable {
             _ = try core { try ffi.deleteDocument(path: path) }
             lock.withLock { _ = ids.removeValue(forKey: path) }
             originals.remove(for: path)
-        } else if let source = session?.sourceFile {
+        } else if let input = session?.pendingInput {
             // An import not yet read: OCR's kept pages go first, found by the
-            // source file's digest, then the file.
-            try core { try ffi.discardImport(source: source.path) }
+            // source files' digests, then the files.
+            switch input {
+            case .file(let url, _): try core { try ffi.discardImport(source: url.path) }
+            case .images(let urls): try core { try ffi.discardImages(images: urls.map(\.path)) }
+            case .text: break
+            }
         }
         lock.withLock { _ = sessions.removeValue(forKey: document) }
         pending.remove(document)
@@ -662,10 +662,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return renamed.title
     }
 
-    /// The source file of an import not yet read.
-    fileprivate var sourceFile: URL? {
-        guard case .file(let url, _) = lock.withLock({ source?.input }) else { return nil }
-        return url
+    /// What an import not yet read reads.
+    fileprivate var pendingInput: PreparedSource.Input? {
+        lock.withLock { source?.input }
     }
 
     /// The list row of an import not saved yet.
@@ -806,6 +805,19 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 try ffi.importFileIn(
                     library: library.ffi, path: url.path,
                     options: ImportOptions(ocr: ocr, nativeTextOnly: false, password: password), progress: reporter)
+            }
+        case .images(let urls):
+            guard let ocr = library.setup?.ocrPaths() else { throw CoreError.modelMissing }
+            if !lock.withLock({ ocrStarted }) {
+                lock.withLock { ocrStarted = true }
+                library.ocrStarted(self)
+            }
+            // One document, a page each, built in memory by the core; its
+            // kept pages resume as a file's do.
+            _ = try job(observer) {
+                try ffi.importImagesIn(
+                    library: library.ffi, images: urls.map(\.path), title: chosen.title,
+                    options: ImportOptions(ocr: ocr, nativeTextOnly: false, password: nil), progress: reporter)
             }
         }
         lock.withLock {
@@ -1226,8 +1238,12 @@ struct PreparedSource: Sendable {
     enum Input: Sendable {
         /// Text taken as Markdown, and how its document began.
         case text(String, DocumentOrigin)
-        /// `needsOcr`: page images, which only OCR can read.
+        /// `needsOcr`: page images, which only OCR can read (imports kept
+        /// from before `images`).
         case file(URL, needsOcr: Bool)
+        /// Photos or camera pages, one document of a page each, which only
+        /// OCR can read.
+        case images([URL])
     }
 
     var input: Input
@@ -1259,8 +1275,9 @@ final class OriginalsIndex: @unchecked Sendable {
         self.storage = storage
     }
 
-    /// Moves a received file under its title and, for page images, builds
-    /// the one file the core imports: the JPEG itself, or a PDF of the pages.
+    /// Moves a received file under its title. Page images go to the core
+    /// as they are, together as one document, a single one named after the
+    /// title.
     func prepare(_ source: ImportSource, title: String) throws -> PreparedSource {
         switch source {
         case .text(let text):
@@ -1271,26 +1288,20 @@ final class OriginalsIndex: @unchecked Sendable {
             return PreparedSource(input: .text(text, .sample), kind: .text, original: .none)
         case .file(let url, let kind):
             let named = try rename(url, to: title)
+            if kind == .image {
+                return PreparedSource(input: .images([named]), kind: kind, original: .images([named]), owned: owned(named))
+            }
             let original: OriginalSource = switch kind {
             case .pdf: .pdf(named)
             case .docx: .docx(named)
-            case .image: .images([named])
             default: .none
             }
-            return PreparedSource(
-                input: .file(named, needsOcr: kind == .image), kind: kind, original: original,
-                owned: owned(named))
+            return PreparedSource(input: .file(named, needsOcr: false), kind: kind, original: original, owned: owned(named))
         case .scan(let pages), .photos(let pages):
             let kind: SourceKind = if case .scan = source { .scan } else { .image }
             guard let first = pages.first else { throw CoreError.emptySelection }
-            if pages.count == 1 {
-                let named = try rename(first, to: title)
-                return PreparedSource(
-                    input: .file(named, needsOcr: true), kind: kind, original: .images([named]), owned: owned(named))
-            }
-            let pdf = try pagesPDF(pages, title: title, folder: first.deletingLastPathComponent())
-            return PreparedSource(
-                input: .file(pdf, needsOcr: true), kind: kind, original: .images(pages), owned: owned(pdf))
+            let named = pages.count == 1 ? [try rename(first, to: title)] : pages
+            return PreparedSource(input: .images(named), kind: kind, original: .images(named), owned: owned(named[0]))
         }
     }
 
@@ -1308,25 +1319,6 @@ final class OriginalsIndex: @unchecked Sendable {
         try? FileManager.default.removeItem(at: target)
         try FileManager.default.moveItem(at: url, to: target)
         return target
-    }
-
-    /// Several scanned pages as one image-only PDF, which the core reads
-    /// with OCR as a scanned document.
-    private func pagesPDF(_ pages: [URL], title: String, folder: URL) throws -> URL {
-        #if canImport(UIKit)
-        let document = PDFDocument()
-        for (index, url) in pages.enumerated() {
-            guard let image = UIImage(contentsOfFile: url.path), let page = PDFPage(image: image) else { continue }
-            document.insert(page, at: index)
-        }
-        let target = folder.appendingPathComponent(MdocStorage.fileName(title, extension: "pdf"))
-        guard document.pageCount > 0, document.write(to: target) else {
-            throw CoreError.importFailed(String(localized: "The scanned pages could not be read."))
-        }
-        return target
-        #else
-        throw CoreError.importFailed("PDFKit is unavailable.")
-        #endif
     }
 
     func record(_ original: OriginalSource, owned: [URL], for path: String) {
@@ -1459,6 +1451,8 @@ final class PendingImports: @unchecked Sendable {
         var kind: String
         var text: String?
         var file: String?
+        /// Page images imported together; older entries have none.
+        var images: [String]?
         var needsOcr: Bool
         var originalKind: String
         var originalFiles: [String]
@@ -1493,6 +1487,8 @@ final class PendingImports: @unchecked Sendable {
         case .file(let file, let needsOcr):
             stored.file = relative(file)
             stored.needsOcr = needsOcr
+        case .images(let files):
+            stored.images = files.map { relative($0) }
         }
         switch source.original {
         case .none: break
@@ -1528,6 +1524,10 @@ final class PendingImports: @unchecked Sendable {
                 // A source file that is gone cannot be read again.
                 guard FileManager.default.fileExists(atPath: url.path) else { return nil }
                 input = .file(url, needsOcr: stored.needsOcr)
+            } else if let images = stored.images, !images.isEmpty {
+                let urls = images.map { absolute($0) }
+                guard urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else { return nil }
+                input = .images(urls)
             } else {
                 return nil
             }

@@ -1,8 +1,8 @@
 package io.github.lawkitt.mdoc.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
+import android.graphics.ImageDecoder
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
@@ -12,6 +12,12 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.Semaphore
+import java.util.concurrent.atomic.AtomicInteger
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +42,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,9 +53,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The page a document came from: a PDF's pages, drawn by
- * Android's own renderer (PDFium stays in the core for reading text), or a
- * photo, both zoomable with two fingers. DOCX and pasted text have none.
+ * The pages a document came from: a PDF's pages, drawn by
+ * Android's own renderer (PDFium stays in the core for reading text), or
+ * photos and camera pages, drawn upright, all zoomable with two fingers.
+ * DOCX and pasted text have none.
  */
 @Composable
 fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
@@ -76,16 +84,10 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            is OriginalSource.Image -> {
-                val bitmap by produceState<Bitmap?>(null, original.file) { value = withContext(Dispatchers.IO) { decode(original.file) } }
-                bitmap?.let {
-                    Image(
-                        it.asImageBitmap(),
-                        contentDescription = stringResource(R.string.original_page, 1, 1),
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize().then(zoomed),
-                    )
-                }
+            is OriginalSource.Images -> if (original.files.size == 1) {
+                ImagePage(original.files.single(), 1, 1, ContentScale.Fit, Modifier.fillMaxSize().then(zoomed))
+            } else {
+                ImagePages(original.files, Modifier.fillMaxSize().then(zoomed))
             }
             is OriginalSource.Pdf -> PdfPages(original.file, Modifier.fillMaxSize().then(zoomed))
         }
@@ -145,6 +147,69 @@ private fun open(file: File): PdfRenderer {
     }
 }
 
+/** Photos or camera pages one under another, as a PDF's pages are. */
+@Composable
+private fun ImagePages(files: List<File>, modifier: Modifier) {
+    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(files.size) { index ->
+            // Page-sized until drawn, so the list lays out only the pages it shows.
+            ImagePage(files[index], index + 1, files.size, ContentScale.FillWidth, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** A page being drawn, drawn, or one that couldn't be drawn. */
+private sealed interface PageImage {
+    data object Loading : PageImage
+
+    data class Shown(val bitmap: Bitmap) : PageImage
+
+    data object Unavailable : PageImage
+}
+
+/**
+ * One photo or page, drawn upright off the main thread, and a placeholder
+ * the size of a page until it is (or in its place if it can't be), so a
+ * list lays out only the pages it shows.
+ */
+@Composable
+private fun ImagePage(file: File, number: Int, count: Int, scale: ContentScale, modifier: Modifier) {
+    val description = stringResource(R.string.original_page, number, count)
+    val page by produceState<PageImage>(PageImage.Loading, file) {
+        value = decodes.withPermit { withContext(Dispatchers.IO) { decode(file) } }
+            ?.let(PageImage::Shown) ?: PageImage.Unavailable
+    }
+    when (val shown = page) {
+        is PageImage.Shown -> Image(
+            shown.bitmap.asImageBitmap(),
+            contentDescription = description,
+            contentScale = scale,
+            modifier = modifier,
+        )
+        else -> Box(
+            modifier
+                .aspectRatio(PAGE_ASPECT)
+                .background(MaterialTheme.colorScheme.surface)
+                .semantics { contentDescription = description }
+                .then(if (shown == PageImage.Loading) Modifier.testTag(PAGE_PLACEHOLDER) else Modifier),
+        )
+    }
+}
+
+/** The test tag of a page still being drawn. */
+internal const val PAGE_PLACEHOLDER = "original-page-placeholder"
+
+/** A placeholder's shape: an A4 page. */
+private const val PAGE_ASPECT = 210f / 297f
+
+/** At most two photos decode at once, however many pages a list shows. */
+private val decodes = Semaphore(2)
+
+/** Decodes started, for the tests. */
+internal object OriginalDecodes {
+    val started = AtomicInteger()
+}
+
 private fun render(renderer: PdfRenderer, index: Int, width: Int): Bitmap = renderer.openPage(index).use { page ->
     val height = (width.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
     Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
@@ -153,11 +218,13 @@ private fun render(renderer: PdfRenderer, index: Int, width: Int): Bitmap = rend
     }
 }
 
-/** A photo, scaled down to at most about 2,500 px on its long side. */
-private fun decode(file: File): Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.path, bounds)
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2500) sample *= 2
-    return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
-}
+/** A photo, upright by its EXIF orientation, scaled down to at most about 2,500 px on its long side. */
+private fun decode(file: File): Bitmap? = runCatching {
+    OriginalDecodes.started.incrementAndGet()
+    ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+        var sample = 1
+        while (maxOf(info.size.width, info.size.height) / sample > 2500) sample *= 2
+        decoder.setTargetSampleSize(sample)
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+    }
+}.getOrNull()

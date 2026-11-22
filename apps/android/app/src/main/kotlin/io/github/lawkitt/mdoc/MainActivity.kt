@@ -28,7 +28,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -44,10 +43,7 @@ import io.github.lawkitt.mdoc.home.HomeViewModel
 import io.github.lawkitt.mdoc.settings.SettingsScreen
 import io.github.lawkitt.mdoc.setup.CellularQuestion
 import io.github.lawkitt.mdoc.setup.SetupCard
-import io.github.lawkitt.mdoc.storage.MdocStorage
 import io.github.lawkitt.mdoc.ui.MdocTheme
-import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -120,24 +116,17 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         home.received(context.contentResolver, uris, io.github.lawkitt.mdoc.core.SourceKind.Image, context.getString(R.string.photo))
     }
-    // Scan: the system camera, a page per photo; mdoc itself asks for no camera permission.
-    // Kept through activity recreation: Android may recreate mdoc while the camera is open.
-    var pagePaths by rememberSaveable { mutableStateOf(listOf<String>()) }
-    var askNextPage by rememberSaveable { mutableStateOf(false) }
-    var pendingPath by rememberSaveable { mutableStateOf<String?>(null) }
-    val pages = pagePaths.map(::File)
+    // The system camera receives a seekable in-memory output URI.
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
-        val page = pendingPath?.let(::File)
-        if (taken && page != null && page.length() > 0) pagePaths = pagePaths + page.path else page?.delete()
-        pendingPath = null
-        askNextPage = pagePaths.isNotEmpty()
+        home.cameraResult(taken)
     }
     fun takePage() {
-        val folder = pages.firstOrNull()?.parentFile
-            ?: File(app.core.storage.dir(MdocStorage.Area.Originals), UUID.randomUUID().toString()).apply { mkdirs() }
-        val page = File(folder, "page-${pages.size + 1}.jpg")
-        pendingPath = page.path
-        camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.files", page))
+        val uri = home.takePage(context) ?: return
+        try {
+            camera.launch(uri)
+        } catch (error: RuntimeException) {
+            home.cameraResult(false, error.message)
+        }
     }
 
     val current = open
@@ -165,10 +154,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                     AddOption.Paste -> home.startPaste(context.getString(R.string.pasted_text))
                     AddOption.Files -> files.launch(OPENABLE)
                     AddOption.Photos -> photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    AddOption.Scan -> {
-                        pagePaths = emptyList()
-                        takePage()
-                    }
+                    AddOption.Scan -> takePage()
                 }
             },
             onRetry = home::refresh,
@@ -238,23 +224,17 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
         )
     }
     CellularQuestion(setupState, app.setup::answerCellular)
-    if (askNextPage) {
+    val scanTitle = stringResource(R.string.scan)
+    if (state.scanPageCount > 0) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text(stringResource(R.string.scan)) },
-            text = { Text(pluralStringResource(R.plurals.pages_scanned, pages.size, pages.size)) },
+            title = { Text(scanTitle) },
+            text = { Text(pluralStringResource(R.plurals.pages_scanned, state.scanPageCount, state.scanPageCount)) },
             confirmButton = {
-                TextButton(onClick = {
-                    askNextPage = false
-                    home.scanned(pages, context.getString(R.string.scan))
-                    pagePaths = emptyList()
-                }) { Text(stringResource(R.string.done)) }
+                TextButton(onClick = { home.finishScan(scanTitle) }) { Text(stringResource(R.string.done)) }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    askNextPage = false
-                    takePage()
-                }) { Text(stringResource(R.string.add_page)) }
+                TextButton(onClick = ::takePage) { Text(stringResource(R.string.add_page)) }
             },
         )
     }

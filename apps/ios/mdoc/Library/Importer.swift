@@ -1,36 +1,52 @@
 import Foundation
+import ImageIO
+import MdocFFI
 import UIKit
 import UniformTypeIdentifiers
 
 /// File intake (ADR 0104): what comes in from Files, "Open in mdoc", the
 /// camera, Photos or the clipboard becomes a `PendingImport` over a copy in
 /// mdoc's storage. PDF, DOCX and text go to the core as they are; images
-/// become upright JPEG pages, which the core reads with OCR.
+/// become pages the core reads with OCR, kept without their metadata.
 struct Importer {
     let storage: MdocStorage
 
     enum Failure: LocalizedError {
         /// Not a PDF, DOCX or image, or an image that cannot be read.
         case unsupported
+        /// No page the camera or Photos handed over could be read.
+        case unread(Int)
 
         var errorDescription: String? {
-            String(localized: "mdoc opens PDF, DOCX and image files.")
+            switch self {
+            case .unsupported: String(localized: "mdoc opens PDF, DOCX and image files.")
+            case .unread(let count): Importer.unreadNote(count)
+            }
         }
     }
 
     /// A file from Files or "Open in mdoc". It is copied into mdoc's storage
-    /// and the original left alone (an Inbox copy is removed). Images become
-    /// JPEG pages like the camera's.
+    /// and the original left alone (an Inbox copy is removed). An image
+    /// becomes a page like the camera's, one document of its own. What it
+    /// is comes from its first bytes, which must agree with its name: a
+    /// photo named `.pdf`, or anything named `.jpg` that isn't an image, is
+    /// refused before a copy is kept.
     func file(_ url: URL) throws -> PendingImport? {
         let scoped = url.startAccessingSecurityScopedResource()
         defer {
             if scoped { url.stopAccessingSecurityScopedResource() }
         }
-        guard let kind = Self.kind(of: url) else { throw Failure.unsupported }
+        let header = (try? FileHandle(forReadingFrom: url))
+            .flatMap { handle in defer { try? handle.close() }; return try? handle.read(upToCount: 1024) } ?? Data()
+        guard let named = Self.kind(of: url), let kind = Self.kind(named, header: header) else {
+            throw Failure.unsupported
+        }
         if kind == .image {
-            guard let data = try? Data(contentsOf: url) else { throw Failure.unsupported }
+            guard let data = try? Data(contentsOf: url),
+                  let pending = try images([data], scanned: false, title: url.deletingPathExtension().lastPathComponent)
+            else { throw Failure.unsupported }
             removeInboxCopy(url)
-            return try images([data], scanned: false, title: url.deletingPathExtension().lastPathComponent)
+            return pending
         }
         let copy = try storage.importCopy(of: url, in: .originals)
         removeInboxCopy(url)
@@ -43,23 +59,43 @@ struct Importer {
         }
     }
 
-    /// Page images from the document camera or Photos, as upright JPEGs:
-    /// the core reads JPEG only (PNG and HEIC are converted here). Nil when
-    /// no page could be read.
-    func images(_ images: [Data], scanned: Bool, title: String? = nil) throws -> PendingImport? {
+    /// Page images from the document camera or Photos, picked together as
+    /// one document, each kept as `page` keeps it. A page that can't be
+    /// kept refuses the whole batch (`Failure.unsupported`): no page is
+    /// left out without a word.
+    /// A page that arrives as nil (the camera couldn't encode it, Photos
+    /// couldn't load it) is left out, and the import counts it
+    /// (`unreadPages`) for the note that says so; with none read at all,
+    /// `Failure.unread`.
+    func images(_ pages: [Data?], scanned: Bool, title: String? = nil) throws -> PendingImport? {
+        guard !pages.isEmpty else { return nil }
+        let images = pages.compactMap { $0 }
+        let unread = pages.count - images.count
+        guard !images.isEmpty else { throw Failure.unread(unread) }
         let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let urls = try images.enumerated().compactMap { index, data -> URL? in
-            guard let jpeg = Self.uprightJPEG(data) else { return nil }
-            let url = folder.appendingPathComponent("page-\(index + 1).jpg")
-            try jpeg.write(to: url, options: [.atomic, .completeFileProtection])
-            return url
+        let urls: [URL]
+        do {
+            urls = try images.enumerated().map { index, data -> URL in
+                guard let (page, format) = Self.page(data) else { throw Failure.unsupported }
+                let url = folder.appendingPathComponent("page-\(index + 1).\(format)")
+                try page.write(to: url, options: [.atomic, .completeFileProtection])
+                return url
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
         }
-        guard !urls.isEmpty else { return nil }
         let kind = scanned ? String(localized: "Scan") : String(localized: "Photo")
         return PendingImport(
             source: scanned ? .scan(urls) : .photos(urls),
-            suggestedTitle: title ?? "\(kind) \(Date.now.formatted(date: .abbreviated, time: .shortened))")
+            suggestedTitle: title ?? "\(kind) \(Date.now.formatted(date: .abbreviated, time: .shortened))",
+            unreadPages: unread)
+    }
+
+    /// The note for pages the camera or Photos couldn't hand over.
+    static func unreadNote(_ count: Int) -> String {
+        String(localized: "\(count) pages couldn't be read and weren't imported.")
     }
 
     /// Pasted text; nil when there is none.
@@ -74,6 +110,69 @@ struct Importer {
         let firstLine = trimmed.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
         let title = firstLine.trimmingCharacters(in: CharacterSet(charactersIn: "# ")).prefix(60)
         return title.isEmpty ? String(localized: "Pasted text") : String(title)
+    }
+
+    /// An image as mdoc keeps it, which the core reads and the Original
+    /// shows (#1021), with its file extension: the core rewrites JPEG, PNG,
+    /// WebP and GIF without their metadata (GPS position, camera, dates),
+    /// the pixels and orientation as they were; HEIC and anything else iOS
+    /// reads is drawn upright as a JPEG without metadata. Nil when neither
+    /// can read it, and for a TIFF (TIFF on the phones is #1064).
+    static func page(_ data: Data) -> (Data, String)? {
+        if isTIFF(data) { return nil }
+        if let kept = imageWithoutMetadata(image: data), let format = coreFormat(kept) {
+            return (kept, format)
+        }
+        return uprightJPEG(data).map { ($0, "jpg") }
+    }
+
+    /// The extension of an image the core reads, by its signature.
+    static func coreFormat(_ data: Data) -> String? {
+        let bytes = [UInt8](data.prefix(12))
+        if bytes.starts(with: [0xff, 0xd8, 0xff]) { return "jpg" }
+        if bytes.starts(with: [0x89, 0x50, 0x4e, 0x47]) { return "png" }
+        if bytes.starts(with: Array("GIF8".utf8)) { return "gif" }
+        if bytes.count == 12, bytes.starts(with: Array("RIFF".utf8)), Array(bytes[8...]) == Array("WEBP".utf8) {
+            return "webp"
+        }
+        return nil
+    }
+
+    /// A classic TIFF or BigTIFF, in either byte order.
+    static func isTIFF(_ data: Data) -> Bool {
+        let bytes = [UInt8](data.prefix(4))
+        return [[0x49, 0x49, 0x2a, 0], [0x4d, 0x4d, 0, 0x2a], [0x49, 0x49, 0x2b, 0], [0x4d, 0x4d, 0, 0x2b]]
+            .contains(bytes)
+    }
+
+    /// What a file named as `named` is by its first bytes, `header`, or nil
+    /// when they disagree: a PDF has its header, a DOCX is a ZIP package
+    /// (or, locked, an OLE compound file), and an image starts with a
+    /// signature mdoc or iOS reads.
+    static func kind(_ named: SourceKind, header: Data) -> SourceKind? {
+        let bytes = [UInt8](header)
+        let pdf = header.range(of: Data("%PDF-".utf8)) != nil
+        let zip = bytes.starts(with: [0x50, 0x4b, 0x03, 0x04])
+        // A password-protected Office file is an OLE compound file.
+        let compound = bytes.starts(with: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+        // A TIFF, named as one or not, is refused (TIFF on the phones is
+        // #1064).
+        if isTIFF(header) { return nil }
+        let image = coreFormat(header) != nil
+            || (bytes.count >= 12 && Array(bytes[4..<8]) == Array("ftyp".utf8))
+        // An image's signature wins: a photo with `%PDF-` in an early
+        // comment is a photo, as the core reads it.
+        if image { return named == .image ? .image : nil }
+        switch named {
+        case .pdf: return pdf ? .pdf : nil
+        case .docx: return zip || compound ? .docx : nil
+        case .image:
+            // Other formats iOS reads (BMP, ICO, …), if their bytes say so.
+            guard !pdf, !zip, let source = CGImageSourceCreateWithData(header as CFData, nil),
+                  CGImageSourceGetType(source) != nil else { return nil }
+            return .image
+        default: return nil
+        }
     }
 
     /// Redraws an image with its orientation applied, as JPEG.
@@ -96,6 +195,8 @@ struct Importer {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return nil }
         if type.conforms(to: .pdf) { return .pdf }
         if type.conforms(to: docx) || url.pathExtension.lowercased() == "docx" { return .docx }
+        // TIFF on the phones is #1064.
+        if type.conforms(to: .tiff) { return nil }
         if type.conforms(to: .image) { return .image }
         return nil
     }
