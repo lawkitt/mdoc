@@ -217,29 +217,12 @@ Features are frozen until items 13–19 land (Q4).
     and Android follow (Later). One TestFlight build after. *Done when:*
     both merged and checked on the iPhone 17 Pro.
 
-30. **[Mobile] iOS 27 menu lookups and the quarantine file.** *From the
-    [iOS audit grill](https://github.com/lawkitt/mdoc/issues/1076) (A).*
-    The Panes row and Dark page UI tests find menu items through the shared
-    lookup, and their absence checks test something on iOS 27; the ghost
-    `#837` line goes and `#818` is retired or extended. *Done when:* merged
-    before 2026-11-26, the classes pass on iOS 26 and the next `xcode-27`
-    nightly, and the UI class times list every active class, measured.
-31. **[Mobile] Core and storage bugs from the audit.** *From #1076 (B1).*
-    Delete cancels the document's job, and delete and discard drop its
-    deferred save; the reply snapshot is cached; "finds names" follows the
-    tier; batch decisions use `perform`'s result; image imports encode off
-    the main actor; test hooks are Debug-only; dead core fields go.
-    *Done when:* merged, each fix with a real-core test.
 32. **[Mobile] UI and Restore extension bugs from the audit.** *From #1076
     (B2).* Restore says when it failed, resets Copied and clears an old
     error; a scanner error shows; the comment rail caches card heights and
     hit-tests in comment order; a table cell drag builds its stops once and
     auto-scrolls by time; dead UI code goes. *Done when:* merged, with
     `sharedText`, Restore view and drag tests.
-33. **[Mobile] One text-view test harness.** *From #1076 (C1).* The 7
-    copied editing setups become one shared harness; `ReviewScrollTests`
-    and the read-only text view tests keep theirs. *Done when:* merged
-    with no test's assertions changed and the editing tests green.
 34. **[Mobile] Tests for cases, the library and Originals.** *From #1076
     (C2).* Rename a case, library search, the case filter cleared when its
     case is deleted, case colours, the Cases page counts, eviction rules,
