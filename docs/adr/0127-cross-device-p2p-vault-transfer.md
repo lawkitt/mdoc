@@ -1,19 +1,21 @@
-# Cross-device P2P vault transfer via iroh
+# Cross-device Vault transfer by sealed bundle
 
-Status: Accepted, 2026-11-22.
+Status: Accepted, 2026-11-23.
 
 ## Why
 
-Users scan or review documents on iPhone/Android and continue working on macOS/Windows (and vice versa), while mdoc promises no accounts, no cloud storage, and no background sync. On-demand, user-initiated transfer of a Project or Document solves this cleanly without distributed sync conflicts.
+People scan on a phone and continue on a desktop, and transfer is the only way to a new phone, since mobile files never reach a backup. With no accounts, servers or sync, a transfer is explicit: a Document, a Project or everything.
 
-We use pure-Rust `iroh` (`iroh` + `iroh-blobs`) directly in the shared core rather than Tailscale's Go-based `tailcat`, achieving the same zero-account, direct P2P + relay-fallback UX without adding a Go/`gomobile`/cgo toolchain across four platforms and CI. Each send starts a one-time session encoded as a QR code and short copyable code carrying the peer address, ephemeral auth secret, and manifest hash. The bundle streams chunked over `iroh` QUIC double-encrypted with an ephemeral `AES-256-GCM` key, includes Source Originals by default (with an opt-out toggle for slow cellular), previews size and contents on the receiver, and expires after one transfer, cancel, or 5 minutes. Re-sending an existing `ProjectId` merges non-destructively (union of stable aliases, conflict copy if a `DocumentId` diverged). `iroh` prefers direct LAN/P2P and falls back to relays unless the user enables "Local network only".
+The sender builds one bundle sealed under a one-time pairing key. Either device shows the key as a QR, since a desktop cannot scan a phone; between desktops it is pasted. The bundle travels over a direct local-network connection, or as a file the user moves. Sealing makes the carrier irrelevant, and neither route adds a dependency or contacts a third party.
+
+A Project merges only when no alias, current or earlier, points at two identities; otherwise it arrives as a separate copy, because rewriting cannot reach text already sent to an AI, and a late reply would restore as the wrong person. Each document records the hash of its last transfer, to tell one-sided edits from two-sided.
 
 ## Rejected
 
-- **Embedding Go `tailcat`:** adds Go cross-compilation (`gomobile`/cgo) to desktop, iOS, and Android builds and CI.
-- **Continuous background sync:** requires accounts or always-on daemons and complex conflict resolution.
-- **Strictly LAN-only:** breaks cellular-to-office transfers; offered instead as a Settings toggle.
+- **`iroh` now:** its public relays are for hobby use only; its default build publishes the endpoint id and uses private Apple APIs; it adds 5 MB, `tokio` and 85 crates for what a local connection does alone.
+- **Go `tailcat`:** a Go toolchain on four platforms.
+- **Background sync:** accounts or daemons.
 
 ## Revisit when
 
-Traffic volume or enterprise privacy requirements justify operating a self-hosted `iroh-relay` as the default.
+Transfers across networks are worth running or paying for a relay: `iroh` without default features then carries the same bundle.

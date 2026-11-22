@@ -87,8 +87,8 @@ in `apps/ios/README.md`.
   filtered Documents list.
 - New imports default to **Unfiled** (or the open Project when added from inside
   one); iPhone keeps single-active-document navigation with no tab strip.
-- Document text leaves the app only through Copy for AI, Share, or explicit
-  user-initiated P2P transfer ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md)):
+- Document text leaves the app only through Copy for AI, Share, or a device
+  transfer the user starts ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md)):
   no plain Copy, Share, Look Up, Translate, Search Web or Writing Tools on it,
   in edit mode too, where Copy writes a pasteboard only mdoc reads.
 - Copy for AI and Share are always in the title menu; until the document is

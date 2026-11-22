@@ -52,7 +52,7 @@ formatting** comes from several source ranges.
 **Document header**: the title-bar row above a document: breadcrumb, Source,
 panel toggle, ⋯ and the primary action.
 
-**Project tree**: the persistent sidebar hierarchy of Projects (expandable to show all open or closed documents) and Unfiled documents; open tabs live in the desktop tab bar.
+**Project tree**: the persistent sidebar hierarchy of Projects (expandable to all their documents) and Unfiled; desktop's only document navigation.
 
 ## Models and processing
 
@@ -98,15 +98,17 @@ kept apart from the Markdown handed off.
 **At-risk tab**: a tab that closing or quitting would lose something from:
 unsaved changes, an unsaved mapping, or both.
 
-**Vault**: mdoc's encrypted local store (`crates/mdoc-vault`) holding Projects, Documents, AI Replies, and Source Originals under opaque UUID filenames.
+**Vault**: mdoc's encrypted local store holding Projects, Documents, AI Replies and Source Originals under opaque names.
 
-**Unfiled**: a Vault document not assigned to any Project; keeps its own document-local mapping and replies.
+**Unfiled**: a Vault document in no Project, with its own mapping and replies.
 
 **AI reply**: a saved pseudonymized AI response linked to a Project or Unfiled document, viewable restored and promotable to a Document.
 
 **Project**: a named, encrypted workspace sharing one replacement mapping across its Documents and AI Replies. Avoid "case" and "matter".
 
-**Vault key**: the 256-bit OS-held key encrypting the Vault (macOS Keychain, Windows DPAPI, mobile Secure Enclave/Keystore). The **quiet probe** reads it at launch without dialogs; the **dev key** separates unsigned/debug macOS builds.
+**Vault key**: the 256-bit OS-held key encrypting the Vault. The **quiet probe** reads it at launch without dialogs; the **dev key** separates unsigned/debug macOS builds; the **recovery key** is its text form, shown in desktop Settings.
+
+**AI project**: the one Project the desktop MCP connector serves, chosen in mdoc.
 
 **Keychain explainer**: the dialog shown before the first case-key access and
 after a denial.

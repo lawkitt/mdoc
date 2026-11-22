@@ -18,15 +18,29 @@ in [CONTEXT.md](../../CONTEXT.md).
 
 ## Projects and Vault
 
-- Projects (formerly Cases), Vault documents, AI replies, Source Originals, and
-  the Vault manifest are encrypted at rest with `AES-256-GCM` under the single
-  32-byte OS-held key using opaque UUID filenames ([ADR 0125](../adr/0125-unified-encrypted-vault-and-projects.md));
-  `original.enc` uses 1 MiB chunked `AES-256-GCM`, and password-protected
-  originals stay locked on disk.
+- Projects, Vault documents, AI replies, Source Originals and the Vault's
+  index are encrypted at rest with `AES-256-GCM` under the OS-held key, under
+  opaque names ([ADR 0125](../adr/0125-unified-encrypted-vault-and-projects.md));
+  password-protected originals stay locked on disk.
 - Never write a plaintext key file or a plaintext fallback, not for dev
   builds and not as an opt-in; without a keyring, the Vault is unavailable.
-- Desktop `session.json` stores opaque Vault UUIDs only (plus external `.md`
-  paths), never Project or Document titles.
+- The key is the only way to read the Vault, so desktop shows a recovery key
+  in Settings (never written to disk by mdoc), accepts one on the wrong-key
+  screen, and exports a Project as Markdown and originals. Mobile offers neither: its files never reach a
+  backup, and device transfer is its way to a new phone.
+- mdoc keeps every import, with its original and mapping, until the user
+  deletes it; [privacy.md](../privacy.md) says so in those words.
+- A build that introduces the Vault leaves the old cases folder and key
+  untouched.
+- Text leaves (Copy for AI, Share, shelf, MCP) only after a fresh check
+  against the Project's names; a stored copy of AI-ready text is never served.
+- A saved AI reply restores by the identities its aliases meant when saved,
+  whatever a later move or merge did to the aliases.
+- Mobile decrypts an original for viewing into a cache wiped on close and at
+  launch. On iOS, encryption at rest adds little beyond Data Protection and
+  exists to keep one storage path; do not present it as extra security.
+- Desktop `session.json` stores opaque Vault ids only, never Project or
+  Document titles.
 - Moving a document into a Project reconciles matching originals to the target
   Project's aliases and updates the document text undoably; deleting a non-empty
   Project always asks whether to move documents to Unfiled or delete them.
@@ -60,13 +74,21 @@ in [CONTEXT.md](../../CONTEXT.md).
 
 - Detection, conversion, recognition, and the Vault run on the device.
 - mdoc goes online only for the update check, a model download the user chose,
-  a page the user opens in the browser, or an explicit user-initiated P2P vault
-  transfer ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md)) which
-  prefers direct LAN/P2P and allows a "Local network only" opt-out of relays.
+  and a page the user opens in the browser.
+- A device transfer ([ADR 0127](../adr/0127-cross-device-p2p-vault-transfer.md))
+  sends a bundle sealed under a one-time pairing key, over a direct connection
+  on the local network or as a file the user moves; it contacts no relay or
+  other third party.
+- A transfer never rewrites aliases: a Project whose aliases clash with the
+  local one arrives as a separate copy.
 - The desktop MCP connector ([ADR 0126](../adr/0126-local-mcp-ai-connector.md))
-  exposes only `Ready` documents in opt-in Projects with pseudonymized titles;
-  Unfiled documents stay hidden, and `deliver_reply` restores exclusively inside
-  mdoc's UI without returning real names to the AI.
+  serves one AI project, chosen and always shown in mdoc: only its `Ready`
+  documents, labelled from their reviewed text and never by stored title.
+  Unfiled documents stay hidden. `deliver_reply` restores only inside mdoc,
+  returns no real name, and is refused unless it names a document of the
+  current AI project.
+- Any process running as the user can read the AI project's pseudonymized
+  documents through the connector; never claim otherwise.
 - The update check is one unauthenticated GET to the GitHub Releases API
   with an mdoc User-Agent; it sends nothing but what the request itself
   carries.

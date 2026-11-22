@@ -6,11 +6,12 @@ renders and flow tests specify the screens. Terms are in
 
 ## Scope
 
-- Imported documents, Markdown, review state, Source Originals, Projects, and AI
+- Imported documents, Markdown, review state, Source Originals, Projects and AI
   Replies live in mdoc's encrypted Vault ([ADR 0125](../adr/0125-unified-encrypted-vault-and-projects.md))
-  and autosave continuously; loose external `.md` files remain openable (badged
-  External, with explicit save prompts and one-click Save to Vault) and `Export…`
-  writes standard UTF-8 Markdown to disk.
+  and autosave, with no save prompt.
+- Opening a `.md` imports a copy like any other format; nothing is edited in
+  place on disk, and `Export…` writes standard UTF-8 Markdown.
+- Pseudonymize clipboard creates no document.
 - The editor renders standard Markdown only: wiki links, `#tags`,
   `key:: value` properties, block references and embeds show as plain text.
   There are no PDF highlight tools.
@@ -20,12 +21,15 @@ renders and flow tests specify the screens. Terms are in
 
 ## Shell
 
-- The left sidebar is a stable Vault tree (Search, Home, Projects expandable to
-  all open or closed documents, Unfiled, and any open External `.md` tabs); open
-  Documents, AI Replies, and Project Overview tabs live in a horizontal tab bar
-  above the main pane.
-- The Project Overview tab uses three segments (`Documents` · `Replies` ·
-  `Names`) so identity lists never crowd out working documents.
+- The left sidebar is a stable Vault tree (Search, Home, Projects, Unfiled) and
+  the only document navigation: no tab bar and no open or closed state,
+  because every sidebar failure in the 2026-11 audit came from that split.
+- Recently viewed documents keep their undo and scroll; `⌃Tab` switches by
+  recency.
+- Projects start collapsed and remember their expansion; Unfiled shows its 7
+  most recent and Show all.
+- The Project page uses three segments (`Documents` · `Replies` · `Names`) so
+  identity lists never crowd out working documents.
 - The document header holds one primary action at a time; there is no
   stepper.
 - Every header and ⋯ action is also in the palette and the menu bar.
