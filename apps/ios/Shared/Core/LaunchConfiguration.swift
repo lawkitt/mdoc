@@ -36,7 +36,10 @@ struct LaunchConfiguration: Sendable, Equatable {
 
     init() {}
 
+    /// A Release build reads none of them: the UI tests and the device
+    /// scripts run Debug builds.
     init(arguments: [String], environment: [String: String]) {
+        #if DEBUG
         isUITesting = arguments.contains(Self.uiTestingArgument)
         guard isUITesting else { return }
         seedFile = environment["MDOC_SEED_FILE"]
@@ -46,6 +49,7 @@ struct LaunchConfiguration: Sendable, Equatable {
         keepsLibrary = environment["MDOC_KEEP_LIBRARY"] == "1"
         showsTips = environment["MDOC_SHOW_TIPS"] == "1"
         uiNotice = environment["MDOC_UI_NOTICE"]
+        #endif
     }
 
     /// This process's launch, parsed on first use.

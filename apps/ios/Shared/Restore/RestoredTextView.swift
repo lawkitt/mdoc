@@ -76,7 +76,7 @@ struct RestoredTextView: UIViewRepresentable {
             switch segment {
             case .text(let plain):
                 text += plain
-            case .restored(let value, _):
+            case .restored(let value):
                 text += value
                 restored.append(NSRange(location: start, length: value.utf16.count))
             case .unresolved(let token):

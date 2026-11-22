@@ -77,6 +77,7 @@ struct KeychainCaseKeyStore: CaseKeyStore {
         }
     }
 
+    #if DEBUG
     /// Removes the item (tests only).
     func remove() {
         let query: [String: Any] = [
@@ -86,6 +87,7 @@ struct KeychainCaseKeyStore: CaseKeyStore {
         ]
         SecItemDelete(query as CFDictionary)
     }
+    #endif
 }
 
 #if DEBUG

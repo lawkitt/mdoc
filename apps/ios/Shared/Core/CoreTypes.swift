@@ -196,7 +196,7 @@ enum Decision: Hashable, Sendable {
 /// alias-shaped tokens no identity owns (never guessed).
 enum RestoredSegment: Hashable, Sendable {
     case text(String)
-    case restored(value: String, alias: String)
+    case restored(String)
     case unresolved(String)
 }
 
@@ -220,7 +220,7 @@ struct RestoreResult: Hashable, Sendable {
         var tokens = Set<String>()
         for segment in segments {
             switch segment {
-            case .restored(let value, _): values.insert(value)
+            case .restored(let value): values.insert(value)
             case .unresolved(let token): tokens.insert(token)
             case .text: break
             }
@@ -232,7 +232,7 @@ struct RestoreResult: Hashable, Sendable {
         segments.map { segment in
             switch segment {
             case .text(let text): text
-            case .restored(let value, _): value
+            case .restored(let value): value
             case .unresolved(let token): token
             }
         }.joined()
@@ -270,9 +270,6 @@ struct DocumentSnapshot: Equatable, Sendable {
     var candidates: [Candidate]
     var identities: [Identity]
     var original: OriginalSource
-    /// OCR pages finished and total; equal once recognition is done.
-    var pagesDone: Int
-    var pageCount: Int
     var reply: ReplySnapshot?
     /// A partial import (pages OCR skipped or may have misread): the banner
     /// over the text.

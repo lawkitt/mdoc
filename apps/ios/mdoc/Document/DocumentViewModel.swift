@@ -221,7 +221,7 @@ final class DocumentViewModel {
         case nil where importNotFinished:
             return .finishImport
         case nil:
-            return .recognize(resume: snapshot.pagesDone > 0 || snapshot.resumesOCR)
+            return .recognize(resume: snapshot.resumesOCR)
         case .unscanned:
             return .findNames
         case .reviewing:
@@ -435,23 +435,27 @@ final class DocumentViewModel {
         updateReview { $0.reviewNext() }
     }
 
-    func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) {
-        guard !reviewWaitsForJob() else { return }
-        perform { try session.decide(candidate, decision, scope: scope) }
+    /// Returns whether the decision was made: false while a job runs, or
+    /// when the core refused it (its message shows).
+    @discardableResult
+    func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) -> Bool {
+        guard !reviewWaitsForJob() else { return false }
+        return perform { try session.decide(candidate, decision, scope: scope) }
     }
 
-    func decide(identity: IdentityID, _ decision: Decision) {
-        guard let first = snapshot.mentions(of: identity).first else { return }
-        decide(first.id, decision, scope: .all)
+    @discardableResult
+    func decide(identity: IdentityID, _ decision: Decision) -> Bool {
+        guard let first = snapshot.mentions(of: identity).first else { return false }
+        return decide(first.id, decision, scope: .all)
     }
 
     func replaceAllPending() {
         guard !reviewWaitsForJob() else { return }
         let count = snapshot.pendingCount
         let wasReviewing = isReviewing
-        perform { try session.replaceAllPending() }
+        let replaced = perform { try session.replaceAllPending() }
         // One tap changed them all: says so, with Undo (ADR 0098).
-        if errorMessage == nil && count > 0 {
+        if replaced && count > 0 {
             if wasReviewing { endReview() }
             toast = ToastMessage(
                 text: String(localized: "\(count) replaced"),

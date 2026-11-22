@@ -56,8 +56,8 @@ extension DocumentViewModel {
         var steps = 0
         for id in ids {
             let before = snapshot.undoStep
-            decide(identity: id, decision)
-            if errorMessage != nil { break }
+            guard let first = snapshot.mentions(of: id).first else { continue }
+            guard decide(first.id, decision, scope: .all) else { break }
             if snapshot.undoStep != before { steps += 1 }
         }
         guard steps > 0 else { return }
@@ -78,8 +78,7 @@ extension DocumentViewModel {
         for id in ids {
             guard let first = snapshot.mentions(of: id).first else { continue }
             let before = snapshot.undoStep
-            perform { try session.notAName(first.id, scope: .all) }
-            if errorMessage != nil { break }
+            guard perform({ try session.notAName(first.id, scope: .all) }) else { break }
             if snapshot.undoStep != before { steps += 1 }
         }
         guard steps > 0 else { return }

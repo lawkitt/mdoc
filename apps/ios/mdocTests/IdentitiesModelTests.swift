@@ -75,6 +75,31 @@ final class IdentitiesModelTests: XCTestCase {
         XCTAssertTrue(ids.allSatisfy { id in model.snapshot.identities.first { $0.id == id }?.state == .proposed })
     }
 
+    /// An error still showing from before (its alert not yet dismissed)
+    /// does not stop a bulk decision after its first name: each decision
+    /// counts by its own result.
+    func testABulkDecisionAfterAnEarlierErrorDecidesEveryName() throws {
+        let model = try model()
+        let ids = model.snapshot.identities.filter { $0.state == .proposed }.prefix(2).map(\.id)
+        XCTAssertEqual(ids.count, 2)
+        model.errorMessage = "An earlier error"
+        model.decide(identities: Array(ids), .replace)
+        XCTAssertTrue(ids.allSatisfy { id in model.snapshot.identities.first { $0.id == id }?.state == .replaced })
+        XCTAssertEqual(model.toast?.text, "2 replaced")
+
+        model.toast?.action?()
+        model.errorMessage = "An earlier error"
+        model.notAName(identities: Array(ids))
+        XCTAssertEqual(model.toast?.text, "2 marked Not a name")
+
+        model.toast?.action?()
+        let pending = model.snapshot.pendingCount
+        model.errorMessage = "An earlier error"
+        model.replaceAllPending()
+        XCTAssertEqual(model.snapshot.pendingCount, 0)
+        XCTAssertEqual(model.toast?.text, "\(pending) replaced")
+    }
+
     func testSameAsMergesIntoTheNameMentionedMost() throws {
         let model = try model()
         let people = model.snapshot.identities.filter { $0.category == .person }

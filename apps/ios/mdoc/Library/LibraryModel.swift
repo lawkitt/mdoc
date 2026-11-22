@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Something brought in that waits for its title and case.
-struct PendingImport: Identifiable, Equatable {
+struct PendingImport: Identifiable, Equatable, Sendable {
     let id = UUID()
     var source: ImportSource
     var suggestedTitle: String
@@ -18,16 +18,18 @@ struct PendingImport: Identifiable, Equatable {
 @Observable
 final class LibraryModel {
     private let library: any Library
-    /// The device runs the name detector (ADR 0088).
-    let findsNames: Bool
+    /// The device runs the name detector (ADR 0088), as setup says now:
+    /// timing the detector can put the phone below the floor (ADR 0120).
+    var findsNames: Bool { canFindNames() }
+    private let canFindNames: @MainActor () -> Bool
     private(set) var snapshot: LibrarySnapshot = .empty
     /// Deleted documents still within their toast's Undo (Q17): left out of
     /// every list until the delete happens or is undone.
     private(set) var hidden: Set<DocumentID> = []
 
-    init(library: any Library, findsNames: Bool = true) {
+    init(library: any Library, findsNames: Bool = true, canFindNames: (@MainActor () -> Bool)? = nil) {
         self.library = library
-        self.findsNames = findsNames
+        self.canFindNames = canFindNames ?? { findsNames }
         refresh()
     }
 
