@@ -158,6 +158,23 @@ final class ResumeDeleteTests: XCTestCase {
         XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty, "not saved again")
     }
 
+    /// A delete the core refuses (its case cannot be saved) leaves the
+    /// document as it was: still listed, and its next changes saved.
+    func testAFailedDeleteLeavesTheDocumentAsItWas() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .newCase(name: "Lee"))
+        _ = try session.recognize(observer: TestObserver())
+        XCTAssertEqual(try session.scan(observer: TestObserver()).phase, .reviewing)
+        let cases = storage.url(.cases).path
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: cases)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cases) }
+        XCTAssertThrowsError(try core.library.deleteDocument(session.id))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cases)
+        XCTAssertEqual(try session.replaceAllPending().phase, .ready)
+        try core.library.saveChanges()
+        XCTAssertEqual(try self.core().library.snapshot().documents.map(\.phase), [.ready])
+    }
+
     /// A job on a deleted document stops as it starts, and what it would
     /// have found is not saved: the document does not come back.
     func testAJobOnADeletedDocumentSavesNothing() throws {

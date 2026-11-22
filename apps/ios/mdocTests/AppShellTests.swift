@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import mdoc
 
@@ -97,6 +98,20 @@ final class AppShellTests: XCTestCase {
         guard case .error = app.navigator.presentation else {
             return XCTFail("no error for an unknown file")
         }
+    }
+
+    /// Photos are prepared off the main actor and then wait in the import
+    /// sheet; a page Photos could not hand over is counted in a toast.
+    func testPhotosWaitForTheirTitleWithUnreadPagesCounted() async throws {
+        let app = try app()
+        let jpeg = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).jpegData(withCompressionQuality: 0.9) { _ in }
+        await app.receiveImages([jpeg, nil], scanned: false).value
+        guard case .importing(let pending) = app.navigator.presentation, case .photos(let pages) = pending.source else {
+            return XCTFail("no import sheet: \(String(describing: app.navigator.presentation))")
+        }
+        XCTAssertEqual(pages.count, 1)
+        XCTAssertEqual(pending.unreadPages, 1)
+        XCTAssertEqual(app.toast?.text, Importer.unreadNote(1))
     }
 
     // MARK: Document models

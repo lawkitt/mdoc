@@ -172,6 +172,7 @@ final class RealCoreTests: XCTestCase {
         let email = try XCTUnwrap(ready.candidates.first { $0.category == .email })
         let kept = try session.decide(email.id, .keep, scope: .all)
         XCTAssertEqual(kept.reply?.aliasText, "Write to \(alias).")
+        XCTAssertEqual(kept.reply?.restored.text, "Write to \(alias).", "kept: the alias no longer restores")
         XCTAssertEqual(try session.undo().reply?.restored.text, "Write to maya.ellison@example.com.")
 
         // The extension opens its own library on the same folder and key.
@@ -185,6 +186,18 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(session.snapshot().caseName, "Ellison")
         try core.library.renameCase(try XCTUnwrap(ready.caseID), to: "Ellison v Brightwater")
         XCTAssertEqual(session.snapshot().caseName, "Ellison v Brightwater")
+    }
+
+    /// A document renamed in a case named after it, its only document,
+    /// renames the case: the snapshot shows the case's new name.
+    func testACaseRenamedWithItsDocumentShowsItsNewName() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.text("# Memo\n\nCall Ann."), title: "Memo", into: .newCase(name: "Memo"))
+        _ = try session.recognize(observer: TestObserver())
+        XCTAssertEqual(session.snapshot().caseName, "Memo")
+        try core.library.renameDocument(session.id, to: "Note")
+        XCTAssertEqual(core.library.snapshot().cases.map(\.name), ["Note"])
+        XCTAssertEqual(session.snapshot().caseName, "Note")
     }
 
     /// A scan that found nothing is still a scan (#673): after mdoc

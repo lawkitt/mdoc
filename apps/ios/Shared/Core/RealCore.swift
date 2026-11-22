@@ -319,47 +319,60 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     func deleteDocument(_ document: DocumentID) throws {
-        let session = lock.withLock { sessions[document] }
-        // A listed document not opened this run has no session: its id is
-        // its file.
-        let path = session.map(\.path) ?? (FileManager.default.fileExists(atPath: document.rawValue) ? document.rawValue : nil)
-        guard session != nil || path != nil else { throw CoreError.notFound }
-        // Nothing writes it again once it is gone: not its taps' save, its
-        // job's, or a save that waits for the phone to unlock; its job stops.
-        session?.end()
-        lock.withLock { _ = unsaved.removeValue(forKey: document) }
-        if let path {
-            // The core takes it out of its case (and the reply kept for it),
-            // then removes the file; a case it cannot save keeps it.
-            _ = try core { try ffi.deleteDocument(path: path) }
-            lock.withLock { _ = ids.removeValue(forKey: path) }
-            originals.remove(for: path)
-        } else if let input = session?.pendingInput {
-            // An import not yet read: OCR's kept pages go first, found by the
-            // source files' digests, then the files.
-            switch input {
-            case .file(let url, _): try core { try ffi.discardImport(source: url.path) }
-            case .images(let urls): try core { try ffi.discardImages(images: urls.map(\.path)) }
-            case .text: break
+        guard let session = lock.withLock({ sessions[document] }) else {
+            // A listed document not opened this run has no session: its id
+            // is its file.
+            let path = document.rawValue
+            guard FileManager.default.fileExists(atPath: path) else { throw CoreError.notFound }
+            try deleteFile(path)
+            forget(document, path: path)
+            return
+        }
+        // Its file is read once no save or rename runs, and none starts
+        // until the delete ends: once it succeeds, nothing writes the
+        // document again (not its taps' save, its job's, or a save waiting
+        // for the phone to unlock) and its job stops. A delete that fails
+        // leaves the session as it was.
+        let path = try session.delete { [self] path in
+            if let path {
+                try deleteFile(path)
+            } else if let input = session.pendingInput {
+                // An import not yet read: OCR's kept pages go first, found by
+                // the source files' digests, then the files.
+                switch input {
+                case .file(let url, _): try core { try ffi.discardImport(source: url.path) }
+                case .images(let urls): try core { try ffi.discardImages(images: urls.map(\.path)) }
+                case .text: break
+                }
             }
         }
-        lock.withLock { _ = sessions.removeValue(forKey: document) }
+        forget(document, path: path)
+    }
+
+    /// The core takes a saved document out of its case (and the reply kept
+    /// for it), then removes the file; a case it cannot save keeps it.
+    private func deleteFile(_ path: String) throws {
+        _ = try core { try ffi.deleteDocument(path: path) }
+    }
+
+    /// A deleted or discarded document's session goes, with the save that
+    /// waited for the phone to unlock: together, so no failed save queues
+    /// one again after (`saveOnUnlock`).
+    private func forget(_ document: DocumentID, path: String?) {
+        lock.withLock {
+            _ = unsaved.removeValue(forKey: document)
+            _ = sessions.removeValue(forKey: document)
+            if let path { _ = ids.removeValue(forKey: path) }
+        }
+        if let path { originals.remove(for: path) }
         pending.remove(document)
     }
 
     func discardIfEmpty(_ document: DocumentID) throws -> Bool {
-        guard let session = lock.withLock({ sessions[document] }) else { return false }
-        let path = session.path
-        guard try session.discardIfEmpty() else { return false }
+        guard let session = lock.withLock({ sessions[document] }),
+              let discarded = try session.discardIfEmpty() else { return false }
         // Gone in the core: its saves have nothing left to write.
-        session.end()
-        lock.withLock { _ = unsaved.removeValue(forKey: document) }
-        if let path {
-            lock.withLock { _ = ids.removeValue(forKey: path) }
-            originals.remove(for: path)
-        }
-        lock.withLock { _ = sessions.removeValue(forKey: document) }
-        pending.remove(document)
+        forget(document, path: discarded)
         return true
     }
 
@@ -367,6 +380,12 @@ final class RealLibrary: Library, @unchecked Sendable {
         guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
         let (old, new) = try session.rename(to: title)
         renamed(session, from: old, to: new)
+    }
+
+    /// A document's rename renames a case named after it, its only
+    /// document: the case names are read again.
+    fileprivate func caseNamesChanged() {
+        lock.withLock { caseNames.removeAll() }
     }
 
     /// What this side keeps by the file follows a renamed document.
@@ -467,6 +486,8 @@ final class RealLibrary: Library, @unchecked Sendable {
     /// first.
     fileprivate func saveOnUnlock(_ id: DocumentID, replacing: Bool = true, _ save: @escaping () throws -> Void) {
         lock.withLock {
+            // A document deleted or discarded meanwhile has nothing to save.
+            guard sessions[id] != nil else { return }
             if replacing || unsaved[id] == nil {
                 unsaved[id] = save
             }
@@ -713,23 +734,52 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             throw CoreError.refused(String(localized: "Rename the document once it is read."))
         }
         let renamed = try saving.withLock { try core { try ffi.renameDocument(library: library.ffi, title: title) } }
+        library.caseNamesChanged()
         return (before.path, renamed.path ?? before.path)
     }
 
-    /// `RealLibrary.discardIfEmpty`: the core removes the file and its case.
-    /// A save waiting for the lock writes nothing after it.
-    fileprivate func discardIfEmpty() throws -> Bool {
-        try saving.withLock {
-            guard try core({ try ffi.discardIfEmpty(library: library.ffi) }) else { return false }
-            lock.withLock { ended = true }
+    /// `RealLibrary.discardIfEmpty`: the core removes the file and its case,
+    /// with no save or rename running; nil when it was not empty. Ended
+    /// (`end`) once discarded, with the file it had.
+    fileprivate func discardIfEmpty() throws -> String?? {
+        try end { [self] _ in try core { try ffi.discardIfEmpty(library: library.ffi) } }
+    }
+
+    /// `RealLibrary.deleteDocument`: `remove` deletes the document at its
+    /// file (nil before its first save), read once no save or rename runs;
+    /// none starts until it returns. Ended (`end`) once it succeeds;
+    /// returns the file.
+    fileprivate func delete(_ remove: (String?) throws -> Void) throws -> String? {
+        try end { path in
+            try remove(path)
             return true
+        } ?? nil
+    }
+
+    /// Runs `remove` on the document's file under the save lock; once it
+    /// returns true, the session ends: its scheduled save does not run, no
+    /// later save writes it, and its running job stops. Nil when `remove`
+    /// returned false, else the file.
+    private func end(_ remove: (String?) throws -> Bool) throws -> String?? {
+        let outcome: (path: String?, job: UInt64?)? = try saving.withLock {
+            let path = ffi.info()?.path
+            guard try remove(path) else { return nil }
+            return lock.withLock {
+                ended = true
+                return (path, runningJob)
+            }
         }
+        guard let outcome else { return nil }
+        saver.cancel()
+        if let job = outcome.job { ffi.cancelJob(job: job) }
+        return .some(outcome.path)
     }
 
     func followFirstLine() throws -> String? {
         let before = ffi.info()?.path
         let renamed = try saving.withLock { try core { try ffi.followFirstLine(library: library.ffi) } }
         guard let renamed else { return nil }
+        library.caseNamesChanged()
         library.renamed(self, from: before, to: renamed.path ?? before)
         return renamed.title
     }
@@ -932,6 +982,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         }
         let caseID = chosen.caseID
         try saveAfterJob { [self] in
+            // Deleted meanwhile: nothing joins the case.
+            guard !lock.withLock({ ended }) else { return }
             if let caseID {
                 _ = try core { try ffi.joinCase(library: library.ffi, caseId: caseID) }
             }
@@ -1213,20 +1265,6 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         }
         guard let saved else { return }
         library.report(.saved(id, rejoined: saved.rejoined))
-    }
-
-    /// The document goes (deleted or discarded): its scheduled save does
-    /// not run, one running now ends first and no later save writes it; its
-    /// running job stops.
-    fileprivate func end() {
-        saver.cancel()
-        let job = saving.withLock {
-            lock.withLock {
-                ended = true
-                return runningJob
-            }
-        }
-        if let job { ffi.cancelJob(job: job) }
     }
 
     private func save() throws {

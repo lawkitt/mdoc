@@ -56,7 +56,8 @@ extension DocumentViewModel {
         var steps = 0
         for id in ids {
             let before = snapshot.undoStep
-            guard decide(identity: id, decision) else { break }
+            guard let first = snapshot.mentions(of: id).first else { continue }
+            guard decide(first.id, decision, scope: .all) else { break }
             if snapshot.undoStep != before { steps += 1 }
         }
         guard steps > 0 else { return }
