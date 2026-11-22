@@ -61,7 +61,18 @@ pub struct TabRecord {
 impl TabRecord {
     /// The document this tab names: none for a blank or a source tab.
     pub fn document(&self) -> Option<DocumentId> {
-        (!self.markdown.as_os_str().is_empty()).then(|| DocumentId::File(self.markdown.clone()))
+        self.names_document()
+            .then(|| DocumentId::File(self.markdown.clone()))
+    }
+
+    /// Whether this tab names a document, without building its id.
+    pub fn names_document(&self) -> bool {
+        !self.markdown.as_os_str().is_empty()
+    }
+
+    /// Whether both tabs name the same document.
+    pub fn same_document(&self, other: &TabRecord) -> bool {
+        self.names_document() && self.markdown == other.markdown
     }
 
     /// The tab names `document` from now on.

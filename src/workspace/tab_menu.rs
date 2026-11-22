@@ -116,8 +116,8 @@ impl Workspace {
                 let view = view.read(cx);
                 view.session
                     .document
-                    .path
-                    .clone()
+                    .id()
+                    .and_then(DocumentId::into_file)
                     .or_else(|| view.preview.source().cloned())
             }
             // Not shown since launch: the restored record names it.

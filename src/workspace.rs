@@ -942,9 +942,7 @@ impl Workspace {
                 if record.source_only {
                     tab.record().attachment == record.attachment
                 } else {
-                    record.document().is_some()
-                        && !tab.record().source_only
-                        && tab.record().document() == record.document()
+                    !tab.record().source_only && record.same_document(tab.record())
                 }
             }) {
                 continue;
@@ -1099,8 +1097,7 @@ impl Workspace {
                     return;
                 }
                 if let Ok(document) = &result {
-                    this.tabs
-                        .set_document(id, document.path.clone().map(DocumentId::File));
+                    this.tabs.set_document(id, document.id());
                 }
                 // A dialog keeps the keyboard while the document loads behind it.
                 let dialog = this.dialog_up(window);
@@ -1246,10 +1243,9 @@ impl Workspace {
             .find(|tab| {
                 Some(tab.id()) != except
                     && (tab.document() == Some(document)
-                        || tab.view().is_some_and(|view| {
-                            let held = view.read(cx).session.document.path.as_deref();
-                            document.file().is_some_and(|file| held == Some(file))
-                        }))
+                        || tab
+                            .view()
+                            .is_some_and(|view| view.read(cx).session.document.is(document)))
             })
             .map(|tab| tab.id())
     }
@@ -1525,8 +1521,8 @@ impl Workspace {
                     .tabs
                     .get(id)
                     .and_then(|tab| tab.view())
-                    .and_then(|view| view.read(cx).session.document.path.clone());
-                let previous = self.tabs.set_document(id, saved.map(DocumentId::File));
+                    .and_then(|view| view.read(cx).session.document.id());
+                let previous = self.tabs.set_document(id, saved);
                 // Save As moves the member: the case forgets the old path.
                 self.case_member_moved(id, previous.and_then(DocumentId::into_file), cx);
                 self.case_changed(id, cx);
@@ -2011,7 +2007,7 @@ impl Workspace {
                 record.source_only =
                     view.lifecycle.source_only() || view.lifecycle.generated_unedited();
                 record.blank = !record.source_only
-                    && record.document().is_none()
+                    && !record.names_document()
                     && view.session.document.path.is_none()
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty();
@@ -2029,8 +2025,8 @@ impl Workspace {
                 if let Some(link) = view.case.link() {
                     record.case = Some(link.id.clone());
                 }
-                if let Some(path) = &view.session.document.path {
-                    record.set_document(DocumentId::File(path.clone()));
+                if let Some(document) = view.session.document.id() {
+                    record.set_document(document);
                 }
                 if !view.lifecycle.loading() && !view.lifecycle.unavailable() {
                     record.caret = view.editor.read(cx).cursor();
@@ -2054,7 +2050,7 @@ impl Workspace {
                     };
                 }
             }
-            if record.document().is_none() && !record.source_only && !record.blank {
+            if !record.names_document() && !record.source_only && !record.blank {
                 continue;
             }
             if tab.id() == self.tabs.active() {
