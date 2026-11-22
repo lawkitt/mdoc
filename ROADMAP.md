@@ -217,23 +217,6 @@ Features are frozen until items 13–19 land (Q4).
     and Android follow (Later). One TestFlight build after. *Done when:*
     both merged and checked on the iPhone 17 Pro.
 
-32. **[Mobile] UI and Restore extension bugs from the audit.** *From #1076
-    (B2).* Restore says when it failed, resets Copied and clears an old
-    error; a scanner error shows; the comment rail caches card heights and
-    hit-tests in comment order; a table cell drag builds its stops once and
-    auto-scrolls by time; dead UI code goes. *Done when:* merged, with
-    `sharedText`, Restore view and drag tests.
-34. **[Mobile] Tests for cases, the library and Originals.** *From #1076
-    (C2).* Rename a case, library search, the case filter cleared when its
-    case is deleted, case colours, the Cases page counts, eviction rules,
-    and renaming a document that has an Original, at the real-core seam.
-    *Done when:* merged; a bug found becomes its own fix or issue.
-35. **[Mobile] UI test cleanup that keeps what #829 kept.** *From #1076
-    (D).* Notice card's screenshots leave the queue; same-fixture launches
-    merge; the scope chip moves to a snapshot and drawer swipe hit-testing
-    to `DrawerDragTests`, keeping one or two real drags; fixed 2 s negative
-    waits go. *Blocked by:* item 30. *Done when:* merged and the UI class
-    times measured again; no shard-count target.
 36. **[Mobile] `MarkdownTextView.Coordinator` split into owned pieces.**
     *From #1076 (E).* Text reveal and scroll, Fix the words, and toolbar
     and keyboard each get an owner; closures re-wire only when the mode or
@@ -360,12 +343,6 @@ image, and every iOS part builds the core itself. Items 32 (#1044), 33
 (#1052), 34 (#1053; its shards take about 17 minutes of tests, accepted
 over a test sweep), 35 (#1050), 36 (#1046) and 37 (#1045) have shipped.
 
-38. **[CI] Build the iOS app once per run.** *From the
-    [iOS audit grill](https://github.com/lawkitt/mdoc/issues/1076)
-    (decision 8).* Each UI part runs `build-for-testing` itself (about 1.8
-    minutes); only the core is shared. Build once, pass the products to
-    the parts and run `test-without-building`. *Done when:* no UI part
-    builds the app, and the queue's iOS time is measured before and after.
 
 ## Desktop GPUI
 
