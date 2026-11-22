@@ -58,12 +58,13 @@ final class DarkPageUITests: XCTestCase {
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { MdocUITest.isDark(at: paper) == true }, "dark again")
 
         // The title menu has no Dark page, nor Show Markdown over the
-        // Original.
+        // Original. Menu items by their words: iOS 27 drops their
+        // identifiers.
         let title = app.buttons["title-menu"]
         title.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["find-in-document"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
-        XCTAssertEqual(app.switches.matching(identifier: "dark-page").count, 0, "no Dark page in the menu")
-        XCTAssertFalse(app.descendants(matching: .any)["show-markdown"].firstMatch.exists)
+        XCTAssertTrue(MdocUITest.menuItem("Find in document", app).waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertFalse(MdocUITest.menuItem("Dark page", app).exists, "no Dark page in the menu")
+        XCTAssertFalse(MdocUITest.menuItem("Show Markdown", app).exists)
     }
 
     /// A tap on the hint closes it, the page as it was.

@@ -43,23 +43,23 @@ final class EditModeUITests: XCTestCase {
         app.typeText(Self.marker)
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", Self.marker), timeout: MdocUITest.timeout))
 
-        // ⌘Z undoes the typing as one step; ⇧⌘Z makes it again. The first
-        // hardware key after the software keyboard can be lost in the
-        // switch (see `caretToTheEnd`): then ⌘Z goes again, which with the
-        // typing the only step changes nothing more.
+        // ⌘Z undoes the typing as one step; ⇧⌘Z makes it again.
         let undone = NSPredicate(format: "NOT (value CONTAINS %@)", "Zephyrine")
-        app.typeKey("z", modifierFlags: .command)
-        if !text.wait(until: undone, timeout: 3) { app.typeKey("z", modifierFlags: .command) }
-        XCTAssertTrue(text.wait(until: undone, timeout: 5))
+        XCTAssertTrue(press("z", .command, until: undone, in: text, app), "⌘Z undid the typing")
         let redone = NSPredicate(format: "value CONTAINS %@", Self.marker)
-        app.typeKey("z", modifierFlags: [.command, .shift])
-        if !text.wait(until: redone, timeout: 3) { app.typeKey("z", modifierFlags: [.command, .shift]) }
-        XCTAssertTrue(text.wait(until: redone, timeout: MdocUITest.timeout))
+        XCTAssertTrue(press("z", [.command, .shift], until: redone, in: text, app), "⇧⌘Z made it again")
 
-        // Done, then mdoc leaves the foreground: the typing is saved.
+        // Done, then mdoc leaves the foreground: the typing is saved as the
+        // scene leaves the active phase, before iOS lets it run in the
+        // background (`MdocApp`), so it is stopped only once it is there
+        // (#818).
         done.tap()
         XCTAssertTrue(edit.waitForExistence(timeout: MdocUITest.timeout))
         XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            MdocUITest.wait(timeout: MdocUITest.timeout) {
+                app.state == .runningBackground || app.state == .runningBackgroundSuspended
+            }, "mdoc is in the background")
         app.terminate()
 
         // The same library, as the last launch left it.
@@ -73,6 +73,22 @@ final class EditModeUITests: XCTestCase {
         let reopened = again.textViews["document-text"]
         XCTAssertTrue(reopened.waitForExistence(timeout: 10))
         XCTAssertTrue(reopened.wait(until: NSPredicate(format: "value CONTAINS %@", "Zephyrine notes"), timeout: 10))
+    }
+
+    /// `key` with `flags` until `text` matches `done`. The first hardware
+    /// key after the software keyboard can be lost in the switch (see
+    /// `caretToTheEnd`), so it goes again; with the typing the only step, a
+    /// key past it changes nothing more (#818).
+    @MainActor
+    private func press(
+        _ key: String, _ flags: XCUIElement.KeyModifierFlags, until done: NSPredicate, in text: XCUIElement,
+        _ app: XCUIApplication
+    ) -> Bool {
+        for _ in 0..<4 {
+            app.typeKey(key, modifierFlags: flags)
+            if text.wait(until: done, timeout: 3) { return true }
+        }
+        return false
     }
 
     // MARK: Modes (ADR 0110)
