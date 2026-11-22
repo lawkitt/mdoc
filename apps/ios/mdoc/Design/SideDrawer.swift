@@ -672,9 +672,13 @@ final class DrawerController: UIViewController, UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === pan else { return true }
         // A long press, a selection handle's drag or a row's swipe that
-        // already began keeps the touch.
+        // already began keeps the touch. SwiftUI's buttons begin at the
+        // touch's start and keep nothing: over a sidebar row the drawer
+        // never moved and the lift opened the row (#1070).
         let others = trackedTouch?.gestureRecognizers ?? []
-        return !others.contains { $0 !== pan && ($0.state == .began || $0.state == .changed) }
+        return !others.contains {
+            $0 !== pan && ($0.state == .began || $0.state == .changed) && !DrawerSwipes.followsTouchesForSwiftUI($0)
+        }
     }
 
     func gestureRecognizer(
@@ -890,6 +894,13 @@ enum DrawerSwipes {
             return true
         }
         return view.subviews.contains { showsSwipeActions(in: $0) }
+    }
+
+    /// SwiftUI's recognizer that hands a hosting view's touches to its
+    /// buttons (`UIKitResponderGestureRecognizer`), found by name as the
+    /// swipe actions are. It begins with every touch.
+    static func followsTouchesForSwiftUI(_ recognizer: UIGestureRecognizer) -> Bool {
+        NSStringFromClass(type(of: recognizer)).contains("ResponderGestureRecognizer")
     }
 
     static func scrollsSideways(_ scroll: UIScrollView) -> Bool {

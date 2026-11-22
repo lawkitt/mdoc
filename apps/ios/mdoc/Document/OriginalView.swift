@@ -18,9 +18,6 @@ struct OriginalView: View {
     /// The comment sheet's thread, and opening it (`DocxOriginalView`).
     var activeComment: String?
     var onOpenComment: (String) -> Void = { _ in }
-    /// Dark page was turned on from its hint, for a toast saying where the
-    /// toggle lives.
-    var onDarkPageOn: () -> Void = {}
     /// A locked PDF, unlocked in memory (`DocumentViewModel.unlockedOriginal`).
     var unlockedPDF: PDFDocument?
     /// The import's password prompt takes the place of the page.
@@ -39,11 +36,11 @@ struct OriginalView: View {
         DarkPageState(preference: preferences.darkPage, colorScheme: colorScheme)
     }
 
-    /// The Dark page hint: the app dark, a page to darken, the page still
-    /// light (dark already, it has nothing to teach), and the hints'
-    /// one-at-a-time rule letting it show.
+    /// The Dark page hint (#1070): the page shown dark, as it is by default
+    /// in a dark app, and the hints' one-at-a-time rule letting it show. It
+    /// says where the moon is that switches it.
     private var hintShows: Bool {
-        dark.offered && !preferences.darkPage && original != .none && importPrompt == nil
+        dark.isOn && original != .none && importPrompt == nil
             && Hints.shared.teachable.contains(.darkPage)
     }
 
@@ -62,13 +59,7 @@ struct OriginalView: View {
             .overlay(alignment: .bottom) {
                 ZStack {
                     if hintShows {
-                        DarkPageHintCapsule(
-                            onTurnOn: {
-                                preferences.darkPage = true
-                                ReviewHint.darkPage.learn()
-                                onDarkPageOn()
-                            },
-                            onClose: { Hints.shared.learn(.darkPage, closed: true) })
+                        DarkPageHintCapsule { Hints.shared.learn(.darkPage, closed: true) }
                         .padding(Space.m)
                         .padding(.bottom, reachesBottom ? bottomInset : 0)
                     }
@@ -217,6 +208,11 @@ struct ZoomableImageView: UIViewRepresentable {
             // a tall one grows past it (`fitWidth`) and scrolls.
             image.heightAnchor.constraint(greaterThanOrEqualTo: scroll.frameLayoutGuide.heightAnchor),
         ])
+        // The picture's own size never wins over the width rule: tied with
+        // it, a re-layout could take the picture's pixel height and leave
+        // the page in the middle of a screen of blank (#1070).
+        image.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        image.setContentHuggingPriority(.defaultLow, for: .vertical)
         context.coordinator.imageView = image
         context.coordinator.viewport = viewport
         viewport.attach { [weak scroll] _ in scroll?.setZoomScale(1, animated: true) }
@@ -249,7 +245,9 @@ struct ZoomableImageView: UIViewRepresentable {
             guard let imageView, let image, image.size.width > 0 else { return }
             let constraint = imageView.heightAnchor.constraint(
                 equalTo: imageView.widthAnchor, multiplier: image.size.height / image.size.width)
-            constraint.priority = .defaultHigh
+            // Under the floor (at least the view's height), over the
+            // picture's own size.
+            constraint.priority = .required - 1
             constraint.isActive = true
             ratio = constraint
         }

@@ -26,8 +26,10 @@ struct MdocApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
                     app.saveDeferred()
                 }
-                // Settings › Appearance › Theme (ADR 0099), for every window.
-                .preferredColorScheme(theme.colorScheme)
+                // Settings › Appearance › Theme (ADR 0099), for every window
+                // and sheet. No `preferredColorScheme`: back to nil it keeps
+                // the last Light or Dark, so Automatic never followed the
+                // system (#1070).
                 .onChange(of: theme, initial: true) { theme.apply() }
         }
         .onChange(of: scenePhase) { _, phase in

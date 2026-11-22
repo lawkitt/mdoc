@@ -1,14 +1,25 @@
 import MdocFFI
 import SwiftUI
 
-/// The swipeable card under review (ADR 0098): the category icon, the name
-/// (tap to scroll back to it) and its alias, with a mentions chip when the
-/// identity has more than one; then the category, alias and scope chips
-/// (the alias chip's menu: Rename…, Adjust Words, Same as…, New alias);
-/// and a merge hint while the core sees one.
+/// The card under review (ADR 0098), in two parts (#1070). The name part
+/// swipes in the strip (`ReviewPager`): the category icon, the name (tap to
+/// scroll back to it), its state and a mentions chip when the identity has
+/// more than one. The controls part stays put under the strip, for the
+/// card under review: the category, alias and scope chips (the alias
+/// chip's menu: Rename…, Adjust Words, Same as…, New alias) and a merge
+/// hint while the core sees one.
 struct ReviewCard: View {
+    enum Part {
+        /// The swiping card: its icon, name, state and mentions chip.
+        case name
+        /// The fixed row under the strip: the chips, the rename field and
+        /// the merge hint.
+        case controls
+    }
+
     @Bindable var model: DocumentViewModel
     let candidate: Candidate
+    var part = Part.name
     /// False for a neighbor peeking in beside the card under review
     /// (`ReviewPager`): drawn the same, but its controls take no taps, keys
     /// or focus, and carry no test identifiers.
@@ -23,34 +34,35 @@ struct ReviewCard: View {
     private var identity: Identity? { model.snapshot.identities.first { $0.id == candidate.identityID } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
+        switch part {
+        case .name:
             header
-            if renaming {
-                renameField
-            } else {
-                chips
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card(padding: Space.s)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(id("review-card"))
+                .disabled(!isCurrent)
+        case .controls:
+            // Its own view per card (`.id` where it's placed), so a rename
+            // begun on one card ends when another takes its place.
+            VStack(alignment: .leading, spacing: Space.xs) {
+                if renaming {
+                    renameField
+                } else {
+                    chips
+                }
+                if let hint = model.mergeHint(for: candidate), !renaming {
+                    hintLine(hint)
+                }
             }
-            if let hint = model.mergeHint(for: candidate), !renaming {
-                hintLine(hint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(isPresented: $showsSameAsList) {
+                SameAsPicker(
+                    source: candidate.original, targets: model.sameAsTargets(for: candidate),
+                    categoryLabel: candidate.category.label) { model.sameAs($0) }
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card(padding: Space.s)
-        .sheet(isPresented: $showsSameAsList) {
-            SameAsPicker(
-                source: candidate.original, targets: model.sameAsTargets(for: candidate),
-                categoryLabel: candidate.category.label) { model.sameAs($0) }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(id("review-card"))
-        .disabled(!isCurrent)
-        // A rename begun on this card ends when it slides aside, so its
-        // field never renames the card that took its place.
-        .onChange(of: isCurrent) { _, current in
-            if !current {
-                renaming = false
-                aliasFocused = false
-            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("review-controls")
         }
     }
 
@@ -130,9 +142,9 @@ struct ReviewCard: View {
 
     // MARK: Line 2
 
-    /// The category, alias and scope chips. A row too long for the card
-    /// scrolls under a short fade at the card's edges and is clipped there,
-    /// so no chip draws over a neighbouring card (ADR 0115).
+    /// The category, alias and scope chips. A row too long for the bar
+    /// scrolls under a short fade at its edges and is clipped there
+    /// (ADR 0115).
     private var chips: some View {
         ScrollView(.horizontal) {
             HStack(spacing: Space.xs) {

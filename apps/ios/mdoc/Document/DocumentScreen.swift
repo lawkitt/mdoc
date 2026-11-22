@@ -190,7 +190,7 @@ struct DocumentScreen: View {
             reachesBottom: reachesBottom,
             onComments: { model.originalComments = $0 },
             activeComment: model.commentSheet?.thread?.id,
-            onOpenComment: openComment, onDarkPageOn: darkPageToast,
+            onOpenComment: openComment,
             unlockedPDF: model.unlockedOriginal, importPrompt: model.passwordPrompt,
             importCardInPane: model.originalCoversText && model.runningJob == nil,
             onImportUnlock: model.importUnlockAction, onUnlockPDF: model.pdfUnlockAction)
@@ -208,20 +208,34 @@ struct DocumentScreen: View {
         return model.pane == .original
     }
 
-    /// The title menu's Dark page: switching it teaches what its hint
-    /// would have.
-    private var darkPageBinding: Binding<Bool> {
-        Binding(
-            get: { preferences.darkPage },
-            set: {
-                preferences.darkPage = $0
-                ReviewHint.darkPage.learn()
-            })
+    /// The Original's Dark page, offered while the app is dark.
+    private var darkPage: DarkPageState {
+        DarkPageState(preference: preferences.darkPage, colorScheme: colorScheme)
     }
 
-    /// After the hint turned Dark page on: where to turn it off.
-    private func darkPageToast() {
-        model.toast = ToastMessage(text: String(localized: "Dark page · in the title menu"))
+    /// The Dark page button shows: an Original in view while the app is dark.
+    private var offersDarkPage: Bool {
+        originalShows && darkPage.offered
+    }
+
+    /// The page theme button over the Original (#1070): the moon, filled
+    /// while the page is dark. It bounces once while its hint shows (the
+    /// capsule over the page), and a tap teaches what the hint would have.
+    @ViewBuilder
+    private var darkPageButton: some View {
+        if offersDarkPage {
+            Button {
+                preferences.darkPage.toggle()
+                ReviewHint.darkPage.learn()
+            } label: {
+                Label("Dark page", systemImage: preferences.darkPage ? "moon.fill" : "moon")
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .symbolEffect(.bounce, options: .nonRepeating, value: darkPage.isOn && Hints.shared.teachable.contains(.darkPage))
+            .accessibilityValue(preferences.darkPage ? Text("On") : Text("Off"))
+            .accessibilityAddTraits(.isToggle)
+            .accessibilityIdentifier("dark-page")
+        }
     }
 
     /// The text is in view: always beside the right pane, and on iPhone
@@ -450,14 +464,6 @@ struct DocumentScreen: View {
                 }
                 .accessibilityIdentifier("show-markdown")
             }
-            // The page inverted while the app is dark (#1036): app-wide,
-            // off until chosen.
-            if originalShows, DarkPageState(preference: preferences.darkPage, colorScheme: colorScheme).offered {
-                Toggle(isOn: darkPageBinding) {
-                    Label("Dark page", systemImage: "moon")
-                }
-                .accessibilityIdentifier("dark-page")
-            }
             // The original's comments, in place of a bar over the page:
             // app-wide, on by default.
             if let comments = model.originalComments, !comments.all.isEmpty {
@@ -565,7 +571,8 @@ struct DocumentScreen: View {
             }
         } else {
             // One capsule: the pencil and Identities (ADR 0114). Over the
-            // Original neither: nothing there acts on names.
+            // Original neither: nothing there acts on names; the moon for
+            // Dark page instead, while the app is dark (#1070).
             ToolbarItemGroup(placement: .topBarTrailing) {
                 editButton
                 if !model.originalCoversText {
@@ -577,6 +584,7 @@ struct DocumentScreen: View {
                     .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
                     .accessibilityIdentifier("identities-button")
                 }
+                darkPageButton
             }
         }
     }
@@ -592,7 +600,7 @@ struct DocumentScreen: View {
         let cap: CGFloat = isRegular ? 420 : 300
         guard screenWidth > 0 else { return isRegular ? 420 : 140 }
         let leading: CGFloat = 60
-        let buttons: CGFloat = (offersEdit ? 1 : 0) + (model.originalCoversText ? 0 : 1)
+        let buttons: CGFloat = (offersEdit ? 1 : 0) + (model.originalCoversText ? 0 : 1) + (offersDarkPage ? 1 : 0)
         let trailing: CGFloat = model.isEditing ? 76 : buttons == 0 ? 16 : 16 + 14 + 48 * buttons
         return min(cap, max(60, screenWidth - leading - trailing - 2 * Space.xs - 22))
     }

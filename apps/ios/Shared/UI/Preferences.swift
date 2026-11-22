@@ -5,7 +5,7 @@ import SwiftUI
 /// What the user chose and what the app has learned about them, in one
 /// store: the App Group's defaults, which the Restore extension reads too
 /// (ADR 0104). Theme and the document font (Settings › Appearance), Show
-/// Markdown, comments and the Original's Dark page (the title menu),
+/// Markdown and comments (the title menu), the Original's Dark page,
 /// haptics, the review's hints and the setup card. UI tests keep theirs
 /// under a prefix of their own, cleared at each launch, so a test never
 /// changes the user's choices.
@@ -88,10 +88,11 @@ final class Preferences: @unchecked Sendable {
         set { withMutation(keyPath: \.showsComments) { store.set(newValue, forKey: name(.showsComments)) } }
     }
 
-    /// The Original's Dark page, while the app is dark (#1036): off until
-    /// chosen, so the page looks like the paper.
+    /// The Original's Dark page, while the app is dark: on until turned
+    /// off (#1070), so a dark app shows a dark page; a choice stored before
+    /// stays.
     var darkPage: Bool {
-        get { access(keyPath: \.darkPage); return bool(.darkPage) }
+        get { access(keyPath: \.darkPage); return bool(.darkPage, default: true) }
         set { withMutation(keyPath: \.darkPage) { store.set(newValue, forKey: name(.darkPage)) } }
     }
 

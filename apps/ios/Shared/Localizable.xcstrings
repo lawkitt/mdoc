@@ -435,6 +435,9 @@
     "Close sidebar" : {
 
     },
+    "Closes this tip." : {
+      "comment" : "VoiceOver hint on the Dark page hint."
+    },
     "Code block" : {
 
     },
@@ -491,10 +494,13 @@
 
     },
     "Dark page" : {
-      "comment" : "The title menu's toggle, and its hint, that shows the original's page dark while the app is dark."
+      "comment" : "The button over the original that shows its page dark while the app is dark."
     },
-    "Dark page · in the title menu" : {
-      "comment" : "Toast after the hint turned Dark page on: where the toggle lives."
+    "Dark page is on. The moon at the top switches it." : {
+      "comment" : "VoiceOver label of the Dark page hint."
+    },
+    "Dark page · %@ above switches it" : {
+      "comment" : "The one-time hint over the original's dark page; %@ is the moon symbol of the button at the top."
     },
     "Date" : {
 
@@ -1029,7 +1035,13 @@
     "Nothing you open leaves this device unless you share it." : {
 
     },
+    "Off" : {
+
+    },
     "OK" : {
+
+    },
+    "On" : {
 
     },
     "Open" : {
@@ -1451,6 +1463,9 @@
     "Swipe the card for the next name" : {
 
     },
+    "Switches between light and dark. Touch and hold for Automatic." : {
+      "comment" : "VoiceOver hint on the sidebar's theme button."
+    },
     "System" : {
 
     },
@@ -1561,9 +1576,6 @@
     },
     "Turn into" : {
 
-    },
-    "Turns the page dark. It's also in the title menu." : {
-      "comment" : "VoiceOver hint on the Dark page hint."
     },
     "Typing" : {
 

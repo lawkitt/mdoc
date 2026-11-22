@@ -25,56 +25,46 @@ private struct DarkPageEffect: ViewModifier {
     }
 }
 
-/// Whether the Original's page shows dark: the preference, only while the
-/// app is dark.
+/// Whether the Original's page shows dark: the preference (on by default,
+/// #1070), only while the app is dark.
 struct DarkPageState {
     let preference: Bool
     let colorScheme: ColorScheme
 
-    /// The title menu offers the toggle: the app is dark.
+    /// The moon over the Original offers it: the app is dark.
     var offered: Bool { colorScheme == .dark }
     var isOn: Bool { offered && preference }
 }
 
-/// The one-time hint over the Original while the app is dark: a capsule
-/// that turns Dark page on, or × for good (ADR 0114: a quiet line, no
-/// popover). Settings › Review › Reset tips brings it back.
+/// The one-time hint over the Original while its page shows dark (#1070):
+/// a quiet capsule saying the moon at the top switches it (ADR 0114: no
+/// popover). A tap anywhere on it closes it for good; Settings › Review ›
+/// Reset tips brings it back.
 struct DarkPageHintCapsule: View {
-    let onTurnOn: () -> Void
     let onClose: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button(action: onTurnOn) {
-                Label {
-                    Text(ReviewHint.darkPage.text)
-                } icon: {
-                    Image(systemName: ReviewHint.darkPage.symbol)
-                }
-                .font(.subheadline.weight(.semibold))
-                .padding(.leading, Space.m)
-                .padding(.trailing, Space.xs)
-                .frame(minHeight: Size.target)
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint(Text("Turns the page dark. It's also in the title menu."))
-            .accessibilityIdentifier("dark-page-hint")
-            Button(action: onClose) {
+        Button(action: onClose) {
+            HStack(spacing: Space.xs) {
+                Text("Dark page · \(Image(systemName: "moon")) above switches it")
+                    .font(.subheadline.weight(.semibold))
                 Image(systemName: "xmark")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: Size.target, height: Size.target)
-                    .contentShape(Circle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Close"))
-            .accessibilityIdentifier("dark-page-hint-close")
+            .padding(.leading, Space.m)
+            .padding(.trailing, Space.s)
+            .frame(minHeight: Size.target)
+            .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
         .foregroundStyle(.primary)
         .glassEffect(.regular.interactive(), in: .capsule)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .accessibilityLabel(Text("Dark page is on. The moon at the top switches it."))
+        .accessibilityHint(Text("Closes this tip."))
+        .accessibilityIdentifier("dark-page-hint")
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 }
