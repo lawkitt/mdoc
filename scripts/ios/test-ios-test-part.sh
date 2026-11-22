@@ -5,9 +5,11 @@
 # plans and leaving an .xcresult whose tests a fake xcrun prints, the
 # checked-in sample of a runner that failed to start
 # (scripts/ios/fixtures/ios-runner-failed.json) or a failed test. A UI part
-# whose runner failed, then passed, retries once without building on an
-# erased Simulator and is green with a warning; one whose runner fails twice
-# fails; a failed test, and the unit part, never retry. Skipped on Windows:
+# whose runner failed, then passed, retries once without building on its
+# erased device and is green with a warning; one whose runner fails twice
+# fails; a failed test, the unit part, and a device that cannot be found or
+# erased never retry. The `ios-test` recipe's own line, on a fake
+# xcodebuild, runs the action MDOC_IOS_TEST_ACTION names. Skipped on Windows:
 # the script runs only on macOS runners (ci-ios.yml). Bash 3.2 compatible.
 source "$(dirname "$0")/../lib.sh"
 if [ "$(platform)" = windows-x64 ]; then
@@ -55,29 +57,48 @@ case "$step" in
   *) echo "fake just: no step $n" >&2 && exit 99 ;;
 esac
 EOF
-# xcrun: xcresulttool prints the .xcresult's tests.json; simctl lists one
-# booted device and logs what it is asked.
+# xcrun: xcresulttool prints the .xcresult's tests.json; simctl lists an
+# iPhone 17 in each pinned runtime (scripts/tools.env) and an iPhone 17 Pro
+# (no iPhone 17 in the nightly's with XCRUN_NO_DEVICE), and logs what else
+# it is asked, failing an erase with XCRUN_ERASE_FAIL.
 cat >"$tmp/bin/xcrun" <<'EOF'
 #!/usr/bin/env bash
 case "$1 $2" in
   "xcresulttool get") cat "$6/tests.json" ;;
   "simctl list")
     echo "== Devices =="
-    echo "-- iOS 27.2 --"
-    echo "    iPhone 17 (4AD2086B-7B8F-4608-A742-AA422A0B8D74) (Booted) "
+    echo "-- iOS $IOS_SIM_RUNTIME --"
+    echo "    iPhone 17 (11111111-2222-3333-4444-555555555555) (Shutdown) "
+    echo "-- iOS $IOS_SIM_BUILDS_RUNTIME --"
+    echo "    iPhone 17 Pro (99999999-2222-3333-4444-555555555555) (Shutdown) "
+    [ -n "${XCRUN_NO_DEVICE:-}" ] || echo "    iPhone 17 (4AD2086B-7B8F-4608-A742-AA422A0B8D74) (Booted) "
+    ;;
+  "simctl erase")
+    echo "$*" >>"$XCRUN_LOG"
+    [ -z "${XCRUN_ERASE_FAIL:-}" ] || exit 1
     ;;
   *) echo "$*" >>"$XCRUN_LOG" ;;
 esac
 EOF
-chmod +x "$tmp/bin/just" "$tmp/bin/xcrun"
-export PATH="$tmp/bin:$PATH"
+# xcodebuild: logs its arguments.
+cat >"$tmp/bin/xcodebuild" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"$XCODEBUILD_LOG"
+EOF
+chmod +x "$tmp/bin/just" "$tmp/bin/xcrun" "$tmp/bin/xcodebuild"
+# The nightly's pin, whose runtime is the second section's.
+export PATH="$tmp/bin:$PATH" MDOC_XCODE=builds
+IOS_SIM_RUNTIME=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env)
+IOS_SIM_BUILDS_RUNTIME=$(sed -n 's/^IOS_SIM_BUILDS_RUNTIME=//p' scripts/tools.env)
+export IOS_SIM_RUNTIME IOS_SIM_BUILDS_RUNTIME
+if [ -z "$IOS_SIM_RUNTIME" ] || [ -z "$IOS_SIM_BUILDS_RUNTIME" ]; then fail "no runtimes in scripts/tools.env"; fi
 
-# run <case> <part> <plan step>...: runs the script in a fresh folder,
-# its output in $out and its status in $rc.
+# run <case> <part> <plan step>...: runs the script in a fresh folder that
+# links scripts/, its output in $out and its status in $rc.
 run() {
   local name=$1 part=$2
   shift 2
-  dir="$tmp/$name" && mkdir -p "$dir"
+  dir="$tmp/$name" && mkdir -p "$dir" && ln -s "$root/scripts" "$dir/scripts"
   printf '%s\n' "$@" >"$dir/plan"
   export JUST_PLAN="$dir/plan" JUST_LOG="$dir/just.log" XCRUN_LOG="$dir/xcrun.log" GITHUB_STEP_SUMMARY="$dir/summary"
   : >"$JUST_LOG" && : >"$XCRUN_LOG"
@@ -95,8 +116,9 @@ run green 'ui 1' pass
 [ -s "$out" ] && fail "a green part said something: $(cat "$out")"
 
 # The runner fails to start, then passes: one retry, without building, of
-# the same tests on the erased booted Simulator; green, with the warning;
-# the failed attempt's .xcresult out of the later steps' folder.
+# the same tests on the erased iPhone 17 of the pin's runtime (not another
+# runtime's, nor an iPhone 17 Pro); green, with the warning; the failed
+# attempt's .xcresult out of the later steps' folder.
 run retried 'ui 1' "fail $runner_json" pass
 [ "$rc" = 0 ] || fail "a pass on the retry failed the part: $(cat "$out")"
 has "$JUST_LOG" "$first"
@@ -104,6 +126,7 @@ has "$JUST_LOG" "$again"
 [ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 2 ] || fail "not one retry: $(cat "$JUST_LOG")"
 has "$XCRUN_LOG" 'simctl shutdown all'
 has "$XCRUN_LOG" 'simctl erase 4AD2086B-7B8F-4608-A742-AA422A0B8D74'
+[ "$(grep -c 'simctl erase' "$XCRUN_LOG")" = 1 ] || fail "erased another device: $(cat "$XCRUN_LOG")"
 has "$out" "$warning"
 [ "$(grep -c '^::warning::' "$out")" = 1 ] || fail "not one warning: $(cat "$out")"
 has "$GITHUB_STEP_SUMMARY" '### ci/ios (ui 1): UI test runner failed to start; retried once'
@@ -133,6 +156,27 @@ run test 'ui 1' "fail $tmp/test.json" pass
 [ -s "$XCRUN_LOG" ] && fail "a failed test reset the Simulator: $(cat "$XCRUN_LOG")"
 grep -q '^::warning::' "$out" && fail "a failed test warned: $(cat "$out")"
 
+# No such device, or its erase fails: no retry, the failed attempt's
+# .xcresult left for the Failing tests step.
+XCRUN_NO_DEVICE=1 run nodevice 'ui 1' "fail $runner_json" pass
+[ "$rc" = 65 ] || fail "no device exited $rc: $(cat "$out")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "no device retried: $(cat "$JUST_LOG")"
+has "$out" "::warning::no iPhone 17 on iOS $IOS_SIM_BUILDS_RUNTIME to reset, so no retry"
+[ -d "$dir/target/ios/DerivedData/Logs/Test/Test-mdoc-1.xcresult" ] || fail "no device moved the xcresult"
+XCRUN_ERASE_FAIL=1 run noerase 'ui 1' "fail $runner_json" pass
+[ "$rc" = 65 ] || fail "a failed erase exited $rc: $(cat "$out")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a failed erase retried: $(cat "$JUST_LOG")"
+has "$out" '::warning::could not erase iPhone 17 (4AD2086B-7B8F-4608-A742-AA422A0B8D74), so no retry'
+[ -d "$dir/target/ios/DerivedData/Logs/Test/Test-mdoc-1.xcresult" ] || fail "a failed erase moved the xcresult"
+# The .xcresult cannot move aside: no retry, so the Failing tests step never
+# reads the first attempt's error as the retry's.
+moved="$tmp/nomove/target/ios/DerivedData/Logs/RunnerFailed"
+mkdir -p "$moved" && chmod 555 "$moved"
+run nomove 'ui 1' "fail $runner_json" pass
+chmod 755 "$moved"
+[ "$rc" = 65 ] || fail "a failed move exited $rc: $(cat "$out")"
+[ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a failed move retried: $(cat "$JUST_LOG")"
+
 # The unit part's runner fails to start: unit tests never retry.
 run unit unit "fail $runner_json" pass
 [ "$rc" = 65 ] || fail "the unit part exited $rc: $(cat "$out")"
@@ -142,6 +186,22 @@ run unit unit "fail $runner_json" pass
 run build 'ui 3' 'exit 65' pass
 [ "$rc" = 65 ] || fail "a build failure exited $rc: $(cat "$out")"
 [ "$(wc -l <"$JUST_LOG" | tr -d ' ')" = 1 ] || fail "a build failure retried: $(cat "$JUST_LOG")"
+
+# The ios-test recipe's line, as just runs it (the device and tests in its
+# place), from the repository root on the fake xcodebuild: `test`, or the
+# action MDOC_IOS_TEST_ACTION names, on the same tests and device.
+recipe=$(awk '/^ios-test device=/ { getline; sub(/^    /, ""); print; exit }' justfile |
+  sed -e 's/{{device}}/iPhone 17/' -e 's#{{only}}#mdocUITests/AUITests mdocUITests/BUITests#')
+case "$recipe" in *xcodebuild*) ;; *) fail "no ios-test recipe line: $recipe" ;; esac
+export XCODEBUILD_LOG="$tmp/xcodebuild.log"
+only='-only-testing:mdocUITests/AUITests -only-testing:mdocUITests/BUITests'
+bash -c "$recipe" || fail "the recipe failed"
+grep -q -- " -quiet test $only" "$XCODEBUILD_LOG" || fail "the recipe did not test: $(cat "$XCODEBUILD_LOG")"
+grep -q -- "-destination platform=iOS Simulator,OS=$IOS_SIM_BUILDS_RUNTIME,name=iPhone 17 " "$XCODEBUILD_LOG" ||
+  fail "the recipe tests another device: $(cat "$XCODEBUILD_LOG")"
+: >"$XCODEBUILD_LOG"
+MDOC_IOS_TEST_ACTION=test-without-building bash -c "$recipe" || fail "the recipe failed without building"
+grep -q -- " -quiet test-without-building $only" "$XCODEBUILD_LOG" || fail "the recipe built: $(cat "$XCODEBUILD_LOG")"
 
 # Usage.
 rc=0

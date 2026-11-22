@@ -8,11 +8,13 @@
 # initializing for UI testing, before any test, and the per-test retry
 # (MDOC_IOS_TEST_RETRY) never sees a test fail. When no test case ran and
 # the runner's own error is the only failure (scripts/ios/ios-failed-tests.py
-# runner), the part runs once more: the failed attempt's .xcresult moves to
-# target/ios/DerivedData/Logs/RunnerFailed (the later steps read the
-# retry's), the booted Simulator is shut down and erased, and
-# `ios-test` runs the same tests with `test-without-building`
-# (MDOC_IOS_TEST_ACTION), so the app is not rebuilt. A pass keeps the part
+# runner), the part runs once more: the test device (the iPhone 17 of the
+# pinned runtime, scripts/tools.env) is shut down and erased, the failed
+# attempt's .xcresult moves to target/ios/DerivedData/Logs/RunnerFailed (the
+# later steps read the retry's), and `ios-test` runs the same tests with
+# `test-without-building` (MDOC_IOS_TEST_ACTION), so the app is not
+# rebuilt. When the device cannot be found or erased, or the .xcresult
+# moved, it does not retry and fails as before. A pass keeps the part
 # green with a warning, `ci/ios (<part>): UI test runner failed to start;
 # retried once`, an infrastructure failure that charges no test; a failure
 # fails the part as before. A failure after a test started, and the unit
@@ -38,13 +40,23 @@ esac
 python3 "$(dirname "$0")/ios-failed-tests.py" runner "$logs/Test" || exit "$rc"
 
 echo "The UI test runner failed to start, before any test: resetting the Simulator and testing once more without building (#1065)"
-mkdir -p "$logs/RunnerFailed"
-mv "$logs/Test/"*.xcresult "$logs/RunnerFailed/"
-booted=$(xcrun simctl list devices booted | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}')
+# The destination `ios-test` names: the device in its runtime's section
+# (`-- iOS 27.2 --`), as `    iPhone 17 (<udid>) (Booted)`, booted or not.
+os=$(source "$(dirname "$0")/../lib.sh" && load_tools && echo "$IOS_SIM_RUNTIME") || exit "$rc"
+udid=$(xcrun simctl list devices available |
+  awk -v section="-- iOS $os --" -v name="    $device (" '/^-- / { here = ($0 == section) } here && index($0, name) == 1' |
+  grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}' | head -n 1)
+if [ -z "$udid" ]; then
+  echo "::warning::no $device on iOS $os to reset, so no retry"
+  exit "$rc"
+fi
 xcrun simctl shutdown all || true
-for udid in $booted; do
-  xcrun simctl erase "$udid" || echo "::warning::could not erase the Simulator $udid; retrying on it as it is"
-done
+if ! xcrun simctl erase "$udid"; then
+  echo "::warning::could not erase $device ($udid), so no retry"
+  exit "$rc"
+fi
+mkdir -p "$logs/RunnerFailed" || exit "$rc"
+mv "$logs/Test/"*.xcresult "$logs/RunnerFailed/" || exit "$rc"
 
 MDOC_IOS_TEST_ACTION=test-without-building just --no-deps ios-test "$device" "$@" || exit
 note="ci/ios ($part): UI test runner failed to start; retried once"

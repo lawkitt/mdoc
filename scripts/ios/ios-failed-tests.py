@@ -40,7 +40,8 @@ runner   in a UI part's Tests step (scripts/ios/ios-test-part.sh), after
          runner's own errors (xcresulttool's "System Failures" suite),
          `mdocUITests-Runner (<pid>) encountered an error`, each failure
          message of which says the runner crashed while preparing to run
-         tests or failed to initialize for UI testing: no test case ran.
+         tests or failed to initialize for UI testing, and no other failure
+         message is in the tree: no test case ran.
 """
 import json
 import os
@@ -99,18 +100,24 @@ def runner_failed(tree):
     """Whether the test runner failed to start: in xcresulttool's
     `test-results tests` JSON, every test case is a runner's own error
     (RUNNER_ERROR) with failure messages, each saying it never started
-    (RUNNER_START), and there is at least one."""
-    cases = []
+    (RUNNER_START), there is at least one, and no failure message is
+    anywhere else."""
+    cases, stray = [], []
 
     def walk(node):
-        if node.get("nodeType") == "Test Case":
+        kind = node.get("nodeType")
+        if kind == "Test Case":
             cases.append(node)
             return
+        if kind == "Failure Message":
+            stray.append(node)
         for child in node.get("children", []):
             walk(child)
 
     for node in tree["testNodes"]:
         walk(node)
+    if stray:
+        return False
     for case in cases:
         if not RUNNER_ERROR.fullmatch(case.get("nodeIdentifier", "")):
             return False

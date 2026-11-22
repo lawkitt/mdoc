@@ -194,8 +194,8 @@ has "$tmp/out" '::error::ci/ios (core): cancelled'
 # runner: 0 only when every .xcresult's test cases are its runner's own
 # errors from before any test ran (the sample is ui 1's on run 44940648698,
 # both of its messages); 1 when a test ran beside one, or the runner's
-# error says something else or nothing, or with no case, no .xcresult, or
-# an unreadable one.
+# error says something else or nothing, or a failure message is elsewhere,
+# or with no case, no .xcresult, or an unreadable one.
 runner_json=$PWD/scripts/ios/fixtures/ios-runner-failed.json
 runner() { python3 scripts/ios/ios-failed-tests.py runner "$@" >"$tmp/out" 2>&1; }
 # variant <name> <python on d, the sample, and case, its runner error>
@@ -211,6 +211,8 @@ variant other "case['children'][0]['name'] = 'Lost connection to the test manage
 if XCRUN_JSON="$tmp/other.json" runner "$tmp/one-result"; then fail 'another runner error reads as a failed start'; fi
 variant both "case['children'].append({'nodeType': 'Failure Message', 'name': 'Lost connection to the test manager service.'})"
 if XCRUN_JSON="$tmp/both.json" runner "$tmp/one-result"; then fail 'a second runner error reads as a failed start'; fi
+variant stray "d['testNodes'][0]['children'][0]['children'][0]['children'].append({'nodeType': 'Failure Message', 'name': 'Lost connection to the test manager service.'})"
+if XCRUN_JSON="$tmp/stray.json" runner "$tmp/one-result"; then fail 'a failure message outside the runner error reads as a failed start'; fi
 variant silent "case['children'] = []"
 if XCRUN_JSON="$tmp/silent.json" runner "$tmp/one-result"; then fail 'a runner error with no message reads as a failed start'; fi
 variant ran "d['testNodes'][0]['children'][0]['children'].append({'nodeType': 'Test Suite', 'name': 'S', 'children': [{'nodeType': 'Test Case', 'name': 'testA()', 'nodeIdentifier': 'S/testA()', 'result': 'Passed'}]})"
