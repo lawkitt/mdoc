@@ -199,17 +199,29 @@ roadmap_item = "remove item {number} from `{roadmap}` {milestone} (delete only i
 issue = "the commit that finishes it says `fixes #{number}`"
 fragment = "add `changes/{slug}.md`, or `changes/ios/{slug}.md` / `changes/android/{slug}.md` for one app, `changes/mobile/{slug}.md` for both (format in `changes/README.md`)"
 
+[ci]
+scarce = { macos = { slots = 5, labels = ["macos-26", "xcode-27"] } }
+shadow = "they pass a shadow run on `ci-shadow/main/<name>` before the hub enqueues them (`docs/specs/ci.md`, Changing CI). A change that adds or alters a red path also needs a deliberately broken twin that must fail. Delete both branches afterwards."
+targets = "`scripts/ci/ci-stats.sh` (the nightly's CI targets): a core change's queue median 30 minutes or less; missing it reopens a self-hosted Mac (#1041)."
+notes = [
+  "`docs/specs/ci.md` has a 500-word ceiling (docs-lint; count with `LC_ALL=en_US.UTF-8`): make room by tightening lines that restate the code, never by raising it.",
+  "On the Mac, reproduce a hosted iOS failure with Xcode 27.2 (ADR 0124): a queue or branch failure on the iOS 26.2 Simulator runtime (the default), a nightly one with `MDOC_XCODE=builds` (iOS 27.2).",
+]
+
 [machines.macbook-air]
 setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."
+builds = ["rust", "macos", "ios", "android"]
 
 [machines.windows]
 disk_check = "`Get-PSDrive E` (not `just disk`, which fails while another lane builds)"
 lanes = { windows-lane-1 = 'E:\t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'E:\t3\worktrees\mdoc\windows-lane-2', windows-lane-3 = 'E:\t3\worktrees\mdoc\windows-lane-3', windows-lane-4 = 'E:\t3\worktrees\mdoc\windows-lane-4' }
 notes = "Every lane, the root checkout and the queue runners' homes (`E:\\ci`) are on `E:`, a ReFS Dev Drive (a VHDX on `D:`); `CARGO_HOME` and `RUSTUP_HOME` stay on `C:`."
+builds = ["rust", "windows"]
 
 [machines.wsl]
 disk_check = "`df -h ~`"
 lanes = { wsl-lane-1 = "~/.t3/worktrees/mdoc/wsl-lane-1" }
 gate = ["cargo test -p mdoc-pii -p mdoc-editor -p mdoc-history"]
 notes = "Only the platform-neutral crates build here; a Linux build of the app is not a shipped target."
+builds = ["rust-neutral"]
 ```

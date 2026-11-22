@@ -53,11 +53,11 @@ How a PR reaches `main`. The machinery and the PC's runners:
 ## Changing CI
 
 - A change to what decides merges (`merge-gate.sh`, `queue.yml`, the job
-  workflows, `queue-runner.sh`, `ci-areas.txt`) first passes a shadow run on
-  `ci-shadow/main/<name>`, with a deliberately broken twin that must fail.
+  workflows, `queue-runner.sh`, `ci-areas.txt`) passes a shadow run on
+  `ci-shadow/main/<name>`; a new or changed red path needs a failing twin.
   Delete both branches afterwards.
 - If a merged gate change blocks the queue, the maintainer pushes its revert
-  straight to `main`.
+  to `main`.
 
 ## iOS tests
 
