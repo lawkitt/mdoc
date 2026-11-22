@@ -12,9 +12,14 @@ use crate::{
 use gpui::{AnyElement, App, Context, Entity, Focusable, PromptLevel, Window, div, prelude::*, px};
 use mdoc_store::{
     cases::{Case, CaseError, CaseLink, Store},
+    document_id::DocumentId,
     session_store,
 };
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 gpui::actions!(
     cases,
@@ -420,7 +425,10 @@ impl Workspace {
             return;
         };
         let wanted = tab.record().case.clone();
-        let identity = tab.identity().cloned();
+        let file = tab
+            .document()
+            .and_then(DocumentId::file)
+            .map(Path::to_path_buf);
         let (loaded, has_case) = {
             let v = view.read(cx);
             (
@@ -433,7 +441,7 @@ impl Workspace {
         }
         let case = self.case_coordinator.cases().iter().find(|case| {
             wanted.as_deref() == Some(case.id.as_str())
-                || identity.as_ref().is_some_and(|p| case.members.contains(p))
+                || file.as_ref().is_some_and(|p| case.members.contains(p))
         });
         match case {
             Some(case) => {
@@ -445,7 +453,7 @@ impl Workspace {
                 let dismissed = case.dismissed_hints.clone();
                 // What it took off as Not a name that the case keeps for
                 // another member stays off.
-                let not_names = identity
+                let not_names = file
                     .as_ref()
                     .map(|member| case.not_names_of(member))
                     .unwrap_or_default();

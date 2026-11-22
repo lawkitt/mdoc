@@ -1,38 +1,39 @@
-//! The window's tabs in sidebar order: each tab's id, saved
-//! record and document view, which tab is active, and whether Home covers
-//! it. Generic over the view, so the order rules run without a window; the
-//! workspace view creates, releases and focuses the documents.
+//! The window's live views in sidebar order, one per tab: each one's id,
+//! the document it names, its saved record and its document view, which one
+//! is active, and whether Home covers it. Generic over the view, so the order
+//! rules run without a window; the workspace view creates, releases and
+//! focuses the documents.
 
-use mdoc_store::session_store::TabRecord;
+use mdoc_store::{document_id::DocumentId, session_store::TabRecord};
 use std::{collections::HashSet, path::PathBuf};
 
-/// What the workspace view carries out for a tab-set transition.
+/// What the workspace view carries out for a live-view transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum TabsEffect {
+pub(super) enum LiveViewsEffect {
     /// The sidebar order changed.
     Repaint,
     /// Activate this tab: the closed tab's neighbour, or a new placeholder.
     Activate(u64),
 }
 
-pub(super) struct Tab<V> {
+pub(super) struct LiveView<V> {
     id: u64,
     record: TabRecord,
-    /// The Markdown file this tab holds, for finding it by path.
-    identity: Option<PathBuf>,
+    /// The document this view holds, for finding it again.
+    document: Option<DocumentId>,
     view: Option<V>,
     /// Last opened/saved path observed, independent of the capped recent list.
     recent_path: Option<PathBuf>,
 }
 
-impl<V> Tab<V> {
+impl<V> LiveView<V> {
     /// A tab outside any set, for tests of how tabs are labelled.
     #[cfg(test)]
     pub(super) fn detached(id: u64, record: TabRecord) -> Self {
         Self {
             id,
             record,
-            identity: None,
+            document: None,
             view: None,
             recent_path: None,
         }
@@ -47,8 +48,8 @@ impl<V> Tab<V> {
         &self.record
     }
 
-    pub(super) fn identity(&self) -> Option<&PathBuf> {
-        self.identity.as_ref()
+    pub(super) fn document(&self) -> Option<&DocumentId> {
+        self.document.as_ref()
     }
 
     /// The document view, once the tab was first shown.
@@ -57,15 +58,15 @@ impl<V> Tab<V> {
     }
 }
 
-pub(super) struct TabSet<V> {
-    tabs: Vec<Tab<V>>,
+pub(super) struct LiveViews<V> {
+    tabs: Vec<LiveView<V>>,
     active: u64,
     next_id: u64,
     /// Home fills the card instead of the active tab.
     home: bool,
 }
 
-impl<V> Default for TabSet<V> {
+impl<V> Default for LiveViews<V> {
     fn default() -> Self {
         Self {
             tabs: Vec::new(),
@@ -77,24 +78,24 @@ impl<V> Default for TabSet<V> {
 }
 
 /// Sidebar order: `tabs[0]` is the first row.
-impl<V> std::ops::Index<usize> for TabSet<V> {
-    type Output = Tab<V>;
+impl<V> std::ops::Index<usize> for LiveViews<V> {
+    type Output = LiveView<V>;
 
-    fn index(&self, index: usize) -> &Tab<V> {
+    fn index(&self, index: usize) -> &LiveView<V> {
         &self.tabs[index]
     }
 }
 
-impl<'a, V> IntoIterator for &'a TabSet<V> {
-    type Item = &'a Tab<V>;
-    type IntoIter = std::slice::Iter<'a, Tab<V>>;
+impl<'a, V> IntoIterator for &'a LiveViews<V> {
+    type Item = &'a LiveView<V>;
+    type IntoIter = std::slice::Iter<'a, LiveView<V>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.tabs.iter()
     }
 }
 
-impl<V> TabSet<V> {
+impl<V> LiveViews<V> {
     pub(super) fn len(&self) -> usize {
         self.tabs.len()
     }
@@ -103,12 +104,12 @@ impl<V> TabSet<V> {
         self.tabs.is_empty()
     }
 
-    pub(super) fn iter(&self) -> std::slice::Iter<'_, Tab<V>> {
+    pub(super) fn iter(&self) -> std::slice::Iter<'_, LiveView<V>> {
         self.tabs.iter()
     }
 
     #[cfg(test)]
-    pub(super) fn last(&self) -> Option<&Tab<V>> {
+    pub(super) fn last(&self) -> Option<&LiveView<V>> {
         self.tabs.last()
     }
 
@@ -119,15 +120,15 @@ impl<V> TabSet<V> {
     }
 
     /// The tab at sidebar position `index`.
-    pub(super) fn at(&self, index: usize) -> Option<&Tab<V>> {
+    pub(super) fn at(&self, index: usize) -> Option<&LiveView<V>> {
         self.tabs.get(index)
     }
 
-    pub(super) fn get(&self, id: u64) -> Option<&Tab<V>> {
+    pub(super) fn get(&self, id: u64) -> Option<&LiveView<V>> {
         self.tabs.iter().find(|tab| tab.id == id)
     }
 
-    fn get_mut(&mut self, id: u64) -> Option<&mut Tab<V>> {
+    fn get_mut(&mut self, id: u64) -> Option<&mut LiveView<V>> {
         self.tabs.iter_mut().find(|tab| tab.id == id)
     }
 
@@ -143,7 +144,7 @@ impl<V> TabSet<V> {
         self.active
     }
 
-    pub(super) fn active_tab(&self) -> Option<&Tab<V>> {
+    pub(super) fn active_tab(&self) -> Option<&LiveView<V>> {
         self.get(self.active)
     }
 
@@ -157,11 +158,11 @@ impl<V> TabSet<V> {
     pub(super) fn push(&mut self, record: TabRecord) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
-        let identity = (!record.markdown.as_os_str().is_empty()).then(|| record.markdown.clone());
-        self.tabs.push(Tab {
+        let document = record.document();
+        self.tabs.push(LiveView {
             id,
             record,
-            identity,
+            document,
             view: None,
             recent_path: None,
         });
@@ -226,10 +227,14 @@ impl<V> TabSet<V> {
         }
     }
 
-    /// Tab `id` now holds the Markdown file `path`. Returns the file it held.
-    pub(super) fn set_identity(&mut self, id: u64, path: Option<PathBuf>) -> Option<PathBuf> {
+    /// Tab `id` now holds `document`. Returns the document it held.
+    pub(super) fn set_document(
+        &mut self,
+        id: u64,
+        document: Option<DocumentId>,
+    ) -> Option<DocumentId> {
         let tab = self.get_mut(id)?;
-        std::mem::replace(&mut tab.identity, path)
+        std::mem::replace(&mut tab.document, document)
     }
 
     /// Tab `id` shows `path` now. Returns whether that is a different path
@@ -260,22 +265,22 @@ impl<V> TabSet<V> {
     }
 
     /// The tab `delta` places from the active one, wrapping.
-    pub(super) fn cycle(&self, delta: isize) -> Option<TabsEffect> {
+    pub(super) fn cycle(&self, delta: isize) -> Option<LiveViewsEffect> {
         if self.tabs.is_empty() {
             return None;
         }
         let index = self.position(self.active).unwrap_or(0);
         let next = (index as isize + delta).rem_euclid(self.tabs.len() as isize) as usize;
-        Some(TabsEffect::Activate(self.tabs[next].id))
+        Some(LiveViewsEffect::Activate(self.tabs[next].id))
     }
 
     /// Move tab `from` to tab `to`'s place; nothing when either is gone.
-    pub(super) fn reorder(&mut self, from: u64, to: u64) -> Option<TabsEffect> {
+    pub(super) fn reorder(&mut self, from: u64, to: u64) -> Option<LiveViewsEffect> {
         let from = self.position(from)?;
         let to = self.position(to)?;
         let tab = self.tabs.remove(from);
         self.tabs.insert(to, tab);
-        Some(TabsEffect::Repaint)
+        Some(LiveViewsEffect::Repaint)
     }
 
     /// Move the `created` tabs, keeping their sidebar order, before tab
@@ -294,17 +299,17 @@ impl<V> TabSet<V> {
     /// Close tab `id`. The last tab leaves a placeholder for Home; closing the
     /// active tab activates the one in its place, else
     /// the one before it.
-    pub(super) fn remove(&mut self, id: u64) -> Option<(Tab<V>, Option<TabsEffect>)> {
+    pub(super) fn remove(&mut self, id: u64) -> Option<(LiveView<V>, Option<LiveViewsEffect>)> {
         let index = self.position(id)?;
         let tab = self.tabs.remove(index);
         let effect = if self.tabs.is_empty() {
-            Some(TabsEffect::Activate(self.push(TabRecord {
+            Some(LiveViewsEffect::Activate(self.push(TabRecord {
                 blank: true,
                 blank_disposable: true,
                 ..TabRecord::default()
             })))
         } else if self.active == id {
-            Some(TabsEffect::Activate(
+            Some(LiveViewsEffect::Activate(
                 self.tabs[index.min(self.tabs.len() - 1)].id,
             ))
         } else {
@@ -318,6 +323,10 @@ impl<V> TabSet<V> {
 mod tests {
     use super::*;
 
+    fn file(path: &str) -> DocumentId {
+        DocumentId::File(path.into())
+    }
+
     fn markdown(path: &str) -> TabRecord {
         TabRecord {
             markdown: path.into(),
@@ -326,13 +335,13 @@ mod tests {
     }
 
     #[test]
-    fn tabs_get_new_ids_in_order_and_markdown_names_their_identity() {
-        let mut tabs = TabSet::<u8>::default();
+    fn tabs_get_new_ids_in_order_and_markdown_names_their_document() {
+        let mut tabs = LiveViews::<u8>::default();
         let a = tabs.push(markdown("/cases/a.md"));
         let b = tabs.push(TabRecord::default());
         assert!(b > a);
-        assert_eq!(tabs.get(a).unwrap().identity(), Some(&"/cases/a.md".into()));
-        assert_eq!(tabs.get(b).unwrap().identity(), None);
+        assert_eq!(tabs.get(a).unwrap().document(), Some(&file("/cases/a.md")));
+        assert_eq!(tabs.get(b).unwrap().document(), None);
         assert_eq!(tabs.get(a).unwrap().view(), None);
         tabs.open(a, 7);
         assert_eq!(tabs.get(a).unwrap().view(), Some(&7));
@@ -343,22 +352,25 @@ mod tests {
         assert!(tabs.home());
         assert!(tabs.activate(a));
         assert!(!tabs.home());
-        assert_eq!(tabs.active_tab().map(Tab::id), Some(a));
+        assert_eq!(tabs.active_tab().map(LiveView::id), Some(a));
     }
 
     #[test]
     fn closing_activates_the_tab_in_its_place_and_the_last_leaves_a_placeholder() {
-        let mut tabs = TabSet::<u8>::default();
+        let mut tabs = LiveViews::<u8>::default();
         let [a, b, c] = [(); 3].map(|_| tabs.push(TabRecord::default()));
         tabs.activate(b);
         let (closed, effect) = tabs.remove(b).unwrap();
         assert_eq!(closed.id(), b);
-        assert_eq!(effect, Some(TabsEffect::Activate(c)));
+        assert_eq!(effect, Some(LiveViewsEffect::Activate(c)));
         tabs.activate(c);
-        assert_eq!(tabs.remove(c).unwrap().1, Some(TabsEffect::Activate(a)));
+        assert_eq!(
+            tabs.remove(c).unwrap().1,
+            Some(LiveViewsEffect::Activate(a))
+        );
         tabs.activate(a);
         assert!(tabs.remove(99).is_none());
-        let Some((_, Some(TabsEffect::Activate(placeholder)))) = tabs.remove(a) else {
+        let Some((_, Some(LiveViewsEffect::Activate(placeholder)))) = tabs.remove(a) else {
             panic!("the last tab leaves a placeholder");
         };
         assert_eq!(tabs.len(), 1);
@@ -368,7 +380,7 @@ mod tests {
 
     #[test]
     fn records_change_only_through_named_transitions() {
-        let mut tabs = TabSet::<u8>::default();
+        let mut tabs = LiveViews::<u8>::default();
         let [a, b] = [(); 2].map(|_| {
             tabs.push(TabRecord {
                 blank: true,
@@ -390,12 +402,12 @@ mod tests {
         );
         tabs.forget_case("case-1");
         assert!(tabs.iter().all(|tab| tab.record().case.is_none()));
-        assert_eq!(tabs.set_identity(a, Some("/cases/a.md".into())), None);
+        assert_eq!(tabs.set_document(a, Some(file("/cases/a.md"))), None);
         assert_eq!(
-            tabs.set_identity(a, Some("/cases/b.md".into())),
-            Some("/cases/a.md".into())
+            tabs.set_document(a, Some(file("/cases/b.md"))),
+            Some(file("/cases/a.md"))
         );
-        assert_eq!(tabs.set_identity(99, None), None);
+        assert_eq!(tabs.set_document(99, None), None);
         let path = PathBuf::from("/cases/b.md");
         assert!(tabs.note_recent(a, Some(&path)));
         assert!(!tabs.note_recent(a, Some(&path)));
@@ -405,7 +417,7 @@ mod tests {
 
     #[test]
     fn closing_an_inactive_tab_keeps_the_active_one() {
-        let mut tabs = TabSet::<u8>::default();
+        let mut tabs = LiveViews::<u8>::default();
         let [a, b] = [(); 2].map(|_| tabs.push(TabRecord::default()));
         tabs.activate(a);
         assert_eq!(tabs.remove(b).unwrap().1, None);
@@ -414,21 +426,21 @@ mod tests {
 
     #[test]
     fn cycling_wraps_and_reordering_and_placing_move_tabs() {
-        let mut tabs = TabSet::<u8>::default();
+        let mut tabs = LiveViews::<u8>::default();
         assert_eq!(tabs.cycle(1), None);
         let [a, b, c, d] = [(); 4].map(|_| tabs.push(TabRecord::default()));
         tabs.activate(a);
-        assert_eq!(tabs.cycle(-1), Some(TabsEffect::Activate(d)));
-        assert_eq!(tabs.cycle(1), Some(TabsEffect::Activate(b)));
-        let order = |tabs: &TabSet<u8>| tabs.iter().map(Tab::id).collect::<Vec<_>>();
-        assert_eq!(tabs.reorder(d, a), Some(TabsEffect::Repaint));
+        assert_eq!(tabs.cycle(-1), Some(LiveViewsEffect::Activate(d)));
+        assert_eq!(tabs.cycle(1), Some(LiveViewsEffect::Activate(b)));
+        let order = |tabs: &LiveViews<u8>| tabs.iter().map(LiveView::id).collect::<Vec<_>>();
+        assert_eq!(tabs.reorder(d, a), Some(LiveViewsEffect::Repaint));
         assert_eq!(order(&tabs), [d, a, b, c]);
         assert_eq!(tabs.reorder(d, 99), None);
         tabs.place(&[c, d], Some(b));
         assert_eq!(order(&tabs), [a, d, c, b]);
         tabs.place(&[a], Some(a));
         assert_eq!(order(&tabs), [d, c, b, a]);
-        assert_eq!(tabs.at(0).map(Tab::id), Some(d));
+        assert_eq!(tabs.at(0).map(LiveView::id), Some(d));
         assert_eq!(tabs.position(b), Some(2));
     }
 }

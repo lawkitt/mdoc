@@ -1,4 +1,5 @@
 //! Small, versioned, paths-only session manifest. No document content is stored.
+use crate::document_id::DocumentId;
 use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read, Write},
@@ -55,6 +56,31 @@ pub struct TabRecord {
     pub preview_split: Option<f32>,
     /// The saved case this document belongs to; never its contents.
     pub case: Option<String>,
+}
+
+impl TabRecord {
+    /// The document this tab names: none for a blank or a source tab.
+    pub fn document(&self) -> Option<DocumentId> {
+        self.names_document()
+            .then(|| DocumentId::File(self.markdown.clone()))
+    }
+
+    /// Whether this tab names a document, without building its id.
+    pub fn names_document(&self) -> bool {
+        !self.markdown.as_os_str().is_empty()
+    }
+
+    /// Whether both tabs name the same document.
+    pub fn same_document(&self, other: &TabRecord) -> bool {
+        self.names_document() && self.markdown == other.markdown
+    }
+
+    /// The tab names `document` from now on.
+    pub fn set_document(&mut self, document: DocumentId) {
+        match document {
+            DocumentId::File(path) => self.markdown = path,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

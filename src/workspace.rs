@@ -20,6 +20,7 @@ use mdoc_import::{import, model_work, ocr};
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::{
     document::{self, Document},
+    document_id::DocumentId,
     session_store::{self, Session, TabRecord},
     settings,
 };
@@ -61,18 +62,18 @@ pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
 mod shell;
 pub(crate) mod shortcuts_ui;
 use session_writer::SessionEffect;
+mod live_views;
 mod sidebar;
 mod tab_menu;
-mod tab_set;
 mod user_lists;
 pub(crate) use cases_ui::{
     AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName, bind_keys as bind_case_keys,
 };
+use live_views::LiveViewsEffect;
 pub(crate) use shell::{
     CloseNotices, OpenPalette, PALETTE, PaletteClose, ShowHome, bind_keys as bind_shell_keys,
 };
 use sidebar::{REVEAL_SLIDE, Reveal, SLIDE, SidebarEffect};
-use tab_set::TabsEffect;
 mod app_actions;
 pub(crate) use app_actions::bind as bind_app_actions;
 actions!(
@@ -120,7 +121,7 @@ pub(super) enum TabEvent {
     SourceDisplay(crate::preview::SourceDisplay),
 }
 
-/// Tabs to add (`TabSet`).
+/// Tabs to add (`LiveViews`).
 pub(super) enum TabsEvent {
     New,
     Open(Vec<PathBuf>),
@@ -221,7 +222,8 @@ impl SidebarStatus {
     }
 }
 
-type Tab = tab_set::Tab<Entity<DocumentView>>;
+/// A tab is a live view the sidebar lists.
+type Tab = live_views::LiveView<Entity<DocumentView>>;
 
 #[derive(Clone)]
 struct TabDrag {
@@ -253,7 +255,7 @@ pub(super) struct Workspace {
     pub(super) case_list_focus: gpui::FocusHandle,
     pub(super) case_list_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
-    tabs: tab_set::TabSet<Entity<DocumentView>>,
+    tabs: live_views::LiveViews<Entity<DocumentView>>,
     navigation: navigation::History,
     back_focus: gpui::FocusHandle,
     forward_focus: gpui::FocusHandle,
@@ -455,7 +457,7 @@ impl Workspace {
             case_list_focus: cx.focus_handle(),
             case_list_return: None,
             notices_focus: cx.focus_handle(),
-            tabs: tab_set::TabSet::default(),
+            tabs: live_views::LiveViews::default(),
             navigation: Default::default(),
             back_focus: cx.focus_handle().tab_stop(true),
             forward_focus: cx.focus_handle().tab_stop(true),
@@ -940,9 +942,7 @@ impl Workspace {
                 if record.source_only {
                     tab.record().attachment == record.attachment
                 } else {
-                    !record.markdown.as_os_str().is_empty()
-                        && !tab.record().source_only
-                        && tab.record().markdown == record.markdown
+                    !tab.record().source_only && record.same_document(tab.record())
                 }
             }) {
                 continue;
@@ -990,6 +990,7 @@ impl Workspace {
             .collect();
         self.tabs.name_blank_tabs(names);
         let record = self.tabs[index].record().clone();
+        let document = record.document();
         let theme = self.theme.clone();
         let import_busy = self.import_busy.clone();
         let view = cx.new(|cx| {
@@ -1010,13 +1011,14 @@ impl Workspace {
             view.active = id == self.tabs.active();
             // Keep a file's title while loading, including a failed load,
             // without accepting its path as a successfully opened document.
-            view.session.name = record
-                .markdown
-                .file_name()
+            view.session.name = document
+                .as_ref()
+                .and_then(DocumentId::file)
+                .and_then(std::path::Path::file_name)
                 .map(|name| name.to_string_lossy().into_owned())
                 .or_else(|| record.blank.then(|| record.name.clone()).flatten());
             view.lifecycle.restore(
-                !record.markdown.as_os_str().is_empty(),
+                document.is_some(),
                 record.source_only,
                 record.blank_disposable,
             );
@@ -1052,8 +1054,8 @@ impl Workspace {
         });
         self.tabs.open(id, view.clone());
         self.tab_subscriptions.insert(id, vec![events, changes]);
-        if !record.markdown.as_os_str().is_empty() {
-            self.load_document(id, record, window, cx);
+        if let Some(document) = document {
+            self.load_document(id, document, record, window, cx);
         } else if record.source_only
             && let Some(path) = record.attachment
         {
@@ -1064,6 +1066,7 @@ impl Workspace {
     fn load_document(
         &mut self,
         id: u64,
+        document: DocumentId,
         record: TabRecord,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1082,7 +1085,8 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
-        let path = record.markdown.clone();
+        let DocumentId::File(path) = document;
+        let shown = path.clone();
         let task = cx
             .background_executor()
             .spawn(async move { Document::open(session_store::identity(&path)) });
@@ -1093,7 +1097,7 @@ impl Workspace {
                     return;
                 }
                 if let Ok(document) = &result {
-                    this.tabs.set_identity(id, document.path.clone());
+                    this.tabs.set_document(id, document.id());
                 }
                 // A dialog keeps the keyboard while the document loads behind it.
                 let dialog = this.dialog_up(window);
@@ -1127,10 +1131,8 @@ impl Workspace {
                             }
                         }
                         Err(error) => {
-                            view.error = Some(format!(
-                                "Could not open {}: {error}",
-                                record.markdown.display()
-                            ));
+                            view.error =
+                                Some(format!("Could not open {}: {error}", shown.display()));
                         }
                     }
                     cx.notify();
@@ -1218,9 +1220,21 @@ impl Workspace {
         id
     }
 
+    /// The live view of the file at `identity`, other than `except`.
     pub fn find_path(
         &self,
         identity: &std::path::Path,
+        except: Option<u64>,
+        cx: &App,
+    ) -> Option<u64> {
+        self.find_document(&DocumentId::File(identity.to_path_buf()), except, cx)
+    }
+
+    /// The live view of `document`, other than `except`: the one named for
+    /// it, or one whose view holds it now.
+    pub(crate) fn find_document(
+        &self,
+        document: &DocumentId,
         except: Option<u64>,
         cx: &App,
     ) -> Option<u64> {
@@ -1228,10 +1242,10 @@ impl Workspace {
             .iter()
             .find(|tab| {
                 Some(tab.id()) != except
-                    && (tab.identity().map(PathBuf::as_path) == Some(identity)
-                        || tab.view().is_some_and(|view| {
-                            view.read(cx).session.document.path.as_deref() == Some(identity)
-                        }))
+                    && (tab.document() == Some(document)
+                        || tab
+                            .view()
+                            .is_some_and(|view| view.read(cx).session.document.is(document)))
             })
             .map(|tab| tab.id())
     }
@@ -1507,10 +1521,10 @@ impl Workspace {
                     .tabs
                     .get(id)
                     .and_then(|tab| tab.view())
-                    .and_then(|view| view.read(cx).session.document.path.clone());
-                let previous = self.tabs.set_identity(id, saved);
+                    .and_then(|view| view.read(cx).session.document.id());
+                let previous = self.tabs.set_document(id, saved);
                 // Save As moves the member: the case forgets the old path.
-                self.case_member_moved(id, previous, cx);
+                self.case_member_moved(id, previous.and_then(DocumentId::into_file), cx);
                 self.case_changed(id, cx);
                 self.record_review(id, cx);
             }
@@ -1748,7 +1762,7 @@ impl Workspace {
         } else {
             Arrival::Unrecorded
         };
-        let activated = if let Some(TabsEffect::Activate(next)) = effect {
+        let activated = if let Some(LiveViewsEffect::Activate(next)) = effect {
             self.activate_as(next, arrival, window, cx);
             true
         } else {
@@ -1993,7 +2007,7 @@ impl Workspace {
                 record.source_only =
                     view.lifecycle.source_only() || view.lifecycle.generated_unedited();
                 record.blank = !record.source_only
-                    && record.markdown.as_os_str().is_empty()
+                    && !record.names_document()
                     && view.session.document.path.is_none()
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty();
@@ -2011,8 +2025,8 @@ impl Workspace {
                 if let Some(link) = view.case.link() {
                     record.case = Some(link.id.clone());
                 }
-                if let Some(path) = &view.session.document.path {
-                    record.markdown = path.clone();
+                if let Some(document) = view.session.document.id() {
+                    record.set_document(document);
                 }
                 if !view.lifecycle.loading() && !view.lifecycle.unavailable() {
                     record.caret = view.editor.read(cx).cursor();
@@ -2036,7 +2050,7 @@ impl Workspace {
                     };
                 }
             }
-            if record.markdown.as_os_str().is_empty() && !record.source_only && !record.blank {
+            if !record.names_document() && !record.source_only && !record.blank {
                 continue;
             }
             if tab.id() == self.tabs.active() {
@@ -2113,7 +2127,7 @@ impl Workspace {
         if self.quit_flow.quitting() || self.tabs.is_empty() {
             return;
         }
-        if let Some(TabsEffect::Activate(next)) = self.tabs.cycle(delta) {
+        if let Some(LiveViewsEffect::Activate(next)) = self.tabs.cycle(delta) {
             self.activate(next, window, cx);
         }
     }
@@ -2350,7 +2364,7 @@ impl Workspace {
         if self.quit_flow.quitting() {
             return;
         }
-        if let Some(TabsEffect::Repaint) = self.tabs.reorder(from, to) {
+        if let Some(LiveViewsEffect::Repaint) = self.tabs.reorder(from, to) {
             cx.notify();
         }
     }
@@ -3569,8 +3583,10 @@ impl Render for Workspace {
                 this.tab_from_window(true, window, cx)
             }))
             .on_action(cx.listener(|this, _: &RetryDocument, window, cx| {
-                if let Some(tab) = this.tabs.get(this.tabs.active()) {
-                    this.load_document(tab.id(), tab.record().clone(), window, cx);
+                if let Some(tab) = this.tabs.get(this.tabs.active())
+                    && let Some(document) = tab.record().document()
+                {
+                    this.load_document(tab.id(), document, tab.record().clone(), window, cx);
                 }
             }))
             .when_some(self.tab_menu, |view, (id, position)| {

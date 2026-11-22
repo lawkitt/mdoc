@@ -1,4 +1,5 @@
 //! Plain-file persistence; never opens the old journal database.
+use crate::document_id::DocumentId;
 use std::{
     io::{self, Write},
     path::{Path, PathBuf},
@@ -11,6 +12,18 @@ pub struct Document {
 }
 
 impl Document {
+    /// The document this is, once it was opened or saved.
+    pub fn id(&self) -> Option<DocumentId> {
+        self.path.clone().map(DocumentId::File)
+    }
+
+    /// Whether this is `document`, without building an id.
+    pub fn is(&self, document: &DocumentId) -> bool {
+        document
+            .file()
+            .is_some_and(|file| self.path.as_deref() == Some(file))
+    }
+
     pub fn open(path: PathBuf) -> io::Result<Self> {
         let path = std::path::absolute(path)?;
         let saved = std::fs::read_to_string(&path)?;
