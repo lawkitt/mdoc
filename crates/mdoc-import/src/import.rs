@@ -595,6 +595,17 @@ pub struct LeftOut {
 }
 
 impl LeftOut {
+    /// The counts of a PDF the image builder made: each page is one of the
+    /// pictures imported, so none counts as left out, while the frames of
+    /// animated pictures the builder dropped do (#1070).
+    pub(crate) fn of_images(self, frames: u64) -> Self {
+        Self {
+            pictures: 0,
+            animation_frames: frames,
+            ..self
+        }
+    }
+
     /// What a PDF's pages hold that its Markdown leaves out, from its native
     /// pass, which OCR doesn't change. Pictures on the `skipped` pages (left
     /// for OCR that didn't run) don't count: the partial-import notice
@@ -960,7 +971,7 @@ fn import_image_pdf(
     // The built PDF is never locked, whatever the images were.
     let opened = std::cell::Cell::new(false);
     let mut imported = convert_pdf(pdf, None, installed, skip_ocr, cancel, &opened)?;
-    imported.left_out.animation_frames = frames;
+    imported.left_out = imported.left_out.of_images(frames);
     imported.warning = image_warning(imported.warning);
     imported.is_image = true;
     Ok(imported)

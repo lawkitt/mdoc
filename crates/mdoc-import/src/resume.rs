@@ -406,7 +406,11 @@ fn recognize_resumable(
     if image {
         warning = image_warning(warning);
     }
-    left_out.animation_frames = frames;
+    if image {
+        left_out = left_out.of_images(frames);
+    } else {
+        left_out.animation_frames = frames;
+    }
     left_out.repeated_lines = pages
         .iter()
         .map(|page| u64::from(page.repeated_lines))
