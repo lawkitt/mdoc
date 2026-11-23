@@ -4,6 +4,7 @@ import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentPhase
 import io.github.lawkitt.mdoc.core.DocumentSummary
+import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.ProjectColour
 import io.github.lawkitt.mdoc.core.ProjectId
 import io.github.lawkitt.mdoc.core.ProjectNameRow
@@ -66,6 +67,16 @@ class LibraryStateTest {
         assertEquals(listOf("Harbour"), projects.map { it.name })
         assertEquals(listOf("Lease"), state.search("LEASE").first.map { it.title })
         assertTrue(state.search("  ").first.isEmpty())
+    }
+
+    @Test
+    fun onlyAFileOrASinglePhotoIsComparedWithWhatIsInMdoc() {
+        val file = java.io.File("lease.pdf")
+        assertEquals(file, HomeViewModel.sourceFile(ImportSource.File(file, SourceKind.Pdf)))
+        assertEquals(file, HomeViewModel.sourceFile(ImportSource.Pages(listOf(file), SourceKind.Image)))
+        assertNull("photos picked together", HomeViewModel.sourceFile(ImportSource.Pages(listOf(file, file), SourceKind.Image)))
+        assertNull("camera pages", HomeViewModel.sourceFile(ImportSource.Pages(listOf(file), SourceKind.Scan)))
+        assertNull("a paste", HomeViewModel.sourceFile(ImportSource.Text("Ann Lee")))
     }
 
     @Test

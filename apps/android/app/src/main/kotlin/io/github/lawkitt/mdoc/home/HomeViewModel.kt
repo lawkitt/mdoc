@@ -355,11 +355,7 @@ class HomeViewModel(
      * keeps no source.
      */
     private fun repeatOf(pending: PendingAdd.Received): DocumentId? {
-        val file = when (val source = pending.source) {
-            is ImportSource.File -> source.file
-            is ImportSource.Pages -> source.pages.singleOrNull()?.takeIf { source.kind == SourceKind.Image }
-            is ImportSource.Text -> null
-        } ?: return null
+        val file = sourceFile(pending.source) ?: return null
         // One deleted, its Undo still offered, is not opened.
         val deleting = state.value.pendingDelete?.ids.orEmpty()
         return core().documents.documentsFromSource(file).firstOrNull { it !in deleting }
@@ -691,6 +687,18 @@ class HomeViewModel(
             "image/heif" -> "heif"
             // TIFF on the phones is #1064: refused with the formats mdoc opens.
             else -> null
+        }
+
+        /**
+         * The one file whose bytes a saved document records as its source
+         * (#1091 Decision 7): a file, or a single photo. Camera pages and
+         * photos picked together become a PDF the core makes, and a paste
+         * keeps no source.
+         */
+        fun sourceFile(source: ImportSource): File? = when (source) {
+            is ImportSource.File -> source.file
+            is ImportSource.Pages -> source.pages.singleOrNull()?.takeIf { source.kind == SourceKind.Image }
+            is ImportSource.Text -> null
         }
 
         /** A new Project's name: `name`, or numbered from 2 when a Project has it already (iOS `unusedName`). */
