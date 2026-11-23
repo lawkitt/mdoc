@@ -24,8 +24,8 @@ final class SidebarModelTests: XCTestCase {
 
     func testOpeningADocumentClosesTheSidebarAndLeavesTheSection() throws {
         let app = try app()
-        app.open(.cases)
-        XCTAssertEqual(app.navigator.section, .cases)
+        app.open(.projects)
+        XCTAssertEqual(app.navigator.section, .projects)
         app.navigator.showsSidebar = true
         app.open(seeded.letter)
         XCTAssertNil(app.navigator.section, "a document replaces the section's page")
@@ -40,7 +40,7 @@ final class SidebarModelTests: XCTestCase {
         let app = try app()
         let source = try Fixture.copy("tests/fixtures/locked-office/word-locked.docx", into: seeded.storage)
         let locked = try seeded.core.library.importDocument(
-            .file(source, .docx), title: "Locked", into: .existing(seeded.ellison))
+            .file(source, .docx), title: "Locked", into: seeded.ellison)
         app.open(locked.id)
         let model = try XCTUnwrap(app.openModel)
         await model.recognize()
@@ -72,28 +72,28 @@ final class SidebarModelTests: XCTestCase {
 
     /// The Documents row lists every document, whatever case was tapped
     /// before (#676).
-    func testTheDocumentsRowClearsACasesFilter() throws {
+    func testTheDocumentsRowClearsAProjectsFilter() throws {
         let app = try app()
-        app.openCase(seeded.harbour)
+        app.openProject(seeded.harbour)
         XCTAssertEqual(app.navigator.section, .documents)
-        XCTAssertEqual(app.library.caseFilter, seeded.harbour)
+        XCTAssertEqual(app.library.projectFilter, seeded.harbour)
         app.open(.documents)
-        XCTAssertNil(app.library.caseFilter)
+        XCTAssertNil(app.library.projectFilter)
         XCTAssertEqual(app.library.shownDocuments.count, app.library.documents.count)
     }
 
     /// Move to case › New case… names the case as every new case is named
     /// (#677): trimmed, a blank name refused, a taken one numbered.
-    func testMoveToANewCaseTrimsAndNumbersTheName() throws {
+    func testMoveToANewProjectTrimsAndNumbersTheName() throws {
         let app = try app()
-        let before = app.library.cases.count
-        app.move(seeded.letter, to: .newCase(name: "   "))
-        XCTAssertEqual(app.library.cases.count, before, "a blank name makes no case")
+        let before = app.library.projects.count
+        app.move(seeded.letter, to: .newProject(name: "   "))
+        XCTAssertEqual(app.library.projects.count, before, "a blank name makes no case")
         XCTAssertNil(app.toast)
-        app.move(seeded.letter, to: .newCase(name: "  Harbour Street lease "))
-        let moved = try XCTUnwrap(app.library.document(seeded.letter)?.caseID)
-        XCTAssertEqual(app.library.cases.first { $0.id == moved }?.name, "Harbour Street lease 2")
-        XCTAssertEqual(app.library.cases.map(\.name).filter { $0 == "Harbour Street lease" }.count, 1)
+        app.move(seeded.letter, to: .newProject(name: "  Harbour Street lease "))
+        let moved = try XCTUnwrap(app.library.document(seeded.letter)?.projectID)
+        XCTAssertEqual(app.library.projects.first { $0.id == moved }?.name, "Harbour Street lease 2")
+        XCTAssertEqual(app.library.projects.map(\.name).filter { $0 == "Harbour Street lease" }.count, 1)
     }
 
     func testContinueIsTheNewestDocumentWithNamesLeft() throws {
@@ -122,24 +122,24 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertNil(app.toast)
         let after = try XCTUnwrap(app.library.document(seeded.tenancy))
         XCTAssertEqual(after.title, before.title)
-        XCTAssertEqual(after.caseID, seeded.harbour)
+        XCTAssertEqual(after.projectID, seeded.harbour)
     }
 
     func testMoveOffersUndoThatMovesBack() throws {
         let app = try app()
-        let before = app.library.document(seeded.letter)?.caseID
+        let before = app.library.document(seeded.letter)?.projectID
         app.move(seeded.letter, to: .existing(seeded.harbour))
-        XCTAssertEqual(app.library.document(seeded.letter)?.caseID, seeded.harbour)
+        XCTAssertEqual(app.library.document(seeded.letter)?.projectID, seeded.harbour)
         let toast = try XCTUnwrap(app.toast)
         XCTAssertTrue(toast.text.contains("Moved to"))
         toast.action?()
-        XCTAssertEqual(app.library.document(seeded.letter)?.caseID, before)
+        XCTAssertEqual(app.library.document(seeded.letter)?.projectID, before)
     }
 
-    func testRecentCasesLeaveOutTheDocumentsOwn() throws {
+    func testRecentProjectsLeaveOutTheDocumentsOwn() throws {
         let app = try app()
-        let own = app.library.document(seeded.letter)?.caseID
-        XCTAssertFalse(app.library.recentCases(excluding: own).contains { $0.id == own })
-        XCTAssertLessThanOrEqual(app.library.recentCases(excluding: own).count, 5)
+        let own = app.library.document(seeded.letter)?.projectID
+        XCTAssertFalse(app.library.recentProjects(excluding: own).contains { $0.id == own })
+        XCTAssertLessThanOrEqual(app.library.recentProjects(excluding: own).count, 5)
     }
 }

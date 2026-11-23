@@ -275,7 +275,10 @@ final class StorageTests: XCTestCase {
             let values = try storage.url(area).resourceValues(forKeys: [.isExcludedFromBackupKey])
             XCTAssertEqual(values.isExcludedFromBackup, true, "\(area) is in backups")
         }
-        let file = try storage.write(Data("text".utf8), named: "a.md", in: .documents)
+        for folder in [storage.vault, storage.intake] {
+            XCTAssertEqual(try folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+        }
+        let file = try storage.write(Data("text".utf8), named: "a.md", in: .handOff)
         let values = try file.resourceValues(forKeys: [.isExcludedFromBackupKey, .fileProtectionKey])
         XCTAssertEqual(values.isExcludedFromBackup, true)
         #if !targetEnvironment(simulator)
@@ -284,18 +287,38 @@ final class StorageTests: XCTestCase {
         #endif
     }
 
+    /// The Vault and the intake folder sit beside the old library's folder,
+    /// never inside it (#1091 Decision 2), and preparing the storage makes
+    /// none of the old library's folders.
+    func testTheVaultIsASiblingOfTheOldLibrary() throws {
+        let storage = try MdocStorage.shared(folder: "mdoc-sibling-test", vaultFolder: "vault-sibling-test")
+        defer {
+            for folder in [storage.root, storage.vault, storage.intake] { try? FileManager.default.removeItem(at: folder) }
+        }
+        let base = storage.root.deletingLastPathComponent()
+        XCTAssertEqual(storage.vault, base.appendingPathComponent("vault-sibling-test", isDirectory: true))
+        XCTAssertEqual(storage.intake, base.appendingPathComponent("vault-sibling-test-intake", isDirectory: true))
+        try storage.prepare()
+        for old in ["documents", "cases", "imports", "originals"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: storage.root.appendingPathComponent(old).path), old)
+        }
+        XCTAssertFalse(storage.url(.intake).path.hasPrefix(storage.root.path + "/"))
+        XCTAssertFalse(storage.url(.ocr).path.hasPrefix(storage.root.path + "/"))
+    }
+
     func testModelsKeepTheDefaultProtection() {
         XCTAssertNil(MdocStorage.Area.models.protection)
-        XCTAssertEqual(MdocStorage.Area.cases.protection, .complete)
+        XCTAssertEqual(MdocStorage.Area.intake.protection, .complete)
+        XCTAssertEqual(MdocStorage.Area.ocr.protection, .complete)
     }
 
     func testImportCopyLeavesTheOriginal() throws {
         let storage = try Fixture.temporaryStorage()
         let source = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
         try Data("%PDF".utf8).write(to: source)
-        let copy = try storage.importCopy(of: source, in: .originals, named: "Contract")
+        let copy = try storage.importCopy(of: source, in: .intake, named: "Contract")
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
-        XCTAssertTrue(copy.path.hasPrefix(storage.url(.originals).path))
+        XCTAssertTrue(copy.path.hasPrefix(storage.url(.intake).path))
         XCTAssertEqual(copy.lastPathComponent, "Contract.pdf")
     }
 

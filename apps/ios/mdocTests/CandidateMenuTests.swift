@@ -79,7 +79,7 @@ final class CandidateMenuTests: XCTestCase {
         let (core, storage) = try Fixture.core()
         let session = try core.library.importDocument(
             .text("Maya Bennett and Daniel Okafor signed for Riverside Holdings Ltd."), title: "Note",
-            into: .newCase(name: "Bennett"))
+            into: nil)
         _ = try session.recognize(observer: TestObserver())
         _ = try session.propose([
             SampleDocument.Name(wording: "Maya Bennett", category: .person),

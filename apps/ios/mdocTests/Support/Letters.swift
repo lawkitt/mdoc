@@ -27,8 +27,8 @@ enum Letters {
         .init(wording: "GB82 WEST 1234 5698 7654 32", category: .bank),
     ]
 
-    static let ellisonCase = "Ellison v Brightwater"
-    static let harbourCase = "Harbour Street lease"
+    static let ellisonProject = "Ellison v Brightwater"
+    static let harbourProject = "Harbour Street lease"
 
     static let letterTitle = "Letter before claim"
 

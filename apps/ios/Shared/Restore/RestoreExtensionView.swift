@@ -42,13 +42,13 @@ struct RestoreExtensionView: View {
     @ViewBuilder
     private func content(_ model: RestoreViewModel) -> some View {
         VStack(spacing: 0) {
-            if model.cases.isEmpty {
+            if model.projects.isEmpty {
                 ContentUnavailableView(
-                    "No cases yet",
+                    "No Projects yet",
                     systemImage: "folder",
-                    description: Text(CoreError.noCase.errorDescription ?? ""))
+                    description: Text(CoreError.noProject.errorDescription ?? ""))
             } else {
-                casePicker(model)
+                projectPicker(model)
                 Divider()
                 if let result = model.result {
                     RestoredTextView(result: result)
@@ -65,30 +65,30 @@ struct RestoreExtensionView: View {
         ContentUnavailableView("Not restored", systemImage: "exclamationmark.triangle", description: Text(message))
     }
 
-    private func casePicker(_ model: RestoreViewModel) -> some View {
+    private func projectPicker(_ model: RestoreViewModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Menu {
-                Picker("Case", selection: Binding(
-                    get: { model.selectedCase },
-                    set: { if let id = $0 { model.selectCase(id) } })
+                Picker("Project", selection: Binding(
+                    get: { model.selectedProject },
+                    set: { if let id = $0 { model.selectProject(id) } })
                 ) {
-                    ForEach(model.cases) { item in
+                    ForEach(model.projects) { item in
                         Label(item.name, systemImage: "folder").tag(Optional(item.id))
                     }
                 }
             } label: {
                 HStack {
-                    Text("Case")
+                    Text("Project")
                         .foregroundStyle(.secondary)
-                    Text(model.selectedCaseName ?? "")
+                    Text(model.selectedProjectName ?? "")
                         .fontWeight(.semibold)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption)
                         .accessibilityHidden(true)
                 }
             }
-            .accessibilityLabel(Text("Case: \(model.selectedCaseName ?? "")"))
-            .accessibilityHint(Text("Restores the reply with another case's names."))
+            .accessibilityLabel(Text("Project: \(model.selectedProjectName ?? "")"))
+            .accessibilityHint(Text("Restores the reply with another Project's names."))
             .accessibilityIdentifier("restore-case-picker")
             if let result = model.result {
                 RestoreSummary(result: result)
@@ -137,7 +137,7 @@ struct RestoreExtensionView: View {
                 .frame(maxWidth: .infinity)
         }
         Menu {
-            ForEach(model.documentsInCase) { document in
+            ForEach(model.documentsInProject) { document in
                 Button {
                     model.save(to: document.id)
                 } label: {
@@ -158,7 +158,7 @@ struct RestoreExtensionView: View {
             }
         }
         .secondaryGlass()
-        .disabled(model.documentsInCase.isEmpty)
+        .disabled(model.documentsInProject.isEmpty)
         .accessibilityHint(Text("Keeps the reply with \(model.defaultSaveTarget?.title ?? "")."))
     }
 }

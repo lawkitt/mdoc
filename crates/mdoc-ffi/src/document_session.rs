@@ -9,6 +9,7 @@ mod actions;
 mod editing;
 mod intake;
 mod origin;
+mod resume;
 mod review;
 mod saving;
 mod scanning;
@@ -187,6 +188,9 @@ pub struct DocumentSession {
     generation: Mutex<u64>,
     /// One save at a time (`lock_saving`).
     saving: Mutex<()>,
+    /// This phone finds no names (`set_no_name_finder`): a Vault save
+    /// with no proposals left counts as reviewed by hand.
+    by_hand: AtomicBool,
 }
 
 /// The session's jobs, one at a time: a new job stops the one before. Its
@@ -238,6 +242,7 @@ impl DocumentSession {
             job: Mutex::new(Jobs::default()),
             generation: Mutex::new(0),
             saving: Mutex::new(()),
+            by_hand: AtomicBool::new(false),
         })
     }
 

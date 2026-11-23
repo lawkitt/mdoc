@@ -8,6 +8,7 @@ import XCTest
 /// read-only `MarkdownTextViewTests` keep their own setup.
 @MainActor
 struct TextViewHarness {
+    let library: any mdoc.Library
     let session: any mdoc.DocumentSession
     let model: DocumentViewModel
     let window: UIWindow
@@ -37,15 +38,15 @@ protocol TextViewHarnessTests: XCTestCase {}
 extension TextViewHarnessTests {
     typealias Harness = TextViewHarness
 
-    /// `text` imported into a new case and recognized, `prepare` run on the
+    /// `text` imported (Unfiled) and recognized, `prepare` run on the
     /// session before the model reads it, and shown; in edit mode when
     /// `editing`.
     func textViewHarness(
-        text: String, title: String, caseName: String, rendered: Bool, editing: Bool,
+        text: String, title: String, projectName: String, rendered: Bool, editing: Bool,
         prepare: (any mdoc.DocumentSession) throws -> Void = { _ in }
     ) throws -> Harness {
         let (core, storage) = try Fixture.core()
-        let session = try core.library.importDocument(.text(text), title: title, into: .newCase(name: caseName))
+        let session = try core.library.importDocument(.text(text), title: title, into: nil)
         _ = try session.recognize(observer: TestObserver())
         try prepare(session)
         let model = DocumentViewModel(
@@ -59,7 +60,7 @@ extension TextViewHarnessTests {
         coordinator.attach(to: view)
         view.delegate = coordinator
         let harness = Harness(
-            session: session, model: model, window: window, view: view, coordinator: coordinator, rendered: rendered)
+            library: core.library, session: session, model: model, window: window, view: view, coordinator: coordinator, rendered: rendered)
         show(harness)
         if editing {
             model.enterEditMode()

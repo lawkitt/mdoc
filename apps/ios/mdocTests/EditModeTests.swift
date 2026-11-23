@@ -13,7 +13,7 @@ final class EditModeTests: XCTestCase, TextViewHarnessTests {
     private static let text = "# Agreement\n\nMaya Bennett signs first.\n\nThe tenant, Maya Bennett, pays rent.\n"
 
     private func harness(text: String = text) throws -> Harness {
-        try textViewHarness(text: text, title: "Agreement", caseName: "Bennett", rendered: false, editing: false) {
+        try textViewHarness(text: text, title: "Agreement", projectName: "Bennett", rendered: false, editing: false) {
             _ = try $0.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
         }
     }
@@ -324,9 +324,10 @@ final class EditModeTests: XCTestCase, TextViewHarnessTests {
             XCTAssertEqual(coreText(harness), harness.shown, "step \(step)")
             if step % 50 == 0 {
                 try harness.session.saveChanges()
-                let path = try XCTUnwrap((harness.session as? RealSession)?.path)
-                let saved = try Data(contentsOf: URL(fileURLWithPath: path))
-                XCTAssertEqual(saved, Data(harness.shown.utf8), "saved bytes at step \(step)")
+                let session = try XCTUnwrap(harness.session as? RealSession)
+                let library = try XCTUnwrap(harness.library as? RealLibrary)
+                let saved = try Fixture.savedText(try XCTUnwrap(session.vaultID), in: library)
+                XCTAssertEqual(Data(saved.utf8), Data(harness.shown.utf8), "saved bytes at step \(step)")
             }
         }
     }

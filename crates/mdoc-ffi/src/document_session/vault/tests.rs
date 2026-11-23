@@ -806,6 +806,122 @@ fn a_document_awaiting_discovery_is_not_saved_ready() {
     );
 }
 
+/// Below the name finder's floor, a document reviewed by hand (a name
+/// marked and replaced, never scanned) saves Ready once no proposals are
+/// left, and leaves as Copy for AI's text, still unscanned; with proposals
+/// left, or above the floor, it is not reviewed (#1091 Q4: the
+/// maintainer's (b)).
+#[test]
+fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let marked = |no_name_finder: bool| {
+        let session = session("Ann Lee met Bob Hart.", "Letter");
+        session.set_no_name_finder(no_name_finder);
+        let text = session.snapshot().unwrap().text;
+        session
+            .add_selection(at(&text, "Ann Lee", 0), Some(Category::Person))
+            .unwrap();
+        session
+    };
+
+    let by_hand = marked(true);
+    let saved = by_hand.save_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        vault.readiness(saved.id.clone()).unwrap(),
+        crate::vault::Readiness::NotReviewed,
+        "a proposal is left"
+    );
+    by_hand.replace_all().unwrap();
+    by_hand
+        .save_pending_into_vault(vault.clone())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        vault.readiness(saved.id.clone()).unwrap(),
+        crate::vault::Readiness::Ready
+    );
+    assert_eq!(
+        vault.text_for_ai(saved.id.clone()).unwrap(),
+        by_hand.hand_off(None).unwrap().text
+    );
+    assert_eq!(
+        by_hand.snapshot().unwrap().phase,
+        DocumentPhase::Unscanned,
+        "the session's own phase is unchanged"
+    );
+    let listed = vault.document(saved.id.clone()).unwrap();
+    assert!(!listed.scanned, "scanned stays false");
+    assert_eq!(
+        listed.phase,
+        DocumentPhase::Unscanned,
+        "lists keep their label"
+    );
+
+    let scanning = marked(false);
+    scanning.replace_all().unwrap();
+    let saved = scanning.save_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        vault.readiness(saved.id).unwrap(),
+        crate::vault::Readiness::NotReviewed
+    );
+}
+
+/// A document saved above the floor, unscanned, is saved Ready by its next
+/// save once the phone falls below it (timing the detector can put it
+/// there), with no change of its own; opened again, the same (review 3).
+#[test]
+fn a_document_saved_above_the_floor_is_ready_once_the_phone_falls_below_it() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee met Bob Hart.", "Letter");
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    let readiness = || vault.readiness(saved.id.clone()).unwrap();
+    assert_eq!(readiness(), crate::vault::Readiness::NotReviewed);
+    assert!(
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_none(),
+        "nothing owed above the floor"
+    );
+
+    session.set_no_name_finder(true);
+    assert!(
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(readiness(), crate::vault::Readiness::Ready);
+    assert!(
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_none(),
+        "saved once"
+    );
+
+    let (below, _) = reopened(&vault, &saved.id);
+    below.set_no_name_finder(true);
+    assert!(
+        below
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_none(),
+        "opened Ready: nothing owed"
+    );
+    let (above, _) = reopened(&vault, &saved.id);
+    assert!(
+        above
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_some(),
+        "above the floor again, the fingerprint goes"
+    );
+    assert_eq!(readiness(), crate::vault::Readiness::NotReviewed);
+}
+
 /// The key is the app's: 32 bytes, and another key's Vault never opens.
 #[test]
 fn a_vault_opens_only_with_its_key() {

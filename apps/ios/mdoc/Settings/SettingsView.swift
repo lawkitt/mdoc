@@ -282,7 +282,7 @@ struct PrivacyView: View {
         Form {
             Section {
                 Label(SettingsView.storageNote, systemImage: "iphone")
-                Label("Case keys stay in this device's Keychain.", systemImage: "key")
+                Label("The Vault key stays in this device's Keychain.", systemImage: "key")
                 Label("Nothing you open leaves this device unless you share it.", systemImage: "square.and.arrow.up")
             } footer: {
                 Text("mdoc is free, has no accounts and collects no data.")
