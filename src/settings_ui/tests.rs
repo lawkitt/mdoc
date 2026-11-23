@@ -754,7 +754,6 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
             }
             Category::Recognition => expected.ocr = defaults.ocr,
             Category::Spelling => expected.spelling = defaults.spelling,
-            Category::Cases => expected.cases = defaults.cases,
             Category::About => {}
         }
         assert_eq!(
@@ -1481,7 +1480,7 @@ fn a_long_page_shows_where_it_continues(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("settings-fade-top").is_some());
     assert!(cx.debug_bounds("settings-fade-bottom").is_none());
     // A page that fits shows neither.
-    panel.update_in(cx, |p, w, cx| p.change_category(Category::Cases, w, cx));
+    panel.update_in(cx, |p, w, cx| p.change_category(Category::About, w, cx));
     draw_settings(cx);
     assert!(cx.debug_bounds("settings-scrollbar").is_none());
     assert!(cx.debug_bounds("settings-fade-top").is_none());

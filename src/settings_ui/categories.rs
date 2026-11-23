@@ -17,16 +17,14 @@ pub(crate) enum Category {
     Detection,
     Recognition,
     Spelling,
-    Cases,
     About,
 }
 impl Category {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::General,
         Self::Detection,
         Self::Recognition,
         Self::Spelling,
-        Self::Cases,
         Self::About,
     ];
     pub fn label(self) -> &'static str {
@@ -35,7 +33,6 @@ impl Category {
             Self::Detection => "Detection",
             Self::Recognition => "Recognition",
             Self::Spelling => "Spelling",
-            Self::Cases => "Cases",
             Self::About => "About",
         }
     }
@@ -84,7 +81,8 @@ impl Panel {
             .iter()
             .position(|c| *c == self.category)
             .unwrap();
-        let next = (index + if backwards { 5 } else { 1 }) % Category::ALL.len();
+        let len = Category::ALL.len();
+        let next = (index + if backwards { len - 1 } else { 1 }) % len;
         self.change_category(Category::ALL[next], window, cx);
     }
     pub(super) fn setting_row(
@@ -481,7 +479,6 @@ impl Panel {
                     .child(self.setting_row("Compare text recognition", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-ocr", "Compare", theme, true, cx).aria_label("Compare text recognition").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic))))), theme))
             },
             Category::Spelling => div().child(self.spelling_section(theme, cx)),
-            Category::Cases => div().child(self.setting_row("Ask before closing", "Confirm before closing an unsaved mapping. A saved case keeps its mapping encrypted on this computer.", self.switch("cases-ask", "Ask before closing an unsaved mapping", self.draft.cases.ask_before_closing, true, |p| p.cases.ask_before_closing = !p.cases.ask_before_closing, theme, cx), theme)),
             Category::About => div().child(self.about_section(theme, cx)),
         };
         // About has no preferences, so it has nothing to reset.

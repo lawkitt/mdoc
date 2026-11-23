@@ -15,7 +15,7 @@ const ORIGINALS: [&str; 5] = [
 fn save(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) {
     let view = cx.update(|_, cx| tabs.read(cx).tabs.get(id).unwrap().view().cloned().unwrap());
     let path = cx.update(|_, cx| view.read(cx).session.document.path.clone().unwrap());
-    view.update(cx, |view, cx| view.write(path, None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path, cx));
     cx.run_until_parked();
 }
 

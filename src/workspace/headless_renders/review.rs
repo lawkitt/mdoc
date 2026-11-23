@@ -8,13 +8,11 @@ use crate::{
 };
 use gpui::{Entity, Focusable};
 use mdoc_store::settings;
-use std::path::Path;
 
 /// More menu, review, its focus rings, the word popup and model setup.
 pub(super) fn scenes(
     d: &mut Driver,
     view: &Entity<DocumentView>,
-    path: &Path,
     detections: &[mdoc_pii::Detection],
 ) -> Result<()> {
     // Nothing is pseudonymized yet: Copy for AI says why it is off.
@@ -29,8 +27,9 @@ pub(super) fn scenes(
     d.change(|_, window, cx| view.update(cx, |v, cx| v.close_more(window, cx)))?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            // A Tab in the editor edits text. Restore the fixture before review.
-            let text = std::fs::read_to_string(path).expect("copied fixture");
+            // A Tab in the editor edits text, which saves itself. Restore the
+            // fixture before review.
+            let (text, _) = super::fixture().expect("public fixture");
             v.editor.update(cx, |e, cx| e.set_text(text.clone(), cx));
             v.pii
                 .review_mut()

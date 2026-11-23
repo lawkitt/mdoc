@@ -631,7 +631,7 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
             .occurrence_identity(initials, &detached)
             .unwrap();
         let revision = app.editor.read(cx).revision();
-        let dirty = app.dirty(cx);
+        let dirty = app.unsaved(cx);
         app.select_occurrence(Selection::Entity(identity), cx);
         app.pii.mapping.set_scope(Scope::Entity);
         app.keep_originals(window, cx);
@@ -641,7 +641,7 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
             revision,
             "Keep invalidates older scan revisions without editing source"
         );
-        assert_eq!(app.dirty(cx), dirty);
+        assert_eq!(app.unsaved(cx), dirty);
         assert_eq!(app.pii.review.remaining(), 1);
         assert_eq!(
             app.pii.review.occurrence_identity(initials, &detached),

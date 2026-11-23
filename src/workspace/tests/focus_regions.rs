@@ -737,7 +737,7 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.write(path, None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path, cx));
     let case = tabs
         .update_in(cx, |tabs, window, cx| {
             tabs.create_case(tabs.tabs.active(), window, cx)

@@ -5,10 +5,7 @@ use super::{
     CloseEvent, TabDrag, TabEvent, Workspace,
     case_coordinator::{CaseEffect, CaseLoad, Flush, KeyWait},
 };
-use crate::{
-    document_view::{DocumentView, Next},
-    markdown_search, style, ui,
-};
+use crate::{document_view::DocumentView, markdown_search, style, ui};
 use gpui::{AnyElement, App, Context, Entity, Focusable, PromptLevel, Window, div, prelude::*, px};
 use mdoc_store::{
     cases::{Case, CaseError, CaseLink, Store},
@@ -533,7 +530,9 @@ impl Workspace {
     pub(super) fn can_create_case(&self, id: u64, cx: &App) -> bool {
         self.tab_view(id).is_some_and(|view| {
             let view = view.read(cx);
+            // A case lists Markdown files: a Vault document can't join one.
             view.case.link().is_none()
+                && view.session.document.path.is_some()
                 && view.can_copy_markdown()
                 && (!view.pii.review().applied().is_empty()
                     || !view.pii.review().variants().is_empty())
@@ -970,50 +969,6 @@ impl Workspace {
         }
         self.checkpoint(window, cx);
         cx.notify();
-    }
-    /// A member saved under a new path no longer lives at `previous`.
-    pub(super) fn case_member_moved(
-        &mut self,
-        id: u64,
-        previous: Option<PathBuf>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(previous) = previous.as_deref().map(session_store::identity) else {
-            // An untitled member's reply lived only in its tab until now.
-            self.case_reply_changed(id, cx);
-            return;
-        };
-        let Some(view) = self.tab_view(id) else {
-            return;
-        };
-        let (link, current) = {
-            let v = view.read(cx);
-            (
-                v.case.link().cloned(),
-                v.session
-                    .document
-                    .path
-                    .as_deref()
-                    .map(session_store::identity),
-            )
-        };
-        let Some(link) = link else {
-            return;
-        };
-        if current.as_ref() == Some(&previous) {
-            return;
-        }
-        if let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
-            let kept = case.set_reply(&previous, None);
-            if let Some(current) = &current {
-                case.not_a_name_member_moved(&previous, current);
-            }
-            (case.remove_member(&previous) || kept).then_some(())
-        }) {
-            self.carry_out_cases(effect.into_iter().collect(), cx);
-        }
-        // The reply follows the member to its new path.
-        self.case_reply_changed(id, cx);
     }
     /// Keep the tab's AI reply in its case under the member's path, or drop
     /// it when cleared. A member without a path keeps its reply
@@ -1989,51 +1944,31 @@ impl Workspace {
         }
     }
 
-    /// A case lists its documents by path, so a never-saved document (a fresh
-    /// conversion) is saved first; the case follows once it is (#75).
-    /// Returns true when a save started instead.
+    /// A case lists its documents by path: a document that is no Markdown
+    /// file (a Vault document) can't join one until cases become Projects.
+    /// Returns true when it can't.
     fn save_before_case(
         &mut self,
         id: u64,
-        close: bool,
-        window: &mut Window,
+        _close: bool,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(view) = self.tab_view(id) else {
-            return false;
-        };
-        if view.read(cx).session.document.path.is_some() {
-            return false;
-        }
-        // Answering a close or quit prompt is not a stop.
-        let arrival = if close {
-            super::navigation::Arrival::Unrecorded
-        } else {
-            super::navigation::Arrival::Visit
-        };
-        self.activate_as(id, arrival, window, cx);
-        view.update(cx, |view, cx| {
-            view.save(true, Some(Next::CreateCase { close }), window, cx)
-        });
-        true
+        self.tab_view(id)
+            .is_none_or(|view| view.read(cx).session.document.path.is_none())
     }
 
-    /// Whether closing tab `id` would lose an unsaved mapping, and Settings
-    /// asks first: applied aliases and no case, or, closing one tab, a case
-    /// whose save failed; a quit retries those in its final case saves
-    /// (an at-risk tab, without the unsaved changes).
+    /// Whether closing tab `id` would lose an unsaved mapping: a Markdown
+    /// file's applied aliases and no case, or, closing one tab, a case whose
+    /// save failed; a quit retries those in its final case saves. A Vault
+    /// document keeps its own.
     pub(super) fn mapping_at_risk(&self, id: u64, quitting: bool, cx: &App) -> bool {
-        let ask = self
-            .preferences
-            .borrow()
-            .snapshot()
-            .map(|p| p.cases.ask_before_closing)
-            .unwrap_or(true);
         let Some(view) = self.tab_view(id) else {
             return false;
         };
         let v = view.read(cx);
-        ask && !self.case_coordinator.asked(id)
+        v.session.document.path.is_some()
+            && !self.case_coordinator.asked(id)
             && cfg!(any(target_os = "macos", windows, target_os = "linux"))
             && !v.pii.review().applied().is_empty()
             && v.case
@@ -2041,9 +1976,8 @@ impl Workspace {
                 .is_none_or(|l| !quitting && self.case_coordinator.failed(&l.id))
     }
 
-    /// Before closing a tab whose mapping would be lost, offer to keep it:
-    /// with its unsaved changes in one prompt. Returns true when
-    /// the close continues now.
+    /// Before closing a tab whose mapping would be lost, offer to keep it.
+    /// Returns true when the close continues now.
     pub(super) fn confirm_mapping_close(
         &mut self,
         id: u64,
@@ -2053,8 +1987,8 @@ impl Workspace {
         !self.ask_about_mapping(id, false, window, cx)
     }
 
-    /// While quitting, ask about tab `id`'s mapping, with its unsaved changes
-    /// when it has them. Returns false when its mapping isn't at risk.
+    /// While quitting, ask about tab `id`'s mapping. Returns false when its
+    /// mapping isn't at risk.
     pub(super) fn ask_quit_mapping(
         &mut self,
         id: u64,
@@ -2078,11 +2012,7 @@ impl Workspace {
         let Some(view) = self.tab_view(id) else {
             return false;
         };
-        let (dirty, prompting) = {
-            let v = view.read(cx);
-            (v.dirty(cx), v.lifecycle.prompting())
-        };
-        if prompting {
+        if view.read(cx).lifecycle.prompting() {
             return true;
         }
         self.case_coordinator.note_asked(id);
@@ -2092,11 +2022,7 @@ impl Workspace {
         self.cases.mapping_prompt = true;
         // The prompt's tab comes to the front; it isn't a stop.
         self.activate_as(id, super::navigation::Arrival::Unrecorded, window, cx);
-        if dirty {
-            self.ask_changes_and_mapping(id, quitting, window, cx);
-        } else {
-            self.ask_mapping(id, quitting, window, cx);
-        }
+        self.ask_mapping(id, quitting, window, cx);
         true
     }
 
@@ -2113,7 +2039,7 @@ impl Workspace {
             Some(
                 "Closing forgets which original each alias stands for, so AI replies to this \
                  document can't be restored. Save it as a case to keep it, encrypted on this \
-                 computer. You can turn this question off in Settings.",
+                 computer.",
             ),
             &["Save as Case", "Close", "Cancel"],
             cx,
@@ -2127,75 +2053,6 @@ impl Workspace {
                     Some(0) => this.save_case_and_close(id, window, cx),
                     Some(1) if quitting => this.event(id, &CLOSE_RESOLVED, window, cx),
                     Some(1) => this.close_tab(id, window, cx),
-                    _ => this.cancel_mapping_close(id, quitting, window, cx),
-                }
-            });
-        })
-        .detach();
-    }
-
-    /// Unsaved changes and an unsaved mapping: one question for both.
-    pub(super) fn ask_changes_and_mapping(
-        &mut self,
-        id: u64,
-        quitting: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(view) = self.tab_view(id) else {
-            return;
-        };
-        let question = format!(
-            "Save “{}” and keep its mapping?",
-            view.read(cx).display_name()
-        );
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &question,
-            Some(
-                "Closing forgets which original each alias stands for, so AI replies to this \
-                 document can't be restored. Save as Case keeps it, encrypted on this \
-                 computer; Save keeps only the document. You can turn this question off in \
-                 Settings.",
-            ),
-            &[
-                gpui::PromptButton::new("Save as Case"),
-                gpui::PromptButton::new("Save"),
-                gpui::PromptButton::new("Don't Save"),
-                gpui::PromptButton::cancel("Cancel"),
-            ],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let answer = answer.await.ok();
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.cases.mapping_prompt = false;
-                let Some(view) = this.tab_view(id) else {
-                    return;
-                };
-                let unsaved = view.read(cx).session.document.path.is_none();
-                match answer {
-                    Some(0) if quitting => this.quit_save_case(id, window, cx),
-                    Some(0) => {
-                        // The document is saved first; its case follows and
-                        // closes the tab once written.
-                        this.case_coordinator.forget_asked(id);
-                        view.update(cx, |view, cx| {
-                            view.save(unsaved, Some(Next::CreateCase { close: true }), window, cx)
-                        });
-                    }
-                    Some(answer @ (1 | 2)) => {
-                        if !quitting {
-                            this.quit_flow.close(id);
-                        }
-                        view.update(cx, |view, cx| {
-                            if answer == 1 {
-                                view.save(unsaved, Some(Next::Close), window, cx)
-                            } else {
-                                view.proceed(Next::Close, window, cx)
-                            }
-                        });
-                    }
                     _ => this.cancel_mapping_close(id, quitting, window, cx),
                 }
             });
@@ -2217,23 +2074,9 @@ impl Workspace {
         }
     }
 
-    /// Save as Case while quitting: the document first when it needs it,
-    /// then the case; the quit goes on once the case is queued.
+    /// Save as Case while quitting; the quit goes on once the case is
+    /// queued.
     fn quit_save_case(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(view) = self.tab_view(id) else {
-            return;
-        };
-        let (dirty, unsaved) = {
-            let v = view.read(cx);
-            (v.dirty(cx), v.session.document.path.is_none())
-        };
-        if dirty || unsaved {
-            self.cases.quit_case = Some(id);
-            view.update(cx, |view, cx| {
-                view.save(unsaved, Some(Next::CreateCase { close: false }), window, cx)
-            });
-            return;
-        }
         self.quit_create_case(id, window, cx);
     }
 

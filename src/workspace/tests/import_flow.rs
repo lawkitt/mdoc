@@ -490,7 +490,6 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     cx.update(|_, cx| {
         let view = view.read(cx);
         assert!(!view.lifecycle.source_only());
-        assert!(view.dirty(cx));
         assert!(view.editor.read(cx).text().contains("Readable page three"));
         assert!(view.session.warning.as_ref().unwrap().contains("2, 5"));
         assert_eq!(view.preview.pdf(), Some(&pdf));
@@ -547,7 +546,6 @@ fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut Tes
         assert_eq!(original.read(cx).editor.read(cx).text(), "keep original");
         let imported = tabs.read(cx).tabs[1].view().unwrap().read(cx);
         assert!(imported.editor.read(cx).text().contains("alpha"));
-        assert!(imported.dirty(cx));
         assert!(!imported.import.busy());
     });
 }
@@ -593,7 +591,7 @@ fn a_closed_tab_s_import_ending_starts_the_conversion_waiting_for_it(cx: &mut Te
 }
 
 #[gpui::test]
-fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut TestAppContext) {
+fn automatic_conversion_is_disposable_and_closes_without_asking(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.docx");
     tabs.update_in(cx, |tabs, window, cx| {
@@ -604,7 +602,7 @@ fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut Tes
     cx.update(|_, cx| {
         assert!(!view.read(cx).lifecycle.source_only());
         assert!(view.read(cx).lifecycle.generated_unedited());
-        assert!(!view.read(cx).dirty(cx));
+        assert!(!view.read(cx).unsaved(cx));
         assert!(!view.read(cx).editor.read(cx).text().is_empty());
         assert!(view.read(cx).preview.pdf().is_some());
         let snapshot = tabs.read(cx).snapshot(cx);
@@ -616,32 +614,11 @@ fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut Tes
     assert!(!cx.has_pending_prompt());
     tabs.update_in(cx, |tabs, window, cx| tabs.open_path(source, window, cx));
     cx.run_until_parked();
-    let view = active(&tabs, cx);
     cx.simulate_input("edited ");
     cx.run_until_parked();
     cx.dispatch_action(Close);
     cx.run_until_parked();
-    assert!(cx.has_pending_prompt());
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    let dir = tempfile::tempdir().unwrap();
-    let saved = dir.path().join("converted.md");
-    cx.dispatch_action(Save);
-    cx.run_until_parked();
-    cx.simulate_new_path_selection(|_| Some(saved.clone()));
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert!(!view.read(cx).dirty(cx));
-        assert_eq!(
-            std::fs::read_to_string(&saved).unwrap(),
-            view.read(cx).editor.read(cx).text()
-        );
-        // Recents now leads with the saved file (#76), and the source's own
-        // row folded into it (#306).
-        let recents = &tabs.read(cx).shell.recents.files;
-        assert_eq!(recents[0].path, session_store::identity(&saved));
-        assert_eq!(recents.len(), 1, "{recents:?}");
-    });
+    assert!(!cx.has_pending_prompt());
 }
 
 #[gpui::test]
@@ -906,9 +883,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
 
     // Saved, the Markdown is the user's; the session saves nothing unlocked.
     let markdown = dir.path().join("Locked comments.md");
-    cx.dispatch_action(Save);
-    cx.run_until_parked();
-    cx.simulate_new_path_selection(|_| Some(markdown.clone()));
+    active(&tabs, cx).update(cx, |view, cx| view.save_as_file(markdown.clone(), cx));
     cx.run_until_parked();
     assert!(
         std::fs::read_to_string(&markdown)
@@ -1164,9 +1139,7 @@ fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut 
 
     // Saved, the Markdown is the user's; the session saves no password.
     let markdown = dir.path().join("Locked agreement.md");
-    cx.dispatch_action(Save);
-    cx.run_until_parked();
-    cx.simulate_new_path_selection(|_| Some(markdown.clone()));
+    active(&tabs, cx).update(cx, |view, cx| view.save_as_file(markdown.clone(), cx));
     cx.run_until_parked();
     assert!(
         std::fs::read_to_string(&markdown)
@@ -1481,9 +1454,7 @@ fn a_restored_locked_pdf_tab_asks_again_on_its_original(cx: &mut TestAppContext)
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     let markdown = dir.path().join("Locked agreement.md");
-    cx.dispatch_action(Save);
-    cx.run_until_parked();
-    cx.simulate_new_path_selection(|_| Some(markdown.clone()));
+    active(&tabs, cx).update(cx, |view, cx| view.save_as_file(markdown.clone(), cx));
     cx.run_until_parked();
     let session_path = dir.path().join("session.json");
     tabs.update_in(cx, |tabs, window, cx| {

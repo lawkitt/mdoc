@@ -32,7 +32,7 @@ pub(crate) fn bind(cx: &mut App) {
         crate::updater::spawn_check(updates.include_prereleases, false, cx);
     });
     app_action::<New>(cx, |this, window, cx| {
-        if this.ready && !this.quit_flow.quitting() && !this.intake_refused(cx) {
+        if this.ready && !this.quit_flow.quitting() && !this.intake_refused(window, cx) {
             this.new_tab(window, cx);
         }
     });
@@ -43,7 +43,7 @@ pub(crate) fn bind(cx: &mut App) {
         this.toggle_shortcuts(window, cx);
     });
     app_action::<Open>(cx, |this, window, cx| {
-        if this.intake_refused(cx) {
+        if this.intake_refused(window, cx) {
             return;
         }
         if let Some(view) = this.active_view() {

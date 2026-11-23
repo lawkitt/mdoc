@@ -114,6 +114,12 @@ impl Workspace {
         self.vault.reopen(vault);
     }
 
+    /// Tests: the Vault this window opened.
+    #[cfg(test)]
+    pub(crate) fn opened_vault(&self) -> Option<Arc<Vault>> {
+        self.vault.vault().cloned()
+    }
+
     /// A Vault in a new temporary folder that lives as long as the window.
     #[cfg(test)]
     pub(super) fn use_temp_vault(&mut self) {
@@ -184,9 +190,14 @@ impl Workspace {
         None
     }
 
-    /// Open, paste, New and drop make Vault documents: with no Vault this
-    /// run, say why and do nothing.
-    pub(super) fn intake_refused(&mut self, cx: &mut Context<Self>) -> bool {
+    /// Open, paste, New and drop make Vault documents: while the key is
+    /// locked, the explainer offers to unlock it first; with no Vault this
+    /// run, say why. Either way nothing is added now.
+    pub(super) fn intake_refused(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.vault.needs_key() {
+            self.unlock_cases(window, cx);
+            return true;
+        }
         let Some(why) = self.vault.unavailable() else {
             return false;
         };

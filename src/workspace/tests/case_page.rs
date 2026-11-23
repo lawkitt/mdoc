@@ -179,7 +179,7 @@ fn case_page_actions_persist_and_delete_returns_home_with_members_open(cx: &mut 
     // Forgetting names and deleting the case never touch the member's file,
     // saved pseudonymized.
     let view = active(&tabs, cx);
-    view.update_in(cx, |view, window, cx| view.save(false, None, window, cx));
+    view.update(cx, |view, cx| view.save_now(cx));
     cx.run_until_parked();
     let markdown = std::fs::read(&path).unwrap();
     let text = String::from_utf8_lossy(&markdown).into_owned();
@@ -833,7 +833,7 @@ fn a_long_case_name_stays_inside_the_narrow_page(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn case_close_all_resolves_dirty_members_in_turn_and_cancel_stops_it(cx: &mut TestAppContext) {
+fn case_close_all_closes_every_member_and_writes_their_edits(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
@@ -843,7 +843,7 @@ fn case_close_all_resolves_dirty_members_in_turn_and_cancel_stops_it(cx: &mut Te
     let path = dir.path().join("second.md");
     std::fs::write(&path, "# Second").unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
+        tabs.open_paths(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let second = cx.update(|_, cx| tabs.read(cx).tabs.active());
@@ -865,22 +865,15 @@ fn case_close_all_resolves_dirty_members_in_turn_and_cancel_stops_it(cx: &mut Te
         cx.run_until_parked();
     };
     close_all(cx);
-    assert!(cx.has_pending_prompt());
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).tabs.contains(first) && tabs.read(cx).tabs.contains(second)));
-    close_all(cx);
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
-    assert!(
-        cx.has_pending_prompt(),
-        "the second dirty member must be asked next"
-    );
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
     assert!(cx.update(
         |_, cx| !tabs.read(cx).tabs.contains(first) && !tabs.read(cx).tabs.contains(second)
     ));
+    // The changed member wrote itself to its file as it closed.
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "Changed second document"
+    );
 }
 
 #[gpui::test]
@@ -929,7 +922,7 @@ fn forgetting_the_highest_alias_reserves_it_in_new_members_and_survives_reopen(
             .unwrap();
         view.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(view.editor.read(cx).text(), "PERSON_3");
-        view.write(second.clone(), None, cx);
+        view.save_as_file(second.clone(), cx);
     });
     cx.run_until_parked();
     tabs.update_in(cx, |tabs, window, cx| {

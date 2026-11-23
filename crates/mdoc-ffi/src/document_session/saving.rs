@@ -155,6 +155,7 @@ impl Document {
                 vault: None,
                 path: self.stored.path.clone(),
                 saved: self.stored.saved.clone(),
+                review: None,
             },
             wrote: false,
             text: self.review.text.clone(),

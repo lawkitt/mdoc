@@ -11,7 +11,6 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         (Category::Detection, "settings-detection"),
         (Category::Recognition, "settings-recognition"),
         (Category::Spelling, "settings-spelling"),
-        (Category::Cases, "settings-cases"),
         (Category::About, "settings-about"),
     ] {
         d.change(|w, window, cx| {

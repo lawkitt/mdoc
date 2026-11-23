@@ -2,7 +2,9 @@
 //! Home with its drop zone, and the ⌘K command palette.
 use super::{Tab, Workspace};
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, RecentFolders, Save, SaveAs, ToggleCompare},
+    document_view::{
+        CopyMarkdown, DocumentView, ExportMarkdown, RecentFolders, Save, ToggleCompare,
+    },
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
     shortcuts,
@@ -115,7 +117,7 @@ enum Command {
     CopyForAi,
     CopyMarkdown,
     Save,
-    SaveAs,
+    ExportMarkdown,
     CloseTab,
     BeforeAfter,
     /// The active document's What you did; no key of its own.
@@ -151,7 +153,7 @@ impl Command {
             Command::CopyForAi => Box::new(CopyForAi),
             Command::CopyMarkdown => Box::new(CopyMarkdown),
             Command::Save => Box::new(Save),
-            Command::SaveAs => Box::new(SaveAs),
+            Command::ExportMarkdown => Box::new(ExportMarkdown),
             Command::CloseTab => Box::new(Close),
             Command::BeforeAfter => Box::new(ToggleCompare),
             Command::ToggleSidebar => Box::new(ToggleSidebar),
@@ -1361,7 +1363,7 @@ impl Workspace {
     }
 
     pub(super) fn paste_as_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.intake_refused(cx) {
+        if self.intake_refused(window, cx) {
             return;
         }
         let item = cx.read_from_clipboard();
@@ -1384,6 +1386,8 @@ impl Workspace {
         let id = self.new_tab(window, cx);
         if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view()).cloned() {
             view.update(cx, |view, cx| {
+                // An ordinary document, not a new one.
+                view.session.pasted = true;
                 view.editor
                     .update(cx, |editor, cx| editor.insert_pasted(text, window, cx))
             });
@@ -1515,9 +1519,9 @@ impl Workspace {
                 },
                 Row {
                     section: "Actions",
-                    label: "Save as…".into(),
+                    label: "Export Markdown…".into(),
                     detail: None,
-                    command: Command::SaveAs,
+                    command: Command::ExportMarkdown,
                 },
                 Row {
                     section: "Actions",
@@ -1753,7 +1757,7 @@ impl Workspace {
             Command::CopyForAi => dispatch(window, cx, Box::new(CopyForAi)),
             Command::CopyMarkdown => dispatch(window, cx, Box::new(CopyMarkdown)),
             Command::Save => dispatch(window, cx, Box::new(Save)),
-            Command::SaveAs => dispatch(window, cx, Box::new(SaveAs)),
+            Command::ExportMarkdown => dispatch(window, cx, Box::new(ExportMarkdown)),
             Command::CloseTab => dispatch(window, cx, Box::new(Close)),
             Command::BeforeAfter => dispatch(window, cx, Box::new(ToggleCompare)),
             // Straight to the document: focus may have gone back to the
@@ -1844,7 +1848,7 @@ impl Workspace {
                 Command::Theme => ui::Icon::ThemeSystem,
                 Command::RestoreReply => ui::Icon::Reply,
                 Command::CopyForAi | Command::CopyMarkdown => ui::Icon::Copy,
-                Command::Save | Command::SaveAs => ui::Icon::Save,
+                Command::Save | Command::ExportMarkdown => ui::Icon::Save,
                 Command::CloseTab | Command::CancelConversion => ui::Icon::Close,
                 Command::BeforeAfter => ui::Icon::PanelRight,
                 Command::DecisionHistory => ui::Icon::Clock,

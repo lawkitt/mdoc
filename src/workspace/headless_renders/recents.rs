@@ -74,7 +74,14 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<()> {
     d.settle()?;
     let saved = folder.join(format!("{DEMO}.md"));
     d.change(|_, window, cx| {
-        view.update(cx, |v, cx| v.save_to(saved, None, window, cx));
+        // A case's Markdown file, as a saved conversion was before the Vault.
+        view.update(cx, |v, cx| {
+            let text = v.editor.read(cx).text().to_string();
+            mdoc_store::document::export(&saved, &text).expect("fixture folder");
+            v.session.document = mdoc_store::document::Document::open(saved).expect("just written");
+            v.replace_images(v.save_directory(), window, cx);
+            cx.notify();
+        });
     })?;
     d.settle()?;
 

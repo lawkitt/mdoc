@@ -273,7 +273,8 @@ impl Default for UpdatesConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CasesConfig {
-    /// Closing a tab with an unsaved replacement mapping asks to save a case.
+    /// No longer read: documents keep their own mappings. Kept so settings
+    /// files that have it still load.
     pub ask_before_closing: bool,
 }
 impl Default for CasesConfig {

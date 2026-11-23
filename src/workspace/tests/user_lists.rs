@@ -299,9 +299,6 @@ fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {
         view.not_a_name_identity(identity, cx);
     });
     settle(cx);
-    // The saved file still has PERSON_1: the case keeps it until the
-    // document saves, so a discarded edit still restores.
-    assert_eq!(anna(&store), ["Anna Petrova"]);
     view.update_in(cx, |view, window, cx| {
         window.focus(&view.editor.read(cx).focus_handle(cx), cx)
     });

@@ -60,22 +60,11 @@ fn untitled_numbering_reuses_closed_gaps_and_suggests_the_tab_name(cx: &mut Test
         let view = tabs.active_view().unwrap();
         assert_eq!(view.read(cx).session.suggested_name(), "Untitled 3.md");
     });
-    cx.dispatch_action(SaveAs);
+    cx.dispatch_action(ExportMarkdown);
     cx.run_until_parked();
     assert!(cx.did_prompt_for_new_path());
     cx.simulate_new_path_selection(|_| None);
     cx.run_until_parked();
-    cx.simulate_input("third document");
-    for action in [Box::new(Close) as Box<dyn gpui::Action>, Box::new(Quit)] {
-        cx.update(|window, cx| window.dispatch_action(action, cx));
-        cx.run_until_parked();
-        assert_eq!(
-            cx.pending_prompt().unwrap().0,
-            "Save changes to “Untitled 3.md”?"
-        );
-        cx.simulate_prompt_answer("Cancel");
-        cx.run_until_parked();
-    }
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.close_tab(second, window, cx);
         tabs.new_tab(window, cx);
@@ -295,7 +284,7 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
         );
         assert!(tabs.notices.message().unwrap().contains("unknown.bin"));
         assert!(!source.read(cx).lifecycle.source_only());
-        assert!(!source.read(cx).dirty(cx));
+        assert!(!source.read(cx).unsaved(cx));
         assert!(source.read(cx).preview.pdf().is_some());
         assert!(!source.read(cx).editor.read(cx).text().is_empty());
         assert_eq!(original.read(cx).editor.read(cx).text(), "keep edits");
@@ -341,7 +330,6 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
             first.read(cx).editor.read(cx).text(),
             "original **Markdown**"
         );
-        assert!(first.read(cx).dirty(cx));
         assert_eq!(second.read(cx).editor.read(cx).text(), "second document");
     });
     cx.dispatch_action(mdoc_editor::Undo);
@@ -353,13 +341,7 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
     assert_eq!(active(&tabs, cx), second);
     cx.dispatch_action(Close);
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    assert_eq!(active(&tabs, cx), second);
-    cx.dispatch_action(Close);
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert!(
@@ -650,7 +632,7 @@ fn untitled_save_as_starts_in_the_last_used_folder(cx: &mut TestAppContext) {
     // the process's working directory (#180).
     cx.dispatch_action(New);
     cx.run_until_parked();
-    cx.dispatch_action(SaveAs);
+    cx.dispatch_action(ExportMarkdown);
     cx.run_until_parked();
     let mut start = None;
     cx.simulate_new_path_selection(|directory| {

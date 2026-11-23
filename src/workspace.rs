@@ -3,7 +3,7 @@
 use crate::{
     comparison, comparison_ui,
     document_view::{
-        Background, DocumentView, DocumentViewDependencies, Next, OcrState, known_ocr_state,
+        Background, DocumentView, DocumentViewDependencies, OcrState, known_ocr_state,
     },
     pii,
     pii::ui::PiiApplyAll,
@@ -33,9 +33,11 @@ use std::{
     time::Duration,
 };
 
+mod autosave;
 mod case_coordinator;
 mod case_page;
 mod cases_ui;
+mod document_writer;
 mod docx_queue;
 use docx_queue::{DocxEffect, DocxJob};
 mod focus_regions;
@@ -55,7 +57,7 @@ mod notices;
 pub(crate) use navigation_ui::{Back, Forward};
 mod quit_flow;
 pub(crate) use quit_flow::CloseWatch;
-use quit_flow::{QuitEffect, QuitEnd};
+use quit_flow::QuitEffect;
 mod session_writer;
 mod shelf_source;
 pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
@@ -158,15 +160,13 @@ pub(super) enum DocxEvent {
     Finished { generation: u64 },
 }
 
-/// Saving the document.
+/// The document saves itself.
 pub(super) enum SaveEvent {
-    /// Save to `path` unless another tab has that file open, then go on
-    /// with `next`.
-    Write {
-        path: PathBuf,
-        next: Option<Next>,
-    },
-    Saved,
+    /// Typing paused, or Save was chosen: write what it shows now.
+    Changed,
+    /// Tests: the document became a Markdown file.
+    #[cfg(test)]
+    Filed,
 }
 
 /// The tab's case (`CaseCoordinator`).
@@ -197,7 +197,6 @@ impl EventEmitter<TabEvent> for DocumentView {}
 struct SidebarStatus {
     path: Option<PathBuf>,
     source: Option<PathBuf>,
-    dirty: bool,
     loading: bool,
     queued: bool,
     importing: bool,
@@ -210,7 +209,6 @@ impl SidebarStatus {
         Self {
             path: view.session.document.path.clone(),
             source: view.preview.source().cloned(),
-            dirty: view.lifecycle.dirty(),
             loading: view.lifecycle.loading() || view.preview.loading(),
             queued: view.preview.queued() || view.import.auto_pending(),
             importing: view.import.busy(),
@@ -306,8 +304,6 @@ pub(super) struct Workspace {
     import_busy: Arc<AtomicBool>,
     docx_queue: docx_queue::DocxQueue,
     quit_flow: quit_flow::QuitFlow,
-    /// The quit's summary question is up.
-    quit_summary: bool,
     session_writer: session_writer::SessionWriter<Session>,
     cases: cases_ui::CaseState,
     /// Dropped folders' sheets, one at a time.
@@ -316,6 +312,8 @@ pub(super) struct Workspace {
     case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
     /// The Vault, once the key opened it.
     vault: vault_state::VaultState,
+    /// Documents' autosaves, one write at a time.
+    document_writer: autosave::Writer,
     /// What a test's loud key read yields.
     #[cfg(test)]
     staged_vault: Option<Result<mdoc_vault::Vault, mdoc_store::cases::CaseError>>,
@@ -521,13 +519,13 @@ impl Workspace {
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: docx_queue::DocxQueue::default(),
             quit_flow: quit_flow::QuitFlow::default(),
-            quit_summary: false,
             session_writer: session_writer::SessionWriter::new(None),
             cases: Default::default(),
             folder_sheets: Default::default(),
             folder_sheet_focus: None,
             case_coordinator: Default::default(),
             vault: Default::default(),
+            document_writer: Default::default(),
             #[cfg(test)]
             staged_vault: None,
             #[cfg(test)]
@@ -818,7 +816,7 @@ impl Workspace {
             .update(cx, |panel, cx| panel.close(window, cx));
         self.quit(window, cx);
         // Quitting can't start now (a prompt is open): don't relaunch later.
-        if self.quit_flow.may_quit() && !self.quit_summary {
+        if self.quit_flow.may_quit() {
             crate::updater::cancel_restart(cx);
         }
     }
@@ -1110,7 +1108,10 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
-        let task: gpui::Task<Result<(Document, Option<String>), String>> = match document {
+        // The document, and a Vault document's title and whether it follows
+        // its first line.
+        type Loaded = (Document, Option<(String, bool)>);
+        let task: gpui::Task<Result<Loaded, String>> = match document {
             DocumentId::File(path) => cx.background_executor().spawn(async move {
                 Document::open(session_store::identity(&path))
                     .map(|document| (document, None))
@@ -1121,10 +1122,10 @@ impl Workspace {
                     vault
                         .document(document.as_str())
                         .map(|stored| {
-                            (
-                                Document::in_vault(document, stored.markdown),
-                                Some(stored.title),
-                            )
+                            let mut loaded = Document::in_vault(document, stored.markdown);
+                            loaded.review = stored.review;
+                            let follows = stored.origin == mdoc_vault::DocumentOrigin::New;
+                            (loaded, Some((stored.title, follows)))
                         })
                         .map_err(|error| format!("Could not open the document. {error}"))
                 }),
@@ -1162,9 +1163,13 @@ impl Workspace {
                         return;
                     }
                     match result {
-                        Ok((document, title)) => {
+                        Ok((document, vault)) => {
+                            let review = document.review.clone();
                             view.session.replace(document);
-                            view.session.name = title;
+                            if let Some((title, follows)) = vault {
+                                view.session.name = Some(title);
+                                view.session.follows_first_line = follows;
+                            }
                             view.reset_pii(cx);
                             view.editor.update(cx, |editor, cx| {
                                 editor.set_text(view.session.document.saved.clone(), cx);
@@ -1174,6 +1179,10 @@ impl Workspace {
                                 }
                                 editor.set_cursor(caret, cx);
                             });
+                            // Its review comes back as it was: no rescan.
+                            if let Some(review) = review {
+                                view.restore_review(review, cx);
+                            }
                             view.replace_images(view.save_directory(), window, cx);
                             view.scroll
                                 .set_offset(gpui::point(px(0.), px(record.scroll_y.min(0.))));
@@ -1375,7 +1384,7 @@ impl Workspace {
             self.pending_open.push((paths, at, case));
             return;
         }
-        if self.intake_refused(cx) {
+        if self.intake_refused(window, cx) {
             return;
         }
         // Opening activates a tab and takes focus; a confirm dialog keeps it
@@ -1537,7 +1546,7 @@ impl Workspace {
         }
         match event {
             TabEvent::Tabs(TabsEvent::New) if !self.quit_flow.quitting() => {
-                if !self.intake_refused(cx) {
+                if !self.intake_refused(window, cx) {
                     self.new_tab(window, cx);
                 }
             }
@@ -1575,18 +1584,6 @@ impl Workspace {
             }
             TabEvent::Close(CloseEvent::Requested) => self.close_tab(id, window, cx),
             TabEvent::Import(ImportEvent::Ocr(state)) => self.set_ocr(state.clone(), cx),
-            TabEvent::Save(SaveEvent::Saved) => {
-                let saved = self
-                    .tabs
-                    .get(id)
-                    .and_then(|tab| tab.view())
-                    .and_then(|view| view.read(cx).session.document.id());
-                let previous = self.tabs.set_document(id, saved);
-                // Save As moves the member: the case forgets the old path.
-                self.case_member_moved(id, previous.and_then(DocumentId::into_file), cx);
-                self.case_changed(id, cx);
-                self.record_review(id, cx);
-            }
             TabEvent::Case(CaseEvent::Changed) => self.case_changed(id, cx),
             TabEvent::Case(CaseEvent::Reply) => self.case_reply_changed(id, cx),
             TabEvent::Case(CaseEvent::OpenPage) => {
@@ -1636,7 +1633,7 @@ impl Workspace {
                 }
             }
             TabEvent::Close(CloseEvent::Resolved) => {
-                if let Some(effect) = self.quit_flow.resolved(id) {
+                if let Some(effect) = self.quit_flow.resolved() {
                     self.carry_out_quit(effect, window, cx);
                 }
             }
@@ -1659,29 +1656,18 @@ impl Workspace {
                     let _ = owner.update(cx, |this, cx| this.refresh_import(window, cx));
                 });
             }
-            TabEvent::Save(SaveEvent::Write { path, next }) => {
-                let Some(other) = self.find_path(path, Some(id), cx) else {
-                    if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) {
-                        let (path, next) = (path.clone(), next.clone());
-                        view.update(cx, |view, cx| view.save_to(path, next, window, cx));
-                    }
-                    return;
-                };
-                let answer = window.prompt(
-                    PromptLevel::Warning,
-                    "That file is already open in another tab",
-                    Some("Switch to the existing tab, or choose a different Save As path."),
-                    &["Switch to tab", "Cancel"],
-                    cx,
-                );
-                cx.spawn_in(window, async move |this, cx| {
-                    if answer.await.ok() == Some(0) {
-                        let _ =
-                            this.update_in(cx, |this, window, cx| this.activate(other, window, cx));
-                    }
-                })
-                .detach();
-                self.event(id, &TabEvent::Close(CloseEvent::Cancelled), window, cx);
+            TabEvent::Save(SaveEvent::Changed) => self.autosave(id, window, cx),
+            #[cfg(test)]
+            TabEvent::Save(SaveEvent::Filed) => {
+                let filed = self
+                    .tabs
+                    .get(id)
+                    .and_then(|tab| tab.view())
+                    .and_then(|view| view.read(cx).session.document.id());
+                self.tabs.set_document(id, filed);
+                self.case_reply_changed(id, cx);
+                self.case_changed(id, cx);
+                self.record_review(id, cx);
             }
             TabEvent::Import(ImportEvent::Finished) => self.refresh_import(window, cx),
             TabEvent::Docx(DocxEvent::Finished { generation }) => {
@@ -1759,19 +1745,15 @@ impl Workspace {
         let Some(tab) = self.tabs.get(id) else {
             return;
         };
-        if let Some(view) = tab.view().cloned() {
-            if !view.read(cx).dirty(cx) {
-                self.remove(id, window, cx);
-                return;
-            }
-            if view.read(cx).lifecycle.prompting() {
-                return;
-            }
-            let effect = self.quit_flow.close(id);
-            self.carry_out_quit(effect, window, cx);
-        } else {
-            self.remove(id, window, cx);
+        if tab
+            .view()
+            .is_some_and(|view| view.read(cx).lifecycle.prompting())
+        {
+            return;
         }
+        // Its last text is written after the tab goes.
+        self.autosave(id, window, cx);
+        self.remove(id, window, cx);
     }
 
     fn release(view: &Entity<DocumentView>, window: &mut Window, cx: &mut App) {
@@ -1856,7 +1838,7 @@ impl Workspace {
     /// the window with every tab kept in memory. A quit already
     /// asking goes on.
     pub(super) fn close_requested(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if crate::menu_bar::keeps_running(cx) && self.quit_flow.may_quit() && !self.quit_summary {
+        if crate::menu_bar::keeps_running(cx) && self.quit_flow.may_quit() {
             crate::menu_bar::close_window(window, cx);
         } else {
             self.quit(window, cx);
@@ -1875,54 +1857,17 @@ impl Workspace {
         }
         // A question already up (the summary, or a tab's mapping) is
         // answered first.
-        if self.quit_summary || self.mapping_prompt_open() {
+        if self.mapping_prompt_open() {
             return;
         }
+        // Documents save themselves; only a mapping a case would lose is
+        // asked about.
         let at_risk = self.at_risk_tabs(cx);
         // A hidden window shows before it asks anything.
         if !at_risk.is_empty() {
             crate::menu_bar::reveal_if_hidden(window, cx);
         }
-        if at_risk.len() < 2 {
-            self.start_quit(at_risk, window, cx);
-            return;
-        }
-        // Two or more to lose: one question first.
-        self.quit_summary = true;
-        let names: Vec<String> = at_risk
-            .iter()
-            .filter_map(|&id| self.tabs.get(id)?.view())
-            .map(|view| view.read(cx).display_name())
-            .collect();
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &format!(
-                "{} documents have unsaved changes or mappings",
-                at_risk.len()
-            ),
-            Some(&quit_flow::summary_detail(&names)),
-            &[
-                gpui::PromptButton::new("Review…"),
-                gpui::PromptButton::new("Discard All"),
-                gpui::PromptButton::cancel("Cancel"),
-            ],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let answer = answer.await.ok();
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.quit_summary = false;
-                match answer {
-                    Some(0) => {
-                        let at_risk = this.at_risk_tabs(cx);
-                        this.start_quit(at_risk, window, cx);
-                    }
-                    Some(1) => this.start_quit(VecDeque::new(), window, cx),
-                    _ => Self::quit_cancelled(cx),
-                }
-            });
-        })
-        .detach();
+        self.start_quit(at_risk, window, cx);
     }
 
     /// A quit from outside the app (macOS: the Dock, an Apple Event,
@@ -1931,7 +1876,7 @@ impl Workspace {
     #[cfg(any(target_os = "macos", test))]
     pub(crate) fn quit_from_system(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.quit(window, cx);
-        let underway = !self.quit_flow.may_quit() || self.quit_summary;
+        let underway = !self.quit_flow.may_quit();
         if !underway {
             cx.activate(true);
             window.activate_window();
@@ -1947,20 +1892,13 @@ impl Workspace {
         crate::system_quit::cancelled(cx);
     }
 
-    /// Tabs a quit would lose something from, in sidebar order: unsaved
-    /// changes, an unsaved mapping, or both.
+    /// Tabs whose mapping a quit would lose, in sidebar order.
     fn at_risk_tabs(&mut self, cx: &mut Context<Self>) -> VecDeque<u64> {
         self.mapping_quit_started();
         self.tabs
             .iter()
             .map(|tab| tab.id())
-            .filter(|&id| {
-                self.tabs
-                    .get(id)
-                    .and_then(|tab| tab.view())
-                    .is_some_and(|view| view.read(cx).dirty(cx))
-                    || self.mapping_at_risk(id, true, cx)
-            })
+            .filter(|&id| self.mapping_at_risk(id, true, cx))
             .collect()
     }
 
@@ -1977,56 +1915,44 @@ impl Workspace {
                 if self.quit_flow.quitting() && self.ask_quit_mapping(id, window, cx) {
                     return;
                 }
-                // The prompt's tab comes to the front; it isn't a stop.
-                self.activate_as(id, Arrival::Unrecorded, window, cx);
-                if let Some(view) = self.active_view() {
-                    view.update(cx, |view, cx| view.request(Next::Close, window, cx));
+                if let Some(effect) = self.quit_flow.resolved() {
+                    self.carry_out_quit(effect, window, cx);
                 }
             }
             QuitEffect::Settle { restore } => {
                 if let Some(active) = restore {
                     self.activate_as(active, Arrival::Unrecorded, window, cx);
                 }
-                let histories: Vec<_> = self
-                    .tabs
-                    .iter()
-                    .filter_map(|tab| {
-                        Some((tab.id(), tab.view()?.read(cx).editor.read(cx).history_id()))
-                    })
-                    .collect();
-                self.quit_flow.settle(histories);
-                self.checkpoint(window, cx);
-                if !self.session_writer.writing() {
-                    self.finish_quit(window, cx);
+                self.quit_flow.settle();
+                // Every document's last text is written before the window
+                // closes.
+                for view in self.tabs.iter().filter_map(|tab| tab.view().cloned()) {
+                    view.update(cx, |view, _| view.cancel_autosave());
                 }
+                self.autosave_all(window, cx);
+                self.checkpoint(window, cx);
+                self.finish_quit(window, cx);
             }
-            QuitEffect::Remove(id) => self.remove(id, window, cx),
         }
     }
 
+    /// The quit's last step, once documents and the session are written:
+    /// the Vault's summaries, then the cases, then the window.
     fn finish_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let changed: VecDeque<_> = self
-            .tabs
-            .iter()
-            .filter_map(|tab| {
-                let view = tab.view()?.read(cx);
-                (view.dirty(cx)
-                    && self
-                        .quit_flow
-                        .changed_since(tab.id(), view.editor.read(cx).history_id()))
-                .then_some(tab.id())
-            })
-            .collect();
-        match self.quit_flow.end(changed) {
-            QuitEnd::Ask(effect) => {
-                self.cancel_case_quit();
-                self.carry_out_quit(effect, window, cx);
-            }
-            QuitEnd::Close => {
-                if self.flush_cases(window, cx) {
-                    self.close_window(window, cx);
-                }
-            }
+        if !self.quit_flow.finishing()
+            || self.session_writer.writing()
+            || self.document_writer.busy()
+        {
+            return;
+        }
+        if let Some(vault) = self.vault.vault()
+            && let Err(error) = vault.flush()
+        {
+            self.notices
+                .post(format!("Could not save the document list: {error}"));
+        }
+        if self.flush_cases(window, cx) {
+            self.close_window(window, cx);
         }
     }
 
@@ -2161,11 +2087,14 @@ impl Workspace {
                             crate::menu_bar::reveal_if_hidden(window, cx);
                             let answer = window.prompt(PromptLevel::Warning,
                                 "Could not save the tab list",
-                                Some("Your saved Markdown files are safe. Cancel to retry, or quit using the previous session list."),
+                                Some("Your documents are saved. Cancel to retry, or quit using the previous session list."),
                                 &["Cancel", "Quit without updating session"], cx);
                             cx.spawn_in(window, async move |this, cx| {
                                 if answer.await.ok() == Some(1) {
-                                    let _ = this.update_in(cx, |this, window, cx| this.finish_quit(window, cx));
+                                    let _ = this.update_in(cx, |this, window, cx| {
+                                        this.quit_flow.settle();
+                                        this.finish_quit(window, cx);
+                                    });
                                 } else {
                                     let _ = this.update(cx, |_, cx| Self::quit_cancelled(cx));
                                 }
@@ -2471,7 +2400,6 @@ impl Workspace {
                     format,
                     source,
                 } = labels[index].clone();
-                let dirty = view.is_some_and(|v| v.lifecycle.dirty());
                 let running = view.is_some_and(|v| {
                     v.lifecycle.loading() || v.import.busy() || v.preview.loading()
                 });
@@ -2490,7 +2418,7 @@ impl Workspace {
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 let tooltip = format!(
-                    "{name}\n{parent}{}{}{}{}{}{}",
+                    "{name}\n{parent}{}{}{}{}{}",
                     // A saved conversion's badge is MD; the tooltip keeps
                     // where it came from.
                     source
@@ -2505,7 +2433,6 @@ impl Workspace {
                         ""
                     },
                     if pseudonymized { "\nPseudonymized" } else { "" },
-                    if dirty { "\nUnsaved changes" } else { "" },
                     if busy { "\nProcessing…" } else { "" },
                     if error { "\nNeeds attention" } else { "" }
                 );
@@ -2589,7 +2516,7 @@ impl Workspace {
                         .when(!revealed && !menu_open, |v| {
                             v.tooltip(style::tooltip(format!("{tooltip}\n{format}"), theme))
                         })
-                        .when(dirty || busy || error, |v| {
+                        .when(busy || error, |v| {
                             v.child(if running && !error {
                                 div()
                                     .absolute()
@@ -2694,7 +2621,7 @@ impl Workspace {
                         .when(pseudonymized, |v| {
                             v.child(tab_badge(ui::Icon::Anonymous, palette.header_muted))
                         })
-                        .when(dirty || busy || error, |v| {
+                        .when(busy || error, |v| {
                             v.child(
                                 div()
                                     .text_color(if error {
@@ -2706,13 +2633,7 @@ impl Workspace {
                                         ui::spinner(("tab-activity", id), theme)
                                     } else {
                                         div()
-                                            .child(if error {
-                                                "!"
-                                            } else if busy {
-                                                "…"
-                                            } else {
-                                                "•"
-                                            })
+                                            .child(if error { "!" } else { "…" })
                                             .into_any_element()
                                     }),
                             )

@@ -15,14 +15,14 @@ use crate::{
     workspace::{self, Close, Import, New, Open, RetryDocument, ToggleTheme},
 };
 use gpui::{
-    App, Context, Entity, Focusable, PathPromptOptions, PromptLevel, ScrollHandle, Subscription,
-    Window, actions, div, prelude::*, px,
+    App, Context, Entity, Focusable, PathPromptOptions, ScrollHandle, Subscription, Window,
+    actions, div, prelude::*, px,
 };
 use mdoc_editor::{EditorEvent, EditorState};
 use mdoc_import::{import, model_work, ocr, recognition};
 use mdoc_store::{
     document::{self, Document},
-    document_session, session_store, settings,
+    document_session, settings,
 };
 use std::{
     cell::Cell,
@@ -42,7 +42,6 @@ mod import_flow;
 use import_flow::ImportEffect;
 #[cfg(test)]
 pub(crate) use import_flow::PasswordPrompt;
-pub(crate) mod save_prompt;
 #[cfg(test)]
 pub(crate) mod tests;
 actions!(
@@ -53,7 +52,7 @@ actions!(
         ExtractNative,
         DismissImportWarning,
         Save,
-        SaveAs,
+        ExportMarkdown,
         CopyMarkdown,
         ToggleCompare,
         ShowEditView,
@@ -71,15 +70,9 @@ actions!(
 #[derive(Clone)]
 pub(crate) enum Next {
     Import(Box<import::Imported>),
-    Close,
-    /// Saved first so the new case lists the document (#75); `close` closes
-    /// the tab once the case is written.
-    CreateCase {
-        close: bool,
-    },
 }
 
-/// The window's Recents folders, most recent first, for Save As to start in
+/// The window's Recents folders, most recent first, for Export Markdown to start in
 /// when a document has no folder of its own (#180). The window shares them
 /// whenever its Recents change.
 pub(crate) struct RecentFolders(Vec<PathBuf>);
@@ -175,6 +168,8 @@ pub(crate) struct DocumentView {
     pub(crate) case: case_link::CaseLink,
     /// The waiting save of the mapping into the case.
     case_save: Option<gpui::Task<()>>,
+    /// The waiting autosave of the document.
+    autosave: Option<gpui::Task<()>>,
     pub(crate) case_names_open: bool,
     pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
     /// The result of Pseudonymize Clipboard, for a few seconds.
@@ -320,8 +315,7 @@ impl DocumentView {
                     this.schedule_spellcheck(true, cx);
                     this.schedule_case_save(cx);
                     this.lifecycle.edited();
-                    let dirty = this.dirty(cx);
-                    this.lifecycle.set_dirty(dirty);
+                    this.schedule_autosave(cx);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
                 }
@@ -406,6 +400,7 @@ impl DocumentView {
             reply_scroll: gpui::ScrollHandle::new(),
             case: Default::default(),
             case_save: None,
+            autosave: None,
             case_names_open: false,
             case_term: None,
             clipboard_notice: Default::default(),
@@ -447,16 +442,54 @@ impl DocumentView {
         self.images = images::install(&self.editor, directory, cx);
     }
 
-    pub(crate) fn dirty(&self, cx: &App) -> bool {
-        if self.lifecycle.loading()
-            || self.lifecycle.unavailable()
-            || self.lifecycle.source_only()
-            || self.lifecycle.generated_unedited()
-        {
-            return false;
+    /// Whether the text differs from what was last written: an autosave is
+    /// due. Never shown; documents save themselves.
+    pub(crate) fn unsaved(&self, cx: &App) -> bool {
+        self.lifecycle.ready()
+            && !self.lifecycle.source_only()
+            && self.session.document.id().is_some()
+            && self.session.unsaved(self.editor.read(cx).text())
+    }
+
+    /// The text changed: save it once typing pauses.
+    pub(crate) fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
+        if !self.lifecycle.ready() || self.lifecycle.source_only() {
+            return;
         }
-        self.session.dirty(self.editor.read(cx).text())
-            || (self.session.document.path.is_none() && self.preview.attachment().is_some())
+        self.autosave = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(AUTOSAVE_DELAY).await;
+            let _ = this.update(cx, |this, cx| {
+                this.autosave = None;
+                cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Changed));
+            });
+        }));
+    }
+
+    /// Save: write now instead of after the pause.
+    pub(crate) fn save_now(&mut self, cx: &mut Context<Self>) {
+        self.autosave = None;
+        cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Changed));
+    }
+
+    /// Tests: make this document the Markdown file `path`, as a case's
+    /// members are, and tell the window.
+    #[cfg(test)]
+    pub(crate) fn save_as_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let path = mdoc_store::session_store::identity(&path);
+        let text = self.editor.read(cx).text().to_string();
+        document::export(&path, &text).expect("test file");
+        self.session.document = Document {
+            vault: None,
+            path: Some(path),
+            saved: text,
+            review: None,
+        };
+        cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Filed));
+    }
+
+    /// Drop the waiting autosave: the caller writes the text itself.
+    pub(crate) fn cancel_autosave(&mut self) {
+        self.autosave = None;
     }
 
     /// A Markdown tab with no content and no source shows the empty page.
@@ -649,66 +682,19 @@ impl DocumentView {
 
     /// The window title while this tab shows; the workspace sets it.
     pub(crate) fn window_title(&self) -> String {
-        format!(
-            "{}{} — mdoc",
-            if self.lifecycle.dirty() { "• " } else { "" },
-            self.display_name()
-        )
+        format!("{} — mdoc", self.display_name())
     }
 
+    /// Replace or close the document, unless one of its dialogs is open.
     pub(crate) fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        let dirty = self.dirty(cx);
-        match self.lifecycle.request(dirty) {
-            Some(LifecycleEffect::Proceed) => {
-                self.proceed(next, window, cx);
-                return;
-            }
-            Some(LifecycleEffect::AskToSave) => {}
-            _ => return,
+        if let Some(LifecycleEffect::Proceed) = self.lifecycle.request() {
+            self.proceed(next, window, cx);
         }
-        // Save is the default, Don't Save ⌘D / Alt+D, Cancel Esc.
-        let question = format!("Save changes to “{}”?", self.display_name());
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &question,
-            Some("Your changes will be lost if you don't save them."),
-            &[
-                gpui::PromptButton::new("Save"),
-                gpui::PromptButton::new("Don't Save"),
-                gpui::PromptButton::cancel("Cancel"),
-            ],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let answer = answer.await.ok();
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.lifecycle.end_prompt();
-                match answer {
-                    Some(0) => this.save(false, Some(next), window, cx),
-                    Some(1) => this.proceed(next, window, cx),
-                    _ => {
-                        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-                    }
-                }
-                this.resume_import(window, cx);
-            });
-        })
-        .detach();
     }
 
     pub(crate) fn proceed(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         self.copy_feedback = None;
         match next {
-            Next::Close => {
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Resolved));
-                return;
-            }
-            Next::CreateCase { close } => {
-                cx.emit(workspace::TabEvent::Case(workspace::CaseEvent::Create {
-                    close,
-                }));
-                return;
-            }
             Next::Import(imported) => {
                 let imported = *imported;
                 let automatic = self.import.imported();
@@ -737,8 +723,6 @@ impl DocumentView {
                 self.replace_images(self.save_directory(), window, cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
-                let dirty = self.dirty(cx);
-                self.lifecycle.set_dirty(dirty);
                 self.reset_markdown_search(cx);
                 if self.active {
                     window.focus(&self.editor.read(cx).focus_handle(cx), cx);
@@ -1756,13 +1740,13 @@ impl DocumentView {
         self.session.directory()
     }
 
-    /// Where Save As starts: the document's folder, else a Recents folder,
-    /// else Documents (#180).
-    fn save_as_directory(&self, cx: &App) -> PathBuf {
+    /// Where Export Markdown starts: the document's folder, else a Recents
+    /// folder, else Documents (#180).
+    fn export_directory(&self, cx: &App) -> PathBuf {
         let folders = cx
             .try_global::<RecentFolders>()
             .map_or(&[][..], |folders| &folders.0);
-        self.session.save_as_directory(folders)
+        self.session.export_directory(folders)
     }
 
     pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1846,106 +1830,61 @@ impl DocumentView {
         .detach();
     }
 
-    pub(crate) fn save(
-        &mut self,
-        save_as: bool,
-        next: Option<Next>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match self
-            .lifecycle
-            .save(save_as, self.session.document.path.is_some())
-        {
-            LifecycleEffect::CancelClose => {
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-                return;
-            }
-            LifecycleEffect::Write => {
-                if let Some(path) = self.session.document.path.clone() {
-                    self.write(path, next, cx);
-                }
-                return;
-            }
-            _ => {}
+    /// Export Markdown: a copy of the text in a file the user picks. The
+    /// document stays where it is.
+    pub(crate) fn export_markdown(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(LifecycleEffect::AskForPath) = self.lifecycle.export() else {
+            return;
+        };
+        let mut name = self.session.suggested_name();
+        if !document::is_markdown(std::path::Path::new(&name)) {
+            name.push_str(".md");
         }
-        let name = self.session.suggested_name();
-        let directory = self.save_as_directory(cx);
-        let reason =
-            matches!(next, Some(Next::CreateCase { .. })).then_some(save_prompt::CASE_REASON);
-        let path =
-            save_prompt::with_reason(reason, || cx.prompt_for_new_path(&directory, Some(&name)));
+        let directory = self.export_directory(cx);
+        let path = cx.prompt_for_new_path(&directory, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.lifecycle.end_prompt();
-                if let Ok(Ok(Some(mut path))) = result {
-                    if path.extension().is_none() {
-                        path.set_extension("md");
+                match result {
+                    Ok(Ok(Some(mut path))) => {
+                        if path.extension().is_none() {
+                            path.set_extension("md");
+                        }
+                        let source = this.session.source.as_deref();
+                        if !document::is_markdown(&path) {
+                            this.error = Some(
+                                "Export Markdown with a .md, .markdown, .mdown, or .txt extension."
+                                    .into(),
+                            );
+                        } else if source.is_some_and(|source| {
+                            mdoc_store::session_store::identity(source)
+                                == mdoc_store::session_store::identity(&path)
+                        }) {
+                            this.error = Some(
+                                "Choose a different path to preserve the imported source.".into(),
+                            );
+                        } else if let Err(error) =
+                            document::export(&path, this.editor.read(cx).text())
+                        {
+                            this.error = Some(format!("Could not export: {error}"));
+                        } else {
+                            this.error = None;
+                        }
                     }
-                    if !document::is_markdown(&path) {
-                        this.error = Some(
-                            "Save Markdown with a .md, .markdown, .mdown, or .txt extension."
-                                .into(),
-                        );
-                        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-                        cx.notify();
-                        this.resume_import(window, cx);
-                        return;
-                    }
-                    this.write(path, next, cx);
-                } else {
-                    if let Ok(Err(error)) = &result {
-                        this.error = Some(chooser_unavailable(error));
-                        cx.notify();
-                    }
-                    cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
+                    Ok(Err(error)) => this.error = Some(chooser_unavailable(&error)),
+                    _ => {}
                 }
+                cx.notify();
                 this.resume_import(window, cx);
             });
         })
         .detach();
     }
-
-    pub(crate) fn write(&mut self, path: PathBuf, next: Option<Next>, cx: &mut Context<Self>) {
-        // The window checks that no other tab has the file open, then calls
-        // `save_to`.
-        let path = session_store::identity(&path);
-        cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Write {
-            path,
-            next,
-        }));
-    }
-
-    /// Save to `path`, which no other tab has open, then go on with `next`.
-    pub(crate) fn save_to(
-        &mut self,
-        path: PathBuf,
-        next: Option<Next>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let old_directory = self.save_directory();
-        match self.session.save(path, self.editor.read(cx).text()) {
-            Ok(()) => {
-                self.lifecycle.saved();
-                cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Saved));
-                if old_directory != self.session.document.directory() {
-                    self.replace_images(self.session.document.directory(), window, cx);
-                }
-                self.error = None;
-                if let Some(next) = next {
-                    self.proceed(next, window, cx);
-                }
-            }
-            Err(error) => {
-                self.error = Some(format!("Could not save: {error}"));
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-            }
-        }
-        cx.notify();
-    }
 }
+
+/// How long typing pauses before a document saves itself.
+const AUTOSAVE_DELAY: std::time::Duration = std::time::Duration::from_millis(700);
 
 pub(crate) fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> ui::Control {
     ui::control(label, label, theme, true)
@@ -2629,9 +2568,11 @@ impl Render for DocumentView {
             .on_action(cx.listener(|_, _: &New, _, cx| {
                 cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::New))
             }))
-            .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
+            .on_action(cx.listener(|this, _: &Save, _, cx| this.save_now(cx)))
             .on_action(
-                cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)),
+                cx.listener(|this, _: &ExportMarkdown, window, cx| {
+                    this.export_markdown(window, cx)
+                }),
             )
             .on_action(cx.listener(|_, _: &Close, _, cx| {
                 cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))

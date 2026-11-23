@@ -1,5 +1,5 @@
 use crate::{
-    document_view::{Save, SaveAs},
+    document_view::{ExportMarkdown, Save},
     markdown_search::SearchInput,
     models,
     style::Theme,
@@ -215,7 +215,7 @@ pub(crate) fn block_document_commands<E: gpui::InteractiveElement>(element: E) -
         .on_action(|_: &NextTab, _, cx| cx.stop_propagation())
         .on_action(|_: &PreviousTab, _, cx| cx.stop_propagation())
         .on_action(|_: &Save, _, cx| cx.stop_propagation())
-        .on_action(|_: &SaveAs, _, cx| cx.stop_propagation())
+        .on_action(|_: &ExportMarkdown, _, cx| cx.stop_propagation())
         .on_action(|_: &Import, _, cx| cx.stop_propagation())
 }
 
@@ -830,7 +830,6 @@ impl Panel {
                 self.number_errors[1] = None;
             }
             Category::Spelling => self.draft.spelling = defaults.spelling,
-            Category::Cases => self.draft.cases = defaults.cases,
             Category::About => return,
         }
         if self.category == Category::General {

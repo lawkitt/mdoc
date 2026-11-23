@@ -66,7 +66,7 @@ impl Workspace {
                     .map(session_store::identity),
                 if !ready(v, cx) {
                     Some(None)
-                } else if v.lifecycle.dirty() {
+                } else if v.unsaved(cx) {
                     // The saved text is the reviewed one only while nothing
                     // is unsaved: keep the fingerprint of the last save.
                     None

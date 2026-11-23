@@ -13,6 +13,8 @@ pub struct Document {
     pub vault: Option<VaultId>,
     pub path: Option<PathBuf>,
     pub saved: String,
+    /// A Vault document's review as last saved with `saved`.
+    pub review: Option<mdoc_pii::saved::SavedReview>,
 }
 
 impl Document {
@@ -22,6 +24,7 @@ impl Document {
             vault: Some(id),
             path: None,
             saved,
+            review: None,
         }
     }
 
@@ -48,6 +51,7 @@ impl Document {
             vault: None,
             path: Some(path),
             saved,
+            review: None,
         })
     }
 
@@ -97,6 +101,11 @@ impl Document {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
+}
+
+/// Write `text` to `path` whole, replacing what is there: Export Markdown.
+pub fn export(path: &Path, text: &str) -> io::Result<()> {
+    Document::default().save(path.to_path_buf(), text)
 }
 
 pub fn is_markdown(path: &Path) -> bool {

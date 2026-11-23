@@ -998,8 +998,6 @@ impl DocumentView {
             } else {
                 return;
             }
-            let dirty = this.dirty(cx);
-            this.lifecycle.set_dirty(dirty);
             cx.notify();
         });
         self.preview.pending = Some(PendingPreview {

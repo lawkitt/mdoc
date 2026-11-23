@@ -347,6 +347,29 @@ pub(crate) fn bind_keys(cx: &mut App) {
 }
 
 impl DocumentView {
+    /// The review as its document keeps it; `None` while it holds nothing.
+    pub(crate) fn saved_review(&self) -> Option<mdoc_pii::saved::SavedReview> {
+        let saved = self.pii.review.save();
+        (saved != Review::default().save()).then_some(saved)
+    }
+
+    /// A document's saved review, back over the text it was saved with.
+    /// A review that no longer fits the text is dropped: the document then
+    /// opens as if never scanned.
+    pub(crate) fn restore_review(
+        &mut self,
+        saved: mdoc_pii::saved::SavedReview,
+        cx: &mut Context<Self>,
+    ) {
+        let editor = self.editor.read(cx);
+        let Ok(review) = Review::restore(saved, editor.text(), editor.history_id()) else {
+            return;
+        };
+        self.pii.review = review;
+        self.pii.reviewing = true;
+        self.review_changed(cx);
+    }
+
     pub(crate) fn reset_pii(&mut self, cx: &mut Context<Self>) {
         self.pii.cancel();
         self.pii.review = Review::default();

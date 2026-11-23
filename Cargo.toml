@@ -91,12 +91,12 @@ unicode-segmentation = "1"
 zeroize = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# The save dialog's reason (src/save_prompt.rs), the quit question
-# (src/system_quit.rs) and the menu bar shelf (src/menu_bar.rs).
+# The quit question (src/system_quit.rs) and the menu bar shelf
+# (src/menu_bar.rs).
 gpui_macos = { package = "gpui-pre-macos", version = "=0.3.12" }
 
 [target.'cfg(windows)'.dependencies]
-# The save dialog's reason (src/save_prompt.rs) and the headless renderer.
+# The headless renderer.
 gpui_windows = { package = "gpui-pre-windows", version = "=0.3.12" }
 # Single-instance launch (src/single_instance.rs) uses the pipe, session and
 # foreground features; src/crash.rs sets the error mode (Diagnostics_Debug).

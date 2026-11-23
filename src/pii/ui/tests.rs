@@ -229,7 +229,7 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some("keep clipboard")
         );
-        assert!(app.dirty(cx));
+        assert!(app.unsaved(cx));
         assert!(app.session.warning.is_some());
     });
     cx.run_until_parked();
@@ -242,9 +242,7 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
             Some(applied)
         );
         let result = app.editor.read(cx).text().to_owned();
-        app.session
-            .save(dir.path().join("prepared.md"), &result)
-            .unwrap();
+        mdoc_store::document::export(&dir.path().join("prepared.md"), &result).unwrap();
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
     });
     assert_eq!(std::fs::read_to_string(original).unwrap(), source);
@@ -454,7 +452,6 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
         assert_eq!(app.pii.review.remaining(), 0);
         // Nothing is left to review, so Apply closes the popup.
         assert!(app.pii.popup.is_none());
-        assert!(app.dirty(cx));
         assert!(app.pii.error.is_none());
     });
     // With no pending suggestions, another click must not add an undo step.

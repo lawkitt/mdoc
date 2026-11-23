@@ -384,7 +384,7 @@ fn fixture() -> Result<(String, Vec<mdoc_pii::Detection>)> {
 /// document, its review and its case.
 fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) -> Result<()> {
     let view = navigation::scenes(d, path)?;
-    review::scenes(d, &view, path, detections)?;
+    review::scenes(d, &view, detections)?;
     settings::scenes(d)?;
     shell::scenes(d)?;
     search::scenes(d, &view)?;
@@ -459,10 +459,12 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     let text_system = gpui_windows::headless_text_system().map_err(|e| e.to_string())?;
     let (text, detections) = fixture()?;
     let path = profile.path().join("Services Agreement.md");
-    std::fs::write(&path, text).map_err(|e| e.to_string())?;
     let mut screens = Vec::new();
     let mut focus_rings = Vec::new();
     for (theme, tag) in [(ThemeChoice::Light, "light"), (ThemeChoice::Dark, "dark")] {
+        // The fixture saves itself as scenes edit it: each theme starts
+        // from the public text.
+        std::fs::write(&path, &text).map_err(|e| e.to_string())?;
         let mut cx = HeadlessAppContext::with_platform(text_system.clone(), Arc::new(()), || {
             #[cfg(target_os = "macos")]
             {

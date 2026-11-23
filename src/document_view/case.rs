@@ -11,8 +11,9 @@ impl DocumentView {
     /// changes settle.
     pub(crate) fn schedule_case_save(&mut self, cx: &mut Context<Self>) {
         // Every mapping change passes here, in a case or not: the AI reply's
-        // aliases follow renumbering.
+        // aliases follow renumbering, and the document saves its review.
         self.follow_reply_aliases_soon(cx);
+        self.schedule_autosave(cx);
         let effect = self.case.mapping_changed();
         self.carry_out_case_link(effect, cx);
     }

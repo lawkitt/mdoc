@@ -37,7 +37,7 @@ fn source_only_manifest_restores_multiple_sources_and_missing_source_is_retryabl
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.retryable());
-        assert!(!view.read(cx).dirty(cx));
+        assert!(!view.read(cx).unsaved(cx));
     });
 }
 
