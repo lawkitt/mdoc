@@ -733,7 +733,7 @@ fn local_note(theme: crate::style::Theme) -> impl IntoElement {
         "this computer"
     };
     let detail = format!(
-        "Detection, conversion and saved cases run on {machine}. mdoc goes online only \
+        "Detection, conversion and Projects run on {machine}. mdoc goes online only \
          to check for updates and to download models you choose."
     );
     div()

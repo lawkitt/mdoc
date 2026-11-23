@@ -140,7 +140,7 @@ impl Panel {
             .border_color(p.border)
             .child(div().text_size(px(13.)).child("Always and never replace"))
             .child(div().text_size(px(11.)).text_color(p.header_muted).child(
-                "Scans in every document propose these wordings, or never do. A case's own \
+                "Scans in every document propose these wordings, or never do. A Project's own \
                  lists, from what you keep and mark in it, come first.",
             ));
         let Some(lists) = &self.user_lists.lists else {

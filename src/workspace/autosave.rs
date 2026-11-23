@@ -144,26 +144,7 @@ impl Workspace {
             let DocumentId::Vault(_) = document else {
                 return;
             };
-            let names = view.pii.review();
-            let write = Write::Vault {
-                title: view
-                    .session
-                    .follows_first_line
-                    .then(|| first_line_title(&text)),
-                markdown: text,
-                review: review.map(Box::new),
-                notes: view.session.source.is_some().then(|| Notes {
-                    warning: view.session.warning.clone(),
-                    left_out: view.session.left_out.clone(),
-                    password_protected: view.import.unlock().is_some(),
-                }),
-                names: Box::new(Names {
-                    identities: names.export_identities(),
-                    kept: names.kept_pairs(),
-                    not_names: names.not_a_name_pairs(),
-                }),
-                ready: super::shelf_source::ready(view, cx),
-            };
+            let write = vault_write(view, text, review, cx);
             self.queue_write(target, write, window, cx);
             return;
         }
@@ -293,48 +274,9 @@ impl Workspace {
                         VaultId::parse(&created.id).ok_or_else(|| "Invalid id.".to_string())?;
                     Ok(Wrote::Created(id, created.markdown, follows))
                 }
-                (
-                    Target::Document(DocumentId::Vault(id)),
-                    Job::Vault {
-                        markdown,
-                        title,
-                        review,
-                        notes,
-                        names,
-                        ready,
-                    },
-                ) => {
+                (Target::Document(DocumentId::Vault(id)), job @ Job::Vault { .. }) => {
                     let vault = vault.ok_or_else(no_vault)?;
-                    vault
-                        .update_document(id.as_str(), |document| {
-                            document.markdown = markdown;
-                            document.review = review.map(|review| *review);
-                            if let (Some(notes), Some(original)) =
-                                (notes, document.original.as_mut())
-                            {
-                                original.info.import_warning = notes.warning;
-                                original.info.left_out = notes.left_out;
-                                original.info.password_protected |= notes.password_protected;
-                            }
-                            if let Some(title) = title {
-                                document.title = title;
-                            }
-                            // In a Project its names are the Project's.
-                            if document.project.is_none() {
-                                super::projects_ui::fold(
-                                    &mut document.mapping,
-                                    &names.identities,
-                                    &names.kept,
-                                    &names.not_names,
-                                    id.as_str(),
-                                    |_| false,
-                                );
-                            }
-                            document.scanned |= ready;
-                            document.set_ready(ready);
-                        })
-                        .map(|_| Wrote::Saved)
-                        .map_err(|e| e.to_string())
+                    save_vault(&vault, &id, job).map(|()| Wrote::Saved)
                 }
                 (Target::Project(id), Job::Project(project)) => {
                     let vault = vault.ok_or_else(no_vault)?;
@@ -431,6 +373,8 @@ impl Workspace {
                     crate::menu_bar::reveal_if_hidden(window, cx);
                 }
                 if let Target::Project(id) = &target {
+                    // Written again by the next write of it, or the next quit.
+                    self.project_ui.mark_unwritten(id);
                     let name =
                         (self.projects.project(id)).map_or_else(String::new, |p| p.name.clone());
                     self.notices
@@ -474,6 +418,63 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Write tab `id`'s Vault document as it shows now, at once and on this
+    /// thread: a move or delete at the head of the queue reads it next.
+    /// `Ok` when there is nothing to write.
+    pub(super) fn write_tab_now(
+        &mut self,
+        id: u64,
+        vault: &mdoc_vault::Vault,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
+            return Ok(());
+        };
+        let (document, write) = {
+            let view = view.read(cx);
+            let Some(DocumentId::Vault(document)) = view.session.document.id() else {
+                return Ok(());
+            };
+            if view.lifecycle.loading() || view.lifecycle.source_only() {
+                return Ok(());
+            }
+            let text = view.editor.read(cx).text().to_string();
+            let review = view.saved_review();
+            (document, vault_write(view, text, review, cx))
+        };
+        let Write::Vault {
+            markdown,
+            title,
+            review,
+            notes,
+            names,
+            ready,
+        } = write
+        else {
+            return Ok(());
+        };
+        let saved_review = review.as_deref().cloned();
+        let job = Job::Vault {
+            markdown: markdown.clone(),
+            title: title.clone(),
+            review,
+            notes,
+            names,
+            ready,
+        };
+        save_vault(vault, &document, job)?;
+        view.update(cx, |view, cx| {
+            view.session.document.saved = markdown;
+            view.session.document.review = saved_review;
+            view.session.write_due = false;
+            if let Some(title) = title {
+                view.session.name = Some(title);
+            }
+            cx.notify();
+        });
+        Ok(())
+    }
+
     /// A write of tab `id`'s document, or of the document it is becoming,
     /// runs or waits.
     pub(super) fn write_pending_for(&self, id: u64, cx: &gpui::App) -> bool {
@@ -484,6 +485,78 @@ impl Workspace {
             || document
                 .is_some_and(|document| self.document_writer.has(&Target::Document(document)))
     }
+}
+
+/// The autosave of `view`'s Vault document showing `text`.
+fn vault_write(
+    view: &crate::document_view::DocumentView,
+    text: String,
+    review: Option<SavedReview>,
+    cx: &gpui::App,
+) -> Write {
+    let names = view.pii.review();
+    Write::Vault {
+        title: view
+            .session
+            .follows_first_line
+            .then(|| first_line_title(&text)),
+        markdown: text,
+        review: review.map(Box::new),
+        notes: view.session.source.is_some().then(|| Notes {
+            warning: view.session.warning.clone(),
+            left_out: view.session.left_out.clone(),
+            password_protected: view.import.unlock().is_some(),
+        }),
+        names: Box::new(Names {
+            identities: names.export_identities(),
+            kept: names.kept_pairs(),
+            not_names: names.not_a_name_pairs(),
+        }),
+        ready: super::shelf_source::ready(view, cx),
+    }
+}
+
+/// Save `job` (a `Job::Vault`) into document `id`.
+fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, job: Job) -> Result<(), String> {
+    let Job::Vault {
+        markdown,
+        title,
+        review,
+        notes,
+        names,
+        ready,
+    } = job
+    else {
+        return Ok(());
+    };
+    vault
+        .update_document(id.as_str(), |document| {
+            document.markdown = markdown;
+            document.review = review.map(|review| *review);
+            if let (Some(notes), Some(original)) = (notes, document.original.as_mut()) {
+                original.info.import_warning = notes.warning;
+                original.info.left_out = notes.left_out;
+                original.info.password_protected |= notes.password_protected;
+            }
+            if let Some(title) = title {
+                document.title = title;
+            }
+            // In a Project its names are the Project's.
+            if document.project.is_none() {
+                super::projects_ui::fold(
+                    &mut document.mapping,
+                    &names.identities,
+                    &names.kept,
+                    &names.not_names,
+                    id.as_str(),
+                    |_| false,
+                );
+            }
+            document.scanned |= ready;
+            document.set_ready(ready);
+        })
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

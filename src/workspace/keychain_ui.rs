@@ -426,7 +426,7 @@ impl Workspace {
                                     .gap_1()
                                     .text_size(px(13.))
                                     .child(line(
-                                        "Documents and saved cases are encrypted, and the key lives in your \
+                                        "Documents and Projects are encrypted, and the key lives in your \
                                          Mac’s Keychain.",
                                     ))
                                     .child(line(

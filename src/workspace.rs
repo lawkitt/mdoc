@@ -1153,6 +1153,7 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
+        let loading = document.vault().cloned();
         let task: gpui::Task<Result<Loaded, String>> = match document {
             // Files open only as Vault documents.
             DocumentId::File(_) => return,
@@ -1183,6 +1184,13 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                // A move's reload ends, done or with its tab gone: autosaves
+                // resume with the moved text.
+                if let Some(document) = &loading
+                    && this.reloading.remove(document)
+                {
+                    this.moving.remove(document);
+                }
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.
                     if let Some(dir) = this.viewing_dir(id) {
@@ -1192,13 +1200,6 @@ impl Workspace {
                 }
                 if let Ok(loaded) = &result {
                     this.tabs.set_document(id, loaded.document.id());
-                }
-                // A move's reload: its autosaves resume with the moved text.
-                if let Some(DocumentId::Vault(document)) =
-                    this.tabs.get(id).and_then(|t| t.document())
-                    && this.reloading.remove(document)
-                {
-                    this.moving.remove(document);
                 }
                 // A dialog keeps the keyboard while the document loads behind it.
                 let dialog = this.dialog_up(window);

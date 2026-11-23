@@ -2000,7 +2000,7 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
         "this computer"
     };
     let detail = format!(
-        "tooltip-Detection, conversion and saved cases run on {machine}. mdoc goes online \
+        "tooltip-Detection, conversion and Projects run on {machine}. mdoc goes online \
          only to check for updates and to download models you choose."
     );
     let bubble = cx

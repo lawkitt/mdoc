@@ -158,7 +158,7 @@ impl DocumentView {
                     )
                     .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
                     .child(section("Project"))
-                    .child(match case {
+                    .child(match &case {
                         Some(link) => ui::control("share-project-page", "", theme, true)
                             .when(cfg!(test), |v| v.debug_selector(|| "share-project-page".into()))
                             .aria_label(format!("Open Project {}", link.name))
@@ -170,27 +170,24 @@ impl DocumentView {
                             .child(div().flex_1().truncate().child(link.name.clone()))
                             .into_any_element(),
                         None if !movable => note("Kept with the document, encrypted on this computer.".into()).into_any_element(),
-                        None => div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(note("Unfiled. Its names are kept with it, encrypted on this computer; in a Project, its documents share them.".into()))
-                            // A row, so the button keeps its label width like
-                            // Copy Markdown instead of stretching into a field.
-                            .child(
-                                div().flex().child(
-                                    ui::primary_button("share-new-project", "Move to New Project", theme, true)
-                                        .when(cfg!(test), |v| v.debug_selector(|| "share-new-project".into()))
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            // The button leaves with the click; the panel
-                                            // stays in every view, so shortcuts keep a
-                                            // focused target (#79).
-                                            window.focus(&this.pii.mapping.focus, cx);
-                                            cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::MoveToNew));
-                                        })),
-                                ),
-                            )
-                            .into_any_element(),
+                        None => note("Unfiled. Its names are kept with it, encrypted on this computer; in a Project, its documents share them.".into()).into_any_element(),
+                    })
+                    // A row, so the button keeps its label width like Copy
+                    // Markdown instead of stretching into a field.
+                    .when(movable, |v| {
+                        v.child(
+                            div().flex().child(
+                                ui::primary_button("share-new-project", "Move to New Project", theme, true)
+                                    .when(cfg!(test), |v| v.debug_selector(|| "share-new-project".into()))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        // The button leaves with the click; the panel
+                                        // stays in every view, so shortcuts keep a
+                                        // focused target (#79).
+                                        window.focus(&this.pii.mapping.focus, cx);
+                                        cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::MoveToNew));
+                                    })),
+                            ),
+                        )
                     }),
             )
             .into_any_element()

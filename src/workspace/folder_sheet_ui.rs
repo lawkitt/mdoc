@@ -297,13 +297,14 @@ impl Workspace {
         };
         // Open Unfiled files move in; the others are imported into it.
         for path in sheet.ticked() {
-            if let Some(tab) = self.open_tab_for(&path, cx)
-                && self
-                    .tabs
-                    .get(tab)
-                    .is_some_and(|tab| self.sidebar_project_link(tab, cx).is_none())
-            {
-                self.move_tab(tab, Some(project.clone()), window, cx);
+            let Some(tab) = self.open_tab_for(&path, cx) else {
+                continue;
+            };
+            let document = (self.tabs.get(tab))
+                .filter(|tab| self.sidebar_project_link(tab, cx).is_none())
+                .and_then(|tab| tab.document().and_then(|d| d.vault().cloned()));
+            if let Some(document) = document {
+                self.move_document(document, Some(project.clone()), window, cx);
             }
         }
         self.open_ticked(&sheet, sheet.at(), Some(project), window, cx);

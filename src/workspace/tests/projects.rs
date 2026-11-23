@@ -1054,3 +1054,151 @@ fn project_of(
 ) -> mdoc_vault::Project {
     project(tabs, cx, id)
 }
+
+#[gpui::test]
+fn a_move_gives_the_projects_open_members_its_names_at_once(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova signed.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, first);
+    let second = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    move_tab(&tabs, cx, second, Some(&project));
+    // The open member knows Boris as PERSON_2 before any fold: it can't
+    // give that alias to someone else.
+    let first_view = view_of(&tabs, cx, first);
+    cx.update(|_, cx| {
+        let review = first_view.read(cx).pii.review();
+        let boris = review.identity_by_alias("PERSON_2").unwrap();
+        assert_eq!(review.identity(boris).unwrap().alias, "PERSON_2");
+    });
+    first_view.update(cx, |view, cx| {
+        let id = view.pii.review_mut().new_identity(Person);
+        assert_ne!(view.pii.review().identity(id).unwrap().alias, "PERSON_2");
+        let _ = cx;
+    });
+}
+
+#[gpui::test]
+fn text_typed_while_a_move_waits_moves_with_it(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova signed.",
+        &[("Anna Petrova", Person)],
+    );
+    let view = view_of(&tabs, cx, tab);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    // The move queues behind the tab's own write; typing goes on meanwhile.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_to_new_project(tab, window, cx)
+    });
+    cx.simulate_input(" Later.");
+    cx.run_until_parked();
+    let text = text_of(&view, cx);
+    assert!(text.contains(" Later."), "{text}");
+    assert_eq!(
+        stored(&tabs, cx, tab).markdown,
+        text,
+        "the typed text moved"
+    );
+    assert!(stored(&tabs, cx, tab).project.is_some());
+}
+
+#[gpui::test]
+fn a_delete_stops_when_a_move_changed_the_projects_documents(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova signed.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, first);
+    let second = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    let id = cx.update(|_, cx| tabs.read(cx).tab_document(second, cx).unwrap());
+    // Confirmed with one document; a move queued first brings a second.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_tab(second, Some(project.clone()), window, cx);
+        tabs.forget_project(&project, mdoc_vault::ProjectDocuments::Delete, window, cx);
+    });
+    cx.run_until_parked();
+    let vault = vault(&tabs, cx);
+    assert!(vault.project(&project).is_ok(), "nothing was deleted");
+    assert!(vault.document(id.as_str()).is_ok());
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).tabs.contains(first) && tabs.read(cx).tabs.contains(second));
+        let notice = tabs.read(cx).notices.message().unwrap();
+        assert!(
+            notice.starts_with("The Project's documents changed"),
+            "{notice}"
+        );
+    });
+}
+
+#[gpui::test]
+fn the_project_page_moves_a_document_whose_tab_never_loaded(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("vault");
+    let (project, document) = saved_project(&mdoc_vault::Vault::open(&root, &[3; 32]).unwrap());
+    // Its tab is restored behind another and never shown.
+    let mut session = session_of(&document);
+    session.tabs.insert(
+        0,
+        TabRecord {
+            blank: true,
+            name: Some("Untitled.md".into()),
+            ..TabRecord::default()
+        },
+    );
+    session.active = 0;
+    let (tabs, cx) = boot_on_vault(cx, session, &root);
+    let lazy = cx.update(|_, cx| tabs.read(cx).tabs.last().unwrap().id());
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.get(lazy).unwrap().view().is_none()));
+    let vault_id = mdoc_store::document_id::VaultId::parse(&document).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_project(&project, window, cx);
+        tabs.remove_project_member(&project, vault_id, window, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(vault(&tabs, cx).document(&document).unwrap().project, None);
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(lazy, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(view.read(cx).project.link().is_none());
+        assert_eq!(view.read(cx).pii.review().applied().len(), 1);
+    });
+}

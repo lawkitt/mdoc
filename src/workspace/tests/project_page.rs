@@ -522,6 +522,8 @@ fn share_and_sidebar_header_open_the_same_page(cx: &mut TestAppContext) {
         }
     });
     draw(cx);
+    // A member can move to a new Project from Share too.
+    assert!(cx.debug_bounds("share-new-project").is_some());
     let share = cx.debug_bounds("share-project-page").unwrap();
     cx.simulate_click(share.center(), Default::default());
     cx.run_until_parked();

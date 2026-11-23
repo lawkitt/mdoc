@@ -77,6 +77,13 @@ pub(super) struct ProjectsState {
 
 type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
 
+impl ProjectsState {
+    /// Project `id`'s last write failed: queue it again with the next.
+    pub(super) fn mark_unwritten(&mut self, id: &str) {
+        self.unwritten.insert(id.to_string());
+    }
+}
+
 /// What a move shows in its toast, and whether it can be undone.
 enum Moving {
     Into,
@@ -282,8 +289,9 @@ impl Workspace {
         self.tabs.get(id)?.view().cloned()
     }
 
-    /// Whether tab `id` can move: a loaded Vault document whose text is
-    /// written, and no move of it waits.
+    /// Whether tab `id` can move: a loaded Vault document, converted, and
+    /// no move of it waits. An unconverted source keeps its document as
+    /// admitted until it converts.
     pub(super) fn can_move(&self, id: u64, cx: &App) -> bool {
         self.vault.vault().is_some()
             && self
@@ -291,7 +299,7 @@ impl Workspace {
                 .is_some_and(|document| !self.moving.contains(&document))
             && self.tab_view(id).is_some_and(|view| {
                 let view = view.read(cx);
-                view.lifecycle.ready() && !view.lifecycle.loading()
+                view.lifecycle.ready() && !view.lifecycle.loading() && !view.lifecycle.source_only()
             })
     }
 
@@ -625,7 +633,11 @@ impl Workspace {
         if self.moving.contains(&document) {
             return;
         }
-        if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx) {
+        // A tab showing it moves it; a tab not loaded yet loads the moved
+        // document when first shown.
+        if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx)
+            && self.tab_view(tab).is_some()
+        {
             self.move_tab(tab, to, window, cx);
             return;
         }
@@ -717,6 +729,21 @@ impl Workspace {
             return;
         };
         let id = document.as_str();
+        // What its tab shows now, typed while the move waited included, is
+        // what moves; if it can't be written, nothing moves.
+        let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx);
+        if let Some(tab) = tab
+            && let Err(error) = self.write_tab_now(tab, &vault, cx)
+        {
+            self.moving.remove(&document);
+            let title =
+                (self.tab_view(tab)).map_or_else(String::new, |v| v.read(cx).display_name());
+            self.notices.post(format!(
+                "Could not move “{title}”: its text could not be saved. {error}"
+            ));
+            cx.notify();
+            return;
+        }
         let from = self.project_of(id);
         let before = vault.document(id).ok();
         let title = before.as_ref().map(|d| d.title.clone()).unwrap_or_default();
@@ -783,6 +810,7 @@ impl Workspace {
                     count_renumbered(&before.markdown, &names, &aliases)
                 });
                 self.took_move(&moved);
+                self.sync_members(&moved, &document, cx);
                 let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx);
                 match tab {
                     Some(tab) => {
@@ -828,6 +856,36 @@ impl Workspace {
     fn took_move(&mut self, moved: &Moved) {
         for project in moved.project.iter().chain(&moved.left) {
             self.projects.moved(project.clone());
+        }
+    }
+
+    /// The other open members of the Projects a move wrote take their names
+    /// as they are now: a name the move brought is known, and its alias is
+    /// taken, before any of them can hand that alias to someone else.
+    fn sync_members(&mut self, moved: &Moved, document: &VaultId, cx: &mut Context<Self>) {
+        for project in moved.project.iter().chain(&moved.left) {
+            let Some(project) = self.projects.project(&project.id) else {
+                continue;
+            };
+            let exported = project.mapping.exported();
+            let reserved = project.mapping.reserved_aliases();
+            for tab in self.tabs.iter() {
+                let Some(view) = tab.view() else {
+                    continue;
+                };
+                let member = view.read(cx).project.is(&project.id)
+                    && !view
+                        .read(cx)
+                        .session
+                        .document
+                        .is(&DocumentId::Vault(document.clone()));
+                if member {
+                    view.update(cx, |view, cx| {
+                        view.pii.review_mut().reserve_aliases(&reserved);
+                        view.sync_project_identities(&[], &exported, cx);
+                    });
+                }
+            }
         }
     }
 
@@ -1070,6 +1128,25 @@ impl Workspace {
         let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
+        // Only what was confirmed is deleted: a move since that changed the
+        // Project's documents stops it.
+        let mut now: Vec<String> = (vault.documents_in(Some(&project_id)).into_iter())
+            .map(|summary| summary.id)
+            .collect();
+        let mut confirmed: Vec<String> = members.iter().map(|m| m.as_str().to_string()).collect();
+        now.sort();
+        confirmed.sort();
+        if now != confirmed {
+            for member in &members {
+                self.moving.remove(member);
+            }
+            self.notices.post(
+                "The Project's documents changed before it was deleted, so nothing was \
+                 deleted. Delete it again to choose for them as they are now.",
+            );
+            cx.notify();
+            return;
+        }
         let result = vault.delete_project(&project_id, documents);
         let tabs: Vec<(u64, VaultId)> = (members.iter())
             .filter_map(|member| {
