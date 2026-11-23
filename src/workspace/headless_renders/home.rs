@@ -114,20 +114,26 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     Ok(())
 }
 
-/// Run every pending autosave to its end.
+/// Write every live view's unsaved text now and wait, for at most ten
+/// seconds of real time, until no write is queued or running. No clock is
+/// advanced: a write never waits on a timer once queued.
 fn flush(d: &mut Driver) -> Result<()> {
-    for _ in 0..200 {
-        d.cx.advance_clock(Duration::from_secs(1));
-        d.settle()?;
-        let pending = d.change(|w, _, cx| {
+    d.change(|w, window, cx| w.autosave_all(window, cx))?;
+    let mut pending = Vec::new();
+    for _ in 0..100 {
+        d.cx.run_until_parked();
+        pending = d.change(|w, _, cx| {
             let ids: Vec<u64> = w.tabs.iter().map(|tab| tab.id()).collect();
             ids.into_iter()
-                .any(|id| w.unsaved.contains(&id) || w.write_pending_for(id, cx))
+                .filter(|id| w.write_pending_for(*id, cx))
+                .collect::<Vec<_>>()
         })?;
-        if !pending {
+        if pending.is_empty() {
             return Ok(());
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(100));
     }
-    Err("autosaves did not finish".into())
+    Err(format!(
+        "home scenes: writes of live views {pending:?} still pending after 10 s"
+    ))
 }
