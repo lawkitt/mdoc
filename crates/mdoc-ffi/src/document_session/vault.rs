@@ -331,7 +331,7 @@ impl DocumentSession {
     }
 
     /// This phone finds no names: no name finder fits it, or none is
-    /// installed yet (#1091 Q4, provisional). Then a Vault save with no
+    /// installed yet (#1091 Q4: the maintainer chose this). Then a Vault save with no
     /// proposals left counts as reviewed by hand and records the document
     /// as Ready, so Copy for AI and Share (`Vault::text_for_ai`) take it.
     /// Its session's own phase is unchanged.
@@ -577,7 +577,7 @@ impl Pending {
     /// Whether the record reads as scanned, and whether it is Ready
     /// (scanned, no proposals left, no discovery owed). On a phone that
     /// finds no names, a review with no proposals left counts as scanned
-    /// by hand (#1091 Q4, provisional): this is the one place that decides.
+    /// by hand (#1091 Q4: the maintainer chose this): this is the one place that decides.
     fn reviewed(&self) -> (bool, bool) {
         let settled = self.counts.proposed == 0 && !self.awaiting_discovery;
         let scanned = self.scanned || (self.by_hand && settled);

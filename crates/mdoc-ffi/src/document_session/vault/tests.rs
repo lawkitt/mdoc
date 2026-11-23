@@ -809,7 +809,7 @@ fn a_document_awaiting_discovery_is_not_saved_ready() {
 /// On a phone that finds no names, a document reviewed by hand (a name
 /// marked and replaced, never scanned) saves Ready once no proposals are
 /// left, and leaves as Copy for AI's text; with proposals left, or on a
-/// phone that finds names, it is not reviewed (#1091 Q4, provisional).
+/// phone that finds names, it is not reviewed (#1091 Q4: the maintainer chose this).
 #[test]
 fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
     let scratch = Scratch::new();
