@@ -400,20 +400,6 @@ not coherent between them and `main` stays releasable; item 23 lands them.
    byte, a truncated file, swapped chunks and a file placed under another
    document all fail to open; a second import of the same bytes finds the
    first.
-7. **[Mobile] The mobile core stores documents and Projects through the
-   Vault.** *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* New
-   exported objects beside the old ones, so both apps keep building until they
-   switch: documents and Projects by id, Unfiled intake, move, rename, delete,
-   summaries from the manifest, the review saved as item 2 defines, originals
-   as item 3 does. *Blocked by:* items 2, 3, 4, 6. *Done when:* the core's
-   tests and the parity goldens pass through the new objects, and the old
-   objects still pass theirs.
-8. **[Mobile] The mobile core saves and restores replies through the Vault.**
-   *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Saved replies
-   for a Project or an Unfiled document, restored through their bindings, and
-   the Restore extension's path: a handle that reads a Project and writes only
-   a reply. *Blocked by:* items 5, 7. *Done when:* a reply saved through a
-   second handle shows in the first's list and restores.
 9. **[iOS] iOS cuts over to the Vault with today's screens.** *From
    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The app uses the new
    objects. "Case" reads "Project"; a scan, file, paste or new document lands
