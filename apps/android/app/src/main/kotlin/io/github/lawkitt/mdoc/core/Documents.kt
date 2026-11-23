@@ -393,11 +393,13 @@ class Documents(
             if (source.kind == SourceKind.Scan) core { ffi.setSourceKind(DocumentSourceKind.SCAN) }
             // Started in a Project: it joins it before its first save.
             if (chosenProject != null && vaultId == null) core { ffi.joinProject(vault, chosenProject) }
+            // The import stays to read again until the Vault holds it: a
+            // failed save leaves Recognize offered, not an empty document.
+            save()
             synchronized(this) {
                 this.source = null
                 ocrStarted = false
             }
-            save()
             return snapshot()
         }
 
@@ -412,6 +414,9 @@ class Documents(
             if (models?.snapshot()?.needsTiming == true) {
                 observer.stage(JobStage.SCANNING)
                 if (models.timeDetector(observer).belowFloor == FloorReason.SPEED) {
+                    // Below the floor now: saved again, its names decided by
+                    // hand are Ready (#1091 Q4 (b)).
+                    if (vaultId != null) save()
                     throw AppError.Failed("The name finder is too slow on this phone. Select text to mark a name.")
                 }
             }
@@ -487,9 +492,8 @@ class Documents(
             return snapshot()
         }
 
-        /** Remove reply: the reply the pane shows is deleted from the Vault. */
-        fun clearReply(): DocumentSnapshot {
-            val shown = snapshot().reply?.id ?: return snapshot()
+        /** Remove reply: `shown`, the saved reply the pane showed, is deleted from the Vault. */
+        fun clearReply(shown: String): DocumentSnapshot {
             core { vault.deleteReply(shown) }
             return snapshot()
         }
@@ -755,8 +759,10 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
     fun remove(id: DocumentId) {
         val entries = load()
         val entry = entries[id.raw] ?: return
-        entry.source.file?.let(owner)?.deleteRecursively()
+        // Retired first: a stop in between leaves files no entry owns,
+        // which the next start clears, never an entry without its files.
         save(entries - id.raw)
+        entry.source.file?.let(owner)?.deleteRecursively()
     }
 
     private fun load(): Map<String, Entry> {

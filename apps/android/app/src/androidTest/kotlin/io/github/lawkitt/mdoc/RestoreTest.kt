@@ -101,6 +101,23 @@ class RestoreTest {
         assertEquals("Maya Bennett signed.", session.snapshot().reply?.restored?.text)
     }
 
+    /** Remove reply deletes the reply the pane showed, never one Restore saved since. */
+    @Test
+    fun removeReplyDeletesTheReplyShown() {
+        val session = shared("Remove ${System.nanoTime()}")
+        val shown = checkNotNull(session.restoreReply("First: PERSON_1.").reply)
+        assertEquals("First: Maya Bennett.", shown.restored.text)
+        // Restore with mdoc saves another while the pane still shows the first.
+        val replies = app.core.replies
+        val place = checkNotNull(replies.places().let { it.of(it.default) })
+        replies.save("Second: PERSON_1.", place)
+        app.core.documents.refresh()
+
+        val after = session.clearReply(checkNotNull(shown.id))
+        assertEquals("Second: Maya Bennett.", after.reply?.restored?.text)
+        assertEquals(1, app.core.vault.documentReplies(checkNotNull(session.vaultId)).size)
+    }
+
     @Test
     fun aSecondReplyReplacesTheFirst() {
         shared("Second ${System.nanoTime()}")

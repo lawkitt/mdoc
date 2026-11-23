@@ -218,7 +218,8 @@ class DocumentViewModel(
 
     fun showReply(show: Boolean) = mutable.update { it.copy(showsReply = show) }
 
-    fun clearReply() = change { mutable.update { it.copy(snapshot = session.clearReply(), showsReply = false) } }
+    /** Remove reply: the one shown, by its id, never a newer one saved meanwhile. */
+    fun clearReply(shown: String) = change { mutable.update { it.copy(snapshot = session.clearReply(shown), showsReply = false) } }
 
     fun dismissError() = mutable.update { it.copy(error = null) }
 
@@ -226,9 +227,13 @@ class DocumentViewModel(
         runCatching { session.snapshot() }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
     }
 
-    /** Back on screen: a reply Restore with mdoc saved meanwhile comes in. */
+    /**
+     * Back on screen: a reply Restore with mdoc saved meanwhile comes in,
+     * whether or not Home's refresh took it in first.
+     */
     fun resumed() = viewModelScope.launch(Dispatchers.IO) {
-        if (documents.refresh()) refresh()
+        documents.refresh()
+        runCatching { session.snapshot() }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
     }
 
     /** The document closed: its decrypted original goes (#1091 Decision 24). */

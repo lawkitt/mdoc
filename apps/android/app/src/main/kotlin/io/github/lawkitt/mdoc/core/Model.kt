@@ -161,16 +161,35 @@ sealed interface OriginalData {
 
     /** The Vault's original, read by [open]; [close] drops what it decrypted. */
     class Stored(private val decrypt: () -> Decrypted, private val remove: () -> Unit) : OriginalData {
+        /** One decrypt at a time; [close] never waits for it. */
+        private val decrypting = Any()
         private var decrypted: Decrypted? = null
 
-        @Synchronized
-        fun open(): Decrypted = decrypted ?: decrypt().also { decrypted = it }
+        /** Counts closes: a decrypt that a close overtook keeps nothing. */
+        private var closes = 0
 
-        /** The document closed: its bytes go, and its viewing copy. */
-        @Synchronized
+        fun open(): Decrypted = synchronized(decrypting) {
+            synchronized(this) { decrypted }?.let { return it }
+            val before = synchronized(this) { closes }
+            val fresh = decrypt()
+            synchronized(this) {
+                if (closes == before) {
+                    decrypted = fresh
+                    return fresh
+                }
+            }
+            (fresh as? Decrypted.Memory)?.bytes?.fill(0)
+            remove()
+            throw IllegalStateException("The document closed.")
+        }
+
+        /** The document closed: its bytes go, and its viewing copy, even while a decrypt runs. */
         fun close() {
-            (decrypted as? Decrypted.Memory)?.bytes?.fill(0)
-            decrypted = null
+            val dropped = synchronized(this) {
+                closes++
+                decrypted.also { decrypted = null }
+            }
+            (dropped as? Decrypted.Memory)?.bytes?.fill(0)
             remove()
         }
     }

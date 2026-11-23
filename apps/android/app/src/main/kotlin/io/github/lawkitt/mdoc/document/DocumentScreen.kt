@@ -368,7 +368,7 @@ fun DocumentScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    pane == Pane.Reply -> Readable { ReplyPane(snapshot.reply!!, onRemove = model::clearReply) }
+                    pane == Pane.Reply -> Readable { ReplyPane(snapshot.reply!!, onRemove = { snapshot.reply.id?.let(model::clearReply) }) }
                     pane == Pane.Original -> OriginalView(snapshot.original, Modifier.fillMaxSize())
                     wide && hasOriginal -> Row(Modifier.fillMaxSize()) {
                         text(Modifier.weight(1f).fillMaxHeight())
