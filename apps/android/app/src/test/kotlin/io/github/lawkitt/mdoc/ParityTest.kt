@@ -10,10 +10,12 @@ import uniffi.mdoc_ffi.Candidate
 import uniffi.mdoc_ffi.Category
 import uniffi.mdoc_ffi.DocumentSession
 import uniffi.mdoc_ffi.ImportOptions
-import uniffi.mdoc_ffi.MdocLibrary
 import uniffi.mdoc_ffi.MentionState
+import uniffi.mdoc_ffi.ReplyVault
 import uniffi.mdoc_ffi.ReviewSnapshot
+import uniffi.mdoc_ffi.SharedFrom
 import uniffi.mdoc_ffi.TextRange
+import uniffi.mdoc_ffi.Vault
 
 /**
  * The core's parity tests on the JVM: the core called through
@@ -120,25 +122,31 @@ class ParityTest {
     }
 
     /**
-     * The Restore with mdoc path: a saved document's case restores a reply
-     * exactly as the document's session does.
+     * The Restore with mdoc path on the Vault: a reply restored through the
+     * Restore handle with a saved document's names is the reply its session
+     * restores, and the text for AI comes from the Vault as the session
+     * copies it.
      */
     @Test
-    fun libraryRestoreMatchesTheSession() {
+    fun vaultRestoreMatchesTheSession() {
         val root = Files.createTempDirectory("mdoc-parity").toFile()
+        val key = ByteArray(32) { 42 }
         try {
-            MdocLibrary(root.path, ByteArray(32) { 42 }).use { library ->
+            Vault.open(root.path, key).use { vault ->
                 val markdown = read("docs/product-media/Settlement agreement.md")
                 DocumentSession().use { session ->
                     session.importText(markdown, "Settlement agreement")
                     session.addCandidates(candidates(markdown, identities()))
                     session.replaceAll()
-                    val saved = session.save(library)
+                    val saved = session.saveIntoVault(vault)
                     val copied = session.copyForAi()
+                    assertEquals(copied, vault.textForAi(saved.id))
                     val body = copied.indexOf("\n\n---\n\n") + "\n\n---\n\n".length
                     val reply = "Summary:\n\n" + copied.substring(body)
                     val inSession = session.restoreReply(reply)
-                    val inShareTarget = library.restore(saved.case.id, reply)
+                    val inShareTarget = ReplyVault.open(root.path, key).use { handle ->
+                        handle.restoreText(SharedFrom.Document(saved.id), reply)
+                    }
                     assertEquals(inSession.text, inShareTarget.text)
                     // "Maya" alone joined her full name, so it restores as that.
                     val expected = markdown.replaceFirst("Maya brought", "Maya Bennett brought")

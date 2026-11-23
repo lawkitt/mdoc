@@ -93,6 +93,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.Candidate
@@ -149,6 +150,10 @@ fun DocumentScreen(
     }
     // The job's result arrives as a new snapshot when it ends.
     LaunchedEffect(job) { if (job == null) model.refresh() }
+    LifecycleResumeEffect(model) {
+        model.resumed()
+        onPauseOrDispose {}
+    }
 
     Scaffold(
         modifier = modifier,
@@ -408,7 +413,7 @@ fun DocumentScreen(
         )
     }
     if (state.showsReplySheet) {
-        ReplySheet(snapshot.caseName, onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
+        ReplySheet(snapshot.projectName, onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
     }
     state.error?.let { message ->
         AlertDialog(
@@ -745,17 +750,17 @@ private fun IdentitiesSheet(
     }
 }
 
-/** Paste AI reply: restored with this document's case and kept as its reply. */
+/** Paste AI reply: restored with this document's names and saved in the Vault as a reply to it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReplySheet(caseName: String?, onRestore: (String) -> Unit, onDismiss: () -> Unit) {
+private fun ReplySheet(projectName: String?, onRestore: (String) -> Unit, onDismiss: () -> Unit) {
     var reply by rememberSaveable { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp, 0.dp, 24.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.paste_ai_reply), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            // Which names come back, as on iOS: the case's, never another's.
+            // Which names come back, as on iOS: its Project's, or its own while Unfiled.
             Text(
-                caseName?.let { stringResource(R.string.puts_back_case, it) } ?: stringResource(R.string.puts_back_this_case),
+                projectName?.let { stringResource(R.string.puts_back_project, it) } ?: stringResource(R.string.puts_back_this_document),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 6,

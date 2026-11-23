@@ -9,7 +9,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
@@ -41,7 +40,7 @@ class ReviewFlowTest {
 
     @Before
     fun seed() {
-        val session = app.core.documents.importDocument(ImportSource.Text(letter), title, CaseChoice.New(title))
+        val session = app.core.documents.importDocument(ImportSource.Text(letter), title)
         session.recognize(object : JobObserver {
             override fun stage(stage: JobStage) = Unit
 

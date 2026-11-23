@@ -8,7 +8,6 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
 import org.junit.Assert.assertTrue
@@ -32,7 +31,7 @@ class LabelsTest {
     @Test
     fun everyControlIsNamed() {
         val title = "Labels ${System.nanoTime()}"
-        val session = core.app.core.documents.importDocument(ImportSource.Text("Dear Maya Bennett."), title, CaseChoice.New(title))
+        val session = core.app.core.documents.importDocument(ImportSource.Text("Dear Maya Bennett."), title)
         session.recognize(object : JobObserver {
             override fun stage(stage: JobStage) = Unit
 

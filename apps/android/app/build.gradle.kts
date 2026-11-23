@@ -17,6 +17,8 @@ val copyTestAssets = tasks.register<Copy>("copyTestAssets") {
     from(repo.resolve("tests/fixtures/restore/claude-en")) { include("identities.json", "reply.md") }
     // The photo intake's HEIC pages.
     from(repo.resolve("tests/fixtures/heic")) { include("page-orientation-6.heic", "page-gps.heic") }
+    // A PDF with its own text, read without OCR, for the Vault's originals.
+    from(repo.resolve("tests/fixtures/import")) { include("handmade-running-header.pdf") }
     into(testAssets)
 }
 tasks.matching { it.name.endsWith("AndroidTestAssets") }.configureEach { dependsOn(copyTestAssets) }

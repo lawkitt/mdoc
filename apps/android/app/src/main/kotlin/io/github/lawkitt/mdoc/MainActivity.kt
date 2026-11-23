@@ -176,9 +176,14 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             },
         )
     } else {
-        BackHandler { open = null }
         val documents = app.core.documents
         val session = remember(current) { runCatching { documents.session(DocumentId(current)) }.getOrNull() }
+        // Closing the document wipes its decrypted original (#1091 Decision 24).
+        fun close() {
+            session?.closeOriginal()
+            open = null
+        }
+        BackHandler(onBack = ::close)
         if (session == null) {
             LaunchedEffect(current) { open = null }
         } else {
@@ -200,7 +205,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                 beforeJob = ::beforeJob,
                 setup = app.setup,
                 onBack = {
-                    open = null
+                    close()
                     home.refresh()
                 },
             )
@@ -210,10 +215,10 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     state.adding?.let { adding ->
         AddSheet(
             adding = adding,
-            cases = state.cases,
-            onAdd = { text, title, case ->
+            projects = state.projects,
+            onAdd = { text, title, project ->
                 scope.launch {
-                    home.add(text, title, case)?.let {
+                    home.add(text, title, project)?.let {
                         // Read at once, from the visible screen, as a long job.
                         readAfterOpen = true
                         open = it.raw

@@ -92,14 +92,14 @@ class DocumentViewModel(
     val interrupted = jobs.interrupted
 
     /**
-     * The id a job of this document carries: its saved path once it has one,
+     * The id a job of this document carries: its Vault id once it has one,
      * which is the id it has after mdoc restarts, so an interrupted job still
      * finds its document.
      */
-    private val jobId get() = session.path?.let(::DocumentId) ?: session.id
+    private val jobId get() = session.vaultId?.let(::DocumentId) ?: session.id
 
     /** Whether a job or interruption belongs to this document. */
-    fun isMine(id: DocumentId?): Boolean = id != null && (id == session.id || id.raw == session.path)
+    fun isMine(id: DocumentId?): Boolean = id != null && (id == session.id || id.raw == session.vaultId)
 
     fun primaryAction(state: DocumentState, job: RunningJob?): PrimaryAction {
         val snapshot = state.snapshot
@@ -224,6 +224,16 @@ class DocumentViewModel(
 
     fun refresh() = viewModelScope.launch(Dispatchers.IO) {
         runCatching { session.snapshot() }.onSuccess { snapshot -> mutable.update { it.copy(snapshot = snapshot) } }
+    }
+
+    /** Back on screen: a reply Restore with mdoc saved meanwhile comes in. */
+    fun resumed() = viewModelScope.launch(Dispatchers.IO) {
+        if (documents.refresh()) refresh()
+    }
+
+    /** The document closed: its decrypted original goes (#1091 Decision 24). */
+    override fun onCleared() {
+        session.closeOriginal()
     }
 
     fun delete(onDeleted: () -> Unit) = viewModelScope.launch {

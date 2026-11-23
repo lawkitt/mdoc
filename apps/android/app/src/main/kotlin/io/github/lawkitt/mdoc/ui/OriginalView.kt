@@ -47,8 +47,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.R
+import io.github.lawkitt.mdoc.core.OriginalData
 import io.github.lawkitt.mdoc.core.OriginalSource
-import java.io.File
+import android.system.Os
+import android.system.OsConstants
+import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -56,7 +59,8 @@ import kotlinx.coroutines.withContext
  * The pages a document came from: a PDF's pages, drawn by
  * Android's own renderer (PDFium stays in the core for reading text), or
  * photos and camera pages, drawn upright, all zoomable with two fingers.
- * DOCX and pasted text have none.
+ * DOCX and pasted text have none. A saved document's original is
+ * decrypted from the Vault off the main thread when first shown.
  */
 @Composable
 fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
@@ -95,8 +99,11 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PdfPages(file: File, modifier: Modifier) {
-    val opened = remember(file) { runCatching { open(file) } }
+private fun PdfPages(file: OriginalData, modifier: Modifier) {
+    val opening by produceState<Result<PdfRenderer>?>(null, file) {
+        value = withContext(Dispatchers.IO) { runCatching { open(file) } }
+    }
+    val opened = opening ?: return
     val renderer = opened.getOrNull()
     DisposableEffect(renderer) { onDispose { renderer?.close() } }
     if (renderer == null) {
@@ -136,9 +143,19 @@ private fun PdfPages(file: File, modifier: Modifier) {
     }
 }
 
-/** The PDF's renderer; its file closes with it, or at once if it can't open. */
-private fun open(file: File): PdfRenderer {
-    val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+/**
+ * The PDF's renderer; its file closes with it, or at once if it can't open.
+ * An original decrypted into memory is read from an anonymous memory file,
+ * so no copy of it reaches the disk.
+ */
+private fun open(file: OriginalData): PdfRenderer {
+    val descriptor = when (file) {
+        is OriginalData.Local -> ParcelFileDescriptor.open(file.file, ParcelFileDescriptor.MODE_READ_ONLY)
+        is OriginalData.Stored -> when (val decrypted = file.open()) {
+            is OriginalData.Decrypted.Copy -> ParcelFileDescriptor.open(decrypted.file, ParcelFileDescriptor.MODE_READ_ONLY)
+            is OriginalData.Decrypted.Memory -> inMemory(decrypted.bytes)
+        }
+    }
     return try {
         PdfRenderer(descriptor)
     } catch (error: Exception) {
@@ -147,9 +164,22 @@ private fun open(file: File): PdfRenderer {
     }
 }
 
+/** `bytes` in an anonymous memory file, read from its start. */
+private fun inMemory(bytes: ByteArray): ParcelFileDescriptor {
+    val fd = Os.memfd_create("original", 0)
+    try {
+        var at = 0
+        while (at < bytes.size) at += Os.write(fd, bytes, at, bytes.size - at)
+        Os.lseek(fd, 0, OsConstants.SEEK_SET)
+        return ParcelFileDescriptor.dup(fd)
+    } finally {
+        Os.close(fd)
+    }
+}
+
 /** Photos or camera pages one under another, as a PDF's pages are. */
 @Composable
-private fun ImagePages(files: List<File>, modifier: Modifier) {
+private fun ImagePages(files: List<OriginalData>, modifier: Modifier) {
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(files.size) { index ->
             // Page-sized until drawn, so the list lays out only the pages it shows.
@@ -173,7 +203,7 @@ private sealed interface PageImage {
  * list lays out only the pages it shows.
  */
 @Composable
-private fun ImagePage(file: File, number: Int, count: Int, scale: ContentScale, modifier: Modifier) {
+private fun ImagePage(file: OriginalData, number: Int, count: Int, scale: ContentScale, modifier: Modifier) {
     val description = stringResource(R.string.original_page, number, count)
     val page by produceState<PageImage>(PageImage.Loading, file) {
         value = decodes.withPermit { withContext(Dispatchers.IO) { decode(file) } }
@@ -219,9 +249,16 @@ private fun render(renderer: PdfRenderer, index: Int, width: Int): Bitmap = rend
 }
 
 /** A photo, upright by its EXIF orientation, scaled down to at most about 2,500 px on its long side. */
-private fun decode(file: File): Bitmap? = runCatching {
+private fun decode(file: OriginalData): Bitmap? = runCatching {
     OriginalDecodes.started.incrementAndGet()
-    ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+    val source = when (file) {
+        is OriginalData.Local -> ImageDecoder.createSource(file.file)
+        is OriginalData.Stored -> when (val decrypted = file.open()) {
+            is OriginalData.Decrypted.Copy -> ImageDecoder.createSource(decrypted.file)
+            is OriginalData.Decrypted.Memory -> ImageDecoder.createSource(ByteBuffer.wrap(decrypted.bytes))
+        }
+    }
+    ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
         var sample = 1
         while (maxOf(info.size.width, info.size.height) / sample > 2500) sample *= 2
         decoder.setTargetSampleSize(sample)
