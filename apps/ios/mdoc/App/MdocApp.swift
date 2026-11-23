@@ -49,6 +49,8 @@ struct MdocApp: App {
             // The unlock's notification can come while mdoc is suspended.
             if phase == .active {
                 app.saveDeferred()
+                // A reply Restore with mdoc saved meanwhile.
+                app.takeInChanges()
             }
         }
         .commands {

@@ -6,9 +6,8 @@ import MdocFFI
 ///
 /// - `root` (`mdoc/`) keeps the models, their downloads and the `.md` file
 ///   Share writes. It is also the old library's folder: its `documents/`,
-///   `cases/`, `imports/` and `originals/` stay untouched (#1091 Decision 2),
-///   and only the Restore extension still reads its cases (until Vault &
-///   Projects item 10).
+///   `cases/`, `imports/` and `originals/` stay untouched (#1091 Decision 2):
+///   nothing reads or writes them.
 /// - `vault` (`vault/`, `vault-dev/` for UI tests) is the core's encrypted
 ///   Vault, a sibling of the old folder, never inside it.
 /// - `intake` (`vault-intake/`, `vault-dev-intake/`) holds what an import
@@ -17,6 +16,9 @@ import MdocFFI
 /// - `viewing` is the app's own cache (not the App Group's) for viewing a
 ///   Vault document's original: a decrypted copy, wiped when the document
 ///   closes and at launch (#1091 Decision 24).
+/// - `restorePlace` (`restore-place.json`, `restore-place-dev.json` for UI
+///   tests) names the place of the last Copy for AI or Share, by id only,
+///   which the Restore extension restores with by default.
 ///
 /// All of it is excluded from iCloud and device backups, and everything but
 /// models and their downloads uses Data Protection Complete. Models keep the
@@ -53,6 +55,8 @@ struct MdocStorage: Sendable {
     let intake: URL
     /// Decrypted viewing copies of originals.
     let viewing: URL
+    /// The place of the last Copy for AI or Share (`RestorePlaceFile`).
+    let restorePlace: URL
 
     /// Everything under `root`: tests and previews, where no old library
     /// lives.
@@ -60,18 +64,23 @@ struct MdocStorage: Sendable {
         self.init(
             root: root, vault: root.appendingPathComponent("vault", isDirectory: true),
             intake: root.appendingPathComponent("intake", isDirectory: true),
-            viewing: root.appendingPathComponent("original-view", isDirectory: true))
+            viewing: root.appendingPathComponent("original-view", isDirectory: true),
+            restorePlace: root.appendingPathComponent("restore-place.json"))
     }
 
-    init(root: URL, vault: URL, intake: URL, viewing: URL) {
+    init(root: URL, vault: URL, intake: URL, viewing: URL, restorePlace: URL) {
         self.root = root
         self.vault = vault
         self.intake = intake
         self.viewing = viewing
+        self.restorePlace = restorePlace
     }
 
     /// `folder` in the App Group container, or in Application Support when
-    /// the group is unavailable, with the Vault `vaultFolder` beside it.
+    /// the group is unavailable, with the Vault `vaultFolder` beside it and
+    /// the restore place's file beside them: `restore-place.json` for the
+    /// `vault` folder, `restore-place-dev.json` for `vault-dev`. Never inside
+    /// `folder`, the old library's.
     static func shared(
         folder: String = "mdoc", vaultFolder: String = "vault", fileManager: FileManager = .default
     ) throws -> MdocStorage {
@@ -87,7 +96,8 @@ struct MdocStorage: Sendable {
             root: base.appendingPathComponent(folder, isDirectory: true),
             vault: base.appendingPathComponent(vaultFolder, isDirectory: true),
             intake: base.appendingPathComponent("\(vaultFolder)-intake", isDirectory: true),
-            viewing: caches.appendingPathComponent("\(vaultFolder)-original-view", isDirectory: true))
+            viewing: caches.appendingPathComponent("\(vaultFolder)-original-view", isDirectory: true),
+            restorePlace: base.appendingPathComponent("restore-place\(vaultFolder.dropFirst("vault".count)).json"))
     }
 
     func url(_ area: Area) -> URL {

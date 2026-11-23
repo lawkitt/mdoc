@@ -557,11 +557,15 @@ final class DocumentViewModel {
         share = ShareItems(items: [TitledText(text: reply.restored.text, title: snapshot.title)])
     }
 
+    /// The Reply pane shows another of the document's saved replies.
+    func showReply(_ id: ReplyID) {
+        applyReview(session.showReply(id))
+    }
+
+    /// Remove reply: the reply shown is deleted from the Vault, and the
+    /// pane shows the newest one left, or the text when none is.
     func clearReply() {
         perform { try session.clearReply() }
-        if pane == .reply {
-            pane = .text
-        }
     }
 
     // MARK: Identities

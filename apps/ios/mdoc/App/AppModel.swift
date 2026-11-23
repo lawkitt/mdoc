@@ -258,13 +258,25 @@ final class AppModel {
         switch event {
         case .saved(let id, let rejoined):
             library.refresh()
-            if rejoined { documents.model(for: id)?.refresh() }
+            // Its reply restores from the names as saved now.
+            if let model = documents.model(for: id), rejoined || model.snapshot.reply != nil { model.refresh() }
         case .failed(let id, let error):
             if let model = documents.model(for: id), navigator.openDocument == id {
                 model.errorMessage = error.localizedDescription
             } else {
                 present(error)
             }
+        }
+    }
+
+    /// Shows what another handle saved in the Vault meanwhile: a reply
+    /// Restore with mdoc kept (#1091 Decision 20). mdoc comes to the
+    /// foreground, a list is pulled, or a share sheet closes.
+    func takeInChanges() {
+        guard core.library.takeInChanges() else { return }
+        library.refresh()
+        for model in documents.all {
+            model.refresh()
         }
     }
 

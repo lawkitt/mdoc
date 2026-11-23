@@ -94,7 +94,9 @@ struct DocumentScreen: View {
                     model.restore(reply: reply)
                 }
             }
-            .sheet(item: $model.share, onDismiss: nil) { items in
+            // A reply saved through Restore with mdoc from this share sheet
+            // shows once it closes.
+            .sheet(item: $model.share, onDismiss: { app?.takeInChanges() }) { items in
                 ActivityView(items: items.items)
             }
             .alert(
@@ -153,7 +155,7 @@ struct DocumentScreen: View {
                 if identitiesInPane && model.wantsIdentities {
                     identities
                 } else if model.pane == .reply, let reply = model.snapshot.reply {
-                    ReplyPane(reply: reply, onClear: model.clearReply)
+                    ReplyPane(reply: reply, replies: model.snapshot.replies, onShow: model.showReply, onClear: model.clearReply)
                 } else {
                     originalPane()
                 }
@@ -175,7 +177,8 @@ struct DocumentScreen: View {
                     originalPane(reachesBottom: model.originalCoversText && model.runningJob == nil)
                 case .reply:
                     if let reply = model.snapshot.reply {
-                        ReplyPane(reply: reply, onClear: model.clearReply)
+                        ReplyPane(
+                            reply: reply, replies: model.snapshot.replies, onShow: model.showReply, onClear: model.clearReply)
                     }
                 }
             }

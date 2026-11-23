@@ -18,9 +18,8 @@ protocol JobObserver: AnyObject, Sendable {
     func onCancel(_ handler: @escaping @Sendable () -> Void)
 }
 
-/// Projects and stored documents: the app's over the Vault (ADR 0125), and
-/// the Restore extension's over the old library until Vault & Projects
-/// item 10 (`restore`, `saveReply` and the snapshot's cases only).
+/// Projects and stored documents, the app's over the Vault (ADR 0125). The
+/// Restore extension has a `ReplyStore` instead.
 protocol Library: AnyObject, Sendable {
     func snapshot() -> LibrarySnapshot
     func session(for document: DocumentID) throws -> any DocumentSession
@@ -32,12 +31,14 @@ protocol Library: AnyObject, Sendable {
     /// A new document left empty goes when it is left (ADR 0109). True
     /// when it went; any other document stays.
     func discardIfEmpty(_ document: DocumentID) throws -> Bool
-    /// Restores a reply in place with one Project's mapping. Needs no
-    /// model, so the share extension can call it.
-    func restore(reply: String, in projectID: ProjectID) throws -> RestoreResult
-    /// Keeps `reply`, in alias form, for the document (ADR 0078): the
-    /// Vault saves it as an AI Reply to text shared from it.
-    func saveReply(_ reply: String, to document: DocumentID) throws
+    /// Takes in what another handle wrote meanwhile, the Restore
+    /// extension's replies above all (#1091 Decision 20): true when
+    /// anything changed.
+    @discardableResult
+    func takeInChanges() -> Bool
+    /// Saved reply `id` restored with the people it named when saved, as
+    /// they are now (#1091 Decision 18).
+    func restoreSavedReply(_ id: ReplyID) throws -> RestoreResult
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
     func saveDeferred() throws -> [DocumentID]
@@ -75,6 +76,8 @@ enum SaveEvent: Sendable {
 }
 
 extension Library {
+    func takeInChanges() -> Bool { false }
+    func restoreSavedReply(_ id: ReplyID) throws -> RestoreResult { throw CoreError.notFound }
     func saveDeferred() throws -> [DocumentID] { [] }
     func saveChanges() throws {}
     func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void) {}
@@ -116,9 +119,14 @@ protocol DocumentSession: AnyObject, Sendable {
     /// Saves now what review taps left for their save (ADR 0104): before
     /// the document is left for another, or mdoc leaves the foreground.
     func saveChanges() throws
-    /// Restores `reply` with this document's case and keeps it as the
-    /// document's reply.
+    /// Saves `reply` in the Vault as an AI Reply to text shared from this
+    /// document (its Project's, or its own while Unfiled) and shows it in
+    /// the Reply pane, restored.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot
+    /// The Reply pane shows saved reply `id`, one of the snapshot's
+    /// `replies`.
+    func showReply(_ id: ReplyID) -> DocumentSnapshot
+    /// Remove reply: deletes the reply the pane shows from the Vault.
     func clearReply() throws -> DocumentSnapshot
 
     // MARK: Review bar (ADR 0098)
