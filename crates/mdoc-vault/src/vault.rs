@@ -213,6 +213,20 @@ impl Vault {
         Ok(vault)
     }
 
+    /// Whether `key` is the key this handle seals with: Settings shows a
+    /// recovery key only when it opens these documents. The key itself is
+    /// never kept.
+    pub fn opens_with(&self, key: &[u8; 32]) -> bool {
+        const PROBE: &str = "recovery-key-check";
+        self.sealer
+            .seal(ObjectKind::Manifest, PROBE, PROBE.as_bytes())
+            .is_ok_and(|sealed| {
+                Sealer::new(key)
+                    .open(ObjectKind::Manifest, PROBE, &sealed)
+                    .is_ok()
+            })
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }

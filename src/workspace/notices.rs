@@ -20,6 +20,8 @@ pub(super) struct Notices {
     crash: Option<(String, bool)>,
     /// Notices that open the bell, as of the last count.
     opening: usize,
+    /// The first-Project nudge to save the recovery key shows.
+    recovery_nudge: bool,
 }
 
 impl Notices {
@@ -52,6 +54,11 @@ impl Notices {
         NoticesEffect::OpenBell
     }
 
+    /// Whether the first-Project nudge shows, which the window decides.
+    pub(super) fn set_recovery_nudge(&mut self, shows: bool) {
+        self.recovery_nudge = shows;
+    }
+
     pub(super) fn dismiss(&mut self) {
         self.message = None;
     }
@@ -81,7 +88,10 @@ impl Notices {
         case_banner: bool,
         case_needed: bool,
     ) -> (usize, Option<NoticesEffect>) {
-        let own = usize::from(self.crash.is_some()) + usize::from(self.message.is_some());
+        // The first-Project nudge opens the bell once, like a message.
+        let own = usize::from(self.crash.is_some())
+            + usize::from(self.message.is_some())
+            + usize::from(self.recovery_nudge);
         let shown = own + usize::from(case_banner);
         let opening = own + usize::from(case_needed);
         let effect = if opening > self.opening {
@@ -180,5 +190,27 @@ mod tests {
         assert_eq!(notices.finish_crash(), None);
         notices.load_crash(None);
         assert_eq!(notices.crash(), None);
+    }
+
+    #[test]
+    fn the_recovery_nudge_opens_the_bell_once_and_counts_until_it_goes() {
+        let mut notices = Notices::default();
+        notices.set_recovery_nudge(true);
+        assert_eq!(
+            notices.count(false, false),
+            (1, Some(NoticesEffect::OpenBell))
+        );
+        assert_eq!(notices.count(false, false), (1, None));
+        notices.post("Exported 3 documents.");
+        assert_eq!(
+            notices.count(false, false),
+            (2, Some(NoticesEffect::OpenBell))
+        );
+        notices.dismiss();
+        notices.set_recovery_nudge(false);
+        assert_eq!(
+            notices.count(false, false),
+            (0, Some(NoticesEffect::CloseBell))
+        );
     }
 }

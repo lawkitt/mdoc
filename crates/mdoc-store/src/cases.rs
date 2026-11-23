@@ -979,6 +979,19 @@ pub fn vault_key(quiet: bool) -> Result<Option<[u8; 32]>, CaseError> {
     }
 }
 
+/// Keep `key`, a recovery key that opened the Vault, as the Vault key in
+/// the OS key store; never in a plain file.
+pub fn store_vault_key(key: &[u8; 32]) -> Result<(), CaseError> {
+    if crate::app_paths::isolated() {
+        return Err(CaseError::KeysDisabled);
+    }
+    #[cfg(feature = "deny-os-services")]
+    deny_os_service("to store the Vault key");
+    let _ = key;
+    // Where it is kept waits on the hub's answer (item 22, Q4).
+    Err(CaseError::NoKeyStore)
+}
+
 /// Public build label, using the same runtime identity as case storage.
 /// This inspects signing metadata only; it never reads the case key.
 pub fn build_identity() -> &'static str {

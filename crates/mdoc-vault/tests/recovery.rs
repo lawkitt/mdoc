@@ -162,3 +162,13 @@ fn a_vault_copied_to_a_fresh_profile_opens_with_its_recovery_key() {
     .unwrap();
     assert_eq!(original, b"# Engagement letter\n\nJohn Smith");
 }
+
+#[test]
+fn a_vault_knows_its_own_key_and_keeps_no_other() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = Vault::open(dir.path().join("vault"), &key(5)).unwrap();
+    assert!(vault.opens_with(&key(5)));
+    assert!(!vault.opens_with(&key(6)));
+    let parsed = recovery::parse(&recovery::format(&key(5))).unwrap();
+    assert!(vault.opens_with(&parsed));
+}

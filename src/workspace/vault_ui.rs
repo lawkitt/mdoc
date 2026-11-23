@@ -24,8 +24,9 @@ impl Workspace {
         let Some(root) = cases::vault_dir() else {
             return Opening::Key(CaseError::NoAppData);
         };
-        match Vault::open(root, key) {
+        match Vault::open(&root, key) {
             Ok(vault) => Opening::Opened(Box::new(vault)),
+            Err(mdoc_vault::VaultError::WrongKey) => Opening::WrongKey(root),
             Err(error) => Opening::Vault(error),
         }
     }
@@ -76,6 +77,7 @@ impl Workspace {
             }
             VaultEffect::None => {}
         }
+        self.recovery_screen_opened(window, cx);
         cx.notify();
     }
 
@@ -101,6 +103,23 @@ impl Workspace {
     pub(super) fn vault_unavailable_for_render(&mut self) -> Option<Arc<Vault>> {
         let vault = self.vault.vault().cloned();
         self.vault.opened(Opening::Key(CaseError::NoKeyStore));
+        vault
+    }
+
+    /// Headless renders: launch found the Vault sealed with another key.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn vault_wrong_key_for_render(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<std::sync::Arc<Vault>> {
+        let vault = self.vault.vault().cloned();
+        let root = vault.as_ref()?.root().to_path_buf();
+        self.vault_opened(Opening::WrongKey(root), window, cx);
         vault
     }
 
@@ -182,6 +201,13 @@ impl Workspace {
         if let Some(why) = self.vault.unavailable() {
             return Some((why.to_owned().into(), None));
         }
+        if self.vault.wrong_key_root().is_some() {
+            return Some((
+                "Your documents were saved with a different key. Enter your recovery key on \n                 Home to open them."
+                    .into(),
+                None,
+            ));
+        }
         if self.vault.denied() {
             return Some((
                 "Your documents need Keychain access to open.".into(),
@@ -203,6 +229,13 @@ impl Workspace {
     pub(super) fn intake_refused(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if self.vault.needs_key() {
             self.unlock_cases(window, cx);
+            return true;
+        }
+        if self.vault.wrong_key_root().is_some() {
+            self.notices.post(
+                "Documents can't be added until your recovery key opens the documents you \n                 have. Enter it on Home.",
+            );
+            cx.notify();
             return true;
         }
         let Some(why) = self.vault.unavailable() else {

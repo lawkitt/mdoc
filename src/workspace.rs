@@ -56,9 +56,12 @@ use navigation::Arrival;
 mod navigation_ui;
 mod notices;
 pub(crate) use navigation_ui::{Back, Forward};
+mod export_project;
 mod quit_flow;
+mod recovery_key;
 pub(crate) use quit_flow::CloseWatch;
 use quit_flow::QuitEffect;
+pub(crate) use recovery_key::OpenWithRecoveryKey;
 mod session_writer;
 mod shelf_source;
 pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
@@ -313,6 +316,9 @@ pub(super) struct Workspace {
     case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
     /// The Vault, once the key opened it.
     vault: vault_state::VaultState,
+    /// Settings › Vault's key, the first-Project nudge and the wrong-key
+    /// screen.
+    recovery: recovery_key::Recovery,
     /// Documents' autosaves, one write at a time.
     document_writer: autosave::Writer,
     /// Where each imported tab's file was opened from: what Recents lists.
@@ -544,6 +550,7 @@ impl Workspace {
             folder_sheet_focus: None,
             case_coordinator: Default::default(),
             vault: Default::default(),
+            recovery: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
             closing_after_write: Default::default(),
@@ -625,6 +632,7 @@ impl Workspace {
                         this.save_user_lists(lists.clone(), cx)
                     }
                     settings_ui::Event::UnlockLists => this.unlock_cases(window, cx),
+                    settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
                     settings_ui::Event::CategoriesUnticked(categories) => {
                         for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
                             view.update(cx, |view, cx| {
@@ -1018,6 +1026,8 @@ impl Workspace {
         }
         let active = self.tabs[selected.min(self.tabs.len() - 1)].id();
         self.activate(active, window, cx);
+        // Sealed with another key: Home asks for the recovery key first.
+        self.recovery_screen_opened(window, cx);
         for (paths, at, case) in std::mem::take(&mut self.pending_open) {
             self.open_paths_into(paths, at, case, window, cx);
         }
@@ -3615,6 +3625,7 @@ impl Render for Workspace {
         // Notices wait behind the header's bell; a new one opens it,
         // except locked cases, which open it only when a locked case is
         // needed.
+        self.notices.set_recovery_nudge(self.recovery_nudge());
         let (notices, effect) = self
             .notices
             .count(self.case_key_banner().is_some(), self.case_key_needed());
