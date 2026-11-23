@@ -104,6 +104,7 @@ impl DocumentSession {
             title: document.title.clone(),
             markdown: document.markdown.clone(),
             source_kind: document.source_kind,
+            source: None,
             note: super::intake::ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -347,6 +348,9 @@ struct Pending {
     awaiting_discovery: bool,
     scanned: bool,
     review: SavedReview,
+    /// What a first save keeps as the Source Original, with what the
+    /// import said it left out; `None` once the record is made.
+    source: Option<(super::intake::Source, super::intake::ImportNote)>,
 }
 
 /// What a Vault save stored.
@@ -375,6 +379,14 @@ impl Document {
             awaiting_discovery: self.review.review.awaiting_discovery(),
             scanned: self.scanned,
             review: self.review.saved_review(),
+            source: (self.vault.as_ref())
+                .is_none_or(|place| place.id.is_none())
+                .then(|| {
+                    self.source
+                        .clone()
+                        .map(|source| (source, self.note.clone()))
+                })
+                .flatten(),
         }
     }
 
@@ -388,6 +400,8 @@ impl Document {
         {
             place.id.clone_from(&pending.place.id);
             place.revision = pending.place.revision;
+            // Kept with the record it made.
+            self.source = None;
         }
     }
 
@@ -559,14 +573,32 @@ impl Pending {
             }
             None => {
                 // Empty first, so a crash before the rest leaves no text
-                // without the names it needs.
-                let created = store.create_document(NewDocument {
+                // without the names it needs. An import keeps its source
+                // with it, streamed in as item 3 does.
+                let new = NewDocument {
                     project: self.place.project.clone(),
                     title: self.title.clone(),
                     source_kind: self.source_kind,
                     origin: self.origin.into(),
                     markdown: String::new(),
-                })?;
+                };
+                let created = match &self.source {
+                    Some((source, note)) => {
+                        let reader = source.reader().map_err(|error| CoreError::Io {
+                            message: format!(
+                                "The imported file could not be kept as the original: {error}"
+                            ),
+                        })?;
+                        let info = mdoc_vault::OriginalInfo {
+                            file_name: source.file_name.clone(),
+                            password_protected: source.password_protected,
+                            import_warning: note.warning.clone(),
+                            left_out: note.left_out.clone(),
+                        };
+                        store.import_document(new, reader, info)?
+                    }
+                    None => store.create_document(new)?,
+                };
                 self.place.id = Some(created.id.clone());
                 self.place.revision = created.revision;
                 created.id

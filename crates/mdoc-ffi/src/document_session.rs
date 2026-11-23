@@ -22,6 +22,7 @@ use crate::{
 };
 pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 pub use editing::Typed;
+pub(crate) use intake::Source;
 use mdoc_pii::restore::RestoreMap;
 pub use origin::{DocumentOrigin, first_line_title};
 pub(crate) use review::Counts;
@@ -167,6 +168,9 @@ struct Document {
     followed: Option<String>,
     /// The file family it came from, which its first Vault save records.
     source_kind: mdoc_vault::SourceKind,
+    /// What its first Vault save keeps as its Source Original; gone once
+    /// kept.
+    source: Option<intake::Source>,
     /// Where it is in the Vault, once it joined a Project there or was
     /// saved or opened there (`vault`); `None` for a document of the
     /// library's, which keeps `path` and `case` instead. A document is
@@ -333,6 +337,7 @@ impl DocumentSession {
             title,
             markdown: text,
             source_kind: mdoc_vault::SourceKind::Text,
+            source: None,
             note: intake::ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -368,6 +373,7 @@ impl DocumentSession {
             title: crate::library::title_of(Path::new(&path)),
             markdown: stored.saved.clone(),
             source_kind: mdoc_vault::SourceKind::Markdown,
+            source: None,
             note: intake::ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -944,6 +950,7 @@ impl DocumentSession {
             origin: DocumentOrigin::Ordinary,
             followed: None,
             source_kind: imported.source_kind,
+            source: imported.source,
             vault: None,
         };
         if let Some(opened) = opened.filter(|opened| {
