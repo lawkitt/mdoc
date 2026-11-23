@@ -16,6 +16,8 @@
 //! writes nothing but new replies.
 mod originals;
 mod replies;
+#[cfg(test)]
+mod tests;
 
 pub use originals::OriginalFile;
 pub use replies::{ReplyInfo, ReplyOwner, ReplyVault, SavedReply, SharedFrom};
@@ -119,13 +121,26 @@ pub struct ProjectName {
     pub originals: Vec<String>,
 }
 
+/// A wording on a Project's Always list, with the category scans propose
+/// it in.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct ListedWording {
+    pub wording: String,
+    pub category: Category,
+}
+
 /// A Project page's data: the Project, its documents (most recently
-/// updated first) and its names that still restore.
+/// updated first), its names that still restore, and its Always and Never
+/// lists.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct ProjectPage {
     pub project: ProjectInfo,
     pub documents: Vec<DocumentInfo>,
     pub names: Vec<ProjectName>,
+    /// Wordings its scans always propose.
+    pub always: Vec<ListedWording>,
+    /// Wordings its scans never propose.
+    pub never: Vec<String>,
 }
 
 /// What deleting a Project does with its documents; the app asks.
@@ -211,11 +226,49 @@ impl Vault {
                 originals: identity.originals.iter().map(|o| o.to_string()).collect(),
             })
             .collect();
+        let always = (project.lists.always.iter())
+            .map(|entry| ListedWording {
+                wording: entry.wording.clone(),
+                category: entry.category().into(),
+            })
+            .collect();
         Ok(ProjectPage {
             documents: self.infos(self.store.documents_in(Some(&id))),
             project: self.project_info(&project),
             names,
+            always,
+            never: project.lists.never.clone(),
         })
+    }
+
+    /// Remove `wording` from Project `project_id`'s Always list, or its
+    /// Never list when `always` is false, as the lists compare wordings
+    /// (case and spacing aside). Nothing else changes: its documents keep
+    /// their names. Removing a wording not on the list changes nothing.
+    pub fn remove_listed(
+        &self,
+        project_id: String,
+        wording: String,
+        always: bool,
+    ) -> Result<ProjectInfo, CoreError> {
+        let _writes = self.lock_writes();
+        let project = self.store.project(&project_id)?;
+        let listed = if always {
+            project.lists.always_for(&wording).is_some()
+        } else {
+            project.lists.never_has(&wording)
+        };
+        if !listed {
+            return Ok(self.project_info(&project));
+        }
+        let project = self.store.update_project(&project_id, |project| {
+            if always {
+                project.lists.remove_always(&wording);
+            } else {
+                project.lists.remove_never(&wording);
+            }
+        })?;
+        Ok(self.project_info(&project))
     }
 
     pub fn create_project(&self, name: String) -> Result<ProjectInfo, CoreError> {
