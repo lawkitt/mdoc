@@ -22,6 +22,8 @@ use crate::{
 };
 pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 pub use editing::Typed;
+#[cfg(test)]
+pub(crate) use intake::BEFORE_KEEPING;
 pub(crate) use intake::Source;
 use mdoc_pii::restore::RestoreMap;
 pub use origin::{DocumentOrigin, first_line_title};
@@ -1066,6 +1068,17 @@ impl DocumentSession {
             }
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+impl DocumentSession {
+    /// Make `source` what the open document's first Vault save keeps, as an
+    /// import would: for sources a test cannot import without OCR.
+    pub(crate) fn keep_as_original(&self, source: intake::Source) {
+        if let Some(document) = self.lock_document().as_mut() {
+            document.source = Some(source);
+        }
     }
 }
 

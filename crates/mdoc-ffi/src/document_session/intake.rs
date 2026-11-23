@@ -71,7 +71,7 @@ pub(super) fn import_file(
             title,
             markdown,
             source_kind: source_kind(path),
-            source: Source::of(path, false)?,
+            source: Source::kept(path, false),
             note: ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -118,7 +118,7 @@ pub(super) fn import_file(
     // Locked as imported: an Office file the password unlocked in memory,
     // or a PDF, which the apps give a password only once it asked for one.
     let locked = imported.source.unlocked() || (imported.is_pdf && password.is_some());
-    let source = Source::of(path, locked)?;
+    let source = Source::kept(path, locked);
     finish(
         title,
         source_kind(path),
@@ -200,11 +200,11 @@ pub(super) fn import_images(
             None,
         ),
     };
-    // One photo is its own original; pages picked together have none of
-    // their own yet.
+    // One photo is its own original; pages picked together keep the PDF
+    // the scan became for OCR, one page each (#1091, maintainer's answer).
     let source = match images {
-        [image] => Source::of(image, false)?,
-        _ => None,
+        [image] => Source::kept(image, false),
+        _ => Some(Source::scan(imported.source.bytes().to_vec(), &title)),
     };
     finish(
         title,
@@ -281,6 +281,27 @@ enum SourceBytes {
 }
 
 impl Source {
+    /// [`Self::of`] at the end of an import: a source that cannot be read
+    /// now (gone, or moved, since the import read it) leaves the document
+    /// without an original instead of failing an import that worked.
+    pub(crate) fn kept(path: &Path, password_protected: bool) -> Option<Self> {
+        #[cfg(test)]
+        if let Some(hook) = BEFORE_KEEPING.with(|hook| hook.borrow_mut().take()) {
+            hook();
+        }
+        Self::of(path, password_protected).ok().flatten()
+    }
+
+    /// Pages picked together: the PDF the image builder made of them,
+    /// which holds no metadata of theirs, named after the scan.
+    pub(crate) fn scan(pdf: Vec<u8>, title: &str) -> Self {
+        Self {
+            bytes: SourceBytes::Memory(pdf),
+            file_name: format!("{}.pdf", title.trim()),
+            password_protected: false,
+        }
+    }
+
     /// What `path` keeps: `None` for an image the core cannot strip of its
     /// metadata (HEIC, TIFF, one it does not parse, one past the import's
     /// size limit), which is never kept with it. An image is told by its
@@ -320,6 +341,14 @@ impl Source {
             SourceBytes::Memory(bytes) => Box::new(bytes.as_slice()),
         })
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Run once by the next [`Source::kept`] on this thread, before it reads
+    /// the source.
+    pub(crate) static BEFORE_KEEPING: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
 }
 
 /// What an import says it left out.
