@@ -260,7 +260,7 @@ fn quit_when_windows_close_turns_the_switch_off_and_quits(cx: &mut TestAppContex
         .unwrap();
     cx.run_until_parked();
     assert!(note(cx).is_none());
-    assert!(!cx.cx.read(|cx| menu_bar::keeps_running(cx)));
+    assert!(!cx.cx.read(menu_bar::keeps_running));
     // Nothing asks: the edit is written and the app quits.
     assert!(!cx.has_pending_prompt());
     assert!(quit(cx));

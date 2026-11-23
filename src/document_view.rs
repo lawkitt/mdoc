@@ -1743,7 +1743,13 @@ impl DocumentView {
             .into_any_element()
     }
 
+    /// Where relative links and images resolve. A Vault document without a
+    /// Source has no folder: they resolve nowhere, as the Vault reads nothing
+    /// outside itself.
     pub(crate) fn save_directory(&self) -> PathBuf {
+        if self.session.document.vault.is_some() && self.session.source.is_none() {
+            return PathBuf::new();
+        }
         self.session.directory()
     }
 

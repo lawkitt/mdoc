@@ -565,3 +565,20 @@ fn several_repeats_ask_one_question_and_new_files_open_anyway(cx: &mut TestAppCo
     assert_eq!(titles.len(), 3, "{titles:?}");
     assert!(titles.contains(&"C".to_string()));
 }
+
+#[gpui::test]
+fn relative_links_in_an_imported_markdown_file_resolve_nowhere(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let note = dir.path().join("Note.md");
+    std::fs::write(dir.path().join("beside.md"), "# Beside").unwrap();
+    std::fs::write(&note, "[beside](beside.md)").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![note], cx);
+    active(&tabs, cx).read_with(cx, |view, _| {
+        let directory = view.save_directory();
+        assert_eq!(
+            mdoc_store::document::local_path("beside.md", &directory),
+            None
+        );
+    });
+}
