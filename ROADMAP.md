@@ -391,11 +391,6 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As item 11.
     *Blocked by:* item 12. *Done when:* the Android job passes with tests of
     the Project page and the delete question.
-14. **[Mobile] Retire the old mobile library.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The old exported
-    objects and their storage code go. *Blocked by:* items 10, 12. *Done
-    when:* nothing in the core, iOS or Android names them, and the bindings
-    are regenerated.
 16. **[Desktop] Documents live in the Vault and save themselves.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The Vault opens at
     launch through the existing key flow. Every import, paste, new document
