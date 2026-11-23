@@ -199,11 +199,15 @@ impl Record for Document {
     fn table(manifest: &mut Manifest) -> &mut Table<DocumentSummary> {
         &mut manifest.documents
     }
-    /// A Document's Project changes only by a move (item 4), so a stale
-    /// copy saved after a move cannot undo it.
+    /// A Document's Project changes only by a move, so a stale copy saved
+    /// after a move cannot undo it; in a Project it keeps no mapping of its
+    /// own.
     fn settle(&mut self, stored: &Self, revision: u64, now: u64) {
         self.id.clone_from(&stored.id);
         self.project.clone_from(&stored.project);
+        if self.project.is_some() {
+            self.mapping = crate::mapping::Mapping::default();
+        }
         self.created = stored.created;
         self.revision = revision;
         self.updated = now;

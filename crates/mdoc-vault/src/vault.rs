@@ -2,16 +2,24 @@
 //! time: in the process through a mutex and across processes and handles
 //! through `.lock`, held only for the write (#1091 Decision 20). A handle
 //! never writes a revision older than the last it wrote.
+mod moves;
+
+pub use moves::{MoveUndo, Moved, ProjectDocuments};
+
 use crate::{
     ObjectKind, VaultError, is_id,
     manifest::{
         Entry, LoadError, MANIFEST_ID, Manifest, Record, Stamp, document_dir, document_path, load,
         write_dirs,
     },
+    mapping::Mapping,
     new_id,
-    records::{Document, DocumentSummary, NewDocument, NewProject, Project, ProjectSummary, now},
-    seal::{MAX_FILE, Sealer, TEMP_PREFIX, temp_beside},
+    records::{
+        Document, DocumentSummary, NewDocument, NewProject, Project, ProjectSummary, UserLists, now,
+    },
+    seal::{MAX_FILE, Sealer, TEMP_PREFIX, Unseal, read_limited, temp_beside},
 };
+use mdoc_store::lists::Lists;
 use std::{
     collections::HashMap,
     fs::File,
@@ -23,6 +31,9 @@ use std::{
     },
     time::{Duration, Instant},
 };
+
+/// The user-wide lists' id in their authenticated data.
+const USER_LISTS_ID: &str = "user-lists";
 
 /// A summary change rewrites the manifest at most this often; the rest wait
 /// for the next write after it, [`Vault::flush`] or the handle's drop.
@@ -169,7 +180,13 @@ impl Vault {
                     Err(()) => (Manifest::default(), ManifestCheck::Damaged),
                 };
             let checked = manifest.check(&vault.sealer, &vault.root)?;
-            if opened != ManifestCheck::Current && checked.opened == 0 && checked.rejected > 0 {
+            // The user-wide lists are an object too, kept outside the manifest.
+            let lists = vault.user_lists_open();
+            let (any_opened, any_rejected) = (
+                checked.opened > 0 || lists == Some(true),
+                checked.rejected > 0 || lists == Some(false),
+            );
+            if opened != ManifestCheck::Current && !any_opened && any_rejected {
                 return Err(VaultError::WrongKey);
             }
             if opened == ManifestCheck::Current && checked.changed {
@@ -260,6 +277,14 @@ impl Vault {
 
     pub fn create_project(&self, new: NewProject) -> Result<Project, VaultError> {
         let lock = self.write_lock()?;
+        self.create_project_locked(&lock, new)
+    }
+
+    fn create_project_locked(
+        &self,
+        lock: &WriteLock<'_>,
+        new: NewProject,
+    ) -> Result<Project, VaultError> {
         let now = now();
         let project = Project {
             id: new_id()?,
@@ -269,8 +294,12 @@ impl Vault {
             created: now,
             updated: now,
             revision: 1,
+            mapping: Mapping::default(),
+            lists: Lists::default(),
+            skip: Vec::new(),
+            dismissed_hints: Vec::new(),
         };
-        self.write_record(&lock, &project)?;
+        self.write_record(lock, &project)?;
         Ok(project)
     }
 
@@ -315,6 +344,7 @@ impl Vault {
             markdown: new.markdown,
             scanned: false,
             ready_fingerprint: None,
+            mapping: Mapping::default(),
         };
         self.write_record(&lock, &document)?;
         Ok(document)
@@ -347,19 +377,109 @@ impl Vault {
         if !is_id(id) {
             return Err(VaultError::InvalidId);
         }
-        let _lock = self.write_lock()?;
+        let lock = self.write_lock()?;
+        self.delete_document_locked(&lock, id)
+    }
+
+    fn delete_document_locked(&self, _lock: &WriteLock<'_>, id: &str) -> Result<(), VaultError> {
+        self.check_alive()?;
         remove_sealed(&document_path(&self.root, id))?;
         match std::fs::remove_dir_all(document_dir(&self.root, id)) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
             _ => {}
         }
+        self.forget_deleted::<Document>(id)
+    }
+
+    /// Note `id` deleted: later saves of it by this handle are skipped,
+    /// and it leaves the cached summaries.
+    fn forget_deleted<R: Record>(&self, id: &str) -> Result<(), VaultError> {
         let mut state = self.state();
         state.written.insert(id.to_string(), Last::Deleted);
-        let table = &mut state.manifest.documents;
+        let table = R::table(&mut state.manifest);
         if table.ok.remove(id).is_some() | table.damaged.remove(id).is_some() {
             state.dirty = true;
         }
         self.write_manifest_debounced(&mut state)
+    }
+
+    /// The user-wide Always and Never lists; empty ones when none were
+    /// saved.
+    pub fn user_lists(&self) -> Result<UserLists, VaultError> {
+        let path = self.user_lists_path();
+        let damaged = || VaultError::Damaged {
+            kind: ObjectKind::UserLists,
+            id: USER_LISTS_ID.into(),
+        };
+        let mut file = match File::open(&path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(UserLists::default()),
+            Err(e) => return Err(e.into()),
+        };
+        let bytes = match read_limited(&mut file) {
+            Ok(bytes) => bytes,
+            Err(Unseal::Io(e)) => return Err(e.into()),
+            Err(_) => return Err(damaged()),
+        };
+        let plain = (self.sealer)
+            .open(ObjectKind::UserLists, USER_LISTS_ID, &bytes)
+            .map_err(|_| damaged())?;
+        serde_json::from_slice(&plain).map_err(|_| damaged())
+    }
+
+    /// Whether `user-lists.enc` opens with this key: `None` when there is
+    /// none, or it is not a sealed file at all.
+    fn user_lists_open(&self) -> Option<bool> {
+        let mut file = File::open(self.user_lists_path()).ok()?;
+        let bytes = read_limited(&mut file).ok()?;
+        match (self.sealer).open(ObjectKind::UserLists, USER_LISTS_ID, &bytes) {
+            Ok(_) => Some(true),
+            Err(Unseal::Rejected) => Some(false),
+            Err(_) => None,
+        }
+    }
+
+    /// Load the user-wide lists, change them with `change`, and save them
+    /// as the next revision, all under the write lock.
+    pub fn update_user_lists(
+        &self,
+        change: impl FnOnce(&mut Lists),
+    ) -> Result<UserLists, VaultError> {
+        let lock = self.write_lock()?;
+        let stored = self.user_lists()?;
+        let last = match self.state().written.get(USER_LISTS_ID).copied() {
+            Some(Last::Revision(last)) => last,
+            _ => 0,
+        };
+        let mut lists = stored.clone();
+        change(&mut lists.lists);
+        lists.revision = (stored.revision.max(last).checked_add(1))
+            .ok_or_else(|| io::Error::other("A Vault revision overflowed"))?;
+        self.write_user_lists(&lock, &lists)?;
+        Ok(lists)
+    }
+
+    /// Save `lists` unless this handle wrote, or the file holds, a newer
+    /// revision.
+    pub fn save_user_lists(&self, lists: &UserLists) -> Result<Saved, VaultError> {
+        let lock = self.write_lock()?;
+        let last = match self.state().written.get(USER_LISTS_ID).copied() {
+            Some(Last::Revision(last)) => last,
+            _ => 0,
+        };
+        if last > lists.revision || self.user_lists()?.revision > lists.revision {
+            return Ok(Saved::Skipped);
+        }
+        self.write_user_lists(&lock, lists)?;
+        Ok(Saved::Written)
+    }
+
+    fn write_user_lists(&self, _lock: &WriteLock<'_>, lists: &UserLists) -> Result<(), VaultError> {
+        let json = serde_json::to_vec(lists).map_err(io::Error::from)?;
+        let path = self.user_lists_path();
+        self.write_object(ObjectKind::UserLists, USER_LISTS_ID, &path, &json)?;
+        (self.state().written).insert(USER_LISTS_ID.into(), Last::Revision(lists.revision));
+        Ok(())
     }
 
     fn update<R: Record>(&self, id: &str, change: impl FnOnce(&mut R)) -> Result<R, VaultError> {
@@ -367,19 +487,33 @@ impl Vault {
             return Err(VaultError::InvalidId);
         }
         let lock = self.write_lock()?;
+        self.update_locked(&lock, id, change)
+    }
+
+    fn update_locked<R: Record>(
+        &self,
+        lock: &WriteLock<'_>,
+        id: &str,
+        change: impl FnOnce(&mut R),
+    ) -> Result<R, VaultError> {
         let stored: R = self.load_record(id)?;
-        let last = match self.state().written.get(id).copied() {
-            Some(Last::Deleted) => return Err(not_found::<R>(id)),
+        let mut record = stored.clone();
+        change(&mut record);
+        record.settle(&stored, self.next_revision(&stored)?, now());
+        self.write_record(lock, &record)?;
+        Ok(record)
+    }
+
+    /// The revision a write over `stored` takes: past the file's and past
+    /// the last this handle wrote.
+    fn next_revision<R: Record>(&self, stored: &R) -> Result<u64, VaultError> {
+        let last = match self.state().written.get(stored.id()).copied() {
+            Some(Last::Deleted) => return Err(not_found::<R>(stored.id())),
             Some(Last::Revision(last)) => last,
             None => 0,
         };
-        let revision = (stored.revision().max(last).checked_add(1))
-            .ok_or_else(|| io::Error::other("A Vault revision overflowed"))?;
-        let mut record = stored.clone();
-        change(&mut record);
-        record.settle(&stored, revision, now());
-        self.write_record(&lock, &record)?;
-        Ok(record)
+        Ok((stored.revision().max(last).checked_add(1))
+            .ok_or_else(|| io::Error::other("A Vault revision overflowed"))?)
     }
 
     fn save<R: Record>(&self, record: &R) -> Result<Saved, VaultError> {
@@ -455,6 +589,7 @@ impl Vault {
         path: &Path,
         plain: &[u8],
     ) -> Result<Stamp, VaultError> {
+        self.check_alive()?;
         let bytes = self.sealer.seal(kind, id, plain)?;
         let temp = temp_beside(path, &bytes)?;
         if self.fault(kind, id, Stage::BeforeRename) {
@@ -510,10 +645,17 @@ impl Vault {
         crash
     }
 
-    fn write_lock(&self) -> Result<WriteLock<'_>, VaultError> {
+    /// [`VaultError::Crashed`] once a fault hook stopped a write: a crashed
+    /// handle writes nothing more, not even to put back a failed step.
+    fn check_alive(&self) -> Result<(), VaultError> {
         if self.crashed.load(Ordering::SeqCst) {
             return Err(VaultError::Crashed);
         }
+        Ok(())
+    }
+
+    fn write_lock(&self) -> Result<WriteLock<'_>, VaultError> {
+        self.check_alive()?;
         let file = self.lock_file.lock().unwrap_or_else(|e| e.into_inner());
         file.lock()?;
         Ok(WriteLock { file })
@@ -525,6 +667,10 @@ impl Vault {
 
     fn manifest_path(&self) -> PathBuf {
         self.root.join("manifest.enc")
+    }
+
+    fn user_lists_path(&self) -> PathBuf {
+        self.root.join("user-lists.enc")
     }
 }
 

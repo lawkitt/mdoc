@@ -15,6 +15,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 thiserror = "2"
+# Identities, aliases and lining a document's names up with a Project's.
+mdoc-pii = { path = "../mdoc-pii" }
+# The Always and Never lists, shared with the case store until it retires.
+mdoc-store = { path = "../mdoc-store" }
 
 [lints]
 workspace = true
