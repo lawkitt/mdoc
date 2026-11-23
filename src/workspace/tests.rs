@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     bind_app_keys,
     document_view::{
-        DocumentView, OcrState, Save, SaveAs, TogglePreview, ZoomIn, ZoomReset,
+        DocumentView, ExportMarkdown, OcrState, Save, TogglePreview, ZoomIn, ZoomReset,
         bind_markdown_search_keys,
     },
     markdown_search,
@@ -55,6 +55,7 @@ mod sidebar;
 mod tab_menu;
 mod tab_set;
 mod user_lists;
+mod vault_documents;
 mod window_shell;
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather
@@ -71,10 +72,32 @@ fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Workspace>, &mut V
     (tabs, cx)
 }
 
+/// Boot `session` on the Vault in `root`, as a restart does.
+fn boot_on_vault<'a>(
+    cx: &'a mut TestAppContext,
+    session: Session,
+    root: &std::path::Path,
+) -> (Entity<Workspace>, &'a mut VisualTestContext) {
+    let root = root.to_path_buf();
+    boot_home_with(cx, session, move |tabs, _, _| {
+        tabs.use_vault(mdoc_vault::Vault::open(root, &[3; 32]).unwrap())
+    })
+}
+
 /// Boot exactly as launch does: an empty session shows Home.
 fn boot_home(
     cx: &mut TestAppContext,
     session: Session,
+) -> (Entity<Workspace>, &mut VisualTestContext) {
+    boot_home_with(cx, session, |_, _, _| {})
+}
+
+/// [`boot_home`], with `launch` run where launch opens the Vault: after the
+/// window is built and before its tabs restore.
+fn boot_home_with(
+    cx: &mut TestAppContext,
+    session: Session,
+    launch: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) + 'static,
 ) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
@@ -86,6 +109,7 @@ fn boot_home(
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = Workspace::empty(window, cx);
+        launch(&mut tabs, window, cx);
         tabs.restore(session, window, cx);
         tabs
     });
@@ -242,7 +266,7 @@ fn download_retains_card_focus(cx: &mut TestAppContext, model: settings::Model) 
 
 fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
     let (tabs, _, cancel, cx) = setup_download_card(cx, model);
-    // A separate dirty tab must still get the normal unsaved-changes prompt.
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     let setup_tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.simulate_input("Unsaved draft");
@@ -258,50 +282,22 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
         cx.update(|_, cx| cx.is_action_available(&Quit)),
         "Quit menu stays enabled"
     );
-    cx.dispatch_action(Quit);
-    cx.run_until_parked();
-    if matches!(model, settings::Model::Pii(_)) {
-        // The setup tab has typed text too: two to ask about, so the quit's
-        // summary comes first.
-        cx.simulate_prompt_answer("Review…");
-        cx.run_until_parked();
-    }
-    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert!(!tabs.read(cx).quit_flow.quitting());
-        assert!(!progress.cancel.load(Ordering::Relaxed));
-    });
-    let dirty = cx.update(|_, cx| {
-        tabs.read(cx)
-            .tabs
-            .iter()
-            .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
-            .count()
-    });
-    // The keyboard path also works without focus; Don't Save completes shutdown.
-    cx.update(|window, cx| window.blur(cx));
-    draw(cx);
+    // The keyboard path also works without focus, and nothing asks.
     cx.simulate_keystrokes(if cfg!(target_os = "macos") {
         "cmd-q"
     } else {
         "ctrl-q"
     });
     cx.run_until_parked();
-    if dirty > 1 {
-        // Discard All in the summary drops every tab's changes at once.
-        cx.simulate_prompt_answer("Discard All");
-        cx.run_until_parked();
-    } else {
-        assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-        for _ in 0..dirty {
-            cx.simulate_prompt_answer("Don't Save");
-            cx.run_until_parked();
-        }
-    }
+    assert!(!cx.has_pending_prompt());
     assert!(progress.cancel.load(Ordering::Relaxed));
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert!(
+        vault
+            .documents()
+            .iter()
+            .any(|summary| vault.document(&summary.id).unwrap().markdown == "Unsaved draft")
+    );
 }
 
 /// Open `path` and return its tab once the OCR card is up.
@@ -314,6 +310,11 @@ fn open_scan(
         tabs.open_paths(vec![path], window, cx)
     });
     cx.run_until_parked();
+    // Copies of one scan are one source: each becomes its own document.
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Import Again");
+        cx.run_until_parked();
+    }
     let view = active(tabs, cx);
     draw(cx);
     cx.update(|_, cx| assert!(view.read(cx).import.ocr_required().is_some()));
@@ -356,14 +357,7 @@ fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String
             .map(|tab| {
                 tab.view()
                     .map(|view| view.read(cx).display_name())
-                    .unwrap_or_else(|| {
-                        tab.record()
-                            .markdown
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .into()
-                    })
+                    .unwrap_or_else(|| tab_label(tab, cx).name)
             })
             .collect()
     })
@@ -391,7 +385,7 @@ fn applied_document<'a>(
             dir.join("cases"),
             &[3; 32],
         ));
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
@@ -426,7 +420,7 @@ fn open_applied(
     let path = dir.join(name);
     std::fs::write(&path, text).unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
+        tabs.open_case_files(vec![path], window, cx)
     });
     cx.run_until_parked();
     let view = active(tabs, cx);
@@ -471,7 +465,7 @@ fn case_quit_fixture<'a>(
 ) -> (Entity<Workspace>, &'a mut VisualTestContext, String) {
     let (tabs, cx, path) = applied_document(cx, dir, Session::default());
     let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.write(path, None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path, cx));
     let id = tabs
         .update_in(cx, |tabs, window, cx| {
             tabs.create_case(tabs.tabs.active(), window, cx)

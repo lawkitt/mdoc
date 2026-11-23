@@ -77,25 +77,34 @@ impl Workspace {
 
     /// The tab a file already has: its Markdown, or the source it converts.
     pub(super) fn open_tab_for(&self, path: &Path, cx: &gpui::App) -> Option<u64> {
-        self.find_path(path, None, cx).or_else(|| {
-            self.tabs
+        // A Vault document opened from `path` this session.
+        let admitted = || {
+            self.admitted_from
                 .iter()
-                .find(|tab| {
-                    let source = tab
-                        .view()
-                        .and_then(|view| {
-                            let view = view.read(cx);
-                            view.session
-                                .source
-                                .as_ref()
-                                .or(view.preview.attachment())
-                                .or(view.preview.source())
-                        })
-                        .or(tab.record().attachment.as_ref());
-                    source.map(PathBuf::as_path) == Some(path)
-                })
-                .map(|tab| tab.id())
-        })
+                .find(|(_, from)| from.as_path() == path)
+                .map(|(id, _)| *id)
+        };
+        self.find_path(path, None, cx)
+            .or_else(admitted)
+            .or_else(|| {
+                self.tabs
+                    .iter()
+                    .find(|tab| {
+                        let source = tab
+                            .view()
+                            .and_then(|view| {
+                                let view = view.read(cx);
+                                view.session
+                                    .source
+                                    .as_ref()
+                                    .or(view.preview.attachment())
+                                    .or(view.preview.source())
+                            })
+                            .or(tab.record().attachment.as_ref());
+                        source.map(PathBuf::as_path) == Some(path)
+                    })
+                    .map(|tab| tab.id())
+            })
     }
 
     fn folder_file_status(&self, path: &Path, cx: &gpui::App) -> Status {
@@ -187,15 +196,18 @@ impl Workspace {
             return;
         }
         if let Some(sheet) = self.close_folder_sheet(window, cx) {
-            self.open_ticked(&sheet, sheet.at(), window, cx);
+            self.open_ticked(&sheet, sheet.at(), false, window, cx);
         }
         self.show_next_folder(window, cx);
     }
 
+    /// Open the ticked files; `files` for a case, which lists Markdown
+    /// files until cases become Projects.
     fn open_ticked(
         &mut self,
         sheet: &Sheet,
         at: Option<usize>,
+        files: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (Vec<u64>, Vec<u64>) {
@@ -212,7 +224,7 @@ impl Workspace {
             })
             .map(|path| (path, true))
             .collect();
-        self.finish_open(paths, at, window, cx)
+        self.finish_open(paths, at, files, window, cx)
     }
 
     /// Open as case / Add to “X”: read the key now, after the Keychain
@@ -267,7 +279,7 @@ impl Workspace {
                 (id, sheet.at())
             }
         };
-        let (ids, created) = self.open_ticked(&sheet, at, window, cx);
+        let (ids, created) = self.open_ticked(&sheet, at, true, window, cx);
         if target.is_some() {
             // New members sit after the case's others in the sidebar.
             let last = self.tabs.iter().rposition(|tab| {
@@ -321,7 +333,7 @@ impl Workspace {
         let Some(sheet) = self.close_folder_sheet(window, cx) else {
             return;
         };
-        self.open_ticked(&sheet, sheet.at(), window, cx);
+        self.open_ticked(&sheet, sheet.at(), false, window, cx);
         self.notices
             .post(format!("“{}” opened without a case: {error}", sheet.name()));
         cx.notify();

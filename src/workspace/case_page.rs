@@ -365,7 +365,9 @@ impl Workspace {
         if let Some(tab) = self.find_path(&path, None, cx) {
             self.activate(tab, window, cx);
         } else if path.is_file() {
-            self.open_paths(vec![path], window, cx);
+            // A member is a Markdown file the case lists, not a Vault
+            // document, until cases become Projects.
+            self.finish_open(vec![(path, true)], None, true, window, cx);
         }
     }
 

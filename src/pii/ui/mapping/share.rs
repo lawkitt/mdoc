@@ -3,7 +3,7 @@
 //! with Copy reply and Open as tab.
 use super::Selection;
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, SaveAs},
+    document_view::{CopyMarkdown, DocumentView, ExportMarkdown},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
     style, ui,
 };
@@ -89,6 +89,9 @@ impl DocumentView {
         };
         let status = self.share_status(cx);
         let case = self.case.link().cloned();
+        // Only a Markdown file can join a case; a Vault document keeps its
+        // own replacements.
+        let file = self.session.document.path.is_some();
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
             .m_2()
@@ -151,8 +154,8 @@ impl DocumentView {
                                     .on_click(cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx))),
                             )
                             .child(
-                                ui::primary_button("share-save", "Save…", theme, true)
-                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(SaveAs), cx)),
+                                ui::primary_button("share-export", "Export Markdown…", theme, true)
+                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(ExportMarkdown), cx)),
                             ),
                     )
                     .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
@@ -169,6 +172,7 @@ impl DocumentView {
                             .child(div().flex_1().truncate().child(link.name.clone()))
                             .child(note("saved".into()))
                             .into_any_element(),
+                        None if !file => note("Kept with the document, encrypted on this computer.".into()).into_any_element(),
                         None => div()
                             .flex()
                             .flex_col()

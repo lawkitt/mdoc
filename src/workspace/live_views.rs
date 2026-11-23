@@ -227,6 +227,13 @@ impl<V> LiveViews<V> {
         }
     }
 
+    /// Tab `id` is shown as `name` until its document loads.
+    pub(super) fn set_name(&mut self, id: u64, name: Option<String>) {
+        if let Some(tab) = self.get_mut(id) {
+            tab.record.name = name;
+        }
+    }
+
     /// Tab `id` now holds `document`. Returns the document it held.
     pub(super) fn set_document(
         &mut self,

@@ -100,7 +100,7 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
         let path = dir.path().join(format!("{name}.md"));
         std::fs::write(&path, sent).unwrap();
         tabs.update_in(cx, |tabs, window, cx| {
-            tabs.open_paths(vec![path], window, cx)
+            tabs.open_case_files(vec![path], window, cx)
         });
         cx.run_until_parked();
         let view = active(&tabs, cx);
@@ -339,7 +339,7 @@ fn a_case_member_keeps_its_reply_encrypted_across_reopening(cx: &mut TestAppCont
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
     cx.run_until_parked();
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let case_id = tabs
@@ -367,7 +367,7 @@ fn a_case_member_keeps_its_reply_encrypted_across_reopening(cx: &mut TestAppCont
     assert!(!cx.has_pending_prompt(), "saved document, saved case");
     cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);
@@ -407,7 +407,7 @@ fn without_a_case_the_reply_lives_only_in_the_tab(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
     cx.run_until_parked();
     open_share(&view, cx);
     fill(&view, "PERSON_1 replied, tab-only.", cx);
@@ -435,7 +435,7 @@ fn without_a_case_the_reply_lives_only_in_the_tab(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
+        tabs.open_case_files(vec![path], window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);
@@ -443,14 +443,14 @@ fn without_a_case_the_reply_lives_only_in_the_tab(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_reply_follows_case_creation_member_rename_leave_and_join(cx: &mut TestAppContext) {
+fn a_reply_follows_case_creation_leave_and_join(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
     open_share(&view, cx);
     let reply = "PERSON_1 owes ORG_1 a response.";
     fill(&view, reply, cx);
-    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
     cx.run_until_parked();
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let case = tabs.update_in(cx, |tabs, window, cx| {
@@ -460,14 +460,7 @@ fn a_reply_follows_case_creation_member_rename_leave_and_join(cx: &mut TestAppCo
     let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     let old = session_store::identity(&path);
     assert_eq!(store.load(&case).unwrap().reply(&old), Some(reply));
-
-    let renamed = dir.path().join("renamed.md");
-    view.update(cx, |view, cx| view.write(renamed.clone(), None, cx));
-    cx.run_until_parked();
-    let member = session_store::identity(&renamed);
-    let saved = store.load(&case).unwrap();
-    assert_eq!(saved.reply(&old), None);
-    assert_eq!(saved.reply(&member), Some(reply));
+    let member = old;
 
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.remove_from_case(tab, window, cx)
@@ -496,7 +489,7 @@ fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut Test
     let plain = dir.path().join("plain.md");
     std::fs::write(&plain, "Nothing here was replaced.").unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![plain], window, cx)
+        tabs.open_case_files(vec![plain], window, cx)
     });
     cx.run_until_parked();
     let other = active(&tabs, cx);
@@ -627,7 +620,7 @@ fn an_untitled_case_tab_stores_its_reply_on_first_save_as(cx: &mut TestAppContex
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
     let member = active(&tabs, cx);
-    member.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    member.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
     cx.run_until_parked();
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let case = tabs
@@ -654,7 +647,7 @@ fn an_untitled_case_tab_stores_its_reply_on_first_save_as(cx: &mut TestAppContex
     assert_eq!(saved.reply(&session_store::identity(&path)), Some(first));
 
     let new_path = dir.path().join("restored.md");
-    restored.update(cx, |view, cx| view.write(new_path.clone(), None, cx));
+    restored.update(cx, |view, cx| view.save_as_file(new_path.clone(), cx));
     cx.run_until_parked();
     let saved = store.load(&case).unwrap();
     assert_eq!(
@@ -700,7 +693,7 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
         &[("Boris Ivanov", Person), ("Anna Petrova", Person)],
     );
     let first_view = active(&tabs, cx);
-    first_view.update(cx, |view, cx| view.write(dir.join("a.md"), None, cx));
+    first_view.update(cx, |view, cx| view.save_as_file(dir.join("a.md"), cx));
     cx.run_until_parked();
     let case = tabs
         .update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx))
@@ -716,7 +709,7 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
     );
     let view = active(&tabs, cx);
     let path = dir.join("b.md");
-    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(
@@ -807,7 +800,7 @@ fn a_join_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut Tes
     assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
 
     // Close the saved member and open it again from the encrypted case.
-    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
     cx.executor()
         .advance_clock(std::time::Duration::from_secs(1));
     cx.run_until_parked();
@@ -818,7 +811,7 @@ fn a_join_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut Tes
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt(), "saved document, saved case");
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);

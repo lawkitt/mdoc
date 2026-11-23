@@ -1,6 +1,6 @@
 use super::DocumentView;
 use crate::{
-    document_view::{CopyMarkdown, Save, SaveAs, TogglePreview},
+    document_view::{CopyMarkdown, ExportMarkdown, Save, TogglePreview},
     pii::ui::{CopyForAi, PiiApplyAll},
     spelling::ToggleDocumentSpelling,
     style, ui,
@@ -264,7 +264,6 @@ impl DocumentView {
         let has_preview = self.preview.pdf().is_some() || self.preview.source().is_some();
         let reviewable = self.can_show_replacements();
         let name = self.display_name();
-        let dirty = self.lifecycle.dirty();
         let crumb = div()
             .flex()
             .items_center()
@@ -312,16 +311,6 @@ impl DocumentView {
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .child(name),
             )
-            .when(dirty, |v| {
-                v.child(
-                    div()
-                        .when(cfg!(test), |v| v.debug_selector(|| "header-dirty".into()))
-                        .size(px(6.))
-                        .flex_shrink_0()
-                        .rounded_full()
-                        .bg(p.header_muted),
-                )
-            })
             .when_some(self.left_out(), |v, line| {
                 // The left-out line: quiet counts, never a warning.
                 v.child(
@@ -582,13 +571,13 @@ impl DocumentView {
                         )
                         .child(
                             row(
-                                "more-save-as",
-                                "Save as…".into(),
+                                "more-export",
+                                "Export Markdown…".into(),
                                 Some(modifier("⇧⌘S", "Ctrl+Shift+S")),
                                 None,
                                 copy,
                             )
-                            .on_click(cx.listener(guard(copy, || Box::new(SaveAs)))),
+                            .on_click(cx.listener(guard(copy, || Box::new(ExportMarkdown)))),
                         )
                         .child(ui::menu_divider(theme))
                         .child(

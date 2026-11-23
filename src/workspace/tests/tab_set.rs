@@ -2,9 +2,7 @@
 use super::*;
 
 #[gpui::test]
-fn untitled_numbering_failed_markdown_load_does_not_reserve_an_untitled_name(
-    cx: &mut TestAppContext,
-) {
+fn an_unreadable_markdown_file_adds_nothing_and_says_so(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let unreadable = dir.path().join("unreadable.md");
     std::fs::write(&unreadable, [0xff, 0xfe]).unwrap();
@@ -15,22 +13,10 @@ fn untitled_numbering_failed_markdown_load_does_not_reserve_an_untitled_name(
     cx.run_until_parked();
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        let view = tabs.active_view().unwrap();
-        assert!(view.read(cx).lifecycle.unavailable());
-        assert_eq!(view.read(cx).display_name(), "unreadable.md");
-        assert_eq!(view.read(cx).window_title(), "unreadable.md — mdoc");
-        assert_eq!(
-            tab_label(tabs.tabs.active_tab().unwrap(), cx).name,
-            "unreadable.md"
-        );
-        let snapshot = tabs.snapshot(cx);
-        assert!(
-            !snapshot.tabs[0].blank,
-            "a failed file is not an unsaved blank"
-        );
-        let manifest = dir.path().join("session.json");
-        session_store::save(&manifest, &snapshot).unwrap();
-        assert!(session_store::load(&manifest).is_ok());
+        assert!(tabs.tabs.iter().all(|tab| tab.record().document.is_none()));
+        let notice = tabs.notices.message().unwrap();
+        assert!(notice.contains("unreadable.md"), "{notice}");
+        assert!(tabs.opened_vault().unwrap().documents().is_empty());
     });
     cx.dispatch_action(New);
     cx.run_until_parked();
@@ -60,22 +46,11 @@ fn untitled_numbering_reuses_closed_gaps_and_suggests_the_tab_name(cx: &mut Test
         let view = tabs.active_view().unwrap();
         assert_eq!(view.read(cx).session.suggested_name(), "Untitled 3.md");
     });
-    cx.dispatch_action(SaveAs);
+    cx.dispatch_action(ExportMarkdown);
     cx.run_until_parked();
     assert!(cx.did_prompt_for_new_path());
     cx.simulate_new_path_selection(|_| None);
     cx.run_until_parked();
-    cx.simulate_input("third document");
-    for action in [Box::new(Close) as Box<dyn gpui::Action>, Box::new(Quit)] {
-        cx.update(|window, cx| window.dispatch_action(action, cx));
-        cx.run_until_parked();
-        assert_eq!(
-            cx.pending_prompt().unwrap().0,
-            "Save changes to “Untitled 3.md”?"
-        );
-        cx.simulate_prompt_answer("Cancel");
-        cx.run_until_parked();
-    }
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.close_tab(second, window, cx);
         tabs.new_tab(window, cx);
@@ -289,13 +264,9 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
         assert_eq!(tabs.tabs.len(), 4);
         assert!(tabs.tabs[2].view().is_none());
         assert!(tabs.tabs[3].view().is_none());
-        assert_eq!(
-            tabs.tabs[2].record().markdown,
-            session_store::identity(&markdown)
-        );
+        assert!(tabs.tabs[2].record().document.is_some());
         assert!(tabs.notices.message().unwrap().contains("unknown.bin"));
         assert!(!source.read(cx).lifecycle.source_only());
-        assert!(!source.read(cx).dirty(cx));
         assert!(source.read(cx).preview.pdf().is_some());
         assert!(!source.read(cx).editor.read(cx).text().is_empty());
         assert_eq!(original.read(cx).editor.read(cx).text(), "keep edits");
@@ -305,6 +276,8 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
         tabs.open_paths(vec![pdf, markdown], window, cx)
     });
     cx.run_until_parked();
+    // Both are open already: the first comes to the front, nothing asks.
+    assert!(!cx.has_pending_prompt());
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 4);
         assert_eq!(tabs.read(cx).tabs.active(), source_id);
@@ -341,7 +314,6 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
             first.read(cx).editor.read(cx).text(),
             "original **Markdown**"
         );
-        assert!(first.read(cx).dirty(cx));
         assert_eq!(second.read(cx).editor.read(cx).text(), "second document");
     });
     cx.dispatch_action(mdoc_editor::Undo);
@@ -353,13 +325,7 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
     assert_eq!(active(&tabs, cx), second);
     cx.dispatch_action(Close);
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    assert_eq!(active(&tabs, cx), second);
-    cx.dispatch_action(Close);
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert!(
@@ -408,7 +374,13 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     let placeholder = cx.update(|_, cx| tabs.read(cx).tabs.active());
     // Rejected selections and canceled pickers cannot consume the placeholder.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.finish_open(vec![(dir.path().join("bad.bin"), false)], None, window, cx)
+        tabs.finish_open(
+            vec![(dir.path().join("bad.bin"), false)],
+            None,
+            true,
+            window,
+            cx,
+        )
     });
     cx.dispatch_action(Open);
     cx.run_until_parked();
@@ -467,6 +439,9 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
         tabs.open_path(file, window, cx);
     });
     cx.run_until_parked();
+    // The file is in mdoc already: open its document again.
+    cx.simulate_prompt_answer("Open Existing");
+    cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 3));
 }
 
@@ -508,7 +483,7 @@ fn home_opens_several_files_and_new_tab_is_a_plain_editor(cx: &mut TestAppContex
     cx.run_until_parked();
     draw(cx);
     // The hidden placeholder gives way to the opened files.
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     assert!(cx.debug_bounds("home").is_none());
 
     // A new tab is a plain editor: no Home, no start page.
@@ -591,7 +566,7 @@ fn recents_stay_capped_and_cleared_when_open_documents_notify(cx: &mut TestAppCo
     let mut views = Vec::new();
     for i in 0..13 {
         let path = dir.path().join(format!("{i}.md"));
-        std::fs::write(&path, "text").unwrap();
+        std::fs::write(&path, path.display().to_string()).unwrap();
         tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
         cx.run_until_parked();
         views.push(active(&tabs, cx));
@@ -623,7 +598,7 @@ fn recents_stay_capped_and_cleared_when_open_documents_notify(cx: &mut TestAppCo
 fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let a = dir.path().join("a.md");
-    std::fs::write(&a, "x").unwrap();
+    std::fs::write(&a, a.display().to_string()).unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
@@ -632,7 +607,7 @@ fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppCon
     });
     cx.run_until_parked();
     draw(cx);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "a.md — mdoc"));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "a — mdoc"));
     cx.dispatch_action(shell::ShowHome);
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
@@ -650,7 +625,7 @@ fn untitled_save_as_starts_in_the_last_used_folder(cx: &mut TestAppContext) {
     // the process's working directory (#180).
     cx.dispatch_action(New);
     cx.run_until_parked();
-    cx.dispatch_action(SaveAs);
+    cx.dispatch_action(ExportMarkdown);
     cx.run_until_parked();
     let mut start = None;
     cx.simulate_new_path_selection(|directory| {

@@ -29,7 +29,8 @@ fn active_name(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> String {
     cx.update(|_, cx| view.read(cx).display_name())
 }
 
-/// Open `names` as saved files in `dir`, in order; returns their tab ids.
+/// Open `names` as Markdown files in `dir`, as a case's members open, in
+/// order; returns their tab ids.
 fn open_saved(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
@@ -42,7 +43,7 @@ fn open_saved(
             let path = dir.join(name);
             std::fs::write(&path, *name).unwrap();
             tabs.update_in(cx, |tabs, window, cx| {
-                tabs.open_paths(vec![path], window, cx)
+                tabs.open_case_files(vec![path], window, cx)
             });
             cx.run_until_parked();
             active_id(tabs, cx)
@@ -127,29 +128,26 @@ fn the_only_tab_has_no_close_others(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("context-close-others").is_none());
 }
 
-/// Clean tabs close at once; each at-risk tab asks in sidebar order, the
-/// asked tab in front.
+/// Other tabs close at once, unless closing one would lose a mapping: it
+/// asks, in front.
 #[gpui::test]
-fn close_others_asks_each_at_risk_tab_in_sidebar_order(cx: &mut TestAppContext) {
+fn close_others_asks_only_about_a_mapping_it_would_lose(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let mapped = active_id(&tabs, cx);
     let saved = open_saved(&tabs, cx, dir.path(), &["keep.md", "clean.md"]);
     let (keep, clean) = (saved[0], saved[1]);
-    let dirty = new_dirty(&tabs, cx, "draft");
-    assert_eq!(ids(&tabs, cx), [mapped, keep, clean, dirty]);
+    let draft = new_dirty(&tabs, cx, "draft");
+    assert_eq!(ids(&tabs, cx), [mapped, keep, clean, draft]);
 
     open_menu(cx, keep);
     click(cx, "context-close-others");
-    // The first tab in the sidebar first: one question for its
-    // unsaved changes and mapping.
     assert_eq!(active_name(&tabs, cx), "contract.md");
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
-    // The clean tab went without a question; the dirty one asks next.
-    assert_eq!(ids(&tabs, cx), [keep, dirty]);
-    assert_eq!(active_id(&tabs, cx), dirty);
-    cx.simulate_prompt_answer("Don't Save");
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "Keep the replacement mapping?"
+    );
+    cx.simulate_prompt_answer("Close");
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
     assert_eq!(ids(&tabs, cx), [keep]);
@@ -160,26 +158,24 @@ fn close_others_asks_each_at_risk_tab_in_sidebar_order(cx: &mut TestAppContext) 
 #[gpui::test]
 fn cancel_stops_close_others(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx) = boot_home(cx, Session::default());
-    cx.simulate_resize(size(px(1100.), px(760.)));
-    let first = open_saved(&tabs, cx, dir.path(), &["first.md", "keep.md"]);
-    let (clean, keep) = (first[0], first[1]);
-    let dirty = new_dirty(&tabs, cx, "draft");
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let mapped = active_id(&tabs, cx);
+    let keep = open_saved(&tabs, cx, dir.path(), &["keep.md"])[0];
     let after = open_saved(&tabs, cx, dir.path(), &["after.md"])[0];
-    assert_eq!(ids(&tabs, cx), [clean, keep, dirty, after]);
+    assert_eq!(ids(&tabs, cx), [mapped, keep, after]);
 
     open_menu(cx, keep);
     click(cx, "context-close-others");
-    assert_eq!(active_id(&tabs, cx), dirty);
+    assert_eq!(active_id(&tabs, cx), mapped);
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
-    assert_eq!(ids(&tabs, cx), [keep, dirty, after]);
+    assert_eq!(ids(&tabs, cx), [mapped, keep, after]);
 
     // Closing the asked tab later doesn't resume the stopped run.
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(dirty, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(mapped, window, cx));
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Don't Save");
+    cx.simulate_prompt_answer("Close");
     cx.run_until_parked();
     assert_eq!(ids(&tabs, cx), [keep, after]);
 }

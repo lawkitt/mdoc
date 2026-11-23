@@ -66,7 +66,7 @@ impl Workspace {
                     .map(session_store::identity),
                 if !ready(v, cx) {
                     Some(None)
-                } else if v.lifecycle.dirty() {
+                } else if v.unsaved(cx) {
                     // The saved text is the reviewed one only while nothing
                     // is unsaved: keep the fingerprint of the last save.
                     None
@@ -255,7 +255,13 @@ impl Workspace {
                 (Some(*id), None)
             }
             ShelfKey::Member { path, .. } => {
-                self.open_paths(vec![path.clone()], window, cx);
+                // A case's member is the Markdown file it lists.
+                match self.find_path(path, None, cx) {
+                    Some(id) => self.activate_as(id, Arrival::Visit, window, cx),
+                    None => {
+                        self.finish_open(vec![(path.clone(), true)], None, true, window, cx);
+                    }
+                }
                 (None, Some(path.clone()))
             }
         };

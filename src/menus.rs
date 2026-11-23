@@ -6,7 +6,7 @@
 
 use crate::{
     document_view::{
-        CopyMarkdown, Save, SaveAs, ShowEditView, ShowOriginalView, ShowPseudonymizedView,
+        CopyMarkdown, ExportMarkdown, Save, ShowEditView, ShowOriginalView, ShowPseudonymizedView,
         ShowReplacements, ToggleCompare, ZoomIn, ZoomOut, ZoomReset,
     },
     pii::ui::{CopyForAi, Pseudonymize},
@@ -195,7 +195,7 @@ fn menus(recent: &[PathBuf]) -> Vec<Menu> {
             MenuItem::action("Convert to Markdown", Import),
             MenuItem::separator(),
             MenuItem::action("Save", Save),
-            MenuItem::action("Save As…", SaveAs),
+            MenuItem::action("Export Markdown…", ExportMarkdown),
             MenuItem::separator(),
             MenuItem::action("Copy Markdown", CopyMarkdown),
             MenuItem::action("Copy for AI", CopyForAi),

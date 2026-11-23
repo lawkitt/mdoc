@@ -64,6 +64,7 @@ mod search;
 mod settings;
 mod shelf;
 mod shell;
+mod vault;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
 use crate::{bind_all_keys, pii::ui::CompareMode};
@@ -383,7 +384,7 @@ fn fixture() -> Result<(String, Vec<mdoc_pii::Detection>)> {
 /// document, its review and its case.
 fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) -> Result<()> {
     let view = navigation::scenes(d, path)?;
-    review::scenes(d, &view, path, detections)?;
+    review::scenes(d, &view, detections)?;
     settings::scenes(d)?;
     shell::scenes(d)?;
     search::scenes(d, &view)?;
@@ -410,6 +411,8 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::scanning(d)?;
     recents::scenes(d, path)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
+    vault::repeated_import(d, path.parent().ok_or("fixture folder")?)?;
+    vault::unavailable_home(d)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;
     cases::locked_home(d)
@@ -431,6 +434,8 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     for result in [
         mdoc_store::cases::Store::open(cases.clone()).map(|_| ()),
         mdoc_store::cases::Store::open_quietly(cases).map(|_| ()),
+        mdoc_store::cases::vault_key(true).map(|_| ()),
+        mdoc_store::cases::vault_key(false).map(|_| ()),
     ] {
         if !matches!(result, Err(mdoc_store::cases::CaseError::KeysDisabled)) {
             return Err("OS case-key guard is not active".into());
@@ -455,10 +460,12 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     let text_system = gpui_windows::headless_text_system().map_err(|e| e.to_string())?;
     let (text, detections) = fixture()?;
     let path = profile.path().join("Services Agreement.md");
-    std::fs::write(&path, text).map_err(|e| e.to_string())?;
     let mut screens = Vec::new();
     let mut focus_rings = Vec::new();
     for (theme, tag) in [(ThemeChoice::Light, "light"), (ThemeChoice::Dark, "dark")] {
+        // The fixture saves itself as scenes edit it: each theme starts
+        // from the public text.
+        std::fs::write(&path, &text).map_err(|e| e.to_string())?;
         let mut cx = HeadlessAppContext::with_platform(text_system.clone(), Arc::new(()), || {
             #[cfg(target_os = "macos")]
             {
@@ -487,6 +494,10 @@ pub(crate) fn run(out: &Path) -> Result<()> {
                     let case = mdoc_store::cases::Case::new("Public fixture".into(), &[], None);
                     store.save(&case).expect("temporary fixture case");
                     workspace.use_case_store(store);
+                    workspace.use_vault(
+                        mdoc_vault::Vault::open(profile.path().join(tag).join("vault"), &[3; 32])
+                            .expect("temporary Vault"),
+                    );
                     workspace.case_coordinator.finish_load(vec![case]);
                     workspace.user_lists_read(Ok(Default::default()), cx);
                     workspace.restore(

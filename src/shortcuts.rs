@@ -381,8 +381,13 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Save as…",
-        &[on!(App, None, &["mod-shift-s"], document_view::SaveAs)],
+        "Export Markdown…",
+        &[on!(
+            App,
+            None,
+            &["mod-shift-s"],
+            document_view::ExportMarkdown
+        )],
     ),
     row(
         Everywhere,

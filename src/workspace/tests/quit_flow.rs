@@ -1,4 +1,5 @@
-//! Closing and quitting with unsaved changes (`QuitFlow`).
+//! Quitting: documents are written, then the session, then the window
+//! closes (`QuitFlow`).
 use super::*;
 use std::cell::RefCell;
 
@@ -13,57 +14,28 @@ fn pii_quit_during_setup_download(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn quit_cancel_keeps_all_tabs_and_save_as_collision_never_overwrites(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let note = dir.path().join("saved.md");
-    std::fs::write(&note, "disk original").unwrap();
-    let (tabs, cx) = boot(
-        cx,
-        Session {
-            tabs: vec![TabRecord {
-                markdown: note.clone(),
-                ..TabRecord::default()
-            }],
-            ..Session::default()
-        },
-    );
+fn a_quit_writes_every_draft_and_asks_nothing(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    cx.simulate_input("first draft");
     cx.dispatch_action(New);
     cx.run_until_parked();
-    cx.simulate_input("unsaved");
-    cx.dispatch_action(SaveAs);
-    cx.run_until_parked();
-    cx.simulate_new_path_selection(|_| Some(note.clone()));
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    assert_eq!(std::fs::read_to_string(note).unwrap(), "disk original");
-    cx.dispatch_action(New);
-    cx.run_until_parked();
-    cx.simulate_input("other unsaved");
+    cx.simulate_input("second draft");
     cx.dispatch_action(Quit);
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Review…");
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        assert_eq!(tabs.tabs.len(), 3);
-        assert!(!tabs.quit_flow.quitting());
-        assert_eq!(
-            tabs.tabs
-                .iter()
-                .filter(|tab| tab.view().unwrap().read(cx).dirty(cx))
-                .count(),
-            2
-        );
-    });
+    assert!(!cx.has_pending_prompt());
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let mut texts: Vec<_> = vault
+        .documents()
+        .iter()
+        .map(|summary| vault.document(&summary.id).unwrap().markdown)
+        .collect();
+    texts.sort();
+    assert_eq!(texts, ["first draft", "second draft"]);
 }
 
 #[gpui::test]
-fn production_shell_queues_startup_opens_and_close_hook_keeps_dirty_tabs(cx: &mut TestAppContext) {
+fn production_shell_queues_startup_opens_and_a_quit_writes_the_edit(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("startup.md");
     std::fs::write(&path, "startup").unwrap();
@@ -71,7 +43,7 @@ fn production_shell_queues_startup_opens_and_close_hook_keeps_dirty_tabs(cx: &mu
     cx.update(bind_app_actions);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = Workspace::new(window, cx);
-        tabs.open_path(path, window, cx);
+        tabs.open_path(path.clone(), window, cx);
         tabs
     });
     cx.run_until_parked();
@@ -83,9 +55,8 @@ fn production_shell_queues_startup_opens_and_close_hook_keeps_dirty_tabs(cx: &mu
     cx.simulate_input(" edited");
     cx.dispatch_action(Quit);
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    cx.update(|_, cx| assert!(view.read(cx).dirty(cx)));
+    assert!(!cx.has_pending_prompt());
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
 }
 
 #[gpui::test]
@@ -144,40 +115,25 @@ fn system_quit_gate(
 }
 
 #[gpui::test]
-fn system_quit_asks_like_quit_and_answers_appkit(cx: &mut TestAppContext) {
+fn system_quit_writes_the_edit_and_answers_appkit(cx: &mut TestAppContext) {
     use crate::system_quit::Answer;
     let (tabs, cx) = boot(cx, Session::default());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     cx.simulate_input("unsaved");
     let (gate, replies) = system_quit_gate(cx);
-    // The Dock's Quit: AppKit waits, and Quit's question comes up.
+    // The Dock's Quit: AppKit waits while the edit is written, then the
+    // window closes, which answers yes.
     assert_eq!(
         gate.should_terminate(Some(system_quit_target(cx))),
         Answer::Later
     );
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-    assert!(gate.waiting());
-    // Cancel refuses the terminate and keeps the edit.
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-    assert_eq!(*replies.borrow(), [false]);
-    let view = active(&tabs, cx);
-    cx.update(|_, cx| {
-        assert!(!tabs.read(cx).quit_flow.quitting());
-        assert!(view.read(cx).dirty(cx), "Cancel keeps the edit");
-    });
-    assert!(!cx.cx.read(|cx| cx.windows().is_empty()));
-    // Again, and Discard: the quit flow closes the window, which answers yes.
-    assert_eq!(
-        gate.should_terminate(Some(system_quit_target(cx))),
-        Answer::Later
-    );
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Don't Save");
-    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
-    assert_eq!(*replies.borrow(), [false, true]);
+    assert_eq!(*replies.borrow(), [true]);
     assert!(!gate.waiting());
+    let summary = &vault.documents()[0];
+    assert_eq!(vault.document(&summary.id).unwrap().markdown, "unsaved");
 }
 
 #[gpui::test]

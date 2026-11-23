@@ -340,7 +340,9 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     click_toolbar(cx, "header-source");
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible());
-        assert_eq!(view.read(cx).preview.attachment(), Some(&path));
+        // Its Source is the viewing copy of the file.
+        let attachment = view.read(cx).preview.attachment().cloned().unwrap();
+        assert_eq!(attachment.file_name(), path.file_name());
     });
 }
 
@@ -512,7 +514,7 @@ fn open_recent_follows_recents_and_clear_menu_empties_it(cx: &mut TestAppContext
         cx.dispatch_action(crate::workspace::OpenRecent(path.clone()));
         cx.run_until_parked();
     }
-    assert_eq!(tab_names(&tabs, cx), ["first.md", "second.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["first", "second"]);
     assert_eq!(titles(cx), ["second.md", "first.md", "Clear Menu"]);
     cx.dispatch_action(crate::workspace::ClearRecentFiles);
     cx.run_until_parked();
@@ -714,36 +716,34 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn menu_routes_save_save_as_and_open_to_the_active_document(cx: &mut TestAppContext) {
+fn menu_routes_save_export_and_open_to_the_active_document(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let first_path = dir.path().join("first.md");
     let copy_path = dir.path().join("copy.md");
     let other_path = dir.path().join("other.md");
     std::fs::write(&other_path, "other document").unwrap();
     let (tabs, cx) = boot(cx, Session::default());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    let stored = || {
+        let summary = vault.documents().into_iter().next()?;
+        Some(vault.document(&summary.id).unwrap().markdown)
+    };
     let view = active(&tabs, cx);
     view.update(cx, |v, cx| {
         v.editor.update(cx, |e, cx| e.set_text("first version", cx))
     });
     cx.run_until_parked();
+    // Save writes at once, without asking where.
     more(cx, "more-save");
-    cx.simulate_new_path_selection(|_| Some(first_path.clone()));
-    cx.run_until_parked();
-    assert_eq!(
-        std::fs::read_to_string(&first_path).unwrap(),
-        "first version"
-    );
+    assert_eq!(stored().as_deref(), Some("first version"));
     view.update(cx, |v, cx| {
         v.editor
             .update(cx, |e, cx| e.set_text("updated version", cx))
     });
     cx.run_until_parked();
     more(cx, "more-save");
-    assert_eq!(
-        std::fs::read_to_string(&first_path).unwrap(),
-        "updated version"
-    );
-    more(cx, "more-save-as");
+    assert_eq!(stored().as_deref(), Some("updated version"));
+    // Export Markdown writes a copy; the document stays in the Vault.
+    more(cx, "more-export");
     cx.simulate_new_path_selection(|_| Some(copy_path.clone()));
     cx.run_until_parked();
     assert_eq!(
@@ -751,10 +751,9 @@ fn menu_routes_save_save_as_and_open_to_the_active_document(cx: &mut TestAppCont
         "updated version"
     );
     cx.update(|_, cx| {
-        assert_eq!(
-            view.read(cx).session.document.path.as_ref(),
-            Some(&dunce::canonicalize(&copy_path).unwrap())
-        )
+        let view = view.read(cx);
+        assert!(view.session.document.path.is_none());
+        assert!(view.session.document.vault.is_some());
     });
     // Open has no header button: ⌘O, Home and the palette.
     cx.dispatch_action(Open);
@@ -911,7 +910,6 @@ fn settings_categories_use_one_tab_stop_and_arrow_keys(cx: &mut TestAppContext) 
         settings_ui::Category::Detection,
         settings_ui::Category::Recognition,
         settings_ui::Category::Spelling,
-        settings_ui::Category::Cases,
         settings_ui::Category::About,
         settings_ui::Category::General,
     ] {
@@ -1233,7 +1231,6 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
             "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree."
         );
         assert_eq!(view.display_name(), "Restored – contract.md");
-        assert!(view.dirty(cx), "a restored reply is unsaved work");
         assert_eq!(view.pii.review().remaining(), 3);
         assert_eq!(view.unresolved_tokens(cx).len(), 1);
         assert_eq!(
@@ -1899,7 +1896,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
     let unknown = dir.path().join("unknown.bin");
     for path in [&a, &b, &unknown] {
-        std::fs::write(path, "x").unwrap();
+        std::fs::write(path, path.display().to_string()).unwrap();
     }
     let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
@@ -1917,7 +1914,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     drag_files(cx, &[a.clone(), b.clone(), unknown.clone()], center);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(2)));
     drop_files(cx, center);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     cx.update(|_, cx| {
         assert!(
             tabs.read(cx)
@@ -1933,7 +1930,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     drag_files(cx, std::slice::from_ref(&b), center);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, None));
     drop_files(cx, center);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
 }
 
 #[gpui::test]
@@ -2061,11 +2058,11 @@ fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestApp
     std::fs::write(&path, source).unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    let pending = view.update_in(cx, |view, window, cx| {
+    let pending = view.update_in(cx, |view, _, cx| {
         view.pii.set_reviewing(true);
         view.pii
             .review_mut()
@@ -2076,7 +2073,7 @@ fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestApp
         view.editor.update(cx, |editor, cx| {
             editor.replace_range(source.len()..source.len(), "\n\nA note.", cx)
         });
-        view.save(false, None, window, cx);
+        view.save_now(cx);
         pending
     });
     cx.run_until_parked();

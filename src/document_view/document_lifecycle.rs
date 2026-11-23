@@ -1,25 +1,18 @@
 //! A document view's lifecycle: loading its
 //! Markdown and whether that failed, whether it shows only a source still to
-//! convert, whether its text has unsaved changes, whether it is a generated
-//! conversion nobody edited yet or a blank Home placeholder, and whether a
-//! dialog of its own is open. File identity and saves are the document
-//! session's (`mdoc_store::document_session`); this owner only tracks the view.
+//! convert, whether it is a generated conversion nobody edited yet or a blank
+//! Home placeholder, and whether a dialog of its own is open. Documents save
+//! themselves (the workspace's autosave); this owner only tracks the view.
 
 /// What the document view carries out for a lifecycle transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LifecycleEffect {
-    /// Nothing is unsaved: go on with what was asked.
+    /// Go on with what was asked.
     Proceed,
-    /// Ask whether to save the unsaved changes first.
-    AskToSave,
     /// Ask for files to open.
     AskForFiles,
-    /// Save to the document's own file.
-    Write,
-    /// Ask where to save.
+    /// Ask where to export the Markdown.
     AskForPath,
-    /// The document cannot be saved now; a close waiting on it is cancelled.
-    CancelClose,
 }
 
 #[derive(Default)]
@@ -31,8 +24,6 @@ pub(crate) struct DocumentLifecycle {
     unavailable: bool,
     /// A source shown before its conversion (or a non-Markdown file).
     source_only: bool,
-    /// Unsaved changes, as of the last edit or save.
-    dirty: bool,
     /// An automatic conversion nobody has edited: the session keeps its
     /// source instead of a Markdown file.
     generated_unedited: bool,
@@ -69,10 +60,6 @@ impl DocumentLifecycle {
 
     pub(crate) fn source_only(&self) -> bool {
         self.source_only
-    }
-
-    pub(crate) fn dirty(&self) -> bool {
-        self.dirty
     }
 
     pub(crate) fn generated_unedited(&self) -> bool {
@@ -121,7 +108,7 @@ impl DocumentLifecycle {
     }
 
     /// The user edited the text: it is no longer an untouched conversion
-    /// or placeholder. The caller then rechecks `set_dirty`.
+    /// or placeholder.
     pub(crate) fn edited(&mut self) {
         self.generated_unedited = false;
         self.blank_disposable = false;
@@ -133,33 +120,15 @@ impl DocumentLifecycle {
         self.edited_at
     }
 
-    /// Whether the text differs from the saved text, rechecked.
-    pub(crate) fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty;
-    }
-
-    pub(crate) fn saved(&mut self) {
-        self.generated_unedited = false;
-        self.blank_disposable = false;
-        self.dirty = false;
-    }
-
     /// The user acted on the tab, so Home no longer replaces it.
     pub(crate) fn keep_blank(&mut self) {
         self.blank_disposable = false;
     }
 
-    /// Something asked to replace or close the document; `dirty` is whether
-    /// it has unsaved changes. Nothing while one of its dialogs is open.
-    pub(crate) fn request(&mut self, dirty: bool) -> Option<LifecycleEffect> {
-        if self.prompting {
-            return None;
-        }
-        if !dirty {
-            return Some(LifecycleEffect::Proceed);
-        }
-        self.prompting = true;
-        Some(LifecycleEffect::AskToSave)
+    /// Something asked to replace or close the document. Nothing while one
+    /// of its dialogs is open.
+    pub(crate) fn request(&mut self) -> Option<LifecycleEffect> {
+        (!self.prompting).then_some(LifecycleEffect::Proceed)
     }
 
     /// Open pressed. Nothing while one of the document's dialogs is open.
@@ -171,18 +140,14 @@ impl DocumentLifecycle {
         Some(LifecycleEffect::AskForFiles)
     }
 
-    /// Save (`save_as` false) or Save As; `has_path` when the document has a
-    /// file of its own. A document that is loading, failed to load, shows only
-    /// a source, or has a dialog open cannot be saved.
-    pub(crate) fn save(&mut self, save_as: bool, has_path: bool) -> LifecycleEffect {
+    /// Export Markdown. A document that is loading, failed to load, shows
+    /// only a source, or has a dialog open has nothing to export.
+    pub(crate) fn export(&mut self) -> Option<LifecycleEffect> {
         if self.prompting || self.loading || self.unavailable || self.source_only {
-            return LifecycleEffect::CancelClose;
-        }
-        if !save_as && has_path {
-            return LifecycleEffect::Write;
+            return None;
         }
         self.prompting = true;
-        LifecycleEffect::AskForPath
+        Some(LifecycleEffect::AskForPath)
     }
 
     /// The document's dialog was answered or dismissed.
@@ -232,17 +197,13 @@ mod tests {
     }
 
     #[test]
-    fn a_conversion_is_generated_until_edited_or_saved() {
+    fn a_conversion_is_generated_until_edited() {
         let mut lifecycle = lifecycle(false, true, false);
         assert!(lifecycle.source_only());
         lifecycle.converted(true);
         assert!(!lifecycle.source_only() && lifecycle.generated_unedited());
         lifecycle.edited();
-        lifecycle.set_dirty(true);
-        assert!(!lifecycle.generated_unedited() && lifecycle.dirty());
-        lifecycle.converted(true);
-        lifecycle.saved();
-        assert!(!lifecycle.generated_unedited() && !lifecycle.dirty());
+        assert!(!lifecycle.generated_unedited());
         lifecycle.converted(false);
         assert!(!lifecycle.generated_unedited());
         lifecycle.show_source();
@@ -253,45 +214,30 @@ mod tests {
     fn a_blank_placeholder_stops_being_one_once_used() {
         let mut placeholder = lifecycle(false, false, true);
         assert!(placeholder.blank_disposable());
-        placeholder.set_dirty(true);
-        assert!(placeholder.blank_disposable());
         placeholder.edited();
         assert!(!placeholder.blank_disposable());
         let mut placeholder = lifecycle(false, false, true);
         placeholder.keep_blank();
         assert!(!placeholder.blank_disposable());
-        let mut placeholder = lifecycle(false, false, true);
-        placeholder.saved();
-        assert!(!placeholder.blank_disposable());
     }
 
     #[test]
-    fn unsaved_changes_are_asked_about_once() {
+    fn nothing_else_asks_while_a_dialog_is_open() {
         let mut lifecycle = DocumentLifecycle::default();
-        assert_eq!(lifecycle.request(false), Some(LifecycleEffect::Proceed));
-        assert!(!lifecycle.prompting());
-        assert_eq!(lifecycle.request(true), Some(LifecycleEffect::AskToSave));
-        assert!(lifecycle.prompting());
-        // While the dialog is open nothing else may ask.
-        assert_eq!(lifecycle.request(true), None);
-        assert_eq!(lifecycle.open_files(), None);
-        assert_eq!(lifecycle.save(false, true), LifecycleEffect::CancelClose);
-        lifecycle.end_prompt();
+        assert_eq!(lifecycle.request(), Some(LifecycleEffect::Proceed));
         assert_eq!(lifecycle.open_files(), Some(LifecycleEffect::AskForFiles));
+        assert!(lifecycle.prompting());
+        assert_eq!(lifecycle.request(), None);
+        assert_eq!(lifecycle.open_files(), None);
+        assert_eq!(lifecycle.export(), None);
+        lifecycle.end_prompt();
+        assert_eq!(lifecycle.export(), Some(LifecycleEffect::AskForPath));
         lifecycle.end_prompt();
         assert!(!lifecycle.prompting());
     }
 
     #[test]
-    fn save_writes_its_file_or_asks_where_unless_it_cannot_save() {
-        let mut lifecycle = DocumentLifecycle::default();
-        assert_eq!(lifecycle.save(false, true), LifecycleEffect::Write);
-        assert!(!lifecycle.prompting());
-        assert_eq!(lifecycle.save(true, true), LifecycleEffect::AskForPath);
-        assert!(lifecycle.prompting());
-        lifecycle.end_prompt();
-        assert_eq!(lifecycle.save(false, false), LifecycleEffect::AskForPath);
-        lifecycle.end_prompt();
+    fn only_a_shown_text_exports() {
         for (loading, unavailable, source_only) in [
             (true, false, false),
             (false, true, false),
@@ -299,7 +245,7 @@ mod tests {
         ] {
             let mut lifecycle = DocumentLifecycle::default();
             lifecycle.force(loading, unavailable, source_only);
-            assert_eq!(lifecycle.save(false, true), LifecycleEffect::CancelClose);
+            assert_eq!(lifecycle.export(), None);
             assert!(!lifecycle.prompting());
         }
     }
