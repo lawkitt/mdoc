@@ -101,7 +101,9 @@ pub struct Document {
     /// Scanned for names, so a scan that found nothing reopens as scanned.
     #[serde(default)]
     pub scanned: bool,
-    /// The SHA-256, in hex, of the text last saved while Ready.
+    /// The SHA-256, in hex, of the text last saved while Ready
+    /// ([`Document::set_ready`]); readiness itself is checked when text
+    /// leaves ([`crate::Vault::readiness`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ready_fingerprint: Option<String>,
     /// Its own identities while Unfiled; empty in a Project, whose mapping

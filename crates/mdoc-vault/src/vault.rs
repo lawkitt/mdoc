@@ -3,8 +3,10 @@
 //! through `.lock`, held only for the write (#1091 Decision 20). A handle
 //! never writes a revision older than the last it wrote.
 mod moves;
+mod readiness;
 
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
+pub use readiness::Readiness;
 
 use crate::{
     ObjectKind, VaultError, is_id,
