@@ -291,3 +291,112 @@ fn closing_a_tab_saves_the_reply_in_its_box(cx: &mut TestAppContext) {
     );
     cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
 }
+
+/// A reply deleted from its page stays deleted: the box that saved it does
+/// not save the same text again on the next autosave or close.
+#[gpui::test]
+fn a_reply_deleted_from_its_page_is_not_saved_again_by_its_box(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector_share = true;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    view.update_in(cx, |view, window, cx| {
+        view.fill_reply("PERSON_1 wrote back.", window, cx);
+        view.open_saved_reply(cx);
+    });
+    cx.run_until_parked();
+    let id = shown_reply(&tabs, cx).expect("Open reply shows it");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.delete_saved_reply(&id, window, cx)
+    });
+    cx.run_until_parked();
+    assert!(vault(&tabs, cx).replies().is_empty());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.autosave(tab, window, cx);
+        tabs.close_tab(tab, window, cx);
+    });
+    cx.run_until_parked();
+    assert!(vault(&tabs, cx).replies().is_empty(), "not saved again");
+}
+
+/// Deleting a Project deletes its own replies; one open on its page closes.
+#[gpui::test]
+fn a_project_reply_open_on_its_page_closes_when_the_project_is_deleted(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let project = new_project(&tabs, cx, tab);
+    tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
+    let id = paste_reply(&tabs, cx, "PERSON_1 agreed.");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.delete_project(project.clone(), window, cx)
+    });
+    cx.simulate_prompt_answer("Move to Unfiled");
+    cx.run_until_parked();
+    assert!(vault(&tabs, cx).reply(&id).is_err());
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        assert!(w.reply_page.is_none(), "the page of a deleted reply closes");
+        assert!(!matches!(
+            w.navigation_target(true, cx),
+            Some(Stop::Reply(_))
+        ));
+    });
+}
+
+/// Paste AI Reply is saved even when its tab closes before the save runs.
+#[gpui::test]
+fn a_pasted_reply_is_saved_after_its_tab_closes(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let view = active(&tabs, cx);
+    // An edit waiting to be written puts the paste behind it in the queue.
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            editor.set_text("PERSON_1 met ORG_1 again.", cx)
+        })
+    });
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
+    view.update_in(cx, |view, window, cx| {
+        view.paste_ai_response(&PasteAiResponse, window, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    let replies = vault(&tabs, cx).replies();
+    assert_eq!(replies.len(), 1);
+    assert_eq!(
+        vault(&tabs, cx).reply(&replies[0].id).unwrap().markdown,
+        "PERSON_1 replied."
+    );
+}
+
+/// A reply pasted while its document is moving is not bound against the
+/// mapping it moves into: it is refused, and says why.
+#[gpui::test]
+fn a_reply_pasted_during_a_move_is_refused(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let view = active(&tabs, cx);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_to_new_project(tab, window, cx);
+        view.update(cx, |view, cx| {
+            view.paste_ai_response(&PasteAiResponse, window, cx)
+        });
+    });
+    cx.run_until_parked();
+    assert!(vault(&tabs, cx).replies().is_empty());
+    let notice = cx
+        .update(|_, cx| tabs.read(cx).notice_text())
+        .unwrap_or_default();
+    assert!(notice.contains("is moving"), "{notice}");
+}

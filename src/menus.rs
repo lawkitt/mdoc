@@ -12,9 +12,11 @@ use crate::{
     pii::ui::{CopyForAi, Pseudonymize},
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
-        CheckForUpdates, ClearRecentFiles, Close, Import, New, NextTab, Open, OpenPalette,
-        OpenProject, OpenRecent, PasteAiResponse, PreviousTab, PseudonymizeClipboard, Quit,
-        RestoreClipboard, Settings, ShowHome, ToggleSidebar, shortcuts_ui::ShowShortcuts,
+        AddDocumentToProject, ChangeProjectColour, CheckForUpdates, ClearRecentFiles, Close,
+        DeleteProject, ExportProject, Import, New, NextTab, Open, OpenPalette, OpenProject,
+        OpenRecent, PasteAiResponse, PreviousTab, ProjectCategories, PseudonymizeClipboard, Quit,
+        RenameProject, RestoreClipboard, Settings, ShowHome, ToggleSidebar,
+        shortcuts_ui::ShowShortcuts,
     },
 };
 use gpui::{App, Global, Menu, MenuItem, OsAction, SystemMenuType, actions};
@@ -202,6 +204,15 @@ fn menus(recent: &[PathBuf]) -> Vec<Menu> {
             MenuItem::action("Paste AI Reply", PasteAiResponse),
             MenuItem::separator(),
             MenuItem::action("Close Tab", Close),
+        ]),
+        Menu::new("Project").items([
+            MenuItem::action("Add Document…", AddDocumentToProject),
+            MenuItem::action("Rename Project", RenameProject),
+            MenuItem::action("Project Colour", ChangeProjectColour),
+            MenuItem::action("Categories to Detect", ProjectCategories),
+            MenuItem::separator(),
+            MenuItem::action("Export Project…", ExportProject),
+            MenuItem::action("Delete Project…", DeleteProject),
         ]),
         Menu::new("Edit").items([
             MenuItem::os_action("Undo", mdoc_editor::Undo, OsAction::Undo),

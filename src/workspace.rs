@@ -107,6 +107,12 @@ actions!(
         RestoreClipboard,
         CheckForUpdates,
         ClearRecentFiles,
+        AddDocumentToProject,
+        RenameProject,
+        ChangeProjectColour,
+        ProjectCategories,
+        ExportProject,
+        DeleteProject,
     ]
 );
 
@@ -1656,24 +1662,11 @@ impl Workspace {
                 }
             }
             TabEvent::Tabs(TabsEvent::Open(paths)) => self.open_paths(paths.clone(), window, cx),
-            TabEvent::Reply(event) if !self.quit_flow.quitting() => {
-                let save = |markdown: String, revision, open| saved_replies::ReplySave {
-                    tab: id,
-                    markdown,
-                    revision,
-                    open,
-                };
-                match event {
-                    // The box's text is read when the save runs.
-                    ReplyEvent::Settled { open } => {
-                        self.queue_reply_save(save(String::new(), Some(0), *open), window, cx)
-                    }
-                    ReplyEvent::Pasted(text) => {
-                        self.queue_reply_save(save(text.clone(), None, true), window, cx)
-                    }
-                    ReplyEvent::Open(reply) => self.open_reply(reply, window, cx),
-                }
-            }
+            TabEvent::Reply(event) if !self.quit_flow.quitting() => match event {
+                ReplyEvent::Settled { open } => self.queue_box_save(id, *open, window, cx),
+                ReplyEvent::Pasted(text) => self.queue_pasted_reply(id, text.clone(), window, cx),
+                ReplyEvent::Open(reply) => self.open_reply(reply, window, cx),
+            },
             TabEvent::Import(ImportEvent::State) => {
                 self.refresh_import(window, cx);
                 // A converted document of a Project gets its names now.

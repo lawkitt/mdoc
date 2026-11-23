@@ -16,19 +16,24 @@ use gpui::{
     px,
 };
 use mdoc_pii::restore::{ExportedIdentity, RestoreMap, RestoredText};
+use mdoc_store::document_id::VaultId;
 use mdoc_vault::{Reply, ReplyOwner, SharedFrom, VaultError};
 
 /// A reply on its way into the Vault.
-pub(super) struct ReplySave {
-    /// The tab whose document it answers.
-    pub(super) tab: u64,
-    /// As pasted: aliases, never restored text.
-    pub(super) markdown: String,
-    /// The reply box's revision this text is, when it came from the box;
-    /// the box's earlier saved reply is replaced by it. None: Paste AI Reply.
-    pub(super) revision: Option<u64>,
-    /// Show it on the Reply page once saved.
-    pub(super) open: bool,
+pub(super) enum ReplySave {
+    /// The reply in tab `tab`'s box, as the box holds it when the save
+    /// runs; it replaces the reply the box saved before. Shown once saved
+    /// when `open`.
+    Box { tab: u64, open: bool },
+    /// Paste AI Reply in tab `tab`: `markdown` as pasted, aliases and all,
+    /// to Document `document`. Saved even if the tab closes meanwhile, and
+    /// shown once saved.
+    Pasted {
+        tab: u64,
+        document: VaultId,
+        title: String,
+        markdown: String,
+    },
 }
 
 /// View state only: never serialized, cleared on any other destination.
@@ -87,23 +92,23 @@ impl ReplyPage {
 }
 
 impl Workspace {
-    /// The tab's reply box, or Paste AI Reply in it: save `save` after the
-    /// document's own writes and its Project's, so the aliases are bound to
-    /// the names the Vault holds for them.
-    pub(super) fn queue_reply_save(
+    /// The reply in tab `tab`'s box settled, or Open reply asked for it:
+    /// save it after the document's own writes and its Project's, so its
+    /// aliases bind to the names the Vault holds, and show it when `open`.
+    pub(super) fn queue_box_save(
         &mut self,
-        save: ReplySave,
+        tab: u64,
+        open: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let tab = save.tab;
         if self.tab_document(tab, cx).is_none() {
             // A pasted document becomes one at its first write; the box's
             // reply is saved with the next change after that.
-            if save.revision.is_none() || save.open {
+            if open {
                 self.notices.post(
                     "The AI reply could not be saved: its document is not in mdoc yet. Type in \
-                     it first, then paste the reply again."
+                     it first, then open the reply again."
                         .to_string(),
                 );
                 cx.notify();
@@ -113,13 +118,55 @@ impl Workspace {
         self.project_changed(tab, cx);
         self.autosave(tab, window, cx);
         self.queue_project_writes(window, cx);
-        let target = if save.revision.is_some() {
-            // Only the box's latest text waits.
-            Target::Reply(tab)
-        } else {
-            self.next_op += 1;
-            Target::Op(self.next_op)
+        // Only the box's latest save waits; it reads the box when it runs.
+        let save = ReplySave::Box { tab, open };
+        self.queue_write(Target::Reply(tab), Write::Reply(save), window, cx);
+    }
+
+    /// Paste AI Reply in tab `tab`: save `markdown` after the document's
+    /// writes, then show it.
+    pub(super) fn queue_pasted_reply(
+        &mut self,
+        tab: u64,
+        markdown: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(document) = self.tab_document(tab, cx) else {
+            self.notices.post(
+                "The AI reply could not be saved: its document is not in mdoc yet. Type in it \
+                 first, then paste the reply again."
+                    .to_string(),
+            );
+            cx.notify();
+            return;
         };
+        // Its aliases are the document's as it shows them; a move waiting
+        // to run would read them in another mapping.
+        if self.moving.contains(&document) {
+            self.notices.post(
+                "The AI reply was not saved: its document is moving. Paste the reply again once \
+                 the move is done."
+                    .to_string(),
+            );
+            cx.notify();
+            return;
+        }
+        let title = self.tab_view(tab).map_or_else(String::new, |view| {
+            let name = view.read(cx).display_name();
+            name.strip_suffix(".md").unwrap_or(&name).to_string()
+        });
+        self.project_changed(tab, cx);
+        self.autosave(tab, window, cx);
+        self.queue_project_writes(window, cx);
+        let save = ReplySave::Pasted {
+            tab,
+            document,
+            title: format!("Reply to {title}"),
+            markdown,
+        };
+        self.next_op += 1;
+        let target = Target::Op(self.next_op);
         self.queue_write(target, Write::Reply(save), window, cx);
     }
 
@@ -134,24 +181,31 @@ impl Workspace {
         let Some(view) = self.tab_view(tab) else {
             return;
         };
-        let Some((markdown, revision)) = view.read(cx).reply.unsaved() else {
-            return;
-        };
-        // One waiting saves whatever the box holds when it runs.
-        if self.document_writer.has(&Target::Reply(tab)) {
-            return;
-        }
-        if self.tab_document(tab, cx).is_none() || self.vault.vault().is_none() {
+        if view.read(cx).reply.unsaved().is_none()
+            // One waiting saves whatever the box holds when it runs.
+            || self.document_writer.has(&Target::Reply(tab))
+            || self.tab_document(tab, cx).is_none()
+            || self.vault.vault().is_none()
+        {
             return;
         }
         self.queue_project_writes(window, cx);
-        let save = ReplySave {
-            tab,
-            markdown,
-            revision: Some(revision),
-            open: false,
-        };
+        let save = ReplySave::Box { tab, open: false };
         self.queue_write(Target::Reply(tab), Write::Reply(save), window, cx);
+    }
+
+    /// Why tab `tab`'s names are not in the Vault as it shows them, when
+    /// they are not: a reply bound now would miss them.
+    fn names_unsaved(&self, tab: u64, cx: &Context<Self>) -> Option<&'static str> {
+        let view = self.tab_view(tab)?;
+        let view = view.read(cx);
+        if let Some(link) = view.project.link()
+            && self.project_ui.is_unwritten(&link.id)
+        {
+            return Some("its Project's names are not saved yet");
+        }
+        view.unsaved(cx)
+            .then_some("its document's names are not saved yet")
     }
 
     /// Save a reply at the head of the writer's queue.
@@ -161,72 +215,121 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(view) = self.tab_view(save.tab) else {
+        let Some(vault) = self.vault.vault().cloned() else {
             return;
         };
-        let (Some(vault), Some(document)) =
-            (self.vault.vault().cloned(), self.tab_document(save.tab, cx))
-        else {
-            return;
-        };
-        let (saved, unsaved, title) = view.read_with(cx, |view, _| {
-            let name = view.display_name();
-            let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
-            (
-                view.reply.saved(),
-                view.reply.unsaved(),
-                format!("Reply to {stem}"),
-            )
-        });
-        // The box's reply is saved as the box holds it now; a later change
-        // queues another save.
-        let text = match save.revision {
-            Some(_) => match (unsaved, &saved) {
-                (Some((text, revision)), _) => Some((text, Some(revision))),
-                (None, Some(_)) => None,
-                // Cleared since: it keeps the reply it saved.
-                (None, None) => {
-                    self.refresh_saved_replies(cx);
+        let (id, open) = match save {
+            ReplySave::Box { tab, open } => {
+                let (Some(view), Some(document)) = (self.tab_view(tab), self.tab_document(tab, cx))
+                else {
+                    return;
+                };
+                // It loads again with its new aliases, and its next autosave
+                // queues the box again.
+                if self.moving.contains(&document) {
                     return;
                 }
-            },
-            None => Some((save.markdown, None)),
-        };
-        let id = match text {
-            None => saved.clone().map(|(id, _)| id),
-            Some((markdown, revision)) => {
-                let from = SharedFrom::Document(document.as_str().to_string());
-                match vault.save_shared_reply(&from, title, None, markdown) {
-                    Ok(reply) => {
-                        if let Some(revision) = revision {
-                            // One fill of the box makes one reply.
-                            if let Some((old, _)) = &saved
-                                && let Err(error) = vault.delete_reply(old)
-                                && !matches!(error, VaultError::NotFound { .. })
-                            {
-                                self.notices.post(format!(
-                                    "Could not replace an earlier AI reply: {error}"
-                                ));
-                            }
-                            view.update(cx, |view, _| view.reply.mark_saved(&reply.id, revision));
+                let (saved, unsaved, title) = view.read_with(cx, |view, _| {
+                    let name = view.display_name();
+                    let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
+                    (
+                        view.reply.saved_id(),
+                        view.reply.unsaved(),
+                        format!("Reply to {stem}"),
+                    )
+                });
+                let unready = unsaved.as_ref().and_then(|_| self.names_unsaved(tab, cx));
+                let id = match unsaved {
+                    None => saved,
+                    Some(_) if unready.is_some() => {
+                        // Left unsaved for its next save, unless something
+                        // waits on it now.
+                        if open
+                            || self.closing_after_write.contains(&tab)
+                            || self.quit_flow.quitting()
+                        {
+                            let why = unready.unwrap_or_default().to_string();
+                            self.reply_failed(Some(tab), why, window, cx);
                         }
-                        Some(reply.id)
-                    }
-                    Err(error) => {
-                        self.notices
-                            .post(format!("Could not save the AI reply: {error}"));
                         None
                     }
-                }
+                    Some((markdown, revision)) => {
+                        let from = SharedFrom::Document(document.as_str().to_string());
+                        match vault.save_shared_reply(&from, title, None, markdown) {
+                            Ok(reply) => {
+                                // One fill of the box makes one reply.
+                                if let Some(old) = &saved
+                                    && let Err(error) = vault.delete_reply(old)
+                                    && !matches!(error, VaultError::NotFound { .. })
+                                {
+                                    self.notices.post(format!(
+                                        "Could not replace an earlier AI reply: {error}"
+                                    ));
+                                }
+                                view.update(cx, |view, _| {
+                                    view.reply.mark_saved(&reply.id, revision)
+                                });
+                                Some(reply.id)
+                            }
+                            Err(error) => {
+                                self.reply_failed(Some(tab), error.to_string(), window, cx);
+                                None
+                            }
+                        }
+                    }
+                };
+                (id, open)
+            }
+            ReplySave::Pasted {
+                tab,
+                document,
+                title,
+                markdown,
+            } => {
+                let from = SharedFrom::Document(document.as_str().to_string());
+                let id = match self.names_unsaved(tab, cx) {
+                    Some(why) => {
+                        self.reply_failed(None, format!("{why}. Paste it again"), window, cx);
+                        None
+                    }
+                    None => match vault.save_shared_reply(&from, title, None, markdown) {
+                        Ok(reply) => Some(reply.id),
+                        Err(error) => {
+                            self.reply_failed(None, error.to_string(), window, cx);
+                            None
+                        }
+                    },
+                };
+                (id, true)
             }
         };
         self.refresh_saved_replies(cx);
         if let Some(id) = id
-            && save.open
+            && open
         {
             self.open_reply(&id, window, cx);
         }
         cx.notify();
+    }
+
+    /// A reply could not be saved: say why. A box keeps its text, and a
+    /// close or quit waiting for it stops, as for a document write.
+    fn reply_failed(
+        &mut self,
+        tab: Option<u64>,
+        why: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.notices
+            .post(format!("Could not save the AI reply: {why}."));
+        if let Some(tab) = tab {
+            self.closing_after_write.remove(&tab);
+        }
+        if self.quit_flow.abandon() {
+            Self::quit_cancelled(cx);
+            crate::menu_bar::reveal_if_hidden(window, cx);
+        }
     }
 
     /// Show saved reply `id` on the Reply page.
@@ -753,4 +856,20 @@ pub(super) fn reply_detail(
     .flatten()
     .collect::<Vec<_>>()
     .join(" · ")
+}
+
+impl Workspace {
+    /// The Reply page shows a reply that is gone (its Project was deleted):
+    /// show Home in its place, and Back no longer stops there.
+    pub(super) fn drop_gone_reply_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.reply_page.as_ref().map(|page| page.id.clone()) else {
+            return;
+        };
+        if self.reply_exists(&id) {
+            return;
+        }
+        self.navigation.forget(&Stop::Reply(id));
+        self.reply_page = None;
+        self.show_home_as(Arrival::Replace, window, cx);
+    }
 }

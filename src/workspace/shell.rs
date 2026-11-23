@@ -144,7 +144,7 @@ enum Command {
 
 /// The header and ⋯ actions of the page shown, in the palette too.
 #[derive(Clone, Copy)]
-enum PageAction {
+pub(super) enum PageAction {
     RenameProject,
     ProjectColour,
     ProjectCategories,
@@ -2141,14 +2141,21 @@ impl Workspace {
         ]
     }
 
-    fn run_page_action(&mut self, action: PageAction, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn run_page_action(
+        &mut self,
+        action: PageAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         use super::project_page::Place;
         let reply = self.reply_page.as_ref().map(|page| page.id().to_string());
-        let project = self
-            .project_ui
-            .page
-            .as_ref()
-            .map(|page| page.id().to_string());
+        // The Project shown, else the active document's.
+        let project = (self.project_ui.page.as_ref())
+            .map(|page| page.id().to_string())
+            .or_else(|| {
+                let view = self.active_view().filter(|_| !self.showing_overview(cx))?;
+                view.read(cx).project.link().map(|link| link.id.clone())
+            });
         match (action, reply, project) {
             (PageAction::CopyReply, Some(_), _) => self.copy_saved_reply(cx),
             (PageAction::DeleteReply, Some(id), _) => self.confirm_delete_reply(&id, window, cx),

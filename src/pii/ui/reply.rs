@@ -39,8 +39,10 @@ pub(crate) struct ReplyBox {
     /// changes, the reply's tokens for it follow.
     bound: Vec<(u64, ExportedIdentity)>,
     bound_at: Option<u64>,
-    /// The saved AI Reply this box's text is, and the revision saved.
-    saved: Option<(String, u64)>,
+    /// The revision of the box's text last saved, and the AI Reply it
+    /// saved: none once that reply was deleted, so the text is not saved
+    /// again until it changes.
+    saved: Option<(Option<String>, u64)>,
 }
 
 impl ReplyBox {
@@ -113,9 +115,9 @@ impl ReplyBox {
         }
     }
 
-    /// The saved reply this box holds, and the revision it saved.
-    pub(crate) fn saved(&self) -> Option<(String, u64)> {
-        self.saved.clone()
+    /// The saved reply this box holds.
+    pub(crate) fn saved_id(&self) -> Option<String> {
+        self.saved.as_ref().and_then(|(id, _)| id.clone())
     }
 
     /// The text and revision to save, when the box holds a reply not
@@ -131,14 +133,17 @@ impl ReplyBox {
     /// Reply `id` saved this box's text at `revision`.
     pub(crate) fn mark_saved(&mut self, id: &str, revision: u64) {
         if self.exists() {
-            self.saved = Some((id.to_string(), revision));
+            self.saved = Some((Some(id.to_string()), revision));
         }
     }
 
-    /// Reply `id` was deleted: a change makes a new one.
+    /// Reply `id` was deleted: the text as it is stays unsaved, and a
+    /// change makes a new reply.
     pub(crate) fn forget_saved(&mut self, id: &str) {
-        if self.saved.as_ref().is_some_and(|(saved, _)| saved == id) {
-            self.saved = None;
+        if let Some((saved, _)) = self.saved.as_mut()
+            && saved.as_deref() == Some(id)
+        {
+            *saved = None;
         }
     }
 

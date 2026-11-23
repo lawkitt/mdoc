@@ -78,6 +78,12 @@ pub(super) struct ProjectsState {
 type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
 
 impl ProjectsState {
+    /// Project `id` changed since its last write was queued, or that write
+    /// failed.
+    pub(super) fn is_unwritten(&self, id: &str) -> bool {
+        self.unwritten.contains(id)
+    }
+
     /// Project `id`'s last write failed: queue it again with the next.
     pub(super) fn mark_unwritten(&mut self, id: &str) {
         self.unwritten.insert(id.to_string());
@@ -1208,6 +1214,9 @@ impl Workspace {
                     .post(format!("Could not delete the Project: {error}"));
             }
         }
+        // Its own replies went with it.
+        self.drop_gone_reply_page(window, cx);
+        self.refresh_saved_replies(cx);
         self.checkpoint(window, cx);
         cx.notify();
     }

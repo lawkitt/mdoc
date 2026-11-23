@@ -886,17 +886,21 @@ impl Workspace {
             let Some(document) = VaultId::parse(&summary.id) else {
                 continue;
             };
-            let (open_document, remove_document) = (document.clone(), document);
-            let id = project.id.clone();
+            // A live document says what its review holds now.
+            let pending = (self.find_document(&DocumentId::Vault(document.clone()), None, cx))
+                .and_then(|tab| self.tabs.get(tab)?.view().cloned())
+                .is_some_and(|view| view.read(cx).pii.review().remaining() > 0);
             let detail = format!(
                 "{}{}",
-                if summary.scanned {
+                if summary.scanned && !pending {
                     ""
                 } else {
                     "Needs review · "
                 },
                 format_args!("updated {}", created_date(summary.updated))
             );
+            let (open_document, remove_document) = (document.clone(), document);
+            let id = project.id.clone();
             list = list.child(
                 div()
                     .flex()
