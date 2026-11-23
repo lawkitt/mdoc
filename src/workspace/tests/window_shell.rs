@@ -1439,7 +1439,7 @@ fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
     // From the palette over that document: a second tab, the first untouched.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("Second paste".into()));
     cx.simulate_keystrokes("secondary-k");
-    cx.simulate_input("paste text as new tab");
+    cx.simulate_input("paste text as new document");
     draw(cx);
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();

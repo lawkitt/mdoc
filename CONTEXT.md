@@ -40,10 +40,9 @@ restored reply.
 identity, such as an invented `PERSON_9`.
 
 **Home**: the page shown with no document: drop zone, quick actions and the
-**Continue** strip of documents that need review and saved replies.
+**Continue** strip.
 
-**Command palette**: the ⌘K search over actions, and over the Vault's
-document titles and Project names.
+**Command palette**: the ⌘K search over actions, titles and Project names.
 
 **Find and Replace**: the find bar with its Replace row. It searches
 **visible text**, the Markdown with syntax hidden; a match that **crosses
