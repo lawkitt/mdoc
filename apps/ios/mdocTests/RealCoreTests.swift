@@ -506,6 +506,23 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(handOff.fileName, "Note.md")
     }
 
+    /// A fresh import is never Ready before a scan on a phone that can find
+    /// names, even before the name finder is installed; below the floor it
+    /// is, with its names decided by hand. Both stay unscanned, so the
+    /// lists keep their labels (#1091 Q4).
+    func testAFreshImportIsReadyBeforeAScanOnlyBelowTheFloor() throws {
+        for (memory, ready) in [(Fixture.detectorTier, false), (Fixture.belowFloor, true)] {
+            let core = try RealCore.make(storage: try Fixture.temporaryStorage(), keys: FixedVaultKeyStore(), physicalMemory: memory)
+            let library = try XCTUnwrap(core.library as? RealLibrary)
+            let session = try core.library.importDocument(.text("# Note\n\nNothing to hide."), title: "Note", into: nil)
+            _ = try session.recognize(observer: TestObserver())
+            let id = try XCTUnwrap((session as? RealSession)?.vaultID)
+            XCTAssertEqual(try library.vault.readiness(id: id) == .ready, ready, "memory \(memory)")
+            XCTAssertEqual(try library.vault.document(id: id).phase, .unscanned, "memory \(memory)")
+            XCTAssertEqual(core.library.snapshot().documents.first?.phase, .unscanned)
+        }
+    }
+
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
         let small = RealSetup(storage: storage, physicalMemory: Fixture.belowFloor).snapshot()
         XCTAssertEqual(small.tier, .belowFloor)

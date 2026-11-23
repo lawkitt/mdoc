@@ -248,12 +248,14 @@ final class RealLibrary: Library, @unchecked Sendable {
         }
     }
 
-    /// The phone finds no names (ADR 0088, ADR 0120): below the floor, or
-    /// before the name finder is installed. Then a Vault save with no
-    /// proposals left records the document Ready (#1091 Q4).
+    /// The phone is below the name finder's floor (ADR 0088, ADR 0120): a
+    /// Vault save with no proposals left then records the document Ready,
+    /// its names decided by hand, and it stays unscanned (#1091 Q4, the
+    /// maintainer's (b)). A phone at the detector tier is offered Find
+    /// names, even before the name finder is installed, as today.
     var findsNoNames: Bool {
         guard let setup else { return true }
-        return setup.snapshot().tier != .detector || setup.detectorPaths() == nil
+        return setup.snapshot().tier == .belowFloor
     }
 
     /// The saved documents from the Vault's manifest, which opens none of
