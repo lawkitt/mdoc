@@ -1,9 +1,9 @@
 //! Project, Document and AI Reply records (#1091 Decision 16), stored as
 //! JSON.
-//! Later items add their fields with `#[serde(default)]`: the review state
-//! (item 2), the source hash and the original's metadata (item 3).
+//! Later items add their fields with `#[serde(default)]`: the source hash
+//! and the original's metadata (item 3).
 use crate::mapping::{Binding, Mapping};
-use mdoc_pii::Category;
+use mdoc_pii::{Category, saved::SavedReview};
 use mdoc_store::lists::Lists;
 use serde::{Deserialize, Serialize};
 
@@ -77,8 +77,9 @@ pub struct NewProject {
     pub pinned: bool,
 }
 
-/// A Document: its Markdown and what the Vault keeps beside it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// A Document: its Markdown and what the Vault keeps beside it. Not `Eq`:
+/// its review holds detection scores.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Document {
     pub id: String,
     /// The Project it belongs to; `None`: Unfiled. Changed only by a move,
@@ -111,6 +112,13 @@ pub struct Document {
     /// it shares.
     #[serde(default, skip_serializing_if = "Mapping::is_empty")]
     pub mapping: Mapping,
+    /// The review as it stood at the last save (#1091 Decision 16), so a
+    /// reopened Document needs no rescan; `None` until it has one. Its
+    /// ranges are in `markdown` as saved with it: restore it only over that
+    /// text (`mdoc_pii::Review::restore` refuses ranges that do not fit).
+    /// A move rewrites the text but not this yet (item 7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<SavedReview>,
 }
 
 /// What a new Document starts with.

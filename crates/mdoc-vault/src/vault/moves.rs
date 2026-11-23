@@ -14,7 +14,7 @@ use mdoc_pii::{
 };
 
 /// What a move did.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Moved {
     /// The Document as saved in its new place, its text in the aliases it
     /// has there.
