@@ -8,6 +8,8 @@ struct DocumentsPage: View {
     @Bindable var app: AppModel
 
     @Environment(\.showSidebar) private var showSidebar
+    /// A saved reply shown restored, from the Project's Replies.
+    @State private var shownReply: SavedReply?
 
     private var library: LibraryModel { app.library }
 
@@ -28,7 +30,7 @@ struct DocumentsPage: View {
                 }
                 // Under the card, not over the list: the card grows while
                 // the models download.
-                if library.isEmpty {
+                if showsEmptyState {
                     Section {
                         emptyState
                             .listRowBackground(Color.clear)
@@ -57,9 +59,30 @@ struct DocumentsPage: View {
                         }
                 }
             }
+            // Filtered to a Project: its saved AI replies, which a tap shows
+            // restored (Vault & Projects item 11 moves them to the Project
+            // page's Replies).
+            if let project = library.projectFilter, !library.replies(in: project).isEmpty {
+                Section("Replies") {
+                    ForEach(library.replies(in: project)) { reply in
+                        Button {
+                            shownReply = reply
+                        } label: {
+                            SavedReplyRow(reply: reply)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("reply-row")
+                    }
+                }
+            }
+        }
+        .sheet(item: $shownReply) { reply in
+            SavedReplySheet(reply: reply, restored: library.restore(reply.id))
         }
         .overlay {
-            if library.isEmpty && !showsSetupCard {
+            if showsEmptyState && !showsSetupCard {
                 emptyState
             }
         }
@@ -91,7 +114,17 @@ struct DocumentsPage: View {
                 addMenu
             }
         }
-        .refreshable { library.refresh() }
+        .refreshable {
+            // A reply Restore with mdoc saved meanwhile.
+            app.takeInChanges()
+            library.refresh()
+        }
+    }
+
+    /// No documents, and no replies of the Project filtered to: a
+    /// Project's own replies stay when its documents go.
+    private var showsEmptyState: Bool {
+        library.isEmpty && !(library.projectFilter.map { !library.replies(in: $0).isEmpty } ?? false)
     }
 
     private var showsSetupCard: Bool {

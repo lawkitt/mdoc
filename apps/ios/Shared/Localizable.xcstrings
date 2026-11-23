@@ -56,6 +56,16 @@
     "%@, replaced; was %@" : {
 
     },
+    "%@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
     "%lld" : {
 
     },
@@ -384,7 +394,16 @@
     "Candidates" : {
 
     },
-    "Open mdoc to add documents." : {
+    "Document" : {
+
+    },
+    "Keeps the reply in mdoc with %@." : {
+
+    },
+    "No documents yet" : {
+
+    },
+    "Open mdoc first: it has nothing to restore with yet." : {
 
     },
     "Project" : {
@@ -393,16 +412,31 @@
     "Project %@" : {
 
     },
+    "Replies" : {
+
+    },
     "Reply to %@" : {
+
+    },
+    "Reply: %@" : {
+
+    },
+    "Restore with" : {
+
+    },
+    "Restores the reply with another Project's or document's names." : {
+
+    },
+    "Save" : {
+
+    },
+    "Shows another saved reply." : {
 
     },
     "The Vault key stays in this device's Keychain." : {
 
     },
     "Case number" : {
-
-    },
-    "Project: %@" : {
 
     },
     "Projects" : {
@@ -782,9 +816,6 @@
 
     },
     "Keeps every mention." : {
-
-    },
-    "Keeps the reply with %@." : {
 
     },
     "Keeps this one." : {
@@ -1291,9 +1322,6 @@
     "Restore with mdoc" : {
 
     },
-    "Restores the reply with another Project's names." : {
-
-    },
     "Resume" : {
 
     },
@@ -1356,9 +1384,6 @@
 
     },
     "Same as…" : {
-
-    },
-    "Save to document" : {
 
     },
     "Saved" : {

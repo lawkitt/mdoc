@@ -103,12 +103,12 @@ struct LibraryDocument: Identifiable, Hashable, Sendable {
 struct LibrarySnapshot: Sendable, Equatable {
     var projects: [ProjectSummary]
     var documents: [LibraryDocument]
-    /// The old library's case of the document shared last, which the
-    /// Restore extension still uses (ADR 0084's current case) until Vault &
-    /// Projects item 10; the Vault keeps no such pointer.
-    var currentProject: ProjectID?
+    /// Each Project's saved AI replies, newest first: its own and those of
+    /// the documents in it now. Today's Documents page filtered to the
+    /// Project lists them (until Vault & Projects item 11's Project page).
+    var projectReplies: [ProjectID: [SavedReply]] = [:]
 
-    static let empty = LibrarySnapshot(projects: [], documents: [], currentProject: nil)
+    static let empty = LibrarySnapshot(projects: [], documents: [])
 
     /// The Project's documents, most recently changed first.
     func documents(in projectID: ProjectID) -> [LibraryDocument] {
@@ -363,10 +363,34 @@ struct RestoreResult: Hashable, Sendable {
     }
 }
 
-/// The document's AI reply, kept in alias form with its restored reading.
+struct ReplyID: Hashable, Sendable {
+    let rawValue: String
+}
+
+/// An AI reply saved in the Vault (#1091 Decision 18), as lists show it:
+/// no text.
+struct SavedReply: Identifiable, Hashable, Sendable {
+    let id: ReplyID
+    var title: String
+    /// The app it came from, when known.
+    var sourceApp: String?
+    var created: Date
+}
+
+/// The document's AI reply shown in its Reply pane, kept in alias form with
+/// its restored reading. `id` is the saved reply's.
 struct ReplySnapshot: Hashable, Sendable {
+    var id: ReplyID? = nil
     var aliasText: String
     var restored: RestoreResult
+}
+
+/// Where the Restore extension restores a reply and saves it (#1091, the
+/// maintainer's (a)): a Project, or an Unfiled document, which restores with
+/// its own names.
+enum RestorePlace: Hashable, Sendable {
+    case project(ProjectID)
+    case document(DocumentID)
 }
 
 /// Mentions by state, as the core counts them.
@@ -394,7 +418,13 @@ struct DocumentSnapshot: Equatable, Sendable {
     var candidates: [Candidate]
     var identities: [Identity]
     var original: OriginalSource
+    /// The reply the Reply pane shows: the one picked, else the newest of
+    /// `replies`.
     var reply: ReplySnapshot?
+    /// The saved replies that restore with this document's names, newest
+    /// first: its Project's while it is in one, else its own (#1091
+    /// Decision 4). Today's Reply pane lists them.
+    var replies: [SavedReply] = []
     /// A partial import (pages OCR skipped or may have misread): the banner
     /// over the text.
     var notice: String? = nil

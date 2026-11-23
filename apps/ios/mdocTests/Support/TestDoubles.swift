@@ -51,6 +51,7 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     func copyForAI() throws -> HandOff { try base.copyForAI() }
     func saveChanges() throws { try base.saveChanges() }
     func restoreReply(_ reply: String) throws -> DocumentSnapshot { try base.restoreReply(reply) }
+    func showReply(_ id: ReplyID) -> DocumentSnapshot { base.showReply(id) }
     func clearReply() throws -> DocumentSnapshot { try base.clearReply() }
     func type(_ range: SourceRange, _ text: String) throws -> Typed { try base.type(range, text) }
     func format(_ edits: [EditorEdit]) throws -> Typed { try base.format(edits) }

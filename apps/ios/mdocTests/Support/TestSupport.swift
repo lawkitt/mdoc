@@ -135,6 +135,15 @@ struct Seeded {
 
     var library: any mdoc.Library { core.library }
 
+    /// The Restore extension's store on the same Vault folder: a second
+    /// handle, as the extension's process opens it.
+    func replyStore() throws -> any ReplyStore {
+        try RealCore.replyStore(storage: storage, keys: FixedVaultKeyStore())
+    }
+
+    /// The place of the last Copy for AI or Share, as the extension reads it.
+    var sharedLast: RestorePlace? { RestorePlaceFile(storage).read() }
+
     func session(_ id: DocumentID) throws -> any mdoc.DocumentSession {
         try core.library.session(for: id)
     }
@@ -235,55 +244,5 @@ final class TestObserver: JobObserver, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return cancelled
-    }
-}
-
-/// The old library as the app left it before the Vault, which the Restore
-/// extension still reads until Vault & Projects item 10: the quotation,
-/// replaced and shared last, and the letter waiting for review in the case
-/// "Ellison v Brightwater"; the tenancy in "Harbour Street lease". Written
-/// through the core's old objects, as the app wrote it then.
-struct LegacySeeded {
-    let storage: MdocStorage
-    let library: any mdoc.Library
-    let ellison: ProjectID
-    let harbour: ProjectID
-    let letter: DocumentID
-    let quotation: DocumentID
-    let tenancy: DocumentID
-    /// The alias the shared quotation gave Maya Ellison.
-    let alias: String
-
-    static func make() throws -> LegacySeeded {
-        let storage = try Fixture.temporaryStorage()
-        let key = try FixedVaultKeyStore().key()
-        let old = try MdocFFI.Library(root: storage.root.path, caseKey: key)
-        let ellison = try old.createCase(name: Letters.ellisonProject).id
-        let harbour = try old.createCase(name: Letters.harbourProject).id
-        let names = Letters.names.map { ProposedName(wording: $0.wording, category: $0.category) }
-        var alias = ""
-        func saved(_ text: String, _ title: String, in caseID: String, replace: Bool, share: Bool, hoursAgo: Double) throws -> DocumentID {
-            let session = MdocFFI.DocumentSession()
-            _ = try session.importTextAs(text: text, title: title, origin: .ordinary)
-            _ = try session.joinCase(library: old, caseId: caseID)
-            _ = try session.review(action: .proposeNames(names: names), library: nil)
-            if replace {
-                let review = try session.review(action: .replaceAll, library: nil)
-                alias = review.mentions.first { $0.original == "Maya Ellison" }?.alias ?? ""
-            }
-            let path = try session.save(library: old).path
-            if share { _ = try session.handOff(library: old) }
-            // The old library dates a document by its file.
-            try FileManager.default.setAttributes(
-                [.modificationDate: Date().addingTimeInterval(-hoursAgo * 3600)], ofItemAtPath: path)
-            return DocumentID(rawValue: path)
-        }
-        let quotation = try saved(Letters.quotation, Letters.quotationTitle, in: ellison, replace: true, share: true, hoursAgo: 2)
-        let letter = try saved(Letters.letter, Letters.letterTitle, in: ellison, replace: false, share: false, hoursAgo: 1)
-        let tenancy = try saved("Tenancy agreement", Letters.tenancyTitle, in: harbour, replace: false, share: false, hoursAgo: 3)
-        return LegacySeeded(
-            storage: storage, library: try RealCore.library(storage: storage, keys: FixedVaultKeyStore()),
-            ellison: ProjectID(rawValue: ellison), harbour: ProjectID(rawValue: harbour),
-            letter: letter, quotation: quotation, tenancy: tenancy, alias: alias)
     }
 }

@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Restore with mdoc: takes an AI reply shared as text and shows it restored
-/// in place. It loads no model.
+/// Restore with mdoc: takes an AI reply shared as text, shows it restored
+/// in place and saves it in the Vault (#1091 Decision 37). It loads no
+/// model.
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -10,7 +11,7 @@ final class ShareViewController: UIViewController {
         Task { @MainActor in
             let items = extensionContext?.inputItems.compactMap { $0 as? NSExtensionItem } ?? []
             let text = await PastedReply.sharedText(in: items)
-            show(RestoreSheet.make(text: text, library: CoreFactory.restoreExtension))
+            show(RestoreSheet.make(text: text, store: CoreFactory.restoreExtension))
         }
     }
 

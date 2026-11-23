@@ -16,10 +16,10 @@ enum RealCore {
         return Core(library: library, setup: setup)
     }
 
-    /// The Restore extension's library: the old library's cases and
-    /// restore, no models, until Vault & Projects item 10.
-    static func library(storage: MdocStorage, keys: any VaultKeyStore) throws -> any Library {
-        try LegacyRestoreLibrary(storage: storage, keys: keys)
+    /// The Restore extension's store: the Vault's Projects and Unfiled
+    /// documents through the core's `ReplyVault`, no models.
+    static func replyStore(storage: MdocStorage, keys: any VaultKeyStore) throws -> any ReplyStore {
+        try VaultReplyStore(storage: storage, keys: keys)
     }
 }
 
@@ -223,6 +223,10 @@ final class RealLibrary: Library, @unchecked Sendable {
     /// Project names by id, read once each: every snapshot shows its
     /// Project's name.
     private var projectNames: [String: String] = [:]
+    /// Bumped by every Vault change this handle makes or takes in, so a
+    /// saved reply shown restored is restored again from the names as
+    /// saved.
+    private var changes = 0
     /// Where the saves that follow taps run (ADR 0104).
     fileprivate let saveQueue = DispatchQueue(label: "io.github.lawkitt.mdoc.save", qos: .utility)
     /// How long taps pause before their save; the tests shorten it.
@@ -275,16 +279,67 @@ final class RealLibrary: Library, @unchecked Sendable {
         }
         var documents = rows.map { info, id, session in
             let updated = Date(timeIntervalSince1970: TimeInterval(info.updated))
-            return session?.loadedSummary(updated: updated) ?? LibraryDocument(
-                id: id, title: info.title, projectID: info.projectId.map(ProjectID.init),
-                kind: SourceKind(info.sourceKind), phase: info.phase, pendingCount: Int(info.proposed),
-                updated: updated, candidateCount: Int(info.proposed + info.replaced + info.kept), origin: info.origin)
+            return session?.loadedSummary(updated: updated) ?? LibraryDocument(info, id: id)
         }
         let listed = Set(documents.map(\.id))
         let pending = lock.withLock { sessions.values.filter { !listed.contains($0.id) } }
         documents += pending.map { $0.summary(updated: $0.created) }
+        let replies = Dictionary(uniqueKeysWithValues: projects.map { project in
+            (project.id, vault.projectReplies(projectId: project.id.rawValue).map(SavedReply.init))
+        })
         return LibrarySnapshot(
-            projects: projects, documents: documents.sorted { $0.updated > $1.updated }, currentProject: nil)
+            projects: projects, documents: documents.sorted { $0.updated > $1.updated }, projectReplies: replies)
+    }
+
+    /// Takes in what another handle wrote meanwhile, the Restore
+    /// extension's replies above all (#1091 Decision 20): true when
+    /// anything changed. mdoc comes to the foreground, a list is pulled, or
+    /// a share sheet closes.
+    @discardableResult
+    func takeInChanges() -> Bool {
+        let changed = (try? vault.refresh()) ?? false
+        if changed { noteChange() }
+        return changed
+    }
+
+    /// The Vault changed: what the names restore is read again.
+    fileprivate func noteChange() {
+        lock.withLock { changes += 1 }
+    }
+
+    /// How many Vault changes this handle has seen (`changes`).
+    fileprivate var changeCount: Int { lock.withLock { changes } }
+
+    /// Saved reply `id` restored with the people it named when saved, as
+    /// they are now (#1091 Decision 18).
+    func restoreSavedReply(_ id: ReplyID) throws -> RestoreResult {
+        RestoreResult(try core { try vault.restoreReply(id: id.rawValue) })
+    }
+
+    /// The saved replies that restore with a saved document's names: its
+    /// Project's while it is in one, else its own (#1091 Decision 4).
+    fileprivate func replies(vaultID: String, projectID: String?) -> [SavedReply] {
+        let replies = if let projectID {
+            vault.projectReplies(projectId: projectID)
+        } else {
+            vault.documentReplies(documentId: vaultID)
+        }
+        return replies.map(SavedReply.init)
+    }
+
+    /// Copy for AI or Share left from this saved document: the Restore
+    /// extension restores with its Project, or with it while it is Unfiled,
+    /// until the next one (#1091, the maintainer's (a)). Only the id is
+    /// written. A file that can't be written leaves the extension its
+    /// fallback, so it fails nothing.
+    fileprivate func rememberShared(vaultID: String) {
+        guard let info = try? vault.document(id: vaultID) else { return }
+        let place: RestorePlace = if let project = info.projectId {
+            .project(ProjectID(rawValue: project))
+        } else {
+            .document(DocumentID(rawValue: vaultID))
+        }
+        try? RestorePlaceFile(storage).write(place)
     }
 
     /// The documents this run has a session for: opened, or imported.
@@ -423,6 +478,7 @@ final class RealLibrary: Library, @unchecked Sendable {
         try session.saveChanges()
         let moved = try core { try call(vaultID) }
         lock.withLock { projectNames.removeAll() }
+        noteChange()
         // Its text and Project changed in the Vault: the session opens it
         // again.
         do {
@@ -433,18 +489,6 @@ final class RealLibrary: Library, @unchecked Sendable {
         return ProjectMove(
             document: document, to: moved.project.map(ProjectSummary.init),
             from: moved.left.map { ProjectID(rawValue: $0.id) }, undo: moved.undo)
-    }
-
-    /// The app restores replies in the document's session; the Restore
-    /// extension restores with the old library until item 10.
-    func restore(reply: String, in projectID: ProjectID) throws -> RestoreResult {
-        throw CoreError.noProject
-    }
-
-    /// Saves `reply` for the document as `restoreReply` does.
-    func saveReply(_ reply: String, to document: DocumentID) throws {
-        guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
-        _ = try session.restoreReply(reply)
     }
 
     /// A save that waits for the phone to unlock. A job's save replaces
@@ -625,8 +669,8 @@ private let typingSignposter = OSSignposter(subsystem: "io.github.lawkitt.mdoc",
 /// read with `info()` and `snapshot()` each time (#681, ADR 0104), and the
 /// Vault keeps it. This side keeps only what the core has no record of: an
 /// import's source before it is read, with the title and Project chosen for
-/// it, the document's Vault id once saved, and the reply pasted this
-/// session.
+/// it, the document's Vault id once saved, and which saved reply its Reply
+/// pane shows.
 final class RealSession: DocumentSession, @unchecked Sendable {
     let id: DocumentID
     let created = Date()
@@ -663,17 +707,15 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private var ended = false
     /// The core's id of the long job running now, which `end` stops.
     private var runningJob: UInt64?
-    /// The reply pasted this session (#1091 Q2): the Reply pane shows it,
-    /// and it is empty when the document is opened again until the app
-    /// lists saved replies (Vault & Projects item 10).
-    private var pastedReply: String?
-    /// The pasted reply as restored, while its text and the names stay.
-    private var restoredReply: (key: RestoredReplyKey, reply: ReplySnapshot?)?
+    /// The saved reply the Reply pane shows, picked or pasted this
+    /// session; nil shows the newest.
+    private var shownReply: ReplyID?
+    /// The shown reply as restored, while it and the Vault stay.
+    private var restoredReply: (key: RestoredReplyKey, reply: ReplySnapshot)?
 
     private struct RestoredReplyKey: Equatable {
-        let text: String
-        let textRevision: UInt64
-        let identities: [Identity]
+        let id: ReplyID
+        let vaultChanges: Int
     }
 
     fileprivate init(
@@ -840,28 +882,46 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 primaryWording: row.originals.first ?? row.alias, variants: row.originals,
                 mentionCount: Int(row.mentionCount), state: row.state, owner: row.owner.map(IdentityID.init))
         }
-        let reply = reply(textRevision: review.textRevision, identities: identities)
+        let replies = savedReplies(projectID: projectID)
+        let reply = reply(of: replies)
         return DocumentSnapshot(
             id: id, title: review.title, projectID: projectID.map(ProjectID.init),
             projectName: library.projectName(projectID), kind: kind, phase: review.phase,
             markdown: review.text, styling: styling(review), textRevision: review.textRevision,
             candidates: candidates, identities: identities, original: original,
-            reply: reply, notice: review.notice, leftOut: review.leftOut,
+            reply: reply, replies: replies, notice: review.notice, leftOut: review.leftOut,
             mergeHints: review.linkHints, canUndo: review.canUndo, canRedo: review.canRedo,
             undoStep: review.undoStep, redoStep: review.redoStep,
             counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)),
             origin: ffi.info()?.origin ?? .ordinary)
     }
 
-    /// The reply pasted this session, restored with the document's names;
-    /// restored again only once its text or the names changed.
-    private func reply(textRevision: UInt64, identities: [Identity]) -> ReplySnapshot? {
-        guard let text = lock.withLock({ pastedReply }) else { return nil }
-        let restoredKey = RestoredReplyKey(text: text, textRevision: textRevision, identities: identities)
+    /// The saved replies that restore with this document's names, from
+    /// the Vault's manifest: none before its first save.
+    private func savedReplies(projectID: String?) -> [SavedReply] {
+        guard let vaultID else { return [] }
+        return library.replies(vaultID: vaultID, projectID: projectID)
+    }
+
+    /// The reply the pane shows, the one picked or else the newest,
+    /// restored from the Vault with the people it named when saved, as they
+    /// are now (#1091 Decision 18); restored again only once another is
+    /// shown or the Vault changed: a tap's change shows once it is saved.
+    private func reply(of replies: [SavedReply]) -> ReplySnapshot? {
+        let picked = lock.withLock { shownReply }
+        guard let shown = replies.first(where: { $0.id == picked }) ?? replies.first else { return nil }
+        // Read before the restore: a save meanwhile restores it again.
+        let restoredKey = RestoredReplyKey(id: shown.id, vaultChanges: library.changeCount)
         if let restored = lock.withLock({ restoredReply }), restored.key == restoredKey {
             return restored.reply
         }
-        let reply = (try? ffi.restoreReply(reply: text)).map { ReplySnapshot(aliasText: text, restored: RestoreResult($0)) }
+        let vault = library.vault
+        // One that can't be read now (a locked phone) is read again next
+        // time, not kept as none.
+        guard let reply = try? ReplySnapshot(
+            id: shown.id, aliasText: vault.reply(id: shown.id.rawValue).markdown,
+            restored: RestoreResult(vault.restoreReply(id: shown.id.rawValue)))
+        else { return nil }
         lock.withLock { restoredReply = (restoredKey, reply) }
         return reply
     }
@@ -1040,14 +1100,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         let handOff = try core { try ffi.handOff(library: nil) }
         guard let vaultID else { throw CoreError.notFound }
         let text = try core { try library.vault.textForAi(id: vaultID) }
+        // The Restore extension restores with where it went.
+        library.rememberShared(vaultID: vaultID)
         return HandOff(text: text, fileName: handOff.fileName)
     }
 
-    /// Restores `reply` with the document's names and saves it in the
-    /// Vault as an AI Reply to text shared from this document: its
-    /// Project's, or its own while Unfiled. The Reply pane shows it while
-    /// the session lives (#1091 Q2); the app lists saved replies from
-    /// Vault & Projects item 10.
+    /// Saves `reply` in the Vault as an AI Reply to text shared from this
+    /// document: its Project's, or its own while Unfiled (#1091 Decision
+    /// 4), and the Reply pane shows it.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot {
         _ = try core { try ffi.restoreReply(reply: reply) }
         // What the reply restores with is saved first, a first save the
@@ -1055,18 +1115,28 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         try saveChanges()
         guard let vaultID else { throw CoreError.notFound }
         let title = ffi.info()?.title ?? chosen.title
-        _ = try core {
+        let saved = try core {
             try library.vault.saveReply(
                 sharedFrom: .document(id: vaultID), title: String(localized: "Reply to \(title)"), sourceApp: nil,
                 markdown: reply)
         }
-        lock.withLock { pastedReply = reply }
+        lock.withLock { shownReply = ReplyID(rawValue: saved.id) }
         return snapshot()
     }
 
-    /// Clears the Reply pane; a reply saved stays saved.
+    /// The Reply pane shows saved reply `id`.
+    func showReply(_ id: ReplyID) -> DocumentSnapshot {
+        lock.withLock { shownReply = id }
+        return snapshot()
+    }
+
+    /// Remove reply: the reply the pane shows is deleted from the Vault,
+    /// and the pane shows the newest one left.
     func clearReply() throws -> DocumentSnapshot {
-        lock.withLock { pastedReply = nil }
+        if let shown = snapshot().reply?.id {
+            try core { try library.vault.deleteReply(id: shown.rawValue) }
+        }
+        lock.withLock { shownReply = nil }
         return snapshot()
     }
 
@@ -1261,6 +1331,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     private func recordSaved(vaultID: String) {
+        library.noteChange()
         let first = lock.withLock {
             let first = savedID == nil
             savedID = vaultID

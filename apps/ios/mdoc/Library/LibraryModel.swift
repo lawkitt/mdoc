@@ -105,6 +105,24 @@ final class LibraryModel {
         return filtered.filter { found.contains($0.id) }
     }
 
+    // MARK: Replies
+
+    /// A Project's saved replies, newest first: today's Documents page
+    /// filtered to it lists them (Vault & Projects item 11 moves them to the
+    /// Project page).
+    func replies(in project: ProjectID) -> [SavedReply] {
+        snapshot.projectReplies[project] ?? []
+    }
+
+    /// A saved reply restored, or why it can't be.
+    func restore(_ reply: ReplyID) -> Result<RestoreResult, CoreError> {
+        do {
+            return .success(try library.restoreSavedReply(reply))
+        } catch {
+            return .failure(error as? CoreError ?? CoreError(error))
+        }
+    }
+
     // MARK: Changes
 
     func refresh() {
