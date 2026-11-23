@@ -197,35 +197,32 @@ fn reopening_a_project_document_restores_its_mapping(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_reply_joins_the_source_project(cx: &mut TestAppContext) {
+fn a_reply_pasted_in_a_member_is_the_projects(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let source = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let project = new_project(&tabs, cx, source);
     let view = active(&tabs, cx);
 
-    // A reply pasted from a Project tab restores with its names, right
-    // after its source.
-    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    tabs.update_in(cx, |tabs, window, cx| tabs.activate(source, window, cx));
+    // A reply pasted from a Project's document is saved as the Project's
+    // and restores with its names; no tab opens for it.
+    let count = cx.update(|_, cx| tabs.read(cx).tabs.len());
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 agrees.".into()));
     view.update_in(cx, |view, window, cx| {
         view.paste_ai_response(&PasteAiResponse, window, cx)
     });
     cx.run_until_parked();
-    let reply = active(&tabs, cx);
+    let replies = vault(&tabs, cx).project_replies(&project);
+    assert_eq!(replies.len(), 1);
+    assert_eq!(
+        replies[0].owner,
+        mdoc_vault::ReplyOwner::Project(project.clone())
+    );
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert_eq!(
-            tabs.tabs[1].id(),
-            source,
-            "the reply is viewed after its source"
-        );
-        assert_eq!(reply.read(cx).project.link().unwrap().id, project);
-        assert_eq!(
-            reply.read(cx).editor.read(cx).text(),
-            "Anna Petrova agrees."
-        );
+        assert_eq!(tabs.tabs.len(), count);
+        let page = tabs.reply_page.as_ref().unwrap();
+        assert_eq!(page.restored().text, "Anna Petrova agrees.");
     });
 }
 
@@ -892,41 +889,6 @@ fn merge_hint_dismissal_survives_project_reopen(cx: &mut TestAppContext) {
     assert!(
         {
             let selector = hint_button(&reopened, cx, "dismiss");
-            cx.debug_bounds(selector)
-        }
-        .is_none()
-    );
-
-    // A restored reply in the same Project hides it too.
-    tabs.update_in(cx, |tabs, window, cx| {
-        let reply = crate::pii::ui::RestoredReply {
-            text: "PERSON_1 met PERSON_2".into(),
-            identities: tabs
-                .projects
-                .project(&project.id)
-                .unwrap()
-                .mapping
-                .exported(),
-            source_name: "contract".into(),
-            project: reopened.read(cx).project.link().cloned(),
-        };
-        tabs.event(
-            tabs.tabs.active(),
-            &TabEvent::Tabs(TabsEvent::Restored(reply.into())),
-            window,
-            cx,
-        );
-    });
-    cx.run_until_parked();
-    let reply = active(&tabs, cx);
-    show_panel(&reply, cx);
-    cx.update(|_, cx| {
-        assert_ne!(reply.entity_id(), reopened.entity_id());
-        assert!(reply.read(cx).project.is(&project.id));
-    });
-    assert!(
-        {
-            let selector = hint_button(&reply, cx, "dismiss");
             cx.debug_bounds(selector)
         }
         .is_none()

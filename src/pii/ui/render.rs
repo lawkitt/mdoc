@@ -111,9 +111,6 @@ impl DocumentView {
         )
     }
     pub(crate) fn pii_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if let Some(popup) = self.unresolved_popup(cx) {
-            return Some(popup);
-        }
         if let Popup::Choose { ids, selected } = self.pii.popup.as_ref()? {
             return Some(self.annotation_chooser(ids.clone(), *selected, cx));
         }

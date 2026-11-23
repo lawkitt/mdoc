@@ -5,7 +5,6 @@ use crate::{
     document_view::{
         Background, DocumentView, DocumentViewDependencies, OcrState, known_ocr_state,
     },
-    pii,
     pii::ui::PiiApplyAll,
     settings_ui,
     style::{self, Theme},
@@ -60,6 +59,7 @@ mod export_project;
 mod projects_ui;
 mod quit_flow;
 mod recovery_key;
+mod saved_replies;
 pub(crate) use quit_flow::CloseWatch;
 use quit_flow::QuitEffect;
 pub(crate) use recovery_key::OpenWithRecoveryKey;
@@ -110,6 +110,12 @@ actions!(
         RestoreClipboard,
         CheckForUpdates,
         ClearRecentFiles,
+        AddDocumentToProject,
+        RenameProject,
+        ChangeProjectColour,
+        ProjectCategories,
+        ExportProject,
+        DeleteProject,
     ]
 );
 
@@ -127,6 +133,7 @@ pub(super) enum TabEvent {
     Docx(DocxEvent),
     Save(SaveEvent),
     Project(ProjectEvent),
+    Reply(ReplyEvent),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -137,8 +144,17 @@ pub(super) enum TabEvent {
 pub(super) enum TabsEvent {
     New,
     Open(Vec<PathBuf>),
-    /// Open a copied AI reply in a new tab and restore its aliases.
-    Restored(Arc<pii::ui::RestoredReply>),
+}
+
+/// AI replies to the tab's document (`saved_replies`).
+pub(super) enum ReplyEvent {
+    /// The reply box's text settled, or Open reply asked for it: save it,
+    /// and show it when `open`.
+    Settled { open: bool },
+    /// Paste AI Reply: save this text and show it.
+    Pasted(String),
+    /// Show saved reply `id`.
+    Open(String),
 }
 
 /// Conversions and OCR setup.
@@ -295,6 +311,8 @@ pub(super) struct Workspace {
     quit_flow: quit_flow::QuitFlow,
     session_writer: session_writer::SessionWriter<Session>,
     project_ui: projects_ui::ProjectsState,
+    /// The Reply page, when it shows: view state only.
+    reply_page: Option<saved_replies::ReplyPage>,
     /// Dropped folders' sheets, one at a time.
     folder_sheets: folder_sheet::FolderSheets,
     folder_sheet_focus: Option<folder_sheet_ui::SheetFocus>,
@@ -543,6 +561,7 @@ impl Workspace {
             quit_flow: quit_flow::QuitFlow::default(),
             session_writer: session_writer::SessionWriter::new(None),
             project_ui: Default::default(),
+            reply_page: None,
             folder_sheets: Default::default(),
             folder_sheet_focus: None,
             projects: Default::default(),
@@ -1298,6 +1317,7 @@ impl Workspace {
                     cx.notify();
                 });
                 this.attach_project(id, cx);
+                this.refresh_saved_replies(cx);
                 // A view kept while it loaded may be evicted now.
                 this.evict(window, cx);
                 cx.notify();
@@ -1327,6 +1347,7 @@ impl Workspace {
             return;
         }
         self.project_ui.page = None;
+        self.reply_page = None;
         self.end_rename(true, cx);
         // Viewed again before its eviction's write ended: it stays. An
         // explicit close (a Project's Close all) goes on.
@@ -1636,25 +1657,11 @@ impl Workspace {
                 }
             }
             TabEvent::Tabs(TabsEvent::Open(paths)) => self.open_paths(paths.clone(), window, cx),
-            TabEvent::Tabs(TabsEvent::Restored(reply)) if !self.quit_flow.quitting() => {
-                let reply = reply.clone();
-                let tab = self.new_tab(window, cx);
-                if let Some(view) = self.tabs.get(tab).and_then(|t| t.view().cloned()) {
-                    view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
-                    if let Some(project) = reply
-                        .project
-                        .as_ref()
-                        .and_then(|link| self.projects.project(&link.id))
-                    {
-                        let reserved = project.mapping.reserved_aliases();
-                        let dismissed = project.dismissed_hints.clone();
-                        view.update(cx, |view, cx| {
-                            view.pii.review_mut().reserve_aliases(&reserved);
-                            view.dismiss_project_hints(&dismissed, cx);
-                        });
-                    }
-                }
-            }
+            TabEvent::Reply(event) if !self.quit_flow.quitting() => match event {
+                ReplyEvent::Settled { open } => self.queue_box_save(id, *open, window, cx),
+                ReplyEvent::Pasted(text) => self.queue_pasted_reply(id, text.clone(), window, cx),
+                ReplyEvent::Open(reply) => self.open_reply(reply, window, cx),
+            },
             TabEvent::Import(ImportEvent::State) => {
                 self.refresh_import(window, cx);
                 // A converted document of a Project gets its names now.
@@ -1866,9 +1873,6 @@ impl Workspace {
         self.navigation.forget(&gone);
         self.checkpoint(window, cx);
         cx.notify();
-        if let Some(next) = self.project_ui.closing_members.removed(id) {
-            self.close_tab(next, window, cx);
-        }
     }
 
     /// Files opened from Finder or another app: a window hidden by the
@@ -3283,7 +3287,9 @@ impl Workspace {
     /// then Home or the active document.
     fn card(&mut self, home: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
-        let content = if self.project_ui.page.is_some() {
+        let content = if self.reply_page.is_some() {
+            self.reply_page_view(window, cx)
+        } else if self.project_ui.page.is_some() {
             self.project_page(window, cx)
         } else if home {
             self.home_view(window, cx)
@@ -3321,7 +3327,7 @@ impl Workspace {
                     .flex()
                     .flex_col()
                     .when(self.sidebar.visible(), |v| ui::card_surface(v, theme))
-                    .when(home, |v| {
+                    .when(home && self.project_ui.page.is_none(), |v| {
                         v.on_drop(
                             cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                                 this.shell.drop = None;

@@ -1,8 +1,9 @@
 //! Commands whose availability must not depend on a focused element.
 use super::Workspace;
 use crate::workspace::{
-    CheckForUpdates, New, Open, OpenProject, Quit, Settings, ToggleSidebar, ToggleTheme,
-    shortcuts_ui::ShowShortcuts,
+    AddDocumentToProject, ChangeProjectColour, CheckForUpdates, DeleteProject, ExportProject, New,
+    Open, OpenProject, ProjectCategories, Quit, RenameProject, Settings, ToggleSidebar,
+    ToggleTheme, shell::PageAction, shortcuts_ui::ShowShortcuts,
 };
 use gpui::{App, Context, Window};
 
@@ -37,6 +38,25 @@ pub(crate) fn bind(cx: &mut App) {
         }
     });
     app_action::<OpenProject>(cx, |this, window, cx| this.show_project_list(window, cx));
+    // The Project menu: the Project shown, or the active document's.
+    app_action::<AddDocumentToProject>(cx, |this, window, cx| {
+        this.run_page_action(PageAction::AddDocument, window, cx)
+    });
+    app_action::<RenameProject>(cx, |this, window, cx| {
+        this.run_page_action(PageAction::RenameProject, window, cx)
+    });
+    app_action::<ChangeProjectColour>(cx, |this, window, cx| {
+        this.run_page_action(PageAction::ProjectColour, window, cx)
+    });
+    app_action::<ProjectCategories>(cx, |this, window, cx| {
+        this.run_page_action(PageAction::ProjectCategories, window, cx)
+    });
+    app_action::<ExportProject>(cx, |this, window, cx| {
+        this.run_page_action(PageAction::ExportProject, window, cx)
+    });
+    app_action::<DeleteProject>(cx, |this, window, cx| {
+        this.run_page_action(PageAction::DeleteProject, window, cx)
+    });
     // ⌘/ and Help › Keyboard Shortcuts from a comparison window too.
     app_action::<ShowShortcuts>(cx, |this, window, cx| {
         window.activate_window();

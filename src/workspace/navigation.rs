@@ -7,9 +7,11 @@ pub(super) enum Stop {
     /// again.
     Document(mdoc_store::document_id::VaultId),
     /// A live view no document names yet (a new document before its first
-    /// keystroke, a restored reply).
+    /// keystroke).
     Tab(u64),
     Project(String),
+    /// A saved AI Reply's page.
+    Reply(String),
 }
 
 /// How the history records arriving at a place.

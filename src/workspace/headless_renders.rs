@@ -399,7 +399,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     confirm::scenes(d)?;
     comparison::scenes(d, &view)?;
     import::scenes(d)?;
-    restore::restored_reply(d)?;
+    restore::saved_reply(d)?;
     comments::scenes(d)?;
     pdf_source::scenes(d)?;
     pdf_source::encrypted(d)?;

@@ -1,5 +1,5 @@
 //! Restore in place: the Share panel's AI reply box, the Reply
-//! view, and the reply kept in the case.
+//! view, and the reply saved to the Vault.
 use super::*;
 use crate::pii::ui::CompareMode;
 use mdoc_pii::{Category, restore::ExportedIdentity};
@@ -133,10 +133,10 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
 }
 
 /// The summary counts what came back, Next unrecognised walks the unknown
-/// tokens in the Reply view, the view follows the mapping live, and Open as
-/// tab makes the tab Paste AI Response makes.
+/// tokens in the Reply view, the view follows the mapping live, and Open
+/// reply and Paste AI Reply save the reply and show it on its page.
 #[gpui::test]
-fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppContext) {
+fn the_reply_box_restores_at_once_and_open_reply_shows_it_saved(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     cx.update(|_, cx| crate::pii::ui::bind_keys(cx));
@@ -265,20 +265,29 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
         );
     });
 
-    // Open as tab is today's restore tab.
+    // Open reply saves the box's reply and shows it on its Reply page,
+    // restored from the Vault as the Reply view shows it.
     let source_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     click_toolbar(cx, "share-open-reply");
-    let from_box = active(&tabs, cx);
-    let (box_text, box_name, box_remaining, box_unresolved) = cx.update(|_, cx| {
-        assert_ne!(tabs.read(cx).tabs.active(), source_id);
-        let view = from_box.read(cx);
+    cx.run_until_parked();
+    let (page_text, page_unresolved) = cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        let page = w.reply_page.as_ref().expect("the Reply page shows");
+        assert_eq!(w.tabs.active(), source_id, "no tab is opened");
         (
-            view.editor.read(cx).text().to_owned(),
-            view.display_name(),
-            view.pii.review().remaining(),
-            view.unresolved_tokens(cx).len(),
+            page.restored().text.clone(),
+            page.restored().unresolved.len(),
         )
     });
+    assert_eq!(page_text, restored);
+    assert_eq!(page_unresolved, 2);
+    let saved = vault(&tabs, cx).replies();
+    assert_eq!(saved.len(), 1, "the box made one reply");
+    assert_eq!(
+        vault(&tabs, cx).reply(&saved[0].id).unwrap().markdown,
+        reply
+    );
+    // Paste AI Reply saves a reply of its own and shows it the same way.
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(source_id, window, cx));
     cx.run_until_parked();
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(reply.into()));
@@ -286,16 +295,13 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
         view.paste_ai_response(&PasteAiResponse, window, cx)
     });
     cx.run_until_parked();
-    let pasted = active(&tabs, cx);
     cx.update(|_, cx| {
-        let view = pasted.read(cx);
-        assert_ne!(pasted.entity_id(), from_box.entity_id());
-        assert_eq!(view.editor.read(cx).text(), box_text);
-        assert_eq!(box_text, restored);
-        assert_eq!(view.display_name(), box_name);
-        assert_eq!(view.pii.review().remaining(), box_remaining);
-        assert_eq!(view.unresolved_tokens(cx).len(), box_unresolved);
+        let w = tabs.read(cx);
+        let page = w.reply_page.as_ref().expect("the Reply page shows");
+        assert_ne!(page.id(), saved[0].id);
+        assert_eq!(page.restored().text, restored);
     });
+    assert_eq!(vault(&tabs, cx).replies().len(), 2);
 
     // Live: the view follows the mapping. A forgotten identity's alias is
     // unresolved now, as in the restore tab; nothing is guessed.
@@ -336,43 +342,101 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
     cx.update(|_, cx| assert!(!source.read(cx).reply.exists()));
 }
 
-/// Until replies are saved with their documents, a pasted reply lives only
-/// while its tab is open, in a Project or not: nothing writes it.
+/// A reply pasted in the box is saved once it settles, as received; edits
+/// while the box holds it replace it, clearing keeps it, and the session
+/// holds none of its text. Reopened, the box is empty and Share lists the
+/// reply, which opens restored on its page.
 #[gpui::test]
-fn a_pasted_reply_lives_only_in_its_tab(cx: &mut TestAppContext) {
+fn a_reply_in_the_box_is_saved_once_it_settles_and_listed_on_reopen(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    new_project(&tabs, cx, tab);
+    let project = new_project(&tabs, cx, tab);
+    tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     let view = active(&tabs, cx);
     open_share(&view, cx);
-    fill(&view, "PERSON_1 replied, tab-only.", cx);
+    let settle = |cx: &mut VisualTestContext| {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(800));
+        cx.run_until_parked();
+    };
+    fill(&view, "PERSON_1 replied", cx);
+    assert!(
+        vault(&tabs, cx).replies().is_empty(),
+        "not before it settles"
+    );
+    settle(cx);
+    let first = vault(&tabs, cx).replies();
+    assert_eq!(first.len(), 1);
+    // A document in a Project gives the Project's reply.
+    assert_eq!(
+        first[0].owner,
+        mdoc_vault::ReplyOwner::Project(project.clone())
+    );
+    assert_eq!(first[0].title, "Reply to contract");
+    fill(&view, "PERSON_1 replied, from the box.", cx);
+    settle(cx);
+    let edited = vault(&tabs, cx).replies();
+    assert_eq!(edited.len(), 1, "an edit replaces the reply it saved");
+    assert_ne!(edited[0].id, first[0].id);
+    let markdown = vault(&tabs, cx).reply(&edited[0].id).unwrap().markdown;
+    assert_eq!(markdown, "PERSON_1 replied, from the box.");
+    // Cleared, the box keeps the saved reply; a new paste is a new reply.
+    fill(&view, "", cx);
+    settle(cx);
+    assert_eq!(vault(&tabs, cx).replies().len(), 1);
+    fill(&view, "ORG_1 wrote again.", cx);
+    settle(cx);
+    assert_eq!(vault(&tabs, cx).replies().len(), 2);
     let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
     let manifest = dir.path().join("session.json");
     cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
     assert!(
         !std::fs::read_to_string(&manifest)
             .unwrap()
-            .contains("tab-only")
+            .contains("from the box")
     );
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt(), "a Vault document asks nothing");
-    assert!(vault(&tabs, cx).replies().is_empty());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_vault_document(document, window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);
     cx.update(|_, cx| {
-        assert!(reopened.read(cx).project.link().is_some());
-        assert!(!reopened.read(cx).reply.exists());
+        let view = reopened.read(cx);
+        assert!(!view.reply.exists(), "the box starts empty");
+        let titles: Vec<_> = view
+            .saved_replies
+            .iter()
+            .map(|r| r.title.as_str())
+            .collect();
+        assert_eq!(titles, ["Reply to contract", "Reply to contract"]);
+    });
+    let index = cx.update(|_, cx| {
+        (reopened.read(cx).saved_replies.iter())
+            .position(|row| row.id == edited[0].id)
+            .unwrap()
+    });
+    open_share(&reopened, cx);
+    let row = cx.debug_bounds(if index == 0 {
+        "share-saved-reply-0"
+    } else {
+        "share-saved-reply-1"
+    });
+    let row = row.unwrap();
+    cx.simulate_click(row.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let page = tabs.read(cx).reply_page.as_ref().expect("the Reply page");
+        assert_eq!(page.id(), edited[0].id);
+        assert_eq!(page.restored().text, "Anna Petrova replied, from the box.");
     });
 }
 
 /// The box shows while aliases are applied or a reply exists. With the
-/// aliases gone, Copy reply and Open as tab are off and say why, and Open as
-/// tab has Paste AI Response's guard.
+/// aliases gone, Copy reply and Open reply are off, and Copy reply says why.
 #[gpui::test]
 fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -424,17 +488,9 @@ fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut Test
         )
     });
     click_toolbar(cx, "share-open-reply");
-    assert_eq!(tab_count(cx), before, "Open as tab is off");
-    source.update(cx, |view, cx| view.open_reply_as_tab(cx));
     cx.run_until_parked();
-    assert_eq!(tab_count(cx), before);
-    cx.update(|_, cx| {
-        let error = source.read(cx).error.clone().unwrap_or_default();
-        assert!(
-            error.starts_with("Open as tab needs a document whose names were replaced"),
-            "{error}"
-        );
-    });
+    assert_eq!(tab_count(cx), before, "Open reply is off");
+    assert!(cx.update(|_, cx| tabs.read(cx).reply_page.is_none()));
 }
 
 /// The reply editor is one Tab stop: the box only rings it. Tracking the

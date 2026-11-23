@@ -38,6 +38,9 @@ decision-history
 open-project
 project-move-toast
 project-page
+project-page-replies
+project-page-names
+project-page-menu
 rename-project
 project-categories
 project-page-lists
@@ -70,7 +73,7 @@ import-animation
 import-fax
 import-heic
 import-heic-missing
-restored-reply
+saved-reply
 comments-rail
 comments-resolved
 comments-markers

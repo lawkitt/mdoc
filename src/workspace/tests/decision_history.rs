@@ -88,18 +88,12 @@ fn decision_history_restore_from_home_and_session_snapshot_stays_private(cx: &mu
         "PERSON_1 owes ORG_1.".into(),
     ));
     click_toolbar(cx, "home-restore");
-    let restored = active(&tabs, cx);
-    restored.read_with(cx, |view, cx| {
+    // The reply is saved and shown restored on its page.
+    tabs.read_with(cx, |tabs, _| {
+        let page = tabs.reply_page.as_ref().expect("the Reply page");
         assert_eq!(
-            view.editor.read(cx).text(),
+            page.restored().text,
             "Anna Petrova owes Northwind Traders Ltd."
-        );
-        assert!(
-            lines(view, cx)
-                .last()
-                .unwrap()
-                .0
-                .starts_with("Restored 2 names · ")
         );
     });
     tabs.read_with(cx, |tabs, cx| {
