@@ -1,9 +1,7 @@
 # UniFFI binding settings. Swift needs none.
-# Names that clash in Kotlin: `Library` with JNA's `com.sun.jna.Library`,
-# which the bindings import, and an error variant's `message` with
+# Names that clash in Kotlin: an error variant's `message` with
 # `Throwable.message`.
 [bindings.kotlin.rename]
-Library = "MdocLibrary"
 "CoreError.Import.message" = "detail"
 "CoreError.Ocr.message" = "detail"
 "CoreError.Detect.message" = "detail"

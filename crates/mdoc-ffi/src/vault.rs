@@ -1,9 +1,8 @@
 //! `Vault`: the mobile apps' handle on the encrypted Vault (`mdoc_vault`,
 //! ADR 0125, #1091): Projects and Documents by id, Unfiled, moves with
-//! undo, renames, deletes, and lists from the manifest's summaries. It
-//! stands beside `Library`, which the apps keep using until they switch
-//! (ROADMAP Vault & Projects items 9 and 12); `DocumentSession` opens and
-//! saves its documents (`open_from_vault`, `save_into_vault`).
+//! undo, renames, deletes, and lists from the manifest's summaries.
+//! `DocumentSession` opens and saves its documents (`open_from_vault`,
+//! `save_into_vault`).
 //!
 //! The app passes the Vault's folder and key in; the core never picks a
 //! path nor asks the OS for a key (Decision 21). The apps keep it in a
@@ -41,6 +40,11 @@ pub struct Vault {
     writes: Mutex<()>,
     /// Moves Undo can still take back, and where text was shared from.
     undo: Mutex<Undo>,
+    /// Run once by a document's save once it holds the write lock, before
+    /// it writes.
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) during_save: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// Moves to undo, by the handle `DocumentMove::undo` gives, each with the
@@ -192,6 +196,8 @@ impl Vault {
             store: mdoc_vault::Vault::open(root, &key)?,
             writes: Mutex::new(()),
             undo: Mutex::default(),
+            #[cfg(test)]
+            during_save: Mutex::default(),
         }))
     }
 

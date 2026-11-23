@@ -2,7 +2,7 @@
 //! back. Import and OCR through `mdoc_import`, scans through `mdoc_detect`,
 //! the review of `mdoc_pii` as snapshots and transitions with undo and redo,
 //! typing in edit mode, Copy for AI and Share text,
-//! and the mapping saved into its case. Long jobs report their stage to the
+//! and the document saved into the Vault with its mapping. Long jobs report their stage to the
 //! platform and stop when it cancels; the platform runs them off its main
 //! thread.
 mod actions;
@@ -18,8 +18,8 @@ mod vault;
 
 use crate::{
     CoreError,
-    library::{CaseInfo, Library, Recorded, RenamedDocument, RestoredReply, Stamp, TextRange},
     setup::{DetectorPaths, OcrPaths},
+    text::{RestoredReply, TextRange},
 };
 pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 pub use editing::Typed;
@@ -31,7 +31,6 @@ pub use origin::{DocumentOrigin, first_line_title};
 pub(crate) use review::Counts;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
-pub use saving::SavedChange;
 pub use scanning::Thermal;
 pub(crate) use scanning::{PhoneScan, check_free_memory};
 pub use snapshot::{
@@ -40,7 +39,6 @@ pub use snapshot::{
 };
 use std::{
     collections::HashSet,
-    path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
@@ -121,16 +119,6 @@ pub struct Candidate {
     pub score: f32,
 }
 
-/// Where `save` put the document.
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
-pub struct SavedDocument {
-    pub path: String,
-    pub case: CaseInfo,
-    /// The review after saving: joining the case as stored now may have
-    /// renumbered aliases another document took meanwhile.
-    pub review: ReviewSnapshot,
-}
-
 struct Document {
     title: String,
     note: intake::ImportNote,
@@ -139,29 +127,18 @@ struct Document {
     /// part of a saved document or a snapshot.
     #[cfg(not(target_os = "android"))]
     unlocked_docx: Option<mdoc_import::import::Source>,
-    /// The case the document joined or started; it never changes.
-    case: Option<String>,
-    /// Categories its case does not detect; scans drop them.
+    /// Categories its Project does not detect; scans drop them.
     skip: HashSet<mdoc_pii::Category>,
-    /// Where `save` keeps the Markdown, reserved on the first save.
-    path: Option<PathBuf>,
-    /// The file as last saved, so a save never overwrites a change made to
-    /// it elsewhere (Files, another app).
-    stored: mdoc_store::document::Document,
     /// Bumped when an import replaces the document, so a late scan of the
     /// one before cannot land on it.
     generation: u64,
-    /// The case's identities as this document last joined or saved them:
-    /// while the case still holds exactly these, no other document changed
-    /// it, and saving needs no join that could undo this one's own steps.
-    synced: Option<Vec<mdoc_store::cases::StoredIdentity>>,
     /// Scanned, or names proposed some other way, even if none were found.
     scanned: bool,
     /// `ReviewText::change_key` at the last save: equal now, nothing
     /// changed since, and a save would write what is there.
     saved: Option<((u64, u64, usize), bool)>,
-    /// A `save_pending` joined the case again, and no save has told the
-    /// app yet (`SavedChange::rejoined`).
+    /// A `save_pending_into_vault` joined the Project again, and no save
+    /// has told the app yet (`SavedVaultChange::rejoined`).
     rejoined: bool,
     /// How it began, when that matters later: a new document is named
     /// after its first line, the sample restores.
@@ -175,9 +152,7 @@ struct Document {
     /// kept.
     source: Option<intake::Source>,
     /// Where it is in the Vault, once it joined a Project there or was
-    /// saved or opened there (`vault`); `None` for a document of the
-    /// library's, which keeps `path` and `case` instead. A document is
-    /// kept by one or the other, never both.
+    /// saved or opened there (`vault`); `None` before then.
     vault: Option<vault::Place>,
 }
 
@@ -271,58 +246,6 @@ impl DocumentSession {
         self.open(imported, &cancel, None)
     }
 
-    /// `import_file`, with a PDF's OCR keeping its finished pages under
-    /// `library`'s root: after a cancel, or mdoc
-    /// stopping, importing the same file with the same OCR model again
-    /// recognizes only the pages left, and gives the Markdown an
-    /// uninterrupted run gives. The kept pages are removed once this
-    /// session takes the document, or by `Library::discard_import`.
-    pub fn import_file_in(
-        &self,
-        library: Arc<Library>,
-        path: String,
-        mut options: ImportOptions,
-        progress: Option<Box<dyn JobProgress>>,
-    ) -> Result<ReviewSnapshot, CoreError> {
-        let cancel = self.start_job();
-        let password = options.take_password();
-        let imported = intake::import_file(
-            std::path::Path::new(&path),
-            &options,
-            password.as_ref(),
-            &cancel,
-            progress.as_deref(),
-            Some(&library.kept_pages()),
-        )?;
-        self.open(imported, &cancel, None)
-    }
-
-    /// Photos or camera pages picked together, as one document titled
-    /// `title`, a page each in the order given: JPEG, PNG, WebP or GIF,
-    /// each wrapped in memory as `import_file` wraps one. OCR keeps its
-    /// finished pages under `library`'s root as `import_file_in` does;
-    /// `Library::discard_images` removes them for the same images.
-    pub fn import_images_in(
-        &self,
-        library: Arc<Library>,
-        images: Vec<String>,
-        title: String,
-        options: ImportOptions,
-        progress: Option<Box<dyn JobProgress>>,
-    ) -> Result<ReviewSnapshot, CoreError> {
-        let cancel = self.start_job();
-        let images: Vec<PathBuf> = images.into_iter().map(PathBuf::from).collect();
-        let imported = intake::import_images(
-            &images,
-            title,
-            &options,
-            &cancel,
-            progress.as_deref(),
-            Some(&library.kept_pages()),
-        )?;
-        self.open(imported, &cancel, None)
-    }
-
     /// Pasted or shared text, taken as Markdown.
     pub fn import_text(&self, text: String, title: String) -> Result<ReviewSnapshot, CoreError> {
         self.import_text_as(text, title, DocumentOrigin::Ordinary)
@@ -351,79 +274,6 @@ impl DocumentSession {
             unlocked_docx: None,
         };
         self.open(imported, &cancel, Some(Opened::begun(origin)))
-    }
-
-    /// Open `path`, a document the library keeps: it stays that file and
-    /// stays in its case, whose names are proposed and whose aliases in the
-    /// text count as replaced (desktop's reopened case member).
-    pub fn open_document(
-        &self,
-        library: Arc<Library>,
-        path: String,
-    ) -> Result<ReviewSnapshot, CoreError> {
-        let cancel = self.start_job();
-        // Stamped before they are read: counts recorded with these stamps
-        // are never of anything newer.
-        let stamp = Stamp::of_file(Path::new(&path));
-        let case_stamps = library.case_stamps();
-        let read = library.document_state(Path::new(&path));
-        let stored = mdoc_store::document::Document::open(PathBuf::from(&path))?;
-        let member = library.member(Path::new(&path));
-        let case = library
-            .cases_raw()
-            .into_iter()
-            .find(|case| case.members.contains(&member));
-        let case_mark = case
-            .as_ref()
-            .map(|case| (case.id.clone(), case_stamps.get(&case.id).copied()));
-        let imported = intake::Imported {
-            title: crate::library::title_of(Path::new(&path)),
-            markdown: stored.saved.clone(),
-            source_kind: mdoc_vault::SourceKind::Markdown,
-            source: None,
-            note: intake::ImportNote::default(),
-            kept: None,
-            #[cfg(not(target_os = "android"))]
-            unlocked_docx: None,
-        };
-        let opened = Opened {
-            path: stored.path.clone(),
-            stored,
-            case,
-            member: Some(member),
-            scanned: read.as_ref().map(|s| s.scanned),
-            origin: read.as_ref().map(|s| s.origin).unwrap_or_default(),
-            reopened: true,
-            vault: None,
-        };
-        let snapshot = self.open(imported, &cancel, Some(opened))?;
-        #[cfg(test)]
-        if let Some(hook) = library
-            .before_record
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
-            hook();
-        }
-        // Its summary, as it opened; best effort, as only lists read it,
-        // and never waiting for a save in progress.
-        if let Some(lock) = library.try_lock() {
-            let counts = Counts {
-                proposed: snapshot.proposed,
-                replaced: snapshot.replaced,
-                kept: snapshot.kept,
-            };
-            let summary = Recorded::of(counts, stamp, case_mark);
-            let _ = library.record_opened(
-                &lock,
-                Path::new(&path),
-                read.as_ref(),
-                snapshot.scanned,
-                summary,
-            );
-        }
-        Ok(snapshot)
     }
 
     /// Stop the running import or scan; it fails with `CoreError::Cancelled`
@@ -717,129 +567,13 @@ impl DocumentSession {
             )
         })
     }
-
-    /// Add this document to case `case_id` before saving: its names take
-    /// the case's aliases and the case's names are proposed. A
-    /// document belongs to one case; joining another is refused.
-    pub fn join_case(
-        &self,
-        library: Arc<Library>,
-        case_id: String,
-    ) -> Result<ReviewSnapshot, CoreError> {
-        let case = library.load(&case_id)?;
-        let _saving = self.lock_saving();
-        self.with_document(|document| match &document.case {
-            _ if document.vault.is_some() => Err(vault::in_vault()),
-            Some(joined) if *joined == case_id => Ok(()),
-            Some(_) => Err(CoreError::case("This document is in another case.")),
-            None => {
-                document
-                    .review
-                    .join(&case.exported(), &case.reserved_aliases())?;
-                document.review.dismiss_pairs(&case.dismissed_hints);
-                document.case = Some(case_id.clone());
-                document.skip = case.skipped();
-                document.synced = Some(case.identities.clone());
-                Ok(())
-            }
-        })
-    }
-
-    /// Save the Markdown into the library's documents folder and its
-    /// mapping into its case, starting a case named after the document when
-    /// it has none (each prepared document starts a new case).
-    /// The document first joins its case as stored now, so names another
-    /// document added meanwhile keep their aliases and this one's move to
-    /// free numbers; one library write lock covers the whole save.
-    pub fn save(&self, library: Arc<Library>) -> Result<SavedDocument, CoreError> {
-        let _saving = self.lock_saving();
-        let mut guard = self.lock_document();
-        guard.as_mut().ok_or_else(no_document)?.save(&library)
-    }
-
-    /// Rename…: this document's title, as `Library::rename_document` does
-    /// for a saved one, keeping the session on its renamed file with its
-    /// review and history. Not saved yet, only the title changes, and its
-    /// case with it while the case is still empty and named after it.
-    pub fn rename_document(
-        &self,
-        library: Arc<Library>,
-        title: String,
-    ) -> Result<RenamedDocument, CoreError> {
-        let _saving = self.lock_saving();
-        let mut guard = self.lock_document();
-        let document = guard.as_mut().ok_or_else(no_document)?;
-        let renamed = document.rename(&library, &title)?;
-        // Named by the user, a new document is an ordinary one: its title
-        // stops following its first line, and an empty one stays.
-        if document.origin == DocumentOrigin::New {
-            document.origin = DocumentOrigin::Ordinary;
-            if let Some(path) = &document.path {
-                // Renamed already: an entry that cannot follow only makes
-                // the document follow its first line again when reopened.
-                let lock = library.lock()?;
-                let _ = library.record_origin(&lock, path, DocumentOrigin::Ordinary);
-            }
-        }
-        Ok(renamed)
-    }
 }
 
-/// The text of a document moving from case `from` (if any) into case `to`,
-/// and the identities it brings: opened in `from` as a reopened member is,
-/// then joined to `to` (`plan_join`), so names `to` knows take its aliases,
-/// clashing aliases its next free numbers, and the text is rewritten with
-/// them. The identities carry no earlier aliases: those name `from`'s
-/// history, which can mean other people in `to`.
-pub(crate) fn realias(
-    text: &str,
-    from: Option<&mdoc_store::cases::Case>,
-    to: &mdoc_store::cases::Case,
-) -> Result<(String, Vec<mdoc_pii::restore::ExportedIdentity>), CoreError> {
-    let mut review = ReviewText::new(text.to_owned());
-    if let Some(from) = from {
-        review.open_case(&from.exported(), &from.reserved_aliases());
-    }
-    review.join(&to.exported(), &to.reserved_aliases())?;
-    let mut exported = review.review.export_identities();
-    for identity in &mut exported {
-        identity.previous.clear();
-    }
-    Ok((review.text, exported))
-}
-
-/// What `open_document` would count in a stored document with `text`, in
-/// `case` if any, without a session, and whether it has any mention (how
-/// `open_document` tells a document without a record was scanned): what a
-/// summary falls back to.
-pub(crate) fn reopened_counts(
-    text: String,
-    case: Option<&mdoc_store::cases::Case>,
-    member: Option<&Path>,
-) -> (Counts, bool) {
-    let mut review = ReviewText::new(text);
-    if let Some(case) = case {
-        review.open_in_case(case, member);
-    }
-    (review.counts(), review.has_mentions())
-}
-
-/// What a document the library keeps brings when it is opened, or what a
-/// document that begins in mdoc starts with.
+/// What a document opened from the Vault brings, or what a document that
+/// begins in mdoc starts with.
 struct Opened {
-    path: Option<PathBuf>,
-    stored: mdoc_store::document::Document,
-    case: Option<mdoc_store::cases::Case>,
-    /// Its path as a case member.
-    member: Option<PathBuf>,
-    /// What its last save recorded; `None` for a document saved before
-    /// the library kept it.
-    scanned: Option<bool>,
     origin: DocumentOrigin,
-    /// A stored document, not one just begun.
-    reopened: bool,
-    /// A Vault document and its Project, in place of the library's file
-    /// and case.
+    /// A Vault document and its Project; `None` for one just begun.
     vault: Option<vault::FromVault>,
 }
 
@@ -847,13 +581,7 @@ impl Opened {
     /// A document that begins in mdoc, not yet saved.
     fn begun(origin: DocumentOrigin) -> Self {
         Self {
-            path: None,
-            stored: Default::default(),
-            case: None,
-            member: None,
-            scanned: None,
             origin,
-            reopened: false,
             vault: None,
         }
     }
@@ -885,14 +613,10 @@ impl Document {
         format!("{}.md", title.trim())
     }
 
-    /// Its case, or its Project in the Vault: what snapshots and `info`
-    /// call its case until Case reads Project there too.
-    fn case_or_project(&self) -> Option<&str> {
-        let project = self
-            .vault
-            .as_ref()
-            .and_then(|place| place.project.as_deref());
-        self.case.as_deref().or(project)
+    /// Its Project in the Vault: what snapshots and `info` call its case
+    /// until Case reads Project there too.
+    fn project(&self) -> Option<&str> {
+        (self.vault.as_ref()).and_then(|place| place.project.as_deref())
     }
 
     /// Changes when the review does, or when the document is first scanned.
@@ -906,12 +630,12 @@ impl Document {
             &self.title,
             &self.note,
             &self.review,
-            self.case_or_project(),
+            self.project(),
             self.scanned,
         )
     }
 
-    /// Scan results, minus the categories the case skips
+    /// Scan results, minus the categories the Project skips
     /// (`complete_pii_scan`). The document counts as scanned after.
     fn ingest(&mut self, mut detections: Vec<mdoc_pii::Detection>) -> Result<(), CoreError> {
         detections.retain(|d| !self.skip.contains(&d.category));
@@ -945,12 +669,8 @@ impl DocumentSession {
             review: ReviewText::new(imported.markdown),
             #[cfg(not(target_os = "android"))]
             unlocked_docx: imported.unlocked_docx,
-            case: None,
             skip: HashSet::new(),
-            path: None,
-            stored: mdoc_store::document::Document::default(),
             generation,
-            synced: None,
             scanned: false,
             saved: None,
             rejoined: false,
@@ -960,31 +680,10 @@ impl DocumentSession {
             source: imported.source,
             vault: None,
         };
-        if let Some(opened) = opened.filter(|opened| {
+        if let Some(opened) = opened {
             document.origin = opened.origin;
-            opened.reopened
-        }) {
             if let Some(from) = opened.vault {
                 document.open_in_vault(from);
-            } else {
-                document.path = opened.path;
-                document.stored = opened.stored;
-                if let Some(case) = opened.case {
-                    document
-                        .review
-                        .open_in_case(&case, opened.member.as_deref());
-                    document.review.dismiss_pairs(&case.dismissed_hints);
-                    document.skip = case.skipped();
-                    document.synced = Some(case.identities.clone());
-                    document.case = Some(case.id);
-                }
-                // Saved before scans were recorded: scanned when it has
-                // mentions, as the apps used to tell.
-                document.scanned = opened
-                    .scanned
-                    .unwrap_or_else(|| document.review.has_mentions());
-                // As saved: nothing to save until something changes.
-                document.saved = Some(document.change_key());
             }
         }
         let snapshot = document.snapshot();
@@ -1098,10 +797,34 @@ fn span(range: TextRange) -> std::ops::Range<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::Scratch;
+    use crate::{
+        test_support::Scratch,
+        vault::{SharedFrom, Vault},
+    };
+    use std::path::Path;
 
-    fn library(scratch: &Scratch) -> Arc<Library> {
-        Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap()
+    fn vault(scratch: &Scratch) -> Arc<Vault> {
+        Vault::open(
+            scratch.path().join("vault").display().to_string(),
+            vec![3; 32],
+        )
+        .unwrap()
+    }
+
+    /// `reply` restored as one to text shared from Vault document `id`.
+    fn restored(vault: &Vault, id: &str, reply: &str) -> String {
+        let from = SharedFrom::Document { id: id.into() };
+        vault.restore_text(from, reply.into()).unwrap().text
+    }
+
+    /// Vault document `id`'s own names (Unfiled), as stored.
+    fn stored_names(vault: &Vault, id: &str) -> usize {
+        vault.store().document(id).unwrap().mapping.identities.len()
+    }
+
+    /// The OCR pages a resuming import keeps, in a folder the test names.
+    fn kept_folder(scratch: &Scratch) -> String {
+        scratch.path().join("ocr").display().to_string()
     }
 
     fn session(text: &str, title: &str) -> Arc<DocumentSession> {
@@ -1181,13 +904,10 @@ mod tests {
             .unwrap()
             .id;
         session
-            .review(
-                ReviewAction::NotAName {
-                    mention: dana,
-                    scope: Scope::This,
-                },
-                None,
-            )
+            .review(ReviewAction::NotAName {
+                mention: dana,
+                scope: Scope::This,
+            })
             .unwrap();
         session.new_alias(at(&text, "Ann Lee", 1)).unwrap();
         let before = session.snapshot().unwrap();
@@ -1238,59 +958,6 @@ mod tests {
             reopened_view(reopened.snapshot().unwrap()),
             reopened_view(session.snapshot().unwrap())
         );
-    }
-
-    /// Two documents of one case reviewed side by side both give PERSON_1
-    /// to their own person; the later save moves its person to a free
-    /// number instead of merging the two people.
-    #[test]
-    fn stale_sessions_never_merge_different_people() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let case = library.create_case("Case".into()).unwrap();
-        let ann = session("Ann Lee signed.", "Ann");
-        let bob = session("Bob Hart signed.", "Bob");
-        for (session, name) in [(&ann, "Ann Lee"), (&bob, "Bob Hart")] {
-            session.join_case(library.clone(), case.id.clone()).unwrap();
-            select(session, name);
-            session.replace_all().unwrap();
-        }
-        assert_eq!(ann.snapshot().unwrap().text, "PERSON_1 signed.");
-        assert_eq!(bob.snapshot().unwrap().text, "PERSON_1 signed.");
-        ann.save(library.clone()).unwrap();
-        let saved = bob.save(library.clone()).unwrap();
-        assert_eq!(saved.review.text, "PERSON_2 signed.");
-        assert_eq!(
-            std::fs::read_to_string(&saved.path).unwrap(),
-            "PERSON_2 signed."
-        );
-        let reply = "PERSON_1 and PERSON_2 agree.";
-        assert_eq!(
-            library.restore(case.id, reply.into()).unwrap().text,
-            "Ann Lee and Bob Hart agree."
-        );
-    }
-
-    #[test]
-    fn concurrent_saves_of_one_title_get_their_own_files_and_cases() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let saves: Vec<_> = ["Ann Lee", "Bob Hart"]
-            .into_iter()
-            .map(|name| {
-                let library = library.clone();
-                let session = session(&format!("{name} signed."), "Document");
-                select(&session, name);
-                session.replace_all().unwrap();
-                std::thread::spawn(move || session.save(library).unwrap())
-            })
-            .collect();
-        let saved: Vec<_> = saves.into_iter().map(|s| s.join().unwrap()).collect();
-        assert_ne!(saved[0].path, saved[1].path);
-        assert_ne!(saved[0].case.id, saved[1].case.id);
-        for saved in &saved {
-            assert_eq!(saved.case.documents, std::slice::from_ref(&saved.path));
-        }
     }
 
     /// Cancelling from the progress callback, or starting a newer import
@@ -1454,23 +1121,23 @@ mod tests {
         session.scan(None, None).unwrap();
     }
 
-    /// Save → reopen from the library → share → restore → save: the file
-    /// and its case stay the same, and its aliases count as replaced.
+    /// Save → reopen from the Vault → share → restore → save: the record
+    /// stays the same, and its aliases count as replaced.
     #[test]
-    fn a_saved_document_reopens_in_its_case() {
+    fn a_saved_document_reopens_as_saved() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
+        let vault = vault(&scratch);
         let first = session("Ann Lee wrote to Bob Hart.", "Letter");
         select(&first, "Ann Lee");
         first.replace_all().unwrap();
-        let saved = first.save(library.clone()).unwrap();
+        let saved = first.save_into_vault(vault.clone()).unwrap();
         let copied = first.copy_for_ai().unwrap();
 
         let reopened = DocumentSession::new();
         let snapshot = reopened
-            .open_document(library.clone(), saved.path.clone())
+            .open_from_vault(vault.clone(), saved.id.clone())
             .unwrap();
-        assert_eq!(snapshot.case_id, Some(saved.case.id.clone()));
+        assert_eq!(snapshot.case_id, None, "Unfiled");
         assert_eq!(snapshot.replaced, 1);
         assert_eq!(reopened.copy_for_ai().unwrap(), copied);
         assert_eq!(
@@ -1482,12 +1149,11 @@ mod tests {
         );
         select(&reopened, "Bob Hart");
         reopened.replace_all().unwrap();
-        let again = reopened.save(library.clone()).unwrap();
-        assert_eq!(again.path, saved.path);
-        assert_eq!(again.case.id, saved.case.id);
-        assert_eq!(library.documents().unwrap().len(), 1);
+        let again = reopened.save_into_vault(vault.clone()).unwrap();
+        assert_eq!(again.id, saved.id);
+        assert_eq!(vault.documents().len(), 1);
         assert_eq!(
-            std::fs::read_to_string(&saved.path).unwrap(),
+            vault.store().document(&saved.id).unwrap().markdown,
             "PERSON_1 wrote to PERSON_2."
         );
     }
@@ -1556,7 +1222,7 @@ mod tests {
     #[test]
     fn comments_never_reach_the_saved_copied_or_shared_text() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
+        let vault = vault(&scratch);
         for name in [
             "import/handmade-comments.docx",
             "import/handmade-comments.odt",
@@ -1580,12 +1246,12 @@ mod tests {
             let snapshot = session
                 .import_file(path, ImportOptions::default(), None)
                 .unwrap();
-            let saved = session.save(library.clone()).unwrap();
+            let saved = session.save_into_vault(vault.clone()).unwrap();
             let carried = [
                 snapshot.text,
                 session.copy_for_ai().unwrap(),
                 session.share_text().unwrap(),
-                std::fs::read_to_string(&saved.path).unwrap(),
+                vault.store().document(&saved.id).unwrap().markdown,
             ];
             for comment in &comments {
                 for words in [comment.text.trim(), comment.author.trim()] {
@@ -1622,20 +1288,19 @@ mod tests {
     /// password asks for one, a wrong one asks again, and the right one
     /// gives what its open twin gives. Encryption no password opens says so
     /// whatever is typed, and a PDF locked only against editing opens with
-    /// none. Nothing is written beside it or into the library: no kept
-    /// pages, no unlocked copy.
+    /// none. Nothing is written beside it or into the app's OCR folder: no
+    /// kept pages, no unlocked copy.
     #[test]
     fn a_locked_pdf_imports_with_its_password_only() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
         let copy = |name: &str| {
             let path = scratch.path().join(name);
             std::fs::copy(fixture(&format!("pdf-source/{name}")), &path).unwrap();
             path.display().to_string()
         };
         let import = |path: &str, password: Option<&str>| {
-            DocumentSession::new().import_file_in(
-                library.clone(),
+            DocumentSession::new().import_file_resuming(
+                kept_folder(&scratch),
                 path.into(),
                 ImportOptions {
                     password: password.map(Into::into),
@@ -1723,7 +1388,6 @@ mod tests {
             }
         }
         let scratch = Scratch::new();
-        let library = library(&scratch);
         let models = scratch.path().join("models");
         let installed = mdoc_import::ocr::install_config_in(
             &models,
@@ -1747,8 +1411,8 @@ mod tests {
         };
         let locked = fixture("pdf-source/partly-scanned-aes256.pdf");
         let session = DocumentSession::new();
-        let stopped = session.import_file_in(
-            library.clone(),
+        let stopped = session.import_file_resuming(
+            kept_folder(&scratch),
             locked.clone(),
             options(Some(PDF_PASSWORD)),
             Some(Box::new(CancelAtFirstPage(session.clone()))),
@@ -1758,10 +1422,15 @@ mod tests {
             "{:?}",
             stopped.map(|_| ())
         );
-        let imports = scratch.path().join("imports");
+        let imports = Path::new(&kept_folder(&scratch)).to_owned();
         assert!(!imports.exists(), "nothing kept");
         let recognized = DocumentSession::new()
-            .import_file_in(library, locked, options(Some(PDF_PASSWORD)), None)
+            .import_file_resuming(
+                kept_folder(&scratch),
+                locked,
+                options(Some(PDF_PASSWORD)),
+                None,
+            )
             .unwrap();
         let open = DocumentSession::new()
             .import_file(
@@ -1778,11 +1447,11 @@ mod tests {
 
     /// A locked DOCX, saved by Word and by LibreOffice: no password asks for
     /// one, a wrong one asks again, and the right one gives what its
-    /// unlocked twin gives. Nothing is written beside it or into the library.
+    /// unlocked twin gives. Nothing is written beside it or into the app's
+    /// OCR folder.
     #[test]
     fn a_locked_docx_imports_with_its_password_only() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
         for app in ["word", "libreoffice"] {
             let locked = scratch.path().join(format!("{app}-locked.docx"));
             std::fs::copy(
@@ -1792,8 +1461,8 @@ mod tests {
             .unwrap();
             let before = files(scratch.path());
             let import = |password: Option<&str>| {
-                DocumentSession::new().import_file_in(
-                    library.clone(),
+                DocumentSession::new().import_file_resuming(
+                    kept_folder(&scratch),
                     locked.display().to_string(),
                     ImportOptions {
                         password: password.map(Into::into),
@@ -1955,85 +1624,15 @@ mod tests {
         assert!(!shown.contains("Petrov"), "{shown}");
     }
 
-    /// Without OCR, importing into a library is `import_file`, and keeps
-    /// nothing.
-    #[test]
-    fn importing_into_a_library_without_ocr_is_import_file() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        for (name, options) in [
-            ("import/text.docx", ImportOptions::default()),
-            (
-                "import/handmade-partly-scanned.pdf",
-                ImportOptions {
-                    native_text_only: true,
-                    ..ImportOptions::default()
-                },
-            ),
-        ] {
-            let kept = DocumentSession::new()
-                .import_file_in(library.clone(), fixture(name), options.clone(), None)
-                .unwrap();
-            let plain = DocumentSession::new()
-                .import_file(fixture(name), options, None)
-                .unwrap();
-            assert_eq!(kept, plain, "{name}");
-        }
-        assert!(matches!(
-            DocumentSession::new().import_file_in(
-                library.clone(),
-                fixture("import/handmade-partly-scanned.pdf"),
-                ImportOptions::default(),
-                None
-            ),
-            Err(CoreError::NeedsOcr { .. })
-        ));
-        assert!(!scratch.path().join("imports").exists());
-        // Nothing kept: discarding is a no-op.
-        library
-            .discard_import(fixture("import/handmade-partly-scanned.pdf"))
-            .unwrap();
-    }
-
-    /// Photos picked together import into a library as one document of a
-    /// page each; without OCR it asks for it, keeping nothing, and
-    /// discarding them is a no-op.
-    #[test]
-    fn photos_picked_together_import_as_one_document() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let photos = vec![
-            fixture("images/gps-rotated.jpg"),
-            fixture("images/gps-rotated.jpg"),
-        ];
-        let result = DocumentSession::new().import_images_in(
-            library.clone(),
-            photos.clone(),
-            "Lease".into(),
-            ImportOptions::default(),
-            None,
-        );
-        assert!(
-            matches!(
-                result,
-                Err(CoreError::NeedsOcr { ref pages, page_count: 2 }) if pages == &[1, 2]
-            ),
-            "{result:?}"
-        );
-        assert!(!scratch.path().join("imports").exists());
-        library.discard_images(photos).unwrap();
-    }
-
     /// A partial import's notice belongs to the import: a saved document
     /// reopens without it, so the phones' notice card closes for good.
     #[test]
     fn a_reopened_document_has_no_import_notice() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
+        let vault = vault(&scratch);
         let session = DocumentSession::new();
         let imported = session
-            .import_file_in(
-                library.clone(),
+            .import_file(
                 fixture("import/handmade-partly-scanned.pdf"),
                 ImportOptions {
                     native_text_only: true,
@@ -2050,84 +1649,13 @@ mod tests {
             "{:?}",
             imported.notice
         );
-        let saved = session.save(library.clone()).unwrap();
+        let saved = session.save_into_vault(vault.clone()).unwrap();
         let reopened = DocumentSession::new()
-            .open_document(library, saved.path)
+            .open_from_vault(vault, saved.id)
             .unwrap();
         assert_eq!(reopened.notice, None);
         assert_eq!(reopened.warning, None);
         assert_eq!(reopened.left_out, None);
-    }
-
-    /// With the OCR runtime: an import stopped after two pages resumes
-    /// through the session with the pages left, and gives an uninterrupted
-    /// import's document; a dropped import's pages are discarded.
-    #[test]
-    #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
-    #[cfg(any(
-        all(target_os = "macos", target_arch = "aarch64"),
-        all(target_os = "windows", target_arch = "x86_64")
-    ))]
-    fn a_stopped_ocr_import_resumes_with_the_pages_left() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let models = scratch.path().join("models");
-        let installed = mdoc_import::ocr::install_config_in(
-            &models,
-            &mdoc_store::settings::OcrConfig {
-                model: mdoc_store::settings::OcrModel::Cyrillic,
-                ..Default::default()
-            },
-            &mdoc_import::model_download::Progress::default(),
-        )
-        .unwrap();
-        let paths = OcrPaths {
-            root: models.display().to_string(),
-            model: crate::setup::ModelId::OcrEnglishRussian,
-            pdfium: installed.pdfium.display().to_string(),
-            onnx: installed.onnx.display().to_string(),
-        };
-        let options = ImportOptions {
-            ocr: Some(paths.clone()),
-            ..ImportOptions::default()
-        };
-        let pdf = fixture("import/handmade-partly-scanned.pdf");
-        let uninterrupted = DocumentSession::new()
-            .import_file(pdf.clone(), options.clone(), None)
-            .unwrap();
-        let imports = scratch.path().join("imports");
-        let kept_pages = || std::fs::read_dir(&imports).map_or(0, |dir| dir.count());
-        // Stop after page 2, as a cancel or mdoc stopping would.
-        let stop = || {
-            let cancel = AtomicBool::new(false);
-            let stopped = mdoc_import::resume::prepare_resumable(
-                Path::new(&pdf),
-                None,
-                Some(&paths.installed().unwrap()),
-                false,
-                &cancel,
-                &library.kept_pages(),
-                &|page, _| {
-                    if page == 2 {
-                        cancel.store(true, Ordering::Relaxed);
-                    }
-                },
-            );
-            assert!(matches!(
-                stopped,
-                Err(mdoc_import::import::ImportError::Cancelled)
-            ));
-            assert_eq!(kept_pages(), 1);
-        };
-        stop();
-        let resumed = DocumentSession::new()
-            .import_file_in(library.clone(), pdf.clone(), options.clone(), None)
-            .unwrap();
-        assert_eq!(resumed, uninterrupted);
-        assert_eq!(kept_pages(), 0);
-        stop();
-        library.discard_import(pdf).unwrap();
-        assert_eq!(kept_pages(), 0);
     }
 
     fn range_of(snapshot: &ReviewSnapshot, wording: &str, nth: usize) -> TextRange {
@@ -2138,16 +1666,16 @@ mod tests {
         }
     }
 
-    /// Each change saves (as the app does): saving joins the case only when
-    /// another document changed it, so an undone rename stays undone.
+    /// Each change saves (as the app does): saving joins the Project only
+    /// when another document changed it, so an undone rename stays undone.
     #[test]
     fn an_undo_after_a_save_stays_undone() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
+        let vault = vault(&scratch);
         let session = session("Ann Lee wrote to Ann Lee.", "Letter");
         select(&session, "Ann Lee");
         let replaced = session.replace_all().unwrap();
-        session.save(library.clone()).unwrap();
+        session.save_into_vault(vault.clone()).unwrap();
         let renamed = session
             .rename(
                 range_of(&replaced, "PERSON_1", 0),
@@ -2159,18 +1687,15 @@ mod tests {
         let step = renamed.undo_step.clone().unwrap();
         assert_eq!(step.label, "Rename · CLIENT");
         assert_eq!(step.range, Some(range_of(&renamed, "CLIENT", 0)));
-        session.save(library.clone()).unwrap();
+        session.save_into_vault(vault.clone()).unwrap();
         let undone = session.undo().unwrap();
         assert_eq!(undone.text, "PERSON_1 wrote to PERSON_1.");
         assert_eq!(undone.redo_step.unwrap().kind, StepKind::Rename);
-        let saved = session.save(library.clone()).unwrap();
+        let saved = session.save_into_vault(vault.clone()).unwrap();
         assert_eq!(saved.review.text, "PERSON_1 wrote to PERSON_1.");
         assert!(saved.review.can_redo);
         assert_eq!(
-            library
-                .restore(saved.case.id.clone(), "PERSON_1 agreed.".into())
-                .unwrap()
-                .text,
+            restored(&vault, &saved.id, "PERSON_1 agreed."),
             "Ann Lee agreed."
         );
         let redone = session.redo().unwrap();
@@ -2178,20 +1703,20 @@ mod tests {
         assert!(!redone.can_redo);
     }
 
-    /// Same as saved into the case, then undone and saved again: the
-    /// document has two people again and restores each to its own. The case
-    /// keeps the merge, as on desktop: a member's save never reverses a case
-    /// merge (`unmerged_members_cannot_reverse_a_case_merge`).
+    /// Same as saved, then undone and saved again: the document has two
+    /// people again and restores each to its own. Its mapping keeps the
+    /// merge, as on desktop: a save never reverses a merge
+    /// (`unmerged_members_cannot_reverse_a_case_merge`).
     #[test]
     fn an_undone_merge_is_two_people_in_the_document_again() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
+        let vault = vault(&scratch);
         let session = session("Ann Lee wrote to Mia Fox.", "Letter");
         select(&session, "Ann Lee");
         select(&session, "Mia Fox");
         let replaced = session.replace_all().unwrap();
         assert_eq!(replaced.text, "PERSON_1 wrote to PERSON_2.");
-        session.save(library.clone()).unwrap();
+        session.save_into_vault(vault.clone()).unwrap();
         let (ann, mia) = (
             session
                 .identity_with_alias("PERSON_1".into())
@@ -2203,9 +1728,9 @@ mod tests {
                 .unwrap(),
         );
         session.link(mia, ann).unwrap();
-        session.save(library.clone()).unwrap();
+        session.save_into_vault(vault.clone()).unwrap();
         assert_eq!(session.undo().unwrap().text, "PERSON_1 wrote to PERSON_2.");
-        let saved = session.save(library.clone()).unwrap();
+        let saved = session.save_into_vault(vault.clone()).unwrap();
         assert_eq!(saved.review.text, "PERSON_1 wrote to PERSON_2.");
         assert_eq!(saved.review.identities.len(), 2);
         assert_eq!(
@@ -2215,17 +1740,24 @@ mod tests {
                 .text,
             "Ann Lee and Mia Fox."
         );
-        let case = library.load(&saved.case.id).unwrap();
-        assert_eq!(case.identities.len(), 1, "the case keeps the merge");
+        assert_eq!(
+            stored_names(&vault, &saved.id),
+            1,
+            "the mapping keeps the merge"
+        );
     }
 
-    /// × on a merge hint is kept in the case: the document reopened, or
-    /// another member, no longer shows it.
+    /// × on a merge hint is kept in the Project: the document reopened, or
+    /// another of its documents, no longer shows it.
     #[test]
-    fn a_dismissed_hint_is_kept_in_the_case() {
+    fn a_dismissed_hint_is_kept_in_the_project() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
+        let vault = vault(&scratch);
+        let project = vault.create_project("Case".into()).unwrap();
         let session = session("Maya Bennett met Ms Bennett.", "Letter");
+        session
+            .join_project(vault.clone(), project.id.clone())
+            .unwrap();
         select(&session, "Maya Bennett");
         select(&session, "Ms Bennett");
         let mut snapshot = session.snapshot().unwrap();
@@ -2242,13 +1774,18 @@ mod tests {
         assert!(dismissed.link_hints.is_empty());
         assert_eq!(dismissed.can_undo, can_undo);
         session.replace_all().unwrap();
-        let saved = session.save(library.clone()).unwrap();
+        let saved = session.save_into_vault(vault.clone()).unwrap();
         assert_eq!(
-            library.load(&saved.case.id).unwrap().dismissed_hints.len(),
+            vault
+                .store()
+                .project(&project.id)
+                .unwrap()
+                .dismissed_hints
+                .len(),
             1
         );
         let reopened = DocumentSession::new()
-            .open_document(library.clone(), saved.path)
+            .open_from_vault(vault.clone(), saved.id)
             .unwrap();
         assert_eq!(reopened.identities.len(), 2);
         assert!(reopened.link_hints.is_empty());
@@ -2259,7 +1796,7 @@ mod tests {
     #[test]
     fn a_merge_hint_never_merges_on_its_own() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
+        let vault = vault(&scratch);
         let session = session("Maya Bennett met Ms Bennett.", "Letter");
         select(&session, "Maya Bennett");
         select(&session, "Ms Bennett");
@@ -2273,11 +1810,11 @@ mod tests {
         assert_eq!(snapshot.link_hints.len(), 1);
         let replaced = session.replace_all().unwrap();
         assert_eq!(replaced.identities.len(), 2);
-        let saved = session.save(library.clone()).unwrap();
+        let saved = session.save_into_vault(vault.clone()).unwrap();
         assert_eq!(saved.review.identities.len(), 2);
-        assert_eq!(library.load(&saved.case.id).unwrap().identities.len(), 2);
+        assert_eq!(stored_names(&vault, &saved.id), 2);
         let reopened = DocumentSession::new()
-            .open_document(library.clone(), saved.path)
+            .open_from_vault(vault.clone(), saved.id)
             .unwrap();
         assert_eq!(reopened.identities.len(), 2);
         assert_eq!(reopened.link_hints.len(), 1);
@@ -2289,26 +1826,27 @@ mod tests {
     #[test]
     fn opening_another_document_starts_its_own_undo_history() {
         let scratch = Scratch::new();
-        let library = library(&scratch);
-        let first = session("Ann Lee wrote.", "First");
-        select(&first, "Ann Lee");
-        first.replace_all().unwrap();
-        let first_saved = first.save(library.clone()).unwrap();
-        let second = saved(&library, "Mia Fox replied.", &["Mia Fox"], "Second");
+        let vault = vault(&scratch);
+        let saved = |text: &str, name: &str, title: &str| {
+            let session = session(text, title);
+            select(&session, name);
+            session.replace_all().unwrap();
+            session.save_into_vault(vault.clone()).unwrap().id
+        };
+        let first = saved("Ann Lee wrote.", "Ann Lee", "First");
+        let second = saved("Mia Fox replied.", "Mia Fox", "Second");
 
         let session = DocumentSession::new();
         session
-            .open_document(library.clone(), first_saved.path.clone())
+            .open_from_vault(vault.clone(), first.clone())
             .unwrap();
         select(&session, "wrote");
         assert!(session.snapshot().unwrap().can_undo);
-        let opened = session
-            .open_document(library.clone(), second.path.clone())
-            .unwrap();
+        let opened = session.open_from_vault(vault.clone(), second).unwrap();
         assert!(!opened.can_undo);
         assert_eq!(session.undo().unwrap().text, opened.text);
         let first_again = DocumentSession::new()
-            .open_document(library.clone(), first_saved.path)
+            .open_from_vault(vault.clone(), first)
             .unwrap();
         assert_eq!(first_again.text, "PERSON_1 wrote.");
     }
@@ -2362,368 +1900,5 @@ mod tests {
         let row = undone.identities.iter().find(|i| i.id == mailbox).unwrap();
         assert_eq!(row.owner, None);
         assert_eq!(undone.redo_step.unwrap().kind, StepKind::Owner);
-    }
-
-    /// `text` with `names` replaced, saved into a case of its own.
-    fn saved(library: &Arc<Library>, text: &str, names: &[&str], title: &str) -> SavedDocument {
-        let session = session(text, title);
-        for name in names {
-            select(&session, name);
-        }
-        session.replace_all().unwrap();
-        session.save(library.clone()).unwrap()
-    }
-
-    fn restored(library: &Library, case: &str, reply: &str) -> String {
-        library.restore(case.into(), reply.into()).unwrap().text
-    }
-
-    /// Moving re-aliases the document for the case it joins (`plan_join`):
-    /// a shared name takes the case's alias, a clashing one the next free
-    /// number, and the case's other names are proposed. The case it left
-    /// keeps its names and the reply kept for it. Moving back gives the
-    /// names their old aliases and takes out of the case it leaves the
-    /// names the move added there.
-    #[test]
-    fn a_moved_document_takes_the_cases_aliases() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let letter = saved(
-            &library,
-            "Ann Lee wrote to Bob Hart about Carl Diaz.",
-            &["Ann Lee", "Bob Hart"],
-            "Letter",
-        );
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_1 wrote to PERSON_2 about Carl Diaz."
-        );
-        let reply = "PERSON_1 thanks PERSON_2.";
-        library
-            .save_reply(letter.case.id.clone(), letter.path.clone(), reply.into())
-            .unwrap();
-        let memo = saved(
-            &library,
-            "Bob Hart met Carl Diaz.",
-            &["Bob Hart", "Carl Diaz"],
-            "Memo",
-        );
-        let moved = library
-            .move_document(letter.path.clone(), memo.case.id.clone())
-            .unwrap();
-        assert_eq!(moved.path, letter.path);
-        assert_eq!(moved.case.id, memo.case.id);
-        assert_eq!(
-            moved.case.documents,
-            [memo.path.clone(), letter.path.clone()]
-        );
-        assert_eq!(moved.added, ["PERSON_3"], "Ann; Bob and Carl were known");
-        let left = moved.left.unwrap();
-        assert_eq!(left.id, letter.case.id);
-        assert!(left.documents.is_empty());
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_3 wrote to PERSON_1 about Carl Diaz."
-        );
-        assert_eq!(
-            restored(&library, &memo.case.id, "PERSON_3, PERSON_1, PERSON_2."),
-            "Ann Lee, Bob Hart, Carl Diaz."
-        );
-        // The case left restores replies to what was sent before, and keeps
-        // the reply; the document has none in its new case.
-        assert_eq!(
-            restored(&library, &letter.case.id, reply),
-            "Ann Lee thanks Bob Hart."
-        );
-        let stored = library.load(&letter.case.id).unwrap();
-        assert_eq!(stored.replies.len(), 1);
-        assert_eq!(
-            library
-                .reply(memo.case.id.clone(), letter.path.clone())
-                .unwrap(),
-            None
-        );
-        // Reopened, it is in its new case, with the case's other name proposed.
-        let reopened = DocumentSession::new()
-            .open_document(library.clone(), letter.path.clone())
-            .unwrap();
-        assert_eq!(reopened.case_id, Some(memo.case.id.clone()));
-        assert_eq!(reopened.replaced, 2);
-        assert!(
-            reopened
-                .mentions
-                .iter()
-                .any(|m| m.original == "Carl Diaz" && m.alias.as_deref() == Some("PERSON_2"))
-        );
-        assert_eq!(
-            library
-                .documents()
-                .unwrap()
-                .iter()
-                .find(|d| d.path == letter.path)
-                .unwrap()
-                .case_id,
-            Some(memo.case.id.clone())
-        );
-        // Undo: moving back gives the names their old aliases, the reply is
-        // the document's again, and Memo's case forgets Ann.
-        let back = library
-            .move_back(
-                letter.path.clone(),
-                letter.case.id.clone(),
-                moved.added.clone(),
-            )
-            .unwrap();
-        assert_eq!(back.case.id, letter.case.id);
-        assert_eq!(
-            back.left.unwrap().documents,
-            std::slice::from_ref(&memo.path)
-        );
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_1 wrote to PERSON_2 about Carl Diaz."
-        );
-        assert_eq!(
-            library
-                .reply(letter.case.id.clone(), letter.path.clone())
-                .unwrap(),
-            Some(reply.into())
-        );
-        assert_eq!(
-            restored(&library, &letter.case.id, "PERSON_1, PERSON_2."),
-            "Ann Lee, Bob Hart."
-        );
-        let memo_case = library.load(&memo.case.id).unwrap();
-        assert!(memo_case.identities.iter().all(|i| i.alias != "PERSON_3"));
-        assert_eq!(memo_case.identities.len(), 2);
-        let memo_reopened = DocumentSession::new()
-            .open_document(library.clone(), memo.path.clone())
-            .unwrap();
-        assert!(
-            memo_reopened
-                .identities
-                .iter()
-                .all(|i| i.alias != "PERSON_3")
-        );
-    }
-
-    /// The case a document leaves stays, even empty (a case is
-    /// deleted only on its own). Moving back keeps the names the move added
-    /// where something still uses them: another document of that case, or
-    /// a reply to text shared from it (the current case).
-    #[test]
-    fn a_case_left_stays_and_moving_back_keeps_names_in_use() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
-        let memo = saved(&library, "Bob Hart wrote.", &["Bob Hart"], "Memo");
-        let moved = library
-            .move_document(letter.path.clone(), memo.case.id.clone())
-            .unwrap();
-        assert_eq!(moved.added, ["PERSON_2"]);
-        assert!(moved.left.unwrap().documents.is_empty());
-        assert_eq!(library.cases().cases.len(), 2);
-        assert_eq!(restored(&library, &letter.case.id, "PERSON_1"), "Ann Lee");
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_2 wrote."
-        );
-        // Another document of Memo's case names Ann now.
-        let note = self::session("Ann Lee called.", "Note");
-        note.join_case(library.clone(), memo.case.id.clone())
-            .unwrap();
-        select(&note, "Ann Lee");
-        note.replace_all().unwrap();
-        let note = note.save(library.clone()).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&note.path).unwrap(),
-            "PERSON_2 called."
-        );
-        let back = library
-            .move_back(letter.path.clone(), letter.case.id.clone(), moved.added)
-            .unwrap();
-        assert_eq!(back.case.id, letter.case.id);
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_1 wrote."
-        );
-        assert_eq!(restored(&library, &memo.case.id, "PERSON_2"), "Ann Lee");
-        // Moved into a case shared since: a reply may name Ann there.
-        let other = saved(&library, "Dan Roe wrote.", &["Dan Roe"], "Other");
-        let moved = library
-            .move_document(letter.path.clone(), other.case.id.clone())
-            .unwrap();
-        assert_eq!(moved.added, ["PERSON_2"]);
-        library.note_shared(other.case.id.clone()).unwrap();
-        library
-            .move_back(letter.path.clone(), letter.case.id.clone(), moved.added)
-            .unwrap();
-        assert_eq!(restored(&library, &other.case.id, "PERSON_2"), "Ann Lee");
-        // Moving back into the case it is in is refused, as a move is.
-        assert!(matches!(
-            library.move_back(letter.path.clone(), letter.case.id.clone(), Vec::new()),
-            Err(CoreError::Case { .. })
-        ));
-    }
-
-    #[test]
-    fn a_move_into_its_own_or_a_missing_case_is_refused() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
-        assert!(matches!(
-            library.move_document(letter.path.clone(), letter.case.id.clone()),
-            Err(CoreError::Case { .. })
-        ));
-        for id in ["0".repeat(32), "not an id".into()] {
-            assert!(matches!(
-                library.move_document(letter.path.clone(), id),
-                Err(CoreError::Case { .. })
-            ));
-        }
-        let outside = scratch.path().join("outside.md");
-        std::fs::write(&outside, "Ann Lee").unwrap();
-        assert!(matches!(
-            library.move_document(outside.display().to_string(), letter.case.id.clone()),
-            Err(CoreError::Invalid { .. })
-        ));
-        assert!(matches!(
-            library.move_document_to_new_case(letter.path.clone(), " ".into()),
-            Err(CoreError::Invalid { .. })
-        ));
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_1 wrote."
-        );
-        assert_eq!(
-            library.case_info(letter.case.id).unwrap().documents,
-            std::slice::from_ref(&letter.path)
-        );
-    }
-
-    /// New case…: the document's names keep their aliases in a case of
-    /// their own; the case it left stays.
-    #[test]
-    fn a_document_moves_into_a_new_case() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
-        let moved = library
-            .move_document_to_new_case(letter.path.clone(), " Ivanov ".into())
-            .unwrap();
-        assert_eq!(moved.case.name, "Ivanov");
-        assert_eq!(moved.case.names, 1);
-        assert_eq!(moved.added, ["PERSON_1"]);
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_1 wrote."
-        );
-        assert_eq!(restored(&library, &moved.case.id, "PERSON_1"), "Ann Lee");
-        assert_eq!(library.cases().cases.len(), 2);
-        assert!(
-            library
-                .case_info(letter.case.id)
-                .unwrap()
-                .documents
-                .is_empty()
-        );
-    }
-
-    /// A file that cannot be rewritten leaves the document in the case it
-    /// was in, and the case it was joining as it was.
-    #[test]
-    #[cfg(unix)]
-    fn a_move_whose_file_cannot_be_written_changes_nothing() {
-        use std::os::unix::fs::PermissionsExt;
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
-        let memo = saved(&library, "Bob Hart wrote.", &["Bob Hart"], "Memo");
-        let before = library.load(&memo.case.id).unwrap();
-        let documents = library.documents_dir();
-        let mode = |mode| {
-            std::fs::set_permissions(&documents, std::fs::Permissions::from_mode(mode)).unwrap()
-        };
-        mode(0o555);
-        let result = library.move_document(letter.path.clone(), memo.case.id.clone());
-        mode(0o755);
-        assert!(matches!(result, Err(CoreError::Io { .. })), "{result:?}");
-        assert_eq!(
-            std::fs::read_to_string(&letter.path).unwrap(),
-            "PERSON_1 wrote."
-        );
-        let after = library.load(&memo.case.id).unwrap();
-        assert_eq!(
-            (&after.identities, &after.members),
-            (&before.identities, &before.members)
-        );
-        assert_eq!(
-            library.case_info(letter.case.id).unwrap().documents,
-            std::slice::from_ref(&letter.path)
-        );
-    }
-
-    /// Renaming an open document keeps its review and history; its next
-    /// save goes to the renamed file. Not saved yet, its case follows.
-    #[test]
-    fn an_open_document_is_renamed_in_place() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let session = session("Ann Lee wrote to Bob Hart.", "Sample: services agreement");
-        select(&session, "Ann Lee");
-        session.replace_all().unwrap();
-        let first = session.save(library.clone()).unwrap();
-        assert_eq!(first.case.name, "Sample: services agreement");
-        assert_eq!(
-            library.documents().unwrap()[0].title,
-            "Sample: services agreement"
-        );
-        let renamed = session
-            .rename_document(library.clone(), "Services: final".into())
-            .unwrap();
-        assert_eq!(renamed.case.unwrap().name, "Services: final");
-        let snapshot = session.snapshot().unwrap();
-        assert_eq!(snapshot.title, "Services: final");
-        assert!(snapshot.can_undo);
-        select(&session, "Bob Hart");
-        session.replace_all().unwrap();
-        let again = session.save(library.clone()).unwrap();
-        assert_eq!(Some(again.path.clone()), renamed.path);
-        assert_eq!(
-            std::fs::read_to_string(&again.path).unwrap(),
-            "PERSON_1 wrote to PERSON_2."
-        );
-        assert!(!Path::new(&first.path).exists());
-        assert_eq!(library.documents().unwrap().len(), 1);
-        // Before its first save: the title, and its empty case named after it.
-        let case = library.create_case("Draft".into()).unwrap();
-        let draft = self::session("Text.", "Draft");
-        draft.join_case(library.clone(), case.id.clone()).unwrap();
-        let renamed = draft
-            .rename_document(library.clone(), "Draft: two".into())
-            .unwrap();
-        assert_eq!(renamed.path, None);
-        assert_eq!(renamed.case.unwrap().name, "Draft: two");
-        let saved = draft.save(library.clone()).unwrap();
-        assert!(saved.path.ends_with("Draft\u{A789} two.md"));
-    }
-
-    #[test]
-    fn a_save_never_overwrites_a_change_made_elsewhere() {
-        let scratch = Scratch::new();
-        let library = library(&scratch);
-        let session = session("Ann Lee wrote.", "Letter");
-        select(&session, "Ann Lee");
-        session.replace_all().unwrap();
-        let saved = session.save(library.clone()).unwrap();
-        std::fs::write(&saved.path, "Edited in Files.").unwrap();
-        assert!(matches!(
-            session.save(library.clone()),
-            Err(CoreError::Io { .. })
-        ));
-        assert_eq!(
-            std::fs::read_to_string(&saved.path).unwrap(),
-            "Edited in Files."
-        );
     }
 }

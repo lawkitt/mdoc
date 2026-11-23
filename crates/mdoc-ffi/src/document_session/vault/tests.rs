@@ -4,8 +4,8 @@
 use super::super::*;
 use crate::{
     document_session::actions::ReviewAction,
-    library::TextRange,
     test_support::Scratch,
+    text::TextRange,
     vault::{ProjectDocuments, Vault},
 };
 
@@ -152,13 +152,10 @@ fn a_review_saved_into_the_vault_reopens_as_it_was() {
         .unwrap()
         .id;
     session
-        .review(
-            ReviewAction::NotAName {
-                mention: dana,
-                scope: Scope::This,
-            },
-            None,
-        )
+        .review(ReviewAction::NotAName {
+            mention: dana,
+            scope: Scope::This,
+        })
         .unwrap();
     session.new_alias(at(&text, "Ann Lee", 1)).unwrap();
     let before = session.snapshot().unwrap();
@@ -522,8 +519,7 @@ fn a_deleted_projects_documents_move_to_unfiled_or_go() {
     assert_eq!(vault.documents().len(), 1);
 }
 
-/// A new document follows its first line and goes when left empty, in the
-/// Vault as in the library.
+/// A new document follows its first line and goes when left empty.
 #[test]
 fn a_new_document_follows_its_first_line_and_goes_when_empty() {
     let scratch = Scratch::new();
@@ -572,49 +568,26 @@ fn a_new_document_follows_its_first_line_and_goes_when_empty() {
     assert!(empty.snapshot().is_err());
 }
 
-/// A document is kept by the library or the Vault, never both.
+/// A save never overwrites a change another write made to the record since
+/// this session read it (a rename elsewhere): it is refused until the
+/// document is opened again.
 #[test]
-fn library_calls_refuse_a_vault_document_and_back() {
+fn a_save_never_overwrites_a_change_made_elsewhere() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let library = crate::Library::new(
-        scratch.path().join("library").display().to_string(),
-        vec![3; 32],
-    )
-    .unwrap();
-    let (in_vault, _) = saved(&vault, None, "Ann Lee.", &["Ann Lee"], "Vault");
-    assert!(in_vault.save(library.clone()).is_err());
-    let case = library.create_case("Case".into()).unwrap();
-    assert!(in_vault.join_case(library.clone(), case.id).is_err());
-    assert!(
-        in_vault
-            .rename_document(library.clone(), "X".into())
-            .is_err()
-    );
-    in_vault
-        .keep(
-            at(&in_vault.snapshot().unwrap().text, "PERSON_1", 0),
-            Scope::This,
-        )
+    let (session, saved) = saved(&vault, None, "Ann Lee wrote.", &["Ann Lee"], "Letter");
+    vault
+        .rename_document(saved.id.clone(), "Renamed elsewhere".into())
         .unwrap();
-    assert!(in_vault.save_pending(library.clone()).is_err());
-    assert!(
-        in_vault
-            .review(ReviewAction::ReplaceAll, Some(library.clone()))
-            .is_err()
-    );
-
-    let in_library = session("Bob Hart.", "Library");
-    in_library.save(library.clone()).unwrap();
-    assert!(in_library.save_into_vault(vault.clone()).is_err());
-    assert!(in_library.save_pending_into_vault(vault.clone()).is_err());
-    let project = vault.create_project("P".into()).unwrap();
-    assert!(in_library.join_project(vault.clone(), project.id).is_err());
-    assert!(
-        in_library
-            .rename_in_vault(vault.clone(), "Y".into())
-            .is_err()
-    );
+    let text = session.snapshot().unwrap().text;
+    session.keep(at(&text, "PERSON_1", 0), Scope::This).unwrap();
+    assert!(matches!(
+        session.save_into_vault(vault.clone()),
+        Err(CoreError::Case { .. })
+    ));
+    let stored = vault.store().document(&saved.id).unwrap();
+    assert_eq!(stored.title, "Renamed elsewhere");
+    assert_eq!(stored.markdown, "PERSON_1 wrote.");
 }
 
 /// A document opened from the Vault takes the names its Project changed
@@ -728,13 +701,10 @@ fn an_alias_retired_by_not_a_name_stays_retired_when_reopened() {
             .unwrap();
         assert_eq!(ann.alias.as_deref(), Some("PERSON_1"));
         session
-            .review(
-                ReviewAction::NotAName {
-                    mention: ann.id,
-                    scope: Scope::All,
-                },
-                None,
-            )
+            .review(ReviewAction::NotAName {
+                mention: ann.id,
+                scope: Scope::All,
+            })
             .unwrap();
         session
             .save_pending_into_vault(vault.clone())
@@ -843,7 +813,7 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
     );
     assert_eq!(
         vault.text_for_ai(saved.id.clone()).unwrap(),
-        by_hand.hand_off(None).unwrap().text
+        by_hand.hand_off().unwrap().text
     );
     assert_eq!(
         by_hand.snapshot().unwrap().phase,

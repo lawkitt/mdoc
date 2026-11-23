@@ -1224,7 +1224,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// the share, so a move's Undo keeps the names a reply may use.
     func copyForAI() throws -> HandOff {
         try saveChanges()
-        let handOff = try core { try ffi.handOff(library: nil) }
+        let handOff = try core { try ffi.handOff() }
         guard let vaultID else { throw CoreError.notFound }
         let text = try core { try library.vault.textForAi(id: vaultID) }
         // The Restore extension restores with where it went.
@@ -1281,7 +1281,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// core finds them and counts the document as scanned.
     func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot {
         let names = names.map { ProposedName(wording: $0.wording, category: $0.category) }
-        _ = try core { try ffi.review(action: .proposeNames(names: names), library: nil) }
+        _ = try core { try ffi.review(action: .proposeNames(names: names)) }
         // Stored proposals stand in for the scan, and save as its result
         // does: when the phone locks first, once it unlocks.
         try saveAfterJob { [self] in try save() }
@@ -1371,7 +1371,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private func tap(_ action: ReviewAction) throws -> DocumentSnapshot {
         let interval = reviewSignposter.beginInterval("Review tap", id: reviewSignposter.makeSignpostID())
         defer { reviewSignposter.endInterval("Review tap", interval) }
-        let review = try core { try ffi.review(action: action, library: nil) }
+        let review = try core { try ffi.review(action: action) }
         return snapshot(of: review)
     }
 

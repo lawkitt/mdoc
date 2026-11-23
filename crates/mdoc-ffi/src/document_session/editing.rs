@@ -5,7 +5,7 @@
 //! is `save_pending`'s, as after a review tap.
 pub use super::review::Typed;
 use super::{DocumentSession, ReviewSnapshot, no_document, span};
-use crate::{CoreError, editor::EditorEdit, library::TextRange};
+use crate::{CoreError, editor::EditorEdit, text::TextRange};
 use std::sync::atomic::AtomicBool;
 
 #[uniffi::export]
@@ -68,7 +68,7 @@ impl DocumentSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{document_session::ReviewAction, library::Library, test_support::Scratch};
+    use crate::{document_session::ReviewAction, test_support::Scratch, vault::Vault};
 
     fn at(text: &str, needle: &str) -> TextRange {
         let start = text.find(needle).unwrap() as u64;
@@ -85,17 +85,17 @@ mod tests {
         }
     }
 
-    /// Typing saves through `save_pending` and reopens as typed; undo and
-    /// redo in the snapshot name the typing step.
+    /// Typing saves through `save_pending_into_vault` and reopens as typed;
+    /// undo and redo in the snapshot name the typing step.
     #[test]
     fn typing_saves_and_undoes_through_the_session() {
         let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
         let session = DocumentSession::new();
         session
             .import_text("Ann Lee signed.".into(), "Typed".into())
             .unwrap();
-        session.save(library.clone()).unwrap();
+        session.save_into_vault(vault.clone()).unwrap();
         let text = session.snapshot().unwrap().text;
         let end = text.len() - 1;
         for (i, c) in " today".chars().enumerate() {
@@ -108,11 +108,14 @@ mod tests {
             snapshot.undo_step.unwrap().kind,
             super::super::StepKind::Typing
         );
-        let saved = session.save_pending(library.clone()).unwrap().unwrap();
+        let saved = session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .unwrap();
         let reopened = DocumentSession::new();
-        let opened = reopened.open_document(library.clone(), saved.path).unwrap();
+        let opened = reopened.open_from_vault(vault.clone(), saved.id).unwrap();
         assert_eq!(opened.text, "Ann Lee signed today.");
-        let undone = session.review(ReviewAction::Undo, None).unwrap();
+        let undone = session.review(ReviewAction::Undo).unwrap();
         assert_eq!(undone.text, "Ann Lee signed.");
         assert_eq!(undone.redo_step.unwrap().label, "Typing");
     }
@@ -152,10 +155,7 @@ mod tests {
         let snapshot = session.snapshot().unwrap();
         assert_eq!(snapshot.text, "**due** now");
         assert_eq!(snapshot.undo_step.unwrap().label, "Formatting");
-        assert_eq!(
-            session.review(ReviewAction::Undo, None).unwrap().text,
-            "due now"
-        );
+        assert_eq!(session.review(ReviewAction::Undo).unwrap().text, "due now");
     }
 
     #[test]

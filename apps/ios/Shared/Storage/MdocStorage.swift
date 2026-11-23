@@ -163,7 +163,7 @@ struct MdocStorage: Sendable {
     }
 
     /// A file name from a title, the extension kept, by the core's rule
-    /// (`file_stem` in `crates/mdoc-ffi/src/library.rs`, #683): look-alikes
+    /// (`file_stem` in `crates/mdoc-ffi/src/file_names.rs`, #683): look-alikes
     /// for the characters a file name cannot hold, so "Claim: Bennett"
     /// stays that title; control characters as "-"; no leading dot; at
     /// most 240 bytes; "Document" when nothing is left.
