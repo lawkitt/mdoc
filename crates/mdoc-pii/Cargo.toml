@@ -21,9 +21,12 @@ unicode-normalization = "=0.1.26"
 # matches whole characters.
 unicode-segmentation = "1"
 mdoc-history = { path = "../mdoc-history" }
+# A review saved with its document (`saved`): what the Vault keeps.
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-# Reads the identity maps of captured AI replies.
+# Reads the identity maps of captured AI replies; saved reviews round-trip
+# through it, as the Vault's JSON records do.
 serde_json = "1"
 
 [lints]

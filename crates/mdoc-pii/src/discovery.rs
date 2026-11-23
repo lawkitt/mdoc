@@ -239,7 +239,7 @@ impl DiscoveryInput {
 /// What labels a date of birth: the label before it, as [`cue_before`]
 /// reads it (#466), or the one after it, as [`cue_after`] does, for a date
 /// a rule found before its label (#363).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Cue {
     Before(String),
     After(String),

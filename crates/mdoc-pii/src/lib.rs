@@ -15,6 +15,7 @@ mod propagation;
 pub use identities::{Identity, IdentitySnapshot};
 pub use propagation::{lone_initials, nicknames, person_forms_in, placed_initials};
 pub mod restore;
+pub mod saved;
 mod syntax;
 pub mod tracking;
 pub mod view;
@@ -32,7 +33,8 @@ use std::{
 use syntax::{plain_text_span, protected_syntax};
 use tracking::{Applied, Assignment, ReplacementPlan, Tracking};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Its variant names are part of a saved review's format (`saved`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Category {
     Person,
     Organization,
@@ -350,7 +352,8 @@ fn intersects(protected: &[Range<usize>], range: &Range<usize>) -> bool {
     protected.get(i).is_some_and(|r| r.start < range.end)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Its variant names are part of a saved review's format (`saved`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Recognizer {
     Model,
     Email,

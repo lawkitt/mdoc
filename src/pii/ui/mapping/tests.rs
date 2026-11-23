@@ -3401,3 +3401,185 @@ fn the_footer_says_scanning_while_a_scan_runs() {
         "3 to replace · 1 applied · 2 kept"
     );
 }
+
+/// The Replacements panel with every identity expanded, as text: each row's
+/// identity, wording, alias and counts, and each mention under it.
+fn panel_text(app: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<String> {
+    use super::panel::PanelItem;
+    let rows: Vec<_> = app
+        .replacement_entries(cx)
+        .iter()
+        .map(|(row, _)| row.id)
+        .collect();
+    app.pii.mapping.expanded.extend(rows);
+    app.replacement_entries(cx)
+        .iter()
+        .map(|(row, item)| {
+            let item = match item {
+                PanelItem::Category { entities, mentions } => format!("{entities} {mentions}"),
+                PanelItem::Header => "header".into(),
+                PanelItem::Mention(annotation, range) => format!("{annotation} {range:?}"),
+                PanelItem::Kept(range) => format!("kept {range:?}"),
+                PanelItem::Hint(hint) => {
+                    format!("hint {} {} {}", hint.from, hint.into, hint.wording)
+                }
+            };
+            format!(
+                "{} {} {} {:?} {}/{}/{}: {item}",
+                row.id, row.original, row.alias, row.category, row.mentions, row.applied, row.kept
+            )
+        })
+        .collect()
+}
+
+/// Vault & Projects item 2: desktop's review holding every kind of decision
+/// (replaced, proposed, kept, Not a name, a mention split off to an identity
+/// of its own) saves through JSON and comes back over its text in a new tab
+/// as it was, with no rescan, and carries on as it would have.
+#[gpui::test]
+fn a_saved_review_reopens_as_it_was(cx: &mut gpui::TestAppContext) {
+    let source =
+        "Ann Lee met Bob Hart. Ann Lee left. Carl Fox stayed. Dana Kim came. Ann Lee rang.";
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text(source, cx));
+        app.pii.reviewing = true;
+        let detections = ["Ann Lee", "Bob Hart", "Carl Fox", "Dana Kim"]
+            .map(|wording| {
+                let at = source.find(wording).unwrap();
+                mdoc_pii::Detection {
+                    range: at..at + wording.len(),
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: mdoc_pii::Recognizer::Model,
+                }
+            })
+            .to_vec();
+        app.pii.review.ingest(source, detections).unwrap();
+        app.pii.mapping.begin_review();
+    });
+    cx.run_until_parked();
+    // The `nth` pending mention of `wording`: its variant and range.
+    let pending = |app: &DocumentView, wording: &str, nth: usize| {
+        let review = &app.pii.review;
+        let variant = review
+            .variants()
+            .iter()
+            .find(|v| v.original.as_ref() == wording)
+            .unwrap();
+        (variant.id, variant.mentions[nth].clone())
+    };
+    fn open(
+        app: &mut DocumentView,
+        wording: &str,
+        window: &mut gpui::Window,
+        cx: &mut Context<DocumentView>,
+    ) {
+        let variant = app
+            .pii
+            .review
+            .variants()
+            .iter()
+            .find(|v| v.original.as_ref() == wording)
+            .unwrap();
+        let (variant, range) = (variant.id, variant.mentions[0].clone());
+        let annotation = app.pii.review.annotation_id(variant, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+    }
+    app.update_in(cx, |app, window, cx| {
+        open(app, "Bob Hart", window, cx);
+        app.apply_scope(cx);
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        open(app, "Carl Fox", window, cx);
+        app.keep_originals(window, cx);
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        open(app, "Dana Kim", window, cx);
+        app.not_a_name(window, cx);
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let (variant, range) = pending(app, "Ann Lee", 1);
+        app.change_mapping(MappingAction::AssignCandidate(variant, range, None), cx);
+    });
+    cx.run_until_parked();
+    let (text, saved, before) = app.update(cx, |app, cx| {
+        let review = &app.pii.review;
+        assert_eq!(review.applied().len(), 1, "Bob Hart replaced");
+        assert_eq!(review.kept_mentions().len(), 1, "Carl Fox kept");
+        assert_eq!(review.not_a_name_wordings().len(), 1, "Dana Kim not a name");
+        assert_eq!(review.assignments().len(), 1, "one Ann Lee split off");
+        assert_eq!(review.remaining(), 3, "Ann Lee three times");
+        let text = app.editor.read(cx).text().to_owned();
+        assert!(text.contains("PERSON_"), "{text}");
+        let saved = serde_json::to_string(&review.save()).unwrap();
+        (text, saved, panel_text(app, cx))
+    });
+
+    let tabs = cx.update(|window, _| {
+        window
+            .root::<crate::workspace::Workspace>()
+            .flatten()
+            .unwrap()
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    let reopened = cx.update(|_, cx| tabs.read(cx).active_view().unwrap());
+    assert_ne!(reopened, app);
+    reopened.update(cx, |view, cx| {
+        view.editor.update(cx, |e, cx| e.set_text(&text, cx));
+        let saved = serde_json::from_str(&saved).unwrap();
+        let history = view.editor.read(cx).history_id();
+        view.pii.review = Review::restore(saved, &text, history).unwrap();
+        view.pii.reviewing = true;
+        view.review_changed(cx);
+    });
+    cx.run_until_parked();
+    reopened.update(cx, |view, cx| {
+        assert_eq!(panel_text(view, cx), before);
+        assert_eq!(
+            serde_json::to_string(&view.pii.review.save()).unwrap(),
+            saved
+        );
+    });
+
+    // Both carry on alike: the replacement goes back to its original at
+    // once, then Apply all replaces the same mentions the same way.
+    for view in [&app, &reopened] {
+        view.update_in(cx, |view, window, cx| {
+            let id = view.pii.review.applied()[0].id;
+            view.activate_annotation(APPLIED_ID | id, window, cx);
+            view.pii.mapping.set_scope(Scope::Mention);
+            view.keep_originals(window, cx);
+            assert!(view.pii.review.applied().is_empty());
+            assert!(view.editor.read(cx).text().contains("Bob Hart"));
+        });
+        cx.run_until_parked();
+    }
+    let kept = app.update(cx, |app, cx| {
+        (app.editor.read(cx).text().to_owned(), panel_text(app, cx))
+    });
+    reopened.update(cx, |view, cx| {
+        assert_eq!(
+            (view.editor.read(cx).text().to_owned(), panel_text(view, cx)),
+            kept
+        );
+    });
+    for view in [&app, &reopened] {
+        view.update(cx, |view, cx| view.apply_aliases(cx));
+    }
+    cx.run_until_parked();
+    let after = app.update(cx, |app, cx| {
+        (app.editor.read(cx).text().to_owned(), panel_text(app, cx))
+    });
+    reopened.update(cx, |view, cx| {
+        assert_eq!(
+            (view.editor.read(cx).text().to_owned(), panel_text(view, cx)),
+            after
+        );
+    });
+}

@@ -999,6 +999,35 @@ impl DocumentSession {
     }
 }
 
+/// The review as a Vault document record keeps it (ROADMAP Vault & Projects
+/// item 7 stores it). Rust only: the platforms never see a saved review.
+impl DocumentSession {
+    /// The open document's review, saved: what reopening it needs besides
+    /// its text and whether it was scanned.
+    pub fn saved_review(&self) -> Result<mdoc_pii::saved::SavedReview, CoreError> {
+        self.read_document(|document| document.review.saved_review())
+    }
+
+    /// Reopen the open document's review as `saved` from this same text,
+    /// scanned as `scanned` says, with no rescan. Undo starts afresh; a
+    /// document that had nothing to save still has nothing to save.
+    pub fn reopen_review(
+        &self,
+        saved: mdoc_pii::saved::SavedReview,
+        scanned: bool,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| {
+            let as_saved = document.saved == Some(document.change_key());
+            document.review.reopen(saved)?;
+            document.scanned = scanned;
+            if as_saved {
+                document.saved = Some(document.change_key());
+            }
+            Ok(())
+        })
+    }
+}
+
 fn no_document() -> CoreError {
     CoreError::invalid("Import a document first.")
 }
@@ -1034,6 +1063,122 @@ mod tests {
                 Some(Category::Person),
             )
             .unwrap();
+    }
+
+    /// What a reopened document shows the same: all but the session's own
+    /// mention ids and undo history.
+    fn reopened_view(mut snapshot: ReviewSnapshot) -> ReviewSnapshot {
+        for mention in &mut snapshot.mentions {
+            mention.id = 0;
+        }
+        snapshot.can_undo = false;
+        snapshot.can_redo = false;
+        snapshot.undo_step = None;
+        snapshot.redo_step = None;
+        snapshot
+    }
+
+    /// Vault & Projects item 2: a review holding every kind of decision —
+    /// replaced, proposed, kept, Not a name, a mention split off to its own
+    /// identity, a renamed alias — saves through JSON and reopens over its
+    /// text to the same snapshot, with no rescan, and carries on as it would
+    /// have.
+    #[test]
+    fn a_saved_review_reopens_as_it_was() {
+        let text =
+            "Ann Lee met Bob Hart. Ann Lee left. Carl Fox stayed. Dana Kim came. Ann Lee rang.";
+        let at = |text: &str, wording: &str, nth: usize| {
+            let start = text.match_indices(wording).nth(nth).unwrap().0 as u64;
+            TextRange {
+                start,
+                end: start + wording.len() as u64,
+            }
+        };
+        let session = session(text, "Letter");
+        let candidates = ["Ann Lee", "Bob Hart", "Carl Fox", "Dana Kim"]
+            .map(|wording| Candidate {
+                range: at(text, wording, 0),
+                category: Category::Person,
+                score: 0.9,
+            })
+            .to_vec();
+        session.add_candidates(candidates).unwrap();
+        session
+            .replace(at(text, "Bob Hart", 0), Scope::This)
+            .unwrap();
+        let text = session.snapshot().unwrap().text;
+        let bob = session.snapshot().unwrap().mentions[1].range;
+        session.rename(bob, Scope::All, "WITNESS".into()).unwrap();
+        let text_now = session.snapshot().unwrap().text;
+        assert_ne!(text, text_now);
+        let text = text_now;
+        session.keep(at(&text, "Carl Fox", 0), Scope::This).unwrap();
+        let dana = session
+            .snapshot()
+            .unwrap()
+            .mentions
+            .into_iter()
+            .find(|mention| mention.original == "Dana Kim")
+            .unwrap()
+            .id;
+        session
+            .review(
+                ReviewAction::NotAName {
+                    mention: dana,
+                    scope: Scope::This,
+                },
+                None,
+            )
+            .unwrap();
+        session.new_alias(at(&text, "Ann Lee", 1)).unwrap();
+        let before = session.snapshot().unwrap();
+        let states: Vec<_> = before.mentions.iter().map(|m| m.state).collect();
+        assert_eq!(
+            states,
+            [
+                MentionState::Proposed,
+                MentionState::Replaced,
+                MentionState::Proposed,
+                MentionState::Kept,
+                MentionState::Proposed,
+            ],
+            "Dana Kim is shown nowhere: {:?}",
+            before.mentions
+        );
+        assert_ne!(
+            before.mentions[0].identity, before.mentions[2].identity,
+            "the second Ann Lee is an identity of its own"
+        );
+
+        let saved = session.saved_review().unwrap();
+        let json = serde_json::to_string(&saved).unwrap();
+        let reopened = DocumentSession::new();
+        reopened
+            .import_text(before.text.clone(), "Letter".into())
+            .unwrap();
+        let after = reopened
+            .reopen_review(serde_json::from_str(&json).unwrap(), true)
+            .unwrap();
+        assert_eq!(reopened_view(after), reopened_view(before.clone()));
+        assert_eq!(reopened.saved_review().unwrap(), saved);
+        assert!(!reopened.snapshot().unwrap().can_undo);
+
+        // Both carry on alike: the replacement reverts at once, then the
+        // rest is replaced.
+        for each in [&session, &reopened] {
+            each.keep(before.mentions[1].range, Scope::This).unwrap();
+        }
+        assert_eq!(
+            reopened_view(reopened.snapshot().unwrap()),
+            reopened_view(session.snapshot().unwrap())
+        );
+        assert!(reopened.snapshot().unwrap().text.contains("Bob Hart"));
+        session.replace_all().unwrap();
+        reopened.replace_all().unwrap();
+        assert_eq!(
+            reopened_view(reopened.snapshot().unwrap()),
+            reopened_view(session.snapshot().unwrap())
+        );
     }
 
     /// Two documents of one case reviewed side by side both give PERSON_1
