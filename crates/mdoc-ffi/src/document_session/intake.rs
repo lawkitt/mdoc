@@ -71,7 +71,7 @@ pub(super) fn import_file(
             title,
             markdown,
             source_kind: source_kind(path),
-            source: Source::of(path, false)?,
+            source: Source::kept(path, false),
             note: ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -118,7 +118,7 @@ pub(super) fn import_file(
     // Locked as imported: an Office file the password unlocked in memory,
     // or a PDF, which the apps give a password only once it asked for one.
     let locked = imported.source.unlocked() || (imported.is_pdf && password.is_some());
-    let source = Source::of(path, locked)?;
+    let source = Source::kept(path, locked);
     finish(
         title,
         source_kind(path),
@@ -200,12 +200,7 @@ pub(super) fn import_images(
             None,
         ),
     };
-    // One photo is its own original; pages picked together have none of
-    // their own yet.
-    let source = match images {
-        [image] => Source::of(image, false)?,
-        _ => None,
-    };
+    let source = images_source(images, &title, &imported.source);
     finish(
         title,
         mdoc_vault::SourceKind::Image,
@@ -214,6 +209,20 @@ pub(super) fn import_images(
         completed,
         cancel,
     )
+}
+
+/// What photos or camera pages picked together keep as their original:
+/// one photo, itself; several, the PDF `built` the scan became for OCR,
+/// one page each and shared, not copied (#1091, the maintainer's answer).
+fn images_source(
+    images: &[PathBuf],
+    title: &str,
+    built: &mdoc_import::import::Source,
+) -> Option<Source> {
+    match images {
+        [image] => Source::kept(image, false),
+        _ => Some(Source::scan(built.shared_bytes(), title)),
+    }
 }
 
 /// Each finished page: the bar shows it, and iOS keeps a background job
@@ -266,21 +275,57 @@ impl ImportNote {
 /// Decisions 7, 14 and 23): the file as imported, a locked one still
 /// locked; a photo without its metadata, as the phones keep it
 /// (`image_without_metadata`).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct Source {
     bytes: SourceBytes,
     pub file_name: String,
     pub password_protected: bool,
 }
 
-#[derive(Clone, Debug)]
+/// Held until the first save: in memory only when small (a photo) or
+/// already there (a scan's PDF, shared with the import, never copied).
+#[derive(Clone)]
 enum SourceBytes {
     /// Read when it is kept, streamed: it must still be there then.
     File(PathBuf),
-    Memory(Vec<u8>),
+    Memory(std::sync::Arc<[u8]>),
+    Shared(mdoc_import::import::SharedBytes),
 }
 
 impl Source {
+    /// [`Self::of`] at the end of an import: a source that cannot be read
+    /// now (gone, or moved, since the import read it) leaves the document
+    /// without an original instead of failing an import that worked.
+    pub(crate) fn kept(path: &Path, password_protected: bool) -> Option<Self> {
+        #[cfg(test)]
+        if let Some(hook) = BEFORE_KEEPING.with(|hook| hook.borrow_mut().take()) {
+            hook();
+        }
+        Self::of(path, password_protected).ok().flatten()
+    }
+
+    /// Pages picked together: the PDF the image builder made of them,
+    /// which holds no metadata of theirs, named after the scan (a title
+    /// that names nothing is "Document", as an import's is).
+    pub(crate) fn scan(pdf: mdoc_import::import::SharedBytes, title: &str) -> Self {
+        let title = title.trim();
+        let stem = match title.len().checked_sub(4) {
+            Some(at) if title.is_char_boundary(at) && title[at..].eq_ignore_ascii_case(".pdf") => {
+                title[..at].trim()
+            }
+            _ => title,
+        };
+        let stem = match stem {
+            "" | "." | ".." => "Document",
+            stem => stem,
+        };
+        Self {
+            bytes: SourceBytes::Shared(pdf),
+            file_name: format!("{stem}.pdf"),
+            password_protected: false,
+        }
+    }
+
     /// What `path` keeps: `None` for an image the core cannot strip of its
     /// metadata (HEIC, TIFF, one it does not parse, one past the import's
     /// size limit), which is never kept with it. An image is told by its
@@ -298,7 +343,7 @@ impl Source {
                 }
                 let image = std::fs::read(path)?;
                 match mdoc_import::image_pdf::without_metadata(&image) {
-                    Some(stripped) => SourceBytes::Memory(stripped),
+                    Some(stripped) => SourceBytes::Memory(stripped.into()),
                     None => return Ok(None),
                 }
             }
@@ -317,9 +362,18 @@ impl Source {
             SourceBytes::File(path) => {
                 Box::new(std::io::BufReader::new(std::fs::File::open(path)?))
             }
-            SourceBytes::Memory(bytes) => Box::new(bytes.as_slice()),
+            SourceBytes::Memory(bytes) => Box::new(&bytes[..]),
+            SourceBytes::Shared(bytes) => Box::new(bytes.as_ref()),
         })
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Run once by the next [`Source::kept`] on this thread, before it reads
+    /// the source.
+    pub(crate) static BEFORE_KEEPING: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
 }
 
 /// What an import says it left out.
@@ -545,5 +599,86 @@ mod tests {
         assert!(!contains(b"FictionalCam"));
         let heic = std::fs::read(fixture("heic/page-gps.heic")).unwrap();
         assert_eq!(image_without_metadata(heic), None);
+    }
+
+    fn kept_bytes(source: &Source) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut source.reader().unwrap(), &mut bytes).unwrap();
+        bytes
+    }
+
+    /// Pages picked together keep the PDF they became, shared with the
+    /// import rather than copied; one photo keeps itself without its
+    /// metadata, or nothing once it is gone (review 1 and 3).
+    #[test]
+    fn pages_picked_together_keep_the_pdf_they_became() {
+        let scratch = crate::test_support::Scratch::new();
+        let photo = scratch.path().join("page.jpg");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/images/gps-rotated.jpg"),
+            &photo,
+        )
+        .unwrap();
+        let raw = std::fs::read(&photo).unwrap();
+        let built =
+            mdoc_import::image_pdf::build(&[&raw, &raw, &raw], mdoc_import::image_pdf::DEFAULT_DPI)
+                .unwrap();
+        assert_eq!(built.pages, 3);
+        let pdf = mdoc_import::import::Source::new(
+            scratch.path().join("built.pdf"),
+            None,
+            built.pdf.clone(),
+        );
+        let alone = pdf.shared_bytes().holders();
+        let three = images_source(
+            &[photo.clone(), photo.clone(), photo.clone()],
+            " Lease ",
+            &pdf,
+        )
+        .unwrap();
+        assert_eq!(three.file_name, "Lease.pdf");
+        assert!(!three.password_protected);
+        assert_eq!(kept_bytes(&three), built.pdf);
+        assert_eq!(
+            pdf.shared_bytes().holders(),
+            alone + 1,
+            "shared, not copied"
+        );
+        drop(three);
+
+        let one = images_source(std::slice::from_ref(&photo), "Lease", &pdf).unwrap();
+        assert_eq!(one.file_name, "page.jpg");
+        assert_eq!(
+            kept_bytes(&one),
+            mdoc_import::image_pdf::without_metadata(&raw).unwrap()
+        );
+        let gone = scratch.path().join("gone.jpg");
+        assert!(images_source(&[gone], "Lease", &pdf).is_none());
+    }
+
+    /// A scan's original is named after it, never as a hidden file nor
+    /// with its extension twice (review 2).
+    #[test]
+    fn a_scan_is_named_after_its_title() {
+        let pdf = || mdoc_import::import::Source::new("x.pdf".into(), None, b"%PDF".to_vec());
+        for (title, name) in [
+            ("Lease", "Lease.pdf"),
+            ("  Lease  ", "Lease.pdf"),
+            ("Lease.PDF", "Lease.pdf"),
+            ("Lease .pdf", "Lease.pdf"),
+            ("", "Document.pdf"),
+            ("   ", "Document.pdf"),
+            (".", "Document.pdf"),
+            ("..", "Document.pdf"),
+            (".pdf", "Document.pdf"),
+            ("Résumé", "Résumé.pdf"),
+        ] {
+            assert_eq!(
+                Source::scan(pdf().shared_bytes(), title).file_name,
+                name,
+                "{title:?}"
+            );
+        }
     }
 }
