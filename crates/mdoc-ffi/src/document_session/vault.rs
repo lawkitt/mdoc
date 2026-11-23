@@ -21,7 +21,10 @@ use mdoc_pii::{
     saved::SavedReview,
 };
 use mdoc_vault::{Identity, Mapping, NewDocument, Project};
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::{Arc, atomic::Ordering},
+};
 
 /// Where a document is in the Vault.
 #[derive(Clone, Debug, Default)]
@@ -181,6 +184,7 @@ impl DocumentSession {
         document.vault.get_or_insert_with(Place::default);
         loop {
             let mut pending = document.vault_pending();
+            pending.by_hand = self.by_hand.load(Ordering::Relaxed);
             let written = pending.write(&vault);
             document.take_vault_written(&pending);
             match written? {
@@ -226,6 +230,7 @@ impl DocumentSession {
                     _ => return Ok(None),
                 }
             };
+            pending.by_hand = self.by_hand.load(Ordering::Relaxed);
             let written = pending.write(&vault);
             let mut guard = self.lock_document();
             let Some(document) = guard
@@ -324,6 +329,15 @@ impl DocumentSession {
         guard.as_mut().ok_or_else(no_document)?.source_kind = kind.into();
         Ok(())
     }
+
+    /// This phone finds no names: no name finder fits it, or none is
+    /// installed yet (#1091 Q4, provisional). Then a Vault save with no
+    /// proposals left counts as reviewed by hand and records the document
+    /// as Ready, so Copy for AI and Share (`Vault::text_for_ai`) take it.
+    /// Its session's own phase is unchanged.
+    pub fn set_no_name_finder(&self, no_name_finder: bool) {
+        self.by_hand.store(no_name_finder, Ordering::Relaxed);
+    }
 }
 
 /// What a Vault save writes, taken from the document under its lock; then
@@ -347,6 +361,8 @@ struct Pending {
     /// counts may miss a name, so it is not Ready.
     awaiting_discovery: bool,
     scanned: bool,
+    /// The phone finds no names (`set_no_name_finder`).
+    by_hand: bool,
     review: SavedReview,
     /// What a first save keeps as the Source Original, with what the
     /// import said it left out; `None` once the record is made.
@@ -378,6 +394,7 @@ impl Document {
             counts: self.review.counts(),
             awaiting_discovery: self.review.review.awaiting_discovery(),
             scanned: self.scanned,
+            by_hand: false,
             review: self.review.saved_review(),
             source: (self.vault.as_ref())
                 .is_none_or(|place| place.id.is_none())
@@ -557,6 +574,16 @@ pub(crate) fn vault_counts(
 }
 
 impl Pending {
+    /// Whether the record reads as scanned, and whether it is Ready
+    /// (scanned, no proposals left, no discovery owed). On a phone that
+    /// finds no names, a review with no proposals left counts as scanned
+    /// by hand (#1091 Q4, provisional): this is the one place that decides.
+    fn reviewed(&self) -> (bool, bool) {
+        let settled = self.counts.proposed == 0 && !self.awaiting_discovery;
+        let scanned = self.scanned || (self.by_hand && settled);
+        (scanned, scanned && settled)
+    }
+
     /// Store the names and then the record, under the Vault handle's write
     /// lock; none when another document changed the Project since this
     /// one last joined or saved it, which must be joined first.
@@ -612,7 +639,7 @@ impl Pending {
             },
             None => None,
         };
-        let ready = self.scanned && self.counts.proposed == 0 && !self.awaiting_discovery;
+        let (scanned, ready) = self.reviewed();
         // Checked again under the Vault's own lock: another handle's write
         // since is never overwritten (it is rewritten unchanged instead).
         let (revision, place) = (self.place.revision, self.place.project.clone());
@@ -625,7 +652,7 @@ impl Pending {
             record.title.clone_from(&self.title);
             record.origin = self.origin.into();
             record.markdown.clone_from(&self.text);
-            record.scanned = self.scanned;
+            record.scanned = scanned;
             record.review = Some(self.review.clone());
             record.counts = Some(self.counts.into());
             if record.project.is_none() {
