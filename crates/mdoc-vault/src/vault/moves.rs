@@ -6,7 +6,7 @@ use super::{Vault, WriteLock};
 use crate::{
     VaultError, is_id,
     mapping::{Identity, Mapping},
-    records::{Document, NewProject, Project, now},
+    records::{Document, NewProject, Project, Reply, ReplyOwner, now},
 };
 use mdoc_pii::{
     Review,
@@ -14,7 +14,7 @@ use mdoc_pii::{
 };
 
 /// What a move did.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Moved {
     /// The Document as saved in its new place, its text in the aliases it
     /// has there.
@@ -123,8 +123,9 @@ impl Vault {
     }
 
     /// Delete a Project, first moving its Documents to Unfiled or deleting
-    /// them. Later saves of it by this handle are skipped. A crash part way
-    /// leaves the Project with the Documents not yet done; deleting again
+    /// them, then its own AI Replies; a Document's replies follow it. Later
+    /// saves of it by this handle are skipped. A crash part way leaves the
+    /// Project with the Documents and replies not yet done; deleting again
     /// finishes. A Document that cannot be read for now refuses the delete,
     /// as it may be in the Project; one that never will (another key,
     /// damaged) is passed over.
@@ -152,6 +153,8 @@ impl Vault {
                 ProjectDocuments::Delete => self.delete_document_locked(&lock, &document.id)?,
             }
         }
+        // Its own replies go with its mapping; its Documents' follow them.
+        self.delete_replies_of(&lock, &ReplyOwner::Project(id.to_string()))?;
         self.check_alive()?;
         super::remove_sealed(&crate::manifest::project_path(&self.root, id))?;
         self.forget_deleted::<Project>(id)
@@ -211,6 +214,9 @@ impl Vault {
         let from_mapping = from.as_ref().map_or(&stored.mapping, |p| &p.mapping);
         let (text, exported, ids) =
             realias(stored, from_mapping, to.mapping()).map_err(VaultError::Names)?;
+        // Its replies follow it, so the names they are bound to come along
+        // even where its text no longer uses them.
+        let bound = self.reply_identities(&stored.id, from_mapping, &ids)?;
         let mut added = Vec::new();
         let mut gather = |before: &Mapping, after: &Mapping| {
             added = (after.identities.iter())
@@ -223,6 +229,7 @@ impl Vault {
                 let joined = self.update_locked::<Project>(lock, &project.id, |joined| {
                     let before = joined.mapping.clone();
                     joined.mapping.merge_with_ids(&exported, &ids, None);
+                    joined.mapping.adopt(&bound);
                     gather(&before, &joined.mapping);
                 })?;
                 (Some(joined), Mapping::default())
@@ -230,6 +237,7 @@ impl Vault {
             Landing::Unfiled(mapping) => {
                 let mut local = mapping.clone();
                 local.merge_with_ids(&exported, &ids, None);
+                local.adopt(&bound);
                 gather(mapping, &local);
                 (None, local)
             }
@@ -245,6 +253,9 @@ impl Vault {
         moved.project = joined.as_ref().map(|p| p.id.clone());
         // Readiness was of the text in the mapping it left.
         moved.ready_fingerprint = None;
+        // The review's ranges and identities were of that text and mapping
+        // too: the next open scans again.
+        moved.review = None;
         let moved = match self.place_document(lock, moved) {
             Ok(moved) => moved,
             Err(error) => {
@@ -311,9 +322,10 @@ impl Vault {
 
     /// Take out of `project` the identities named by `ids` (a move added
     /// them) that nothing there uses: no other Document's text holds their
-    /// alias. A Document that cannot be read counts as using them, and so
-    /// does one that does not open, as it may be in the Project. The
-    /// Project as stored after.
+    /// alias and no reply restoring there is bound to them. A Document or
+    /// reply that cannot be read counts as using them, and so does one that
+    /// does not open, as it may be the Project's. The Project as stored
+    /// after.
     fn drop_unused(
         &self,
         lock: &WriteLock<'_>,
@@ -334,16 +346,43 @@ impl Vault {
         if !self.state().manifest.documents.damaged.is_empty() {
             return Ok(project.clone());
         }
-        for summary in self.documents_in(Some(&project.id)) {
-            if summary.id == leaving {
-                continue;
-            }
-            let Ok(document) = self.load_record::<Document>(&summary.id) else {
+        let members: Vec<String> = (self.documents_in(Some(&project.id)).into_iter())
+            .map(|summary| summary.id)
+            .filter(|id| id != leaving)
+            .collect();
+        for member in &members {
+            let Ok(document) = self.load_record::<Document>(member) else {
                 return Ok(project.clone());
             };
             for token in map.tokens(&document.markdown) {
                 if let Some(index) = token.identity {
                     used[index] = true;
+                }
+            }
+        }
+        // A reply that restores here and is bound to one uses it too; one
+        // that does not open, or cannot be read, may be such a reply.
+        let (replies, unopened) = self.current_replies()?;
+        if unopened {
+            return Ok(project.clone());
+        }
+        for summary in replies {
+            let restores_here = match &summary.owner {
+                ReplyOwner::Project(id) => *id == project.id,
+                ReplyOwner::Document(id) => members.contains(id),
+            };
+            if !restores_here {
+                continue;
+            }
+            let Ok(reply) = self.load_record::<Reply>(&summary.id) else {
+                return Ok(project.clone());
+            };
+            for binding in &reply.bindings {
+                let Some(identity) = project.mapping.bound(&binding.identity) else {
+                    continue;
+                };
+                if let Some(at) = candidates.iter().position(|(id, _)| *id == identity.id) {
+                    used[at] = true;
                 }
             }
         }
@@ -366,17 +405,17 @@ impl Vault {
 /// joined to `to` (`plan_join`), so names `to` knows take its aliases,
 /// clashing aliases its next free numbers, and the text is rewritten with
 /// them. The identities carry no earlier aliases: those name `from`'s
-/// history, which can mean other people in `to`. Beside each, the id of
-/// the identity it came from, in `from` or in `to`.
+/// history, which can mean other people in `to`. Beside each, the ids of the identity it came from, in `from` or in `to`: its own
+/// first, then those folded into it.
 #[allow(clippy::type_complexity)]
 fn realias(
     document: &Document,
     from: &Mapping,
     to: &Mapping,
-) -> Result<(String, Vec<ExportedIdentity>, Vec<Option<String>>), String> {
-    let live = |mapping: &Mapping| -> (Vec<String>, Vec<ExportedIdentity>) {
+) -> Result<(String, Vec<ExportedIdentity>, Vec<Vec<String>>), String> {
+    let live = |mapping: &Mapping| -> (Vec<Vec<String>>, Vec<ExportedIdentity>) {
         (mapping.identities.iter())
-            .filter_map(|i: &Identity| Some((i.id.clone(), i.exported()?)))
+            .filter_map(|i: &Identity| Some((i.ids().cloned().collect(), i.exported()?)))
             .unzip()
     };
     let (from_ids, from_exported) = live(from);
@@ -403,14 +442,15 @@ fn realias(
         .map(|(id, mut identity)| {
             identity.previous.clear();
             let source = match seeded.iter().position(|s| *s == id) {
-                Some(at) => Some(from_ids[at].clone()),
+                Some(at) => from_ids[at].clone(),
                 None => (proposed.iter().position(|p| *p == id))
                     .and_then(|at| {
                         to_exported
                             .iter()
                             .position(|e| e.alias == unmatched[at].alias)
                     })
-                    .map(|at| to_ids[at].clone()),
+                    .map(|at| to_ids[at].clone())
+                    .unwrap_or_default(),
             };
             (source, identity)
         })

@@ -1152,13 +1152,23 @@ fn an_unfiled_documents_mapping_follows_it_into_a_project() {
     let back = vault.undo_move(&moved.undo).unwrap();
     assert_eq!(back.project, None);
     assert_eq!(back.document.markdown, "PERSON_1 wrote to PERSON_2.");
-    assert_eq!(back.document.mapping, local, "its names, aliases and ids");
+    // Its names, aliases and ids; Bob also answers to the Memo's Bob, so a
+    // reply saved for it there still finds him.
+    let memo_bob = joined
+        .mapping
+        .identity_named("PERSON_1")
+        .unwrap()
+        .id
+        .clone();
+    let mut expected = local.clone();
+    expected.identities[1].folded = vec![memo_bob];
+    assert_eq!(back.document.mapping, expected);
     assert_eq!(ids_in(&vault, None), std::slice::from_ref(&note));
     let memo_mapping = vault.project(&memo_project).unwrap().mapping;
     assert!(memo_mapping.identity(&ann).is_none(), "Ann goes with it");
     assert_eq!(back.left.unwrap().mapping, memo_mapping);
     drop(vault);
-    assert_eq!(folder.open().document(&note).unwrap().mapping, local);
+    assert_eq!(folder.open().document(&note).unwrap().mapping, expected);
 }
 
 /// A document moved out of a Project keeps, as its own mapping, the names
@@ -1461,4 +1471,32 @@ fn deleting_a_project_moves_its_documents_to_unfiled_or_deletes_them() {
     let vault = folder.open();
     assert!(vault.projects().is_empty());
     assert_eq!(ids_in(&vault, None), both);
+}
+
+#[test]
+fn a_move_clears_the_documents_saved_review() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let review = Some(mdoc_pii::Review::default().save());
+    let (project, _) = saved(
+        &vault,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Ann Lee"])],
+        "Brief",
+    );
+    let memo = new_document(&vault, None, "Memo", "Ann met Bob.");
+    vault
+        .update_document(&memo, |d| d.review = review.clone())
+        .unwrap();
+    let moved = vault.move_document(&memo, Some(&project)).unwrap();
+    assert_eq!(moved.document.review, None);
+    assert_eq!(vault.document(&memo).unwrap().review, None);
+
+    vault
+        .update_document(&memo, |d| d.review = review.clone())
+        .unwrap();
+    vault
+        .delete_project(&project, ProjectDocuments::MoveToUnfiled)
+        .unwrap();
+    assert_eq!(vault.document(&memo).unwrap().review, None);
 }

@@ -1,8 +1,9 @@
-//! Project and Document records (#1091 Decision 16), stored as JSON.
-//! Later items add their fields with `#[serde(default)]`: the review state
-//! (item 2), the source hash and the original's metadata (item 3).
-use crate::mapping::Mapping;
-use mdoc_pii::Category;
+//! Project, Document and AI Reply records (#1091 Decision 16), stored as
+//! JSON.
+//! Later items add their fields with `#[serde(default)]`: the source hash
+//! and the original's metadata (item 3).
+use crate::mapping::{Binding, Mapping};
+use mdoc_pii::{Category, saved::SavedReview};
 use mdoc_store::lists::Lists;
 use serde::{Deserialize, Serialize};
 
@@ -76,8 +77,9 @@ pub struct NewProject {
     pub pinned: bool,
 }
 
-/// A Document: its Markdown and what the Vault keeps beside it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// A Document: its Markdown and what the Vault keeps beside it. Not `Eq`:
+/// its review holds detection scores.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Document {
     pub id: String,
     /// The Project it belongs to; `None`: Unfiled. Changed only by a move,
@@ -110,6 +112,13 @@ pub struct Document {
     /// it shares.
     #[serde(default, skip_serializing_if = "Mapping::is_empty")]
     pub mapping: Mapping,
+    /// The review as it stood at the last save (#1091 Decision 16), so a
+    /// reopened Document needs no rescan; `None` until it has one. Its
+    /// ranges are in `markdown` as saved with it: restore it only over that
+    /// text (`mdoc_pii::Review::restore` refuses ranges that do not fit).
+    /// A move clears it, as its text and mapping change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<SavedReview>,
 }
 
 /// What a new Document starts with.
@@ -259,6 +268,67 @@ impl DocumentSummary {
             scanned: document.scanned,
             created: document.created,
             updated: document.updated,
+        }
+    }
+}
+
+/// What an AI Reply belongs to.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReplyOwner {
+    /// It restores with the Project's mapping.
+    Project(String),
+    /// It follows the Document: it restores with the Document's own mapping
+    /// while Unfiled and with its Project's once moved into one (#1091
+    /// Decision 4).
+    Document(String),
+}
+
+/// An AI Reply (#1091 Decisions 16 and 18): the pseudonymized text as
+/// received and what each alias in it meant when it was saved. Written once.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reply {
+    pub id: String,
+    pub owner: ReplyOwner,
+    pub title: String,
+    /// The app it came from, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_app: Option<String>,
+    /// As received: aliases, never restored text.
+    pub markdown: String,
+    /// Seconds since the Unix epoch.
+    pub created: u64,
+    pub bindings: Vec<Binding>,
+}
+
+/// What a new AI Reply starts with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NewReply {
+    pub owner: ReplyOwner,
+    pub title: String,
+    pub source_app: Option<String>,
+    /// As received.
+    pub markdown: String,
+}
+
+/// What a Project page and Home need of an AI Reply; no text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplySummary {
+    pub id: String,
+    pub owner: ReplyOwner,
+    pub title: String,
+    pub source_app: Option<String>,
+    pub created: u64,
+}
+
+impl ReplySummary {
+    pub fn of(reply: &Reply) -> Self {
+        Self {
+            id: reply.id.clone(),
+            owner: reply.owner.clone(),
+            title: reply.title.clone(),
+            source_app: reply.source_app.clone(),
+            created: reply.created,
         }
     }
 }
