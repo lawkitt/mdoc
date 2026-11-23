@@ -44,9 +44,10 @@ pub(super) fn source_kind(path: &Path) -> SourceKind {
     }
 }
 
-/// Whether a document of `kind` is its own text, with no Source to show.
-pub(super) fn is_text(kind: SourceKind) -> bool {
-    matches!(kind, SourceKind::Markdown | SourceKind::Text)
+/// Whether the file at `path` is converted, with a Source to show, rather
+/// than being its own text (Markdown and plain text).
+pub(super) fn needs_conversion(path: &Path) -> bool {
+    !mdoc_store::document::is_markdown(path)
 }
 
 fn file_name(path: &Path) -> String {
@@ -62,9 +63,8 @@ fn admit_one(path: PathBuf) -> Result<Admitted, (String, String)> {
         .and_then(mdoc_vault::source_sha256)
         .map_err(failed)?;
     let kind = source_kind(&path);
-    // An `.html` file is converted like any source; Markdown and plain text
-    // are their own text.
-    let text = (is_text(kind) && mdoc_store::document::is_markdown(&path))
+    // Markdown and plain text are their own text; any other file converts.
+    let text = (!needs_conversion(&path))
         .then(|| std::fs::read_to_string(&path))
         .transpose()
         .map_err(failed)?;
@@ -98,6 +98,23 @@ impl Workspace {
             return;
         }
         let anchor = at.and_then(|at| self.tabs.at(at).map(|tab| tab.id()));
+        self.admit_at(paths, anchor, window, cx);
+    }
+
+    /// Admit `paths` before tab `anchor`, after any admission still running:
+    /// a file the one before is importing then counts as a repeat.
+    fn admit_at(
+        &mut self,
+        paths: Vec<PathBuf>,
+        anchor: Option<u64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.admitting {
+            self.admit_queue.push_back((paths, anchor));
+            return;
+        }
+        self.admitting = true;
         let task = cx
             .background_executor()
             .spawn(async move { paths.into_iter().map(admit_one).collect::<Vec<_>>() });
@@ -118,6 +135,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(vault) = self.vault.vault().cloned() else {
+            self.admitted_all(window, cx);
             return;
         };
         let mut files: Vec<Admitted> = Vec::new();
@@ -131,6 +149,23 @@ impl Workspace {
             }
         }
         self.post_failures(&failed);
+        // Opened from the same path while this waited: it only comes to the
+        // front.
+        let mut shown = None;
+        files.retain(|file| match self.open_tab_for(&file.path, cx) {
+            Some(id) => {
+                shown.get_or_insert(id);
+                false
+            }
+            None => true,
+        });
+        if files.is_empty() {
+            if let Some(id) = shown {
+                self.activate(id, window, cx);
+            }
+            self.admitted_all(window, cx);
+            return;
+        }
         // Each repeat with the Document it would open: the most recent.
         let existing: Vec<Option<VaultId>> = files
             .iter()
@@ -215,6 +250,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(vault) = self.vault.vault().cloned() else {
+            self.admitted_all(window, cx);
             return;
         };
         // In the order opened: a document to import, or an existing one.
@@ -254,7 +290,7 @@ impl Workspace {
                             .map_err(|error| (name, error.to_string()))
                             .and_then(|document| {
                                 VaultId::parse(&document.id)
-                                    .map(|id| Ok((id, title, file.kind, file.path)))
+                                    .map(|id| Ok((id, title, file.path)))
                                     .ok_or_else(|| (document.title, "Invalid id.".into()))
                             })
                     }
@@ -274,16 +310,14 @@ impl Workspace {
     fn show_imported(
         &mut self,
         imported: Vec<
-            Result<
-                Result<(VaultId, String, SourceKind, PathBuf), (VaultId, PathBuf)>,
-                (String, String),
-            >,
+            Result<Result<(VaultId, String, PathBuf), (VaultId, PathBuf)>, (String, String)>,
         >,
         anchor: Option<u64>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if !self.quit_flow.may_quit() {
+            self.admitted_all(window, cx);
             return;
         }
         let mut failed = Vec::new();
@@ -291,9 +325,9 @@ impl Workspace {
         let mut first = None;
         for step in imported {
             let id = match step {
-                Ok(Ok((document, title, kind, path))) => {
+                Ok(Ok((document, title, path))) => {
                     let mut record = TabRecord {
-                        preview_visible: !is_text(kind),
+                        preview_visible: needs_conversion(&path),
                         ..TabRecord::default()
                     };
                     record.set_document(DocumentId::Vault(document));
@@ -333,7 +367,16 @@ impl Workspace {
         if let Some(first) = first {
             self.show_opened(first, window, cx);
         }
+        self.admitted_all(window, cx);
         cx.notify();
+    }
+
+    /// An admission ended: the next one waiting starts.
+    fn admitted_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.admitting = false;
+        if let Some((paths, anchor)) = self.admit_queue.pop_front() {
+            self.admit_at(paths, anchor, window, cx);
+        }
     }
 
     /// Tests: open Markdown files as a case lists them.

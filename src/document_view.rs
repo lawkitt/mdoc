@@ -717,6 +717,7 @@ impl DocumentView {
                 if let Some((id, name)) = kept {
                     self.session.document = Document::in_vault(id, String::new());
                     self.session.name = name;
+                    self.session.write_due = true;
                 }
                 self.session.left_out = imported.left_out.line(true);
                 self.session.comments_left_out = imported.left_out.comments_not_shown();
@@ -1759,6 +1760,12 @@ impl DocumentView {
         let folders = cx
             .try_global::<RecentFolders>()
             .map_or(&[][..], |folders| &folders.0);
+        // A Vault document's Source is a viewing copy in the app cache,
+        // removed with its tab: never a place to export to.
+        if self.session.document.vault.is_some() {
+            return mdoc_store::document_session::DocumentSession::default()
+                .export_directory(folders);
+        }
         self.session.export_directory(folders)
     }
 
@@ -1865,9 +1872,19 @@ impl DocumentView {
                             path.set_extension("md");
                         }
                         let source = this.session.source.as_deref();
+                        // The viewing copy's folder goes with the tab.
+                        let viewing = (this.session.document.vault.is_some())
+                            .then_some(source)
+                            .flatten()
+                            .and_then(std::path::Path::parent);
                         if !document::is_markdown(&path) {
                             this.error = Some(
                                 "Export Markdown with a .md, .markdown, .mdown, or .txt extension."
+                                    .into(),
+                            );
+                        } else if viewing.is_some_and(|dir| path.starts_with(dir)) {
+                            this.error = Some(
+                                "Choose a folder of your own: this one holds a copy mdoc removes."
                                     .into(),
                             );
                         } else if source.is_some_and(|source| {

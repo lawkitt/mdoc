@@ -315,11 +315,14 @@ fn an_open_file_without_a_case_joins_the_new_case(cx: &mut TestAppContext) {
     );
     click_toolbar(cx, "folder-primary");
     load_all(&tabs, cx);
-    // a.md opened as a Vault document, which can't join a case until cases
-    // become Projects; b.md opens for the case as its Markdown file.
-    assert_eq!(tab_names(&tabs, cx), ["a", "b.md"]);
+    // a.md's Vault document can't join a case until cases become Projects:
+    // the case opens a.md and b.md as its Markdown files, and lists both.
+    assert_eq!(tab_names(&tabs, cx), ["a", "a.md", "b.md"]);
     let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
-    assert_eq!(tab_cases(&tabs, cx), vec![None, Some(case)]);
+    assert_eq!(
+        tab_cases(&tabs, cx),
+        vec![None, Some(case.clone()), Some(case)]
+    );
 }
 
 #[gpui::test]

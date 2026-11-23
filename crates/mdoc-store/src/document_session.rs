@@ -23,6 +23,9 @@ pub struct DocumentSession {
     pub follows_first_line: bool,
     /// Pasted text: its document is an ordinary one, not a new one.
     pub pasted: bool,
+    /// A conversion replaced the text: it is written even if it reads as
+    /// the text last written, so the document is known to be converted.
+    pub write_due: bool,
 }
 
 impl DocumentSession {
@@ -37,6 +40,7 @@ impl DocumentSession {
         self.name = None;
         self.follows_first_line = false;
         self.pasted = false;
+        self.write_due = false;
     }
 
     pub fn import(&mut self, source: PathBuf, warning: Option<String>) {
@@ -48,7 +52,7 @@ impl DocumentSession {
     /// Whether `text` differs from what was last written: an autosave is
     /// due. A document not yet created has nothing written.
     pub fn unsaved(&self, text: &str) -> bool {
-        text != self.document.saved
+        self.write_due || text != self.document.saved
     }
 
     /// Export Markdown's suggested file name: the source's, else the

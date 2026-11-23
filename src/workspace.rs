@@ -320,6 +320,14 @@ pub(super) struct Workspace {
     /// Viewing copies of originals: an app-private cache folder, one
     /// subfolder per tab, removed when the tab closes and cleared at launch.
     viewing_root: Option<PathBuf>,
+    /// Tabs whose close waits for their last text to be written: a write
+    /// that fails keeps the tab and its edit.
+    closing_after_write: std::collections::HashSet<u64>,
+    /// What each case Markdown file holds after this window's last write.
+    file_baselines: std::collections::HashMap<PathBuf, String>,
+    /// One admission at a time, so a repeat waits for the import before it.
+    admitting: bool,
+    admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<u64>)>,
     /// What a test's loud key read yields.
     #[cfg(test)]
     staged_vault: Option<Result<mdoc_vault::Vault, mdoc_store::cases::CaseError>>,
@@ -538,6 +546,10 @@ impl Workspace {
             vault: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
+            closing_after_write: Default::default(),
+            file_baselines: Default::default(),
+            admitting: false,
+            admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.
             viewing_root: if cfg!(test) {
                 None
@@ -1167,6 +1179,10 @@ impl Workspace {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if !this.tabs.contains(id) {
+                    // Its viewing copy may have been made after the tab went.
+                    if let Some(dir) = this.viewing_dir(id) {
+                        let _ = std::fs::remove_dir_all(dir);
+                    }
                     return;
                 }
                 if let Ok(loaded) = &result {
@@ -1546,7 +1562,12 @@ impl Workspace {
                 );
                 continue;
             }
-            let existing = self.open_tab_for(&path, cx);
+            // A case lists Markdown files: only a file's own tab is reused.
+            let existing = if files {
+                self.find_path(&path, None, cx)
+            } else {
+                self.open_tab_for(&path, cx)
+            };
             let id = existing.unwrap_or_else(|| {
                 let id = if document::is_markdown(&path) {
                     self.push(TabRecord {
@@ -1858,8 +1879,13 @@ impl Workspace {
         {
             return;
         }
-        // Its last text is written after the tab goes.
+        // Its last text is written before the tab goes; a failed write keeps
+        // the tab, and its edit, open.
         self.autosave(id, window, cx);
+        if self.write_pending_for(id, cx) {
+            self.closing_after_write.insert(id);
+            return;
+        }
         self.remove(id, window, cx);
     }
 
@@ -2056,6 +2082,14 @@ impl Workspace {
         {
             return;
         }
+        // The tab list as it stands now that every document has its id.
+        if self.session_writer.enabled() {
+            let effect = self.session_writer.checkpoint(self.snapshot(cx));
+            if effect.is_some() {
+                self.carry_out_session(effect, window, cx);
+                return;
+            }
+        }
         if let Some(vault) = self.vault.vault()
             && let Err(error) = vault.flush()
         {
@@ -2073,6 +2107,10 @@ impl Workspace {
             if let Some(view) = tab.view() {
                 Self::release(view, window, cx);
             }
+        }
+        // Viewing copies leave with the window; launch clears any it misses.
+        if let Some(root) = &self.viewing_root {
+            let _ = std::fs::remove_dir_all(root);
         }
         for handle in cx
             .windows()
@@ -2214,6 +2252,8 @@ impl Workspace {
                             cx.spawn_in(window, async move |this, cx| {
                                 if answer.await.ok() == Some(1) {
                                     let _ = this.update_in(cx, |this, window, cx| {
+                                        // The previous tab list stays.
+                                        this.session_writer.set_path(None);
                                         this.quit_flow.settle();
                                         this.finish_quit(window, cx);
                                     });
@@ -3417,10 +3457,9 @@ fn load_from_vault(
     let stored = vault
         .document(id.as_str())
         .map_err(|error| format!("Could not open the document. {error}"))?;
-    let original = stored
-        .original
-        .as_ref()
-        .filter(|_| !intake::is_text(stored.source_kind));
+    let original = (stored.original.as_ref()).filter(|original| {
+        intake::needs_conversion(std::path::Path::new(&original.info.file_name))
+    });
     let copy = match (original, viewing) {
         (Some(original), Some(dir)) => Some(
             vault
@@ -3429,7 +3468,8 @@ fn load_from_vault(
         ),
         _ => None,
     };
-    let unconverted = copy.is_some() && stored.markdown.is_empty();
+    // Admitted and never written since: a text emptied by its user stays so.
+    let unconverted = copy.is_some() && stored.markdown.is_empty() && stored.revision == 1;
     let (warning, left_out) = original.map_or((None, None), |original| {
         (
             original.info.import_warning.clone(),

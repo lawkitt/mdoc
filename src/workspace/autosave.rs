@@ -25,14 +25,22 @@ pub(super) enum Write {
         title: Option<String>,
         /// Its review, whose ranges are in `markdown`.
         review: Option<Box<SavedReview>>,
-        /// A conversion's warning and left-out line, kept with its original.
-        notes: Option<(Option<String>, Option<String>)>,
+        /// A conversion's notes, kept with its original.
+        notes: Option<Notes>,
     },
     File {
         text: String,
         /// What the file held when it was last read or written.
         saved: String,
     },
+}
+
+/// What a conversion learned of its source.
+pub(super) struct Notes {
+    warning: Option<String>,
+    left_out: Option<String>,
+    /// It took a password to open.
+    password_protected: bool,
 }
 
 /// How a write ended.
@@ -73,7 +81,13 @@ impl Workspace {
         if let Some(document) = view.session.document.id() {
             // A case's Markdown file keeps its review in the case.
             let review = document.vault().and_then(|_| view.saved_review());
-            if !view.unsaved(cx) && review == view.session.document.review {
+            let target = Target::Document(document.clone());
+            // Unchanged since the last completed write, and none running: a
+            // running one may hold text this view has since undone.
+            if !view.unsaved(cx)
+                && review == view.session.document.review
+                && !self.document_writer.has(&target)
+            {
                 return;
             }
             let write = match document {
@@ -84,18 +98,18 @@ impl Workspace {
                         .then(|| first_line_title(&text)),
                     markdown: text,
                     review: review.map(Box::new),
-                    notes: view
-                        .session
-                        .source
-                        .is_some()
-                        .then(|| (view.session.warning.clone(), view.session.left_out.clone())),
+                    notes: view.session.source.is_some().then(|| Notes {
+                        warning: view.session.warning.clone(),
+                        left_out: view.session.left_out.clone(),
+                        password_protected: view.import.unlock().is_some(),
+                    }),
                 },
                 DocumentId::File(_) => Write::File {
                     text,
                     saved: view.session.document.saved.clone(),
                 },
             };
-            self.queue_write(Target::Document(document), write, window, cx);
+            self.queue_write(target, write, window, cx);
             return;
         }
         // A new or pasted document is created by its first keystroke; a
@@ -153,6 +167,17 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let vault = self.vault.vault().cloned();
+        // A case file was last written by this window, maybe after the view
+        // queued this write: that is what the file holds now.
+        let write = match (write, &target) {
+            (Write::File { text, saved }, Target::Document(DocumentId::File(path))) => {
+                Write::File {
+                    saved: self.file_baselines.get(path).cloned().unwrap_or(saved),
+                    text,
+                }
+            }
+            (write, _) => write,
+        };
         let written = match &write {
             Write::Create(new) => new.markdown.clone(),
             Write::Vault { markdown, .. } => markdown.clone(),
@@ -193,11 +218,12 @@ impl Workspace {
                         .update_document(id.as_str(), |document| {
                             document.markdown = markdown;
                             document.review = review.map(|review| *review);
-                            if let (Some((warning, left_out)), Some(original)) =
+                            if let (Some(notes), Some(original)) =
                                 (notes, document.original.as_mut())
                             {
-                                original.info.import_warning = warning;
-                                original.info.left_out = left_out;
+                                original.info.import_warning = notes.warning;
+                                original.info.left_out = notes.left_out;
+                                original.info.password_protected |= notes.password_protected;
                             }
                             if let Some(title) = title {
                                 document.title = title;
@@ -249,6 +275,10 @@ impl Workspace {
                 }
             }
             (Target::Document(document), Ok(_)) => {
+                if let Some(path) = document.file() {
+                    self.file_baselines
+                        .insert(path.to_path_buf(), written.clone());
+                }
                 let tabs: Vec<_> = self
                     .tabs
                     .iter()
@@ -260,6 +290,7 @@ impl Workspace {
                         if shows {
                             view.session.document.saved = written.clone();
                             view.session.document.review = review.clone();
+                            view.session.write_due = false;
                             if let Some(title) = &title {
                                 view.session.name = Some(title.clone());
                             }
@@ -276,6 +307,19 @@ impl Workspace {
                 }
             }
             (target, Err(error)) => {
+                // The edit stays in its tab: a close or quit waiting on it stops.
+                let tab = match &target {
+                    Target::Tab(tab) => Some(*tab),
+                    Target::Document(document) => self.find_document(document, None, cx),
+                };
+                if let Some(tab) = tab {
+                    self.closing_after_write.remove(&tab);
+                }
+                if self.quit_flow.abandon() {
+                    self.cancel_case_quit();
+                    Self::quit_cancelled(cx);
+                    crate::menu_bar::reveal_if_hidden(window, cx);
+                }
                 let name = match &target {
                     Target::Tab(tab) => self.tabs.get(*tab).and_then(|tab| tab.view().cloned()),
                     Target::Document(document) => self
@@ -295,7 +339,26 @@ impl Workspace {
         } else if self.quit_flow.finishing() {
             self.finish_quit(window, cx);
         }
+        // Closes that waited for their writes go now.
+        let closing: Vec<u64> = self.closing_after_write.iter().copied().collect();
+        for tab in closing {
+            if !self.write_pending_for(tab, cx) {
+                self.closing_after_write.remove(&tab);
+                self.remove(tab, window, cx);
+            }
+        }
         cx.notify();
+    }
+
+    /// A write of tab `id`'s document, or of the document it is becoming,
+    /// runs or waits.
+    pub(super) fn write_pending_for(&self, id: u64, cx: &gpui::App) -> bool {
+        let document = (self.tabs.get(id))
+            .and_then(|tab| tab.view())
+            .and_then(|view| view.read(cx).session.document.id());
+        self.document_writer.has(&Target::Tab(id))
+            || document
+                .is_some_and(|document| self.document_writer.has(&Target::Document(document)))
     }
 }
 

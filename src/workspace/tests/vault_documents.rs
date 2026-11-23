@@ -582,3 +582,88 @@ fn relative_links_in_an_imported_markdown_file_resolve_nowhere(cx: &mut TestAppC
         );
     });
 }
+
+#[gpui::test]
+fn a_quit_right_after_typing_a_new_document_restores_it_from_session_json(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = dir.path().join("session.json");
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.session_writer.set_path(Some(manifest.clone()))
+    });
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.simulate_input("Typed and quit");
+    cx.dispatch_action(Quit);
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let session = session_store::load(&manifest).unwrap();
+    assert_eq!(session.tabs.len(), 1, "{session:?}");
+    assert!(session.tabs[0].document.is_some());
+    let (restored, cx) = boot_on(&mut cx.cx, dir.path(), session);
+    assert_eq!(text_of(&restored, cx), "Typed and quit");
+}
+
+#[gpui::test]
+fn a_close_whose_write_fails_keeps_the_tab_and_its_edit(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("member.md");
+    std::fs::write(&path, "original").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_case_files(vec![path.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    cx.simulate_input("my edit ");
+    // Changed on disk meanwhile: the write is refused.
+    std::fs::write(&path, "changed elsewhere").unwrap();
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.tabs.contains(tab), "the tab stays with its edit");
+        let notice = tabs.notices.message().unwrap();
+        assert!(notice.starts_with("Could not save"), "{notice}");
+    });
+    assert!(text_of(&tabs, cx).contains("my edit"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "changed elsewhere");
+}
+
+#[gpui::test]
+fn a_converted_text_emptied_by_its_user_stays_empty_after_a_restart(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let docx = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/text.docx");
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![docx], cx);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        assert!(!view.editor.read(cx).text().is_empty());
+        view.editor
+            .update(cx, |editor, cx| editor.set_text(String::new(), cx));
+    });
+    wait(cx, 1000);
+    let session = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    let (restored, cx) = boot_on(&mut cx.cx, dir.path(), session);
+    active(&restored, cx).read_with(cx, |view, cx| {
+        assert!(!view.lifecycle.source_only());
+        assert!(view.editor.read(cx).text().is_empty());
+    });
+}
+
+#[gpui::test]
+fn a_second_open_of_a_file_still_importing_asks_as_a_repeat(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let note = dir.path().join("Note.md");
+    std::fs::write(&note, "# Note").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![note.clone()], window, cx);
+        tabs.open_paths(vec![note.clone()], window, cx);
+    });
+    cx.run_until_parked();
+    // The first admission is open in a tab by now: the second only shows it.
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(documents(dir.path()).len(), 1);
+}
