@@ -688,8 +688,12 @@ impl Pending {
             record.title.clone_from(&self.title);
             record.origin = self.origin.into();
             record.markdown.clone_from(&self.text);
-            // Its text is the converted text, even when that is empty.
-            record.unconverted = false;
+            // An import's first save holds its converted text, even when
+            // that is empty. A record opened before its import finished
+            // stays waiting for its conversion.
+            if self.source.is_some() {
+                record.unconverted = false;
+            }
             record.scanned = self.scanned;
             record.review = Some(self.review.clone());
             record.counts = Some(self.counts.into());

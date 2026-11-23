@@ -132,6 +132,37 @@ fn a_saved_import_is_never_pending_conversion() {
     assert!(!stored.unconverted && !stored.pending_conversion());
 }
 
+/// Review of #1126: a record whose import stopped before its first save
+/// opens on the phone as it is; a save from there leaves it waiting for
+/// its conversion.
+#[test]
+fn an_unfinished_import_saved_from_the_phone_stays_pending() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let new = mdoc_vault::NewDocument {
+        project: None,
+        title: "Brief".into(),
+        source_kind: mdoc_vault::SourceKind::Pdf,
+        origin: mdoc_vault::DocumentOrigin::Ordinary,
+        markdown: String::new(),
+    };
+    let info = mdoc_vault::OriginalInfo {
+        file_name: "brief.pdf".into(),
+        ..mdoc_vault::OriginalInfo::default()
+    };
+    let store = vault.store();
+    let id = store
+        .import_document(new, &b"%PDF-1.4"[..], info)
+        .unwrap()
+        .id;
+    let session = DocumentSession::new();
+    session.open_from_vault(vault.clone(), id.clone()).unwrap();
+    session.save_into_vault(vault.clone()).unwrap();
+    let stored = vault.store().document(&id).unwrap();
+    assert!(stored.revision > 1, "the phone saved it");
+    assert!(stored.unconverted && stored.pending_conversion());
+}
+
 #[test]
 fn a_locked_source_stays_locked() {
     let scratch = Scratch::new();
