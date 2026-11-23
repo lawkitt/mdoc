@@ -12,7 +12,7 @@ use crate::{
     settings_ui, spelling,
     style::{self, Theme},
     ui,
-    workspace::{self, Close, Import, New, Open, RetryDocument, ToggleTheme},
+    workspace::{self, Import, New, Open, RetryDocument, ToggleTheme},
 };
 use gpui::{
     App, Context, Entity, Focusable, PathPromptOptions, ScrollHandle, Subscription, Window,
@@ -2588,9 +2588,6 @@ impl Render for DocumentView {
                     this.export_markdown(window, cx)
                 }),
             )
-            .on_action(cx.listener(|_, _: &Close, _, cx| {
-                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))
-            }))
             .on_action(cx.listener(|this, _: &ClosePdf, window, cx| {
                 this.toggle_preview(window, cx);
                 if this.lifecycle.source_only() {

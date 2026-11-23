@@ -87,11 +87,11 @@ enum Repeats {
 
 impl Workspace {
     /// Admit `paths` (supported files) as Vault documents, Unfiled or in
-    /// `project`, in new tabs placed before the tab now at `at`.
+    /// `project`, after any admission still running: a file the one before
+    /// is importing then counts as a repeat.
     pub(super) fn admit(
         &mut self,
         paths: Vec<PathBuf>,
-        at: Option<usize>,
         project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -99,22 +99,8 @@ impl Workspace {
         if paths.is_empty() {
             return;
         }
-        let anchor = at.and_then(|at| self.tabs.at(at).map(|tab| tab.id()));
-        self.admit_at(paths, anchor, project, window, cx);
-    }
-
-    /// Admit `paths` before tab `anchor`, after any admission still running:
-    /// a file the one before is importing then counts as a repeat.
-    fn admit_at(
-        &mut self,
-        paths: Vec<PathBuf>,
-        anchor: Option<u64>,
-        project: Option<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
         if self.admitting {
-            self.admit_queue.push_back((paths, anchor, project));
+            self.admit_queue.push_back((paths, project));
             return;
         }
         self.admitting = true;
@@ -124,7 +110,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let admitted = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.admitted(admitted, anchor, project, window, cx)
+                this.admitted(admitted, project, window, cx)
             });
         })
         .detach();
@@ -133,7 +119,6 @@ impl Workspace {
     fn admitted(
         &mut self,
         admitted: Vec<Result<Admitted, (String, String)>>,
-        anchor: Option<u64>,
         project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -187,15 +172,7 @@ impl Workspace {
             .map(|(file, _)| file_name(&file.path))
             .collect();
         if repeats.is_empty() {
-            self.import(
-                files,
-                existing,
-                Repeats::ImportAgain,
-                anchor,
-                project,
-                window,
-                cx,
-            );
+            self.import(files, existing, Repeats::ImportAgain, project, window, cx);
             return;
         }
         let (question, detail) = match repeats.as_slice() {
@@ -232,7 +209,7 @@ impl Workspace {
                 _ => Repeats::Skip,
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.import(files, existing, repeats, anchor, project, window, cx)
+                this.import(files, existing, repeats, project, window, cx)
             });
         })
         .detach();
@@ -258,7 +235,6 @@ impl Workspace {
         files: Vec<Admitted>,
         existing: Vec<Option<VaultId>>,
         repeats: Repeats,
-        anchor: Option<u64>,
         project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -314,7 +290,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let imported = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.show_imported(imported, anchor, window, cx)
+                this.show_imported(imported, window, cx)
             });
         })
         .detach();
@@ -326,7 +302,6 @@ impl Workspace {
         imported: Vec<
             Result<Result<(VaultId, String, PathBuf), (VaultId, PathBuf)>, (String, String)>,
         >,
-        anchor: Option<u64>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -375,9 +350,6 @@ impl Workspace {
             first.get_or_insert(id);
         }
         self.post_failures(&failed);
-        if anchor.is_some() && !created.is_empty() {
-            self.tabs.place(&created, anchor);
-        }
         if let Some(first) = first {
             self.show_opened(first, window, cx);
         }
@@ -388,8 +360,8 @@ impl Workspace {
     /// An admission ended: the next one waiting starts.
     fn admitted_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.admitting = false;
-        if let Some((paths, anchor, project)) = self.admit_queue.pop_front() {
-            self.admit_at(paths, anchor, project, window, cx);
+        if let Some((paths, project)) = self.admit_queue.pop_front() {
+            self.admit(paths, project, window, cx);
         }
     }
 

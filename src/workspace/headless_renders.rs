@@ -64,6 +64,7 @@ mod search;
 mod settings;
 mod shelf;
 mod shell;
+mod tree;
 mod vault;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
@@ -392,6 +393,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     restore::reply_view(d, &view)?;
     decisions::scenes(d, &view)?;
     let project = projects::scenes(d)?;
+    tree::scenes(d, &project)?;
     folder_sheet::scenes(d, path, &project)?;
     projects::delete(d, project)?;
     confirm::scenes(d)?;

@@ -41,9 +41,19 @@ pub(super) fn repeated_import(d: &mut Driver, folder: &Path) -> Result<()> {
         let both = both.clone();
         move |w, window, cx| w.open_paths(both, window, cx)
     })?;
-    // Imports run on a background thread: give them real time.
-    wait_until(d, "the imports", |w, _| open_tabs(w).len() == 2)?;
-    // Closed, they are still in the Vault: opening them again asks.
+    // Imports run on a background thread: give them real time. The second
+    // may be evicted at once: it was never viewed.
+    wait_until(d, "the imports", |w, _| {
+        let titles: Vec<String> = (w.vault.vault().into_iter())
+            .flat_map(|vault| vault.documents())
+            .map(|summary| summary.title)
+            .collect();
+        !w.admitting
+            && ["Engagement letter", "Board minutes"]
+                .iter()
+                .all(|title| titles.iter().filter(|t| t == title).count() == 1)
+    })?;
+    // Released, they are still in the Vault: opening them again asks.
     d.change({
         let open_tabs = open_tabs.clone();
         move |w, window, cx| {

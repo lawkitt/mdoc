@@ -3,6 +3,11 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Stop {
     Home,
+    /// A Vault document, live or not: going back to an evicted one opens it
+    /// again.
+    Document(mdoc_store::document_id::VaultId),
+    /// A live view no document names yet (a new document before its first
+    /// keystroke, a restored reply).
     Tab(u64),
     Project(String),
 }

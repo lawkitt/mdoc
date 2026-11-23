@@ -50,12 +50,14 @@ pub(super) fn scenes(
         window.focused(cx).expect("first toolbar control")
     })?;
     d.focus_pair("toggle-on", toggle)?;
-    let sidebar = d.change(|w, _, _| {
-        w.sidebar_row_focus
-            .borrow()
-            .get(&w.tabs.active())
-            .expect("selected sidebar row")
-            .clone()
+    let sidebar = d.change(|w, _, cx| {
+        let document = w
+            .tabs
+            .active_tab()
+            .and_then(|tab| w.live_document(tab, cx))
+            .expect("the reviewed document");
+        let key = super::super::tree::RowKey::Document(document.as_str().to_string());
+        w.tree_focus(&key, cx)
     })?;
     d.focus_pair("sidebar-row", sidebar)?;
     d.change(|_, window, cx| {

@@ -24,7 +24,7 @@ pub(super) fn scenes(d: &mut Driver, view: &Entity<DocumentView>, folder: &Path)
         paths.push(path);
     }
     d.change(|w, window, cx| {
-        w.drop_files(&gpui::ExternalPaths(paths.into()), false, window, cx);
+        w.drop_files(&gpui::ExternalPaths(paths.into()), window, cx);
     })?;
     d.settle()?;
     d.resize(1000., 700.)?;
@@ -46,14 +46,15 @@ pub(super) fn scenes(d: &mut Driver, view: &Entity<DocumentView>, folder: &Path)
     })?;
     // The minimum window with Replacements open: the sidebar collapses by
     // itself and gives the editor its width.
+    // The fixture document, live still or opened again from the tree.
+    let document = d.change(|_, _, cx| view.read(cx).session.document.id())?;
+    let Some(mdoc_store::document_id::DocumentId::Vault(document)) = document else {
+        return Err("the fixture is a Vault document".into());
+    };
+    d.change(|w, window, cx| w.open_vault_document(document, window, cx))?;
+    d.settle()?;
     d.change(|w, window, cx| {
-        let id = w
-            .tabs
-            .iter()
-            .find(|tab| tab.view() == Some(view))
-            .map(|tab| tab.id())
-            .expect("the fixture tab");
-        w.activate(id, window, cx);
+        let view = w.active_view().expect("the fixture document");
         view.update(cx, |v, cx| {
             if !v.replacements_open() {
                 v.toggle_replacements_panel(window, cx);

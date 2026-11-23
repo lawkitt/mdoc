@@ -4,7 +4,7 @@ use crate::{
     models,
     style::Theme,
     ui, updater,
-    workspace::{Close, Import, New, NextTab, Open, PreviousTab},
+    workspace::{Close, Import, New, Open, SwitchDocument, SwitchDocumentBack},
 };
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, KeyBinding, PromptLevel, Window, actions, div,
@@ -212,8 +212,8 @@ pub(crate) fn block_document_commands<E: gpui::InteractiveElement>(element: E) -
         .on_action(|_: &New, _, cx| cx.stop_propagation())
         .on_action(|_: &Open, _, cx| cx.stop_propagation())
         .on_action(|_: &Close, _, cx| cx.stop_propagation())
-        .on_action(|_: &NextTab, _, cx| cx.stop_propagation())
-        .on_action(|_: &PreviousTab, _, cx| cx.stop_propagation())
+        .on_action(|_: &SwitchDocument, _, cx| cx.stop_propagation())
+        .on_action(|_: &SwitchDocumentBack, _, cx| cx.stop_propagation())
         .on_action(|_: &Save, _, cx| cx.stop_propagation())
         .on_action(|_: &ExportMarkdown, _, cx| cx.stop_propagation())
         .on_action(|_: &Import, _, cx| cx.stop_propagation())

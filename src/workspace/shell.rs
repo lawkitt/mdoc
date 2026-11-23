@@ -53,6 +53,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", PaletteDown, Some(PALETTE)),
         KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
     ]);
+    super::switcher_ui::bind_keys(cx);
 }
 
 pub(super) struct ShellState {
@@ -118,7 +119,7 @@ enum Command {
     CopyMarkdown,
     Save,
     ExportMarkdown,
-    CloseTab,
+    Close,
     BeforeAfter,
     /// The active document's What you did; no key of its own.
     DecisionHistory,
@@ -154,7 +155,7 @@ impl Command {
             Command::CopyMarkdown => Box::new(CopyMarkdown),
             Command::Save => Box::new(Save),
             Command::ExportMarkdown => Box::new(ExportMarkdown),
-            Command::CloseTab => Box::new(Close),
+            Command::Close => Box::new(Close),
             Command::BeforeAfter => Box::new(ToggleCompare),
             Command::ToggleSidebar => Box::new(ToggleSidebar),
             Command::OpenProject => Box::new(OpenProject),
@@ -292,6 +293,7 @@ impl Workspace {
         self.end_rename(true, cx);
         self.tabs.show_home();
         self.note_destination(arrival, cx);
+        self.drop_if_empty_new(self.tabs.active(), window, cx);
         window.focus(&self.focus, cx);
         cx.notify();
     }
@@ -1594,9 +1596,9 @@ impl Workspace {
             }
             rows.extend([Row {
                 section: "Actions",
-                label: "Close tab".into(),
+                label: "Close".into(),
                 detail: None,
-                command: Command::CloseTab,
+                command: Command::Close,
             }]);
         }
         rows.extend([
@@ -1784,7 +1786,7 @@ impl Workspace {
             Command::CopyMarkdown => dispatch(window, cx, Box::new(CopyMarkdown)),
             Command::Save => dispatch(window, cx, Box::new(Save)),
             Command::ExportMarkdown => dispatch(window, cx, Box::new(ExportMarkdown)),
-            Command::CloseTab => dispatch(window, cx, Box::new(Close)),
+            Command::Close => dispatch(window, cx, Box::new(Close)),
             Command::BeforeAfter => dispatch(window, cx, Box::new(ToggleCompare)),
             // Straight to the document: focus may have gone back to the
             // sidebar, outside the view's action handlers.
@@ -1875,7 +1877,7 @@ impl Workspace {
                 Command::RestoreReply => ui::Icon::Reply,
                 Command::CopyForAi | Command::CopyMarkdown => ui::Icon::Copy,
                 Command::Save | Command::ExportMarkdown => ui::Icon::Save,
-                Command::CloseTab | Command::CancelConversion => ui::Icon::Close,
+                Command::Close | Command::CancelConversion => ui::Icon::Close,
                 Command::BeforeAfter => ui::Icon::PanelRight,
                 Command::DecisionHistory => ui::Icon::Clock,
                 Command::ExpandIdentities => ui::Icon::ExpandAll,

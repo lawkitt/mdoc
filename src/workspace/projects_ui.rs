@@ -1,10 +1,9 @@
 //! Projects in the window: they open with the Vault; a member tab gets its
 //! Project's mapping and folds its own back in; a document moves into a
 //! Project, into a new one or out to Unfiled with an undoable toast;
-//! rename, colour, categories, lists and delete; the Open Project list and
-//! the sidebar's Project headers.
+//! rename, colour, categories, lists and delete; the Open Project list.
 use super::{
-    TabDrag, Workspace,
+    Workspace,
     autosave::{Op, Write},
     document_writer::Target,
     projects::ProjectLink,
@@ -61,8 +60,6 @@ pub(super) struct ProjectsState {
     list_anchor: Option<gpui::Bounds<gpui::Pixels>>,
     /// Where Home's Open a Project… link was last painted.
     pub(super) home_link: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
-    /// Projects whose member rows are folded under their header.
-    pub(super) collapsed: HashSet<String>,
     /// The Keychain explainer is shown.
     pub(super) explainer: bool,
     /// What runs once the explainer's Continue opened the key.
@@ -686,6 +683,50 @@ impl Workspace {
         );
     }
 
+    /// Move to New Project from a document row: its live view moves it, or
+    /// a document not live moves under its title.
+    pub(super) fn move_document_to_new_project(
+        &mut self,
+        document: VaultId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.moving.contains(&document) || self.vault.vault().is_none() {
+            return;
+        }
+        if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx)
+            && self.tab_view(tab).is_some()
+        {
+            self.move_to_new_project(tab, window, cx);
+            return;
+        }
+        let Some(name) = (self.vault.vault().into_iter())
+            .flat_map(|vault| vault.documents())
+            .find(|summary| summary.id == document.as_str())
+            .map(|summary| summary.title)
+        else {
+            return;
+        };
+        let name = name.strip_suffix(".md").unwrap_or(&name).to_string();
+        let skip = self
+            .preferences
+            .borrow()
+            .current
+            .as_ref()
+            .map(|p| p.categories.skip.clone())
+            .unwrap_or_default();
+        self.queue_op(
+            document,
+            Op::New {
+                name,
+                skip,
+                dismissed: Vec::new(),
+            },
+            window,
+            cx,
+        );
+    }
+
     /// The toast's Undo.
     pub(super) fn undo_move(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some((undo, made)) = self.project_ui.toast.take().and_then(|toast| toast.undo) else {
@@ -799,7 +840,9 @@ impl Workspace {
                 }
                 (result, Moving::Undo, None)
             }
-            Op::Delete { .. } => unreachable!("deletes run as their own step"),
+            Op::Delete { .. } | Op::DeleteDocuments { .. } => {
+                unreachable!("deletes run as their own step")
+            }
         };
         match result {
             Ok(moved) => {
@@ -1163,7 +1206,7 @@ impl Workspace {
                 self.navigation
                     .forget(&super::navigation::Stop::Project(project_id.clone()));
                 self.projects.remove(&project_id);
-                self.project_ui.collapsed.remove(&project_id);
+                self.tree.forget_project(&project_id);
                 for (tab, member) in tabs {
                     match documents {
                         ProjectDocuments::MoveToUnfiled => self.reload_tab(tab, member, window, cx),
@@ -1336,149 +1379,6 @@ impl Workspace {
         cx.notify();
     }
 
-    /// A Project's sidebar header above its first member tab.
-    pub(super) fn project_header(
-        &self,
-        link: &ProjectLink,
-        count: usize,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let theme = self.theme.get();
-        let palette = theme.pdf_style();
-        let id = link.id.clone();
-        let selected = (self.project_ui.page.as_ref()).is_some_and(|page| page.id() == link.id);
-        div()
-            .id(gpui::SharedString::from(format!("project-{}", link.id)))
-            .when(cfg!(test), |v| v.debug_selector(|| "project-header".into()))
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_2()
-            .pt_2()
-            .pb_1()
-            .text_size(px(11.))
-            .text_color(palette.header_muted)
-            .when(selected, |v| v.bg(theme.sidebar_selected()))
-            .drag_over::<TabDrag>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
-            .on_drop(cx.listener({
-                let id = link.id.clone();
-                move |this, drag: &TabDrag, window, cx| {
-                    this.move_tab(drag.id, Some(id.clone()), window, cx)
-                }
-            }))
-            // A folder dropped here offers Add to this Project.
-            .drag_over::<gpui::ExternalPaths>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
-            .can_drop(super::can_drop_files)
-            .on_drop(cx.listener({
-                let id = link.id.clone();
-                move |this, paths: &gpui::ExternalPaths, window, cx| {
-                    this.drop_on_project(paths, &id, window, cx)
-                }
-            }))
-            .child(
-                ui::control(
-                    gpui::SharedString::from(format!("collapse-project-{}", link.id)),
-                    if self.project_ui.collapsed.contains(&link.id) {
-                        "▸"
-                    } else {
-                        "▾"
-                    },
-                    theme,
-                    true,
-                )
-                .when(cfg!(test), |v| {
-                    v.debug_selector(|| "collapse-project".into())
-                })
-                .aria_label(if self.project_ui.collapsed.contains(&link.id) {
-                    "Expand Project"
-                } else {
-                    "Collapse Project"
-                })
-                .px_1()
-                .py_0()
-                .on_click(cx.listener({
-                    let id = link.id.clone();
-                    move |this, _, window, cx| {
-                        cx.stop_propagation();
-                        if !this.project_ui.collapsed.remove(&id) {
-                            this.project_ui.collapsed.insert(id.clone());
-                        }
-                        this.checkpoint(window, cx);
-                        cx.notify();
-                    }
-                })),
-            )
-            .child(
-                div()
-                    .size(px(8.))
-                    .flex_shrink_0()
-                    .rounded_full()
-                    .bg(style::project_color(link.hue(), theme)),
-            )
-            .child(
-                ui::control(
-                    gpui::SharedString::from(format!("project-page-link-{}", link.id)),
-                    link.name.clone(),
-                    theme,
-                    true,
-                )
-                .when(cfg!(test), |v| {
-                    v.debug_selector(|| "project-page-link".into())
-                })
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .px_1()
-                .py_1()
-                .aria_label(format!("Open Project {}", link.name))
-                .aria_selected(selected)
-                .on_click(cx.listener({
-                    let id = id.clone();
-                    move |this, _, window, cx| this.open_project(&id, window, cx)
-                })),
-            )
-            .child(
-                ui::control(
-                    gpui::SharedString::from(format!("project-menu-{}", link.id)),
-                    "⋯",
-                    theme,
-                    true,
-                )
-                .when(cfg!(test), |v| {
-                    v.debug_selector(|| "project-header-menu".into())
-                })
-                .aria_label(format!("Actions for Project {}", link.name))
-                .px_1()
-                .py_0()
-                .on_click(cx.listener({
-                    let id = id.clone();
-                    move |this, event: &gpui::ClickEvent, window, cx| {
-                        this.menu_return = window.focused(cx);
-                        this.project_ui.header_menu = Some((id.clone(), event.position()));
-                        window.focus(&this.menu_focus, cx);
-                        cx.notify();
-                    }
-                })),
-            )
-            .when(count > 1, |v| v.child(div().child(count.to_string())))
-            .when(!self.context_menu_open(), |v| {
-                v.tooltip(style::tooltip(
-                    format!("Project “{}” · its names are kept in the Vault", link.name),
-                    theme,
-                ))
-            })
-            .on_mouse_down(
-                gpui::MouseButton::Right,
-                cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
-                    this.menu_return = window.focused(cx);
-                    window.focus(&this.menu_focus, cx);
-                    this.project_ui.header_menu = Some((id.clone(), event.position));
-                    cx.notify();
-                }),
-            )
-            .into_any_element()
-    }
-
     /// Switch a category on or off for a Project and its open members.
     pub(super) fn toggle_project_category(
         &mut self,
@@ -1543,124 +1443,6 @@ impl Workspace {
         };
         self.write_project(project_id, cx);
         self.project_lists_changed(project_id, &lists, cx);
-    }
-
-    /// Project entries for the tab context menu.
-    pub(super) fn project_menu_items(&self, tab: u64, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let theme = self.theme.get();
-        let palette = theme.pdf_style();
-        let row = |id: &'static str, label: &'static str| {
-            crate::ui::focus_ring(id, theme)
-                .role(gpui::Role::Button)
-                .aria_label(label)
-                .key_context("UiControl")
-                .tab_index(0)
-                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
-                .px_3()
-                .py_1()
-                .rounded_sm()
-                .cursor_pointer()
-                .hover(move |v| v.bg(palette.placeholder_bg))
-                .child(label)
-        };
-        if !self.can_move(tab, cx) {
-            return Vec::new();
-        }
-        let link = self
-            .tab_view(tab)
-            .and_then(|v| v.read(cx).project.link().cloned());
-        let moves: Vec<AnyElement> = self
-            .projects
-            .summaries()
-            .into_iter()
-            .filter(|p| link.as_ref().is_none_or(|l| l.id != p.id))
-            .take(5)
-            .map(|p| {
-                let project_id = p.id.clone();
-                let label = format!("Move to “{}”", p.name);
-                crate::ui::focus_ring(
-                    gpui::SharedString::from(format!("context-move-{}", p.id)),
-                    theme,
-                )
-                .role(gpui::Role::Button)
-                .aria_label(label.clone())
-                .key_context("UiControl")
-                .tab_index(0)
-                .when(cfg!(test), |v| {
-                    v.debug_selector(|| "context-move-project".into())
-                })
-                .px_3()
-                .py_1()
-                .rounded_sm()
-                .cursor_pointer()
-                .hover(move |v| v.bg(palette.placeholder_bg))
-                .max_w(px(320.))
-                .truncate()
-                .child(label)
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.tab_menu = None;
-                    this.move_tab(tab, Some(project_id.clone()), window, cx);
-                }))
-                .into_any_element()
-            })
-            .collect();
-        let mut items = Vec::new();
-        if let Some(link) = link {
-            let rename = link.id.clone();
-            let delete = link.id.clone();
-            let categories = link.id.clone();
-            items.extend([
-                row("context-project-categories", "Categories to detect…")
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.tab_menu = None;
-                        this.show_project_page(
-                            &categories,
-                            super::project_page::Place::Categories,
-                            window,
-                            cx,
-                        );
-                    }))
-                    .into_any_element(),
-                row("context-rename-project", "Rename Project…")
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.tab_menu = None;
-                        this.show_project_page(
-                            &rename,
-                            super::project_page::Place::Rename,
-                            window,
-                            cx,
-                        );
-                    }))
-                    .into_any_element(),
-                row("context-leave-project", "Move to Unfiled")
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.tab_menu = None;
-                        this.move_tab(tab, None, window, cx);
-                    }))
-                    .into_any_element(),
-                row("context-delete-project", "Delete Project…")
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.tab_menu = None;
-                        this.show_project_page(
-                            &delete,
-                            super::project_page::Place::Delete,
-                            window,
-                            cx,
-                        );
-                    }))
-                    .into_any_element(),
-            ]);
-        }
-        items.push(
-            row("context-new-project", "Move to New Project")
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.tab_menu = None;
-                    this.move_to_new_project(tab, window, cx);
-                }))
-                .into_any_element(),
-        );
-        items.extend(moves);
-        items
     }
 
     /// File → Open Project…: every Project, pinned then most recent.

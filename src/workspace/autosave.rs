@@ -58,6 +58,8 @@ pub(super) enum Op {
         documents: ProjectDocuments,
         members: Vec<VaultId>,
     },
+    /// Unfiled documents, with their originals, names and replies.
+    DeleteDocuments { documents: Vec<VaultId> },
 }
 
 /// A document's names as its review holds them.
@@ -211,6 +213,9 @@ impl Workspace {
                         documents,
                         members,
                     } => self.run_delete(project, documents, members, window, cx),
+                    Op::DeleteDocuments { documents } => {
+                        self.run_delete_documents(documents, window, cx)
+                    }
                     op => self.run_op(document, op, window, cx),
                 }
                 self.advance_writer(window, cx);

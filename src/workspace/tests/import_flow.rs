@@ -32,7 +32,7 @@ fn file_open_and_home_drop_show_the_same_scanned_pdf_card(cx: &mut TestAppContex
     cx.run_until_parked();
     assert_scanned_pdf_card(&tabs, &source, cx);
 
-    cx.dispatch_action(Close);
+    tabs.update_in(cx, |tabs, window, cx| tabs.release_active(window, cx));
     cx.run_until_parked();
     draw(cx);
     let center = cx.debug_bounds("home-drop").unwrap().center();
@@ -108,7 +108,7 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
         // fails the same way before recognition starts.
         assert!(view.error.is_some(), "OCR failure is reported");
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     let second = active(&tabs, cx);
     second.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
@@ -617,7 +617,7 @@ fn automatic_conversion_is_disposable_and_closes_without_asking(cx: &mut TestApp
         assert!(snapshot.tabs[0].document.is_some());
         assert!(snapshot.tabs[0].attachment.is_none());
     });
-    cx.dispatch_action(Close);
+    tabs.update_in(cx, |tabs, window, cx| tabs.release_active(window, cx));
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
     tabs.update_in(cx, |tabs, window, cx| tabs.open_path(source, window, cx));
@@ -627,7 +627,7 @@ fn automatic_conversion_is_disposable_and_closes_without_asking(cx: &mut TestApp
     cx.run_until_parked();
     cx.simulate_input("edited ");
     cx.run_until_parked();
-    cx.dispatch_action(Close);
+    tabs.update_in(cx, |tabs, window, cx| tabs.release_active(window, cx));
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
 }
@@ -657,13 +657,18 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
         assert!(first.read(cx).import.auto_pending());
         assert!(tabs.read(cx).tabs[1].view().is_none());
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     let closed = active(&tabs, cx);
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.close_tab(tabs.tabs.active(), window, cx)
     });
     cx.run_until_parked();
+    // The partly scanned PDF, still waiting, is shown next.
+    tabs.update_in(cx, |tabs, window, cx| {
+        let waiting = tabs.tabs[1].id();
+        tabs.activate(waiting, window, cx)
+    });
     let selected = cx.update(|_, cx| tabs.read(cx).tabs.active());
     drop(permit);
     tabs.update_in(cx, |tabs, window, cx| tabs.refresh_import(window, cx));

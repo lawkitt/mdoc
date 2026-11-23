@@ -106,9 +106,9 @@ pub struct Session {
     pub sidebar_visible: bool,
     #[serde(default)]
     pub sidebar_choice: Option<bool>,
-    /// Projects folded in the sidebar, by id.
+    /// Projects expanded in the sidebar, by id; the rest start collapsed.
     #[serde(default)]
-    pub collapsed_projects: Vec<String>,
+    pub expanded_projects: Vec<String>,
     /// The sidebar's System / Light / Dark pick.
     #[serde(default)]
     pub theme_choice: ThemeChoice,
@@ -126,7 +126,7 @@ impl Default for Session {
             active: 0,
             sidebar_visible: true,
             sidebar_choice: None,
-            collapsed_projects: Vec::new(),
+            expanded_projects: Vec::new(),
             theme_choice: Default::default(),
         }
     }
@@ -157,7 +157,7 @@ pub fn load(path: &Path) -> io::Result<Session> {
         _ => return Err(io::Error::other("Unsupported session version")),
     }
     if session
-        .collapsed_projects
+        .expanded_projects
         .iter()
         .any(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
     {
@@ -257,11 +257,11 @@ mod tests {
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
     #[test]
-    fn folded_project_ids_are_validated_on_load() {
+    fn expanded_project_ids_are_validated_on_load() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("session.json");
         let mut session = Session {
-            collapsed_projects: vec!["aB0123456789cdef".repeat(2)],
+            expanded_projects: vec!["aB0123456789cdef".repeat(2)],
             ..Session::default()
         };
         save(&path, &session).unwrap();
@@ -274,7 +274,7 @@ mod tests {
             format!("{}é", "a".repeat(30)),
             "../secret".into(),
         ] {
-            session.collapsed_projects[0] = invalid.clone();
+            session.expanded_projects[0] = invalid.clone();
             save(&path, &session).unwrap();
             let error = load(&path).unwrap_err();
             assert_eq!(
