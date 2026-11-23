@@ -629,17 +629,21 @@ mod tests {
         use crate::shelf::OpenTab;
         let cx = cx.add_empty_window();
         let row = |title: &'static str| {
-            ShelfDocument::of_tab(OpenTab {
-                id: 1,
-                title,
-                text: "PERSON_1 signed the agreement today.",
-                aliases: vec!["PERSON_1"],
-                pending: 0,
-                checking: false,
-                names: Vec::new(),
-                project: None,
-                edited: SystemTime::UNIX_EPOCH,
-            })
+            ShelfDocument::of_tab(
+                OpenTab {
+                    id: 1,
+                    title,
+                    text: "PERSON_1 signed the agreement today.",
+                    aliases: vec!["PERSON_1"],
+                    pending: 0,
+                    checking: false,
+                    names: Vec::new(),
+                    project: None,
+                    edited: SystemTime::UNIX_EPOCH,
+                    stored: None,
+                }
+                .checked(),
+            )
             .unwrap()
         };
         cx.update(|window, _| {

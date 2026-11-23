@@ -222,7 +222,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             }
             // The shelf (ADR 0084): only ready rows copy or drag and show a
             // preview, of prose without Markdown syntax or an original;
-            // a locked Vault asks to unlock.
+            // a locked Vault lists open tabs only and asks to unlock.
             if name.starts_with("shelf") && *name != "shelf-note" {
                 let state = &record["state"];
                 let rows = state["rows"].as_array().unwrap();
@@ -230,7 +230,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 match *name {
                     "shelf" | "shelf-copied" => assert_eq!(
                         states,
-                        ["ready", "ready", "2 left to review"],
+                        ["ready", "ready", "2 left to review", "Changed since review"],
                         "{theme}/{name}"
                     ),
                     "shelf-empty" => assert!(rows.is_empty(), "{theme}/{name}"),

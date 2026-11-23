@@ -414,6 +414,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
     vault::repeated_import(d, path.parent().ok_or("fixture folder")?)?;
     vault::unavailable_home(d)?;
+    vault::recovery_key(d)?;
     // Last: it leaves the Vault locked.
     shelf::scenes(d)
 }
@@ -507,6 +508,8 @@ pub(crate) fn run(out: &Path) -> Result<()> {
                         cx,
                     );
                     workspace.install_prompts(cx);
+                    // The first-Project nudge shows only in its own scene.
+                    let _ = workspace.update_general(|g| g.recovery_key_nudge_dismissed = true, cx);
                     workspace
                 })
             })

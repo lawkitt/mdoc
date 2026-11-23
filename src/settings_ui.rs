@@ -26,6 +26,7 @@ use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 mod categories;
 pub(crate) mod dictionary;
 pub(crate) mod lists;
+mod vault;
 pub(crate) use categories::Category;
 
 fn status_label(status: &Status) -> String {
@@ -68,6 +69,9 @@ pub enum Event {
     UserListsChanged(mdoc_store::lists::Lists),
     /// The lists wait for the locked Vault: unlock it.
     UnlockLists,
+    /// Settings › Vault's Show: read the key and hand it back with
+    /// [`Panel::show_recovery_key`].
+    ShowRecoveryKey,
 }
 
 struct SetupCompletion {
@@ -176,6 +180,8 @@ pub struct Panel {
     pub dictionary: Option<dictionary::DictionaryView>,
     /// Settings › Detection's user-wide Always and Never lists.
     user_lists: lists::UserListsUi,
+    /// Settings › Vault's recovery key, while it shows.
+    recovery: vault::RecoveryUi,
 }
 impl gpui::EventEmitter<Event> for Panel {}
 pub fn bind_keys(cx: &mut App) {
@@ -362,6 +368,7 @@ impl Panel {
             controls: Default::default(),
             dictionary: None,
             user_lists,
+            recovery: vault::RecoveryUi::default(),
         }
     }
     /// A Settings › General choice changed and saved outside the panel (the
@@ -389,6 +396,7 @@ impl Panel {
         }
         self.category = Category::General;
         self.dictionary = None;
+        self.recovery.forget();
         self.number_errors = [None, None];
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
         self.error = self
@@ -615,6 +623,7 @@ impl Panel {
         self.refresh_watch = None;
         self.open = false;
         self.dictionary = None;
+        self.recovery.forget();
         self.commit_visible_number(cx);
         if let Some(focus) = self.previous.take() {
             window.focus(&focus, cx);
@@ -830,7 +839,7 @@ impl Panel {
                 self.number_errors[1] = None;
             }
             Category::Spelling => self.draft.spelling = defaults.spelling,
-            Category::About => return,
+            Category::About | Category::Vault => return,
         }
         if self.category == Category::General {
             self.reset_theme = Some(self.theme_revision);

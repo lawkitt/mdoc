@@ -1,11 +1,15 @@
 //! The window's hold on the Vault: opened at launch with the OS-held key
 //! read quietly, Locked while that read would ask, Denied after the macOS
 //! dialog was declined, and Unavailable when there is no key store or the
-//! Vault does not open. Tabs whose document waits for the key are kept
+//! Vault does not open, or WrongKey when it was sealed with another key
+//! (a recovery key opens it). Tabs whose document waits for the key are kept
 //! here and load once it opens.
 use mdoc_store::cases::CaseError;
 use mdoc_vault::{Vault, VaultError};
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// What reading the key and opening the Vault gave.
 pub(super) enum Opening {
@@ -13,6 +17,8 @@ pub(super) enum Opening {
     /// Reading the key would show the macOS password dialog.
     MayAsk,
     Key(CaseError),
+    /// The Vault in this folder was sealed with another key.
+    WrongKey(PathBuf),
     Vault(VaultError),
 }
 
@@ -32,6 +38,9 @@ enum Access {
     Locked,
     Denied,
     Open(Arc<Vault>),
+    /// Sealed with another key: the recovery key for the Vault in this
+    /// folder opens it.
+    WrongKey(PathBuf),
     /// Why documents can't be kept, in the user's words.
     Unavailable(String),
 }
@@ -75,6 +84,14 @@ impl VaultState {
         matches!(self.access, Access::Denied)
     }
 
+    /// The Vault's folder, while it waits for its recovery key.
+    pub(super) fn wrong_key_root(&self) -> Option<&Path> {
+        match &self.access {
+            Access::WrongKey(root) => Some(root),
+            _ => None,
+        }
+    }
+
     /// Unlocking would read the key: Locked or Denied.
     pub(super) fn needs_key(&self) -> bool {
         matches!(self.access, Access::Locked | Access::Denied)
@@ -87,6 +104,7 @@ impl VaultState {
             Opening::MayAsk => Access::Locked,
             Opening::Key(CaseError::KeyDenied) => Access::Denied,
             Opening::Key(error) => Access::Unavailable(key_unavailable(&error)),
+            Opening::WrongKey(root) => Access::WrongKey(root),
             Opening::Vault(error) => Access::Unavailable(vault_unavailable(&error)),
         };
         match &self.access {
@@ -189,5 +207,24 @@ mod tests {
         assert!(!state.needs_key() && state.vault().is_none());
         state.opened(Opening::Vault(VaultError::WrongKey));
         assert!(state.unavailable().unwrap().contains("different key"));
+    }
+
+    #[test]
+    fn a_vault_sealed_with_another_key_keeps_tabs_waiting_for_its_recovery_key() {
+        let mut state = VaultState::default();
+        state.wait(3);
+        let root = PathBuf::from("vault");
+        assert_eq!(
+            state.opened(Opening::WrongKey(root.clone())),
+            VaultEffect::None
+        );
+        assert_eq!(state.wrong_key_root(), Some(root.as_path()));
+        assert!(state.unavailable().is_none() && !state.needs_key());
+        let (_dir, vault) = vault();
+        assert_eq!(
+            state.opened(Opening::Opened(Box::new(vault))),
+            VaultEffect::Load(vec![3])
+        );
+        assert!(state.wrong_key_root().is_none());
     }
 }

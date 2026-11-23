@@ -531,6 +531,7 @@ impl Workspace {
         let p = theme.pdf_style();
         let cards: Vec<AnyElement> = [
             self.project_key_bar(cx),
+            self.recovery_nudge_bar(cx),
             self.crash_bar(cx),
             self.notice_bar(cx),
         ]
@@ -937,7 +938,7 @@ impl Workspace {
         )
     }
 
-    fn drop_zone(&self, _cx: &mut Context<Self>) -> AnyElement {
+    fn drop_zone(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let accent = theme.search_accent();
@@ -990,6 +991,10 @@ impl Workspace {
         } else {
             illustration.into_any_element()
         };
+        // Sealed with another key: the zone asks for the recovery key.
+        if self.vault.wrong_key_root().is_some() {
+            return self.recovery_panel(cx);
+        }
         // No Vault this run: nothing can be added, and the zone says why.
         let unavailable = self.vault.unavailable();
         let title = match self.shell.drop {

@@ -14,7 +14,7 @@ impl Workspace {
         match cases::vault_key(true) {
             Ok(Some(key)) => Self::open_vault(&key),
             Ok(None) => Opening::MayAsk,
-            Err(error) => Opening::Key(error),
+            Err(error) => key_unreadable(error, cases::vault_dir()),
         }
     }
 
@@ -22,8 +22,9 @@ impl Workspace {
         let Some(root) = cases::vault_dir() else {
             return Opening::Key(CaseError::NoAppData);
         };
-        match Vault::open(root, key) {
+        match Vault::open(&root, key) {
             Ok(vault) => Opening::Opened(Box::new(vault)),
+            Err(mdoc_vault::VaultError::WrongKey) => Opening::WrongKey(root),
             Err(error) => Opening::Vault(error),
         }
     }
@@ -69,6 +70,7 @@ impl Workspace {
         } else if self.vault.unavailable().is_some() {
             self.projects.clear();
         }
+        self.recovery_screen_opened(window, cx);
         cx.notify();
     }
 
@@ -94,6 +96,23 @@ impl Workspace {
     pub(super) fn vault_unavailable_for_render(&mut self) -> Option<std::sync::Arc<Vault>> {
         let vault = self.vault.vault().cloned();
         self.vault.opened(Opening::Key(CaseError::NoKeyStore));
+        vault
+    }
+
+    /// Headless renders: launch found the Vault sealed with another key.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn vault_wrong_key_for_render(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<std::sync::Arc<Vault>> {
+        let vault = self.vault.vault().cloned();
+        let root = vault.as_ref()?.root().to_path_buf();
+        self.vault_opened(Opening::WrongKey(root), window, cx);
         vault
     }
 
@@ -155,7 +174,7 @@ impl Workspace {
         let opening = match cases::vault_key(false) {
             Ok(Some(key)) => Self::open_vault(&key),
             Ok(None) => Opening::MayAsk,
-            Err(error) => Opening::Key(error),
+            Err(error) => key_unreadable(error, cases::vault_dir()),
         };
         let denied = matches!(opening, Opening::Key(CaseError::KeyDenied));
         self.vault_opened(opening, window, cx);
@@ -171,6 +190,14 @@ impl Workspace {
     pub(super) fn vault_banner(&self) -> Option<(SharedString, Option<&'static str>)> {
         if let Some(why) = self.vault.unavailable() {
             return Some((why.to_owned().into(), None));
+        }
+        if self.vault.wrong_key_root().is_some() {
+            return Some((
+                "Your documents were saved with a different key. Enter your recovery key on \
+                 Home to open them."
+                    .into(),
+                None,
+            ));
         }
         if self.vault.denied() {
             return Some((
@@ -195,6 +222,14 @@ impl Workspace {
             self.unlock_projects(window, cx);
             return true;
         }
+        if self.vault.wrong_key_root().is_some() {
+            self.notices.post(
+                "Documents can't be added until your recovery key opens the documents you \
+                 have. Enter it on Home.",
+            );
+            cx.notify();
+            return true;
+        }
         let Some(why) = self.vault.unavailable() else {
             return false;
         };
@@ -202,5 +237,61 @@ impl Workspace {
             .post(format!("Documents can't be added. {why}"));
         cx.notify();
         true
+    }
+}
+
+/// A key that is there but can't be opened (a slot or key file sealed by
+/// another Windows installation, or damaged) leaves a Vault that holds
+/// documents to its recovery key, which then replaces the slot. Any other
+/// failure leaves the Vault unavailable.
+fn key_unreadable(error: CaseError, root: Option<std::path::PathBuf>) -> Opening {
+    let unreadable = matches!(
+        error,
+        CaseError::DataProtection
+            | CaseError::KeyDamaged
+            | CaseError::KeychainDamaged
+            | CaseError::KeyringDamaged
+    );
+    match root {
+        Some(root) if unreadable && holds_objects(&root) => Opening::WrongKey(root),
+        _ => Opening::Key(error),
+    }
+}
+
+/// The Vault's folder holds sealed objects (#1091 Decision 12's layout).
+fn holds_objects(root: &std::path::Path) -> bool {
+    root.join("manifest.enc").is_file()
+        || ["docs", "projects", "replies"].iter().any(|dir| {
+            std::fs::read_dir(root.join(dir)).is_ok_and(|mut entries| entries.next().is_some())
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_key_that_cannot_be_opened_offers_the_recovery_key_for_a_vault_with_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("vault");
+        // No Vault yet: nothing to recover.
+        let opening = key_unreadable(CaseError::DataProtection, Some(root.clone()));
+        assert!(matches!(opening, Opening::Key(CaseError::DataProtection)));
+        let vault = Vault::open(&root, &[1; 32]).unwrap();
+        vault
+            .create_project(mdoc_vault::NewProject::default())
+            .unwrap();
+        vault.flush().unwrap();
+        for error in [CaseError::DataProtection, CaseError::KeyDamaged] {
+            assert!(matches!(
+                key_unreadable(error, Some(root.clone())),
+                Opening::WrongKey(found) if found == root
+            ));
+        }
+        // No key store at all is not a key to recover.
+        assert!(matches!(
+            key_unreadable(CaseError::NoKeyStore, Some(root.clone())),
+            Opening::Key(CaseError::NoKeyStore)
+        ));
     }
 }

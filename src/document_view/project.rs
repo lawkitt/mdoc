@@ -45,7 +45,6 @@ impl DocumentView {
     }
 
     /// Whether a mapping change waits to be folded into the Project.
-    #[cfg(test)]
     pub(crate) fn project_save_pending(&self) -> bool {
         self.project_save.is_some()
     }

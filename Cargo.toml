@@ -89,6 +89,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 unicode-segmentation = "1"
 # The import card's password field wipes what was typed (src/markdown_search.rs).
 zeroize = "1"
+# The recovery key's QR in Settings › Vault, drawn as quads; no image
+# encoders (approved for #1091 Decision 22).
+qrcode = { version = "0.14", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The quit question (src/system_quit.rs) and the menu bar shelf

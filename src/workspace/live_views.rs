@@ -126,12 +126,6 @@ impl<V> LiveViews<V> {
         self.tabs.last()
     }
 
-    /// Drop every tab, keeping the active id and the id counter.
-    #[cfg(test)]
-    pub(super) fn clear(&mut self) {
-        self.tabs.clear();
-    }
-
     pub(super) fn get(&self, id: u64) -> Option<&LiveView<V>> {
         self.tabs.iter().find(|tab| tab.id == id)
     }

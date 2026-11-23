@@ -104,5 +104,10 @@ review-scanning
 review-long-counts
 home-vault-unavailable
 home-vault-unavailable-notice
+settings-vault
+settings-vault-recovery-key
+vault-recovery-nudge
+home-vault-wrong-key
+home-vault-wrong-key-error
 import-repeated
 import-repeated-several
