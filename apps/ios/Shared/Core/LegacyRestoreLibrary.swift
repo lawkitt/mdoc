@@ -18,13 +18,18 @@ final class LegacyRestoreLibrary: Library, @unchecked Sendable {
         let projects = ffi.cases().cases.map {
             ProjectSummary(id: ProjectID(rawValue: $0.id), name: $0.name, colour: ProjectColour(hue: $0.hue))
         }
-        let documents = ((try? ffi.documentSummaries()) ?? []).map { summary in
-            LibraryDocument(
+        let summaries = (try? ffi.documentSummaries()) ?? []
+        let documents: [LibraryDocument] = summaries.map { summary -> LibraryDocument in
+            // Broken up: Xcode 26.2 can't type-check it as one expression.
+            let pending = Int(summary.proposed)
+            let candidates = pending + Int(summary.replaced) + Int(summary.kept)
+            let updated = Date(timeIntervalSince1970: TimeInterval(summary.modified))
+            let projectID: ProjectID? = summary.caseId.map { ProjectID(rawValue: $0) }
+            return LibraryDocument(
                 id: DocumentID(rawValue: summary.path), title: summary.title,
-                projectID: summary.caseId.map(ProjectID.init), kind: .text, phase: summary.phase,
-                pendingCount: Int(summary.proposed),
-                updated: Date(timeIntervalSince1970: TimeInterval(summary.modified)),
-                candidateCount: Int(summary.proposed + summary.replaced + summary.kept), origin: summary.origin)
+                projectID: projectID, kind: .text, phase: summary.phase,
+                pendingCount: pending, updated: updated,
+                candidateCount: candidates, origin: summary.origin)
         }
         return LibrarySnapshot(
             projects: projects, documents: documents.sorted { $0.updated > $1.updated },
