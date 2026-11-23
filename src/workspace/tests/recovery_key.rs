@@ -163,7 +163,13 @@ fn export_project_in_the_project_menu_writes_its_files(cx: &mut TestAppContext) 
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let id = new_project(&tabs, cx, tab);
     let name = vault_of(&tabs, cx).project(&id).unwrap().name;
-    click(cx, "project-header-menu");
+    // The Project row's menu, as a right-click opens it.
+    draw(cx);
+    let row: &'static str = Box::leak(format!("tree-project-{id}").into_boxed_str());
+    let row = cx.debug_bounds(row).unwrap().center();
+    cx.simulate_mouse_down(row, gpui::MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(row, gpui::MouseButton::Right, Default::default());
+    cx.run_until_parked();
     click(cx, "project-action-export");
     assert!(cx.did_prompt_for_paths());
     let picked = tempfile::tempdir().unwrap();

@@ -61,10 +61,10 @@ fn back_forward_revisits_tabs_home_and_projects_without_key_or_member_reads(
     cx.update(crate::bind_all_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     let id = tabs.update(cx, |w, _| add_project(w, "Raman"));
-    let first = tabs.update_in(cx, |w, window, cx| note(w, window, cx));
+    let first = tabs.update_in(cx, note);
     tabs.update_in(cx, |w, window, cx| w.open_project(&id, window, cx));
     cx.run_until_parked();
-    let second = tabs.update_in(cx, |w, window, cx| note(w, window, cx));
+    let second = tabs.update_in(cx, note);
     cx.run_until_parked();
     let before = tabs.read_with(cx, |w, _| w.project_ui.member_reads);
     cx.update(|window, cx| {
@@ -189,7 +189,7 @@ fn alt_arrows_keep_word_moves_in_editor_and_do_not_navigate_from_text_fields(
 fn mouse_buttons_navigate_from_editor_and_text_input_once_per_press(cx: &mut TestAppContext) {
     cx.update(crate::bind_all_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
-    let first = tabs.update_in(cx, |w, window, cx| note(w, window, cx));
+    let first = tabs.update_in(cx, note);
     tabs.update_in(cx, |w, window, cx| {
         note(w, window, cx);
     });
@@ -216,7 +216,7 @@ fn title_buttons_disable_at_ends_and_work_with_sidebar_collapsed(cx: &mut TestAp
     cx.simulate_resize(size(px(1100.), px(760.)));
     click_toolbar(cx, "workspace-back");
     assert!(tabs.read_with(cx, |w, cx| w.showing_home(cx)));
-    let first = tabs.update_in(cx, |w, window, cx| note(w, window, cx));
+    let first = tabs.update_in(cx, note);
     click_toolbar(cx, "workspace-back");
     assert!(tabs.read_with(cx, |w, cx| w.showing_home(cx)));
     click_toolbar(cx, "workspace-back");

@@ -68,7 +68,8 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>
                 source_kind: mdoc_vault::SourceKind::Markdown,
                 origin: mdoc_vault::DocumentOrigin::Ordinary,
                 markdown: "# Meeting notes
-".into(),
+"
+                .into(),
             })
             .expect("temporary fixture document");
         let notes = mdoc_store::document_id::VaultId::parse(&notes.id).expect("an id");
