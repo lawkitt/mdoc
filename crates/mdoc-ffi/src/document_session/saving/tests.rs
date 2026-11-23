@@ -1,7 +1,6 @@
 //! Saving after the tap, through the Vault (`save_pending_into_vault`).
 use super::*;
 use crate::{
-    ReviewError,
     document_session::{
         Category, MentionState, ProposedName, ReviewAction, ReviewSnapshot, SavedVaultChange, Scope,
     },
@@ -232,7 +231,7 @@ fn a_failed_save_keeps_the_change_and_says_so() {
         session.save_pending_into_vault(vault.clone())
     });
     assert!(
-        matches!(failed, Err(ReviewError::Storage { .. })),
+        matches!(failed, Err(crate::ReviewError::Storage { .. })),
         "{failed:?}"
     );
     assert!(session.has_unsaved_changes());
