@@ -595,12 +595,16 @@ impl Workspace {
                 ReplyOwner::Document(_) if place == "Unfiled" => place,
                 ReplyOwner::Document(_) => format!("Project “{place}”"),
             }),
-            Some(reply_detail(
-                &reply.owner,
-                reply.source_app.as_deref(),
-                reply.created,
-                &titles,
-            )),
+            Some({
+                let detail = reply_detail(
+                    &reply.owner,
+                    reply.source_app.as_deref(),
+                    reply.created,
+                    &titles,
+                );
+                // The place already names the Project.
+                (detail.strip_prefix("From the Project · ")).map_or(detail.clone(), str::to_string)
+            }),
         ]
         .into_iter()
         .flatten()
