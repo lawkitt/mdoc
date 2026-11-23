@@ -105,6 +105,33 @@ fn an_import_keeps_its_file_as_the_original() {
 }
 
 /// A locked DOCX keeps its original locked, byte for byte, marked so.
+/// The mobile core imports converted text: its first save leaves nothing
+/// for the desktop to convert again, even when that text is empty.
+#[test]
+fn a_saved_import_is_never_pending_conversion() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let docx = fixture("../../docs/product-media/Settlement agreement.docx");
+    let id = imported(&vault, &docx, ImportOptions::default());
+    let stored = vault.store().document(&id).unwrap();
+    assert!(!stored.markdown.is_empty());
+    assert!(!stored.unconverted && !stored.pending_conversion());
+
+    let session = DocumentSession::new();
+    let text = (session.import_file(docx.display().to_string(), ImportOptions::default(), None))
+        .unwrap()
+        .text;
+    let all = crate::library::TextRange {
+        start: 0,
+        end: text.len() as u64,
+    };
+    session.type_text(all, String::new()).unwrap();
+    let emptied = session.save_into_vault(vault.clone()).unwrap().id;
+    let stored = vault.store().document(&emptied).unwrap();
+    assert!(stored.markdown.is_empty() && stored.original.is_some());
+    assert!(!stored.unconverted && !stored.pending_conversion());
+}
+
 #[test]
 fn a_locked_source_stays_locked() {
     let scratch = Scratch::new();

@@ -688,6 +688,8 @@ impl Pending {
             record.title.clone_from(&self.title);
             record.origin = self.origin.into();
             record.markdown.clone_from(&self.text);
+            // Its text is the converted text, even when that is empty.
+            record.unconverted = false;
             record.scanned = self.scanned;
             record.review = Some(self.review.clone());
             record.counts = Some(self.counts.into());
