@@ -390,22 +390,6 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–22 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
-1. **[Core] The Vault opens and keeps Projects and Documents.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* A new GUI-free
-   crate, `mdoc-vault`, opened on a folder with an injected key: sealed
-   records in the case store's format, random 32-hex ids, JSON; Project and
-   Document records; the manifest as a cache checked against the directory and
-   per-file stamps; the write lock and the newest-revision rule. *Done when:*
-   through the Vault's interface, a Project and a Document survive a reopen; a
-   missing, stale or damaged manifest is rebuilt; a fault between two writes
-   loses nothing; a second handle on the folder sees the first's writes.
-2. **[Core] A review saves and comes back as it was.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The review model
-   serializes its per-mention state (applied spans, pending proposals, Keep,
-   Not a name, occurrence overrides), so a reopened document needs no rescan.
-   Nothing persists it today. *Done when:* a review holding each kind of
-   decision round-trips to an identical snapshot, in desktop's review and the
-   mobile core's.
 3. **[Core] Source Originals in the Vault.** *From
    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Each original is
    sealed under its own wrapped key, in 1 MiB chunks with counter nonces, and
