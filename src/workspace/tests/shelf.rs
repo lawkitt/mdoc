@@ -422,7 +422,10 @@ fn a_save_during_a_scan_is_written_again_once_the_scan_ends(cx: &mut TestAppCont
             let end = editor.text().len();
             editor.replace_range(end..end, " Later.", cx);
         });
-        // ⌘S at once: written while the scan still runs.
+    });
+    // ⌘S at once: written while the edit's scan still runs.
+    view.update(cx, |view, cx| {
+        assert!(view.pii.review().awaiting_discovery());
         view.save_now(cx);
     });
     cx.run_until_parked();
