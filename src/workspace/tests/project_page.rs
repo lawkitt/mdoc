@@ -538,7 +538,8 @@ fn share_and_sidebar_header_open_the_same_page(cx: &mut TestAppContext) {
     );
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(tab, window, cx));
     draw(cx);
-    let header = cx.debug_bounds("project-page-link").unwrap();
+    let row: &'static str = Box::leak(format!("tree-project-{id}").into_boxed_str());
+    let header = cx.debug_bounds(row).unwrap();
     cx.simulate_click(header.center(), Default::default());
     cx.run_until_parked();
     assert_eq!(

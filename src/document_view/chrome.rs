@@ -639,7 +639,7 @@ impl DocumentView {
                         .child(
                             row(
                                 "more-close",
-                                "Close tab".into(),
+                                "Close".into(),
                                 Some(modifier("⌘W", "Ctrl+W")),
                                 None,
                                 true,

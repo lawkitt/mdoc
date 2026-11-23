@@ -32,26 +32,6 @@ pub(crate) fn colour_name(colour: Colour) -> &'static str {
     }
 }
 
-#[derive(Default)]
-pub(super) struct ProjectClose {
-    waiting: Option<u64>,
-    queue: std::collections::VecDeque<u64>,
-}
-impl ProjectClose {
-    pub(super) fn begin(&mut self, ids: impl IntoIterator<Item = u64>) -> Option<u64> {
-        self.queue = ids.into_iter().collect();
-        self.waiting = self.queue.pop_front();
-        self.waiting
-    }
-    pub(super) fn removed(&mut self, id: u64) -> Option<u64> {
-        if self.waiting != Some(id) {
-            return None;
-        }
-        self.waiting = self.queue.pop_front();
-        self.waiting
-    }
-}
-
 /// One of the page's three views of its Project.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Segment {
@@ -398,6 +378,7 @@ impl Workspace {
         };
         self.project_ui.page = Some(page);
         self.note_destination(super::navigation::Arrival::Visit, cx);
+        self.drop_if_empty_new(self.tabs.active(), window, cx);
         match place {
             Place::Rename => self.start_rename_project(id.into(), window, cx),
             Place::Delete => self.delete_project(id.into(), window, cx),
@@ -497,7 +478,7 @@ impl Workspace {
                 _ => return,
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.open_paths_into(paths, None, Some(id), window, cx);
+                this.open_paths_into(paths, Some(id), window, cx);
             });
         })
         .detach();

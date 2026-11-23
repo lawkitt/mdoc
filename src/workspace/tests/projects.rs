@@ -82,7 +82,8 @@ fn move_to_new_project_names_it_after_the_document_and_keeps_its_names(cx: &mut 
         assert_eq!(toast, "“contract” moved to “contract”.");
     });
     draw(cx);
-    assert!(cx.debug_bounds("project-header").is_some());
+    let row: &'static str = Box::leak(format!("tree-project-{id}").into_boxed_str());
+    assert!(cx.debug_bounds(row).is_some());
     assert!(cx.debug_bounds("move-toast-undo").is_some());
     // The session names no Project.
     let json = cx.update(|_, cx| serde_json::to_string(&tabs.read(cx).snapshot(cx)).unwrap());
@@ -302,13 +303,13 @@ fn a_move_renumbers_proposes_follows_renames_and_undoes(cx: &mut TestAppContext)
     cx.run_until_parked();
     assert_eq!(text_of(&second_view, cx), "PERSON_2 wrote to PERSON_1.");
 
-    // Folding the Project is remembered in the session.
+    // Expanding the Project is remembered in the session.
     tabs.update(cx, |tabs, _| {
-        tabs.project_ui.collapsed.insert(project.clone());
+        tabs.tree.set_expanded(&project, true);
     });
     cx.update(|_, cx| {
         assert_eq!(
-            tabs.read(cx).snapshot(cx).collapsed_projects,
+            tabs.read(cx).snapshot(cx).expanded_projects,
             std::slice::from_ref(&project)
         )
     });

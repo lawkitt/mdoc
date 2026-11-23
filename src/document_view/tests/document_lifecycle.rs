@@ -6,7 +6,7 @@ use super::*;
 fn closing_an_edited_tab_asks_nothing_and_keeps_its_text(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     cx.simulate_input("keep me");
-    cx.dispatch_action(Close);
+    let _ = close_document(&app, cx);
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
     cx.update(|window, _| assert!(!window.has_active_prompt()));

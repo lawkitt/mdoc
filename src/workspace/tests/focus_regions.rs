@@ -141,38 +141,37 @@ fn leave_sidebar_from(
 }
 
 #[gpui::test]
-fn f6_into_the_sidebar_lands_on_the_active_tab(cx: &mut TestAppContext) {
+fn f6_into_the_sidebar_lands_on_the_shown_documents_row(cx: &mut TestAppContext) {
     // Not Settings or another control last focused there.
-    let (tabs, cx) = boot(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let active = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    cx.run_until_parked();
+    let [first, active] = open_notes(&tabs, cx, dir.path(), &["a", "b"])[..] else {
+        unreachable!()
+    };
     draw(cx);
     assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), active);
     let settings = cx.update(|_, cx| tabs.read(cx).settings_focus.clone());
-    let row = |tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext| {
-        cx.update(|_, cx| tabs.read(cx).sidebar_row_focus.borrow()[&id].clone())
-    };
-    let on_list_row = |tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext| {
-        cx.update(|window, cx| tabs.read(cx).sidebar_row_focus.borrow()[&id].is_focused(window))
-    };
-    // Expanded: after Settings, and after another tab's row.
+    // Expanded: after Settings, and after another document's row.
     leave_sidebar_from(&tabs, settings.clone(), cx);
     key(cx, "f6");
-    assert!(on_list_row(&tabs, active, cx), "F6 lands on the active tab");
-    let other = row(&tabs, first, cx);
+    assert!(
+        tab_row_focused(&tabs, active, cx),
+        "F6 lands on the shown row"
+    );
+    let other = tree_row_focus(&tabs, first, cx);
     leave_sidebar_from(&tabs, other, cx);
     key(cx, "f6");
-    assert!(on_list_row(&tabs, active, cx), "not the row last focused");
+    assert!(
+        tab_row_focused(&tabs, active, cx),
+        "not the row last focused"
+    );
     // Backwards from the toolbar too.
     leave_sidebar_from(&tabs, settings.clone(), cx);
     key(cx, "shift-f6");
     assert!(in_toolbar(&tabs, cx));
     key(cx, "shift-f6");
-    assert!(on_list_row(&tabs, active, cx));
-    // The list's Tab stop follows: Tab leaves the list from there.
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.cursor(), Some(active)));
+    assert!(tab_row_focused(&tabs, active, cx));
     // After opening and closing Settings itself.
     tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
     cx.run_until_parked();
@@ -185,30 +184,20 @@ fn f6_into_the_sidebar_lands_on_the_active_tab(cx: &mut TestAppContext) {
     tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
     draw(cx);
     key(cx, "f6");
-    assert!(on_list_row(&tabs, active, cx), "after visiting Settings");
-    // Collapsed rail: F6 lands on the active tab there.
+    assert!(
+        tab_row_focused(&tabs, active, cx),
+        "after visiting Settings"
+    );
+    // Collapsed rail: F6 enters the rail, which has no document rows.
     key(cx, "escape");
     assert!(editor_focused(&tabs, cx));
     collapse(&tabs, cx);
     key(cx, "f6");
     assert!(in_sidebar(&tabs, cx));
-    assert!(
-        tab_row_focused(&tabs, active, cx),
-        "the rail lands on the tab"
-    );
-    // Out and back again, still the active tab.
     key(cx, "f6");
     key(cx, "f6");
     assert!(editor_focused(&tabs, cx));
-    key(cx, "f6");
-    assert!(
-        tab_row_focused(&tabs, active, cx),
-        "and again after leaving"
-    );
-    // Expand: F6 lands on the active tab in the full list.
-    key(cx, "f6");
-    key(cx, "f6");
-    assert!(editor_focused(&tabs, cx));
+    // Expand: F6 lands on the shown row in the tree.
     tabs.update(cx, |tabs, cx| {
         tabs.sidebar.restore(true, Some(true));
         cx.notify();
@@ -217,7 +206,7 @@ fn f6_into_the_sidebar_lands_on_the_active_tab(cx: &mut TestAppContext) {
     leave_sidebar_from(&tabs, settings, cx);
     key(cx, "f6");
     assert!(
-        on_list_row(&tabs, active, cx),
+        tab_row_focused(&tabs, active, cx),
         "across a collapse and expand"
     );
 }
@@ -337,56 +326,53 @@ fn home_first_tab_is_open_files_not_the_bell(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn sidebar_tab_list_moves_with_arrows_and_closes_with_backspace(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.new_tab(window, cx);
-        tabs.new_tab(window, cx);
-    });
-    cx.run_until_parked();
-    draw(cx);
-    let listed = cx.update(|_, cx| tabs.read(cx).listed_tabs(cx));
-    assert_eq!(listed.len(), 3);
-    let row = |tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext| {
-        cx.update(|window, cx| {
-            tabs.read(cx)
-                .sidebar_row_focus
-                .borrow()
-                .get(&id)
-                .is_some_and(|f| f.is_focused(window))
-        })
+fn the_tree_moves_with_arrows_and_folds_projects(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let [a, b, c] = open_notes(&tabs, cx, dir.path(), &["a", "b", "c"])[..] else {
+        unreachable!()
     };
-    // F6 into the sidebar lands on the list's one Tab stop: the active tab.
-    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    let project = new_project(&tabs, cx, a);
+    tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     draw(cx);
-    let active_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    assert_eq!(active_id, listed[2]);
-    tabs.update_in(cx, |tabs, window, cx| {
-        let focus = tabs
-            .sidebar_row_focus
-            .borrow()
-            .get(&active_id)
-            .cloned()
-            .unwrap();
-        window.focus(&focus, cx);
+    // Projects ▸ "a" (collapsed), then Unfiled: b and c, newest first.
+    let rows = cx.update(|_, cx| tabs.read(cx).tree_keys());
+    assert_eq!(rows[0], tree::RowKey::Project(project.clone()));
+    let (b, c) = if rows[1] == tree::RowKey::Document(document_of(&tabs, b, cx)) {
+        (b, c)
+    } else {
+        (c, b)
+    };
+    assert_eq!(rows[2], tree::RowKey::Document(document_of(&tabs, c, cx)));
+    let focus = tree_row_focus(&tabs, c, cx);
+    cx.update(|window, cx| window.focus(&focus, cx));
+    draw(cx);
+    key(cx, "up");
+    assert!(tab_row_focused(&tabs, b, cx));
+    key(cx, "up");
+    let project_row = tabs.update(cx, |w, cx| {
+        w.tree_focus(&tree::RowKey::Project(project.clone()), cx)
     });
-    draw(cx);
+    assert!(cx.update(|window, _| project_row.is_focused(window)));
     key(cx, "up");
-    assert!(row(&tabs, listed[1], cx));
-    key(cx, "up");
-    assert!(row(&tabs, listed[0], cx));
-    key(cx, "up");
-    assert!(row(&tabs, listed[0], cx));
+    assert!(
+        cx.update(|window, _| project_row.is_focused(window)),
+        "the first row"
+    );
+    // → expands the Project, → again enters it, ← goes back, ← folds it.
+    key(cx, "right");
+    cx.update(|_, cx| assert!(tabs.read(cx).tree.expanded(&project)));
+    key(cx, "right");
+    assert!(tab_row_focused(&tabs, a, cx));
+    key(cx, "left");
+    assert!(cx.update(|window, _| project_row.is_focused(window)));
+    key(cx, "left");
+    cx.update(|_, cx| assert!(!tabs.read(cx).tree.expanded(&project)));
     key(cx, "down");
-    assert!(row(&tabs, listed[1], cx));
-    // ⌫ closes the focused tab; focus moves to its neighbour.
-    key(cx, "backspace");
-    let now = cx.update(|_, cx| tabs.read(cx).listed_tabs(cx));
-    assert_eq!(now, vec![listed[0], listed[2]]);
-    assert!(row(&tabs, listed[2], cx));
-    // Tab leaves the list rather than visiting each row.
+    assert!(tab_row_focused(&tabs, b, cx));
+    // Tab leaves the tree rather than visiting each row.
     key(cx, "tab");
-    assert!(!row(&tabs, listed[0], cx) && !row(&tabs, listed[2], cx));
+    assert!(!tab_row_focused(&tabs, b, cx) && !tab_row_focused(&tabs, c, cx));
 }
 
 #[gpui::test]
@@ -427,48 +413,41 @@ fn f6_stays_inside_settings(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn tab_leaves_the_sidebar_list_from_any_row(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.new_tab(window, cx);
-        tabs.new_tab(window, cx);
-    });
-    cx.run_until_parked();
+fn tab_leaves_the_tree_from_any_row(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let ids = open_notes(&tabs, cx, dir.path(), &["a", "b", "c"]);
     draw(cx);
-    let listed = cx.update(|_, cx| tabs.read(cx).listed_tabs(cx));
     let on_row = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
         cx.update(|window, cx| {
             tabs.read(cx)
-                .sidebar_row_focus
+                .tree_row_focus
                 .borrow()
                 .values()
                 .any(|f| f.is_focused(window))
         })
     };
-    tabs.update_in(cx, |tabs, window, cx| {
-        let focus = tabs
-            .sidebar_row_focus
-            .borrow()
-            .get(&listed[2])
-            .cloned()
-            .unwrap();
-        window.focus(&focus, cx);
-    });
+    // Rows in the tree's order: newest import first, then by title.
+    let rows = cx.update(|_, cx| tabs.read(cx).tree_keys());
+    let in_order: Vec<u64> = rows
+        .iter()
+        .map(|key| {
+            *ids.iter()
+                .find(|id| *key == tree::RowKey::Document(document_of(&tabs, **id, cx)))
+                .unwrap()
+        })
+        .collect();
+    let focus = tree_row_focus(&tabs, in_order[2], cx);
+    cx.update(|window, cx| window.focus(&focus, cx));
     draw(cx);
-    // Up to the first row, then Tab: out of the list, not to the next row.
+    // Up to the first row, then Tab: out of the tree, not to the next row.
     key(cx, "up");
     key(cx, "up");
     key(cx, "tab");
     assert!(!on_row(&tabs, cx));
     // Shift+Tab comes back to the row the arrows left it on.
     key(cx, "shift-tab");
-    assert!(cx.update(|window, cx| {
-        tabs.read(cx)
-            .sidebar_row_focus
-            .borrow()
-            .get(&listed[0])
-            .is_some_and(|f| f.is_focused(window))
-    }));
+    assert!(tab_row_focused(&tabs, in_order[0], cx));
 }
 
 #[gpui::test]
@@ -644,14 +623,10 @@ fn opening_a_project_with_enter_closes_the_list_and_focuses_its_page(cx: &mut Te
         let w = tabs.read(cx);
         assert_eq!(w.project_ui.page.as_ref().unwrap().id(), project);
         assert!(w.focus_regions.home().contains_focused(window, cx));
+        // No document opened; the empty New under the page went.
         assert!(
             w.active_view()
-                .unwrap()
-                .read(cx)
-                .session
-                .document
-                .path
-                .is_none()
+                .is_none_or(|view| view.read(cx).session.document.id().is_none())
         );
         assert_eq!(w.project_ui.member_reads, 0);
     });
@@ -696,34 +671,28 @@ fn f6_skips_the_hidden_pane_in_a_narrow_window(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn ctrl_enter_opens_a_tabs_menu_in_both_sidebar_layouts(cx: &mut TestAppContext) {
+fn ctrl_enter_opens_a_document_rows_menu(cx: &mut TestAppContext) {
     // ⌃↩ needs no fn on MacBook keyboards, unlike ⇧F10.
-    let (tabs, cx) = boot(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let row = cx.update(|_, cx| tabs.read(cx).sidebar_row_focus.borrow()[&id].clone());
+    let [id] = open_notes(&tabs, cx, dir.path(), &["a"])[..] else {
+        unreachable!()
+    };
+    let document = document_of(&tabs, id, cx);
+    let row = tree_row_focus(&tabs, id, cx);
     cx.update(|window, cx| window.focus(&row, cx));
     draw(cx);
     key(cx, "ctrl-enter");
     assert_eq!(
-        cx.update(|_, cx| tabs.read(cx).tab_menu.map(|(id, _)| id)),
-        Some(id),
-        "expanded"
+        cx.update(|_, cx| {
+            (tabs.read(cx).document_menu.as_ref()).map(|(id, _)| id.as_str().to_string())
+        }),
+        Some(document)
     );
     key(cx, "escape");
-    assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_none()));
+    assert!(cx.update(|_, cx| tabs.read(cx).document_menu.is_none()));
     assert!(cx.update(|window, _| row.is_focused(window)));
-    collapse(&tabs, cx);
-    let compact = compact_focus(&tabs, cx, id);
-    cx.update(|window, cx| window.focus(&compact, cx));
-    key(cx, "ctrl-enter");
-    assert_eq!(
-        cx.update(|_, cx| tabs.read(cx).tab_menu.map(|(id, _)| id)),
-        Some(id),
-        "rail"
-    );
-    key(cx, "escape");
-    assert!(in_sidebar(&tabs, cx));
 }
 
 #[gpui::test]
@@ -734,13 +703,14 @@ fn sidebar_project_actions_and_categories_work_without_a_pointer(cx: &mut TestAp
     let case = new_project(&tabs, cx, tab);
     tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     draw(cx);
-    let row = cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        tabs.sidebar_row_focus.borrow()[&tabs.tabs.active()].clone()
+    let row = tabs.update(cx, |w, cx| {
+        w.tree_focus(&tree::RowKey::Project(case.clone()), cx)
     });
     cx.update(|window, cx| window.focus(&row, cx));
     key(cx, "shift-f10");
-    assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_some()));
+    assert!(cx.update(|_, cx| tabs.read(cx).project_ui.header_menu.is_some()));
+    key(cx, "tab"); // Rename
+    key(cx, "tab"); // Colour
     key(cx, "tab"); // Categories to detect.
     activate_control(cx);
     cx.update(|window, cx| {
@@ -766,20 +736,6 @@ fn sidebar_project_actions_and_categories_work_without_a_pointer(cx: &mut TestAp
             .home()
             .contains_focused(window, cx)
     }));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.activate(tabs.tabs.active(), window, cx)
-    });
-    collapse(&tabs, cx);
-    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let compact = compact_focus(&tabs, cx, id);
-    cx.update(|window, cx| window.focus(&compact, cx));
-    key(cx, "shift-f10");
-    assert_eq!(
-        cx.update(|_, cx| tabs.read(cx).tab_menu.map(|(id, _)| id)),
-        Some(id)
-    );
-    key(cx, "escape");
-    assert!(in_sidebar(&tabs, cx));
 }
 
 /// Tab past the toolbar (and the view switcher, part of its region) enters

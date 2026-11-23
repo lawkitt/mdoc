@@ -126,12 +126,10 @@ pub(super) struct Target {
     pub name: String,
 }
 
-/// A folder waiting for its sheet: the drop's Project header, if any, and
-/// where in the sidebar the drop landed.
+/// A folder waiting for its sheet, and the Project row it was dropped on.
 pub(super) struct Pending {
     pub folder: DroppedFolder,
     pub project: Option<String>,
-    pub at: Option<usize>,
 }
 
 pub(super) struct Sheet {
@@ -144,16 +142,10 @@ pub(super) struct Sheet {
     target: Option<Target>,
     cursor: usize,
     refused: bool,
-    at: Option<usize>,
 }
 impl Sheet {
     /// Every file starts ticked, except new files past the cap.
-    pub fn new(
-        folder: &DroppedFolder,
-        statuses: Vec<Status>,
-        target: Option<Target>,
-        at: Option<usize>,
-    ) -> Self {
+    pub fn new(folder: &DroppedFolder, statuses: Vec<Status>, target: Option<Target>) -> Self {
         let mut new = 0;
         let rows = folder
             .files
@@ -182,7 +174,6 @@ impl Sheet {
             target,
             cursor: 0,
             refused: false,
-            at,
         }
     }
     pub fn id(&self) -> u64 {
@@ -202,9 +193,6 @@ impl Sheet {
     }
     pub fn cursor(&self) -> usize {
         self.cursor
-    }
-    pub fn at(&self) -> Option<usize> {
-        self.at
     }
     /// A tick went over the cap since the last change.
     pub fn refused(&self) -> bool {

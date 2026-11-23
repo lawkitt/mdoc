@@ -3,6 +3,11 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Stop {
     Home,
+    /// A Vault document, live or not: going back to an evicted one opens it
+    /// again.
+    Document(mdoc_store::document_id::VaultId),
+    /// A live view no document names yet (a new document before its first
+    /// keystroke).
     Tab(u64),
     Project(String),
     /// A saved AI Reply's page.
@@ -66,6 +71,16 @@ impl History {
         }
         self.cursor = self.stops.len() - 1;
         self.before = false;
+    }
+
+    /// `from` is known as `to` from now on: a New document got its id.
+    pub(super) fn rename(&mut self, from: &Stop, to: Stop) {
+        for stop in &mut self.stops {
+            if stop == from {
+                *stop = to.clone();
+            }
+        }
+        self.normalize(|_| true);
     }
 
     /// A tab closed or a Project was deleted: drop its stops. The position stays
@@ -210,6 +225,17 @@ mod tests {
         assert_eq!(travel(&mut history, true, live), None);
         assert_eq!(travel(&mut history, false, live), Some(Stop::Tab(3)));
         assert_eq!(travel(&mut history, false, live), None);
+    }
+
+    #[test]
+    fn a_renamed_stop_keeps_its_place_and_forward() {
+        let id = mdoc_store::document_id::VaultId::parse(&"a".repeat(32)).unwrap();
+        let mut history = visited([Stop::Home, Stop::Tab(1), Stop::Tab(2)]);
+        history.go(1);
+        history.rename(&Stop::Tab(1), Stop::Document(id.clone()));
+        assert_eq!(history.current(), Some(&Stop::Document(id)));
+        assert_eq!(target(&history, false), Some(&Stop::Tab(2)));
+        assert_eq!(target(&history, true), Some(&Stop::Home));
     }
 
     #[test]

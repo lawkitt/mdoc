@@ -7,8 +7,8 @@ use crate::{
     style::{self, Theme},
     ui,
     workspace::{
-        Close, Import, New, NextTab, Open, OpenProject, PreviousTab, RetryDocument, Settings,
-        ToggleSidebar,
+        Close, Import, New, Open, OpenProject, RetryDocument, Settings, SwitchDocument,
+        SwitchDocumentBack, ToggleSidebar,
     },
 };
 use gpui::{Animation, AnimationExt, AnyElement, App, Context, Hsla, Window, div, prelude::*, px};
@@ -395,8 +395,8 @@ impl Workspace {
                             .on_action(|_: &crate::menus::About, _, _| {})
                             .on_action(|_: &super::CheckForUpdates, _, _| {})
                             .on_action(|_: &super::OpenRecent, _, _| {})
-                            .on_action(|_: &NextTab, _, _| {})
-                            .on_action(|_: &PreviousTab, _, _| {})
+                            .on_action(|_: &SwitchDocument, _, _| {})
+                            .on_action(|_: &SwitchDocumentBack, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})
                             .on_action(|_: &RetryDocument, _, _| {})
                             // Tab cycles only its own buttons.

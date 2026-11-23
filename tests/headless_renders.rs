@@ -288,7 +288,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     assert_eq!(record["state"]["back_enabled"], true, "{theme}/{name}");
                     assert_eq!(record["state"]["forward_enabled"], true, "{theme}/{name}");
                     assert_eq!(record["state"]["back_label"], "Back to Home");
-                    assert_eq!(record["state"]["forward_label"], "Forward to Untitled.md");
+                    assert_eq!(record["state"]["forward_label"], "Forward to Meeting notes");
                 }
                 assert_eq!(
                     record["state"]["palette"],

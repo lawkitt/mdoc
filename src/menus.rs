@@ -13,9 +13,9 @@ use crate::{
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
         AddDocumentToProject, ChangeProjectColour, CheckForUpdates, ClearRecentFiles, Close,
-        DeleteProject, ExportProject, Import, New, NextTab, Open, OpenPalette, OpenProject,
-        OpenRecent, PasteAiResponse, PreviousTab, ProjectCategories, PseudonymizeClipboard, Quit,
-        RenameProject, RestoreClipboard, Settings, ShowHome, ToggleSidebar,
+        DeleteProject, ExportProject, Import, New, Open, OpenPalette, OpenProject, OpenRecent,
+        PasteAiResponse, ProjectCategories, PseudonymizeClipboard, Quit, RenameProject,
+        RestoreClipboard, Settings, ShowHome, SwitchDocument, SwitchDocumentBack, ToggleSidebar,
         shortcuts_ui::ShowShortcuts,
     },
 };
@@ -203,7 +203,7 @@ fn menus(recent: &[PathBuf]) -> Vec<Menu> {
             MenuItem::action("Copy for AI", CopyForAi),
             MenuItem::action("Paste AI Reply", PasteAiResponse),
             MenuItem::separator(),
-            MenuItem::action("Close Tab", Close),
+            MenuItem::action("Close", Close),
         ]),
         Menu::new("Project").items([
             MenuItem::action("Add Document…", AddDocumentToProject),
@@ -254,8 +254,8 @@ fn menus(recent: &[PathBuf]) -> Vec<Menu> {
             MenuItem::action("Minimize", MinimizeWindow),
             MenuItem::action("Zoom", ZoomWindow),
             MenuItem::separator(),
-            MenuItem::action("Next Tab", NextTab),
-            MenuItem::action("Previous Tab", PreviousTab),
+            MenuItem::action("Switch Document", SwitchDocument),
+            MenuItem::action("Switch Document Back", SwitchDocumentBack),
         ]),
         Menu::new("Help").items(help),
     ]

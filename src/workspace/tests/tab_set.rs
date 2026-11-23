@@ -29,109 +29,6 @@ fn an_unreadable_markdown_file_adds_nothing_and_says_so(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
-fn untitled_numbering_reuses_closed_gaps_and_suggests_the_tab_name(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
-    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    let third = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        let names: Vec<_> = tabs
-            .tabs
-            .iter()
-            .map(|tab| tab_label(tab, cx).name)
-            .collect();
-        assert_eq!(names, ["Untitled.md", "Untitled 2.md", "Untitled 3.md"]);
-        let view = tabs.active_view().unwrap();
-        assert_eq!(view.read(cx).session.suggested_name(), "Untitled 3.md");
-    });
-    cx.dispatch_action(ExportMarkdown);
-    cx.run_until_parked();
-    assert!(cx.did_prompt_for_new_path());
-    cx.simulate_new_path_selection(|_| None);
-    cx.run_until_parked();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_tab(second, window, cx);
-        tabs.new_tab(window, cx);
-    });
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert_eq!(
-            tabs.read(cx).active_view().unwrap().read(cx).display_name(),
-            "Untitled 2.md"
-        );
-    });
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_tab(first, window, cx);
-        tabs.new_tab(window, cx);
-    });
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert_eq!(
-            tabs.read(cx).active_view().unwrap().read(cx).display_name(),
-            "Untitled.md"
-        );
-        assert_eq!(
-            tabs.read(cx)
-                .tabs
-                .get(third)
-                .unwrap()
-                .view()
-                .unwrap()
-                .read(cx)
-                .display_name(),
-            "Untitled 3.md"
-        );
-    });
-}
-
-#[gpui::test]
-fn untitled_numbering_counts_lazy_restored_tabs_and_keeps_their_names(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.new_tab(window, cx);
-        tabs.new_tab(window, cx);
-    });
-    cx.run_until_parked();
-    let dir = tempfile::tempdir().unwrap();
-    let manifest = dir.path().join("session.json");
-    cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
-    let session = session_store::load(&manifest).unwrap();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.tabs.clear();
-        tabs.tab_subscriptions.clear();
-        tabs.restore(session, window, cx);
-    });
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        assert!(tabs.tabs[0].view().is_none());
-        assert!(tabs.tabs[1].view().is_none());
-        assert_eq!(tab_label(&tabs.tabs[1], cx).name, "Untitled 2.md");
-        assert_eq!(
-            tabs.active_view().unwrap().read(cx).display_name(),
-            "Untitled 3.md"
-        );
-        assert_eq!(
-            tabs.active_view()
-                .unwrap()
-                .read(cx)
-                .session
-                .suggested_name(),
-            "Untitled 3.md"
-        );
-    });
-    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        let view = tabs.read(cx).active_view().unwrap();
-        assert_eq!(view.read(cx).display_name(), "Untitled 4.md");
-        assert_eq!(view.read(cx).session.suggested_name(), "Untitled 4.md");
-    });
-}
-
-#[gpui::test]
 fn untitled_numbering_reserves_later_restored_names_before_naming_legacy_blanks(
     cx: &mut TestAppContext,
 ) {
@@ -200,7 +97,7 @@ fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut Test
         view.pii.review_mut().keep(id, None);
         view.review_changed(cx);
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     let second = active(&tabs, cx);
     cx.update(|_, cx| assert!(second.read(cx).pii.review().variants().is_empty()));
@@ -276,14 +173,18 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
         assert_eq!(tabs.read(cx).tabs.active(), source_id);
         assert!(tabs.read(cx).tabs[2].view().is_none());
     });
+    // Close shows Home; nothing is released or asked.
     cx.dispatch_action(Close);
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 3));
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).showing_home(cx));
+        assert_eq!(tabs.read(cx).tabs.len(), 4);
+    });
 }
 
 #[gpui::test]
-fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppContext) {
+fn new_switch_and_close_preserve_live_editor_state(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     let first = active(&tabs, cx);
     cx.simulate_input("original **Markdown**");
@@ -295,11 +196,7 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
     assert_ne!(first, second);
     cx.simulate_input("second document");
     cx.run_until_parked();
-    let second_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.reorder(first_id, second_id, cx);
-        tabs.activate(first_id, window, cx);
-    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(first_id, window, cx));
     cx.run_until_parked();
     assert_eq!(active(&tabs, cx), first);
     cx.update(|_, cx| {
@@ -312,25 +209,22 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
     cx.update(|_, cx| assert!(first.read(cx).editor.read(cx).text().is_empty()));
-    cx.dispatch_action(Close);
-    cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1));
-    assert_eq!(active(&tabs, cx), second);
+    // Close shows Home; both views stay live, with their undo.
     cx.dispatch_action(Close);
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).tabs.len(), 1);
-        assert!(
-            tabs.read(cx)
-                .active_view()
-                .unwrap()
-                .read(cx)
-                .editor
-                .read(cx)
-                .text()
-                .is_empty()
-        );
+        assert!(tabs.read(cx).showing_home(cx));
+        assert_eq!(tabs.read(cx).tabs.len(), 2);
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(first_id, window, cx));
+    cx.dispatch_action(mdoc_editor::Redo);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            first.read(cx).editor.read(cx).text(),
+            "original **Markdown**"
+        )
     });
 }
 
@@ -367,13 +261,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     let placeholder = cx.update(|_, cx| tabs.read(cx).tabs.active());
     // Rejected selections and canceled pickers cannot consume the placeholder.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.finish_open(
-            vec![(dir.path().join("bad.bin"), false)],
-            None,
-            None,
-            window,
-            cx,
-        )
+        tabs.finish_open(vec![(dir.path().join("bad.bin"), false)], None, window, cx)
     });
     cx.dispatch_action(Open);
     cx.run_until_parked();
@@ -388,54 +276,28 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
         assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert_ne!(tabs.read(cx).tabs.active(), placeholder);
     });
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_tab(tabs.tabs.active(), window, cx)
-    });
+    // From Home, New turns the placeholder under Home into the document;
+    // typed into, it is saved as an intentional blank until it is one.
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| tabs.release_active(window, cx));
     cx.run_until_parked();
     let fallback = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    // From Home, New turns the placeholder into the tab; a second
-    // New adds another.
     tabs.update_in(cx, |tabs, window, cx| {
         assert_eq!(tabs.new_tab(window, cx), fallback);
-        tabs.new_tab(window, cx);
     });
     cx.run_until_parked();
     let manifest = dir.path().join("session.json");
     cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
     let session = session_store::load(&manifest).unwrap();
-    assert_eq!(session.tabs.len(), 2);
-    assert!(
-        session
-            .tabs
-            .iter()
-            .all(|tab| tab.blank && !tab.blank_disposable)
-    );
+    assert_eq!(session.tabs.len(), 1);
+    assert!(session.tabs[0].blank && !session.tabs[0].blank_disposable);
+    // A second New leaves the first, which goes: it was never typed into.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_tab(tabs.tabs.active(), window, cx)
+        tabs.new_tab(window, cx);
     });
     cx.run_until_parked();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_path(file.clone(), window, cx)
-    });
-    cx.run_until_parked();
-    cx.update(|_, cx| assert!(tabs.read(cx).tabs.contains(fallback)));
-    // Restore both intentional blanks without deduplicating their empty paths.
-    tabs.update_in(cx, |tabs, window, cx| {
-        for tab in &tabs.tabs {
-            if let Some(view) = tab.view() {
-                Workspace::release(view, window, cx);
-            }
-        }
-        tabs.tabs.clear();
-        tabs.tab_subscriptions.clear();
-        tabs.restore(session, window, cx);
-        tabs.open_path(file, window, cx);
-    });
-    cx.run_until_parked();
-    // The file is in mdoc already: open its document again.
-    cx.simulate_prompt_answer("Open Existing");
-    cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 3));
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(fallback)));
 }
 
 #[gpui::test]

@@ -391,7 +391,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Close tab",
+        "Close",
         &[on!(App, None, &["mod-w"], workspace::Close)],
     ),
     row(
@@ -435,13 +435,18 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Next tab",
-        &[on!(App, None, &["ctrl-tab"], workspace::NextTab)],
+        "Switch to a recent document",
+        &[on!(App, None, &["ctrl-tab"], workspace::SwitchDocument)],
     ),
     row(
         Everywhere,
-        "Previous tab",
-        &[on!(App, None, &["ctrl-shift-tab"], workspace::PreviousTab)],
+        "Switch to a recent document, backwards",
+        &[on!(
+            App,
+            None,
+            &["ctrl-shift-tab"],
+            workspace::SwitchDocumentBack
+        )],
     ),
     // The macOS convention for View › Toggle Sidebar.
     row(
@@ -1015,46 +1020,86 @@ pub static SHORTCUTS: &[Shortcut] = &[
         ],
     ),
     // ---- Panels and sidebar -------------------------------------------------
-    // The sidebar's tab list is one Tab stop; arrows move inside it.
+    // The sidebar's tree is one Tab stop; arrows move inside it.
     row(
         Panel,
-        "Sidebar: previous tab",
+        "Sidebar: previous row",
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
             &["up"],
             crate::ui::SidebarPrevious
         )],
     ),
     row(
         Panel,
-        "Sidebar: next tab",
+        "Sidebar: next row",
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
             &["down"],
             crate::ui::SidebarNext
         )],
     ),
     row(
         Panel,
-        "Sidebar: close the tab",
+        "Sidebar: collapse a Project, or go to it",
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
+            &["left"],
+            crate::ui::SidebarCollapse
+        )],
+    ),
+    row(
+        Panel,
+        "Sidebar: expand a Project, or go into it",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
+            &["right"],
+            crate::ui::SidebarExpand
+        )],
+    ),
+    row(
+        Panel,
+        "Unfiled: select the row above too",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
+            &["shift-up"],
+            crate::ui::SidebarExtendUp
+        )],
+    ),
+    row(
+        Panel,
+        "Unfiled: select the row below too",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
+            &["shift-down"],
+            crate::ui::SidebarExtendDown
+        )],
+    ),
+    row(
+        Panel,
+        "Unfiled: delete the selected documents",
+        &[on!(
+            Ui,
+            Some("SidebarRow"),
             &["backspace"],
-            crate::ui::SidebarCloseTab
+            crate::ui::SidebarDelete
         )
         .also(&["delete"])],
     ),
     row(
         Panel,
-        "Sidebar: the tab's menu",
+        "Sidebar: the row's menu",
         // ⌃↩ needs no fn on MacBook keyboards, where F10 is the mute key;
         // Windows adds the Menu key.
         &[on!(
             Ui,
-            Some("SidebarTab"),
+            Some("SidebarRow"),
             &["ctrl-enter", "shift-f10"],
             crate::ui::SidebarMenu
         )

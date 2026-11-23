@@ -1,6 +1,6 @@
 //! Restoring an AI reply: the Reply view beside Share, Share
-//! with a name left after Apply (#301) and a restored reply from the public
-//! Claude fixture.
+//! with a name left after Apply (#301) and a saved reply reopened from the
+//! public Claude fixture.
 use super::{Driver, Result};
 use crate::{document_view::DocumentView, pii::ui::PiiApplyAll};
 use gpui::Entity;

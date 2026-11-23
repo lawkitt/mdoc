@@ -55,10 +55,10 @@ mod session_writer;
 mod shelf;
 mod shortcuts_sheet;
 mod sidebar;
-mod tab_menu;
 mod tab_set;
 mod user_lists;
 mod vault_documents;
+mod vault_tree;
 mod window_shell;
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather
@@ -198,12 +198,54 @@ fn reveal_by_keyboard(cx: &mut VisualTestContext, rail: &gpui::FocusHandle) {
     draw(cx);
 }
 
-fn compact_focus(
+/// The Vault document live view `id` shows.
+fn document_of(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) -> String {
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        let tab = w.tabs.get(id).expect("a live view");
+        w.live_document(tab, cx)
+            .expect("a Vault document")
+            .as_str()
+            .to_string()
+    })
+}
+
+/// The tree row's focus of the Vault document live view `id` shows.
+fn tree_row_focus(
+    tabs: &Entity<Workspace>,
+    id: u64,
+    cx: &mut VisualTestContext,
+) -> gpui::FocusHandle {
+    let document = document_of(tabs, id, cx);
+    tabs.update(cx, |w, cx| {
+        w.tree_focus(&tree::RowKey::Document(document), cx)
+    })
+}
+
+/// The debug selector of the tree row of live view `id`'s document.
+fn tree_row(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) -> &'static str {
+    let document = document_of(tabs, id, cx);
+    Box::leak(format!("tree-document-{document}").into_boxed_str())
+}
+
+/// Import a Markdown note per name in `dir`, one at a time, as Open does;
+/// their live views' ids in order.
+fn open_notes(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
-    id: u64,
-) -> gpui::FocusHandle {
-    cx.update(|_, cx| tabs.read(cx).compact_row_focus.borrow()[&id].clone())
+    dir: &std::path::Path,
+    names: &[&str],
+) -> Vec<u64> {
+    names
+        .iter()
+        .map(|name| {
+            let path = dir.join(format!("{name}.md"));
+            std::fs::write(&path, format!("{name} text")).unwrap();
+            tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+            cx.run_until_parked();
+            cx.update(|_, cx| tabs.read(cx).tabs.active())
+        })
+        .collect()
 }
 
 /// Set up the real card with a synthetic running transfer: no model/network access.
@@ -352,8 +394,10 @@ fn drop_files(cx: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
     draw(cx);
 }
 
+/// The live views' names, sorted: live views keep recency order, which no
+/// row shows.
 fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
-    cx.update(|_, cx| {
+    let mut names: Vec<String> = cx.update(|_, cx| {
         tabs.read(cx)
             .tabs
             .iter()
@@ -363,7 +407,9 @@ fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String
                     .unwrap_or_else(|| tab_label(tab, cx).name)
             })
             .collect()
-    })
+    });
+    names.sort_by_key(|name| name.to_lowercase());
+    names
 }
 
 /// A workspace with one imported document whose names are replaced.
@@ -568,13 +614,8 @@ fn in_sidebar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
     })
 }
 
-/// Whether keyboard focus is on `id`'s sidebar row in either layout: the
-/// expanded list (or the rail's reveal of it) or the collapsed rail.
+/// Whether keyboard focus is on the tree row of live view `id`'s document.
 fn tab_row_focused(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) -> bool {
-    cx.update(|window, cx| {
-        let tabs = tabs.read(cx);
-        [&tabs.sidebar_row_focus, &tabs.compact_row_focus]
-            .iter()
-            .any(|rows| rows.borrow().get(&id).is_some_and(|f| f.is_focused(window)))
-    })
+    let focus = tree_row_focus(tabs, id, cx);
+    cx.update(|window, _| focus.is_focused(window))
 }

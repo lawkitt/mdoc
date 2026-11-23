@@ -1,4 +1,5 @@
-//! The sidebar: collapsing, the rail's reveal, dropped files and row names (`Sidebar`).
+//! The sidebar: collapsing, the rail's reveal of the tree, dropped files and row names
+//! (`Sidebar`).
 use super::*;
 
 #[gpui::test]
@@ -111,28 +112,23 @@ fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut T
 }
 
 #[gpui::test]
-fn keyboard_reveal_escape_restores_rail_control_and_closing_opener_keeps_focus_valid(
-    cx: &mut TestAppContext,
-) {
+fn keyboard_reveal_escape_restores_the_rail_control(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    cx.run_until_parked();
     collapse(&tabs, cx);
-    let opener = compact_focus(&tabs, cx, first_id);
+    let opener = cx.update(|_, cx| tabs.read(cx).rail_home_focus.clone());
     reveal_by_keyboard(cx, &opener);
     cx.update(|window, cx| {
         let tabs = tabs.read(cx);
         assert_eq!(tabs.sidebar.reveal(), Reveal::Shown);
-        assert!(tabs.sidebar_row_focus.borrow()[&first_id].is_focused(window));
+        assert!(tabs.panel_home_focus.is_focused(window));
         assert_eq!(tabs.sidebar.choice(), Some(false), "a reveal never pins");
     });
     cx.simulate_keystrokes("escape");
     draw(cx);
     cx.update(|window, cx| {
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
-        assert!(tabs.read(cx).compact_row_focus.borrow()[&first_id].is_focused(window));
+        assert!(opener.is_focused(window));
     });
     // Escape's target stays put rather than revealing again.
     draw(cx);
@@ -144,47 +140,22 @@ fn keyboard_reveal_escape_restores_rail_control_and_closing_opener_keeps_focus_v
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown);
         assert!(tabs.read(cx).panel_toggle_focus.is_focused(window));
     });
-    cx.simulate_keystrokes("escape");
-    draw(cx);
-    reveal_by_keyboard(cx, &opener);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(first_id, window, cx));
-    cx.run_until_parked();
-    draw(cx);
-    cx.update(|window, cx| {
-        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
-        assert!(tabs.read(cx).sidebar.opener().is_none());
-        assert!(
-            tabs.read(cx)
-                .active_view()
-                .unwrap()
-                .read(cx)
-                .editor
-                .read(cx)
-                .focus_handle(cx)
-                .is_focused(window)
-        );
-    });
 }
 
 #[gpui::test]
-fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
+fn the_rail_holds_no_documents_and_hover_reveals_the_tree(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    cx.run_until_parked();
+    let [first, second] = open_notes(&tabs, cx, dir.path(), &["a", "b"])[..] else {
+        unreachable!()
+    };
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(first, window, cx));
     collapse(&tabs, cx);
-    let compact = |id| Box::leak(format!("compact-tab-{id}").into_boxed_str()) as &'static str;
-    let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
-
-    // A click before hover intent activates without revealing.
-    click_toolbar(cx, compact(first));
-    cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).tabs.active(), first);
-        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
-    });
+    let row = tree_row(&tabs, second, cx);
+    // The rail lists no documents: Search, Home and New only.
+    assert!(cx.debug_bounds(row).is_none());
+    assert!(cx.debug_bounds("sidebar-new-collapsed").is_some());
     // A pointer passing over the rail does not reveal.
     hover(cx, gpui::point(px(850.), px(500.)));
     wait(cx, 250);
@@ -198,8 +169,8 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
         editor_left < px(40.),
         "reveal overlays from the window edge"
     );
-    // Rows in the reveal activate and keep it open while the pointer is inside.
-    click_toolbar(cx, row(second));
+    // Rows in the reveal open and keep it open while the pointer is inside.
+    click_toolbar(cx, row);
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.active(), second);
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown);
@@ -231,101 +202,59 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
 }
 
 #[gpui::test]
-fn new_follows_the_last_document_and_context_close_holds_the_reveal(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
+fn new_sits_on_unfiled_and_a_row_menu_holds_the_reveal(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
+    let [first] = open_notes(&tabs, cx, dir.path(), &["a"])[..] else {
+        unreachable!()
+    };
     draw(cx);
-    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
-    let compact = |id| Box::leak(format!("compact-tab-{id}").into_boxed_str()) as &'static str;
-    // Expanded: a full-width row directly under the last document.
-    let plus = cx.debug_bounds("sidebar-new").unwrap();
-    let last = cx.debug_bounds(row(first_id)).unwrap();
-    assert!(plus.top() >= last.bottom() && plus.top() < last.bottom() + px(8.));
-    assert!(plus.size.width > px(150.));
+    // Expanded: New is on Unfiled's label, above its rows.
+    let plus = cx.debug_bounds("tree-new").unwrap();
+    let row = tree_row(&tabs, first, cx);
+    assert!(plus.bottom() <= cx.debug_bounds(row).unwrap().top());
     cx.simulate_click(plus.center(), Default::default());
     cx.run_until_parked();
     draw(cx);
-    let second_id = cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).tabs.len(), 2);
-        tabs.read(cx).tabs.active()
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).active_view().unwrap();
+        assert!(
+            view.read(cx).session.document.id().is_none(),
+            "a New document"
+        );
     });
-    assert!(cx.debug_bounds("sidebar-new").unwrap().top() > plus.top());
 
-    // Collapsed: a square below the compact entries.
+    // Collapsed: a square on the rail.
     collapse(&tabs, cx);
     let plus = cx.debug_bounds("sidebar-new-collapsed").unwrap();
-    assert!(plus.top() >= cx.debug_bounds(compact(second_id)).unwrap().bottom());
     assert_eq!(plus.size.width, px(32.));
-    cx.simulate_click(plus.center(), Default::default());
-    cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 3));
 
-    // The context menu keeps the reveal open after the pointer leaves it.
+    // A row's menu keeps the reveal open after the pointer leaves it.
     reveal_by_hover(&tabs, cx);
-    let first = cx.debug_bounds(row(first_id)).unwrap();
-    cx.simulate_mouse_down(first.center(), gpui::MouseButton::Right, Default::default());
-    cx.simulate_mouse_up(first.center(), gpui::MouseButton::Right, Default::default());
+    let bounds = cx.debug_bounds(row).unwrap();
+    cx.simulate_mouse_down(
+        bounds.center(),
+        gpui::MouseButton::Right,
+        Default::default(),
+    );
+    cx.simulate_mouse_up(
+        bounds.center(),
+        gpui::MouseButton::Right,
+        Default::default(),
+    );
     cx.run_until_parked();
     draw(cx);
-    let close = cx.debug_bounds("context-close-tab").unwrap();
-    hover(cx, close.center());
+    let item = cx.debug_bounds("context-new-project").unwrap();
+    hover(cx, item.center());
     wait(cx, 1000);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
-    cx.simulate_click(close.center(), Default::default());
+    cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).tabs.len(), 2);
-        assert!(tabs.read(cx).tab_menu.is_none());
-    });
+    cx.update(|_, cx| assert!(tabs.read(cx).document_menu.is_none()));
     hover(cx, gpui::point(px(850.), px(500.)));
     wait(cx, 1000);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden));
-}
-
-#[gpui::test]
-fn unsaved_duplicate_names_keep_single_line_rows(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
-    draw(cx);
-    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
-    let single = cx.debug_bounds(row(first)).unwrap().size.height;
-    let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    cx.run_until_parked();
-    draw(cx);
-    for id in [first, second] {
-        assert_eq!(cx.debug_bounds(row(id)).unwrap().size.height, single);
-    }
-}
-
-#[test]
-fn duplicate_names_show_distinguishing_parent_suffixes() {
-    let peers = vec![
-        PathBuf::from("/contracts/first/client/sample.md"),
-        PathBuf::from("/contracts/second/client/sample.md"),
-    ];
-    // Shown with the platform's separator.
-    let suffix = |a: &str| {
-        PathBuf::from(a)
-            .join("client")
-            .to_string_lossy()
-            .into_owned()
-    };
-    assert_eq!(
-        disambiguating_parent(&peers[0], &peers),
-        Some(suffix("first"))
-    );
-    assert_eq!(
-        disambiguating_parent(&peers[1], &peers),
-        Some(suffix("second"))
-    );
-    // A DOCX's conversion beside an .md of that name: no folder tells them
-    // apart, so the row shows the type instead of the full path.
-    let same = vec![
-        PathBuf::from("/contracts/client/sample.docx"),
-        PathBuf::from("/contracts/client/sample.md"),
-    ];
-    assert_eq!(disambiguating_parent(&same[0], &same), None);
 }
 
 #[gpui::test]
@@ -337,38 +266,47 @@ fn the_badge_names_the_source_until_saved_as_markdown(cx: &mut TestAppContext) {
         attachment: Some(docx.clone()),
         ..TabRecord::default()
     });
-    // Saved As under another name, its DOCX still attached as the source.
     let saved = tab(TabRecord {
         markdown: PathBuf::from("/contracts/sample copy.md"),
-        attachment: Some(docx.clone()),
+        attachment: Some(docx),
         ..TabRecord::default()
     });
     cx.update(|cx| {
-        let label = tab_label(&conversion, cx);
-        assert_eq!(
-            (label.format.as_str(), label.identity),
-            ("DOCX", docx.clone())
-        );
-        let label = tab_label(&saved, cx);
-        assert_eq!(label.format, "MD");
-        assert_eq!(label.identity, PathBuf::from("/contracts/sample copy.md"));
-        assert_eq!(label.source, Some(docx));
+        assert_eq!(tab_label(&conversion, cx).format, "DOCX");
+        assert_eq!(tab_label(&saved, cx).format, "MD");
     });
 }
 
 #[gpui::test]
-fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
+fn keyboard_reveals_the_shown_row_in_a_long_collapsed_tree(cx: &mut TestAppContext) {
     use gpui::InputEvent;
-    let (tabs, cx) = boot(cx, Session::default());
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(640.), px(480.)));
-    let last_id = tabs.update_in(cx, |tabs, window, cx| {
-        for _ in 0..19 {
-            tabs.new_tab(window, cx);
-        }
+    let names: Vec<String> = (0..19).map(|i| format!("doc{i:02}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    open_notes(&tabs, cx, dir.path(), &names);
+    // The last Unfiled row, shown with Show all, is viewed now.
+    tabs.update(cx, |tabs, _| tabs.tree.toggle_show_all());
+    let rows = cx.update(|_, cx| tabs.read(cx).tree_keys());
+    let [
+        ..,
+        tree::RowKey::Document(above),
+        tree::RowKey::Document(bottom),
+        tree::RowKey::ShowAll,
+    ] = &rows[..]
+    else {
+        panic!("Unfiled's last rows before Show fewer: {rows:?}")
+    };
+    let (above, bottom) = (above.clone(), bottom.clone());
+    tabs.update_in(cx, |tabs, window, cx| {
+        let id = mdoc_store::document_id::VaultId::parse(&bottom).unwrap();
+        tabs.open_vault_document(id, window, cx);
         tabs.sidebar.choose(Some(false));
         cx.notify();
-        tabs.tabs.last().unwrap().id()
     });
+    cx.run_until_parked();
+    let last = cx.update(|_, cx| tabs.read(cx).tabs.active());
     draw(cx);
     let toggle = cx.update(|_, cx| tabs.read(cx).rail_toggle_focus.clone());
     reveal_by_keyboard(cx, &toggle);
@@ -376,33 +314,28 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
     for _ in 0..45 {
         cx.simulate_keystrokes("tab");
         for _ in 0..3 {
-            cx.update(|window, cx| {
-                window.refresh();
-                window.draw(cx).clear(cx);
-            });
+            draw(cx);
         }
-        reached = cx.update(|window, cx| {
-            tabs.read(cx)
-                .sidebar_row_focus
-                .borrow()
-                .get(&last_id)
-                .is_some_and(|focus| focus.is_focused(window))
-        });
+        reached = tab_row_focused(&tabs, last, cx);
         if reached {
             break;
         }
     }
-    assert!(reached, "Tab must reach every document");
-    let last = cx
-        .debug_bounds(Box::leak(format!("tab-{last_id}").into_boxed_str()))
-        .unwrap();
+    assert!(reached, "Tab must reach the shown document's row");
+    let bounds = {
+        let row = tree_row(&tabs, last, cx);
+        cx.debug_bounds(row)
+    }
+    .unwrap();
     cx.update(|_, cx| {
         let viewport = tabs.read(cx).sidebar_scroll.bounds();
         assert!(
-            last.top() >= viewport.top() && last.bottom() <= viewport.bottom(),
-            "last={last:?}, viewport={viewport:?}"
+            bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom(),
+            "row={bounds:?}, viewport={viewport:?}"
         );
     });
+    // ↑ then Enter opens the row above.
+    key(cx, "up");
     cx.simulate_keystrokes("enter");
     cx.update(|window, cx| {
         window.dispatch_event(
@@ -414,139 +347,24 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
         )
     });
     cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).tabs.active(), last_id);
-        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
-    });
+    let shown = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    assert_eq!(document_of(&tabs, shown, cx), above);
 }
 
 #[gpui::test]
-fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext) {
+fn sidebar_context_menu_dismisses_the_rows_tooltip(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let [a, b, c, d] = ["a.md", "b.md", "two-b.md", "two-c.md"].map(|n| dir.path().join(n));
-    for path in [&a, &b, &c, &d] {
-        std::fs::write(path, path.display().to_string()).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let [id] = open_notes(&tabs, cx, dir.path(), &["a"])[..] else {
+        unreachable!()
+    };
+    draw(cx);
+    let tip = "tooltip-a";
+    let row = {
+        let row = tree_row(&tabs, id, cx);
+        cx.debug_bounds(row)
     }
-    let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![a, b], window, cx)
-    });
-    cx.run_until_parked();
-    draw(cx);
-    let (b_id, old_tip) = cx.update(|_, cx| {
-        let tab = &tabs.read(cx).tabs[1];
-        let label = tab_label(tab, cx);
-        (
-            tab.id(),
-            Box::leak(
-                format!(
-                    "tooltip-{}\n{}",
-                    label.name,
-                    label
-                        .identity
-                        .as_path()
-                        .parent()
-                        .map(|parent| parent.display().to_string())
-                        .unwrap_or_default()
-                )
-                .into_boxed_str(),
-            ) as &'static str,
-        )
-    });
-    let row = cx
-        .debug_bounds(Box::leak(format!("tab-{b_id}").into_boxed_str()))
-        .unwrap();
-    let pointer = gpui::point(row.left() + px(45.), row.top() + row.size.height / 4.);
-    cx.simulate_mouse_move(pointer, None, gpui::Modifiers::none());
-    cx.run_until_parked();
-    cx.executor()
-        .advance_clock(std::time::Duration::from_millis(600));
-    cx.run_until_parked();
-    draw(cx);
-    assert!(
-        cx.debug_bounds(old_tip).is_some(),
-        "old row's tooltip is visible"
-    );
-
-    // Finish the drop's resolved admission without another MouseMove or an
-    // extra frame: the old tooltip must disappear on the first changed frame.
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.finish_open(vec![(c, true), (d, true)], Some(1), None, window, cx);
-    });
-    // Admission imports them off the main thread; no frame is drawn meanwhile.
-    cx.run_until_parked();
-    draw(cx);
-    assert!(
-        cx.debug_bounds(old_tip).is_none(),
-        "moved row's tooltip must not name the new row"
-    );
-    cx.run_until_parked();
-    assert_eq!(tab_names(&tabs, cx), ["a", "two-b", "two-c", "b"]);
-
-    // A fresh hover shows the inserted row's own name and folder.
-    cx.simulate_mouse_move(
-        pointer + gpui::point(px(1.), px(0.)),
-        None,
-        gpui::Modifiers::none(),
-    );
-    cx.run_until_parked();
-    cx.executor()
-        .advance_clock(std::time::Duration::from_millis(600));
-    cx.run_until_parked();
-    draw(cx);
-    let new_tip = cx.update(|_, cx| {
-        let label = tab_label(&tabs.read(cx).tabs[1], cx);
-        Box::leak(
-            format!(
-                "tooltip-{}\n{}",
-                label.name,
-                (label.identity.as_path().parent())
-                    .map(|parent| parent.display().to_string())
-                    .unwrap_or_default()
-            )
-            .into_boxed_str(),
-        ) as &'static str
-    });
-    assert!(cx.debug_bounds(new_tip).is_some());
-}
-
-/// Opening a tab's context menu dismisses its tooltip, and none shows while
-/// the menu stays open (#310): whether the pointer rests on the row, has
-/// drifted onto the tooltip, or jitters off the menu onto the row again.
-#[gpui::test]
-fn sidebar_context_menu_dismisses_the_tab_tooltip(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("a.md");
-    std::fs::write(&path, path.display().to_string()).unwrap();
-    let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
-    });
-    cx.run_until_parked();
-    draw(cx);
-    let (id, tip) = cx.update(|_, cx| {
-        let tab = &tabs.read(cx).tabs[0];
-        let label = tab_label(tab, cx);
-        (
-            tab.id(),
-            Box::leak(
-                format!(
-                    "tooltip-{}\n{}",
-                    label.name,
-                    label
-                        .identity
-                        .as_path()
-                        .parent()
-                        .map(|parent| parent.display().to_string())
-                        .unwrap_or_default()
-                )
-                .into_boxed_str(),
-            ) as &'static str,
-        )
-    });
-    let row = cx
-        .debug_bounds(Box::leak(format!("tab-{id}").into_boxed_str()))
-        .unwrap();
+    .unwrap();
     let rest = gpui::point(row.left() + px(45.), row.top() + row.size.height / 4.);
     for drift in [px(0.), px(3.)] {
         cx.simulate_mouse_move(rest, None, gpui::Modifiers::none());
@@ -567,7 +385,7 @@ fn sidebar_context_menu_dismisses_the_tab_tooltip(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(click, gpui::MouseButton::Right, Default::default());
         cx.run_until_parked();
         draw(cx);
-        assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_some()));
+        assert!(cx.update(|_, cx| tabs.read(cx).document_menu.is_some()));
         assert!(
             cx.debug_bounds(tip).is_none(),
             "the menu's opening dismisses the tooltip (drift={drift:?})"
@@ -594,14 +412,14 @@ fn sidebar_context_menu_dismisses_the_tab_tooltip(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(away, gpui::MouseButton::Left, Default::default());
         cx.run_until_parked();
         draw(cx);
-        assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_none()));
+        assert!(cx.update(|_, cx| tabs.read(cx).document_menu.is_none()));
     }
 }
 
 #[gpui::test]
 fn a_background_conversion_is_named_as_its_source(cx: &mut TestAppContext) {
-    // #311: before activation the second tab read `encrypted--errors.md`,
-    // a file that doesn't exist.
+    // #311: before activation the second document read
+    // `encrypted--errors.md`, a file that doesn't exist.
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import");
     let docx = fixtures.join("truncated--errors.docx");
     let odt = fixtures.join("encrypted--errors.odt");
@@ -613,15 +431,16 @@ fn a_background_conversion_is_named_as_its_source(cx: &mut TestAppContext) {
     draw(cx);
     let (id, label) = cx.update(|_, cx| {
         let tab = &tabs.read(cx).tabs[1];
-        assert!(tab.view().is_none(), "the second tab is not activated");
+        assert!(tab.view().is_none(), "the second document is not shown");
         (tab.id(), tab_label(tab, cx))
     });
     // Named as its document, which takes the file's name.
     assert_eq!(label.name, "encrypted--errors");
-
-    let row = cx
-        .debug_bounds(Box::leak(format!("tab-{id}").into_boxed_str()))
-        .unwrap();
+    let row = {
+        let row = tree_row(&tabs, id, cx);
+        cx.debug_bounds(row)
+    }
+    .unwrap();
     cx.simulate_mouse_move(
         gpui::point(row.left() + px(45.), row.top() + row.size.height / 4.),
         None,
@@ -632,76 +451,77 @@ fn a_background_conversion_is_named_as_its_source(cx: &mut TestAppContext) {
         .advance_clock(std::time::Duration::from_millis(600));
     cx.run_until_parked();
     draw(cx);
-    let tip = format!(
-        "tooltip-encrypted--errors\n{}",
-        label
-            .identity
-            .parent()
-            .map(|parent| parent.display().to_string())
-            .unwrap_or_default()
-    );
     assert!(
-        cx.debug_bounds(Box::leak(tip.into_boxed_str())).is_some(),
+        cx.debug_bounds("tooltip-encrypted--errors").is_some(),
         "the tooltip names the document"
     );
 }
 
 #[gpui::test]
-fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
+fn files_dropped_on_the_tree_go_to_unfiled_or_the_project_under_them(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let [a, b, c, d] = ["a.md", "b.md", "c.md", "d.md"].map(|name| dir.path().join(name));
-    for path in [&a, &b, &c, &d] {
+    let [c, d] = ["c.md", "d.md"].map(|name| dir.path().join(name));
+    for path in [&c, &d] {
         std::fs::write(path, path.display().to_string()).unwrap();
     }
     let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![a.clone(), b.clone()], window, cx)
-    });
-    cx.run_until_parked();
+    let [a, _] = open_notes(&tabs, cx, dir.path(), &["a", "b"])[..] else {
+        unreachable!()
+    };
+    let project = new_project(&tabs, cx, a);
+    tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     draw(cx);
-    let b_id = cx.update(|_, cx| tabs.read(cx).tabs[1].id());
+    // On the Project's row: imported into it.
     let row = cx
-        .debug_bounds(Box::leak(format!("tab-{b_id}").into_boxed_str()))
+        .debug_bounds(Box::leak(
+            format!("tree-project-{project}").into_boxed_str(),
+        ))
         .unwrap();
-    // The upper half of b inserts before it; already-open a does not move.
-    let upper = gpui::point(row.center().x, row.top() + row.size.height / 4.);
-    drag_files(cx, &[c.clone(), a.clone()], upper);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(1)));
-    drop_files(cx, upper);
-    assert_eq!(tab_names(&tabs, cx), ["a", "c", "b"]);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), None));
-
-    // Below the last row the files open at the end.
-    let new = cx.debug_bounds("sidebar-new").unwrap();
-    let below = gpui::point(new.center().x, new.bottom() + px(40.));
+    drag_files(cx, std::slice::from_ref(&c), row.center());
+    drop_files(cx, row.center());
+    let in_project = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let vault = tabs.read(cx).opened_vault().unwrap();
+            let mut titles: Vec<_> = (vault.documents_in(Some(&project)).into_iter())
+                .map(|summary| summary.title)
+                .collect();
+            titles.sort();
+            titles
+        })
+    };
+    assert_eq!(in_project(cx), ["a", "c"]);
+    // Below the rows: Unfiled.
+    let below = gpui::point(px(100.), px(600.));
     drag_files(cx, std::slice::from_ref(&d), below);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(3)));
     drop_files(cx, below);
-    assert_eq!(tab_names(&tabs, cx), ["a", "c", "b", "d"]);
+    assert_eq!(in_project(cx), ["a", "c"]);
+    let unfiled: Vec<String> = cx.update(|_, cx| {
+        let vault = tabs.read(cx).opened_vault().unwrap();
+        (vault.documents_in(None).into_iter())
+            .map(|summary| summary.title)
+            .collect()
+    });
+    assert!(unfiled.contains(&"d".to_string()), "{unfiled:?}");
 }
 
 #[gpui::test]
 fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (a, unknown) = (dir.path().join("a.md"), dir.path().join("образец.xyz"));
-    std::fs::write(&a, a.display().to_string()).unwrap();
+    let unknown = dir.path().join("образец.xyz");
     std::fs::write(&unknown, "x").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![a.clone()], window, cx)
-    });
-    cx.run_until_parked();
+    let [a_id] = open_notes(&tabs, cx, dir.path(), &["a"])[..] else {
+        unreachable!()
+    };
     draw(cx);
-    let a_id = cx.update(|_, cx| tabs.read(cx).tabs[0].id());
-    let row = cx
-        .debug_bounds(Box::leak(format!("tab-{a_id}").into_boxed_str()))
-        .unwrap();
-    // No insertion line: the list says the files can't be opened.
+    let row = {
+        let row = tree_row(&tabs, a_id, cx);
+        cx.debug_bounds(row)
+    }
+    .unwrap();
+    // The tree says the files can't be opened.
     drag_files(cx, std::slice::from_ref(&unknown), row.center());
-    cx.update(|_, cx| {
-        assert!(tabs.read(cx).sidebar.drop_refused());
-        assert_eq!(tabs.read(cx).file_drop_index(), None);
-    });
+    cx.update(|_, cx| assert!(tabs.read(cx).sidebar.drop_refused()));
     drop_files(cx, row.center());
     assert_eq!(tab_names(&tabs, cx), ["a"]);
     cx.update(|_, cx| {
@@ -733,7 +553,7 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn the_refusal_shows_above_a_long_list(cx: &mut TestAppContext) {
+fn the_refusal_shows_above_a_long_tree(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let paths: Vec<_> = (0..40)
         .map(|i| {
@@ -747,37 +567,34 @@ fn the_refusal_shows_above_a_long_list(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| tabs.open_paths(paths, window, cx));
     cx.run_until_parked();
-    draw(cx);
-    let first = cx.update(|_, cx| tabs.read(cx).tabs[0].id());
-    tabs.update(cx, |tabs, _| {
-        tabs.sidebar_scroll.set_offset(gpui::point(px(0.), px(0.)))
+    tabs.update(cx, |tabs, cx| {
+        tabs.tree.toggle_show_all();
+        tabs.sidebar_scroll.set_offset(gpui::point(px(0.), px(0.)));
+        cx.notify();
     });
     draw(cx);
-    let row = cx
-        .debug_bounds(Box::leak(format!("tab-{first}").into_boxed_str()))
-        .unwrap();
+    let first = cx.update(|_, cx| tabs.read(cx).tree_keys())[0].clone();
+    let tree::RowKey::Document(first) = first else {
+        panic!("Unfiled's first row")
+    };
+    let selector: &'static str = Box::leak(format!("tree-document-{first}").into_boxed_str());
+    let row = cx.debug_bounds(selector).unwrap();
     drag_files(cx, std::slice::from_ref(&unknown), row.center());
     let viewport = cx.update(|window, _| window.viewport_size());
     let hint = cx.debug_bounds("drop-refused").expect("refusal shown");
-    let row_now = cx
-        .debug_bounds(Box::leak(format!("tab-{first}").into_boxed_str()))
-        .unwrap();
+    let row_now = cx.debug_bounds(selector).unwrap();
     assert!(hint.bottom() <= viewport.height);
     assert!(hint.bottom() <= row_now.top(), "above the rows");
     drop_files(cx, row.center());
 }
 
 #[gpui::test]
-fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
+fn file_drag_over_collapsed_rail_reveals_the_tree(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
-    std::fs::write(&a, "a").unwrap();
+    let b = dir.path().join("b.md");
     std::fs::write(&b, "b").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![a.clone()], window, cx)
-    });
-    cx.run_until_parked();
+    open_notes(&tabs, cx, dir.path(), &["a"]);
     collapse(&tabs, cx);
     let rail = gpui::point(px(20.), px(400.));
     drag_files(cx, std::slice::from_ref(&b), rail);
@@ -786,9 +603,10 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
     let list = gpui::point(px(120.), px(400.));
     cx.simulate_event(gpui::FileDropEvent::Pending { position: list });
     draw(cx);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(1)));
     drop_files(cx, list);
-    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
+    let mut names = tab_names(&tabs, cx);
+    names.sort();
+    assert_eq!(names, ["a", "b"]);
     // The reveal behaves as for hover: it closes once the pointer leaves.
     cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     hover(cx, gpui::point(px(600.), px(400.)));
@@ -852,11 +670,19 @@ fn restored_source_tabs_keep_their_names_when_opened(cx: &mut TestAppContext) {
         tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
         cx.run_until_parked();
     }
-    assert_eq!(names(cx), before);
+    // The blank, never typed into, went when it was left.
+    let mut after = names(cx);
+    let mut before = before[1..].to_vec();
+    after.sort();
+    before.sort();
+    assert_eq!(after, before);
     // The scan still waits for recognition, and its record keeps its name.
     let snapshot = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
-    assert!(snapshot.tabs[2].source_only);
-    assert_eq!(snapshot.tabs[2].name.as_deref(), Some("english.pdf"));
+    let scan = (snapshot.tabs.iter())
+        .find(|tab| tab.attachment.as_ref() == Some(&scan))
+        .expect("the scan's record");
+    assert!(scan.source_only);
+    assert_eq!(scan.name.as_deref(), Some("english.pdf"));
 }
 
 /// Drag the expanded sidebar's edge to `x` and let go.
@@ -940,12 +766,9 @@ fn a_window_narrower_than_900_collapses_the_sidebar_until_it_widens(cx: &mut Tes
     assert!(resize(cx, 900.));
     assert!(cx.debug_bounds("sidebar-resize").is_some());
 
-    // Keyboard focus in the list moves to the rail's toggle when the
-    // window narrows, and does not reveal the list.
-    let row = cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        tabs.sidebar_row_focus.borrow()[&tabs.tabs.active()].clone()
-    });
+    // Keyboard focus in the tree moves to the rail's toggle when the
+    // window narrows, and does not reveal the tree.
+    let row = cx.update(|_, cx| tabs.read(cx).panel_home_focus.clone());
     cx.update(|window, cx| window.focus(&row, cx));
     assert!(!resize(cx, 800.));
     cx.update(|window, cx| {

@@ -28,7 +28,7 @@ fn source_only_manifest_restores_multiple_sources_and_missing_source_is_retryabl
         assert!(tabs.read(cx).tabs[1].view().is_none());
         assert_eq!(tabs.read(cx).snapshot(cx).tabs.len(), 2);
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     let view = active(&tabs, cx);
     cx.update(|_, cx| assert!(view.read(cx).preview.retryable()));
@@ -89,7 +89,7 @@ fn restoration_is_lazy_and_keeps_the_caret(cx: &mut TestAppContext) {
         let view = tabs.active_view().unwrap();
         assert_eq!(view.read(cx).editor.read(cx).cursor(), "Привет".len());
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     let view = active(&tabs, cx);
     cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "second"));

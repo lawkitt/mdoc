@@ -308,7 +308,7 @@ fn a_completion_after_the_tab_closed_is_discarded(cx: &mut TestAppContext) {
     cx.simulate_input("before");
     let generation = cx.update(|_, cx| app.read(cx).session.generation);
     app.update(cx, |app, _| assert!(app.import.job_mut().begin(false)));
-    cx.dispatch_action(Close);
+    let _ = close_document(&app, cx);
     cx.run_until_parked();
     app.update(cx, |app, _| {
         app.import

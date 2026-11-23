@@ -129,7 +129,7 @@ fn a_command_that_moves_focus_closes_the_sheet(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     // Focus events reach an active window only, as on screen.
     cx.update(|window, _| window.activate_window());
-    let count = tabs.read_with(cx, |tabs, _| tabs.tabs.len());
+    let before = tabs.read_with(cx, |tabs, _| tabs.tabs.active());
     cx.simulate_keystrokes("secondary-/");
     draw(cx);
     assert!(sheet_open(&tabs, cx));
@@ -147,7 +147,7 @@ fn a_command_that_moves_focus_closes_the_sheet(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-n");
     draw(cx);
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tabs.read_with(cx, |tabs, _| tabs.tabs.len()), count + 1);
+    assert_ne!(tabs.read_with(cx, |tabs, _| tabs.tabs.active()), before);
     let view = active(&tabs, cx);
     cx.simulate_input("typed");
     cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "typed"));
