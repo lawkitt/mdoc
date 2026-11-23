@@ -28,9 +28,10 @@ final class AppModel {
     let startupError: String?
 
     private struct PendingDelete {
-        let id: DocumentID
+        let ids: [DocumentID]
         let toast: ToastMessage.ID
-        let wasOpen: Bool
+        /// The one of them that was open.
+        let wasOpen: DocumentID?
     }
 
     init(
@@ -94,6 +95,9 @@ final class AppModel {
             if let seed = launch.seedFile {
                 UITestSeed.run(UITestSeed.fixture(seed), in: app)
             }
+            if launch.seedsRestorePlaces {
+                UITestSeed.seedRestorePlaces(in: app)
+            }
             #endif
             return app
         } catch {
@@ -141,23 +145,18 @@ final class AppModel {
         show(.document(id))
     }
 
-    /// Opens a section's page and closes the sidebar on iPhone. The
-    /// Documents row lists every document, whatever case was opened
-    /// before (#676).
+    /// Opens a section's page and closes the sidebar on iPhone.
     func open(_ section: SidebarSection) {
-        if section == .documents {
-            library.projectFilter = nil
-        }
         show(.section(section))
     }
 
-    /// A case's row: the Documents page filtered to that case.
+    /// A Project's row: its page (#1091 Decision 34).
     func openProject(_ id: ProjectID) {
-        open(.documents)
-        if library.projects.contains(where: { $0.id == id }) { library.projectFilter = id }
+        guard library.project(id) != nil else { return }
+        show(.project(id))
     }
 
-    /// Start: no document and no section.
+    /// Home: no document and no section.
     func showStart() {
         show(.start)
     }
@@ -258,13 +257,30 @@ final class AppModel {
         switch event {
         case .saved(let id, let rejoined):
             library.refresh()
-            if rejoined { documents.model(for: id)?.refresh() }
+            // Its reply restores from the names as saved now.
+            if let model = documents.model(for: id), rejoined || model.snapshot.reply != nil { model.refresh() }
         case .failed(let id, let error):
             if let model = documents.model(for: id), navigator.openDocument == id {
                 model.errorMessage = error.localizedDescription
             } else {
                 present(error)
             }
+        }
+    }
+
+    /// Shows what another handle saved in the Vault meanwhile: a reply
+    /// Restore with mdoc kept (#1091 Decision 20). mdoc comes to the
+    /// foreground, a list is pulled, or a share sheet closes.
+    func takeInChanges() {
+        guard core.library.takeInChanges() else { return }
+        library.refresh()
+        refreshDocuments()
+    }
+
+    /// Every open document shows the Vault as it is now.
+    private func refreshDocuments() {
+        for model in documents.all {
+            model.refresh()
         }
     }
 
@@ -303,11 +319,39 @@ final class AppModel {
 
     // MARK: Intake
 
-    /// The Project an intake is started from: the Documents page filtered
-    /// to one (today's Project page), else nil, Unfiled (#1091 Decision 35).
+    /// The Project an intake is started from: the Project whose page shows,
+    /// else nil, Unfiled (#1091 Decision 35).
     var intakeProject: ProjectID? {
-        guard case .section(.documents) = navigator.destination else { return nil }
-        return library.projectFilter
+        navigator.project
+    }
+
+    /// Something brought in waits for its title and Project, unless its
+    /// file is already in mdoc: then it asks first (#1091 Decision 7).
+    func offer(_ pending: PendingImport) {
+        if let repeated = library.repeatOf(pending) {
+            navigator.present(.repeatedImport(repeated))
+        } else {
+            navigator.present(.importing(pending))
+        }
+    }
+
+    /// "Already in mdoc" answered Open Existing: the document imported
+    /// before opens, and what was brought in goes.
+    func openExisting(_ repeated: RepeatedImport) {
+        navigator.dismiss(Presentation.repeatedImport(repeated).id)
+        Importer.discard(repeated.pending)
+        open(repeated.existing)
+    }
+
+    /// Answered Import Again: it imports as a new document, as any other.
+    func importAgain(_ repeated: RepeatedImport) {
+        navigator.present(.importing(repeated.pending))
+    }
+
+    /// Answered Cancel: nothing is imported, and what was brought in goes.
+    func cancelImport(_ repeated: RepeatedImport) {
+        navigator.dismiss(Presentation.repeatedImport(repeated).id)
+        Importer.discard(repeated.pending)
     }
 
     /// New document (ADR 0109; also ⌘N): an empty document in Unfiled or the
@@ -357,7 +401,7 @@ final class AppModel {
         return Task {
             do {
                 if let pending = try await Task.detached(priority: .userInitiated, operation: { try importer.file(url) }).value {
-                    navigator.present(.importing(pending))
+                    offer(pending)
                 }
             } catch {
                 present(error)
@@ -376,7 +420,7 @@ final class AppModel {
                     try importer.images(images, scanned: scanned)
                 }.value
                 if let pending {
-                    navigator.present(.importing(pending))
+                    offer(pending)
                     // Never silent: the pages left out are counted.
                     if pending.unreadPages > 0 {
                         show(ToastMessage(text: Importer.unreadNote(pending.unreadPages)))
@@ -458,7 +502,8 @@ final class AppModel {
     func move(_ id: DocumentID, to target: ProjectChoice) {
         do {
             guard let move = try library.move(id, to: target) else { return }
-            documents.model(for: id)?.refresh()
+            // Every open document: a Project's replies follow its documents.
+            refreshDocuments()
             Haptics.decision()
             show(ToastMessage(
                 text: String(localized: "Moved to \(move.placeName)"),
@@ -472,7 +517,7 @@ final class AppModel {
     private func undoMove(_ move: ProjectMove) {
         do {
             let back = try library.undoMove(move)
-            documents.model(for: move.document)?.refresh()
+            refreshDocuments()
             Haptics.warning()
             show(ToastMessage(text: String(localized: "Moved back to \(back.placeName)")))
         } catch {
@@ -516,28 +561,38 @@ final class AppModel {
     /// Delete: the document leaves the lists and a toast offers Undo; it is
     /// deleted when the toast ends, or when mdoc leaves the foreground.
     func delete(_ id: DocumentID) {
+        delete([id])
+    }
+
+    /// Delete of documents selected together (Unfiled's Select): one toast
+    /// offers Undo for all of them, as Delete does for one.
+    func delete(_ ids: [DocumentID]) {
         commitPendingDelete()
-        guard let document = library.document(id) else { return }
-        let wasOpen = navigator.openDocument == id
-        if wasOpen { showStart() }
-        library.hide(id)
+        let listed = ids.compactMap { library.document($0) }
+        guard !listed.isEmpty else { return }
+        let ids = listed.map(\.id)
+        let open = navigator.openDocument.flatMap { ids.contains($0) ? $0 : nil }
+        if open != nil { showStart() }
+        library.hide(ids)
+        let text = listed.count == 1
+            ? String(localized: "Deleted \(listed[0].title)")
+            : String(localized: "Deleted \(listed.count) documents")
         let toast = ToastMessage(
-            text: String(localized: "Deleted \(document.title)"),
-            actionTitle: String(localized: "Undo"),
+            text: text, actionTitle: String(localized: "Undo"),
             action: { [weak self] in self?.undoDelete() })
-        pendingDelete = PendingDelete(id: id, toast: toast.id, wasOpen: wasOpen)
+        pendingDelete = PendingDelete(ids: ids, toast: toast.id, wasOpen: open)
         show(toast)
     }
 
-    /// Undo of Delete: the document is back where it was, open again if it
-    /// was open.
+    /// Undo of Delete: the documents are back where they were, the open one
+    /// open again.
     func undoDelete() {
         guard let pending = pendingDelete else { return }
         pendingDelete = nil
-        library.unhide(pending.id)
+        library.unhide(pending.ids)
         Haptics.warning()
         // Open again where it closed, unless something else opened since.
-        if pending.wasOpen && navigator.destination == .start { open(pending.id) }
+        if let open = pending.wasOpen, navigator.destination == .start { self.open(open) }
     }
 
     /// The Delete waiting on its toast happens now; its toast, and the
@@ -548,10 +603,73 @@ final class AppModel {
         if toast?.id == pending.toast { toast = nil }
         // Its job stops: a scan or import that finished later would save
         // the document again.
-        if jobs.current?.documentID == pending.id { jobs.cancel() }
-        documents.remove(pending.id)
+        if let working = jobs.current?.documentID, pending.ids.contains(working) { jobs.cancel() }
+        pending.ids.forEach(documents.remove)
         do {
-            try library.delete(pending.id)
+            try library.delete(pending.ids)
+        } catch {
+            present(error)
+        }
+        // Their replies went with them, from other documents' Reply panes
+        // too; after a failure, the ones deleted before it.
+        refreshDocuments()
+    }
+
+    // MARK: Projects (#1091 Decisions 9, 33, 34)
+
+    /// New Project: an empty Project, named as every new one is, whose page
+    /// opens.
+    func newProject(named name: String) {
+        do {
+            guard let project = try library.createProject(named: name) else { return }
+            Haptics.decision()
+            openProject(project.id)
+        } catch {
+            present(error)
+        }
+    }
+
+    /// Delete Project…: with documents it asks what becomes of them; empty,
+    /// it asks to delete (`Presenter`).
+    func askToDeleteProject(_ id: ProjectID) {
+        guard library.project(id) != nil else { return }
+        navigator.present(.deleteProject(id))
+    }
+
+    /// Delete Project, answered: the Project and its own AI replies go, and
+    /// its documents go to Unfiled or with it. No Undo: the question was
+    /// the confirmation. Its page, if it shows, gives way to All Projects.
+    func deleteProject(_ id: ProjectID, documents choice: ProjectDeletion) {
+        // The question goes even though its alert stops matching first.
+        navigator.dismiss(Presentation.deleteProject(id).id)
+        commitPendingDelete()
+        guard let project = library.project(id) else { return }
+        let members = library.documents(in: id).map(\.id)
+        if choice == .deleteDocuments {
+            if let open = navigator.openDocument, members.contains(open) { showStart() }
+            if let working = jobs.current?.documentID, members.contains(working) { jobs.cancel() }
+        }
+        do {
+            try library.deleteProject(id, documents: choice)
+        } catch {
+            present(error)
+        }
+        if choice == .deleteDocuments {
+            members.filter { library.document($0) == nil }.forEach(documents.remove)
+        }
+        // Moved ones show Unfiled, and their replies; the others lose the
+        // Project's own.
+        refreshDocuments()
+        guard library.project(id) == nil else { return }
+        if navigator.project == id { open(.projects) }
+        Haptics.warning()
+        show(ToastMessage(text: String(localized: "Deleted \(project.name)")))
+    }
+
+    /// A swipe on a Project page's Always or Never row.
+    func removeListed(_ wording: String, always: Bool, from project: ProjectID) {
+        do {
+            try library.removeListed(wording, always: always, from: project)
         } catch {
             present(error)
         }

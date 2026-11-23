@@ -4,8 +4,8 @@
 use super::*;
 use crate::{
     document_session::{Candidate, Category, DocumentSession},
-    library::TextRange,
     test_support::Scratch,
+    text::TextRange,
 };
 
 const KEY: [u8; 32] = [9; 32];

@@ -1,9 +1,10 @@
 import Foundation
 import Observation
 
-/// The sidebar's section rows: each opens a page in the main area.
+/// The sidebar's section rows: each opens a page in the main area. All
+/// Projects, Unfiled and All Documents (#1091 Decision 33).
 enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case projects, documents
+    case projects, unfiled, documents
     var id: String { rawValue }
 }
 
@@ -13,11 +14,12 @@ enum Intake: String, Identifiable, Hashable {
     var id: String { rawValue }
 }
 
-/// What the main area shows (ADR 0102): Start, a sidebar section's page, or
-/// a document.
+/// What the main area shows (ADR 0102): Home (`start`), a sidebar
+/// section's page, a Project's page, or a document.
 enum Destination: Hashable {
     case start
     case section(SidebarSection)
+    case project(ProjectID)
     case document(DocumentID)
 }
 
@@ -26,8 +28,15 @@ enum Destination: Hashable {
 enum Presentation: Identifiable {
     /// Rename…: the document's new title.
     case renameDocument(DocumentID)
-    /// Rename… on the Cases page: the case's new name.
+    /// Rename… on a Project's page: its new name.
     case renameProject(ProjectID)
+    /// New Project: its name.
+    case newProject
+    /// Delete Project…: what becomes of its documents (#1091 Decision 9).
+    case deleteProject(ProjectID)
+    /// An import of a file already in mdoc: Open Existing or Import Again
+    /// (#1091 Decision 7).
+    case repeatedImport(RepeatedImport)
     /// Move to case › New case…: a name for the case the document moves to.
     case moveToNewProject(DocumentID)
     /// Move to case › All projects…: every other case, to move the document to.
@@ -48,6 +57,9 @@ enum Presentation: Identifiable {
         switch self {
         case .renameDocument(let id): "rename-\(id.rawValue)"
         case .renameProject(let id): "rename-project-\(id.rawValue)"
+        case .newProject: "new-project"
+        case .deleteProject(let id): "delete-project-\(id.rawValue)"
+        case .repeatedImport(let repeated): "repeated-import-\(repeated.id)"
         case .moveToNewProject(let id): "new-project-\(id.rawValue)"
         case .chooseProject(let id): "choose-project-\(id.rawValue)"
         case .share(let items): "share-\(items.id)"
@@ -86,6 +98,11 @@ final class Navigator {
     /// The section whose page shows, if one does.
     var section: SidebarSection? {
         if case .section(let section) = destination { section } else { nil }
+    }
+
+    /// The Project whose page shows, if one does.
+    var project: ProjectID? {
+        if case .project(let id) = destination { id } else { nil }
     }
 
     /// Shows `destination` in the main area, closing the drawer and

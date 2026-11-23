@@ -41,7 +41,7 @@ enum CoreFactory {
             let storage = try uiTestingStorage()
             if !launch.keepsLibrary {
                 clearKeepingDetector(storage)
-                for folder in [storage.vault, storage.intake, storage.viewing] {
+                for folder in [storage.vault, storage.intake, storage.viewing, storage.restorePlace] {
                     try? FileManager.default.removeItem(at: folder)
                 }
             }
@@ -116,12 +116,14 @@ enum CoreFactory {
             storage: storage, keys: keyStore(testing: launch.isUITesting), physicalMemory: launch.physicalMemory)
     }
 
-    /// The extension gets the library only: restoring needs no model.
-    static func restoreExtension() throws -> any Library {
+    /// The extension gets the Vault's replies only, and the place of the
+    /// last Copy for AI or Share: restoring needs no model. It makes no
+    /// folder: a Vault the app has not made yet is refused.
+    static func restoreExtension() throws -> (store: any ReplyStore, sharedLast: RestorePlace?) {
         let testing = opensUITestLibrary
         let storage = try testing ? uiTestingStorage() : MdocStorage.shared()
-        try storage.prepare()
-        return try RealCore.library(storage: storage, keys: keyStore(testing: testing))
+        let store = try RealCore.replyStore(storage: storage, keys: keyStore(testing: testing))
+        return (store, RestorePlaceFile(storage).read())
     }
 
     private static func keyStore(testing: Bool) -> any VaultKeyStore {

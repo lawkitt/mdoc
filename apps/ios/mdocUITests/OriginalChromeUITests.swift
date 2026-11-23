@@ -14,10 +14,8 @@ final class OriginalChromeUITests: XCTestCase {
     @MainActor
     func testALockedScanCanShowItsOriginalWhileImportNeedsTheOCRModel() throws {
         let app = MdocUITest.launch(seed: "tests/fixtures/pdf-source/partly-scanned-aes256.pdf")
-        MdocUITest.revealSidebar(app)
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH 'partly-scanned-aes256'"))
-            .firstMatch
+        let row = MdocUITest.listedRow(
+            app, NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH 'partly-scanned-aes256'"))
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         row.tap()
 

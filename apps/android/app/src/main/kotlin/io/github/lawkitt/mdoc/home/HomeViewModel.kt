@@ -20,6 +20,12 @@ import io.github.lawkitt.mdoc.core.DocumentSummary
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.ProjectId
 import io.github.lawkitt.mdoc.core.ProjectSummary
+import io.github.lawkitt.mdoc.core.Category
+import io.github.lawkitt.mdoc.core.ProjectDeletion
+import io.github.lawkitt.mdoc.core.ProjectDetails
+import io.github.lawkitt.mdoc.core.ProjectNameRow
+import io.github.lawkitt.mdoc.core.RestoreResult
+import io.github.lawkitt.mdoc.core.SavedReplyRow
 import io.github.lawkitt.mdoc.core.Originals
 import io.github.lawkitt.mdoc.core.ScanSession
 import io.github.lawkitt.mdoc.core.SourceKind
@@ -47,14 +53,50 @@ import kotlinx.coroutines.withContext
 sealed interface PendingAdd {
     val suggestedTitle: String
 
-    data class Text(override val suggestedTitle: String) : PendingAdd
+    /** The Project whose page it was started from: the add sheet starts on it (#1091 Decision 35). */
+    val into: ProjectId?
 
-    data class Received(val source: ImportSource, override val suggestedTitle: String, val folder: File) : PendingAdd
+    data class Text(override val suggestedTitle: String, override val into: ProjectId? = null) : PendingAdd
+
+    data class Received(
+        val source: ImportSource,
+        override val suggestedTitle: String,
+        val folder: File,
+        /** The name of the file it came from, for "Already in mdoc". */
+        val fileName: String? = null,
+        override val into: ProjectId? = null,
+    ) : PendingAdd
 }
 
-/** Home's view state, built from the core's snapshots. */
+/**
+ * An import whose file is already in mdoc (#1091 Decision 7): it asks Open
+ * Existing or Import Again.
+ */
+data class RepeatedImport(
+    val pending: PendingAdd.Received,
+    /** The document to open instead: the most recently updated of those imported from the same bytes. */
+    val existing: DocumentId,
+    /** The question's name for it: the file's. */
+    val name: String,
+)
+
+/** Delete's first half: the documents leave the lists while a snackbar offers Undo. */
+data class PendingDelete(val ids: List<DocumentId>, val title: String?, val serial: Long)
+
+/** A saved reply shown restored: null while it is restored, [failed] when it can't be. */
+data class ShownReply(val reply: SavedReplyRow, val restored: RestoreResult? = null, val failed: Boolean = false)
+
+/** A Project's page beyond its documents: its replies and its names. */
+data class ProjectPageData(
+    val project: ProjectId,
+    val replies: List<SavedReplyRow> = emptyList(),
+    val details: ProjectDetails = ProjectDetails(),
+)
+
+/** The library's view state, built from the core's snapshots: Home, the drawer and the lists. */
 data class HomeState(
     val documents: List<DocumentSummary> = emptyList(),
+    /** Pinned first, then most recently updated (#1091 Decision 28). */
     val projects: List<ProjectSummary> = emptyList(),
     /** Above the detector floor: Find names is offered. */
     val canFindNames: Boolean = true,
@@ -65,7 +107,52 @@ data class HomeState(
     val scanPageCount: Int = 0,
     /** A file mdoc could not take. */
     val refused: String? = null,
-)
+    /** Deleted, their snackbar still offering Undo. */
+    val pendingDelete: PendingDelete? = null,
+    /** "Deleted <name>" after a Project's delete. */
+    val deletedProject: String? = null,
+    val repeated: RepeatedImport? = null,
+    val page: ProjectPageData? = null,
+    /** A saved reply a Project's Replies shows restored. */
+    val shownReply: ShownReply? = null,
+) {
+    private val hidden: Set<DocumentId> get() = pendingDelete?.ids?.toSet().orEmpty()
+
+    /** Every document the lists show, most recently changed first. */
+    val listed: List<DocumentSummary> get() = documents.filter { it.id !in hidden }
+
+    /** The documents with names left to review, for the drawer's To review. */
+    val toReview: List<DocumentSummary> get() = listed.filter { it.phase == DocumentPhase.Reviewing }
+
+    /** The document most worth going back to: the newest with names left to review (Home's Continue). */
+    val continueDocument: DocumentSummary? get() = toReview.maxByOrNull { it.updated }
+
+    /** The drawer's Projects: the first five. */
+    val topProjects: List<ProjectSummary> get() = projects.take(SIDEBAR_PROJECTS)
+
+    /** Unfiled: the documents in no Project. */
+    val unfiled: List<DocumentSummary> get() = listed.filter { it.projectId == null }
+
+    fun project(id: ProjectId?): ProjectSummary? = projects.firstOrNull { it.id == id }
+
+    /** A Project's documents, most recently changed first. */
+    fun documentsIn(project: ProjectId): List<DocumentSummary> = listed.filter { it.projectId == project }
+
+    /** Search over titles and Project names (#1091 Decision 25): documents, then Projects. */
+    fun search(query: String): Pair<List<DocumentSummary>, List<ProjectSummary>> {
+        val needle = query.trim()
+        if (needle.isEmpty()) return emptyList<DocumentSummary>() to emptyList()
+        val documents = listed.filter { document ->
+            document.title.contains(needle, ignoreCase = true) ||
+                project(document.projectId)?.name?.contains(needle, ignoreCase = true) == true
+        }
+        return documents to projects.filter { it.name.contains(needle, ignoreCase = true) }
+    }
+
+    companion object {
+        const val SIDEBAR_PROJECTS = 5
+    }
+}
 
 class HomeViewModel(
     private val core: () -> AppCore,
@@ -74,6 +161,8 @@ class HomeViewModel(
     private val scan: ScanSession = ScanSession(),
     /** Where the scan is saved for a process stopped while the camera is open. */
     private val saved: SavedStateHandle = SavedStateHandle(),
+    /** Work that must finish though the view model goes: a committed delete. */
+    private val outliving: kotlinx.coroutines.CoroutineScope = Outliving,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = mutable.asStateFlow()
@@ -112,24 +201,200 @@ class HomeViewModel(
         }
     }
 
+    /** Delete from a list, as iOS's swipe does: the document leaves the lists and a snackbar offers Undo. */
+    fun delete(id: DocumentId) = delete(listOf(id))
+
+    private var deletes = 0L
+
     /**
-     * Deletes a document from Home, as iOS's swipe does. A job on it stops
-     * first, so it cannot save the document again.
+     * Delete of documents selected together (Unfiled's Select): one
+     * snackbar offers Undo for all of them, as Delete does for one. They
+     * are deleted when it ends, or when mdoc stops.
      */
-    fun delete(id: DocumentId) = viewModelScope.launch {
-        val jobs = jobs
-        if (jobs != null && jobs.current.value?.documentId == id) {
+    fun delete(ids: List<DocumentId>) {
+        commitPendingDelete()
+        val listed = state.value.listed.filter { it.id in ids }
+        if (listed.isEmpty()) return
+        val title = listed.singleOrNull()?.title
+        mutable.update { it.copy(pendingDelete = PendingDelete(listed.map { document -> document.id }, title, ++deletes)) }
+    }
+
+    /** Undo of Delete: the documents are back where they were. */
+    fun undoDelete() = mutable.update { it.copy(pendingDelete = null) }
+
+    /**
+     * The Delete waiting on its snackbar happens now. A job on one of them
+     * stops first, so it cannot save the document again.
+     */
+    fun commitPendingDelete() {
+        val before = mutable.getAndUpdate {
+            it.copy(pendingDelete = null, documents = it.documents.filter { document -> document.id !in it.pendingDelete?.ids.orEmpty() })
+        }
+        val pending = before.pendingDelete ?: return
+        val deleting = before.documents.filter { it.id in pending.ids }
+        // Not the view model's scope: a delete answered as mdoc closes still
+        // happens when the activity finishes and the view model goes.
+        outliving.launch {
+            stopJob(deleting)
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val documents = core().documents
+                    if (pending.ids.size == 1) documents.delete(pending.ids.single()) else documents.deleteDocuments(pending.ids)
+                }
+            }.onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+            // Their replies went with them; after a failure, the ones deleted before it.
+            refresh()
+        }
+    }
+
+    /**
+     * A job on one of `ids` stops, and is waited for. A document imported
+     * this run is listed by its import's id, while its jobs after the first
+     * save run under its Vault id: both are matched, as the document's own
+     * screen does.
+     */
+    private suspend fun stopJob(documents: List<DocumentSummary>) {
+        val jobs = jobs ?: return
+        val running = jobs.current.value?.documentId ?: return
+        if (documents.any { it.id == running || it.vaultId == running.raw }) {
             jobs.cancel(CancelReason.User)
             jobs.current.first { it == null }
         }
-        withContext(Dispatchers.IO) { runCatching { core().documents.delete(id) } }
+    }
+
+    // Projects (#1091 Decisions 9, 33, 34)
+
+    /**
+     * New Project: named as every new Project is (#677), trimmed and
+     * numbered when a Project has the name already; null for a blank name.
+     */
+    suspend fun createProject(name: String): ProjectId? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return null
+        val taken = state.value.projects.map { it.name }
+        return withContext(Dispatchers.IO) {
+            runCatching { core().documents.createProject(unusedName(trimmed, taken)).id }
+                .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+                .getOrNull()
+        }.also { refreshNow() }
+    }
+
+    /** Rename…: a blank name changes nothing. */
+    fun renameProject(id: ProjectId, name: String) = viewModelScope.launch {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return@launch
+        withContext(Dispatchers.IO) { runCatching { core().documents.renameProject(id, trimmed) } }
             .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
         refresh()
     }
 
+    /**
+     * Delete Project, answered: the Project and its own AI replies go, and
+     * its documents go to Unfiled or with it. No Undo: the question was the
+     * confirmation. True when it is gone.
+     */
+    suspend fun deleteProject(id: ProjectId, documents: ProjectDeletion): Boolean {
+        commitPendingDelete()
+        val project = state.value.project(id) ?: return false
+        if (documents == ProjectDeletion.DeleteDocuments) {
+            stopJob(state.value.documents.filter { it.projectId == id })
+        }
+        val deleted = withContext(Dispatchers.IO) { runCatching { core().documents.deleteProject(id, documents) } }
+            .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+            .isSuccess
+        refreshNow()
+        if (deleted) mutable.update { it.copy(deletedProject = project.name) }
+        return deleted
+    }
+
+    fun deletedProjectShown() = mutable.update { it.copy(deletedProject = null) }
+
+    /** A Project page's replies and names, read from the Vault as they are now. */
+    fun loadPage(id: ProjectId) = viewModelScope.launch(Dispatchers.IO) {
+        val page = runCatching {
+            val documents = core().documents
+            documents.refresh()
+            ProjectPageData(id, documents.projectReplies(id), documents.projectDetails(id))
+        }.getOrElse { ProjectPageData(id) }
+        mutable.update { it.copy(page = page) }
+    }
+
+    /** A Project page's Remove on an Always or Never wording. */
+    fun removeListed(id: ProjectId, wording: String, always: Boolean) = viewModelScope.launch {
+        withContext(Dispatchers.IO) { runCatching { core().documents.removeListed(id, wording, always) } }
+            .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+        loadPage(id)
+    }
+
+    /** A saved reply restored, or null when it can't be. */
+    suspend fun restoreSavedReply(reply: String): RestoreResult? =
+        withContext(Dispatchers.IO) { runCatching { core().documents.restoreSavedReply(reply) }.getOrNull() }
+
+    /** A Project's Replies shows `reply` restored, with the people it named when saved, as they are now. */
+    fun showSavedReply(reply: SavedReplyRow) {
+        mutable.update { it.copy(shownReply = ShownReply(reply)) }
+        viewModelScope.launch {
+            val restored = restoreSavedReply(reply.id)
+            mutable.update { state ->
+                if (state.shownReply?.reply != reply) state else state.copy(shownReply = ShownReply(reply, restored, restored == null))
+            }
+        }
+    }
+
+    fun hideSavedReply() = mutable.update { it.copy(shownReply = null) }
+
+    // Repeated imports (#1091 Decision 7)
+
+    /** "Already in mdoc" answered Open Existing: what was brought in goes, and the caller opens the returned document. */
+    fun openExisting(): DocumentId? {
+        val repeated = mutable.getAndUpdate { it.copy(repeated = null) }.repeated ?: return null
+        repeated.pending.folder.deleteRecursively()
+        return repeated.existing
+    }
+
+    /** Answered Import Again: it goes on to the add sheet, as any other import. */
+    fun importAgain() {
+        val repeated = mutable.getAndUpdate { it.copy(repeated = null) }.repeated ?: return
+        replaceAdding(repeated.pending)
+    }
+
+    /** Answered Cancel: nothing is imported, and what was brought in goes. */
+    fun cancelRepeated() {
+        mutable.getAndUpdate { it.copy(repeated = null) }.repeated?.pending?.folder?.deleteRecursively()
+    }
+
+    /**
+     * The saved document `pending` repeats, when its file's bytes are those
+     * of one listed (#1091 Decision 7): the most recently updated. Only a
+     * file, or a single photo, has a source to compare: camera pages and
+     * photos picked together become a PDF the core makes, and a paste
+     * keeps no source.
+     */
+    private fun repeatOf(pending: PendingAdd.Received): DocumentId? {
+        val file = sourceFile(pending.source) ?: return null
+        // One deleted, its Undo still offered, is not opened.
+        val deleting = state.value.pendingDelete?.ids.orEmpty()
+        return core().documents.documentsFromSource(file).firstOrNull { it !in deleting }
+    }
+
+    /** Something brought in waits for its title and Project, unless its file is already in mdoc: then it asks first. */
+    private fun offer(pending: PendingAdd.Received, existing: DocumentId?) {
+        if (existing == null) {
+            replaceAdding(pending)
+        } else {
+            cancelRepeated()
+            mutable.update { it.copy(repeated = RepeatedImport(pending, existing, pending.fileName ?: pending.suggestedTitle)) }
+        }
+    }
+
     /** Reads the library off the main thread; a core that failed to open is tried again. */
     fun refresh() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch { refreshNow() }
+    }
+
+    /** [refresh], done when it returns. */
+    suspend fun refreshNow() {
+        withContext(Dispatchers.IO) {
             val next = runCatching {
                 val core = core()
                 val library = core.documents.snapshot()
@@ -140,17 +405,40 @@ class HomeViewModel(
                     loaded = true,
                 )
             }.getOrElse { HomeState(loaded = true, error = it.message ?: it.toString()) }
-            mutable.update { next.copy(adding = it.adding, scanPageCount = it.scanPageCount, refused = it.refused) }
+            mutable.update {
+                next.copy(
+                    adding = it.adding, scanPageCount = it.scanPageCount, refused = it.refused,
+                    pendingDelete = it.pendingDelete, deletedProject = it.deletedProject, repeated = it.repeated, page = it.page,
+                    shownReply = it.shownReply,
+                )
+            }
         }
+        // A Project's page reads its replies and names again: a reply Restore
+        // with mdoc saved changes no document.
+        state.value.page?.project?.let(::loadPage)
     }
 
-    fun startPaste(title: String) {
+    /** Paste, started from a Project's page (`into`) or elsewhere. */
+    fun startPaste(title: String, into: ProjectId? = null) {
         receiving?.cancel()
-        replaceAdding(PendingAdd.Text(title))
+        replaceAdding(PendingAdd.Text(title, into))
     }
 
-    /** Stages clean copies before asking for a title and Project. */
-    fun received(resolver: ContentResolver, uris: List<Uri>, kind: SourceKind?, fallbackTitle: String) {
+    /**
+     * The Project whose page Files or Photos was opened from, for what the
+     * picker returns; "Open in mdoc" from another app starts nowhere.
+     */
+    var pickingInto: ProjectId?
+        get() = saved.get<String>(PICKING_INTO)?.let(::ProjectId)
+        set(value) {
+            saved[PICKING_INTO] = value?.raw
+        }
+
+    /**
+     * Stages clean copies before asking for a title and Project; `into`,
+     * the Project whose page it was started from.
+     */
+    fun received(resolver: ContentResolver, uris: List<Uri>, kind: SourceKind?, fallbackTitle: String, into: ProjectId? = null) {
         if (uris.isEmpty()) return
         receiving?.cancel()
         receiving = viewModelScope.launch(Dispatchers.IO) {
@@ -200,8 +488,10 @@ class HomeViewModel(
                 } else {
                     ImportSource.File(staged.single(), detected)
                 }
+                val received = PendingAdd.Received(source, title, stage, staged.singleOrNull()?.name, into)
+                val existing = repeatOf(received)
                 withContext(Dispatchers.Main.immediate) {
-                    replaceAdding(PendingAdd.Received(source, title, stage))
+                    offer(received, existing)
                     handedOff = true
                 }
             } catch (error: CancellationException) {
@@ -245,8 +535,10 @@ class HomeViewModel(
      * The camera's output for the next page: a raw file outside
      * `originals/`, saved with the scan so a stopped process finds it.
      */
-    fun takePage(context: Context): Uri? {
+    fun takePage(context: Context, into: ProjectId? = null): Uri? {
         if (scan.state.value.capture != null) return null
+        // A scan's first page says where it lands.
+        if (scan.state.value.pages.isEmpty()) saved[SCAN_INTO] = into?.raw
         return runCatching { CameraCapture.create(context) }
             .onSuccess { scan.begin(checkNotNull(CameraCapture.file(context, it))) }
             .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
@@ -267,12 +559,14 @@ class HomeViewModel(
         if (current.pages.isEmpty() || current.capture != null) return
         receiving?.cancel()
         val (folder, files) = Originals(core().storage).finishScanStage(scan.finish())
-        replaceAdding(PendingAdd.Received(ImportSource.Pages(files, SourceKind.Scan), title, folder))
+        val into = saved.get<String>(SCAN_INTO)?.let(::ProjectId)
+        replaceAdding(PendingAdd.Received(ImportSource.Pages(files, SourceKind.Scan), title, folder, into = into))
     }
 
     fun cancelAdd() {
         receiving?.cancel()
         replaceAdding(null)
+        cancelRepeated()
     }
 
     private fun replaceAdding(adding: PendingAdd?) {
@@ -324,6 +618,8 @@ class HomeViewModel(
         private const val SCAN_CAPTURE = "scan.capture"
         private const val SCAN_RETURNED = "scan.returned"
         private const val SCAN_SEQUENCE = "scan.sequence"
+        private const val SCAN_INTO = "scan.into"
+        private const val PICKING_INTO = "picking.into"
 
         /**
          * An image's bytes in one array of exactly its size: no growing
@@ -382,6 +678,9 @@ class HomeViewModel(
             return if (at == bytes.size) bytes else bytes.copyOf(at)
         }
 
+        /** The process's own scope, for work the view model's going must not stop. */
+        private val Outliving = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main.immediate)
+
         private const val SPILL_PREFIX = "intake-"
         private var spillsSwept = false
 
@@ -429,6 +728,46 @@ class HomeViewModel(
             "image/heif" -> "heif"
             // TIFF on the phones is #1064: refused with the formats mdoc opens.
             else -> null
+        }
+
+        /**
+         * The one file whose bytes a saved document records as its source
+         * (#1091 Decision 7): a file, or a single photo. Camera pages and
+         * photos picked together become a PDF the core makes, and a paste
+         * keeps no source.
+         */
+        fun sourceFile(source: ImportSource): File? = when (source) {
+            is ImportSource.File -> source.file
+            is ImportSource.Pages -> source.pages.singleOrNull()?.takeIf { source.kind == SourceKind.Image }
+            is ImportSource.Text -> null
+        }
+
+        /** A new Project's name: `name`, or numbered from 2 when a Project has it already (iOS `unusedName`). */
+        fun unusedName(name: String, among: List<String>): String {
+            val taken = among.toSet()
+            if (name !in taken) return name
+            return generateSequence(2) { it + 1 }.map { "$name $it" }.first { it !in taken }
+        }
+
+        /**
+         * A Project's names matching `query` (by alias or wording), grouped by
+         * category in the categories' order, each group by alias.
+         */
+        fun names(names: List<ProjectNameRow>, query: String): List<Pair<Category, List<ProjectNameRow>>> {
+            val needle = query.trim()
+            val found = names.filter { name ->
+                needle.isEmpty() || name.alias.contains(needle, ignoreCase = true) ||
+                    name.originals.any { it.contains(needle, ignoreCase = true) }
+            }
+            return Category.entries.mapNotNull { category ->
+                found.filter { it.category == category }.sortedBy { it.alias.lowercase() }.takeIf { it.isNotEmpty() }?.let { category to it }
+            }
+        }
+
+        /** The wordings of a list matching `query`. */
+        fun wordings(wordings: List<String>, query: String): List<String> {
+            val needle = query.trim()
+            return if (needle.isEmpty()) wordings else wordings.filter { it.contains(needle, ignoreCase = true) }
         }
 
         fun factory(app: MdocApplication): ViewModelProvider.Factory = viewModelFactory {

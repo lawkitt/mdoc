@@ -84,6 +84,31 @@ data class DocumentSummary(
     val vaultId: String? = null,
 )
 
+/** One of a Project's names on its page: its alias, its category and the wordings it stands for, the one restore puts back first. */
+data class ProjectNameRow(val alias: String, val category: Category, val originals: List<String>)
+
+/** A wording on a Project's Always list, in the category scans propose it in. */
+data class AlwaysWording(val wording: String, val category: Category)
+
+/** What a Project's page shows beside its documents and replies: its names and its Always and Never lists. */
+data class ProjectDetails(
+    val names: List<ProjectNameRow> = emptyList(),
+    val always: List<AlwaysWording> = emptyList(),
+    val never: List<String> = emptyList(),
+)
+
+/** A saved AI reply as a Project's Replies lists it; no text. */
+data class SavedReplyRow(val id: String, val title: String, /** Milliseconds since the epoch. */ val created: Long)
+
+/** What deleting a Project that has documents does with them (#1091 Decision 9): the app asks. */
+enum class ProjectDeletion {
+    /** Each goes to Unfiled with its names and its replies; the Project's own AI replies go with the Project. */
+    MoveToUnfiled,
+
+    /** They are deleted with it, and their replies. */
+    DeleteDocuments,
+}
+
 data class LibrarySnapshot(
     val projects: List<ProjectSummary> = emptyList(),
     val documents: List<DocumentSummary> = emptyList(),

@@ -25,10 +25,7 @@ final class LivePreviewUITests: XCTestCase {
         app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo.appendingPathComponent(seed).path
         app.launch()
         // Whatever its status: the rules find no name in the legal opinion.
-        MdocUITest.revealSidebar(app)
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@", "\(title),"))
-            .firstMatch
+        let row = MdocUITest.listedRow(app, title: title)
         XCTAssertTrue(row.waitForExistence(timeout: 120))
         row.tap()
         let text = app.textViews["document-text"]

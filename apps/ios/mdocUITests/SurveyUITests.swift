@@ -54,12 +54,12 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["setup-download"].waitForExistence(timeout: 10))
         shot("07-document-needs-setup")
 
-        goHome(app)
-        XCTAssertTrue(app.descendants(matching: .any)["document-row"].firstMatch.waitForExistence(timeout: 10))
+        let listed = MdocUITest.anyDocumentRow(app)
+        XCTAssertTrue(listed.waitForExistence(timeout: 10))
         shot("08-home-one-document")
         // Delete from the row's menu: the toast offers Undo (Q17), which
-        // brings the document back, open.
-        app.descendants(matching: .any)["document-row"].firstMatch.press(forDuration: 1.0)
+        // brings the document back.
+        listed.press(forDuration: 1.0)
         let delete = app.buttons["Delete"].firstMatch
         XCTAssertTrue(delete.waitForExistence(timeout: MdocUITest.timeout))
         delete.tap()
@@ -67,7 +67,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(undo.waitForExistence(timeout: MdocUITest.timeout))
         shot("40-delete-undo")
         undo.tap()
-        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        XCTAssertTrue(MdocUITest.anyDocumentRow(app).waitForExistence(timeout: 10))
         goHome(app)
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))

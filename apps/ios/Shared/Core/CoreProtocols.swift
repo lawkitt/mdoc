@@ -18,9 +18,8 @@ protocol JobObserver: AnyObject, Sendable {
     func onCancel(_ handler: @escaping @Sendable () -> Void)
 }
 
-/// Projects and stored documents: the app's over the Vault (ADR 0125), and
-/// the Restore extension's over the old library until Vault & Projects
-/// item 10 (`restore`, `saveReply` and the snapshot's cases only).
+/// Projects and stored documents, the app's over the Vault (ADR 0125). The
+/// Restore extension has a `ReplyStore` instead.
 protocol Library: AnyObject, Sendable {
     func snapshot() -> LibrarySnapshot
     func session(for document: DocumentID) throws -> any DocumentSession
@@ -32,12 +31,14 @@ protocol Library: AnyObject, Sendable {
     /// A new document left empty goes when it is left (ADR 0109). True
     /// when it went; any other document stays.
     func discardIfEmpty(_ document: DocumentID) throws -> Bool
-    /// Restores a reply in place with one Project's mapping. Needs no
-    /// model, so the share extension can call it.
-    func restore(reply: String, in projectID: ProjectID) throws -> RestoreResult
-    /// Keeps `reply`, in alias form, for the document (ADR 0078): the
-    /// Vault saves it as an AI Reply to text shared from it.
-    func saveReply(_ reply: String, to document: DocumentID) throws
+    /// Takes in what another handle wrote meanwhile, the Restore
+    /// extension's replies above all (#1091 Decision 20): true when
+    /// anything changed.
+    @discardableResult
+    func takeInChanges() -> Bool
+    /// Saved reply `id` restored with the people it named when saved, as
+    /// they are now (#1091 Decision 18).
+    func restoreSavedReply(_ id: ReplyID) throws -> RestoreResult
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
     func saveDeferred() throws -> [DocumentID]
@@ -63,6 +64,26 @@ protocol Library: AnyObject, Sendable {
     /// their old aliases there. The names the move added go again where
     /// nothing uses them, unless text was shared from there since.
     func undoMove(_ move: ProjectMove) throws -> ProjectMove
+    /// New Project: an empty Project named `name`, trimmed; a blank name is
+    /// refused.
+    func createProject(named name: String) throws -> ProjectSummary
+    /// A Project page's names and its Always and Never lists.
+    func projectDetails(_ projectID: ProjectID) throws -> ProjectDetails
+    /// Deletes a Project with its own AI replies; its documents go to
+    /// Unfiled or are deleted, as `documents` says. A document open in
+    /// this run follows: moved, it opens again in Unfiled; deleted, nothing
+    /// saves it again.
+    func deleteProject(_ projectID: ProjectID, documents: ProjectDeletion) throws
+    /// Unfiled's multi-select delete. A failure stops it, and the documents
+    /// deleted before it stay deleted.
+    func deleteDocuments(_ documents: [DocumentID]) throws
+    /// Takes `wording` off a Project's Always list, or its Never list when
+    /// `always` is false.
+    func removeListed(_ wording: String, always: Bool, from projectID: ProjectID) throws
+    /// The saved documents imported from a file of the same bytes, most
+    /// recently updated first (#1091 Decision 7); none when it can't be
+    /// read.
+    func documentsFromSource(_ file: URL) -> [DocumentID]
 }
 
 /// How a save that followed review taps went (`Library.observeSaves`).
@@ -75,6 +96,8 @@ enum SaveEvent: Sendable {
 }
 
 extension Library {
+    func takeInChanges() -> Bool { false }
+    func restoreSavedReply(_ id: ReplyID) throws -> RestoreResult { throw CoreError.notFound }
     func saveDeferred() throws -> [DocumentID] { [] }
     func saveChanges() throws {}
     func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void) {}
@@ -83,6 +106,14 @@ extension Library {
     func moveDocument(_ document: DocumentID, to target: ProjectChoice) throws -> ProjectMove { throw CoreError.notFound }
     func undoMove(_ move: ProjectMove) throws -> ProjectMove { throw CoreError.noProject }
     func discardIfEmpty(_ document: DocumentID) throws -> Bool { false }
+    func createProject(named name: String) throws -> ProjectSummary { throw CoreError.noProject }
+    func projectDetails(_ projectID: ProjectID) throws -> ProjectDetails { throw CoreError.noProject }
+    func deleteProject(_ projectID: ProjectID, documents: ProjectDeletion) throws { throw CoreError.noProject }
+    func deleteDocuments(_ documents: [DocumentID]) throws {
+        for document in documents { try deleteDocument(document) }
+    }
+    func removeListed(_ wording: String, always: Bool, from projectID: ProjectID) throws { throw CoreError.noProject }
+    func documentsFromSource(_ file: URL) -> [DocumentID] { [] }
 }
 
 /// One document's import, OCR, review and hand-off.
@@ -116,9 +147,14 @@ protocol DocumentSession: AnyObject, Sendable {
     /// Saves now what review taps left for their save (ADR 0104): before
     /// the document is left for another, or mdoc leaves the foreground.
     func saveChanges() throws
-    /// Restores `reply` with this document's case and keeps it as the
-    /// document's reply.
+    /// Saves `reply` in the Vault as an AI Reply to text shared from this
+    /// document (its Project's, or its own while Unfiled) and shows it in
+    /// the Reply pane, restored.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot
+    /// The Reply pane shows saved reply `id`, one of the snapshot's
+    /// `replies`.
+    func showReply(_ id: ReplyID) -> DocumentSnapshot
+    /// Remove reply: deletes the reply the pane shows from the Vault.
     func clearReply() throws -> DocumentSnapshot
 
     // MARK: Review bar (ADR 0098)

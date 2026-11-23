@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// The Restore with mdoc sheet: the reply restored with one case, a case
-/// picker, then Copy, Share and Save to document.
+/// The Restore with mdoc sheet: the reply restored with one place, a
+/// picker of Projects and Unfiled documents, then Copy, Share and Save.
 struct RestoreExtensionView: View {
     let sheet: RestoreSheet
     let close: () -> Void
@@ -42,13 +42,13 @@ struct RestoreExtensionView: View {
     @ViewBuilder
     private func content(_ model: RestoreViewModel) -> some View {
         VStack(spacing: 0) {
-            if model.projects.isEmpty {
+            if model.places.isEmpty {
                 ContentUnavailableView(
-                    "No Projects yet",
+                    "No documents yet",
                     systemImage: "folder",
                     description: Text(CoreError.noProject.errorDescription ?? ""))
             } else {
-                projectPicker(model)
+                placePicker(model)
                 Divider()
                 if let result = model.result {
                     RestoredTextView(result: result)
@@ -65,30 +65,42 @@ struct RestoreExtensionView: View {
         ContentUnavailableView("Not restored", systemImage: "exclamationmark.triangle", description: Text(message))
     }
 
-    private func projectPicker(_ model: RestoreViewModel) -> some View {
+    /// Projects, then Unfiled documents (#1091, the maintainer's (a)).
+    private func placePicker(_ model: RestoreViewModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Menu {
-                Picker("Project", selection: Binding(
-                    get: { model.selectedProject },
-                    set: { if let id = $0 { model.selectProject(id) } })
+                Picker("Restore with", selection: Binding(
+                    get: { model.selected },
+                    set: { if let place = $0 { model.select(place) } })
                 ) {
-                    ForEach(model.projects) { item in
-                        Label(item.name, systemImage: "folder").tag(Optional(item.id))
+                    if !model.places.projects.isEmpty {
+                        Section("Projects") {
+                            ForEach(model.places.projects) { item in
+                                Label(item.name, systemImage: "folder").tag(Optional(RestorePlace.project(item.id)))
+                            }
+                        }
+                    }
+                    if !model.places.unfiled.isEmpty {
+                        Section("Unfiled") {
+                            ForEach(model.places.unfiled) { item in
+                                Label(item.title, systemImage: "doc.text").tag(Optional(RestorePlace.document(item.id)))
+                            }
+                        }
                     }
                 }
             } label: {
                 HStack {
-                    Text("Project")
+                    Text(placeKind(model.selected))
                         .foregroundStyle(.secondary)
-                    Text(model.selectedProjectName ?? "")
+                    Text(model.selectedName ?? "")
                         .fontWeight(.semibold)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption)
                         .accessibilityHidden(true)
                 }
             }
-            .accessibilityLabel(Text("Project: \(model.selectedProjectName ?? "")"))
-            .accessibilityHint(Text("Restores the reply with another Project's names."))
+            .accessibilityLabel(Text("\(placeKind(model.selected)): \(model.selectedName ?? "")"))
+            .accessibilityHint(Text("Restores the reply with another Project's or document's names."))
             .accessibilityIdentifier("restore-case-picker")
             if let result = model.result {
                 RestoreSummary(result: result)
@@ -98,8 +110,13 @@ struct RestoreExtensionView: View {
         .padding()
     }
 
+    /// What the picker shows the place as: a Project, or an Unfiled document.
+    private func placeKind(_ place: RestorePlace?) -> String {
+        if case .document = place { String(localized: "Document") } else { String(localized: "Project") }
+    }
+
     /// One row when the labels fit on one line each, else stacked.
-    /// A Save to document that failed says why under them.
+    /// A Save that failed says why under them.
     private func actions(_ model: RestoreViewModel, result: RestoreResult) -> some View {
         VStack(spacing: 8) {
             ViewThatFits(in: .horizontal) {
@@ -136,29 +153,16 @@ struct RestoreExtensionView: View {
             Label("Share", systemImage: "square.and.arrow.up")
                 .frame(maxWidth: .infinity)
         }
-        Menu {
-            ForEach(model.documentsInProject) { document in
-                Button {
-                    model.save(to: document.id)
-                } label: {
-                    if document.id == model.defaultSaveTarget?.id {
-                        Label(document.title, systemImage: "star")
-                    } else {
-                        Text(document.title)
-                    }
-                }
-            }
+        // Keeps the reply, in alias form, for the app to list restored.
+        Button {
+            model.save()
         } label: {
-            Label(model.savedTo == nil ? "Save to document" : "Saved", systemImage: model.savedTo == nil ? "tray.and.arrow.down" : "checkmark")
+            Label(model.saved == nil ? "Save" : "Saved", systemImage: model.saved == nil ? "tray.and.arrow.down" : "checkmark")
                 .frame(maxWidth: .infinity)
-                .bigButtonLabel(prominent: false)
-        } primaryAction: {
-            if let target = model.defaultSaveTarget {
-                model.save(to: target.id)
-            }
         }
-        .secondaryGlass()
-        .disabled(model.documentsInProject.isEmpty)
-        .accessibilityHint(Text("Keeps the reply with \(model.defaultSaveTarget?.title ?? "")."))
+        .disabled(model.saved != nil)
+        .accessibilityHint(Text("Keeps the reply in mdoc with \(model.selectedName ?? "")."))
+        .accessibilityIdentifier("restore-save")
     }
 }
+
