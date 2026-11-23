@@ -7,7 +7,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.jobs.CancelReason
@@ -39,7 +38,7 @@ class InterruptedTest {
         val pdf = File(folder, "english.pdf")
         InstrumentationRegistry.getInstrumentation().context.assets.open("english.pdf").use { input -> pdf.outputStream().use(input::copyTo) }
         val title = "Stopped ${System.nanoTime()}"
-        val session = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), title, CaseChoice.New(title))
+        val session = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), title)
 
         // A recognition that Android ends while it runs, as when it stops the service.
         val started = CountDownLatch(1)

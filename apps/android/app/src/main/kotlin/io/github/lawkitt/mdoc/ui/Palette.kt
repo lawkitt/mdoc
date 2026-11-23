@@ -1,10 +1,10 @@
 package io.github.lawkitt.mdoc.ui
 
-import io.github.lawkitt.mdoc.core.CaseColour
+import io.github.lawkitt.mdoc.core.ProjectColour
 import io.github.lawkitt.mdoc.core.Category
 
 /**
- * The category and case colours, light and dark: the iOS system
+ * The category and Project colours, light and dark: the iOS system
  * colours' Android twins. Dark variants are lighter, so an underline or a
  * fill still stands out on a dark background.
  */
@@ -24,15 +24,15 @@ object Palette {
         Category.Other -> if (dark) 0xFFA8A8AE else 0xFF6B6B70
     }.toInt()
 
-    fun case(colour: CaseColour): Int = when (colour) {
-        CaseColour.Red -> 0xFFE5484D
-        CaseColour.Orange -> 0xFFF76B15
-        CaseColour.Amber -> 0xFFFFB224
-        CaseColour.Green -> 0xFF30A46C
-        CaseColour.Teal -> 0xFF12A594
-        CaseColour.Blue -> 0xFF0090FF
-        CaseColour.Violet -> 0xFF8E4EC6
-        CaseColour.Pink -> 0xFFD6409F
+    fun project(colour: ProjectColour): Int = when (colour) {
+        ProjectColour.Red -> 0xFFE5484D
+        ProjectColour.Orange -> 0xFFF76B15
+        ProjectColour.Amber -> 0xFFFFB224
+        ProjectColour.Green -> 0xFF30A46C
+        ProjectColour.Teal -> 0xFF12A594
+        ProjectColour.Blue -> 0xFF0090FF
+        ProjectColour.Violet -> 0xFF8E4EC6
+        ProjectColour.Pink -> 0xFFD6409F
     }.toInt()
 
     data class Fill(val proposed: Float, val replaced: Float, val selected: Float)

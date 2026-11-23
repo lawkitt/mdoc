@@ -12,7 +12,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Open in mdoc: a PDF shared from another app asks for its title and case. */
+/** Open in mdoc: a PDF shared from another app asks for its title and Project. */
 @RunWith(AndroidJUnit4::class)
 class ReceiveTest {
     @get:Rule(order = 0)

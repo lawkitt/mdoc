@@ -9,7 +9,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
@@ -32,7 +31,11 @@ import uniffi.mdoc_ffi.JobStage
  */
 @RunWith(AndroidJUnit4::class)
 class ReviewFlowTest {
-    @get:Rule
+    /** Its own Vault, below the floor: names marked by hand make a document Ready to share. */
+    @get:Rule(order = 0)
+    val core = TestCore()
+
+    @get:Rule(order = 1)
     val compose = createAndroidComposeRule<MainActivity>()
 
     private val app get() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as MdocApplication
@@ -41,7 +44,7 @@ class ReviewFlowTest {
 
     @Before
     fun seed() {
-        val session = app.core.documents.importDocument(ImportSource.Text(letter), title, CaseChoice.New(title))
+        val session = app.core.documents.importDocument(ImportSource.Text(letter), title)
         session.recognize(object : JobObserver {
             override fun stage(stage: JobStage) = Unit
 

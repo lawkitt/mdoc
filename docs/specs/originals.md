@@ -69,10 +69,15 @@ Terms are in [CONTEXT.md](../../CONTEXT.md).
   A scan in progress belongs to the app and is saved with Home's state, so
   a destroyed activity or a stopped process comes back to it; its
   `scanning-` stage is kept for a day at a restart. Cancelling Add deletes
-  the staged copies. On restart only saved documents, pending imports and
-  scans in progress keep their staged files; once, the intake folders
-  older versions left unowned are removed too. A `pending.json` that can't
-  be read is moved aside (`pending.json.corrupt`) and clears nothing.
+  the staged copies. Staged files wait in `vault-intake/`, beside the
+  Vault; a document's first save keeps its original in the Vault and its
+  staged files go. On restart only pending imports and scans in progress
+  keep their staged files. A `pending.json` that can't be read is moved
+  aside (`pending.json.corrupt`) and clears nothing.
+- A saved document's original is decrypted from the Vault when its pane
+  first shows it: into memory up to 16 MiB (Android draws a PDF from an
+  anonymous memory file), else into `vault-original-view/` in the cache,
+  wiped when the document closes and at launch (#1091 Decision 24).
 - Photos picked together are one document. The core appends one photo at a
   time to an in-memory PDF and applies the 256 MiB import limit to the
   combined image files and the resulting PDF.

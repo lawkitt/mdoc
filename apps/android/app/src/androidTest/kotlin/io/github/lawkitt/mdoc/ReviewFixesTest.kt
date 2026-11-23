@@ -11,7 +11,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.AppError
 import io.github.lawkitt.mdoc.core.CandidateId
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
@@ -35,6 +34,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.JobStage
@@ -42,6 +42,10 @@ import uniffi.mdoc_ffi.JobStage
 /** Regressions from the review of the review flow (lawkitt/mdoc#315). */
 @RunWith(AndroidJUnit4::class)
 class ReviewFixesTest {
+    /** Its own Vault, below the floor: names marked by hand make a document Ready to share. */
+    @get:Rule
+    val core = TestCore()
+
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val app get() = context.applicationContext as MdocApplication
@@ -79,7 +83,7 @@ class ReviewFixesTest {
     fun sharingNeverCarriesTheOriginalTitle() {
         val title = "Maya Bennett ${System.nanoTime()}"
         val text = "Letter to Maya Bennett."
-        val session = app.core.documents.importDocument(ImportSource.Text(text), title, CaseChoice.New("Share test"))
+        val session = app.core.documents.importDocument(ImportSource.Text(text), title)
         session.recognize(quiet)
         val start = text.indexOf("Maya Bennett")
         session.addReplacement(SourceRange(start, start + 12), Category.Person)
@@ -98,7 +102,7 @@ class ReviewFixesTest {
     @Test
     fun activatingACandidateOpensIt() {
         var opened: CandidateId? = null
-        val session = app.core.documents.importDocument(ImportSource.Text("Dear Maya."), "Tap ${System.nanoTime()}", CaseChoice.New("Tap"))
+        val session = app.core.documents.importDocument(ImportSource.Text("Dear Maya."), "Tap ${System.nanoTime()}")
         session.recognize(quiet)
         val snapshot = session.addReplacement(SourceRange(5, 9), Category.Person)
         instrumentation.runOnMainSync {
@@ -129,7 +133,7 @@ class ReviewFixesTest {
     @Test
     fun aDeletedImportNeverSaves() {
         val title = "Deleted ${System.nanoTime()}"
-        val session = app.core.documents.importDocument(ImportSource.Text("A short note."), title, CaseChoice.New(title))
+        val session = app.core.documents.importDocument(ImportSource.Text("A short note."), title)
         app.core.documents.delete(session.id)
         val outcome = runCatching { session.recognize(quiet) }
         assertTrue(outcome.toString(), outcome.exceptionOrNull() is AppError.Cancelled)
