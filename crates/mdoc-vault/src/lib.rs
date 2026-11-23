@@ -24,6 +24,7 @@ mod manifest;
 mod mapping;
 mod original;
 mod records;
+pub mod recovery;
 mod seal;
 mod vault;
 
@@ -34,8 +35,8 @@ pub use records::{
     OriginalInfo, Project, ProjectSummary, Reply, ReplyOwner, ReplySummary, SourceKind, UserLists,
 };
 pub use vault::{
-    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, Saved, Stage,
-    Vault, WriteStep,
+    Exported, Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ORIGINALS, ProjectDocuments,
+    Readiness, Saved, Stage, Vault, WriteStep,
 };
 
 use std::io;
@@ -114,6 +115,9 @@ pub enum VaultError {
     /// inside the Vault's.
     #[error("A copy of an original needs a bare file name in a folder outside the Vault.")]
     InvalidCopyTarget,
+    /// Export Project… was pointed at a folder inside the Vault.
+    #[error("Documents can't be exported into the Vault's own folder.")]
+    ExportInsideVault,
     /// A record sealed larger than the Vault reads back; nothing was written.
     #[error("The {kind} {id} is too large to store.")]
     TooLarge { kind: ObjectKind, id: String },
