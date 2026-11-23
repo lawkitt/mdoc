@@ -44,11 +44,11 @@ impl ScanCount {
 }
 
 impl DocumentView {
-    /// Categories this tab's scans skip: its case's list once it joined one,
+    /// Categories this tab's scans skip: its Project's list once it joined one,
     /// otherwise the Settings default.
     pub(crate) fn scan_skip(&self) -> HashSet<Category> {
-        if self.case.link().is_some() {
-            return self.case.skip().clone();
+        if self.project.link().is_some() {
+            return self.project.skip().clone();
         }
         self.preferences
             .borrow()
@@ -57,17 +57,17 @@ impl DocumentView {
             .map(|p| p.categories.skipped())
             .unwrap_or_default()
     }
-    /// The lists this tab's scans use: its case's over the
+    /// The lists this tab's scans use: its Project's over the
     /// user-wide ones of Settings › Detection, or those alone outside a
-    /// case.
+    /// Project.
     pub(crate) fn scan_lists(&self, cx: &gpui::App) -> Lists {
         let panel = self.model_panel.read(cx);
         Lists::effective(
-            self.case.link().map(|_| self.case.lists()),
+            self.project.link().map(|_| self.project.lists()),
             panel.user_lists(),
         )
     }
-    /// What this tab's decisions put on its case's lists now:
+    /// What this tab's decisions put on its Project's lists now:
     /// the wordings of identities it kept whole on Never, the wordings it
     /// marked by hand, in their categories, on Always. A wording both kept
     /// and marked is kept; one taken off as Not a name is on neither.
@@ -91,23 +91,23 @@ impl DocumentView {
         }
         listed
     }
-    /// What changed in this tab's contribution to its case's lists since
-    /// the last save into the case; `None` outside a case or when nothing
+    /// What changed in this tab's contribution to its Project's lists since
+    /// the last save into the Project; `None` outside a Project or when nothing
     /// did.
     pub(crate) fn take_list_changes(&mut self, cx: &gpui::App) -> Option<ListChanges> {
-        self.case.link()?;
+        self.project.link()?;
         let listed = self.listed(cx);
-        self.case.contribute(listed)
+        self.project.contribute(listed)
     }
     /// Settings › Detection stopped detecting `categories`. A tab
-    /// without a case drops their unapplied scan proposals; applied
-    /// replacements and manual additions stay. Members follow their case.
+    /// without a Project drops their unapplied scan proposals; applied
+    /// replacements and manual additions stay. Members follow their Project.
     pub(crate) fn default_categories_unticked(
         &mut self,
         categories: &HashSet<Category>,
         cx: &mut Context<Self>,
     ) {
-        if self.case.link().is_some() {
+        if self.project.link().is_some() {
             return;
         }
         let withdrawn: usize = categories
@@ -203,8 +203,8 @@ impl DocumentView {
         self.pii.job = None;
         self.pii.mapping.show();
         let source = self.editor.read(cx).text().to_owned();
-        // A case can switch categories off; scans skip them.
-        // Without a case, Settings › Detection decides.
+        // A Project can switch categories off; scans skip them.
+        // Without a Project, Settings › Detection decides.
         let skip = self.scan_skip();
         let result = result.map(|mut detections| {
             detections.retain(|d| !skip.contains(&d.category));

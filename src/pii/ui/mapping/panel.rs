@@ -253,7 +253,7 @@ impl DocumentView {
     pub(super) fn kept_mention_count(&self, cx: &App) -> usize {
         self.replacement_projection(cx).kept
     }
-    pub(in crate::pii::ui) fn case_alias_is_present(&self, alias: &str, cx: &App) -> bool {
+    pub(in crate::pii::ui) fn project_alias_is_present(&self, alias: &str, cx: &App) -> bool {
         self.replacement_projection(cx)
             .active_aliases
             .contains(alias)
@@ -1089,7 +1089,7 @@ impl DocumentView {
                                 .child(error),
                         )
                     })
-                    .children(self.case_names_section(cx))
+                    .children(self.project_names_section(cx))
                     .child(
                         div()
                             .text_size(px(11.))

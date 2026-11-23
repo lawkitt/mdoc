@@ -1,6 +1,6 @@
 //! The workspace's notices: one session message and the last run's
-//! crash report. They wait behind the header's bell with the
-//! locked-cases banner, which the case state owns.
+//! crash report. They wait behind the header's bell with the Vault's
+//! banner, which the Vault state owns.
 
 /// What the workspace view carries out for a notices transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,9 +48,9 @@ impl Notices {
         NoticesEffect::OpenBell
     }
 
-    /// Open the bell for the locked-cases banner, which the case state
-    /// holds: a locked case is needed now.
-    pub(super) fn show_locked_cases(&self) -> NoticesEffect {
+    /// Open the bell for the Vault's banner, which the Vault state holds:
+    /// the locked Vault is needed now.
+    pub(super) fn show_locked_projects(&self) -> NoticesEffect {
         NoticesEffect::OpenBell
     }
 
@@ -80,20 +80,20 @@ impl Notices {
         self.crash.take().map(|_| NoticesEffect::DiscardCrashReport)
     }
 
-    /// The bell's count with the locked-cases banner. A new notice opens the
-    /// popover, except locked cases, which open it only when a locked case is
-    /// needed; no notices close it.
+    /// The bell's count with the Vault's banner. A new notice opens the
+    /// popover, and the banner opens it only when `needed`; no notices close
+    /// it.
     pub(super) fn count(
         &mut self,
-        case_banner: bool,
-        case_needed: bool,
+        project_banner: bool,
+        project_needed: bool,
     ) -> (usize, Option<NoticesEffect>) {
         // The first-Project nudge opens the bell once, like a message.
         let own = usize::from(self.crash.is_some())
             + usize::from(self.message.is_some())
             + usize::from(self.recovery_nudge);
-        let shown = own + usize::from(case_banner);
-        let opening = own + usize::from(case_needed);
+        let shown = own + usize::from(project_banner);
+        let opening = own + usize::from(project_needed);
         let effect = if opening > self.opening {
             Some(NoticesEffect::OpenBell)
         } else if shown == 0 {
@@ -152,11 +152,11 @@ mod tests {
             NoticesEffect::OpenBell
         );
         assert_eq!(notices.count(false, false), (1, None));
-        assert_eq!(notices.show_locked_cases(), NoticesEffect::OpenBell);
+        assert_eq!(notices.show_locked_projects(), NoticesEffect::OpenBell);
     }
 
     #[test]
-    fn locked_cases_count_but_open_the_bell_only_when_needed() {
+    fn locked_projects_count_but_open_the_bell_only_when_needed() {
         let mut notices = Notices::default();
         assert_eq!(notices.count(true, false), (1, None));
         assert_eq!(

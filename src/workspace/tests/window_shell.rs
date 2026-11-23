@@ -1630,12 +1630,6 @@ fn review_host_performance(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-    });
     // Layout-only baseline: the same text without review state, with the
     // Replacements panel open so the editor width matches the review phases.
     let plain = dir.path().join("plain.md");
@@ -1672,17 +1666,27 @@ fn review_host_performance(cx: &mut TestAppContext) {
             view.pii.review().candidates().is_empty() && view.pii.review().applied().is_empty()
         );
     });
-    let first = open_applied(&tabs, cx, dir.path(), "first.md", &text, &wordings);
+    // Each file its own bytes: the same bytes again would ask Open Existing.
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "first.md",
+        &format!("{text}1"),
+        &wordings,
+    );
     let first_view = active(&tabs, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
-    cx.run_until_parked();
-    let case = tabs.read_with(cx, |tabs, _| tabs.case_coordinator.cases()[0].id.clone());
+    let case = new_project(&tabs, cx, first);
     for name in ["second.md", "third.md"] {
-        let member = open_applied(&tabs, cx, dir.path(), name, &text, &wordings);
-        tabs.update_in(cx, |tabs, window, cx| {
-            tabs.join_case(member, &case, window, cx)
-        });
-        cx.run_until_parked();
+        let member = open_applied(
+            &tabs,
+            cx,
+            dir.path(),
+            name,
+            &format!("{text}{name}"),
+            &wordings,
+        );
+        move_tab(&tabs, cx, member, Some(&case));
     }
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(first, window, cx));
     for phase in ["proposed_panel", "applied_panel", "before_after"] {
@@ -1743,7 +1747,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
         view.retag_identities(&[(id, "CLIENT".into(), Category::Person, true)], cx)
             .unwrap();
     });
-    tabs.update(cx, |tabs, cx| tabs.case_changed(first, cx));
+    tabs.update(cx, |tabs, cx| tabs.project_changed(first, cx));
     cx.run_until_parked();
     draw(cx);
     eprintln!(
@@ -1758,7 +1762,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             .filter_map(|tab| tab.view())
             .filter(|view| {
                 view.read(cx)
-                    .case
+                    .project
                     .link()
                     .is_some_and(|link| link.id == case)
             })
@@ -1939,15 +1943,15 @@ fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
     download_retains_card_focus(cx, settings::Model::Pii(settings::PiiModel::Fp16));
 }
 
-/// Home's "Open a case…" text ends where "Documents stay on this Mac" above
+/// Home's "Open a Project…" text ends where "Documents stay on this Mac" above
 /// it ends; only its hover padding runs past (U25).
 #[gpui::test]
-fn home_open_a_case_ends_under_the_local_note(cx: &mut TestAppContext) {
+fn home_open_a_project_ends_under_the_local_note(cx: &mut TestAppContext) {
     let (_tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     draw(cx);
     let note = cx.debug_bounds("empty-page-local").unwrap();
-    let link = cx.debug_bounds("home-open-case").unwrap();
+    let link = cx.debug_bounds("home-open-project").unwrap();
     let column = cx.debug_bounds("home-drop").unwrap();
     let paste = cx.debug_bounds("home-paste").unwrap();
     assert!(link.top() > note.bottom(), "the link sits under the note");
@@ -1997,7 +2001,7 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
         "this computer"
     };
     let detail = format!(
-        "tooltip-Detection, conversion and saved cases run on {machine}. mdoc goes online \
+        "tooltip-Detection, conversion and Projects run on {machine}. mdoc goes online \
          only to check for updates and to download models you choose."
     );
     let bubble = cx
@@ -2059,7 +2063,7 @@ fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestApp
     std::fs::write(&path, source).unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![path.clone()], window, cx)
+        tabs.open_paths(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
@@ -2078,8 +2082,10 @@ fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestApp
         pending
     });
     cx.run_until_parked();
+    let document = view.read_with(cx, |view, _| view.session.document.vault.clone().unwrap());
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
     assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
+        vault.document(document.as_str()).unwrap().markdown,
         format!("{source}\n\nA note.")
     );
     cx.update(|_, cx| {

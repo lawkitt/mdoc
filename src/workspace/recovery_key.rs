@@ -155,7 +155,7 @@ impl Workspace {
     pub(super) fn recovery_nudge(&self) -> bool {
         let dismissed = (self.preferences.borrow().current.as_ref())
             .is_none_or(|preferences| preferences.general.recovery_key_nudge_dismissed);
-        !dismissed && (self.vault.vault()).is_some_and(|vault| !vault.projects().is_empty())
+        !dismissed && self.vault.vault().is_some() && !self.projects.is_empty()
     }
 
     pub(super) fn dismiss_recovery_nudge(&mut self, cx: &mut Context<Self>) {

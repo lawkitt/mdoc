@@ -137,14 +137,21 @@ pub(super) fn recovery_key(d: &mut Driver) -> Result<()> {
                 ..Default::default()
             })
             .map_err(|e| e.to_string())?;
+        let id = project.id.clone();
+        w.projects.put(project);
+        // Every other scene renders with the nudge closed.
+        w.update_general(|g| g.recovery_key_nudge_dismissed = false, cx)
+            .map_err(|e| e.to_string())?;
         cx.notify();
-        Ok::<_, String>((vault, project.id))
+        Ok::<_, String>((vault, id))
     })??;
     d.settle()?;
     d.capture("vault-recovery-nudge")?;
     d.change(move |w, window, cx| {
         let (vault, id) = project;
         let _ = vault.delete_project(&id, mdoc_vault::ProjectDocuments::MoveToUnfiled);
+        w.projects.remove(&id);
+        let _ = w.update_general(|g| g.recovery_key_nudge_dismissed = true, cx);
         w.close_notices(window, cx);
         cx.notify();
     })?;

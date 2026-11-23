@@ -31,9 +31,9 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-mod case;
-mod case_link;
-use case_link::CaseLinkEffect;
+mod project;
+mod project_link;
+use project_link::ProjectEffect;
 mod chrome;
 mod decision_history;
 mod document_lifecycle;
@@ -164,14 +164,14 @@ pub(crate) struct DocumentView {
     pub(crate) reply_box: Option<(Entity<EditorState>, Subscription)>,
     /// The reply box's scroll, which keeps its caret in view.
     pub(crate) reply_scroll: gpui::ScrollHandle,
-    /// The saved case this tab's mapping belongs to.
-    pub(crate) case: case_link::CaseLink,
-    /// The waiting save of the mapping into the case.
-    case_save: Option<gpui::Task<()>>,
+    /// The Project this tab's mapping belongs to.
+    pub(crate) project: project_link::ProjectState,
+    /// The waiting fold of the mapping into the Project.
+    project_save: Option<gpui::Task<()>>,
     /// The waiting autosave of the document.
     autosave: Option<gpui::Task<()>>,
-    pub(crate) case_names_open: bool,
-    pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
+    pub(crate) project_names_open: bool,
+    pub(crate) project_term: Option<Entity<markdown_search::SearchInput>>,
     /// The result of Pseudonymize Clipboard, for a few seconds.
     pub(crate) clipboard_notice: pii::ui::restore::ClipboardNotice,
     /// The before/after view replaces the editor while open.
@@ -313,7 +313,7 @@ impl DocumentView {
                     this.clipboard_notice.clear();
                     this.pii_edited(cx);
                     this.schedule_spellcheck(true, cx);
-                    this.schedule_case_save(cx);
+                    this.schedule_project_save(cx);
                     this.lifecycle.edited();
                     this.schedule_autosave(cx);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
@@ -398,11 +398,11 @@ impl DocumentView {
             reply: Default::default(),
             reply_box: None,
             reply_scroll: gpui::ScrollHandle::new(),
-            case: Default::default(),
-            case_save: None,
+            project: Default::default(),
+            project_save: None,
             autosave: None,
-            case_names_open: false,
-            case_term: None,
+            project_names_open: false,
+            project_term: None,
             clipboard_notice: Default::default(),
             compare: None,
             switcher: Default::default(),
@@ -469,22 +469,6 @@ impl DocumentView {
     pub(crate) fn save_now(&mut self, cx: &mut Context<Self>) {
         self.autosave = None;
         cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Changed));
-    }
-
-    /// Tests: make this document the Markdown file `path`, as a case's
-    /// members are, and tell the window.
-    #[cfg(test)]
-    pub(crate) fn save_as_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let path = mdoc_store::session_store::identity(&path);
-        let text = self.editor.read(cx).text().to_string();
-        document::export(&path, &text).expect("test file");
-        self.session.document = Document {
-            vault: None,
-            path: Some(path),
-            saved: text,
-            review: None,
-        };
-        cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Filed));
     }
 
     /// Drop the waiting autosave: the caller writes the text itself.

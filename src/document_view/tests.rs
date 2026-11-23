@@ -59,8 +59,7 @@ pub(crate) fn active_document(
     })
 }
 
-/// Open the Markdown file `path` as a file, as a case's member opens, so
-/// what the view does to it reaches the disk.
+/// Import the Markdown file `path` as a Vault document, as Open does.
 pub(crate) fn open_document(
     app: &Entity<DocumentView>,
     path: PathBuf,
@@ -68,7 +67,7 @@ pub(crate) fn open_document(
 ) -> Entity<DocumentView> {
     cx.update(|window, cx| {
         let tabs = window.root::<workspace::Workspace>().flatten().unwrap();
-        tabs.update(cx, |tabs, cx| tabs.open_case_files(vec![path], window, cx));
+        tabs.update(cx, |tabs, cx| tabs.open_paths(vec![path], window, cx));
     });
     cx.run_until_parked();
     active_document(app, cx)
@@ -122,7 +121,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         app.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nPERSON_1 represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         assert_eq!(app.pii.review().remaining(), 0);
-        assert_eq!(app.session.document.path.as_ref(), Some(&source_path));
+        assert!(app.session.document.vault.is_some());
         assert!(app.session.warning.is_some());
         assert!(app.unsaved(cx));
         app.copy_markdown(&CopyMarkdown, window, cx);
@@ -255,7 +254,7 @@ fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppCon
         assert_eq!(app.editor.read(cx).text(), current);
         assert!(app.unsaved(cx));
         assert_eq!(app.session.document.saved, saved);
-        assert_eq!(app.session.document.path.as_ref(), Some(&path));
+        assert!(app.session.document.vault.is_some());
         assert_eq!(app.session.generation, generation);
         assert!(app.session.warning.as_ref().unwrap().contains("page 2"));
         assert!(app.copy_feedback.is_some());

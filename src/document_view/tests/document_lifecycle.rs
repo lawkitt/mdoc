@@ -43,21 +43,6 @@ fn failed_open_preserves_current_document(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_file_changed_on_disk_keeps_its_edit_in_the_tab(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("note.md");
-    std::fs::write(&path, "original").unwrap();
-    let (app, cx) = boot(cx);
-    let app = open_document(&app, path.clone(), cx);
-    cx.simulate_input("my edits");
-    std::fs::write(&path, "external edit").unwrap();
-    cx.dispatch_action(Save);
-    cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).unsaved(cx)));
-    assert_eq!(std::fs::read_to_string(path).unwrap(), "external edit");
-}
-
-#[gpui::test]
 fn opening_and_saving_preserves_markdown_bytes(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("source.md");

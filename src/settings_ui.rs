@@ -65,9 +65,9 @@ pub enum Event {
     Shortcuts,
     /// Saved: Settings › Detection stopped detecting these.
     CategoriesUnticked(std::collections::HashSet<mdoc_pii::Category>),
-    /// The user-wide lists changed: save them with the cases.
+    /// The user-wide lists changed: save them in the Vault.
     UserListsChanged(mdoc_store::lists::Lists),
-    /// The lists wait for locked cases: unlock them.
+    /// The lists wait for the locked Vault: unlock it.
     UnlockLists,
     /// Settings › Vault's Show: read the key and hand it back with
     /// [`Panel::show_recovery_key`].

@@ -4,7 +4,7 @@
 pub(super) enum Stop {
     Home,
     Tab(u64),
-    Case(String),
+    Project(String),
 }
 
 /// How the history records arriving at a place.
@@ -66,7 +66,7 @@ impl History {
         self.before = false;
     }
 
-    /// A tab closed or a case was deleted: drop its stops. The position stays
+    /// A tab closed or a Project was deleted: drop its stops. The position stays
     /// on the stop it was on, or on the one before when that one went, or
     /// before the rest when nothing preceded it.
     pub(super) fn forget(&mut self, gone: &Stop) {
@@ -179,23 +179,23 @@ mod tests {
         let mut history = visited([
             Stop::Home,
             Stop::Tab(1),
-            Stop::Case("raman".into()),
+            Stop::Project("raman".into()),
             Stop::Tab(2),
         ]);
         assert_eq!(
             travel(&mut history, true, |_| true),
-            Some(Stop::Case("raman".into()))
+            Some(Stop::Project("raman".into()))
         );
         assert_eq!(travel(&mut history, true, |_| true), Some(Stop::Tab(1)));
         assert_eq!(
             travel(&mut history, false, |_| true),
-            Some(Stop::Case("raman".into()))
+            Some(Stop::Project("raman".into()))
         );
         history.arrive(Stop::Home, Arrival::Visit);
         assert_eq!(target(&history, false), None);
         // Re-selecting the current place doesn't add a stop or destroy Forward.
         travel(&mut history, true, |_| true);
-        history.arrive(Stop::Case("raman".into()), Arrival::Visit);
+        history.arrive(Stop::Project("raman".into()), Arrival::Visit);
         assert_eq!(travel(&mut history, false, |_| true), Some(Stop::Home));
     }
 
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn forgetting_drops_every_stop_of_a_place_and_keeps_the_cursor_on_its_stop() {
-        let case = || Stop::Case("raman".into());
+        let case = || Stop::Project("raman".into());
         let mut history = visited([
             Stop::Tab(1),
             case(),

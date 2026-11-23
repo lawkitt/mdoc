@@ -6,10 +6,8 @@ use super::Workspace;
 use gpui::{Context, PathPromptOptions, Window};
 
 impl Workspace {
-    /// Ask for a folder and export Project `project` into it.
-    // Its consumer is the Project page's ⋯ menu, which item 17 (#1122)
-    // brings to vault-desktop; wired in when that merges.
-    #[allow(dead_code)]
+    /// Export Project… in the Project page's ⋯ menu: ask for a folder and
+    /// export Project `project` into it.
     pub(super) fn export_project(
         &mut self,
         project: String,
@@ -77,7 +75,6 @@ impl Workspace {
     }
 }
 
-#[allow(dead_code)]
 fn exported_notice(
     name: &str,
     exported: Result<mdoc_vault::Exported, mdoc_vault::VaultError>,

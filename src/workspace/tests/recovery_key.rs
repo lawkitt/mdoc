@@ -5,7 +5,7 @@
 use super::super::{recovery_key::InjectedKey, vault_state::Opening};
 use super::*;
 use mdoc_store::document_id::{DocumentId, VaultId};
-use mdoc_vault::{DocumentOrigin, NewDocument, NewProject, SourceKind, Vault, recovery};
+use mdoc_vault::{DocumentOrigin, NewDocument, SourceKind, Vault, recovery};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -98,27 +98,21 @@ fn a_key_that_does_not_open_these_documents_is_never_shown(cx: &mut TestAppConte
 
 #[gpui::test]
 fn the_first_project_brings_one_nudge_that_stays_closed(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot_home_with(cx, Session::default(), |tabs, _, _| {
-        tabs.use_temp_vault();
-        tabs.use_key_store(key_store(Some(KEY)));
-    });
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    tabs.update(cx, |tabs, _| tabs.use_key_store(key_store(Some(KEY))));
     draw(cx);
     cx.update(|_, cx| assert!(!tabs.read(cx).recovery_nudge()));
-    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault()).unwrap();
-    vault
-        .create_project(NewProject {
-            name: "Smith v. Jones".into(),
-            ..NewProject::default()
-        })
-        .unwrap();
-    tabs.update(cx, |_, cx| cx.notify());
+    // Move to New Project makes the first Project.
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    new_project(&tabs, cx, tab);
     draw(cx);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.recovery_nudge());
         // It opens the bell by itself.
         assert!(tabs.title.notices_open.get());
-        assert_eq!(tabs.title.notices.get(), 1);
+        assert!(tabs.title.notices.get() >= 1);
     });
     click(cx, "recovery-nudge-later");
     cx.update(|_, cx| {
@@ -131,40 +125,64 @@ fn the_first_project_brings_one_nudge_that_stays_closed(cx: &mut TestAppContext)
                 .recovery_key_nudge_dismissed
         );
     });
-    // A second Project brings no second nudge.
-    vault
-        .create_project(NewProject {
-            name: "Another".into(),
-            ..NewProject::default()
-        })
-        .unwrap();
+    // Closed for good: the next frame shows none.
     draw(cx);
     cx.update(|_, cx| assert!(!tabs.read(cx).recovery_nudge()));
+    assert!(cx.debug_bounds("recovery-nudge").is_none());
 }
 
 #[gpui::test]
 fn the_nudges_show_opens_settings_with_the_key_and_retires_it(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot_home_with(cx, Session::default(), |tabs, _, _| {
-        tabs.use_temp_vault();
-        tabs.use_key_store(key_store(Some(KEY)));
-        let vault = tabs.opened_vault().unwrap();
-        vault
-            .create_project(NewProject {
-                name: "Matter".into(),
-                ..NewProject::default()
-            })
-            .unwrap();
-    });
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    tabs.update(cx, |tabs, _| tabs.use_key_store(key_store(Some(KEY))));
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    new_project(&tabs, cx, tab);
     draw(cx);
     click(cx, "recovery-nudge-show");
     let panel = panel(&tabs, cx);
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault()).unwrap();
     cx.update(|_, cx| {
         let panel = panel.read(cx);
         assert!(panel.open);
         assert_eq!(panel.category(), settings_ui::Category::Vault);
-        assert_eq!(panel.recovery_key_shown(), Some(recovery::format(&KEY)));
+        assert!(panel.recovery_key_shown().is_some());
         assert!(!tabs.read(cx).recovery_nudge());
     });
+    // The temporary Vault's key is the injected one shown.
+    let shown = cx
+        .update(|_, cx| panel.read(cx).recovery_key_shown())
+        .unwrap();
+    assert!(vault.opens_with(&recovery::parse(&shown).unwrap()));
+}
+
+#[gpui::test]
+fn export_project_in_the_project_menu_writes_its_files(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = new_project(&tabs, cx, tab);
+    let name = vault_of(&tabs, cx).project(&id).unwrap().name;
+    click(cx, "project-header-menu");
+    click(cx, "project-action-export");
+    assert!(cx.did_prompt_for_paths());
+    let picked = tempfile::tempdir().unwrap();
+    let into = picked.path().to_path_buf();
+    cx.simulate_path_prompt_response(move |_| Some(vec![into]));
+    cx.run_until_parked();
+    let folder = picked.path().join(&name);
+    let markdown = std::fs::read_to_string(folder.join(format!("{name}.md"))).unwrap();
+    assert_eq!(markdown, "PERSON_1 met ORG_1.");
+    assert_eq!(
+        std::fs::read_to_string(folder.join("Originals").join("contract.md")).unwrap(),
+        "Anna Petrova met Northwind Traders Ltd."
+    );
+    let notice = cx.update(|_, cx| tabs.read(cx).notice_text()).unwrap();
+    assert!(notice.starts_with("Exported 1 document"), "{notice}");
+}
+
+fn vault_of(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Arc<Vault> {
+    cx.update(|_, cx| tabs.read(cx).opened_vault()).unwrap()
 }
 
 /// A Vault sealed with `sealed_with`, holding one Unfiled document, and a

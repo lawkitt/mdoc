@@ -34,9 +34,6 @@ use std::{
 };
 
 mod autosave;
-mod case_coordinator;
-mod case_page;
-mod cases_ui;
 mod document_writer;
 mod docx_queue;
 use docx_queue::{DocxEffect, DocxJob};
@@ -56,7 +53,11 @@ use navigation::Arrival;
 mod navigation_ui;
 mod notices;
 pub(crate) use navigation_ui::{Back, Forward};
+mod project_page;
+mod projects;
+pub(crate) use projects::ProjectLink;
 mod export_project;
+mod projects_ui;
 mod quit_flow;
 mod recovery_key;
 pub(crate) use quit_flow::CloseWatch;
@@ -74,10 +75,11 @@ mod tab_menu;
 mod user_lists;
 mod vault_state;
 mod vault_ui;
-pub(crate) use cases_ui::{
-    AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName, bind_keys as bind_case_keys,
-};
 use live_views::LiveViewsEffect;
+pub(crate) use projects_ui::{
+    AddProjectName, CancelProjectName, ClearProjectName, ConfirmProjectName,
+    bind_keys as bind_project_keys,
+};
 pub(crate) use shell::{
     CloseNotices, OpenPalette, PALETTE, PaletteClose, ShowHome, bind_keys as bind_shell_keys,
 };
@@ -98,7 +100,7 @@ actions!(
         ToggleSidebar,
         ToggleTheme,
         ToggleNotices,
-        OpenCase,
+        OpenProject,
         RetryDocument,
         PasteAiResponse,
         PseudonymizeClipboard,
@@ -122,7 +124,7 @@ pub(super) enum TabEvent {
     Import(ImportEvent),
     Docx(DocxEvent),
     Save(SaveEvent),
-    Case(CaseEvent),
+    Project(ProjectEvent),
     ToggleTheme,
     /// "💬 N" or "Hidden text (N)" was switched: app-wide, so every tab's
     /// Source follows and Settings keeps it.
@@ -140,8 +142,6 @@ pub(super) enum TabsEvent {
 /// Closing this tab, alone or in a quit (`QuitFlow`).
 pub(super) enum CloseEvent {
     Requested,
-    Resolved,
-    Cancelled,
 }
 
 /// Conversions and OCR setup.
@@ -168,29 +168,23 @@ pub(super) enum DocxEvent {
 pub(super) enum SaveEvent {
     /// Typing paused, or Save was chosen: write what it shows now.
     Changed,
-    /// Tests: the document became a Markdown file.
-    #[cfg(test)]
-    Filed,
 }
 
-/// The tab's case (`CaseCoordinator`).
-pub(super) enum CaseEvent {
-    /// Show this tab's case page.
+/// The tab's Project (`Projects`).
+pub(super) enum ProjectEvent {
+    /// Show this tab's Project page.
     OpenPage,
-    /// The tab's mapping changed; save it into the tab's case.
+    /// The tab's mapping changed; fold it into the tab's Project.
     Changed,
-    /// The tab's AI reply changed or was cleared; keep it in the tab's case.
-    Reply,
-    /// Add a name to the tab's case before it appears.
+    /// Add a name to the tab's Project before it appears.
     AddTerm(String),
-    /// Keep a dismissed merge hint, as its (shorter, fuller) primary wordings, in the
-    /// tab's case.
+    /// Keep a dismissed merge hint, as its (shorter, fuller) primary
+    /// wordings, in the tab's Project.
     DismissHint(String, String),
-    /// Save the tab's mapping as a case, from the Inspector,
-    /// or once the document is saved; `close` closes the tab after.
-    Create { close: bool },
+    /// Move to New Project, from Share.
+    MoveToNew,
     /// Restoring or pseudonymizing found no mapping in the tab; a locked
-    /// case may hold it.
+    /// Vault may hold it.
     MappingMissing,
 }
 impl EventEmitter<TabEvent> for DocumentView {}
@@ -254,10 +248,10 @@ pub(super) struct Workspace {
     /// F6 regions the workspace owns, and the control last focused in each
     /// region when F6 left it.
     focus_regions: focus_regions::FocusRegions<gpui::FocusHandle>,
-    /// The Open Case list holds focus while open, and gives it back on
+    /// The Open Project list holds focus while open, and gives it back on
     /// close; the notices popover takes Esc.
-    pub(super) case_list_focus: gpui::FocusHandle,
-    pub(super) case_list_return: Option<gpui::FocusHandle>,
+    pub(super) project_list_focus: gpui::FocusHandle,
+    pub(super) project_list_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: live_views::LiveViews<Entity<DocumentView>>,
     navigation: navigation::History,
@@ -297,7 +291,8 @@ pub(super) struct Workspace {
     /// inject their own so they never read this computer's keyboards.
     pub(super) input_languages: fn() -> Vec<mdoc_import::recognition::Language>,
     /// Opens that wait for launch, or for a dialog to be answered, whole:
-    /// their paths, sidebar position and case header.
+    /// their paths, sidebar position and the Project header they were
+    /// dropped on.
     pending_open: Vec<(Vec<PathBuf>, Option<usize>, Option<String>)>,
     /// Opens wait in `pending_open` for a dialog to be answered.
     awaiting_prompt: bool,
@@ -309,11 +304,20 @@ pub(super) struct Workspace {
     docx_queue: docx_queue::DocxQueue,
     quit_flow: quit_flow::QuitFlow,
     session_writer: session_writer::SessionWriter<Session>,
-    cases: cases_ui::CaseState,
+    project_ui: projects_ui::ProjectsState,
     /// Dropped folders' sheets, one at a time.
     folder_sheets: folder_sheet::FolderSheets,
     folder_sheet_focus: Option<folder_sheet_ui::SheetFocus>,
-    case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
+    projects: projects::Projects,
+    /// Documents a move or a delete is rewriting: their autosaves wait
+    /// until they load again.
+    moving: std::collections::HashSet<mdoc_store::document_id::VaultId>,
+    /// Of those, the ones whose tab loads them again now.
+    reloading: std::collections::HashSet<mdoc_store::document_id::VaultId>,
+    /// Moves and deletes in the writer's queue are numbered.
+    next_op: u64,
+    /// The window, for writes that end after the call that queued them.
+    window_handle: gpui::AnyWindowHandle,
     /// The Vault, once the key opened it.
     vault: vault_state::VaultState,
     /// Settings › Vault's key, the first-Project nudge and the wrong-key
@@ -329,11 +333,9 @@ pub(super) struct Workspace {
     /// Tabs whose close waits for their last text to be written: a write
     /// that fails keeps the tab and its edit.
     closing_after_write: std::collections::HashSet<u64>,
-    /// What each case Markdown file holds after this window's last write.
-    file_baselines: std::collections::HashMap<PathBuf, String>,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
-    admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<u64>)>,
+    admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<u64>, Option<String>)>,
     /// What a test's loud key read yields.
     #[cfg(test)]
     staged_vault: Option<Result<mdoc_vault::Vault, mdoc_store::cases::CaseError>>,
@@ -416,8 +418,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let (result, opening) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if let Some((opening, key)) = opening {
-                    this.key_read_at_launch(key);
+                if let Some(opening) = opening {
                     this.vault_opened(opening, window, cx);
                 }
                 let session = match result {
@@ -494,8 +495,8 @@ impl Workspace {
         let mut this = Self {
             focus: cx.focus_handle(),
             focus_regions: focus_regions::FocusRegions::new(cx.focus_handle(), cx.focus_handle()),
-            case_list_focus: cx.focus_handle(),
-            case_list_return: None,
+            project_list_focus: cx.focus_handle(),
+            project_list_return: None,
             notices_focus: cx.focus_handle(),
             tabs: live_views::LiveViews::default(),
             navigation: Default::default(),
@@ -545,16 +546,19 @@ impl Workspace {
             docx_queue: docx_queue::DocxQueue::default(),
             quit_flow: quit_flow::QuitFlow::default(),
             session_writer: session_writer::SessionWriter::new(None),
-            cases: Default::default(),
+            project_ui: Default::default(),
             folder_sheets: Default::default(),
             folder_sheet_focus: None,
-            case_coordinator: Default::default(),
+            projects: Default::default(),
+            moving: Default::default(),
+            reloading: Default::default(),
+            next_op: 0,
+            window_handle: window.window_handle(),
             vault: Default::default(),
             recovery: Default::default(),
             document_writer: Default::default(),
             admitted_from: Default::default(),
             closing_after_write: Default::default(),
-            file_baselines: Default::default(),
             admitting: false,
             admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.
@@ -631,7 +635,7 @@ impl Workspace {
                     settings_ui::Event::UserListsChanged(lists) => {
                         this.save_user_lists(lists.clone(), cx)
                     }
-                    settings_ui::Event::UnlockLists => this.unlock_cases(window, cx),
+                    settings_ui::Event::UnlockLists => this.unlock_projects(window, cx),
                     settings_ui::Event::ShowRecoveryKey => this.show_recovery_key(cx),
                     settings_ui::Event::CategoriesUnticked(categories) => {
                         for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
@@ -992,13 +996,20 @@ impl Workspace {
         self.theme_choice = session.theme_choice;
         self.sync_app_appearance(cx);
         self.apply_theme(window, cx);
-        self.cases.collapsed = session.collapsed_cases.iter().cloned().collect();
-        self.case_coordinator
-            .restore_summaries(session.cases.clone());
+        self.project_ui.collapsed = session.collapsed_projects.iter().cloned().collect();
+        self.load_projects(cx);
         let selected = session.active;
         // Session paths were normalized when opened/saved. Do not stat every file
         // during startup; missing files are diagnosed when activated.
         for record in session.tabs {
+            // A Markdown file's tab (an earlier build's case member) names
+            // no document now; its file stays on disk.
+            if record.document.is_none()
+                && !record.source_only
+                && !record.markdown.as_os_str().is_empty()
+            {
+                continue;
+            }
             if self.tabs.iter().any(|tab| {
                 if record.source_only {
                     tab.record().attachment == record.attachment
@@ -1028,8 +1039,8 @@ impl Workspace {
         self.activate(active, window, cx);
         // Sealed with another key: Home asks for the recovery key first.
         self.recovery_screen_opened(window, cx);
-        for (paths, at, case) in std::mem::take(&mut self.pending_open) {
-            self.open_paths_into(paths, at, case, window, cx);
+        for (paths, at, project) in std::mem::take(&mut self.pending_open) {
+            self.open_paths_into(paths, at, project, window, cx);
         }
         cx.notify();
     }
@@ -1140,7 +1151,7 @@ impl Workspace {
     ) {
         #[cfg(test)]
         {
-            self.cases.member_reads += 1;
+            self.project_ui.member_reads += 1;
         }
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
@@ -1152,15 +1163,10 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
+        let loading = document.vault().cloned();
         let task: gpui::Task<Result<Loaded, String>> = match document {
-            DocumentId::File(path) => cx.background_executor().spawn(async move {
-                Document::open(session_store::identity(&path))
-                    .map(|document| Loaded {
-                        document,
-                        vault: None,
-                    })
-                    .map_err(|error| format!("Could not open {}: {error}", path.display()))
-            }),
+            // Files open only as Vault documents.
+            DocumentId::File(_) => return,
             DocumentId::Vault(document) => match self.vault.vault().cloned() {
                 Some(vault) => {
                     let viewing = self.viewing_dir(id);
@@ -1188,6 +1194,13 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                // A move's reload ends, done or with its tab gone: autosaves
+                // resume with the moved text.
+                if let Some(document) = &loading
+                    && this.reloading.remove(document)
+                {
+                    this.moving.remove(document);
+                }
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.
                     if let Some(dir) = this.viewing_dir(id) {
@@ -1209,7 +1222,9 @@ impl Workspace {
                             let review = document.review.clone();
                             view.session.replace(document);
                             let mut copy = None;
+                            let mut names = None;
                             if let Some(vault) = vault {
+                                names = vault.names;
                                 view.session.name = Some(vault.title);
                                 view.session.follows_first_line = vault.follows;
                                 view.session.warning = vault.warning;
@@ -1245,8 +1260,13 @@ impl Workspace {
                                 editor.set_cursor(caret, cx);
                             });
                             // Its review comes back as it was: no rescan.
+                            // Without one (a move cleared it), an Unfiled
+                            // document's own names come back.
                             if let Some(review) = review {
                                 view.restore_review(review, cx);
+                            } else if let Some(names) = names {
+                                view.open_names(&names.identities, &names.reserved, cx);
+                                view.pii.review_mut().leave_off(&names.not_names);
                             }
                             view.replace_images(view.save_directory(), window, cx);
                             view.scroll
@@ -1278,7 +1298,7 @@ impl Workspace {
                     }
                     cx.notify();
                 });
-                this.attach_case(id, window, cx);
+                this.attach_project(id, cx);
                 cx.notify();
             });
         })
@@ -1305,7 +1325,7 @@ impl Workspace {
         if self.quit_flow.finishing() || !self.tabs.contains(id) {
             return;
         }
-        self.cases.page = None;
+        self.project_ui.page = None;
         self.end_rename(true, cx);
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| {
@@ -1421,8 +1441,8 @@ impl Workspace {
                         return false;
                     }
                     this.awaiting_prompt = false;
-                    for (paths, at, case) in std::mem::take(&mut this.pending_open) {
-                        this.open_paths_into(paths, at, case, window, cx);
+                    for (paths, at, project) in std::mem::take(&mut this.pending_open) {
+                        this.open_paths_into(paths, at, project, window, cx);
                     }
                     true
                 });
@@ -1437,7 +1457,7 @@ impl Workspace {
     /// A confirm dialog, the Keychain explainer or a folder sheet keeps
     /// focus until answered.
     fn dialog_up(&self, window: &Window) -> bool {
-        window.has_active_prompt() || self.cases.explainer || self.folder_sheets.open()
+        window.has_active_prompt() || self.project_ui.explainer || self.folder_sheets.open()
     }
 
     /// Open paths as new tabs before the tab now at `at`, or after
@@ -1453,7 +1473,7 @@ impl Workspace {
     }
 
     /// Open paths. Plain files open at once; each folder among them shows
-    /// its sheet in turn, offering to add to `case` when it was dropped on
+    /// its sheet in turn, offering to add to `Project` when it was dropped on
     /// that case's header.
     fn open_paths_into(
         &mut self,
@@ -1507,11 +1527,11 @@ impl Workspace {
                     this.open_after_prompt(window, cx);
                     return;
                 }
-                this.finish_open(paths, at, false, window, cx);
+                this.finish_open(paths, at, case.clone(), window, cx);
                 for folder in folders {
                     let pending = folder_sheet::Pending {
                         folder,
-                        case: case.clone(),
+                        project: case.clone(),
                         at,
                     };
                     this.queue_folder(pending, window, cx);
@@ -1521,102 +1541,34 @@ impl Workspace {
         .detach();
     }
 
-    /// Open `paths`, supported or not, before the tab now at `at`. They
-    /// become Vault documents; with `files`, Markdown files open as files a
-    /// case can list, which only a case's own flows ask for until cases
-    /// become Projects.
+    /// Open `paths`, supported or not, before the tab now at `at`, as Vault
+    /// documents: Unfiled, or in Project `project`. A file open already
+    /// comes to the front.
     fn finish_open(
         &mut self,
         paths: Vec<(PathBuf, bool)>,
         at: Option<usize>,
-        files: bool,
+        project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (Vec<u64>, Vec<u64>) {
-        if !self.quit_flow.may_quit() {
-            return Default::default();
+    ) {
+        if !self.quit_flow.may_quit() || self.vault.vault().is_none() {
+            return;
         }
-        if !files && self.vault.vault().is_some() {
-            let (supported, unsupported): (Vec<_>, Vec<_>) =
-                paths.into_iter().partition(|(_, supported)| *supported);
-            self.post_unsupported(unsupported.into_iter().map(|(path, _)| path));
-            // A file open already, as a case's Markdown file or a document
-            // opened from it, comes to the front.
-            let (open, new): (Vec<_>, Vec<_>) = supported
-                .into_iter()
-                .map(|(path, _)| path)
-                .partition(|path| self.open_tab_for(path, cx).is_some());
-            if new.is_empty()
-                && let Some(id) = open.first().and_then(|path| self.open_tab_for(path, cx))
-            {
-                self.activate(id, window, cx);
-            }
-            self.admit(new, at, window, cx);
-            cx.notify();
-            return Default::default();
+        let (supported, unsupported): (Vec<_>, Vec<_>) =
+            paths.into_iter().partition(|(_, supported)| *supported);
+        self.post_unsupported(unsupported.into_iter().map(|(path, _)| path));
+        let (open, new): (Vec<_>, Vec<_>) = supported
+            .into_iter()
+            .map(|(path, _)| path)
+            .partition(|path| self.open_tab_for(path, cx).is_some());
+        if new.is_empty()
+            && let Some(id) = open.first().and_then(|path| self.open_tab_for(path, cx))
+        {
+            self.activate(id, window, cx);
         }
-        // Anchor on a tab, not an index: tabs may close while paths resolve.
-        let anchor = at.and_then(|at| self.tabs.at(at).map(|tab| tab.id()));
-        let mut opened = Vec::new();
-        let mut created = Vec::new();
-        let mut first = None;
-        let mut unsupported = Vec::new();
-        for (path, supported) in paths {
-            if !supported {
-                // Names only: the notice is no place for the full path.
-                unsupported.push(
-                    path.file_name()
-                        .unwrap_or(path.as_os_str())
-                        .to_string_lossy()
-                        .into_owned(),
-                );
-                continue;
-            }
-            // A case lists Markdown files: only a file's own tab is reused.
-            let existing = if files {
-                self.find_path(&path, None, cx)
-            } else {
-                self.open_tab_for(&path, cx)
-            };
-            let id = existing.unwrap_or_else(|| {
-                let id = if document::is_markdown(&path) {
-                    self.push(TabRecord {
-                        markdown: path,
-                        ..TabRecord::default()
-                    })
-                } else {
-                    // Named as its source until a `.md` exists, even before
-                    // it is first activated (#311).
-                    self.push(TabRecord {
-                        source_only: true,
-                        name: path
-                            .file_name()
-                            .map(|name| name.to_string_lossy().into_owned()),
-                        attachment: Some(path),
-                        preview_visible: true,
-                        ..TabRecord::default()
-                    })
-                };
-                created.push(id);
-                id
-            });
-            first.get_or_insert(id);
-            opened.push(id);
-        }
-        if at.is_some() && !created.is_empty() {
-            self.tabs.place(&created, anchor);
-        }
-        if !unsupported.is_empty() {
-            self.notices.post(format!(
-                "Unsupported files skipped: {}",
-                unsupported.join(", ")
-            ));
-        }
-        if let Some(first) = first {
-            self.show_opened(first, window, cx);
-        }
+        self.admit(new, at, project, window, cx);
         cx.notify();
-        (opened, created)
     }
 
     /// Unsupported files are skipped, by name: the notice is no place for
@@ -1701,55 +1653,46 @@ impl Workspace {
                 }
                 if let Some(view) = self.tabs.get(tab).and_then(|t| t.view().cloned()) {
                     view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
-                    if let Some(case) = reply
-                        .case
+                    if let Some(project) = reply
+                        .project
                         .as_ref()
-                        .and_then(|link| self.case_coordinator.case(&link.id))
+                        .and_then(|link| self.projects.project(&link.id))
                     {
-                        let reserved = case.reserved_aliases();
-                        let dismissed = case.dismissed_hints.clone();
+                        let reserved = project.mapping.reserved_aliases();
+                        let dismissed = project.dismissed_hints.clone();
                         view.update(cx, |view, cx| {
                             view.pii.review_mut().reserve_aliases(&reserved);
-                            view.dismiss_case_hints(&dismissed, cx);
+                            view.dismiss_project_hints(&dismissed, cx);
                         });
                     }
                 }
             }
             TabEvent::Import(ImportEvent::State) => {
                 self.refresh_import(window, cx);
-                // A converted document of a folder case joins it now.
-                self.attach_case(id, window, cx);
+                // A converted document of a Project gets its names now.
+                self.attach_project(id, cx);
             }
             TabEvent::Close(CloseEvent::Requested) => self.close_tab(id, window, cx),
             TabEvent::Import(ImportEvent::Ocr(state)) => self.set_ocr(state.clone(), cx),
-            TabEvent::Case(CaseEvent::Changed) => self.case_changed(id, cx),
-            TabEvent::Case(CaseEvent::Reply) => self.case_reply_changed(id, cx),
-            TabEvent::Case(CaseEvent::OpenPage) => {
-                if let Some(case) = self.tabs.get(id).and_then(|tab| tab.record().case.clone()) {
-                    self.open_case(&case, window, cx);
+            TabEvent::Project(ProjectEvent::Changed) => self.project_changed(id, cx),
+            TabEvent::Project(ProjectEvent::OpenPage) => {
+                let project = (self.tab_view(id))
+                    .and_then(|view| view.read(cx).project.link().map(|link| link.id.clone()));
+                if let Some(project) = project {
+                    self.open_project(&project, window, cx);
                 }
             }
-            TabEvent::Case(CaseEvent::MappingMissing) => {
-                // A quiet look: launch onto Home may not have checked yet.
-                self.load_cases(window, cx);
-                if self.case_key_banner().is_some() {
-                    self.carry_out_notices(self.notices.show_locked_cases());
+            TabEvent::Project(ProjectEvent::MappingMissing) => {
+                if self.vault_banner().is_some() {
+                    self.carry_out_notices(self.notices.show_locked_projects());
                     cx.notify();
                 }
             }
-            TabEvent::Case(CaseEvent::AddTerm(term)) => self.add_case_term(id, term, cx),
-            TabEvent::Case(CaseEvent::DismissHint(from, into)) => {
-                self.dismiss_case_hint(id, from, into, cx)
+            TabEvent::Project(ProjectEvent::AddTerm(term)) => self.add_project_term(id, term, cx),
+            TabEvent::Project(ProjectEvent::DismissHint(from, into)) => {
+                self.dismiss_project_hint(id, from, into, cx)
             }
-            TabEvent::Case(CaseEvent::Create { close: true }) => {
-                self.save_case_and_close(id, window, cx)
-            }
-            TabEvent::Case(CaseEvent::Create { close: false }) => {
-                if self.quit_case_saved(id, window, cx) {
-                } else if self.can_create_case(id, cx) {
-                    self.create_case(id, window, cx);
-                }
-            }
+            TabEvent::Project(ProjectEvent::MoveToNew) => self.move_to_new_project(id, window, cx),
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::SourceDisplay(display) => {
                 let display = *display;
@@ -1770,43 +1713,7 @@ impl Workspace {
                     view.update(cx, |view, cx| view.source_display_changed(window, cx));
                 }
             }
-            TabEvent::Close(CloseEvent::Resolved) => {
-                if let Some(effect) = self.quit_flow.resolved() {
-                    self.carry_out_quit(effect, window, cx);
-                }
-            }
-            TabEvent::Close(CloseEvent::Cancelled) => {
-                self.cases.closing_members.cancel();
-                Self::quit_cancelled(cx);
-                self.quit_flow.cancel();
-                self.mapping_close_cancelled(id);
-                self.cancel_case_quit();
-                let views: Vec<_> = self
-                    .tabs
-                    .iter()
-                    .filter_map(|tab| tab.view().cloned())
-                    .collect();
-                let owner = cx.entity().downgrade();
-                window.defer(cx, move |window, cx| {
-                    for view in views {
-                        view.update(cx, |view, cx| view.resume_import(window, cx));
-                    }
-                    let _ = owner.update(cx, |this, cx| this.refresh_import(window, cx));
-                });
-            }
             TabEvent::Save(SaveEvent::Changed) => self.autosave(id, window, cx),
-            #[cfg(test)]
-            TabEvent::Save(SaveEvent::Filed) => {
-                let filed = self
-                    .tabs
-                    .get(id)
-                    .and_then(|tab| tab.view())
-                    .and_then(|view| view.read(cx).session.document.id());
-                self.tabs.set_document(id, filed);
-                self.case_reply_changed(id, cx);
-                self.case_changed(id, cx);
-                self.record_review(id, cx);
-            }
             TabEvent::Import(ImportEvent::Finished) => self.refresh_import(window, cx),
             TabEvent::Docx(DocxEvent::Finished { generation }) => {
                 self.docx_finished(id, *generation, window, cx);
@@ -1875,11 +1782,11 @@ impl Workspace {
         if !self.quit_flow.may_close() {
             return;
         }
-        if !self.tabs.contains(id) || !self.confirm_mapping_close(id, window, cx) {
+        if !self.tabs.contains(id) {
             return;
         }
-        // A member's latest mapping reaches its case before the tab goes.
-        self.case_changed(id, cx);
+        // A member's latest mapping reaches its Project before the tab goes.
+        self.project_changed(id, cx);
         let Some(tab) = self.tabs.get(id) else {
             return;
         };
@@ -1964,7 +1871,7 @@ impl Workspace {
         }
         self.checkpoint(window, cx);
         cx.notify();
-        if let Some(next) = self.cases.closing_members.removed(id) {
+        if let Some(next) = self.project_ui.closing_members.removed(id) {
             self.close_tab(next, window, cx);
         }
     }
@@ -2002,19 +1909,8 @@ impl Workspace {
         }) {
             return;
         }
-        // A question already up (the summary, or a tab's mapping) is
-        // answered first.
-        if self.mapping_prompt_open() {
-            return;
-        }
-        // Documents save themselves; only a mapping a case would lose is
-        // asked about.
-        let at_risk = self.at_risk_tabs(cx);
-        // A hidden window shows before it asks anything.
-        if !at_risk.is_empty() {
-            crate::menu_bar::reveal_if_hidden(window, cx);
-        }
-        self.start_quit(at_risk, window, cx);
+        // Documents and their names save themselves: nothing is asked.
+        self.start_quit(VecDeque::new(), window, cx);
     }
 
     /// A quit from outside the app (macOS: the Dock, an Apple Event,
@@ -2039,16 +1935,6 @@ impl Workspace {
         crate::system_quit::cancelled(cx);
     }
 
-    /// Tabs whose mapping a quit would lose, in sidebar order.
-    fn at_risk_tabs(&mut self, cx: &mut Context<Self>) -> VecDeque<u64> {
-        self.mapping_quit_started();
-        self.tabs
-            .iter()
-            .map(|tab| tab.id())
-            .filter(|&id| self.mapping_at_risk(id, true, cx))
-            .collect()
-    }
-
     /// Ask each tab in `at_risk` in turn, then quit.
     fn start_quit(&mut self, at_risk: VecDeque<u64>, window: &mut Window, cx: &mut Context<Self>) {
         let effect = self.quit_flow.quit(self.tabs.active(), at_risk);
@@ -2057,11 +1943,7 @@ impl Workspace {
 
     fn carry_out_quit(&mut self, effect: QuitEffect, window: &mut Window, cx: &mut Context<Self>) {
         match effect {
-            QuitEffect::Resolve(id) => {
-                crate::menu_bar::reveal_if_hidden(window, cx);
-                if self.quit_flow.quitting() && self.ask_quit_mapping(id, window, cx) {
-                    return;
-                }
+            QuitEffect::Resolve(_) => {
                 if let Some(effect) = self.quit_flow.resolved() {
                     self.carry_out_quit(effect, window, cx);
                 }
@@ -2077,14 +1959,15 @@ impl Workspace {
                     view.update(cx, |view, _| view.cancel_autosave());
                 }
                 self.autosave_all(window, cx);
+                self.queue_project_writes(window, cx);
                 self.checkpoint(window, cx);
                 self.finish_quit(window, cx);
             }
         }
     }
 
-    /// The quit's last step, once documents and the session are written:
-    /// the Vault's summaries, then the cases, then the window.
+    /// The quit's last step, once documents, Projects and the session are
+    /// written: the Vault's summaries, then the window.
     fn finish_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.quit_flow.finishing()
             || self.session_writer.writing()
@@ -2106,9 +1989,7 @@ impl Workspace {
             self.notices
                 .post(format!("Could not save the document list: {error}"));
         }
-        if self.flush_cases(window, cx) {
-            self.close_window(window, cx);
-        }
+        self.close_window(window, cx);
     }
 
     fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2137,12 +2018,11 @@ impl Workspace {
             sidebar_visible: self.sidebar.visible(),
             sidebar_choice: self.sidebar.choice(),
             theme_choice: self.theme_choice,
-            collapsed_cases: {
-                let mut ids: Vec<_> = self.cases.collapsed.iter().cloned().collect();
+            collapsed_projects: {
+                let mut ids: Vec<_> = self.project_ui.collapsed.iter().cloned().collect();
                 ids.sort();
                 ids
             },
-            cases: self.case_coordinator.summaries(),
             ..Session::default()
         };
         for tab in &self.tabs {
@@ -2166,10 +2046,6 @@ impl Workspace {
                 } else {
                     None
                 };
-                // A document still waiting to join its folder's case keeps it.
-                if let Some(link) = view.case.link() {
-                    record.case = Some(link.id.clone());
-                }
                 if let Some(document) = view.session.document.id() {
                     record.set_document(document);
                 }
@@ -2251,7 +2127,6 @@ impl Workspace {
                         this.session_writer.failed();
                         this.notices.post(format!("Could not save session: {error}"));
                         let was_quitting = this.quit_flow.abandon();
-                        this.cancel_case_quit();
                         if was_quitting {
                             // A window hidden in the menu bar shows to ask.
                             crate::menu_bar::reveal_if_hidden(window, cx);
@@ -2381,13 +2256,13 @@ impl Workspace {
         }
     }
 
-    /// A tab's or a case's context menu is open. The sidebar then shows no
+    /// A tab's or a Project's context menu is open. The sidebar then shows no
     /// tooltips (#310): GPUI keeps a shown tooltip while the pointer rests
     /// on it, draws it over the menu, and shows a new one when the pointer
     /// slips off the menu onto a row. Rendering a control without its
     /// tooltip is GPUI's one way to dismiss it.
     pub(super) fn context_menu_open(&self) -> bool {
-        self.tab_menu.is_some() || self.cases.header_menu.is_some()
+        self.tab_menu.is_some() || self.project_ui.header_menu.is_some()
     }
 
     /// A context menu, drag, the pointer, or keyboard focus keeps the reveal open.
@@ -2504,12 +2379,12 @@ impl Workspace {
         }
     }
 
-    /// OS files dropped on a case header: a folder among them offers Add to
-    /// that case; plain files open as on the list.
-    fn drop_on_case(
+    /// OS files dropped on a Project header: they are imported into that
+    /// Project, and a folder among them offers Add to it.
+    fn drop_on_project(
         &mut self,
         paths: &gpui::ExternalPaths,
-        case: &str,
+        project: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -2517,7 +2392,7 @@ impl Workspace {
         activate_for_drop(window, cx);
         if !self.quit_flow.quitting() {
             let paths = paths.paths().to_vec();
-            self.open_paths_into(paths, None, Some(case.to_string()), window, cx);
+            self.open_paths_into(paths, None, Some(project.to_string()), window, cx);
         }
     }
 
@@ -2866,51 +2741,47 @@ impl Workspace {
                 )
             })
             .collect::<Vec<_>>();
-        // A case's header sits above its first member in each run of tabs.
-        let mut rows_with_cases = Vec::with_capacity(rows.len());
-        if let Some(page) = &self.cases.page
+        // A Project's header sits above its first member in each run of tabs.
+        let mut rows_with_projects = Vec::with_capacity(rows.len());
+        if let Some(page) = &self.project_ui.page
             && !self.tabs.iter().any(|tab| {
-                self.sidebar_case_link(tab, cx)
+                self.sidebar_project_link(tab, cx)
                     .is_some_and(|link| link.id == page.id())
             })
-            && let Some(summary) = self
-                .case_coordinator
-                .summaries()
-                .iter()
-                .find(|summary| summary.id == page.id())
+            && let Some(link) = self.projects.link(page.id())
         {
-            rows_with_cases.push(self.case_header(&summary.link(), 0, summary.documents, cx));
+            rows_with_projects.push(self.project_header(&link, 0, cx));
         }
         let mut previous: Option<Option<String>> = None;
         for (index, row) in rows.into_iter().enumerate() {
             let Some(row) = row else {
                 continue;
             };
-            let link = self.sidebar_case_link(&self.tabs[index], cx);
+            let link = self.sidebar_project_link(&self.tabs[index], cx);
             let id = link.as_ref().map(|l| l.id.clone());
-            // Tabs without a case gather under "Open".
+            // Tabs outside a Project gather under "Open".
             if link.is_none() && previous.as_ref() != Some(&None) {
-                rows_with_cases.push(self.section_label("Open"));
+                rows_with_projects.push(self.section_label("Open"));
             }
             if let Some(link) = link.filter(|_| previous.as_ref() != Some(&id)) {
                 let count = self
                     .tabs
                     .iter()
                     .skip(index)
-                    .take_while(|t| self.sidebar_case_link(t, cx).map(|link| link.id) == id)
+                    .take_while(|t| self.sidebar_project_link(t, cx).map(|link| link.id) == id)
                     .count();
-                rows_with_cases.push(self.case_header(&link, self.tabs[index].id(), count, cx));
+                rows_with_projects.push(self.project_header(&link, count, cx));
             }
             let folded = id
                 .as_ref()
-                .is_some_and(|id| self.cases.collapsed.contains(id))
+                .is_some_and(|id| self.project_ui.collapsed.contains(id))
                 && self.tabs[index].id() != self.tabs.active();
             previous = Some(id);
             if !folded {
-                rows_with_cases.push(row.into_any_element());
+                rows_with_projects.push(row.into_any_element());
             }
         }
-        let rows = rows_with_cases;
+        let rows = rows_with_projects;
         let new_row = ui::control("sidebar-new", "", theme, true)
             .track_focus(&self.panel_new_focus)
             .aria_label("New Markdown tab")
@@ -3455,6 +3326,15 @@ struct VaultLoaded {
     unconverted: bool,
     warning: Option<String>,
     left_out: Option<String>,
+    /// An Unfiled document's own names, for a load without its review.
+    names: Option<LocalNames>,
+}
+
+/// An Unfiled document's names, as its mapping keeps them.
+struct LocalNames {
+    identities: Vec<mdoc_pii::restore::ExportedIdentity>,
+    reserved: Vec<String>,
+    not_names: Vec<(String, String)>,
 }
 
 /// Read Vault document `id`; a document with a Source gets a viewing copy
@@ -3478,13 +3358,19 @@ fn load_from_vault(
         ),
         _ => None,
     };
-    // Admitted and never written since: a text emptied by its user stays so.
-    let unconverted = copy.is_some() && stored.markdown.is_empty() && stored.revision == 1;
+    // Admitted and its text never written, though a move may have changed
+    // its place: a text emptied by its user stays so.
+    let unconverted = copy.is_some() && stored.pending_conversion();
     let (warning, left_out) = original.map_or((None, None), |original| {
         (
             original.info.import_warning.clone(),
             original.info.left_out.clone(),
         )
+    });
+    let names = (stored.project.is_none() && !stored.mapping.is_empty()).then(|| LocalNames {
+        identities: stored.mapping.exported(),
+        reserved: stored.mapping.reserved_aliases_for(&stored.id),
+        not_names: stored.mapping.not_names_of(&stored.id),
     });
     let mut document = Document::in_vault(id, stored.markdown);
     document.review = stored.review;
@@ -3497,6 +3383,7 @@ fn load_from_vault(
             unconverted,
             warning,
             left_out,
+            names,
         }),
     })
 }
@@ -3622,13 +3509,13 @@ impl Render for Workspace {
         if !cx.has_active_drag() && self.shell.drop.is_some() {
             self.shell.drop = None;
         }
-        // Notices wait behind the header's bell; a new one opens it,
-        // except locked cases, which open it only when a locked case is
-        // needed.
+        // Notices wait behind the header's bell; a new one opens it, and so
+        // does a locked or unavailable Vault. A Vault sealed with another key
+        // waits behind it: Home asks for its recovery key.
+        let locked = self.vault_banner().is_some();
+        let needed = locked && self.vault.wrong_key_root().is_none();
         self.notices.set_recovery_nudge(self.recovery_nudge());
-        let (notices, effect) = self
-            .notices
-            .count(self.case_key_banner().is_some(), self.case_key_needed());
+        let (notices, effect) = self.notices.count(locked, needed);
         if let Some(effect) = effect {
             self.carry_out_notices(effect);
         }
@@ -3845,7 +3732,7 @@ impl Render for Workspace {
                                     },
                                 ))
                                 .map(|menu| {
-                                    let cases = self.case_menu_items(id, cx);
+                                    let cases = self.project_menu_items(id, cx);
                                     let divider = !cases.is_empty();
                                     menu.children(cases)
                                         .when(divider, |v| {
@@ -3859,8 +3746,9 @@ impl Render for Workspace {
                     .with_priority(1),
                 )
             })
-            .children(self.case_list(cx))
-            .children(self.case_header_menu(cx))
+            .children(self.project_list(cx))
+            .children(self.move_toast(cx))
+            .children(self.project_header_menu(cx))
             .children(self.folder_sheet_view(window, cx))
             .children(self.keychain_explainer(window, cx))
             .child(
@@ -3885,8 +3773,8 @@ impl Workspace {
     /// then Home or the active document.
     fn card(&mut self, home: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
-        let content = if self.cases.page.is_some() {
-            self.case_page(window, cx)
+        let content = if self.project_ui.page.is_some() {
+            self.project_page(window, cx)
         } else if home {
             self.home_view(window, cx)
         } else {
@@ -4002,7 +3890,7 @@ mod tests;
 impl Workspace {
     /// Ctrl+Enter or Shift+F10 (and the Menu key on Windows) opens the
     /// focused tab's menu at its rendered row, including the collapsed rail.
-    /// It exposes case actions without a pointer.
+    /// It exposes Project actions without a pointer.
     fn sidebar_tab_menu(&self, row: ui::Control, id: u64, cx: &mut Context<Self>) -> ui::Control {
         let bounds = std::rc::Rc::new(std::cell::Cell::new(gpui::Bounds::default()));
         let drawn = bounds.clone();
@@ -4037,8 +3925,8 @@ impl Workspace {
     fn history_document(&self, window: &Window, cx: &App) -> Option<Entity<DocumentView>> {
         if self.showing_overview(cx)
             || self.settings.read(cx).open
-            || self.cases.list_open
-            || self.cases.explainer
+            || self.project_ui.list_open
+            || self.project_ui.explainer
             || self.folder_sheets.open()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
@@ -4057,8 +3945,8 @@ impl Workspace {
     pub(crate) fn cycle_region(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
         // Modal surfaces keep focus until closed.
         if self.settings.read(cx).open
-            || self.cases.list_open
-            || self.cases.explainer
+            || self.project_ui.list_open
+            || self.project_ui.explainer
             || self.folder_sheets.open()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
@@ -4107,7 +3995,7 @@ impl Workspace {
     /// Where F6 enters the sidebar: the active tab's row, or
     /// Home's row on Home, in the layout drawn now. That is the expanded
     /// list (or the rail's open reveal), or the collapsed rail, whose row
-    /// opens the reveal. None when no such row is shown (a case page): the
+    /// opens the reveal. None when no such row is shown (a Project page): the
     /// region's first control.
     fn sidebar_landing(&self, cx: &App) -> Option<gpui::FocusHandle> {
         let list = self.sidebar.visible() || self.sidebar.reveal() == Reveal::Shown;
@@ -4119,11 +4007,11 @@ impl Workspace {
             };
             return Some(home.clone());
         }
-        if self.cases.page.is_some() {
+        if self.project_ui.page.is_some() {
             return None;
         }
         // The rail's row opens the reveal and hands focus to the list's row,
-        // so the tab must be in the list too (a folded case member is not).
+        // so the tab must be in the list too (a folded Project member is not).
         let tab = self.tabs.active();
         if !self.listed_tabs(cx).contains(&tab) {
             return None;
@@ -4241,15 +4129,15 @@ impl Workspace {
     }
 
     /// The tabs the expanded sidebar lists, in order: not Home's
-    /// placeholder, nor inactive members of a folded case.
+    /// placeholder, nor inactive members of a folded Project.
     fn listed_tabs(&self, cx: &App) -> Vec<u64> {
         self.tabs
             .iter()
             .filter(|tab| !self.is_placeholder(tab, cx))
             .filter(|tab| {
-                let case = tab.view().and_then(|v| v.read(cx).case.link());
+                let project = self.sidebar_project_link(tab, cx);
                 tab.id() == self.tabs.active()
-                    || !case.is_some_and(|link| self.cases.collapsed.contains(&link.id))
+                    || !project.is_some_and(|link| self.project_ui.collapsed.contains(&link.id))
             })
             .map(|tab| tab.id())
             .collect()

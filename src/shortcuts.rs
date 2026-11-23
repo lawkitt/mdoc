@@ -54,7 +54,7 @@ pub enum Owner {
     /// Text fields (`markdown_search::bind_keys`).
     TextField,
     Pii,
-    Cases,
+    Projects,
     Shell,
     Settings,
     Dictionary,
@@ -1345,42 +1345,42 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Save the case name",
+        "Save the Project name",
         &[on!(
-            Cases,
-            Some("CaseName"),
+            Projects,
+            Some("ProjectName"),
             &["enter"],
-            workspace::ConfirmCaseName
+            workspace::ConfirmProjectName
         )],
     ),
     row(
         Popup,
-        "Cancel renaming the case",
+        "Cancel renaming the Project",
         &[on!(
-            Cases,
-            Some("CaseName"),
+            Projects,
+            Some("ProjectName"),
             &["escape"],
-            workspace::CancelCaseName
+            workspace::CancelProjectName
         )],
     ),
     row(
         Panel,
-        "Add a name to the case",
+        "Add a name to the Project",
         &[on!(
-            Cases,
-            Some("CaseTerm"),
+            Projects,
+            Some("ProjectTerm"),
             &["enter"],
-            workspace::AddCaseName
+            workspace::AddProjectName
         )],
     ),
     row(
         Panel,
-        "Clear the new case name",
+        "Clear the new Project name",
         &[on!(
-            Cases,
-            Some("CaseTerm"),
+            Projects,
+            Some("ProjectTerm"),
             &["escape"],
-            workspace::ClearCaseName
+            workspace::ClearProjectName
         )],
     ),
     row(

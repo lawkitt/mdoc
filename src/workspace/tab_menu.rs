@@ -1,8 +1,7 @@
 //! The sidebar tab menu's file and close rows (UI polish grill decision 13):
 //! Reveal in Finder (Show in Explorer on Windows) and Copy path for a tab
 //! with a file, then Close tab and Close others. Close others closes the
-//! other tabs in turn, as a case's Close all does, so each at-risk tab asks
-//! with the at-risk prompt and Cancel stops the rest.
+//! other tabs in turn, as a Project's Close all does.
 use super::Workspace;
 use crate::ui;
 use gpui::{AnyElement, App, Context, Window, prelude::*};
@@ -12,7 +11,7 @@ use std::{
     rc::Rc,
 };
 
-/// A row below the tab's case rows.
+/// A row below the tab's Project rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TabMenuItem {
     Reveal,
@@ -202,16 +201,14 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Close every tab but `keep`, in sidebar order. Each at-risk tab asks
-    /// first, as closing it alone would; once a tab is removed the
-    /// next follows, and Cancel at any question stops the rest. The queue is
-    /// the one a case's Close all uses.
+    /// Close every tab but `keep`, in sidebar order: once a tab is removed
+    /// the next follows. The queue is the one a Project's Close all uses.
     pub(super) fn close_others(&mut self, keep: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.quit_flow.may_close() || self.mapping_prompt_open() {
+        if !self.quit_flow.may_close() {
             return;
         }
         let others = self.other_tabs(keep, cx);
-        if let Some(first) = self.cases.closing_members.begin(others) {
+        if let Some(first) = self.project_ui.closing_members.begin(others) {
             self.close_tab(first, window, cx);
         }
     }

@@ -827,6 +827,7 @@ impl Drop for Vault {
 
 fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Document {
     let now = now();
+    let unconverted = original.is_some() && new.markdown.is_empty();
     Document {
         id,
         project: new.project,
@@ -838,6 +839,7 @@ fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Doc
         updated: now,
         revision: 1,
         markdown: new.markdown,
+        unconverted,
         scanned: false,
         ready_fingerprint: None,
         mapping: Mapping::default(),

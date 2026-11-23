@@ -256,6 +256,8 @@ impl Vault {
         // The review's ranges and identities were of that text and mapping
         // too: the next open scans again.
         moved.review = None;
+        // Its text is still to be made, though the move writes it.
+        moved.unconverted = stored.pending_conversion();
         let moved = match self.place_document(lock, moved) {
             Ok(moved) => moved,
             Err(error) => {
@@ -465,4 +467,58 @@ fn realias(
     }
     out.push_str(&text[at..]);
     Ok((out, exported, ids))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        DocumentOrigin, NewDocument, NewProject, OriginalInfo, ProjectDocuments, SourceKind, Vault,
+    };
+
+    /// A Document imported before `unconverted` existed (revision 1, no
+    /// text, the flag absent) stays waiting for its conversion through the
+    /// move a Project delete makes.
+    #[test]
+    fn an_import_from_before_the_flag_stays_unconverted_through_a_move() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (project, id) = {
+            let vault = Vault::open(&root, &[7; 32]).unwrap();
+            let project = (vault.create_project(NewProject {
+                name: "Lease".into(),
+                ..NewProject::default()
+            }))
+            .unwrap();
+            let new = NewDocument {
+                project: Some(project.id.clone()),
+                title: "Brief".into(),
+                source_kind: SourceKind::Pdf,
+                origin: DocumentOrigin::Ordinary,
+                markdown: String::new(),
+            };
+            let info = OriginalInfo {
+                file_name: "a.pdf".into(),
+                ..OriginalInfo::default()
+            };
+            let mut legacy = vault.import_document(new, &b"source"[..], info).unwrap();
+            // As an import wrote it before the flag.
+            legacy.unconverted = false;
+            let lock = vault.write_lock().unwrap();
+            vault.write_record(&lock, &legacy).unwrap();
+            (project.id, legacy.id)
+        };
+        let vault = Vault::open(&root, &[7; 32]).unwrap();
+        let stored = vault.document(&id).unwrap();
+        assert!(!stored.unconverted && stored.revision == 1);
+        assert!(stored.pending_conversion());
+        vault
+            .delete_project(&project, ProjectDocuments::MoveToUnfiled)
+            .unwrap();
+        let moved = vault.document(&id).unwrap();
+        assert!(moved.revision > 1 && moved.project.is_none());
+        assert!(moved.unconverted && moved.pending_conversion());
+        // A save of text clears it, whoever saves.
+        let saved = (vault.update_document(&id, |d| d.markdown = "# Brief".into())).unwrap();
+        assert!(!saved.unconverted && !saved.pending_conversion());
+    }
 }
