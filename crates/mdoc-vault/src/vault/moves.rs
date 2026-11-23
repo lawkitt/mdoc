@@ -256,6 +256,7 @@ impl Vault {
         // The review's ranges and identities were of that text and mapping
         // too: the next open scans again.
         moved.review = None;
+        moved.counts = None;
         let moved = match self.place_document(lock, moved) {
             Ok(moved) => moved,
             Err(error) => {

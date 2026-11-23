@@ -13,6 +13,7 @@ mod review;
 mod saving;
 mod scanning;
 mod snapshot;
+mod vault;
 
 use crate::{
     CoreError,
@@ -41,6 +42,8 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+pub(crate) use vault::vault_counts;
+pub use vault::{SavedVaultChange, SavedVaultDocument};
 
 /// Where a long job is; the platform shows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -162,6 +165,13 @@ struct Document {
     /// The first line's title a new document last took
     /// (`follow_first_line`), so an unchanged line renames nothing.
     followed: Option<String>,
+    /// The file family it came from, which its first Vault save records.
+    source_kind: mdoc_vault::SourceKind,
+    /// Where it is in the Vault, once it joined a Project there or was
+    /// saved or opened there (`vault`); `None` for a document of the
+    /// library's, which keeps `path` and `case` instead. A document is
+    /// kept by one or the other, never both.
+    vault: Option<vault::Place>,
 }
 
 #[derive(uniffi::Object)]
@@ -322,6 +332,7 @@ impl DocumentSession {
         let imported = intake::Imported {
             title,
             markdown: text,
+            source_kind: mdoc_vault::SourceKind::Text,
             note: intake::ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -356,6 +367,7 @@ impl DocumentSession {
         let imported = intake::Imported {
             title: crate::library::title_of(Path::new(&path)),
             markdown: stored.saved.clone(),
+            source_kind: mdoc_vault::SourceKind::Markdown,
             note: intake::ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -369,6 +381,7 @@ impl DocumentSession {
             scanned: read.as_ref().map(|s| s.scanned),
             origin: read.as_ref().map(|s| s.origin).unwrap_or_default(),
             reopened: true,
+            vault: None,
         };
         let snapshot = self.open(imported, &cancel, Some(opened))?;
         #[cfg(test)]
@@ -703,6 +716,7 @@ impl DocumentSession {
         let case = library.load(&case_id)?;
         let _saving = self.lock_saving();
         self.with_document(|document| match &document.case {
+            _ if document.vault.is_some() => Err(vault::in_vault()),
             Some(joined) if *joined == case_id => Ok(()),
             Some(_) => Err(CoreError::case("This document is in another case.")),
             None => {
@@ -811,6 +825,9 @@ struct Opened {
     origin: DocumentOrigin,
     /// A stored document, not one just begun.
     reopened: bool,
+    /// A Vault document and its Project, in place of the library's file
+    /// and case.
+    vault: Option<vault::FromVault>,
 }
 
 impl Opened {
@@ -824,6 +841,7 @@ impl Opened {
             scanned: None,
             origin,
             reopened: false,
+            vault: None,
         }
     }
 }
@@ -854,6 +872,16 @@ impl Document {
         format!("{}.md", title.trim())
     }
 
+    /// Its case, or its Project in the Vault: what snapshots and `info`
+    /// call its case until Case reads Project there too.
+    fn case_or_project(&self) -> Option<&str> {
+        let project = self
+            .vault
+            .as_ref()
+            .and_then(|place| place.project.as_deref());
+        self.case.as_deref().or(project)
+    }
+
     /// Changes when the review does, or when the document is first scanned.
     fn change_key(&self) -> ((u64, u64, usize), bool) {
         (self.review.change_key(), self.scanned)
@@ -865,7 +893,7 @@ impl Document {
             &self.title,
             &self.note,
             &self.review,
-            self.case.as_deref(),
+            self.case_or_project(),
             self.scanned,
         )
     }
@@ -915,29 +943,35 @@ impl DocumentSession {
             rejoined: false,
             origin: DocumentOrigin::Ordinary,
             followed: None,
+            source_kind: imported.source_kind,
+            vault: None,
         };
         if let Some(opened) = opened.filter(|opened| {
             document.origin = opened.origin;
             opened.reopened
         }) {
-            document.path = opened.path;
-            document.stored = opened.stored;
-            if let Some(case) = opened.case {
-                document
-                    .review
-                    .open_in_case(&case, opened.member.as_deref());
-                document.review.dismiss_pairs(&case.dismissed_hints);
-                document.skip = case.skipped();
-                document.synced = Some(case.identities.clone());
-                document.case = Some(case.id);
+            if let Some(from) = opened.vault {
+                document.open_in_vault(from);
+            } else {
+                document.path = opened.path;
+                document.stored = opened.stored;
+                if let Some(case) = opened.case {
+                    document
+                        .review
+                        .open_in_case(&case, opened.member.as_deref());
+                    document.review.dismiss_pairs(&case.dismissed_hints);
+                    document.skip = case.skipped();
+                    document.synced = Some(case.identities.clone());
+                    document.case = Some(case.id);
+                }
+                // Saved before scans were recorded: scanned when it has
+                // mentions, as the apps used to tell.
+                document.scanned = opened
+                    .scanned
+                    .unwrap_or_else(|| document.review.has_mentions());
+                // As saved: nothing to save until something changes.
+                document.saved = Some(document.change_key());
             }
-            // Saved before scans were recorded: scanned when it has
-            // mentions, as the apps used to tell.
-            document.scanned = opened
-                .scanned
-                .unwrap_or_else(|| document.review.has_mentions());
-            // As saved: nothing to save until something changes.
-            document.saved = Some(document.change_key());
         }
         let snapshot = document.snapshot();
         // The document lock, then the job's check: a newer job that starts

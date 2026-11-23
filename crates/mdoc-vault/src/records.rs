@@ -123,6 +123,11 @@ pub struct Document {
     /// or update keeps it as stored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original: Option<Original>,
+    /// What its review counted at the last save, so lists show it without
+    /// opening it; `None` until a save says. A move clears it with the
+    /// review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counts: Option<ReviewCounts>,
 }
 
 /// What the Document record knows of its Source Original; the sealed file
@@ -153,6 +158,15 @@ pub struct OriginalInfo {
     /// The left-out line: what else the Markdown leaves out, counted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub left_out: Option<String>,
+}
+
+/// A review's mentions by state, as the caller counted them at a save.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ReviewCounts {
+    /// Proposals left.
+    pub proposed: u64,
+    pub replaced: u64,
+    pub kept: u64,
 }
 
 /// What a new Document starts with.
@@ -291,6 +305,9 @@ pub struct DocumentSummary {
     /// The original's SHA-256 in hex, for the repeated-import check.
     #[serde(default)]
     pub source_sha256: Option<String>,
+    /// [`Document::counts`].
+    #[serde(default)]
+    pub counts: Option<ReviewCounts>,
 }
 
 impl DocumentSummary {
@@ -306,6 +323,7 @@ impl DocumentSummary {
             created: document.created,
             updated: document.updated,
             source_sha256: (document.original.as_ref()).map(|original| original.sha256.clone()),
+            counts: document.counts,
         }
     }
 }

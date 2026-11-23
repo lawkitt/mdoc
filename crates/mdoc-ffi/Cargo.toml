@@ -29,6 +29,8 @@ mdoc-import = { path = "../mdoc-import" }
 mdoc-markdown = { path = "../mdoc-markdown" }
 mdoc-pii = { path = "../mdoc-pii" }
 mdoc-store = { path = "../mdoc-store" }
+# Projects and Documents in the encrypted Vault (src/vault.rs, ADR 0125).
+mdoc-vault = { path = "../mdoc-vault" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

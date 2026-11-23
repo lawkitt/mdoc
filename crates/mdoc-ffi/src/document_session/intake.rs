@@ -28,6 +28,8 @@ pub fn image_without_metadata(image: Vec<u8>) -> Option<Vec<u8>> {
 pub(super) struct Imported {
     pub title: String,
     pub markdown: String,
+    /// The file family a first save into the Vault records.
+    pub source_kind: mdoc_vault::SourceKind,
     pub note: ImportNote,
     /// OCR's kept pages, removed once the session takes the document.
     pub kept: Option<mdoc_import::resume::Completed>,
@@ -66,6 +68,7 @@ pub(super) fn import_file(
         return Ok(Imported {
             title,
             markdown,
+            source_kind: source_kind(path),
             note: ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -109,7 +112,32 @@ pub(super) fn import_file(
             None,
         ),
     };
-    finish(title, imported, completed, cancel)
+    finish(title, source_kind(path), imported, completed, cancel)
+}
+
+/// The file family `path` is from (#1091, source kind). OpenDocument text
+/// and RTF count as `word`, CSV and OpenDocument sheets as `spreadsheet`;
+/// anything else that is not an image or Markdown is `text`.
+pub(super) fn source_kind(path: &Path) -> mdoc_vault::SourceKind {
+    use mdoc_vault::SourceKind as Kind;
+    if ImageFormat::from_path(path).is_some() {
+        return Kind::Image;
+    }
+    if mdoc_store::document::is_markdown(path) {
+        return Kind::Markdown;
+    }
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "pdf" => Kind::Pdf,
+        "doc" | "docx" | "docm" | "odt" | "rtf" => Kind::Word,
+        "xls" | "xlsx" | "xlsm" | "xlsb" | "ods" | "csv" => Kind::Spreadsheet,
+        "ppt" | "pps" | "pot" | "pptx" | "pptm" | "ppsx" | "ppsm" | "odp" => Kind::Presentation,
+        "epub" => Kind::Ebook,
+        _ => Kind::Text,
+    }
 }
 
 /// Import `images`, photos or camera pages picked together, as one
@@ -158,7 +186,13 @@ pub(super) fn import_images(
             None,
         ),
     };
-    finish(title, imported, completed, cancel)
+    finish(
+        title,
+        mdoc_vault::SourceKind::Image,
+        imported,
+        completed,
+        cancel,
+    )
 }
 
 /// Each finished page: the bar shows it, and iOS keeps a background job
@@ -171,6 +205,7 @@ fn advanced(progress: Option<&dyn JobProgress>, page: u32, pages: u32) {
 
 fn finish(
     title: String,
+    source_kind: mdoc_vault::SourceKind,
     imported: mdoc_import::import::Imported,
     kept: Option<mdoc_import::resume::Completed>,
     cancel: &AtomicBool,
@@ -180,6 +215,7 @@ fn finish(
     }
     Ok(Imported {
         title,
+        source_kind,
         note: ImportNote::of(&imported),
         markdown: imported.markdown,
         kept,
