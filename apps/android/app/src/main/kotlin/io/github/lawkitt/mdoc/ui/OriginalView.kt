@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +52,7 @@ import android.system.Os
 import android.system.OsConstants
 import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 /**
@@ -100,12 +100,15 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
 
 @Composable
 private fun PdfPages(file: OriginalData, modifier: Modifier) {
+    // Opened off the main thread (a Vault original decrypts first) and closed
+    // when the pane goes, even if it went while the renderer was opening.
     val opening by produceState<Result<PdfRenderer>?>(null, file) {
-        value = withContext(Dispatchers.IO) { runCatching { open(file) } }
+        val opened = withContext(Dispatchers.IO + NonCancellable) { runCatching { open(file) } }
+        value = opened
+        awaitDispose { opened.getOrNull()?.close() }
     }
     val opened = opening ?: return
     val renderer = opened.getOrNull()
-    DisposableEffect(renderer) { onDispose { renderer?.close() } }
     if (renderer == null) {
         // A PDF locked against opening, or encrypted in a way the renderer
         // can't read (it says the same for both): it takes no password
