@@ -181,10 +181,11 @@ fn opening_a_file_from_the_os_shows_the_hidden_window(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    // The file became a document, opened from it.
     assert!(
         cx.update(|_, cx| tabs
             .read(cx)
-            .find_path(&session_store::identity(&path), None, cx))
+            .open_tab_for(&session_store::identity(&path), cx))
             .is_some()
     );
 }
@@ -259,7 +260,12 @@ fn quit_when_windows_close_turns_the_switch_off_and_quits(cx: &mut TestAppContex
         })
         .unwrap();
     cx.run_until_parked();
-    assert!(note(cx).is_none());
+    // The window is gone with the quit, so look at the app's windows.
+    assert!(cx.cx.read(|cx| {
+        cx.windows()
+            .iter()
+            .all(|window| window.downcast::<crate::shelf_ui::NoteView>().is_none())
+    }));
     assert!(!cx.cx.read(menu_bar::keeps_running));
     // Nothing asks: the edit is written and the app quits.
     assert!(!cx.has_pending_prompt());
