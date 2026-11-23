@@ -340,6 +340,16 @@ pub enum ReplyOwner {
     Document(String),
 }
 
+/// Where the text an AI Reply answers was shared from; it decides the
+/// reply's [`ReplyOwner`] (`Vault::save_shared_reply`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SharedFrom {
+    /// A Project as a whole, from its page.
+    Project(String),
+    /// A Document: its Project's when it is in one, else Unfiled.
+    Document(String),
+}
+
 /// An AI Reply (#1091 Decisions 16 and 18): the pseudonymized text as
 /// received and what each alias in it meant when it was saved. Written once.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
