@@ -400,14 +400,6 @@ not coherent between them and `main` stays releasable; item 23 lands them.
    byte, a truncated file, swapped chunks and a file placed under another
    document all fail to open; a second import of the same bytes finds the
    first.
-9. **[iOS] iOS cuts over to the Vault with today's screens.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The app uses the new
-   objects. "Case" reads "Project"; a scan, file, paste or new document lands
-   in Unfiled, or in the Project it was started from, and no import makes a
-   Project; documents are known by id; an original is viewed from a cache
-   wiped on close and at launch; the old library's files stay untouched.
-   *Blocked by:* item 7. *Done when:* iOS unit and UI tests pass, and a device
-   check imports, reviews, shares and reopens a document.
 10. **[iOS] Restore extension and saved replies on the Vault.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Restore with mdoc
     reads a Project and saves the reply through the Vault; the app lists it
