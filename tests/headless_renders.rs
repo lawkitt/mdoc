@@ -424,6 +424,9 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     matches!(
                         *name,
                         "project-page"
+                            | "project-page-replies"
+                            | "project-page-names"
+                            | "project-page-menu"
                             | "project-page-lists"
                             | "rename-project"
                             | "project-categories"

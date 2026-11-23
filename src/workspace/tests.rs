@@ -51,6 +51,7 @@ mod projects;
 mod quit_flow;
 mod recovery_key;
 mod restore_in_place;
+mod saved_replies;
 mod session_writer;
 mod shelf;
 mod shortcuts_sheet;

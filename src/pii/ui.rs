@@ -9,10 +9,10 @@ mod discovery;
 mod mapping;
 mod render;
 mod reply;
-pub(crate) use reply::ReplyBox;
+pub(crate) use reply::{ReplyBox, SavedReplyRow, reply_marks};
 pub(crate) mod restore;
 mod scan;
-pub(crate) use restore::RestoredReply;
+pub(crate) use restore::UNRESOLVED_ID;
 use scan::ScanJob;
 #[cfg(test)]
 mod tests;
@@ -125,8 +125,6 @@ pub(crate) struct ReviewUi {
     popup_layer: PopupLayer,
     chooser_scroll: gpui::UniformListScrollHandle,
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
-    /// Set in a tab opened by Paste AI Response.
-    restore: Option<restore::RestoreState>,
     /// What you did: memory only, as long as the tab.
     decisions: mdoc_pii::decisions::DecisionLog,
     /// Writes an entry's time; renders and tests fix it.
@@ -165,7 +163,6 @@ impl ReviewUi {
             popup_size: Rc::new(Cell::new(gpui::size(px(480.), px(36.)))),
             chooser_scroll: gpui::UniformListScrollHandle::new(),
             popup_controls: Default::default(),
-            restore: None,
             decisions: Default::default(),
             clock: decisions::local_time,
         }
@@ -258,11 +255,6 @@ impl ReviewUi {
     #[cfg(test)]
     pub(crate) fn add_scan(&mut self, scan: settings::PiiConfig) {
         self.scans.push(scan);
-    }
-
-    /// Set in a tab opened by Paste AI Response.
-    pub(crate) fn restore(&self) -> Option<&restore::RestoreState> {
-        self.restore.as_ref()
     }
 
     pub(crate) fn scanning(&self) -> bool {
@@ -377,9 +369,6 @@ impl DocumentView {
         self.pii.dismiss_popup();
         self.pii.error = None;
         self.pii.mapping = mapping::MappingUi::new(self.theme.clone(), cx);
-        self.pii.restore = None;
-        self.editor
-            .update(cx, |editor, _| editor.set_copy_metadata(None));
         self.pii.decisions.clear();
         // The new review lists nothing; what the old one put on the Project's
         // lists stays there.
@@ -505,8 +494,6 @@ impl DocumentView {
                 }
             }));
         }
-        // A restored AI reply also marks placeholders it could not restore.
-        annotations.extend(self.unresolved_annotations(cx));
         self.editor.update(cx, |editor, cx| {
             editor.set_annotations(editor.revision(), annotations, cx)
         });
@@ -524,9 +511,7 @@ impl DocumentView {
     /// What this document shows, for a crash report: words and numbers only,
     /// never its text or name.
     pub(crate) fn crash_state(&self, cx: &App) -> String {
-        let kind = if self.pii.restore.is_some() {
-            "restored reply"
-        } else if self.lifecycle.source_only() {
+        let kind = if self.lifecycle.source_only() {
             "source only"
         } else if self.preview.pdf().is_some() {
             "PDF"
@@ -643,10 +628,6 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if id & APPLIED_ID == 0 && id & restore::UNRESOLVED_ID != 0 {
-            self.activate_unresolved((id & !restore::UNRESOLVED_ID) as usize, window, cx);
-            return;
-        }
         let review = &self.pii.review;
         let available = if id & KEPT_ID != 0 {
             self.pii.reviewing && self.kept_selection((id & !KEPT_ID) as usize).is_some()
@@ -1172,9 +1153,7 @@ impl DocumentView {
     /// leave focus on its unrendered card, where shortcuts reach nothing.
     /// Focus returns as Escape returns it (#79). Called while rendering.
     pub(crate) fn release_closed_popup_focus(&mut self, window: &mut Window, cx: &mut App) {
-        // The restore picker shares the popup's focus.
         if self.pii.popup.is_some()
-            || self.pii.restore.as_ref().is_some_and(|r| r.popup.is_some())
             || !(self.pii.focus.is_focused(window) || self.pii.focus.contains_focused(window, cx))
         {
             return;

@@ -1,4 +1,5 @@
 //! The Project page: it opens no document, and its actions reach the Vault.
+use super::super::project_page::Segment;
 use super::*;
 use mdoc_vault::Colour;
 
@@ -12,6 +13,8 @@ fn in_project<'a>(
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let id = new_project(&tabs, cx, tab);
     tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
+    // The recovery key nudge opens the bell over the page's header.
+    tabs.update(cx, |tabs, _| tabs.title.notices_open.set(false));
     (tabs, cx, tab, id)
 }
 
@@ -231,40 +234,28 @@ fn page_moves_closed_and_open_members_to_unfiled_without_loading_them(cx: &mut T
 }
 
 #[gpui::test]
-fn page_document_activation_and_open_all_are_explicit(cx: &mut TestAppContext) {
+fn page_document_activation_is_explicit(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _, id) = in_project(cx, dir.path());
     let closed = closed_member(&tabs, cx, &id, "PERSON_1");
     tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
     draw(cx);
+    let tabs_before = cx.update(|_, cx| tabs.read(cx).tabs.len());
     // Members sort by title: "closed" before "contract".
-    let row = cx.debug_bounds("project-document-1").unwrap();
+    let row = cx.debug_bounds("project-document-0").unwrap();
     cx.simulate_click(row.center(), Default::default());
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).project_ui.page.is_none()));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_project(&id, window, cx);
-        tabs.open_all_project_members(&id, window, cx);
-    });
-    cx.run_until_parked();
-    cx.update(|_, cx| {
-        let w = tabs.read(cx);
-        assert!(w.project_ui.page.is_none());
-        let closed = mdoc_store::document_id::DocumentId::Vault(
-            mdoc_store::document_id::VaultId::parse(&closed).unwrap(),
-        );
-        assert!(w.find_document(&closed, None, cx).is_some());
-        assert_eq!(w.tabs.len(), 2);
-    });
-    // The member opened from the page has its Project's names.
+    let closed = mdoc_store::document_id::DocumentId::Vault(
+        mdoc_store::document_id::VaultId::parse(&closed).unwrap(),
+    );
     let view = cx.update(|_, cx| {
         let w = tabs.read(cx);
-        let closed = mdoc_store::document_id::DocumentId::Vault(
-            mdoc_store::document_id::VaultId::parse(&closed).unwrap(),
-        );
+        assert!(w.project_ui.page.is_none());
+        assert_eq!(w.tabs.len(), tabs_before + 1, "only the clicked one opens");
         let tab = w.find_document(&closed, None, cx).unwrap();
         w.tabs.get(tab).unwrap().view().unwrap().clone()
     });
+    // The member opened from the page has its Project's names.
     cx.update(|_, cx| {
         assert_eq!(view.read(cx).project.link().unwrap().id, id);
         assert_eq!(view.read(cx).pii.review().applied().len(), 1);
@@ -282,6 +273,7 @@ fn names_filter_add_binding_and_every_page_control_are_keyboard_reachable(cx: &m
         }
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
+    tabs.update(cx, |tabs, cx| tabs.show_project_segment(Segment::Names, cx));
     cx.simulate_resize(size(px(720.), px(480.)));
     expand_sidebar(&tabs, cx);
     draw(cx);
@@ -378,6 +370,7 @@ fn project_page_scrolls(cx: &mut TestAppContext, sidebar_visible: bool) {
         }
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
+    tabs.update(cx, |tabs, cx| tabs.show_project_segment(Segment::Names, cx));
     cx.simulate_resize(size(px(720.), px(480.)));
     draw(cx);
     let offset = |cx: &mut VisualTestContext| {
@@ -426,7 +419,12 @@ fn project_page_scrolls(cx: &mut TestAppContext, sidebar_visible: bool) {
     let window = cx.update(|window, _| window.viewport_size());
     let scroll =
         cx.update(|_, cx| (tabs.read(cx).project_ui.page.as_ref().unwrap()).test_scroll_bounds());
-    let delete = cx.debug_bounds("project-page-delete").unwrap();
+    let last = mdoc_pii::Category::ALL
+        .into_iter()
+        .rfind(|category| *category != mdoc_pii::Category::Other)
+        .unwrap();
+    let last: &'static str = Box::leak(format!("page-category-{}", last.token()).into_boxed_str());
+    let delete = cx.debug_bounds(last).unwrap();
     assert!(
         scroll.bottom() <= window.height,
         "the scroll area {scroll:?} runs past the window {window:?}"
@@ -577,47 +575,6 @@ fn a_long_project_name_stays_inside_the_narrow_page(cx: &mut TestAppContext) {
     assert!(
         name.left() >= page.left() && name.right() <= page.right(),
         "name {name:?} outside page {page:?}"
-    );
-}
-
-#[gpui::test]
-fn project_close_all_closes_every_member_and_writes_their_edits(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, first, id) = in_project(cx, dir.path());
-    let path = dir.path().join("second.md");
-    std::fs::write(&path, "# Second").unwrap();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
-    });
-    cx.run_until_parked();
-    let second = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    move_tab(&tabs, cx, second, Some(&id));
-    let document = cx.update(|_, cx| tabs.read(cx).tab_document(second, cx).unwrap());
-    active(&tabs, cx).update(cx, |view, cx| {
-        view.editor.update(cx, |editor, cx| {
-            editor.set_text("Changed second document", cx)
-        })
-    });
-    draw(cx);
-    let row: &'static str = Box::leak(format!("tree-project-{id}").into_boxed_str());
-    let row = cx.debug_bounds(row).unwrap();
-    cx.simulate_mouse_down(row.center(), gpui::MouseButton::Right, Default::default());
-    cx.simulate_mouse_up(row.center(), gpui::MouseButton::Right, Default::default());
-    draw(cx);
-    let close = cx.debug_bounds("project-action-close-all").unwrap();
-    cx.simulate_click(close.center(), Default::default());
-    cx.run_until_parked();
-    assert!(!cx.has_pending_prompt());
-    assert!(cx.update(
-        |_, cx| !tabs.read(cx).tabs.contains(first) && !tabs.read(cx).tabs.contains(second)
-    ));
-    // The changed member wrote itself as it closed.
-    assert_eq!(
-        vault(&tabs, cx)
-            .document(document.as_str())
-            .unwrap()
-            .markdown,
-        "Changed second document"
     );
 }
 
@@ -822,4 +779,195 @@ fn the_project_list_is_centered_and_says_when_it_is_empty(cx: &mut TestAppContex
         (centered.center().x - width / 2.).abs() <= px(1.),
         "{centered:?} is centered in {width:?}"
     );
+}
+
+/// The header: colour, title, counts, Add document and ⋯, whose menu holds
+/// Rename, Colour, Categories to detect, Export Project… and Delete
+/// Project….
+#[gpui::test]
+fn the_header_and_its_menu_hold_the_project_actions(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _, id) = in_project(cx, dir.path());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
+    draw(cx);
+    for control in [
+        "project-page-color",
+        "project-page-rename",
+        "project-page-add-document",
+        "project-page-menu",
+        "project-segment-documents",
+        "project-segment-replies",
+        "project-segment-names",
+        "project-page-counts",
+    ] {
+        assert!(cx.debug_bounds(control).is_some(), "{control}");
+    }
+    click_toolbar(cx, "project-page-menu");
+    for action in [
+        "project-action-rename",
+        "project-action-colour",
+        "project-action-categories",
+        "project-action-export",
+        "project-action-delete",
+    ] {
+        assert!(cx.debug_bounds(action).is_some(), "{action}");
+    }
+    assert!(cx.debug_bounds("project-action-close-all").is_none());
+    // Colour opens the swatches; Categories opens Names at its section.
+    click_toolbar(cx, "project-action-colour");
+    assert!(cx.debug_bounds("project-swatch-Teal").is_some());
+    click_toolbar(cx, "project-page-menu");
+    click_toolbar(cx, "project-action-categories");
+    cx.update(|_, cx| {
+        let page = tabs.read(cx).project_ui.page.as_ref().unwrap();
+        assert_eq!(page.segment(), Segment::Names);
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("page-category-PERSON").is_some());
+    // Delete Project… asks the delete question at once.
+    click_toolbar(cx, "project-page-menu");
+    click_toolbar(cx, "project-action-delete");
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert!(vault(&tabs, cx).project(&id).is_ok());
+}
+
+/// The counts line follows what the Project holds.
+#[gpui::test]
+fn the_counts_follow_documents_replies_and_names(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _, id) = in_project(cx, dir.path());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
+    let counts = |cx: &mut VisualTestContext| {
+        draw(cx);
+        cx.update(|_, cx| {
+            let w = tabs.read(cx);
+            (
+                w.members(&id).len(),
+                w.project_replies(&id).len(),
+                w.projects.project(&id).unwrap().mapping.exported().len(),
+            )
+        })
+    };
+    assert_eq!(counts(cx), (1, 0, 2));
+    vault(&tabs, cx)
+        .save_reply(mdoc_vault::NewReply {
+            owner: mdoc_vault::ReplyOwner::Project(id.clone()),
+            title: "Reply".into(),
+            source_app: None,
+            markdown: "PERSON_1".into(),
+        })
+        .unwrap();
+    closed_member(&tabs, cx, &id, "ORG_1");
+    assert_eq!(counts(cx), (2, 1, 2));
+}
+
+/// Add document asks for files and imports them into the Project; a
+/// cancelled picker imports nothing.
+#[gpui::test]
+fn add_document_imports_chosen_files_into_the_project(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _, id) = in_project(cx, dir.path());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
+    draw(cx);
+    click_toolbar(cx, "project-page-add-document");
+    assert!(cx.did_prompt_for_paths());
+    cx.simulate_path_prompt_response(|options| {
+        assert!(options.files && options.multiple && !options.directories);
+        None
+    });
+    cx.run_until_parked();
+    assert_eq!(vault(&tabs, cx).documents_in(Some(&id)).len(), 1);
+    let path = dir.path().join("added.md");
+    std::fs::write(&path, "# Added").unwrap();
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
+    click_toolbar(cx, "project-page-add-document");
+    cx.simulate_path_prompt_response(move |_| Some(vec![path]));
+    cx.run_until_parked();
+    assert_eq!(vault(&tabs, cx).documents_in(Some(&id)).len(), 2);
+}
+
+/// Documents: every document of the Project; Replies: its replies newest
+/// first, each opening restored and deleted after a question; Names:
+/// searchable, grouped by category, with Always and Never and Categories to
+/// detect.
+#[gpui::test]
+fn the_three_segments_show_documents_replies_and_names(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _, id) = in_project(cx, dir.path());
+    closed_member(&tabs, cx, &id, "PERSON_1");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&id, window, cx));
+    draw(cx);
+    // Documents (the default).
+    assert!(cx.debug_bounds("project-documents").is_some());
+    assert!(cx.debug_bounds("project-document-1").is_some());
+    assert!(cx.debug_bounds("project-replies").is_none());
+    assert!(cx.debug_bounds("project-page-filter").is_none());
+
+    // Replies: empty, then two.
+    click_toolbar(cx, "project-segment-replies");
+    assert!(cx.debug_bounds("project-replies").is_some());
+    assert!(cx.debug_bounds("project-reply-0").is_none());
+    let vault = vault(&tabs, cx);
+    for (title, markdown) in [("Older", "PERSON_1 wrote."), ("Newer", "ORG_1 wrote.")] {
+        vault
+            .save_reply(mdoc_vault::NewReply {
+                owner: mdoc_vault::ReplyOwner::Project(id.clone()),
+                title: title.into(),
+                source_app: Some("Claude".into()),
+                markdown: markdown.into(),
+            })
+            .unwrap();
+    }
+    let listed = vault.project_replies(&id);
+    assert_eq!(listed.len(), 2);
+    let first = listed[0].id.clone();
+    let expected = match listed[0].title.as_str() {
+        "Older" => "Anna Petrova wrote.",
+        _ => "Northwind Traders Ltd wrote.",
+    };
+    draw(cx);
+    assert!(cx.debug_bounds("project-reply-1").is_some());
+    click_toolbar(cx, "project-reply-0");
+    cx.update(|_, cx| {
+        let page = tabs.read(cx).reply_page.as_ref().unwrap();
+        assert_eq!(page.id(), first);
+        assert_eq!(page.restored().text, expected);
+    });
+    // Delete… from the list asks, then the reply goes.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_project(&id, window, cx);
+        tabs.show_project_segment(Segment::Replies, cx);
+    });
+    draw(cx);
+    click_toolbar(cx, "project-reply-delete-0");
+    cx.simulate_prompt_answer("Delete");
+    cx.run_until_parked();
+    assert_eq!(vault.project_replies(&id).len(), 1);
+    assert!(vault.reply(&first).is_err());
+
+    // Names: grouped by category, searchable, with the lists and categories.
+    click_toolbar(cx, "project-segment-names");
+    assert!(cx.debug_bounds("project-page-filter").is_some());
+    assert!(cx.debug_bounds("project-identity-PERSON_1").is_some());
+    assert!(cx.debug_bounds("project-identity-ORG_1").is_some());
+    assert!(cx.debug_bounds("page-category-PERSON").is_some());
+    assert!(cx.debug_bounds("project-always-remove-0").is_none());
+    assert!(cx.debug_bounds("project-documents").is_none());
+    let (filter, _) = cx.update(|_, cx| {
+        tabs.read(cx)
+            .project_ui
+            .page
+            .as_ref()
+            .unwrap()
+            .test_inputs()
+    });
+    filter.update(cx, |input, cx| input.set_value("anna".into(), cx));
+    draw(cx);
+    assert!(cx.debug_bounds("project-identity-PERSON_1").is_some());
+    assert!(cx.debug_bounds("project-identity-ORG_1").is_none());
+    filter.update(cx, |input, cx| input.set_value("nobody".into(), cx));
+    draw(cx);
+    assert!(cx.debug_bounds("project-identity-PERSON_1").is_none());
 }

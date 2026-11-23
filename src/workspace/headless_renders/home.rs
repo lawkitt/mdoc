@@ -57,6 +57,8 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     document("Witness statement", Some(&smith), SourceKind::Pdf)?;
     document("Lease agreement", Some(&lease), SourceKind::Pdf)?;
 
+    // Earlier scenes' writes land in the fixture Vault before it steps aside.
+    flush(d)?;
     let fixture = d.change(move |w, window, cx| {
         let fixture = w.vault.vault().cloned();
         w.restore_vault_for_render(Arc::new(vault));
@@ -110,4 +112,22 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.settle()?;
     drop(dir);
     Ok(())
+}
+
+/// Run every pending autosave to its end.
+fn flush(d: &mut Driver) -> Result<()> {
+    for _ in 0..200 {
+        d.cx.advance_clock(Duration::from_secs(1));
+        d.settle()?;
+        let pending = d.change(|w, _, cx| {
+            let ids: Vec<u64> = w.tabs.iter().map(|tab| tab.id()).collect();
+            ids.into_iter()
+                .any(|id| w.unsaved.contains(&id) || w.write_pending_for(id, cx))
+        })?;
+        if !pending {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Err("autosaves did not finish".into())
 }

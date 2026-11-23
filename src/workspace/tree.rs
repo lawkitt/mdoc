@@ -53,8 +53,8 @@ impl Row {
 /// What the window shows, as the tree sees it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Shown {
-    /// Home, or a view no row names (a New document before its first
-    /// keystroke, a restored reply).
+    /// Home, a page, or a view no row names (a New document before its
+    /// first keystroke).
     Nothing,
     ProjectPage(String),
     Document(String),

@@ -142,6 +142,21 @@ enum Command {
     Heading(usize),
     Document(VaultId),
     Project(String),
+    /// An action of the Project page or Reply page shown.
+    Page(PageAction),
+}
+
+/// The header and ⋯ actions of the page shown, in the palette too.
+#[derive(Clone, Copy)]
+pub(super) enum PageAction {
+    RenameProject,
+    ProjectColour,
+    ProjectCategories,
+    AddDocument,
+    ExportProject,
+    DeleteProject,
+    CopyReply,
+    DeleteReply,
 }
 
 impl Command {
@@ -174,7 +189,8 @@ impl Command {
             | Command::SettingsCategory(_)
             | Command::Heading(_)
             | Command::Document(_)
-            | Command::Project(_) => return None,
+            | Command::Project(_)
+            | Command::Page(_) => return None,
         })
     }
 
@@ -266,6 +282,7 @@ impl Workspace {
 
     pub(super) fn showing_home(&self, cx: &App) -> bool {
         self.project_ui.page.is_none()
+            && self.reply_page.is_none()
             && (self.tabs.home()
                 || self
                     .tabs
@@ -274,7 +291,7 @@ impl Workspace {
     }
 
     pub(super) fn showing_overview(&self, cx: &App) -> bool {
-        self.project_ui.page.is_some() || self.showing_home(cx)
+        self.project_ui.page.is_some() || self.reply_page.is_some() || self.showing_home(cx)
     }
 
     pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -291,6 +308,7 @@ impl Workspace {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| view.pii.dismiss_popup());
         }
+        self.reply_page = None;
         self.project_ui.page = None;
         self.end_rename(true, cx);
         self.tabs.show_home();
@@ -1362,9 +1380,9 @@ impl Workspace {
                 }
                 home::Card::Reply(reply) => {
                     let id = reply.id;
-                    view.on_click(cx.listener(move |this, _, window, cx| {
-                        this.open_strip_reply(&id, window, cx)
-                    }))
+                    view.on_click(
+                        cx.listener(move |this, _, window, cx| this.open_reply(&id, window, cx)),
+                    )
                 }
             };
             row = row.child(view);
@@ -1510,7 +1528,8 @@ impl Workspace {
             .map(|p| p.input.read(cx).value().trim().to_lowercase())
             .unwrap_or_default();
         let has_document = !self.showing_overview(cx);
-        let mut rows = vec![
+        let mut rows = self.page_rows();
+        rows.extend(vec![
             Row {
                 section: "Actions",
                 label: "New document".into(),
@@ -1529,7 +1548,7 @@ impl Workspace {
                 detail: None,
                 command: Command::PasteText,
             },
-        ];
+        ]);
         if has_document {
             rows.extend([
                 Row {
@@ -1865,6 +1884,7 @@ impl Workspace {
             }
             Command::Document(id) => self.open_vault_document(id, window, cx),
             Command::Project(id) => self.open_project(&id, window, cx),
+            Command::Page(action) => self.run_page_action(action, window, cx),
         }
     }
 
@@ -1909,6 +1929,8 @@ impl Workspace {
                 Command::ToggleSidebar => ui::Icon::Sidebar,
                 Command::Pseudonymize | Command::PseudonymizeClipboard => ui::Icon::Anonymous,
                 Command::Project(_) | Command::OpenProject => ui::Icon::Sidebar,
+                Command::Page(PageAction::CopyReply) => ui::Icon::Copy,
+                Command::Page(_) => ui::Icon::Sidebar,
             };
             list = list.child(
                 div()
@@ -2084,13 +2106,6 @@ fn home_label(label: &'static str, theme: Theme) -> gpui::Div {
 }
 
 impl Workspace {
-    /// A reply card on Home: its Reply page once replies have one.
-    fn open_strip_reply(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let _ = (id, window, cx);
-    }
-}
-
-impl Workspace {
     /// Headless renders: type `query` into the open palette.
     #[cfg(all(
         debug_assertions,
@@ -2105,5 +2120,71 @@ impl Workspace {
             });
         }
         cx.notify();
+    }
+}
+
+impl Workspace {
+    /// The palette's rows for the page shown: its header and ⋯ actions.
+    fn page_rows(&self) -> Vec<Row> {
+        let row = |label: &str, action| Row {
+            section: "Page",
+            label: label.into(),
+            detail: None,
+            command: Command::Page(action),
+        };
+        if self.reply_page.is_some() {
+            return vec![
+                row("Copy reply", PageAction::CopyReply),
+                row("Delete reply…", PageAction::DeleteReply),
+            ];
+        }
+        if self.project_ui.page.is_none() {
+            return Vec::new();
+        }
+        vec![
+            row("Add document to Project…", PageAction::AddDocument),
+            row("Rename Project", PageAction::RenameProject),
+            row("Project colour", PageAction::ProjectColour),
+            row(
+                "Project categories to detect",
+                PageAction::ProjectCategories,
+            ),
+            row("Export Project…", PageAction::ExportProject),
+            row("Delete Project…", PageAction::DeleteProject),
+        ]
+    }
+
+    pub(super) fn run_page_action(
+        &mut self,
+        action: PageAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use super::project_page::Place;
+        let reply = self.reply_page.as_ref().map(|page| page.id().to_string());
+        // The Project shown, else the active document's.
+        let project = (self.project_ui.page.as_ref())
+            .map(|page| page.id().to_string())
+            .or_else(|| {
+                let view = self.active_view().filter(|_| !self.showing_overview(cx))?;
+                view.read(cx).project.link().map(|link| link.id.clone())
+            });
+        match (action, reply, project) {
+            (PageAction::CopyReply, Some(_), _) => self.copy_saved_reply(cx),
+            (PageAction::DeleteReply, Some(id), _) => self.confirm_delete_reply(&id, window, cx),
+            (PageAction::AddDocument, _, Some(id)) => self.add_document_to_project(id, window, cx),
+            (PageAction::RenameProject, _, Some(id)) => {
+                self.show_project_page(&id, Place::Rename, window, cx)
+            }
+            (PageAction::ProjectColour, _, Some(id)) => {
+                self.show_project_page(&id, Place::Colour, window, cx)
+            }
+            (PageAction::ProjectCategories, _, Some(id)) => {
+                self.show_project_page(&id, Place::Categories, window, cx)
+            }
+            (PageAction::ExportProject, _, Some(id)) => self.export_project(id, window, cx),
+            (PageAction::DeleteProject, _, Some(id)) => self.delete_project(id, window, cx),
+            _ => {}
+        }
     }
 }

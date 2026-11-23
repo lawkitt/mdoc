@@ -122,7 +122,8 @@ impl Workspace {
 
     /// How eviction weighs live view `tab`: Home's placeholder and a view
     /// already leaving don't count; a view that works, prompts, waits for a
-    /// write or holds text the Vault doesn't (a restored reply) stays.
+    /// write or holds text the Vault doesn't (a New document before its first
+    /// write) stays.
     fn eviction_weight(&self, tab: &Tab, cx: &App) -> Weight {
         if self.is_placeholder(tab, cx) || self.closing_after_write.contains(&tab.id()) {
             return Weight::Ignored;
@@ -138,8 +139,8 @@ impl Workspace {
                 || view.lifecycle.loading()
                 || view.lifecycle.prompting()
                 || view.import.password_prompt().is_some()
-                // Text no document holds: a restored reply (until replies
-                // are saved), or a New one before its first write.
+                // Text no document holds yet: a New one before its first
+                // write.
                 || (document.is_none() && !view.editor.read(cx).text().is_empty())
         };
         if busy

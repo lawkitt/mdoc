@@ -51,7 +51,6 @@ pub(super) struct MoveToast {
 pub(super) struct ProjectsState {
     pub(super) page: Option<super::project_page::ProjectPage>,
     pub(super) header_menu: Option<(String, gpui::Point<gpui::Pixels>)>,
-    pub(super) closing_members: super::project_page::ProjectClose,
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
     /// Saves the rename when focus leaves its field.
     rename_blur: Option<gpui::Subscription>,
@@ -206,6 +205,7 @@ impl Workspace {
         for id in ids {
             self.attach_project(id, cx);
         }
+        self.refresh_saved_replies(cx);
         cx.notify();
     }
 
@@ -566,6 +566,8 @@ impl Workspace {
 
     /// Save Project `id` through the writer, as it is when its write runs.
     pub(super) fn write_project(&mut self, id: &str, cx: &mut Context<Self>) {
+        // A reply on show restores with the names as they are now.
+        self.refresh_reply_page(cx);
         if !self.project_ui.unwritten.insert(id.to_string()) {
             return;
         }
@@ -894,6 +896,8 @@ impl Workspace {
             }
         }
         self.checkpoint(window, cx);
+        self.refresh_saved_replies(cx);
+        self.refresh_reply_page(cx);
         cx.notify();
     }
 
@@ -1248,6 +1252,9 @@ impl Workspace {
                     .post(format!("Could not delete the Project: {error}"));
             }
         }
+        // Its own replies went with it.
+        self.drop_gone_reply_page(window, cx);
+        self.refresh_saved_replies(cx);
         self.checkpoint(window, cx);
         cx.notify();
     }

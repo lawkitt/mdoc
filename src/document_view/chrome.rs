@@ -17,7 +17,6 @@ enum Primary {
     Apply(usize),
     /// Applied: the header opens the Inspector's Share tab.
     Share,
-    Copy,
 }
 
 impl DocumentView {
@@ -145,9 +144,6 @@ impl DocumentView {
         if self.lifecycle.loading() || self.lifecycle.unavailable() || !self.can_copy_markdown() {
             return Primary::None;
         }
-        if self.pii.restore().is_some() {
-            return Primary::Copy;
-        }
         if self.pii.scanning() {
             return Primary::Scanning;
         }
@@ -167,7 +163,6 @@ impl DocumentView {
 
     fn primary_button(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let theme = self.theme.get();
-        let copied = self.copy_feedback.is_some();
         let modifier = if cfg!(target_os = "macos") {
             "⌘"
         } else {
@@ -237,18 +232,6 @@ impl DocumentView {
                     cx.notify();
                 }))
                 .into_any_element(),
-            Primary::Copy => ui::filled_button(
-                "primary-action",
-                if copied { "Copied" } else { "Copy" },
-                theme,
-                true,
-            )
-            .when(cfg!(test), |v| v.debug_selector(|| "primary-copy".into()))
-            .min_w(px(72.))
-            .on_click(
-                cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx)),
-            )
-            .into_any_element(),
         })
     }
 
@@ -291,15 +274,6 @@ impl DocumentView {
                     gpui::svg()
                         .data(ui::Icon::ChevronRight.data())
                         .size(px(12.))
-                        .flex_shrink_0()
-                        .text_color(p.header_muted),
-                )
-            })
-            .when(self.pii.restore().is_some(), |v| {
-                v.child(
-                    gpui::svg()
-                        .data(ui::Icon::Reply.data())
-                        .size(px(14.))
                         .flex_shrink_0()
                         .text_color(p.header_muted),
                 )

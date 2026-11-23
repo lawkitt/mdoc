@@ -710,6 +710,7 @@ fn sidebar_project_actions_and_categories_work_without_a_pointer(cx: &mut TestAp
     key(cx, "shift-f10");
     assert!(cx.update(|_, cx| tabs.read(cx).project_ui.header_menu.is_some()));
     key(cx, "tab"); // Rename
+    key(cx, "tab"); // Colour
     key(cx, "tab"); // Categories to detect.
     activate_control(cx);
     cx.update(|window, cx| {

@@ -1,6 +1,6 @@
 //! Restoring an AI reply: the Reply view beside Share, Share
-//! with a name left after Apply (#301) and a restored reply from the public
-//! Claude fixture.
+//! with a name left after Apply (#301) and a saved reply reopened from the
+//! public Claude fixture.
 use super::{Driver, Result};
 use crate::{document_view::DocumentView, pii::ui::PiiApplyAll};
 use gpui::Entity;
@@ -109,8 +109,9 @@ pub(super) fn share_leftover(d: &mut Driver) -> Result<()> {
     d.capture("share-leftover")
 }
 
-/// A restored reply in a new tab, from the public Claude EN fixture.
-pub(super) fn restored_reply(d: &mut Driver) -> Result<()> {
+/// A saved reply reopened restored on its page, from the public Claude EN
+/// fixture.
+pub(super) fn saved_reply(d: &mut Driver) -> Result<()> {
     let mapping: Vec<Value> = serde_json::from_str(include_str!(
         "../../../tests/fixtures/restore/claude-en/identities.json"
     ))
@@ -135,17 +136,30 @@ pub(super) fn restored_reply(d: &mut Driver) -> Result<()> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let reply = crate::pii::ui::RestoredReply {
-        text: include_str!("../../../tests/fixtures/restore/claude-en/reply.md").into(),
-        identities,
-        source_name: "Claude public EN fixture".into(),
-        project: None,
-    };
-    d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        w.active_view()
-            .unwrap()
-            .update(cx, |v, cx| v.start_restored(&reply, window, cx));
-    })?;
-    d.capture("restored-reply")
+    let markdown = include_str!("../../../tests/fixtures/restore/claude-en/reply.md");
+    d.change(|w, window, cx| -> Result<()> {
+        let vault = w.vault.vault().cloned().ok_or("fixture Vault")?;
+        let project = vault
+            .create_project(mdoc_vault::NewProject {
+                name: "Claude public EN fixture".into(),
+                colour: Some(mdoc_vault::Colour::Violet),
+                pinned: false,
+            })
+            .map_err(|e| e.to_string())?;
+        vault
+            .update_project(&project.id, |project| project.mapping.merge(&identities))
+            .map_err(|e| e.to_string())?;
+        let reply = vault
+            .save_reply(mdoc_vault::NewReply {
+                owner: mdoc_vault::ReplyOwner::Project(project.id),
+                title: "Reply to Claude public EN fixture".into(),
+                source_app: Some("Claude".into()),
+                markdown: markdown.into(),
+            })
+            .map_err(|e| e.to_string())?;
+        w.open_reply(&reply.id, window, cx);
+        w.fix_reply_date(1791763200);
+        Ok(())
+    })??;
+    d.capture("saved-reply")
 }
