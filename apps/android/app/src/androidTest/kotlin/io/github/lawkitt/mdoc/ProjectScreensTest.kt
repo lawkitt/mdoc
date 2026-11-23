@@ -111,19 +111,31 @@ class ProjectScreensTest {
         compose.shown(hasContentDescription("Add")).performClick()
         tap("Paste")
         compose.waitForText("Paste text")
-        compose.shown(hasSetTextAction() and hasText("Paste or type the text to check")).performTextInput("Ann Lee signed the lease.")
-        // The sheet's Add button, not the page's behind it; a touch, as its
-        // click action comes and goes while the sheet settles.
-        val sheetAdd = hasText("Add") and !hasContentDescription("Add") and
-            androidx.compose.ui.test.SemanticsMatcher.expectValue(
-                androidx.compose.ui.semantics.SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button,
-            )
-        // Not by its bounds: a sheet's window can report none for a moment,
-        // and the closed sidebar has no button like it.
-        compose.waitUntil(15_000) { compose.onAllNodes(sheetAdd).fetchSemanticsNodes().isNotEmpty() }
-        runCatching { compose.onAllNodes(sheetAdd).onFirst().performScrollTo() }
-        compose.onAllNodes(sheetAdd).onFirst().performClick()
-        compose.waitUntil(15_000) { app.core.vault.documents().isNotEmpty() }
+        // The text comes from the clipboard through the sheet's own Paste, so
+        // no keyboard opens over the sheet's Add.
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            app.getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("mdoc test", "Ann Lee signed the lease."))
+        }
+        val button = { label: String ->
+            hasText(label) and !hasContentDescription(label) and
+                androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                    androidx.compose.ui.semantics.SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button,
+                )
+        }
+        // Not by their bounds: a sheet's window can report none for a moment,
+        // and the closed sidebar has no buttons like these.
+        compose.waitUntil(15_000) { compose.onAllNodes(button("Paste") and androidx.compose.ui.test.isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodes(button("Paste")).onFirst().performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Ann Lee signed the lease.")).fetchSemanticsNodes().isNotEmpty() }
+        runCatching { compose.onAllNodes(button("Add")).onFirst().performScrollTo() }
+        compose.onAllNodes(button("Add")).onFirst().performClick()
+        try {
+            compose.waitUntil(30_000) { app.core.vault.documents().isNotEmpty() }
+        } catch (error: Throwable) {
+            compose.dump()
+            throw error
+        }
         assertEquals(project.raw, app.core.vault.documents().single().projectId)
     }
 

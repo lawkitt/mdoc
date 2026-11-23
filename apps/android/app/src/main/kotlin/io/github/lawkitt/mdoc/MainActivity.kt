@@ -198,29 +198,38 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
         }
     }
 
+    // What a picker returns lands where the picker was opened from.
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { home.received(context.contentResolver, listOf(it), null, context.getString(R.string.title)) }
+        uri?.let { home.received(context.contentResolver, listOf(it), null, context.getString(R.string.title), home.pickingInto) }
     }
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
-        home.received(context.contentResolver, uris, io.github.lawkitt.mdoc.core.SourceKind.Image, context.getString(R.string.photo))
+        home.received(context.contentResolver, uris, io.github.lawkitt.mdoc.core.SourceKind.Image, context.getString(R.string.photo), home.pickingInto)
     }
     // The system camera receives a seekable in-memory output URI.
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
         home.cameraResult(taken)
     }
     fun takePage() {
-        val uri = home.takePage(context) ?: return
+        val uri = home.takePage(context, if (open == null) destination.project else null) ?: return
         try {
             camera.launch(uri)
         } catch (error: RuntimeException) {
             home.cameraResult(false, error.message)
         }
     }
+    // Started from a Project's page, it lands in that Project (#1091 Decision 35).
     val onAdd: (AddOption) -> Unit = { option ->
+        val into = destination.project
         when (option) {
-            AddOption.Paste -> home.startPaste(context.getString(R.string.pasted_text))
-            AddOption.Files -> files.launch(OPENABLE)
-            AddOption.Photos -> photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            AddOption.Paste -> home.startPaste(context.getString(R.string.pasted_text), into)
+            AddOption.Files -> {
+                home.pickingInto = into
+                files.launch(OPENABLE)
+            }
+            AddOption.Photos -> {
+                home.pickingInto = into
+                photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
             AddOption.Scan -> takePage()
         }
     }
@@ -279,7 +288,10 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             // Leaving the document, however it goes (Back, or another document
             // opened in its place), wipes its decrypted original (#1091 Decision 24).
             DisposableEffect(session) { onDispose { session?.closeOriginal() } }
-            BackHandler { open = null }
+            BackHandler {
+                open = null
+                home.refresh()
+            }
             if (session == null) {
                 LaunchedEffect(current) { open = null }
             } else {
@@ -347,10 +359,11 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
         AddSheet(
             adding = adding,
             projects = state.projects,
-            // From a Project's page it starts on that Project (#1091 Decision 35).
-            initialProject = if (current == null) destination.project else null,
+            // Started from a Project's page, it starts on that Project (#1091 Decision 35).
+            initialProject = adding.into,
             onAdd = { text, title, project ->
-                scope.launch {
+                // On the main thread: opening the document changes the screens.
+                scope.launch(Dispatchers.Main) {
                     home.add(text, title, project)?.let {
                         // Read at once, from the visible screen, as a long job.
                         readAfterOpen = true

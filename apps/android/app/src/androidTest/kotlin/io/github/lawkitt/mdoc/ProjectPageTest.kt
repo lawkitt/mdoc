@@ -249,8 +249,8 @@ class ProjectPageTest {
         return FileProvider.getUriForFile(app, "${app.packageName}.files", file)
     }
 
-    private suspend fun receive(home: HomeViewModel, name: String): HomeState {
-        withContext(Dispatchers.Main) { home.received(app.contentResolver, listOf(share(name)), null, "Title") }
+    private suspend fun receive(home: HomeViewModel, name: String, into: ProjectId? = null): HomeState {
+        withContext(Dispatchers.Main) { home.received(app.contentResolver, listOf(share(name)), null, "Title", into) }
         return withTimeout(15_000) { home.state.first { it.adding != null || it.repeated != null || it.refused != null } }
     }
 
@@ -282,17 +282,54 @@ class ProjectPageTest {
         assertFalse("the copy went", opened.pending.folder.exists())
         assertNull(home.now().repeated)
 
-        val again = repeated()
-        withContext(Dispatchers.Main) { home.importAgain() }
-        assertEquals(again.pending, home.now().adding)
-        withContext(Dispatchers.Main) { home.cancelAdd() }
-
         val cancelled = repeated()
         withContext(Dispatchers.Main) { home.cancelRepeated() }
         assertNull(home.now().repeated)
         assertNull(home.now().adding)
         assertFalse(cancelled.pending.folder.exists())
         assertEquals(1, vault.documents().size)
+
+        // Import Again goes on to the add sheet, and its Add makes a second document.
+        val again = repeated()
+        withContext(Dispatchers.Main) { home.importAgain() }
+        assertEquals(again.pending, home.now().adding)
+        val second = withContext(Dispatchers.Main) { home.add(null, "Lease again") }!!
+        documents.session(second).recognize(Quiet)
+        assertEquals(listOf("Lease", "Lease again"), vault.documents().map { it.title }.sorted())
+    }
+
+    /**
+     * What is added lands where it was started: from a Project's page in
+     * that Project, from elsewhere, or "Open in mdoc" from another app, in
+     * Unfiled; the add sheet starts there.
+     */
+    @Test
+    fun anAddStartsWhereItWasStarted() = runBlocking {
+        val riverside = documents.createProject("Riverside").id
+        val home = model()
+        withContext(Dispatchers.Main) { home.startPaste("Pasted text", riverside) }
+        assertEquals(riverside, home.now().adding?.into)
+        withContext(Dispatchers.Main) { home.cancelAdd() }
+        assertEquals(riverside, receive(home, "lease.pdf", riverside).adding?.into)
+        withContext(Dispatchers.Main) { home.cancelAdd() }
+        assertNull("Open in mdoc starts nowhere", receive(home, "other.pdf").adding?.into)
+        withContext(Dispatchers.Main) { home.cancelAdd() }
+    }
+
+    /**
+     * Its Project deleted, and mdoc stopped before its pending record said
+     * so: the import lands in Unfiled when it is read, not refused.
+     */
+    @Test
+    fun anImportWhoseProjectWentLandsInUnfiled() {
+        val riverside = documents.createProject("Riverside").id
+        val pending = documents.importDocument(ImportSource.Text("Ann Lee signed the lease."), "Lease", riverside)
+        // The Project's delete reached the Vault only.
+        vault.deleteProject(riverside.raw, uniffi.mdoc_ffi.ProjectDocuments.MOVE_TO_UNFILED)
+        app.reopenCore()
+        val again = app.core.documents.session(pending.id)
+        again.recognize(Quiet)
+        assertNull(app.core.vault.document(again.vaultId!!).projectId)
     }
 
     /** A paste asks nothing: it keeps no source to compare. */

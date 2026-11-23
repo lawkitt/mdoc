@@ -229,39 +229,44 @@ class Documents(
      */
     fun deleteProject(project: ProjectId, documents: ProjectDeletion) {
         val raw = project.raw
-        val stored = vault.documents().filter { it.projectId == raw }.map { it.id }
-        // The Documents' lock only to read: a save holds its session's
-        // save lock and then takes this one.
-        val (members, imports) = synchronized(this) {
-            stored.map { it to (ids[it] ?: DocumentId(it)) } to sessions.values.filter { it.joins(raw) }
-        }
+        // The imports that would join it, first; the Documents' lock only to
+        // read them: a save holds its session's save lock, then takes this one.
+        val imports = synchronized(this) { sessions.values.filter { it.joins(raw) } }
         try {
-            when (documents) {
-                ProjectDeletion.DeleteDocuments -> {
-                    (imports.map { it.id } + members.map { it.second }).forEach(::delete)
-                    core { vault.deleteProject(raw, uniffi.mdoc_ffi.ProjectDocuments.DELETE) }
-                }
-                ProjectDeletion.MoveToUnfiled -> {
-                    val open = synchronized(this) { members.mapNotNull { (vaultId, id) -> sessions[id]?.let { vaultId to it } } }.toMutableList()
-                    // No import's join and first save runs meanwhile: each
-                    // lands in Unfiled, or, saved in the Project before,
-                    // moves with the rest.
-                    holdingSaves(imports) {
+            // No import's join and first save runs meanwhile, so the members
+            // read now are all of them: each import lands in Unfiled, or,
+            // saved in the Project before, moves with the rest.
+            val open = holdingSaves(imports) {
+                val stored = vault.documents().filter { it.projectId == raw }.map { it.id }
+                val members = synchronized(this) { stored.map { it to (ids[it] ?: DocumentId(it)) } }
+                when (documents) {
+                    ProjectDeletion.DeleteDocuments -> {
+                        (imports.filter { it.joins(raw) }.map { it.id } + members.map { it.second }).forEach(::delete)
+                        core { vault.deleteProject(raw, uniffi.mdoc_ffi.ProjectDocuments.DELETE) }
+                        emptyList<Pair<String, Session>>()
+                    }
+                    ProjectDeletion.MoveToUnfiled -> {
+                        // Unfiled in the pending list first: a stop before the
+                        // Project's delete leaves it Unfiled in a Project that
+                        // stays, which its first save takes as it is.
                         val leaving = imports.filter { it.leaveProject(raw) }
+                        leaving.forEach { pending.moveToUnfiled(it.id) }
                         try {
                             core { vault.deleteProject(raw, uniffi.mdoc_ffi.ProjectDocuments.MOVE_TO_UNFILED) }
                         } catch (error: Exception) {
-                            leaving.forEach { it.rejoin(raw) }
+                            leaving.forEach {
+                                it.rejoin(raw)
+                                pending.rejoin(it.id, raw)
+                            }
                             throw error
                         }
-                        leaving.forEach { pending.moveToUnfiled(it.id) }
-                        open += imports.filter { it !in leaving }.mapNotNull { session -> session.vaultId?.let { it to session } }
-                    }
-                    // The core rewrote their text: each opens again as it is now.
-                    for ((vaultId, session) in open) {
-                        runCatching { session.reopen(vaultId, vault.document(vaultId)) }
+                        synchronized(this) { members.mapNotNull { (vaultId, id) -> sessions[id]?.let { vaultId to it } } }
                     }
                 }
+            }
+            // The core rewrote their text: each opens again as it is now.
+            for ((vaultId, session) in open) {
+                runCatching { session.reopen(vaultId, vault.document(vaultId)) }
             }
         } finally {
             synchronized(projectNames) { projectNames.clear() }
@@ -521,7 +526,15 @@ class Documents(
                 if (discarded) throw AppError.Cancelled()
                 // Started in a Project: it joins it before its first save.
                 val joining = synchronized(this) { chosenProject.takeIf { vaultId == null } }
-                if (joining != null) core { ffi.joinProject(vault, joining) }
+                if (joining != null && runCatching { vault.project(joining) }.isFailure) {
+                    // Its Project was deleted, and a stop came before the
+                    // pending list said so: it lands in Unfiled, as the
+                    // delete meant.
+                    synchronized(this) { chosenProject = null }
+                    pending.moveToUnfiled(id)
+                } else if (joining != null) {
+                    core { ffi.joinProject(vault, joining) }
+                }
                 // The import stays to read again until the Vault holds it: a
                 // failed save leaves Recognize offered, not an empty document.
                 save()
@@ -915,7 +928,14 @@ internal class PendingImports(storage: MdocStorage, private val owner: (File) ->
     @Synchronized
     fun moveToUnfiled(id: DocumentId) {
         val entries = load()
-        entries[id.raw]?.let { save(entries + (id.raw to it.copy(projectId = null))) }
+        entries[id.raw]?.takeIf { it.projectId != null }?.let { save(entries + (id.raw to it.copy(projectId = null))) }
+    }
+
+    /** Undoes [moveToUnfiled] when the Project's delete failed. */
+    @Synchronized
+    fun rejoin(id: DocumentId, project: String) {
+        val entries = load()
+        entries[id.raw]?.let { save(entries + (id.raw to it.copy(projectId = project))) }
     }
 
     /** Forgets an import, and its received files go. */

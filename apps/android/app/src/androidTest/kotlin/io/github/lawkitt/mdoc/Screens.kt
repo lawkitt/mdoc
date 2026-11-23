@@ -26,15 +26,22 @@ fun ComposeTestRule.shownText(text: String, substring: Boolean = false): Semanti
 fun ComposeTestRule.waitForShown(matcher: SemanticsMatcher, timeout: Long = 15_000) = try {
     waitUntil(timeout) { onAllNodes(matcher and onScreen).fetchSemanticsNodes().isNotEmpty() }
 } catch (error: Throwable) {
-    // What the screen showed instead, in logcat and as a shot in /data/local/tmp.
+    dump()
+    throw error
+}
+
+/** What the screen shows, in logcat (MDOCTEST) and as a shot in the app's cache. */
+fun ComposeTestRule.dump() {
     runCatching { onAllNodes(androidx.compose.ui.test.isRoot()).fetchSemanticsNodes().indices.forEach { onAllNodes(androidx.compose.ui.test.isRoot())[it].printToLog("MDOCTEST") } }
     runCatching {
         val shot = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-        java.io.File(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "mdoc-test-failure.png").outputStream().use {
-            shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-        }
+        val file = java.io.File(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "mdoc-test-failure.png")
+        file.outputStream().use { shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        // Kept outside the app, which the run uninstalls.
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("cp ${file.path} /data/local/tmp/mdoc-test-failure.png"),
+        ).use { it.readBytes() }
     }
-    throw error
 }
 
 fun ComposeTestRule.waitForText(text: String, timeout: Long = 15_000, substring: Boolean = false) =

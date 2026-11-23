@@ -53,7 +53,10 @@ import kotlinx.coroutines.withContext
 sealed interface PendingAdd {
     val suggestedTitle: String
 
-    data class Text(override val suggestedTitle: String) : PendingAdd
+    /** The Project whose page it was started from: the add sheet starts on it (#1091 Decision 35). */
+    val into: ProjectId?
+
+    data class Text(override val suggestedTitle: String, override val into: ProjectId? = null) : PendingAdd
 
     data class Received(
         val source: ImportSource,
@@ -61,6 +64,7 @@ sealed interface PendingAdd {
         val folder: File,
         /** The name of the file it came from, for "Already in mdoc". */
         val fileName: String? = null,
+        override val into: ProjectId? = null,
     ) : PendingAdd
 }
 
@@ -157,6 +161,8 @@ class HomeViewModel(
     private val scan: ScanSession = ScanSession(),
     /** Where the scan is saved for a process stopped while the camera is open. */
     private val saved: SavedStateHandle = SavedStateHandle(),
+    /** Work that must finish though the view model goes: a committed delete. */
+    private val outliving: kotlinx.coroutines.CoroutineScope = Outliving,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = mutable.asStateFlow()
@@ -221,11 +227,15 @@ class HomeViewModel(
      * stops first, so it cannot save the document again.
      */
     fun commitPendingDelete() {
-        val pending = mutable.getAndUpdate {
+        val before = mutable.getAndUpdate {
             it.copy(pendingDelete = null, documents = it.documents.filter { document -> document.id !in it.pendingDelete?.ids.orEmpty() })
-        }.pendingDelete ?: return
-        viewModelScope.launch {
-            stopJob(pending.ids)
+        }
+        val pending = before.pendingDelete ?: return
+        val deleting = before.documents.filter { it.id in pending.ids }
+        // Not the view model's scope: a delete answered as mdoc closes still
+        // happens when the activity finishes and the view model goes.
+        outliving.launch {
+            stopJob(deleting)
             withContext(Dispatchers.IO) {
                 runCatching {
                     val documents = core().documents
@@ -237,10 +247,16 @@ class HomeViewModel(
         }
     }
 
-    /** A job on one of `ids` stops, and is waited for. */
-    private suspend fun stopJob(ids: List<DocumentId>) {
+    /**
+     * A job on one of `ids` stops, and is waited for. A document imported
+     * this run is listed by its import's id, while its jobs after the first
+     * save run under its Vault id: both are matched, as the document's own
+     * screen does.
+     */
+    private suspend fun stopJob(documents: List<DocumentSummary>) {
         val jobs = jobs ?: return
-        if (jobs.current.value?.documentId in ids) {
+        val running = jobs.current.value?.documentId ?: return
+        if (documents.any { it.id == running || it.vaultId == running.raw }) {
             jobs.cancel(CancelReason.User)
             jobs.current.first { it == null }
         }
@@ -281,7 +297,7 @@ class HomeViewModel(
         commitPendingDelete()
         val project = state.value.project(id) ?: return false
         if (documents == ProjectDeletion.DeleteDocuments) {
-            stopJob(state.value.documents.filter { it.projectId == id }.map { it.id })
+            stopJob(state.value.documents.filter { it.projectId == id })
         }
         val deleted = withContext(Dispatchers.IO) { runCatching { core().documents.deleteProject(id, documents) } }
             .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
@@ -397,15 +413,32 @@ class HomeViewModel(
                 )
             }
         }
+        // A Project's page reads its replies and names again: a reply Restore
+        // with mdoc saved changes no document.
+        state.value.page?.project?.let(::loadPage)
     }
 
-    fun startPaste(title: String) {
+    /** Paste, started from a Project's page (`into`) or elsewhere. */
+    fun startPaste(title: String, into: ProjectId? = null) {
         receiving?.cancel()
-        replaceAdding(PendingAdd.Text(title))
+        replaceAdding(PendingAdd.Text(title, into))
     }
 
-    /** Stages clean copies before asking for a title and Project. */
-    fun received(resolver: ContentResolver, uris: List<Uri>, kind: SourceKind?, fallbackTitle: String) {
+    /**
+     * The Project whose page Files or Photos was opened from, for what the
+     * picker returns; "Open in mdoc" from another app starts nowhere.
+     */
+    var pickingInto: ProjectId?
+        get() = saved.get<String>(PICKING_INTO)?.let(::ProjectId)
+        set(value) {
+            saved[PICKING_INTO] = value?.raw
+        }
+
+    /**
+     * Stages clean copies before asking for a title and Project; `into`,
+     * the Project whose page it was started from.
+     */
+    fun received(resolver: ContentResolver, uris: List<Uri>, kind: SourceKind?, fallbackTitle: String, into: ProjectId? = null) {
         if (uris.isEmpty()) return
         receiving?.cancel()
         receiving = viewModelScope.launch(Dispatchers.IO) {
@@ -455,7 +488,7 @@ class HomeViewModel(
                 } else {
                     ImportSource.File(staged.single(), detected)
                 }
-                val received = PendingAdd.Received(source, title, stage, staged.singleOrNull()?.name)
+                val received = PendingAdd.Received(source, title, stage, staged.singleOrNull()?.name, into)
                 val existing = repeatOf(received)
                 withContext(Dispatchers.Main.immediate) {
                     offer(received, existing)
@@ -502,8 +535,10 @@ class HomeViewModel(
      * The camera's output for the next page: a raw file outside
      * `originals/`, saved with the scan so a stopped process finds it.
      */
-    fun takePage(context: Context): Uri? {
+    fun takePage(context: Context, into: ProjectId? = null): Uri? {
         if (scan.state.value.capture != null) return null
+        // A scan's first page says where it lands.
+        if (scan.state.value.pages.isEmpty()) saved[SCAN_INTO] = into?.raw
         return runCatching { CameraCapture.create(context) }
             .onSuccess { scan.begin(checkNotNull(CameraCapture.file(context, it))) }
             .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
@@ -524,7 +559,8 @@ class HomeViewModel(
         if (current.pages.isEmpty() || current.capture != null) return
         receiving?.cancel()
         val (folder, files) = Originals(core().storage).finishScanStage(scan.finish())
-        replaceAdding(PendingAdd.Received(ImportSource.Pages(files, SourceKind.Scan), title, folder))
+        val into = saved.get<String>(SCAN_INTO)?.let(::ProjectId)
+        replaceAdding(PendingAdd.Received(ImportSource.Pages(files, SourceKind.Scan), title, folder, into = into))
     }
 
     fun cancelAdd() {
@@ -582,6 +618,8 @@ class HomeViewModel(
         private const val SCAN_CAPTURE = "scan.capture"
         private const val SCAN_RETURNED = "scan.returned"
         private const val SCAN_SEQUENCE = "scan.sequence"
+        private const val SCAN_INTO = "scan.into"
+        private const val PICKING_INTO = "picking.into"
 
         /**
          * An image's bytes in one array of exactly its size: no growing
@@ -639,6 +677,9 @@ class HomeViewModel(
             check(input.read() < 0) { TOO_LARGE }
             return if (at == bytes.size) bytes else bytes.copyOf(at)
         }
+
+        /** The process's own scope, for work the view model's going must not stop. */
+        private val Outliving = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main.immediate)
 
         private const val SPILL_PREFIX = "intake-"
         private var spillsSwept = false
