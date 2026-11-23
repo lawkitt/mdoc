@@ -390,16 +390,6 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–22 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
-3. **[Core] Source Originals in the Vault.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Each original is
-   sealed under its own wrapped key, in 1 MiB chunks with counter nonces, and
-   streamed in and out without holding the file in memory. A viewing copy goes
-   to a folder the caller names; the source's SHA-256 is recorded and looked
-   up for repeated imports; a locked source stays locked. *Blocked by:* item
-   1. *Done when:* a 256 MiB original round-trips in bounded memory; a flipped
-   byte, a truncated file, swapped chunks and a file placed under another
-   document all fail to open; a second import of the same bytes finds the
-   first.
 10. **[iOS] Restore extension and saved replies on the Vault.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Restore with mdoc
     reads a Project and saves the reply through the Vault; the app lists it
@@ -414,11 +404,6 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     in iOS items 22 and 37. *Blocked by:* items 9, 10. *Done when:* UI tests
     cover the page, the delete question and multi-select delete, and a device
     check passes.
-12. **[Android] Android cuts over to the Vault.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As items 9 and 10,
-    for the Android app and its Restore screen. *Blocked by:* items 7, 8.
-    *Done when:* the Android job passes, and an emulator run imports, reviews,
-    shares, reopens and restores.
 13. **[Android] Android sidebar and Project page.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As item 11.
     *Blocked by:* item 12. *Done when:* the Android job passes with tests of
