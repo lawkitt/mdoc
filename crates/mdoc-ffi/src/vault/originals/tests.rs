@@ -345,10 +345,9 @@ fn a_three_page_scan_keeps_its_pdf() {
     session
         .import_text_as(String::new(), "Lease".into(), DocumentOrigin::Ordinary)
         .unwrap();
-    session.keep_as_original(crate::document_session::Source::scan(
-        built.pdf.clone(),
-        "Lease",
-    ));
+    let shared = mdoc_import::import::Source::new("Lease.pdf".into(), None, built.pdf.clone())
+        .shared_bytes();
+    session.keep_as_original(crate::document_session::Source::scan(shared, "Lease"));
     let id = session.save_into_vault(vault.clone()).unwrap().id;
     let original = vault.original(id.clone()).unwrap().unwrap();
     assert_eq!(original.file_name, "Lease.pdf");
