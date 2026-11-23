@@ -72,7 +72,11 @@ struct DocxOriginalView: View {
         request = current
         rendering = .working
         let (result, newUnlock) = await RenderedDocx.render(source, unlocked: unlocked, password: password)
-        guard !Task.isCancelled, request == current else { return }
+        guard !Task.isCancelled, request == current else {
+            // Gone before it came: nothing decrypted stays behind.
+            if Task.isCancelled { source.closeIfStored() }
+            return
+        }
         rendering = result
         if case .ready(let rendered) = result {
             if let newUnlock { unlocked = newUnlock }

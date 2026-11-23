@@ -1050,9 +1050,10 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// Vault & Projects item 10.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot {
         _ = try core { try ffi.restoreReply(reply: reply) }
-        guard let vaultID else { throw CoreError.notFound }
-        // What the reply restores with is saved first.
+        // What the reply restores with is saved first, a first save the
+        // locked phone held back too, which makes its Vault id (review 4).
         try saveChanges()
+        guard let vaultID else { throw CoreError.notFound }
         let title = ffi.info()?.title ?? chosen.title
         _ = try core {
             try library.vault.saveReply(

@@ -867,6 +867,61 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
     );
 }
 
+/// A document saved above the floor, unscanned, is saved Ready by its next
+/// save once the phone falls below it (timing the detector can put it
+/// there), with no change of its own; opened again, the same (review 3).
+#[test]
+fn a_document_saved_above_the_floor_is_ready_once_the_phone_falls_below_it() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee met Bob Hart.", "Letter");
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    let readiness = || vault.readiness(saved.id.clone()).unwrap();
+    assert_eq!(readiness(), crate::vault::Readiness::NotReviewed);
+    assert!(
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_none(),
+        "nothing owed above the floor"
+    );
+
+    session.set_no_name_finder(true);
+    assert!(
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(readiness(), crate::vault::Readiness::Ready);
+    assert!(
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_none(),
+        "saved once"
+    );
+
+    let (below, _) = reopened(&vault, &saved.id);
+    below.set_no_name_finder(true);
+    assert!(
+        below
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_none(),
+        "opened Ready: nothing owed"
+    );
+    let (above, _) = reopened(&vault, &saved.id);
+    assert!(
+        above
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_some(),
+        "above the floor again, the fingerprint goes"
+    );
+    assert_eq!(readiness(), crate::vault::Readiness::NotReviewed);
+}
+
 /// The key is the app's: 32 bytes, and another key's Vault never opens.
 #[test]
 fn a_vault_opens_only_with_its_key() {

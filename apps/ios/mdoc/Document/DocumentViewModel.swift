@@ -727,6 +727,11 @@ final class DocumentViewModel {
         if new.reply == nil && pane == .reply {
             pane = .text
         }
+        // An original that went (pages picked together keep none once
+        // saved) leaves no pane to show: the text comes back (review 2).
+        if new.original == .none && pane == .original {
+            pane = .text
+        }
         settleIdentities()
         onChange()
     }

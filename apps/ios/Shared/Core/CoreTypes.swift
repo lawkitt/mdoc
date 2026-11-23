@@ -194,6 +194,12 @@ enum OriginalBytes: Hashable, Sendable {
         if case .stored(let original) = self { try original.load() } else { self }
     }
 
+    /// A stored original's decrypted bytes and viewing copy go: the view
+    /// that read them went before they came (review 1).
+    func closeIfStored() {
+        if case .stored(let original) = self { original.close() }
+    }
+
     func data() throws -> Data {
         switch try resolved() {
         case .file(let url): try Data(contentsOf: url, options: .mappedIfSafe)
@@ -211,29 +217,45 @@ final class StoredOriginal: Hashable, @unchecked Sendable {
     private let decrypt: @Sendable () throws -> OriginalBytes
     private let remove: @Sendable () -> Void
     private var loaded: OriginalBytes?
+    /// Bumped by each close: a decrypt that started before it throws its
+    /// result away (review 1).
+    private var generation = 0
 
     init(decrypt: @escaping @Sendable () throws -> OriginalBytes, remove: @escaping @Sendable () -> Void) {
         self.decrypt = decrypt
         self.remove = remove
     }
 
-    /// The bytes, decrypted the first time; never `.stored`.
+    /// The bytes, decrypted the first time; never `.stored`. The decrypt
+    /// runs outside the lock, so a close never waits for it; one the
+    /// document closed during leaves nothing behind and throws
+    /// `CoreError.cancelled`.
     func load() throws -> OriginalBytes {
-        try lock.withLock {
+        let (cached, started) = lock.withLock { (loaded, generation) }
+        if let cached { return cached }
+        let bytes = try decrypt()
+        let kept = lock.withLock { () -> OriginalBytes? in
+            guard generation == started else { return nil }
             if let loaded { return loaded }
-            let bytes = try decrypt()
             loaded = bytes
             return bytes
         }
+        guard let kept else {
+            remove()
+            throw CoreError.cancelled
+        }
+        return kept
     }
 
     /// The document closed: the decrypted bytes go, and the viewing copy
-    /// with them. The next view decrypts again.
+    /// with them, also one a decrypt running now writes. The next view
+    /// decrypts again.
     func close() {
         lock.withLock {
+            generation += 1
             loaded = nil
-            remove()
         }
+        remove()
     }
 
     static func == (lhs: StoredOriginal, rhs: StoredOriginal) -> Bool { lhs === rhs }

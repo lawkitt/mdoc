@@ -39,6 +39,11 @@ pub(super) struct Place {
     /// them: while the Project still holds exactly these, no other
     /// document changed it, and a save needs no join.
     pub synced: Option<Vec<Identity>>,
+    /// Its record holds a Ready fingerprint, as this session last read or
+    /// wrote it: a save is owed when the document would now save Ready
+    /// otherwise, even with no change of its own (the phone fell below the
+    /// floor since, review 3).
+    pub ready: bool,
 }
 
 /// A Vault document and its Project as `open_from_vault` read them.
@@ -161,6 +166,7 @@ impl DocumentSession {
                         project: Some(project_id.clone()),
                         revision: 0,
                         synced: Some(project.mapping.identities.clone()),
+                        ready: false,
                     });
                     Ok(())
                 }
@@ -213,6 +219,7 @@ impl DocumentSession {
         vault: Arc<Vault>,
     ) -> Result<Option<SavedVaultChange>, ReviewError> {
         let _saving = self.lock_saving();
+        let by_hand = self.by_hand.load(Ordering::Relaxed);
         loop {
             let mut pending = {
                 let guard = self.lock_document();
@@ -222,7 +229,7 @@ impl DocumentSession {
                     }
                     Some(document)
                         if document.saved.is_some()
-                            && document.has_unsaved_changes()
+                            && (document.has_unsaved_changes() || document.ready_owed(by_hand))
                             && (document.vault.as_ref()).is_some_and(|p| p.id.is_some()) =>
                     {
                         document.vault_pending()
@@ -433,8 +440,24 @@ impl Document {
                 .map(|p| p.mapping.identities.clone()),
             project: written.project.map(|p| p.id),
             revision: written.revision,
+            ready: pending.ready(),
         });
         self.saved = Some(pending.key);
+    }
+
+    /// Saved, it would be Ready now (`by_hand`: below the floor) where its
+    /// record is not, or the other way round.
+    fn ready_owed(&self, by_hand: bool) -> bool {
+        let counts = self.review.counts();
+        let ready = is_ready(
+            self.scanned,
+            by_hand,
+            counts.proposed,
+            self.review.review.awaiting_discovery(),
+        );
+        self.vault
+            .as_ref()
+            .is_some_and(|place| place.ready != ready)
     }
 
     /// Join its Project as stored now: only when another document changed
@@ -531,6 +554,7 @@ impl Document {
             synced: project.as_ref().map(|p| p.mapping.identities.clone()),
             project: project.map(|p| p.id),
             revision: stored.revision,
+            ready: stored.ready_fingerprint.is_some(),
         });
     }
 }
@@ -562,6 +586,13 @@ fn open_review(
     review.review.leave_off(&mapping.not_names_of(&stored.id));
 }
 
+/// Whether a save records the document Ready: scanned, no proposals left
+/// and no discovery owed; below the floor (`by_hand`), names decided by
+/// hand count as scanned (#1091 Q4: the maintainer's (b)). The one rule.
+fn is_ready(scanned: bool, by_hand: bool, proposed: u64, awaiting_discovery: bool) -> bool {
+    (scanned || by_hand) && proposed == 0 && !awaiting_discovery
+}
+
 /// What a Vault document counts as `open_from_vault` opens it in
 /// `project`, for a list when its record holds no counts (a move cleared
 /// them).
@@ -581,7 +612,12 @@ impl Pending {
     /// too (#1091 Q4: the maintainer's (b)); the record stays unscanned.
     /// This is the one place that decides.
     fn ready(&self) -> bool {
-        (self.scanned || self.by_hand) && self.counts.proposed == 0 && !self.awaiting_discovery
+        is_ready(
+            self.scanned,
+            self.by_hand,
+            self.counts.proposed,
+            self.awaiting_discovery,
+        )
     }
 
     /// Store the names and then the record, under the Vault handle's write

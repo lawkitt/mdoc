@@ -144,8 +144,21 @@ private struct PDFOriginal: View {
         }
         .task(id: bytes) {
             if read?.bytes != bytes {
-                // A stored original decrypts off the main thread.
-                let resolved = try? await Task.detached(priority: .userInitiated) { [bytes] in try bytes.resolved() }.value
+                // A stored original decrypts off the main thread. Gone
+                // before it came, the pane leaves nothing decrypted behind.
+                let decrypting = Task.detached(priority: .userInitiated) { [bytes] in
+                    try Task.checkCancellation()
+                    return try bytes.resolved()
+                }
+                let resolved = try? await withTaskCancellationHandler {
+                    try await decrypting.value
+                } onCancel: {
+                    decrypting.cancel()
+                }
+                if Task.isCancelled {
+                    bytes.closeIfStored()
+                    return
+                }
                 let document: PDFDocument? = switch resolved {
                 case .file(let url): PDFDocument(url: url)
                 case .memory(let data): PDFDocument(data: data.bytes)
