@@ -15,8 +15,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The manifest's format; another one is rebuilt.
-const FORMAT: u32 = 1;
+/// The manifest's format; another one is rebuilt. 2: Document summaries
+/// carry the source hash.
+const FORMAT: u32 = 2;
 
 /// A sealed file's header (magic, kind, nonce) and tag: the nonce is new on
 /// every write, so a stamp tells two writes apart even within one tick of
@@ -201,10 +202,11 @@ impl Record for Document {
     }
     /// A Document's Project changes only by a move, so a stale copy saved
     /// after a move cannot undo it; in a Project it keeps no mapping of its
-    /// own.
+    /// own; its original never changes.
     fn settle(&mut self, stored: &Self, revision: u64, now: u64) {
         self.id.clone_from(&stored.id);
         self.project.clone_from(&stored.project);
+        self.original.clone_from(&stored.original);
         if self.project.is_some() {
             self.mapping = crate::mapping::Mapping::default();
         }
@@ -407,6 +409,10 @@ pub(crate) fn document_dir(root: &Path, id: &str) -> PathBuf {
 
 pub(crate) fn document_path(root: &Path, id: &str) -> PathBuf {
     document_dir(root, id).join("doc.enc")
+}
+
+pub(crate) fn original_path(root: &Path, id: &str) -> PathBuf {
+    document_dir(root, id).join("original.enc")
 }
 
 /// The entries of `dir`; none when it does not exist.

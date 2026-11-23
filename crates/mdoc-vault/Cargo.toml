@@ -13,7 +13,8 @@ repository = "https://github.com/lawkitt/mdoc"
 aes-gcm = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# The fingerprint of a text saved while Ready, as the desktop's cases kept it.
+# The fingerprint of a text saved while Ready, as the desktop's cases kept it,
+# and source hashes for repeated imports (#1091 Decision 7), as mdoc-import's.
 sha2 = "0.11"
 tempfile = "3"
 thiserror = "2"

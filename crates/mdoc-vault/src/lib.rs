@@ -9,12 +9,11 @@
 //!   user-lists.enc           user-wide Always and Never lists
 //!   projects/<id>.enc        Project record
 //!   docs/<id>/doc.enc        Document record
+//!   docs/<id>/original.enc   the Document's Source Original, as imported
 //!   replies/<id>.enc         AI Reply record
 //! ```
 //!
-//! Originals (`docs/<id>/original.enc`) join in a later item, with their
-//! own [`ObjectKind`]. The caller supplies the key; this crate never asks
-//! the OS for one.
+//! The caller supplies the key; this crate never asks the OS for one.
 //!
 //! No AI text is stored: [`Vault::text_for_ai`] computes it from a
 //! Document's Markdown on every outbound read, after checking it against
@@ -23,14 +22,16 @@
 
 mod manifest;
 mod mapping;
+mod original;
 mod records;
 mod seal;
 mod vault;
 
 pub use mapping::{Binding, Identity, Mapping, NotName};
+pub use original::{OriginalReader, source_sha256};
 pub use records::{
-    Colour, Document, DocumentOrigin, DocumentSummary, NewDocument, NewProject, NewReply, Project,
-    ProjectSummary, Reply, ReplyOwner, ReplySummary, SourceKind, UserLists,
+    Colour, Document, DocumentOrigin, DocumentSummary, NewDocument, NewProject, NewReply, Original,
+    OriginalInfo, Project, ProjectSummary, Reply, ReplyOwner, ReplySummary, SourceKind, UserLists,
 };
 pub use vault::{
     Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, Saved, Stage,
@@ -47,11 +48,12 @@ pub enum ObjectKind {
     Document,
     Reply,
     UserLists,
+    /// A Source Original's file key, sealed at the head of `original.enc`.
+    Original,
 }
 
 impl ObjectKind {
-    /// The header byte. Reserved for a later item: 6 an original's
-    /// wrapped key.
+    /// The header byte.
     pub(crate) fn byte(self) -> u8 {
         match self {
             Self::Manifest => 1,
@@ -59,6 +61,7 @@ impl ObjectKind {
             Self::Document => 3,
             Self::Reply => 4,
             Self::UserLists => 5,
+            Self::Original => 6,
         }
     }
 
@@ -69,6 +72,7 @@ impl ObjectKind {
             Self::Document => "Document",
             Self::Reply => "AI Reply",
             Self::UserLists => "user-wide lists",
+            Self::Original => "original",
         }
     }
 }
@@ -106,6 +110,9 @@ pub enum VaultError {
     /// An outbound read of a Document that is not Ready now.
     #[error("The document is not ready for AI ({0:?}).")]
     NotReady(Readiness),
+    /// A viewing copy's name is empty, a path, or `.` or `..`.
+    #[error("Invalid file name for a copy of an original.")]
+    InvalidFileName,
     /// A fault hook stopped a write; the handle writes nothing more.
     #[error("The Vault handle stopped at an injected fault.")]
     Crashed,

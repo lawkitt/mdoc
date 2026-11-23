@@ -16,7 +16,7 @@ use std::{
 
 /// File header and format version.
 pub(crate) const MAGIC: &[u8; 8] = b"MDOCVLT1";
-const NONCE: usize = 12;
+pub(crate) const NONCE: usize = 12;
 /// Records are small; anything larger is not one of ours.
 pub(crate) const MAX_FILE: u64 = 64 * 1024 * 1024;
 /// Temp files a write leaves only when it dies before its rename.
