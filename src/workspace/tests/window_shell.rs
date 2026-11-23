@@ -66,7 +66,7 @@ fn copy_markdown_button_uses_active_tab_without_editor_focus(cx: &mut TestAppCon
         assert!(first.read(cx).copy_feedback.is_none());
         assert!(second.read(cx).copy_feedback.is_some());
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(-1, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_next_recent(window, cx));
     cx.run_until_parked();
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
     more(cx, "more-copy-markdown");
@@ -1409,7 +1409,7 @@ fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     let texts = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
-        cx.update(|_, cx| {
+        let mut texts = cx.update(|_, cx| {
             tabs.read(cx)
                 .tabs
                 .iter()
@@ -1423,7 +1423,10 @@ fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
                         .to_owned()
                 })
                 .collect::<Vec<_>>()
-        })
+        });
+        // Live views are kept by recency; order them by text.
+        texts.sort();
+        texts
     };
     // From Home's button, with a Windows line ending to normalize.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
@@ -1449,9 +1452,9 @@ fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
     assert_eq!(
         texts(&tabs, cx),
         [
+            "Second paste",
             "Two lines
-Вторая строка",
-            "Second paste"
+Вторая строка"
         ]
     );
     assert_eq!(
@@ -2017,8 +2020,8 @@ fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContex
 
     hover(cx, "sidebar-toggle");
     shown(cx, tip("Collapse sidebar", &ToggleSidebar));
-    hover(cx, "sidebar-new");
-    shown(cx, tip("New Markdown tab", &New));
+    hover(cx, "tree-new");
+    shown(cx, tip("New document", &New));
     // A tab to go back from.
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.new_tab(window, cx);

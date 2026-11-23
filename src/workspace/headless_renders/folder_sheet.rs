@@ -46,11 +46,7 @@ pub(super) fn scenes(d: &mut Driver, document: &Path, project: &str) -> Result<(
         let folder = DroppedFolder::read(folder, mdoc_store::document::is_markdown)
             .ok_or("fixture folder")?;
         d.change(|w, window, cx| {
-            let pending = Pending {
-                folder,
-                project,
-                at: None,
-            };
+            let pending = Pending { folder, project };
             w.queue_folder(pending, window, cx)
         })?;
         d.capture(name)?;

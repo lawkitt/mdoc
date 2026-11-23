@@ -5,8 +5,7 @@ document
 navigation-disabled
 navigation-enabled
 navigation-middle
-tab-menu-saved
-tab-menu-untitled
+document-menu
 more-menu
 review
 merge-hint
@@ -43,6 +42,13 @@ rename-project
 project-categories
 project-page-lists
 keychain-explainer
+tree-projects-collapsed
+tree-project-expanded
+tree-unfiled-show-all
+tree-unfiled-selected
+confirm-delete-documents
+recency-switcher
+home-after-close
 folder-sheet
 folder-sheet-over-cap
 folder-sheet-add-to-project

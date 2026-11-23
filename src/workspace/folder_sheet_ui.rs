@@ -3,8 +3,8 @@
 //! Open files and Cancel. New files are imported into the Project; open
 //! Unfiled ones move into it.
 use super::{
-    Close, Import, New, NextTab, Open, OpenPalette, OpenProject, PasteAiResponse, PreviousTab,
-    PseudonymizeClipboard, RetryDocument, Settings, ToggleSidebar, Workspace,
+    Close, Import, New, Open, OpenPalette, OpenProject, PasteAiResponse, PseudonymizeClipboard,
+    RetryDocument, Settings, SwitchDocument, SwitchDocumentBack, ToggleSidebar, Workspace,
     folder_sheet::{CAP, CAP_NOTE, DroppedFolder, Pending, Sheet, Status, Target},
     shortcuts_ui::ShowShortcuts,
 };
@@ -55,7 +55,7 @@ impl Workspace {
             .map(|path| self.folder_file_status(path, cx))
             .collect();
         let target = self.folder_target(&pending.folder, pending.project.as_deref(), cx);
-        let sheet = Sheet::new(&pending.folder, statuses, target, pending.at);
+        let sheet = Sheet::new(&pending.folder, statuses, target);
         let rows = sheet
             .rows()
             .iter()
@@ -188,7 +188,7 @@ impl Workspace {
             return;
         }
         if let Some(sheet) = self.close_folder_sheet(window, cx) {
-            self.open_ticked(&sheet, sheet.at(), None, window, cx);
+            self.open_ticked(&sheet, None, window, cx);
         }
         self.show_next_folder(window, cx);
     }
@@ -198,7 +198,6 @@ impl Workspace {
     fn open_ticked(
         &mut self,
         sheet: &Sheet,
-        at: Option<usize>,
         project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -215,7 +214,7 @@ impl Workspace {
             })
             .map(|path| (path, true))
             .collect();
-        self.finish_open(paths, at, project, window, cx);
+        self.finish_open(paths, project, window, cx);
     }
 
     /// Open as New Project / Add to “X”: the ticked files go into that
@@ -288,7 +287,7 @@ impl Workspace {
                             "“{}” could not become a Project: {error}",
                             sheet.name()
                         ));
-                        self.open_ticked(&sheet, sheet.at(), None, window, cx);
+                        self.open_ticked(&sheet, None, window, cx);
                         self.show_next_folder(window, cx);
                         return;
                     }
@@ -307,7 +306,7 @@ impl Workspace {
                 self.move_document(document, Some(project.clone()), window, cx);
             }
         }
-        self.open_ticked(&sheet, sheet.at(), Some(project), window, cx);
+        self.open_ticked(&sheet, Some(project), window, cx);
         self.checkpoint(window, cx);
         cx.notify();
         self.show_next_folder(window, cx);
@@ -528,8 +527,8 @@ impl Workspace {
                             .on_action(|_: &OpenPalette, _, _| {})
                             .on_action(|_: &ShowShortcuts, _, _| {})
                             .on_action(|_: &crate::menus::About, _, _| {})
-                            .on_action(|_: &NextTab, _, _| {})
-                            .on_action(|_: &PreviousTab, _, _| {})
+                            .on_action(|_: &SwitchDocument, _, _| {})
+                            .on_action(|_: &SwitchDocumentBack, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})
                             .on_action(|_: &RetryDocument, _, _| {})
                             .on_action(|_: &super::shell::ShowHome, _, _| {})

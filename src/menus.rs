@@ -12,9 +12,9 @@ use crate::{
     pii::ui::{CopyForAi, Pseudonymize},
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
-        CheckForUpdates, ClearRecentFiles, Close, Import, New, NextTab, Open, OpenPalette,
-        OpenProject, OpenRecent, PasteAiResponse, PreviousTab, PseudonymizeClipboard, Quit,
-        RestoreClipboard, Settings, ShowHome, ToggleSidebar, shortcuts_ui::ShowShortcuts,
+        CheckForUpdates, ClearRecentFiles, Close, Import, New, Open, OpenPalette, OpenProject,
+        OpenRecent, PasteAiResponse, PseudonymizeClipboard, Quit, RestoreClipboard, Settings,
+        ShowHome, SwitchDocument, SwitchDocumentBack, ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
 use gpui::{App, Global, Menu, MenuItem, OsAction, SystemMenuType, actions};
@@ -201,7 +201,7 @@ fn menus(recent: &[PathBuf]) -> Vec<Menu> {
             MenuItem::action("Copy for AI", CopyForAi),
             MenuItem::action("Paste AI Reply", PasteAiResponse),
             MenuItem::separator(),
-            MenuItem::action("Close Tab", Close),
+            MenuItem::action("Close", Close),
         ]),
         Menu::new("Edit").items([
             MenuItem::os_action("Undo", mdoc_editor::Undo, OsAction::Undo),
@@ -243,8 +243,8 @@ fn menus(recent: &[PathBuf]) -> Vec<Menu> {
             MenuItem::action("Minimize", MinimizeWindow),
             MenuItem::action("Zoom", ZoomWindow),
             MenuItem::separator(),
-            MenuItem::action("Next Tab", NextTab),
-            MenuItem::action("Previous Tab", PreviousTab),
+            MenuItem::action("Switch Document", SwitchDocument),
+            MenuItem::action("Switch Document Back", SwitchDocumentBack),
         ]),
         Menu::new("Help").items(help),
     ]

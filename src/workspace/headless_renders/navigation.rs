@@ -57,9 +57,26 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>
         cx.notify();
     })?;
     d.capture("navigation-enabled")?;
-    // The document is in the middle: Home behind it and a second tab ahead.
+    // The document is in the middle: Home behind it and a second document
+    // ahead.
     d.change(|w, window, cx| {
-        w.new_tab(window, cx);
+        let vault = w.vault.vault().cloned().expect("the fixture Vault");
+        let notes = vault
+            .create_document(mdoc_vault::NewDocument {
+                project: None,
+                title: "Meeting notes".into(),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown: "# Meeting notes
+"
+                .into(),
+            })
+            .expect("temporary fixture document");
+        let notes = mdoc_store::document_id::VaultId::parse(&notes.id).expect("an id");
+        w.open_vault_document(notes, window, cx);
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
         w.navigate(true, window, cx);
         window.focus(&w.focus, cx);
     })?;
@@ -71,53 +88,37 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>
         w.sidebar.restore(true, Some(true));
         cx.notify();
     })?;
-    tab_menus(d)?;
+    document_menu(d)?;
     Ok(view)
 }
 
-/// The sidebar tab menu of the imported fixture and of the untitled tab
-/// beside it (UI polish decision 13), opened under each row as a right-click
-/// does.
-fn tab_menus(d: &mut Driver) -> Result<()> {
-    for (name, untitled) in [("tab-menu-saved", false), ("tab-menu-untitled", true)] {
-        d.change(|w, window, cx| {
-            let rows: Vec<u64> = w
-                .tabs
-                .iter()
-                .filter(|tab| !w.is_placeholder(tab, cx))
-                .map(|tab| tab.id())
-                .collect();
-            let (row, id) = rows
-                .iter()
-                .enumerate()
-                .find(|(_, id)| w.tab_document(**id, cx).is_none() == untitled)
-                .map(|(row, id)| (row, *id))
-                .ok_or("no such tab")?;
-            // Under the row's label: rows are 31 pt apart from 160 pt.
-            let position = gpui::point(px(48.), px(176. + 31. * row as f32));
-            w.menu_return = window.focused(cx);
-            window.focus(&w.menu_focus, cx);
-            w.tab_menu = Some((id, position));
-            cx.notify();
-            Ok::<_, String>(())
-        })??;
-        d.capture(name)?;
-        d.change(|w, window, cx| {
-            w.tab_menu = None;
-            if let Some(focus) = w.menu_return.take() {
-                window.focus(&focus, cx);
-            }
-            cx.notify();
-        })?;
-    }
-    Ok(())
+/// The imported fixture's row menu in Unfiled, opened under its row as a
+/// right-click does.
+fn document_menu(d: &mut Driver) -> Result<()> {
+    d.change(|w, window, cx| {
+        let document = w
+            .tree_now()
+            .documents
+            .first()
+            .and_then(|summary| mdoc_store::document_id::VaultId::parse(&summary.id))
+            .ok_or("no document row")?;
+        // Under the first Unfiled row's label.
+        let position = gpui::point(px(48.), px(230.));
+        w.menu_return = window.focused(cx);
+        window.focus(&w.menu_focus, cx);
+        w.document_menu = Some((document, position));
+        cx.notify();
+        Ok::<_, String>(())
+    })??;
+    d.capture("document-menu")?;
+    d.change(|w, window, cx| w.close_document_menu(window, cx))
 }
 
 fn document(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
     // The fixture is imported as a drop imports it.
     d.change(|w, window, cx| {
         let path = mdoc_store::session_store::identity(path);
-        w.finish_open(vec![(path, true)], None, None, window, cx);
+        w.finish_open(vec![(path, true)], None, window, cx);
     })?;
     d.settle()?;
     d.change(|w, window, cx| {

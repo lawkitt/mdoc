@@ -58,6 +58,8 @@ pub(super) enum Op {
         documents: ProjectDocuments,
         members: Vec<VaultId>,
     },
+    /// Unfiled documents, with their originals, names and replies.
+    DeleteDocuments { documents: Vec<VaultId> },
 }
 
 /// A document's names as its review holds them.
@@ -211,6 +213,9 @@ impl Workspace {
                         documents,
                         members,
                     } => self.run_delete(project, documents, members, window, cx),
+                    Op::DeleteDocuments { documents } => {
+                        self.run_delete_documents(documents, window, cx)
+                    }
                     op => self.run_op(document, op, window, cx),
                 }
                 self.advance_writer(window, cx);
@@ -314,6 +319,7 @@ impl Workspace {
     ) {
         match (target, result) {
             (Target::Tab(tab), Ok(Wrote::Created(id, markdown, follows))) => {
+                let id_for_stop = id.clone();
                 // A closed tab's document is in the Vault all the same.
                 if let Some(view) = self.tabs.get(tab).and_then(|tab| tab.view().cloned()) {
                     let document = DocumentId::Vault(id.clone());
@@ -326,6 +332,12 @@ impl Workspace {
                         }
                     });
                     self.tabs.set_document(tab, Some(document));
+                    self.unsaved.remove(&tab);
+                    // Back reaches it by its id, also once it is evicted.
+                    self.navigation.rename(
+                        &super::navigation::Stop::Tab(tab),
+                        super::navigation::Stop::Document(id_for_stop),
+                    );
                     // Typing went on while it was created.
                     self.autosave(tab, window, cx);
                 }
@@ -338,6 +350,9 @@ impl Workspace {
                     .filter_map(|tab| Some((tab.id(), tab.view()?.clone())))
                     .collect();
                 for (tab, view) in tabs {
+                    if view.read(cx).session.document.is(&document) {
+                        self.unsaved.remove(&tab);
+                    }
                     let member = view.update(cx, |view, cx| {
                         let shows = view.session.document.is(&document);
                         if shows {
@@ -367,6 +382,8 @@ impl Workspace {
                 };
                 if let Some(tab) = tab {
                     self.closing_after_write.remove(&tab);
+                    // Its edit is in no file: eviction keeps it.
+                    self.unsaved.insert(tab);
                 }
                 if self.quit_flow.abandon() {
                     Self::quit_cancelled(cx);
@@ -415,6 +432,8 @@ impl Workspace {
                 self.remove(tab, window, cx);
             }
         }
+        // A view kept for its write may go now.
+        self.evict(window, cx);
         cx.notify();
     }
 

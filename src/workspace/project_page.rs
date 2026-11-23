@@ -339,6 +339,7 @@ impl Workspace {
         };
         self.project_ui.page = Some(page);
         self.note_destination(super::navigation::Arrival::Visit, cx);
+        self.drop_if_empty_new(self.tabs.active(), window, cx);
         if matches!(place, Place::Rename) {
             self.start_rename_project(id.into(), window, cx);
         } else {

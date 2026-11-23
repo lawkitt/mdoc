@@ -94,7 +94,6 @@ fn open(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
     d.change(|w, window, cx| {
         w.drop_files(
             &gpui::ExternalPaths(vec![path.to_path_buf()].into()),
-            false,
             window,
             cx,
         );

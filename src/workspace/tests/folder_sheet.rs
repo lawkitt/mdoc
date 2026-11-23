@@ -44,12 +44,21 @@ fn focused_row(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<u
 }
 
 /// Every tab's Project, in sidebar order.
+/// The live views' Projects, in `tab_names`' order.
 fn tab_projects(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<Option<String>> {
     cx.update(|_, cx| {
         let w = tabs.read(cx);
-        (w.tabs.iter())
-            .map(|t| w.sidebar_project_link(t, cx).map(|l| l.id))
-            .collect()
+        let mut named: Vec<(String, Option<String>)> = (w.tabs.iter())
+            .map(|t| {
+                let name = t
+                    .view()
+                    .map(|view| view.read(cx).display_name())
+                    .unwrap_or_else(|| tab_label(t, cx).name);
+                (name, w.sidebar_project_link(t, cx).map(|l| l.id))
+            })
+            .collect();
+        named.sort_by_key(|(name, _)| name.to_lowercase());
+        named.into_iter().map(|(_, project)| project).collect()
     })
 }
 
@@ -186,7 +195,7 @@ fn one_folder_opens_at_most_twenty_new_tabs(cx: &mut TestAppContext) {
         assert!(sheet.rows()[CAP].ticked && !sheet.rows()[0].ticked);
     });
     click_toolbar(cx, "folder-open-files");
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1 + CAP));
+    assert_eq!(vault(&tabs, cx).documents().len(), 1 + CAP);
 }
 
 #[gpui::test]
@@ -242,16 +251,17 @@ fn a_folder_with_files_in_a_project_adds_to_it(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_folder_dropped_on_a_project_header_adds_to_that_project(cx: &mut TestAppContext) {
+fn a_folder_dropped_on_a_project_row_adds_to_that_project(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let project = new_project(&tabs, cx, first);
     let other = tempfile::tempdir().unwrap();
     let path = folder(other.path(), "Unrelated", &["note.md"]);
-    // A real drop on the header, not on the list.
+    // A real drop on the Project's row.
     draw(cx);
-    let header = cx.debug_bounds("project-header").unwrap();
+    let header: &'static str = Box::leak(format!("tree-project-{project}").into_boxed_str());
+    let header = cx.debug_bounds(header).unwrap();
     drag_files(cx, &[path], header.center());
     drop_files(cx, header.center());
     cx.update(|_, cx| {
@@ -265,7 +275,7 @@ fn a_folder_dropped_on_a_project_header_adds_to_that_project(cx: &mut TestAppCon
 }
 
 #[gpui::test]
-fn files_dropped_on_a_project_header_are_imported_into_it(cx: &mut TestAppContext) {
+fn files_dropped_on_a_project_row_are_imported_into_it(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
@@ -274,7 +284,8 @@ fn files_dropped_on_a_project_header_are_imported_into_it(cx: &mut TestAppContex
     let note = other.path().join("note.md");
     std::fs::write(&note, "A note").unwrap();
     draw(cx);
-    let header = cx.debug_bounds("project-header").unwrap();
+    let header: &'static str = Box::leak(format!("tree-project-{project}").into_boxed_str());
+    let header = cx.debug_bounds(header).unwrap();
     drag_files(cx, &[note], header.center());
     drop_files(cx, header.center());
     load_all(&tabs, cx);
@@ -484,7 +495,7 @@ fn the_cap_holds_against_tabs_closed_behind_the_sheet(cx: &mut TestAppContext) {
     let open = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.remove(open, window, cx));
     click_toolbar(cx, "folder-open-files");
-    assert_eq!(tab_names(&tabs, cx).len(), CAP);
+    assert_eq!(vault(&tabs, cx).documents().len(), 1 + CAP);
 }
 
 #[gpui::test]
@@ -522,7 +533,7 @@ fn a_deferred_drop_keeps_its_project_header(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|window, _| assert!(window.has_active_prompt()));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths_into(vec![path], None, Some(case), window, cx)
+        tabs.open_paths_into(vec![path], Some(case), window, cx)
     });
     cx.run_until_parked();
     assert!(!sheet_open(&tabs, cx));

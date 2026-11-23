@@ -1,4 +1,5 @@
-//! Carry out destination history without reopening closed tabs or reading the key.
+//! Carry out destination history without reading the key: an evicted
+//! document opens again; a released view that names none is skipped.
 use super::{
     Workspace,
     navigation::{Arrival, Stop},
@@ -18,6 +19,10 @@ impl Workspace {
             Stop::Project(page.id().into())
         } else if self.showing_home(cx) {
             Stop::Home
+        } else if let Some(document) =
+            (self.tabs.active_tab()).and_then(|tab| self.live_document(tab, cx))
+        {
+            Stop::Document(document)
         } else {
             Stop::Tab(self.tabs.active())
         }
@@ -29,8 +34,8 @@ impl Workspace {
     }
 
     /// The one liveness rule for the buttons, their tooltips and the
-    /// actions: Home, an open tab that isn't Home's placeholder, a Project
-    /// that still exists.
+    /// actions: Home, a document the Vault holds, a live view that isn't
+    /// Home's placeholder, a Project that still exists.
     fn live_stops<'a>(&'a self, cx: &'a App) -> impl Fn(&Stop) -> bool + 'a {
         let projects: Vec<String> = self
             .projects
@@ -38,8 +43,13 @@ impl Workspace {
             .into_iter()
             .map(|project| project.id)
             .collect();
+        let documents: std::collections::HashSet<String> = (self.vault.vault().into_iter())
+            .flat_map(|vault| vault.documents())
+            .map(|summary| summary.id)
+            .collect();
         move |stop| match stop {
             Stop::Home => true,
+            Stop::Document(id) => documents.contains(id.as_str()),
             Stop::Tab(id) => self
                 .tabs
                 .get(*id)
@@ -58,6 +68,10 @@ impl Workspace {
         let destination = match self.navigation_target(backwards, cx) {
             Some(Stop::Home) => Some("Home".into()),
             Some(Stop::Tab(id)) => self.tabs.get(*id).map(|tab| super::tab_label(tab, cx).name),
+            Some(Stop::Document(id)) => (self.vault.vault().into_iter())
+                .flat_map(|vault| vault.documents())
+                .find(|summary| summary.id == id.as_str())
+                .map(|summary| summary.title),
             Some(Stop::Project(id)) => self
                 .projects
                 .summaries()
@@ -99,7 +113,7 @@ impl Workspace {
         let stop = self.navigation.go(index);
         self.close_shortcuts(window, cx);
         // A menu belongs to the page it was opened over.
-        self.tab_menu = None;
+        self.document_menu = None;
         self.project_ui.header_menu = None;
         self.menu_return = None;
         // The cursor is already on this stop, so the destination's own
@@ -107,6 +121,7 @@ impl Workspace {
         match stop {
             Stop::Home => self.show_home(window, cx),
             Stop::Tab(id) => self.activate(id, window, cx),
+            Stop::Document(id) => self.open_vault_document(id, window, cx),
             Stop::Project(id) => self.show_project_page(&id, Place::Header, window, cx),
         }
     }

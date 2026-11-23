@@ -15,7 +15,7 @@ use crate::{
     spelling::{NextMisspelling, PreviousMisspelling, ToggleDocumentSpelling},
     style::{self, Theme},
     ui,
-    workspace::{self, Close, Import, New, Open},
+    workspace::{self, Import, New, Open},
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
 use mdoc_import::{import, ocr};
@@ -88,8 +88,10 @@ pub(crate) fn close_document(
     app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    app.update(cx, |_, cx| {
-        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))
+    let _ = app;
+    cx.update(|window, cx| {
+        let tabs = window.root::<workspace::Workspace>().flatten().unwrap();
+        tabs.update(cx, |tabs, cx| tabs.release_active(window, cx));
     });
     cx.run_until_parked();
     if cx.has_pending_prompt() {
@@ -698,7 +700,7 @@ fn accepted_document_transition_resets_search_state(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_input("alpha");
     cx.run_until_parked();
-    cx.dispatch_action(Close);
+    let _ = close_document(&app, cx);
     cx.run_until_parked();
 
     let app = active_document(&app, cx);

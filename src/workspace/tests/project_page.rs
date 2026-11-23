@@ -540,7 +540,8 @@ fn share_and_sidebar_header_open_the_same_page(cx: &mut TestAppContext) {
     );
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(tab, window, cx));
     draw(cx);
-    let header = cx.debug_bounds("project-page-link").unwrap();
+    let row: &'static str = Box::leak(format!("tree-project-{id}").into_boxed_str());
+    let header = cx.debug_bounds(row).unwrap();
     cx.simulate_click(header.center(), Default::default());
     cx.run_until_parked();
     assert_eq!(
@@ -598,8 +599,10 @@ fn project_close_all_closes_every_member_and_writes_their_edits(cx: &mut TestApp
         })
     });
     draw(cx);
-    let menu = cx.debug_bounds("project-header-menu").unwrap();
-    cx.simulate_click(menu.center(), Default::default());
+    let row: &'static str = Box::leak(format!("tree-project-{id}").into_boxed_str());
+    let row = cx.debug_bounds(row).unwrap();
+    cx.simulate_mouse_down(row.center(), gpui::MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(row.center(), gpui::MouseButton::Right, Default::default());
     draw(cx);
     let close = cx.debug_bounds("project-action-close-all").unwrap();
     cx.simulate_click(close.center(), Default::default());
