@@ -558,7 +558,7 @@ final class LibraryModelTests: XCTestCase {
     func testDeleteRemovesTheDocument() throws {
         let seeded = try Fixture.seeded()
         let home = LibraryModel(library: seeded.library)
-        try home.delete(seeded.tenancy)
+        try home.delete([seeded.tenancy])
         XCTAssertFalse(home.documents.contains { $0.projectID == seeded.harbour })
     }
 }

@@ -48,6 +48,10 @@ final class DeviceRestoreUITests: XCTestCase {
         expectRestored("Unfiled reply: ask ann.baker@example.com first.", in: app)
         openReplyPane(Self.projectDocument, in: app)
         expectRestored("Project reply: write to maya.ellison@example.com today.", in: app)
+        // The Project's page lists it under Replies, and shows it restored.
+        expectOnProjectPage(app)
+        openReplyPane(Self.projectDocument, in: app)
+        expectRestored("Project reply: write to maya.ellison@example.com today.", in: app)
 
         // A second reply for the Project, pasted in mdoc: the pane's menu
         // switches between them, and Remove deletes the one shown.
@@ -102,12 +106,10 @@ final class DeviceRestoreUITests: XCTestCase {
         return String(text[range])
     }
 
+    /// Opens `title` from the recent documents the sidebar's search lists.
     @MainActor
     private func open(_ title: String, in app: XCUIApplication) {
-        MdocUITest.revealSidebar(app)
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@", "\(title),"))
-            .firstMatch
+        let row = MdocUITest.listedRow(app, title: title)
         XCTAssertTrue(row.waitForExistence(timeout: 60), dump(app, "no-row-\(title)"))
         row.tap()
     }
@@ -118,6 +120,27 @@ final class DeviceRestoreUITests: XCTestCase {
         let reply = app.segmentedControls["pane-picker"].buttons["Reply"].firstMatch
         XCTAssertTrue(reply.waitForExistence(timeout: MdocUITest.timeout), dump(app, "no-reply-pane-\(title)"))
         reply.tap()
+    }
+
+    /// The Project's page, from its sidebar row: Replies lists the reply
+    /// from Notes, and a tap shows it restored.
+    @MainActor
+    private func expectOnProjectPage(_ app: XCUIApplication) {
+        MdocUITest.revealSidebar(app)
+        let project = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'sidebar-project' AND label == %@", Self.project)).firstMatch
+        XCTAssertTrue(project.waitForExistence(timeout: MdocUITest.timeout), dump(app, "no-project-row"))
+        project.tap()
+        let segments = app.segmentedControls["project-segments"]
+        XCTAssertTrue(segments.waitForExistence(timeout: MdocUITest.timeout), dump(app, "no-project-page"))
+        segments.buttons["Replies"].tap()
+        let reply = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'reply-row' AND label BEGINSWITH %@", "Reply to \(Self.project)"))
+            .firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: MdocUITest.timeout), dump(app, "no-project-reply"))
+        reply.tap()
+        expectRestored("Project reply: write to maya.ellison@example.com today.", in: app)
+        app.buttons["Done"].firstMatch.tap()
     }
 
     @MainActor

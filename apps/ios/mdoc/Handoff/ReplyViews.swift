@@ -112,8 +112,8 @@ final class ReplyTextView: UITextView {
 /// The document's restored reply; the hand-off bar below shares and copies
 /// it (ADR 0087), so here is only its summary and Remove. With more than
 /// one saved reply (its Project's, or its own while Unfiled), a menu picks
-/// the one shown, newest first. Vault & Projects item 11 moves replies to
-/// the Project page.
+/// the one shown, newest first. A Project's page lists its replies too; an
+/// Unfiled document's are only here (#1091 Decisions 4 and 31).
 struct ReplyPane: View {
     let reply: ReplySnapshot
     var replies: [SavedReply] = []

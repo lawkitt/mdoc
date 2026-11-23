@@ -101,11 +101,11 @@ struct LibraryDocument: Identifiable, Hashable, Sendable {
 }
 
 struct LibrarySnapshot: Sendable, Equatable {
+    /// Pinned first, then most recently updated (#1091 Decision 28).
     var projects: [ProjectSummary]
     var documents: [LibraryDocument]
     /// Each Project's saved AI replies, newest first: its own and those of
-    /// the documents in it now. Today's Documents page filtered to the
-    /// Project lists them (until Vault & Projects item 11's Project page).
+    /// the documents in it now, for its page's Replies.
     var projectReplies: [ProjectID: [SavedReply]] = [:]
 
     static let empty = LibrarySnapshot(projects: [], documents: [])
@@ -114,6 +114,42 @@ struct LibrarySnapshot: Sendable, Equatable {
     func documents(in projectID: ProjectID) -> [LibraryDocument] {
         documents.filter { $0.projectID == projectID }.sorted { $0.updated > $1.updated }
     }
+}
+
+/// One of a Project's names on its page: its alias, its category and the
+/// wordings it stands for, the one restore puts back first.
+struct ProjectNameRow: Identifiable, Hashable, Sendable {
+    var alias: String
+    var category: Category
+    var originals: [String]
+    var id: String { alias }
+}
+
+/// A wording on a Project's Always list, in the category scans propose it
+/// in.
+struct AlwaysWording: Hashable, Sendable {
+    var wording: String
+    var category: Category
+}
+
+/// What a Project's page shows beside its documents and replies: its names
+/// and its Always and Never lists.
+struct ProjectDetails: Equatable, Sendable {
+    var names: [ProjectNameRow]
+    var always: [AlwaysWording]
+    var never: [String]
+
+    static let empty = ProjectDetails(names: [], always: [], never: [])
+}
+
+/// What deleting a Project that has documents does with them (#1091
+/// Decision 9): the app asks.
+enum ProjectDeletion: Hashable, Sendable {
+    /// Each goes to Unfiled with its names and its replies; the Project's
+    /// own AI replies go with the Project.
+    case moveToUnfiled
+    /// They are deleted with it, and their replies.
+    case deleteDocuments
 }
 
 /// What the user brought in. Files are already copied into mdoc's storage.

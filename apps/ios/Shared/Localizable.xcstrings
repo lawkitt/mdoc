@@ -310,6 +310,9 @@
     "Address" : {
 
     },
+    "AI replies you save with Restore with mdoc or Paste reply show here, restored." : {
+
+    },
     "AI reply" : {
 
     },
@@ -331,6 +334,9 @@
     "All %lld reviewed" : {
 
     },
+    "All Documents" : {
+
+    },
     "All Projects" : {
 
     },
@@ -341,6 +347,9 @@
 
     },
     "also %@" : {
+
+    },
+    "Always replace" : {
 
     },
     "An empty document to write in." : {
@@ -394,22 +403,97 @@
     "Candidates" : {
 
     },
+    "Create" : {
+
+    },
+    "Delete %lld" : {
+
+    },
+    "Delete Project?" : {
+
+    },
+    "Delete Project…" : {
+
+    },
+    "Delete them" : {
+
+    },
+    "Delete “%@”?" : {
+
+    },
+    "Deleted %lld documents" : {
+
+    },
     "Document" : {
+
+    },
+    "Documents you add from its page land in it." : {
+
+    },
+    "Documents you add outside a Project land here." : {
+
+    },
+    "Each document you add lands in Unfiled, or in the Project whose page you add it from." : {
+
+    },
+    "Home" : {
+
+    },
+    "Import Again" : {
+
+    },
+    "Its %lld documents can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way." : {
+
+    },
+    "Its document can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way." : {
 
     },
     "Keeps the reply in mdoc with %@." : {
 
     },
+    "Move its documents to Unfiled" : {
+
+    },
+    "Names" : {
+
+    },
+    "Names and wordings" : {
+
+    },
+    "Never replace" : {
+
+    },
     "No documents yet" : {
 
     },
+    "No replies yet" : {
+
+    },
+    "None" : {
+
+    },
+    "Nothing in Unfiled" : {
+
+    },
+    "Open Existing" : {
+
+    },
     "Open mdoc first: it has nothing to restore with yet." : {
+
+    },
+    "Open the document you imported before, or import the file again as a new document." : {
 
     },
     "Project" : {
 
     },
     "Project %@" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Remove “%@”" : {
 
     },
     "Replies" : {
@@ -430,7 +514,13 @@
     "Save" : {
 
     },
+    "Show" : {
+
+    },
     "Shows another saved reply." : {
+
+    },
+    "The names its documents replace show here, with their aliases." : {
 
     },
     "The Vault key stays in this device's Keychain." : {
@@ -578,9 +668,6 @@
     "Documents stay on this iPhone" : {
 
     },
-    "Documents you add show here." : {
-
-    },
     "DOCX files and pasted text show their text only." : {
 
     },
@@ -624,9 +711,6 @@
 
     },
     "Drag to make one with another name" : {
-
-    },
-    "Each document you add lands in Unfiled, or in the Project you choose." : {
 
     },
     "Each gets its alias. You can still keep any of them." : {
@@ -1659,6 +1743,9 @@
     "Web address" : {
 
     },
+    "What you add with + lands in this Project." : {
+
+    },
     "working" : {
 
     },
@@ -1669,6 +1756,12 @@
 
     },
     "Your edits to it will be lost." : {
+
+    },
+    "“%@” has no documents. Its names and its AI replies are deleted with it." : {
+
+    },
+    "“%@” is already in mdoc" : {
 
     }
   },

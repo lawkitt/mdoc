@@ -491,6 +491,100 @@ final class RealLibrary: Library, @unchecked Sendable {
             from: moved.left.map { ProjectID(rawValue: $0.id) }, undo: moved.undo)
     }
 
+    func createProject(named name: String) throws -> ProjectSummary {
+        ProjectSummary(try core { try vault.createProject(name: name) })
+    }
+
+    func projectDetails(_ projectID: ProjectID) throws -> ProjectDetails {
+        let page = try core { try vault.projectPage(id: projectID.rawValue) }
+        return ProjectDetails(
+            names: page.names.map { ProjectNameRow(alias: $0.alias, category: $0.category, originals: $0.originals) },
+            always: page.always.map { AlwaysWording(wording: $0.wording, category: $0.category) },
+            never: page.never)
+    }
+
+    func removeListed(_ wording: String, always: Bool, from projectID: ProjectID) throws {
+        _ = try core { try vault.removeListed(projectId: projectID.rawValue, wording: wording, always: always) }
+    }
+
+    func documentsFromSource(_ file: URL) -> [DocumentID] {
+        let found = (try? vault.documentsFromSource(path: file.path)) ?? []
+        return lock.withLock { found.map { ids[$0.id] ?? DocumentID(rawValue: $0.id) } }
+    }
+
+    /// Delete Project. Its documents' sessions follow as a move's and a
+    /// delete's do: a moved one saves what its taps changed first and opens
+    /// again in Unfiled; a deleted one goes through `deleteDocument`, so
+    /// nothing saves it again. An import not read yet that was to join the
+    /// Project lands in Unfiled, or is deleted with the rest.
+    func deleteProject(_ projectID: ProjectID, documents: ProjectDeletion) throws {
+        let id = projectID.rawValue
+        let stored = vault.documents().filter { $0.projectId == id }.map(\.id)
+        let (members, imports) = lock.withLock {
+            (
+                stored.map { vaultID in (vaultID, ids[vaultID] ?? DocumentID(rawValue: vaultID)) },
+                sessions.values.filter { $0.joins(id) }
+            )
+        }
+        switch documents {
+        case .deleteDocuments:
+            for document in imports.map(\.id) + members.map(\.1) {
+                try deleteDocument(document)
+            }
+            try core { try vault.deleteProject(id: id, documents: .delete) }
+        case .moveToUnfiled:
+            var open = lock.withLock { members.compactMap { vaultID, document in sessions[document].map { (vaultID, $0) } } }
+            for (_, session) in open {
+                try session.saveChanges()
+            }
+            // No import's join and first save runs meanwhile: each lands in
+            // Unfiled, or saved in the Project before, moves with the rest.
+            try holdingSaves(imports[...]) {
+                let leaving = imports.filter { $0.leaveProject(id) }
+                do {
+                    try core { try vault.deleteProject(id: id, documents: .moveToUnfiled) }
+                } catch {
+                    leaving.forEach { $0.rejoin(id) }
+                    throw error
+                }
+                leaving.forEach { pending.moveToUnfiled($0.id) }
+                open += imports.filter { session in !leaving.contains { $0 === session } }
+                    .compactMap { session in session.vaultID.map { ($0, session) } }
+            }
+            for (vaultID, session) in open {
+                do {
+                    try session.reopen(vaultID: vaultID, kind: nil)
+                } catch {
+                    session.reopenLater()
+                }
+            }
+        }
+        lock.withLock { projectNames.removeAll() }
+        noteChange()
+    }
+
+    /// Runs `body` while none of `sessions` saves.
+    private func holdingSaves<T>(_ sessions: ArraySlice<RealSession>, _ body: () throws -> T) rethrows -> T {
+        guard let first = sessions.first else { return try body() }
+        return try first.holdingSave { try holdingSaves(sessions.dropFirst(), body) }
+    }
+
+    func deleteDocuments(_ documents: [DocumentID]) throws {
+        // Those this run holds a session for go one by one, as a single
+        // Delete does; the rest in one call.
+        let (held, rest) = lock.withLock {
+            (documents.filter { sessions[$0] != nil }, documents.filter { sessions[$0] == nil })
+        }
+        for document in held {
+            try deleteDocument(document)
+        }
+        guard !rest.isEmpty else { return }
+        try core { try vault.deleteDocuments(ids: rest.map(\.rawValue)) }
+        for document in rest {
+            forget(document, vaultID: document.rawValue)
+        }
+    }
+
     /// A save that waits for the phone to unlock. A job's save replaces
     /// what waited for the document before it (it saves the taps' changes
     /// too); the taps' save never replaces a job's, which may join the
@@ -683,7 +777,10 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// The title and Project chosen at import, until the core holds the
     /// document: it reads the title from the file and joins the Project
     /// only once it is read. Nil: Unfiled.
-    private let chosen: (title: String, projectID: String?)
+    private var chosen: (title: String, projectID: String?) {
+        lock.withLock { chosenPlace }
+    }
+    private var chosenPlace: (title: String, projectID: String?)
     private var kind: SourceKind = .text
     private var original: OriginalSource = .none
     /// Its id in the Vault, once its first save made it or it was opened
@@ -725,7 +822,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         self.id = id
         self.library = library
         self.source = source
-        chosen = (title, projectID)
+        chosenPlace = (title, projectID)
         self.ocrStarted = ocrStarted
         saver = SaveScheduler(queue: library.saveQueue)
         if let source {
@@ -748,6 +845,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         let stored = library.storedOriginal(vaultID)
         lock.withLock {
             savedID = vaultID
+            // The core holds its Project now; the one chosen at import
+            // would show it in that Project after a move to Unfiled.
+            chosenPlace.projectID = nil
             if let kind { self.kind = kind }
             original.close()
             original = stored
@@ -833,6 +933,29 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             id: id, title: review.title, projectID: projectID.map(ProjectID.init), kind: lock.withLock { kind },
             phase: review.phase, pendingCount: Int(review.proposed), updated: updated,
             candidateCount: review.mentions.count, origin: ffi.info()?.origin ?? .ordinary)
+    }
+
+    /// The Project an import not yet read was to join is deleted, its
+    /// documents moved to Unfiled: the import lands there too. True when it
+    /// was to join `projectID`.
+    fileprivate func leaveProject(_ projectID: String) -> Bool {
+        lock.withLock {
+            guard savedID == nil, chosenPlace.projectID == projectID else { return false }
+            chosenPlace.projectID = nil
+            return true
+        }
+    }
+
+    /// Undoes `leaveProject` when the Project's delete failed.
+    fileprivate func rejoin(_ projectID: String) {
+        lock.withLock {
+            if savedID == nil { chosenPlace.projectID = projectID }
+        }
+    }
+
+    /// Whether this import, not yet saved, was to join `projectID`.
+    fileprivate func joins(_ projectID: String) -> Bool {
+        lock.withLock { savedID == nil && chosenPlace.projectID == projectID }
     }
 
     fileprivate func reopenLater() {
@@ -1003,15 +1126,19 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         if kind == .scan {
             try core { try ffi.setSourceKind(kind: .scan) }
         }
-        let projectID = chosen.projectID
         try saveAfterJob { [self] in
-            // Deleted meanwhile: nothing joins the Project.
-            guard !lock.withLock({ ended }) else { return }
-            // Started from a Project: it joins it before its first save.
-            if let projectID, vaultID == nil {
-                _ = try core { try ffi.joinProject(vault: library.vault, projectId: projectID) }
+            // Joining and the first save are one step under the save lock:
+            // a Project deleted meanwhile (`leaveProject`) is deleted
+            // either before it, which leaves the import Unfiled, or after.
+            try saving.withLock {
+                // Deleted meanwhile: nothing joins the Project.
+                guard !lock.withLock({ ended }) else { return }
+                // Started from a Project: it joins it before its first save.
+                if let projectID = chosen.projectID, vaultID == nil {
+                    _ = try core { try ffi.joinProject(vault: library.vault, projectId: projectID) }
+                }
+                try saveHeld()
             }
-            try save()
         }
         return snapshot()
     }
@@ -1322,12 +1449,20 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// The save that ends a job: the first one makes the document in the
     /// Vault, Unfiled unless it joined a Project.
     private func save() throws {
-        try saving.withLock {
-            guard !lock.withLock({ ended }) else { return }
-            ffi.setNoNameFinder(noNameFinder: library.findsNoNames)
-            let saved = try core { try ffi.saveIntoVault(vault: library.vault) }
-            recordSaved(vaultID: saved.id)
-        }
+        try saving.withLock { try saveHeld() }
+    }
+
+    /// `save`, for a caller that holds `saving`.
+    private func saveHeld() throws {
+        guard !lock.withLock({ ended }) else { return }
+        ffi.setNoNameFinder(noNameFinder: library.findsNoNames)
+        let saved = try core { try ffi.saveIntoVault(vault: library.vault) }
+        recordSaved(vaultID: saved.id)
+    }
+
+    /// Runs `body` while no save of this session runs, nor starts.
+    fileprivate func holdingSave<T>(_ body: () throws -> T) rethrows -> T {
+        try saving.withLock(body)
     }
 
     private func recordSaved(vaultID: String) {
@@ -1335,6 +1470,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         let first = lock.withLock {
             let first = savedID == nil
             savedID = vaultID
+            // The core holds its Project from now on.
+            chosenPlace.projectID = nil
             if first {
                 // The received files go with the import: the original is
                 // viewed from the Vault.
@@ -1649,6 +1786,17 @@ final class PendingImports: @unchecked Sendable {
             var entries = load()
             guard entries[id.rawValue] != nil else { return }
             entries[id.rawValue]?.ocrStarted = true
+            save(entries)
+        }
+    }
+
+    /// An import's Project was deleted, its documents moved: it lands in
+    /// Unfiled.
+    func moveToUnfiled(_ id: DocumentID) {
+        lock.withLock {
+            var entries = load()
+            guard entries[id.rawValue] != nil else { return }
+            entries[id.rawValue]?.projectID = nil
             save(entries)
         }
     }

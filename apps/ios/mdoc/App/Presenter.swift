@@ -87,8 +87,25 @@ private struct Dialogs: ViewModifier {
         if case .restoreSample(let id) = navigator.presentation { id } else { nil }
     }
 
+    private var repeatedImport: RepeatedImport? {
+        if case .repeatedImport(let repeated) = navigator.presentation { repeated } else { nil }
+    }
+
     func body(content: Content) -> some View {
         content
+            .modifier(ProjectDialogs(app: app, draft: $draft))
+            // An import of a file already in mdoc, in #1107's words.
+            .alert(
+                Text("“\(repeatedImport?.name ?? "")” is already in mdoc"),
+                isPresented: navigator.isPresenting { if case .repeatedImport = $0 { true } else { false } },
+                presenting: repeatedImport
+            ) { repeated in
+                Button("Open Existing") { app.openExisting(repeated) }
+                Button("Import Again") { app.importAgain(repeated) }
+                Button("Cancel", role: .cancel) { app.cancelImport(repeated) }
+            } message: { _ in
+                Text("Open the document you imported before, or import the file again as a new document.")
+            }
             .alert("Rename document", isPresented: navigator.isPresenting { if case .renameDocument = $0 { true } else { false } }) {
                 TextField("Title", text: $draft)
                     .accessibilityIdentifier("rename-field")
@@ -137,6 +154,70 @@ private struct Dialogs: ViewModifier {
                 Button("OK") { navigator.dismiss() }
             } message: { message in
                 Text(message)
+            }
+    }
+}
+
+/// New Project and Delete Project (#1091 Decisions 9 and 34).
+private struct ProjectDialogs: ViewModifier {
+    let app: AppModel
+    @Binding var draft: String
+
+    private var navigator: Navigator { app.navigator }
+
+    /// The Project Delete Project… asks about, while it is there.
+    private var deleting: ProjectSummary? {
+        guard case .deleteProject(let id) = navigator.presentation else { return nil }
+        return app.library.project(id)
+    }
+
+    private var isDeleting: Binding<Bool> {
+        navigator.isPresenting { if case .deleteProject = $0 { true } else { false } }
+    }
+
+    func body(content: Content) -> some View {
+        let deleting = deleting
+        let count = deleting.map { app.library.documents(in: $0.id).count } ?? 0
+        content
+            .alert("New Project", isPresented: navigator.isPresenting { if case .newProject = $0 { true } else { false } }) {
+                TextField("Name", text: $draft)
+                    .accessibilityIdentifier("new-project-name")
+                Button("Cancel", role: .cancel) {}
+                Button("Create") { app.newProject(named: draft) }
+                    // A Project needs a name (#677).
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } message: {
+                Text("Documents you add from its page land in it.")
+            }
+            .onChange(of: navigator.presentation?.id == Presentation.newProject.id) { _, shown in
+                if shown { draft = "" }
+            }
+            // A Project with documents: move them to Unfiled or delete
+            // them; its own AI replies go either way (the maintainer's
+            // answer on #1091).
+            .alert(
+                Text("Delete “\(deleting?.name ?? "")”?"),
+                isPresented: count > 0 ? isDeleting : .constant(false),
+                presenting: deleting
+            ) { project in
+                Button("Move its documents to Unfiled") { app.deleteProject(project.id, documents: .moveToUnfiled) }
+                Button("Delete them", role: .destructive) { app.deleteProject(project.id, documents: .deleteDocuments) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text(count == 1
+                    ? "Its document can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way."
+                    : "Its \(count) documents can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way.")
+            }
+            // An empty Project asks plainly, as desktop does.
+            .alert(
+                "Delete Project?",
+                isPresented: deleting != nil && count == 0 ? isDeleting : .constant(false),
+                presenting: deleting
+            ) { project in
+                Button("Delete", role: .destructive) { app.deleteProject(project.id, documents: .deleteDocuments) }
+                Button("Cancel", role: .cancel) {}
+            } message: { project in
+                Text("“\(project.name)” has no documents. Its names and its AI replies are deleted with it.")
             }
     }
 }
