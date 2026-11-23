@@ -39,11 +39,11 @@ restored reply.
 **Unresolved token**: an alias-shaped token in AI output that matches no case
 identity, such as an invented `PERSON_9`.
 
-**Home**: the page shown with no tab open: drop zone, quick actions, cases and
-recent files.
+**Home**: the page shown with no document: drop zone, quick actions and the
+**Continue** strip of documents that need review and saved replies.
 
-**Command palette**: the ⌘K search over actions, open tabs, cases and recent
-files.
+**Command palette**: the ⌘K search over actions, and over the Vault's
+document titles and Project names.
 
 **Find and Replace**: the find bar with its Replace row. It searches
 **visible text**, the Markdown with syntax hidden; a match that **crosses

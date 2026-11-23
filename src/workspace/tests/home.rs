@@ -254,7 +254,7 @@ fn the_palette_finds_documents_by_title_and_project_name(cx: &mut TestAppContext
     cx.simulate_input(&name.to_lowercase());
     draw(cx);
     assert_eq!(section(&tabs, cx, "Documents"), ["Lease", "Notes"]);
-    assert_eq!(section(&tabs, cx, "Projects"), [name.clone()]);
+    assert_eq!(section(&tabs, cx, "Projects"), std::slice::from_ref(&name));
     // Documents come first.
     cx.update(|_, cx| {
         let first = tabs.read(cx).palette_labels(cx);
@@ -360,4 +360,40 @@ fn pseudonymize_clipboard_with_no_document_creates_none(cx: &mut TestAppContext)
     });
     assert_eq!(vault_state(&tabs, cx), before);
     assert!(before.documents.is_empty());
+}
+
+#[gpui::test]
+fn a_saved_reply_on_the_strip_opens_its_reply_page(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(900.)));
+    let ids = open_notes(&tabs, cx, dir.path(), &["lease"]);
+    let document = document_of(&tabs, ids[0], cx);
+    let reply = vault(&tabs, cx)
+        .save_reply(mdoc_vault::NewReply {
+            owner: mdoc_vault::ReplyOwner::Document(document),
+            title: "Reply to lease".into(),
+            source_app: None,
+            markdown: "Thanks.\n".into(),
+        })
+        .unwrap();
+    click_toolbar(cx, "sidebar-home");
+    let index = cx.update(|_, cx| {
+        let (strip, _) = tabs.read(cx).home_strip_now(cx).unwrap();
+        (strip.cards.iter())
+            .position(
+                |card| matches!(card, crate::workspace::home::Card::Reply(r) if r.id == reply.id),
+            )
+            .expect("the reply is on the strip")
+    });
+    let card: &'static str = Box::leak(format!("home-card-{index}").into_boxed_str());
+    click_toolbar(cx, card);
+    cx.update(|_, cx| {
+        let page = tabs
+            .read(cx)
+            .reply_page
+            .as_ref()
+            .map(|page| page.id().to_string());
+        assert_eq!(page.as_deref(), Some(reply.id.as_str()));
+    });
 }
