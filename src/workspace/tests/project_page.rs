@@ -805,7 +805,7 @@ fn leaving_the_rename_field_saves_and_escape_still_cancels(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-fn the_project_list_hangs_from_homes_link_and_says_when_it_is_empty(cx: &mut TestAppContext) {
+fn the_project_list_is_centered_and_says_when_it_is_empty(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
     tabs.update_in(cx, |tabs, window, cx| tabs.show_project_list(window, cx));
@@ -814,23 +814,7 @@ fn the_project_list_hangs_from_homes_link_and_says_when_it_is_empty(cx: &mut Tes
     assert!(cx.debug_bounds("project-list-locked").is_none());
     tabs.update_in(cx, |tabs, window, cx| tabs.close_project_list(window, cx));
     draw(cx);
-    let link = cx.debug_bounds("home-open-project").unwrap();
-    cx.simulate_click(link.center(), Default::default());
-    draw(cx);
-    let list = cx.debug_bounds("project-list").unwrap();
-    assert!(
-        list.top() >= link.bottom() && list.top() <= link.bottom() + px(12.),
-        "the list {list:?} opens just below its link {link:?}"
-    );
-    assert!(
-        (list.right() - link.right()).abs() <= px(1.),
-        "the list {list:?} lines up with its link {link:?}"
-    );
-    // From anywhere else it stays centered.
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_project_list(window, cx);
-        tabs.show_project_list(window, cx);
-    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_project_list(window, cx));
     draw(cx);
     let centered = cx.debug_bounds("project-list").unwrap();
     let width = cx.update(|window, _| window.viewport_size().width);

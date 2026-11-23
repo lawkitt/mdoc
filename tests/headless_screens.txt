@@ -99,7 +99,10 @@ narrow-sidebar-names
 sidebar-wide
 narrow-minimum
 narrow-minimum-sidebar
-home-recents
+home-strip
+palette-search-title
+palette-search-project
+home-strip-empty
 review-scanning
 review-long-counts
 home-vault-unavailable

@@ -114,7 +114,7 @@ fn the_palette_opens_the_sheet_and_shows_keys_from_the_table(cx: &mut TestAppCon
         "Ctrl+"
     };
     assert!(shown.contains(&("Keyboard shortcuts".into(), format!("{mod_}/"))));
-    assert!(shown.contains(&("New tab".into(), format!("{mod_}N"))));
+    assert!(shown.contains(&("New document".into(), format!("{mod_}N"))));
     cx.simulate_keystrokes("secondary-k");
     cx.simulate_input("keyboard shortcuts");
     cx.simulate_keystrokes("enter");

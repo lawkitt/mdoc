@@ -292,7 +292,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 }
                 assert_eq!(
                     record["state"]["palette"],
-                    *name == "command-palette",
+                    matches!(
+                        *name,
+                        "command-palette" | "palette-search-title" | "palette-search-project"
+                    ),
                     "stale palette on {theme}/{name}"
                 );
                 assert_eq!(
