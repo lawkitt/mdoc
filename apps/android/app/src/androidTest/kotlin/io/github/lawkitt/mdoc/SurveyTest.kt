@@ -110,7 +110,7 @@ class SurveyTest {
     }
 
     private fun steps(tone: String) {
-        waitFor("Continue")
+        compose.waitForShown(hasContentDescription("Continue", substring = true))
         shot("01-home-$tone")
         compose.onNodeWithContentDescriptionFirst("Add").performClick()
         shot("02-add-menu-$tone")

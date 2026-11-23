@@ -71,7 +71,7 @@ fun Sidebar(
         if (query.isNotBlank()) {
             val (documents, projects) = state.search(query)
             projects.forEach { project ->
-                Item(project.name, destination == Destination.Project(project.id), icon = { ProjectDot(project) }) {
+                Item(project.name, destination == Destination.Project(project.id), icon = { DotIcon { ProjectDot(project) } }) {
                     onDestination(Destination.Project(project.id))
                 }
             }
@@ -96,7 +96,7 @@ fun Sidebar(
         }
         Header(stringResource(R.string.projects))
         state.topProjects.forEach { project ->
-            Item(project.name, destination == Destination.Project(project.id) && openDocument == null, icon = { ProjectDot(project) }) {
+            Item(project.name, destination == Destination.Project(project.id) && openDocument == null, icon = { DotIcon { ProjectDot(project) } }) {
                 onDestination(Destination.Project(project.id))
             }
         }
@@ -138,8 +138,14 @@ private fun Header(title: String) {
 private fun DocumentItem(state: HomeState, document: DocumentSummary, openDocument: DocumentId?, onDocument: (DocumentId) -> Unit) {
     val project = state.project(document.projectId)
     Item(document.title, openDocument == document.id, icon = {
-        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { project?.let { ProjectDot(it) } }
+        DotIcon { project?.let { ProjectDot(it) } }
     }) { onDocument(document.id) }
+}
+
+/** A Project's dot in a row's icon place, so its label lines up with the others. */
+@Composable
+private fun DotIcon(dot: @Composable () -> Unit) {
+    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { dot() }
 }
 
 @Composable

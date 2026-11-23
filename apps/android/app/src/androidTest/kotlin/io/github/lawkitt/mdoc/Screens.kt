@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.printToLog
+import androidx.test.platform.app.InstrumentationRegistry
 
 /**
  * On screen: not in the closed sidebar, which a modal drawer keeps composed
@@ -44,8 +45,12 @@ fun ComposeTestRule.waitUntilGone(text: String, timeout: Long = 15_000) =
 
 /** Opens the sidebar from the page's bar and taps its row `row`. */
 fun ComposeTestRule.sidebar(row: String) {
-    waitForShown(hasContentDescription("Show sidebar"))
-    shown(hasContentDescription("Show sidebar")).performClick()
+    // A wide screen's sidebar stands beside the page, with no button.
+    val wide = InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration.screenWidthDp >= 840
+    if (!wide) {
+        waitForShown(hasContentDescription("Show sidebar"))
+        shown(hasContentDescription("Show sidebar")).performClick()
+    }
     waitForShown(hasText(row) and hasClickAction())
     shown(hasText(row) and hasClickAction()).performClick()
     waitForIdle()
