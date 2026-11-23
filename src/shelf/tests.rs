@@ -166,7 +166,7 @@ fn exports_are_private_fresh_files_cleared_at_quit() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(exports.root()), 0o700);
         assert_eq!(mode(&first), 0o600);
     }
