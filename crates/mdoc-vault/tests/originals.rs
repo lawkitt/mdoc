@@ -355,11 +355,32 @@ fn a_viewing_copy_goes_to_the_folder_the_caller_names() {
         assert!(
             matches!(
                 vault.copy_original_to(&document.id, &cache, name),
-                Err(VaultError::InvalidFileName)
+                Err(VaultError::InvalidCopyTarget)
             ),
             "{name:?}"
         );
     }
+    // Never into the Vault, where it could replace the sealed original or
+    // the record, by any path to it.
+    let docs = folder.root.join("docs");
+    let own = folder.document_dir(&document.id);
+    let by_alias = docs.join("..").join("docs").join(&document.id);
+    for (dir, name) in [
+        (&own, "original.enc"),
+        (&own, "doc.enc"),
+        (&by_alias, "original.enc"),
+        (&folder.root, "brief.pdf"),
+        (&docs.join("new"), "brief.pdf"),
+    ] {
+        assert!(
+            matches!(
+                vault.copy_original_to(&document.id, dir, name),
+                Err(VaultError::InvalidCopyTarget)
+            ),
+            "{dir:?} {name}"
+        );
+    }
+    assert_eq!(read_back(&vault, &document.id), source);
     assert!(matches!(
         vault.copy_original_to(&"0".repeat(32), &cache, "brief.pdf"),
         Err(VaultError::NotFound {
@@ -558,9 +579,57 @@ fn a_crash_during_an_import_leaves_no_document() {
         let hash = source_sha256(&source[..]).unwrap();
         assert_eq!(vault.documents_with_source(&hash), vec![]);
         // Its folder stays while fresh: an import may still be writing it.
-        assert_eq!(folder.document_dirs().len(), 2, "{kind} {stage:?}");
+        let dirs = folder.document_dirs();
+        assert_eq!(dirs.len(), 2, "{kind} {stage:?}");
         assert_eq!(read_back(&vault, &kept.id), b"kept");
+        // An original whose record was never written does not open.
+        let orphan = dirs.into_iter().find(|id| *id != kept.id).unwrap();
+        let not_found = |result: Result<(), VaultError>| {
+            matches!(
+                result,
+                Err(VaultError::NotFound {
+                    kind: ObjectKind::Original,
+                    ..
+                })
+            )
+        };
+        assert!(not_found(vault.open_original(&orphan).map(drop)));
+        let copies = tempfile::tempdir().unwrap();
+        let copied = vault.copy_original_to(&orphan, copies.path(), "b.pdf");
+        assert!(not_found(copied.map(drop)), "{kind} {stage:?}");
     }
+}
+
+#[test]
+fn a_record_too_large_to_read_back_is_not_written() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let kept = import(&vault, b"kept");
+    // Sealed records are read back up to 64 MiB; this one's JSON is larger.
+    let huge = NewDocument {
+        markdown: "a".repeat(64 * MIB),
+        ..new_document("Huge")
+    };
+    let too_large = |result: Result<Document, VaultError>| {
+        matches!(
+            result,
+            Err(VaultError::TooLarge {
+                kind: ObjectKind::Document,
+                ..
+            })
+        )
+    };
+    assert!(too_large(vault.import_document(
+        huge.clone(),
+        &b"source"[..],
+        info("huge.md")
+    )));
+    assert!(too_large(vault.create_document(huge)));
+    // The refused import left nothing, and no match.
+    assert_eq!(folder.document_dirs(), vec![kept.id.clone()]);
+    let hash = source_sha256(&b"source"[..]).unwrap();
+    assert_eq!(folder.open().documents_with_source(&hash), vec![]);
+    assert_eq!(ids(vault.documents()), vec![kept.id]);
 }
 
 fn age(path: &Path, by: Duration) {
@@ -583,21 +652,36 @@ fn an_open_removes_a_dead_imports_folder_after_a_day() {
             age(&dir.join(name), by);
         }
     };
-    let (old, partial, fresh, recent) = (
+    let (old, partial, fresh, recent, stalled) = (
         "a".repeat(32),
         "b".repeat(32),
         "c".repeat(32),
         "d".repeat(32),
+        "e".repeat(32),
     );
     orphan(&old, &["original.enc"], 48 * HOUR);
     orphan(&partial, &[".import-x1"], 25 * HOUR);
     orphan(&fresh, &["original.enc"], Duration::ZERO);
     orphan(&recent, &["original.enc", ".import-x2"], 23 * HOUR);
-    // One old file beside a fresh one: still being written.
+    // One old file beside a newer one: still being written.
     age(&folder.document_dir(&recent).join(".import-x2"), 48 * HOUR);
+    // An import whose source stalled for two days still holds its lock.
+    orphan(&stalled, &[".import-x3"], 48 * HOUR);
+    let held = fs::File::options()
+        .read(true)
+        .write(true)
+        .open(folder.document_dir(&stalled).join(".import-x3"))
+        .unwrap();
+    held.lock().unwrap();
     let vault = folder.open();
-    let mut expected = vec![kept.id.clone(), fresh, recent];
+    let mut expected = vec![kept.id.clone(), fresh.clone(), recent.clone(), stalled];
     expected.sort();
     assert_eq!(folder.document_dirs(), expected);
     assert_eq!(read_back(&vault, &kept.id), b"kept");
+    // Once its lock is gone, it is a dead import's too.
+    drop(held);
+    drop(folder.open());
+    let mut expected = vec![kept.id.clone(), fresh, recent];
+    expected.sort();
+    assert_eq!(folder.document_dirs(), expected);
 }

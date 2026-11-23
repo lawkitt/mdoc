@@ -110,9 +110,13 @@ pub enum VaultError {
     /// An outbound read of a Document that is not Ready now.
     #[error("The document is not ready for AI ({0:?}).")]
     NotReady(Readiness),
-    /// A viewing copy's name is empty, a path, or `.` or `..`.
-    #[error("Invalid file name for a copy of an original.")]
-    InvalidFileName,
+    /// A viewing copy's name is not a bare file name, or its folder is
+    /// inside the Vault's.
+    #[error("A copy of an original needs a bare file name in a folder outside the Vault.")]
+    InvalidCopyTarget,
+    /// A record sealed larger than the Vault reads back; nothing was written.
+    #[error("The {kind} {id} is too large to store.")]
+    TooLarge { kind: ObjectKind, id: String },
     /// A fault hook stopped a write; the handle writes nothing more.
     #[error("The Vault handle stopped at an injected fault.")]
     Crashed,

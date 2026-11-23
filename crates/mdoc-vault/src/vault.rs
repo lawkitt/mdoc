@@ -382,6 +382,9 @@ impl Vault {
         let mut temp = tempfile::Builder::new()
             .prefix(IMPORT_PREFIX)
             .tempfile_in(dir)?;
+        // Held until the file is renamed: an opening handle never removes a
+        // folder whose file is locked, however long the source stalls.
+        temp.as_file().lock()?;
         let sealed = original::seal(&self.sealer, id, source, temp.as_file_mut())?;
         temp.as_file().sync_all()?;
         let lock = self.write_lock()?;
@@ -408,18 +411,26 @@ impl Vault {
     }
 
     /// The Source Original of Document `id`, to read in bounded memory.
-    /// [`OriginalReader`] says what an error in the middle of it means.
+    /// [`OriginalReader`] says what an error in the middle of it means. An
+    /// original whose record was never written is not there.
     pub fn open_original(&self, id: &str) -> Result<OriginalReader, VaultError> {
         if !is_id(id) {
             return Err(VaultError::InvalidId);
+        }
+        if !document_path(&self.root, id).is_file() {
+            return Err(VaultError::NotFound {
+                kind: ObjectKind::Original,
+                id: id.to_string(),
+            });
         }
         OriginalReader::open(&self.sealer, id, &original_path(&self.root, id))
     }
 
     /// A viewing copy: Document `id`'s original decrypted into `dir`, a
-    /// folder the caller names and wipes, as `file_name`, replacing a file
-    /// of that name. It is written to a temp file first, so an original
-    /// found damaged part way leaves nothing in `dir`.
+    /// folder outside the Vault that the caller names and wipes, as
+    /// `file_name`, replacing a file of that name. It is written to a temp
+    /// file first, so an original found damaged part way leaves nothing in
+    /// `dir`.
     pub fn copy_original_to(
         &self,
         id: &str,
@@ -427,10 +438,15 @@ impl Vault {
         file_name: &str,
     ) -> Result<PathBuf, VaultError> {
         if !is_file_name(file_name) {
-            return Err(VaultError::InvalidFileName);
+            return Err(VaultError::InvalidCopyTarget);
         }
         let mut reader = self.open_original(id)?;
         std::fs::create_dir_all(dir)?;
+        // Plaintext never lands in the Vault, nor over one of its files,
+        // whatever alias the folder is reached by.
+        if std::fs::canonicalize(dir)?.starts_with(std::fs::canonicalize(&self.root)?) {
+            return Err(VaultError::InvalidCopyTarget);
+        }
         let mut temp = tempfile::Builder::new().prefix(".copy-").tempfile_in(dir)?;
         io::copy(&mut reader, temp.as_file_mut()).map_err(original::read_error)?;
         let path = dir.join(file_name);
@@ -694,6 +710,12 @@ impl Vault {
     ) -> Result<Stamp, VaultError> {
         self.check_alive()?;
         let bytes = self.sealer.seal(kind, id, plain)?;
+        if bytes.len() as u64 > MAX_FILE {
+            return Err(VaultError::TooLarge {
+                kind,
+                id: id.to_string(),
+            });
+        }
         let temp = temp_beside(path, &bytes)?;
         if self.fault(kind, id, Stage::BeforeRename) {
             let _ = temp.into_temp_path().keep();
@@ -865,10 +887,22 @@ fn sweep_orphans(root: &Path) {
         }
         let old =
             last_change(&dir).is_some_and(|at| at.elapsed().is_ok_and(|age| age > ORPHAN_AGE));
-        if old {
+        if old && !in_use(&dir) {
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
+}
+
+/// A file in `dir` is locked: an import is still writing it.
+fn in_use(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return true;
+    };
+    entries.flatten().any(|entry| {
+        File::open(entry.path()).map_or(true, |file| {
+            matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+        })
+    })
 }
 
 /// When anything in `dir` last changed: its newest file's modification
