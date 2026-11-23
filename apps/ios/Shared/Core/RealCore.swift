@@ -559,6 +559,47 @@ final class RealLibrary: Library, @unchecked Sendable {
         pending.remove(session.id)
     }
 
+    /// What the Original pane shows of a Vault document's original: its
+    /// kind from the name it was imported with, decrypted when the pane
+    /// first reads it, into memory when 16 MiB or less, else into a folder
+    /// of its own in the viewing cache (#1091 Decision 24). `.none` for a
+    /// document that keeps no original: pasted, begun in mdoc, or pages
+    /// picked together.
+    fileprivate func storedOriginal(_ vaultID: String) -> OriginalSource {
+        guard let file = try? vault.original(id: vaultID) else { return .none }
+        let vault = vault
+        let folder = storage.viewing.appendingPathComponent(vaultID, isDirectory: true)
+        let inMemory = originalsInMemory
+        let stored = StoredOriginal(
+            decrypt: {
+                if file.length <= inMemory {
+                    return .memory(OriginalData(try core { try vault.originalBytes(id: vaultID) }))
+                }
+                try? FileManager.default.removeItem(at: folder)
+                try FileManager.default.createDirectory(
+                    at: folder, withIntermediateDirectories: true,
+                    attributes: [.protectionKey: FileProtectionType.complete])
+                let path = try core { try vault.copyOriginal(id: vaultID, folder: folder.path) }
+                var url = URL(fileURLWithPath: path)
+                try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: path)
+                var values = URLResourceValues()
+                values.isExcludedFromBackup = true
+                try url.setResourceValues(values)
+                return .file(url)
+            },
+            remove: { try? FileManager.default.removeItem(at: folder) })
+        switch URL(fileURLWithPath: file.fileName).pathExtension.lowercased() {
+        case "pdf": return .pdf(.stored(stored))
+        case "docx": return .docx(.stored(stored))
+        case "jpg", "jpeg", "png", "heic", "heif", "webp", "gif": return .images([.stored(stored)])
+        default: return .none
+        }
+    }
+
+    /// The largest original viewed from memory, about 16 MiB (#1091
+    /// Decision 24); the tests lower it.
+    var originalsInMemory: UInt64 = 16 * 1024 * 1024
+
     fileprivate func projectName(_ id: String?) -> String? {
         guard let id else { return nil }
         if let name = lock.withLock({ projectNames[id] }) { return name }
@@ -662,14 +703,19 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// the one it has.
     fileprivate func reopen(vaultID: String, kind: SourceKind?) throws {
         _ = try core { try ffi.openFromVault(vault: library.vault, id: vaultID) }
+        let stored = library.storedOriginal(vaultID)
         lock.withLock {
             savedID = vaultID
             if let kind { self.kind = kind }
-            // Viewing a saved document's original comes with the mobile
-            // core's originals; the received files went at its first save.
-            original = .none
+            original.close()
+            original = stored
             reopenPending = false
         }
+    }
+
+    /// The document closed: its decrypted original goes (#1091 Decision 24).
+    func closeOriginal() {
+        lock.withLock { original }.close()
     }
 
     /// Rename: the core renames the document, in the Vault too once saved,
@@ -1218,9 +1264,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             let first = savedID == nil
             savedID = vaultID
             if first {
-                // The received files go with the import: viewing the
-                // original comes from the Vault.
-                original = .none
+                // The received files go with the import: the original is
+                // viewed from the Vault.
+                original = library.storedOriginal(vaultID)
             }
             return first
         }

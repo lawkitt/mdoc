@@ -250,11 +250,12 @@ final class DocumentViewModel {
         await recognize(password: password)
     }
 
-    /// The Original's card: unlocks the locked PDF it shows, in memory.
-    /// False when `password` doesn't open it.
+    /// The Original's card: unlocks the locked PDF it shows (`original`,
+    /// the snapshot's unless a job just gave a newer one), in memory. False
+    /// when `password` doesn't open it.
     @discardableResult
-    func unlockOriginal(password: String) -> Bool {
-        guard case .pdf(let bytes) = snapshot.original,
+    func unlockOriginal(password: String, in original: OriginalSource? = nil) -> Bool {
+        guard case .pdf(let bytes) = original ?? snapshot.original,
               let data = try? bytes.data(),
               let document = PDFDocument(data: data),
               document.isLocked, document.unlock(withPassword: password)
@@ -321,14 +322,16 @@ final class DocumentViewModel {
         case .failed(CoreError.wrongPassword):
             passwordPrompt = .wrong
             return
-        case .finished:
+        case .finished(let finished):
             passwordPrompt = nil
             let docx = session.takeUnlockedDocx()
             if generation == originalUnlockGeneration {
                 if let docx {
                     originalUnlock = .docx(docx)
                 } else if let password {
-                    unlockOriginal(password: password)
+                    // The first save kept the received file in the Vault:
+                    // the finished snapshot's original is the one to open.
+                    unlockOriginal(password: password, in: finished.original)
                 }
             }
         case .cancelled, .failed, .busy:

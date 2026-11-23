@@ -265,7 +265,8 @@ final class ProjectsLibraryTests: XCTestCase {
     }
 
     /// Rename keeps the document as it was: it lists as a PDF after mdoc
-    /// restarts, under its new title, and Delete removes it from the Vault.
+    /// restarts, under its new title, with its Original, and Delete removes
+    /// it from the Vault.
     func testARenamedDocumentKeepsItsKind() throws {
         let (core, storage) = try Fixture.core()
         let (id, _) = try importedPDF(core, storage)
@@ -285,7 +286,10 @@ final class ProjectsLibraryTests: XCTestCase {
         XCTAssertEqual(row.kind, .pdf, "it lists as a PDF")
         XCTAssertNil(row.projectID)
         relaunched.open(row.id)
-        XCTAssertEqual(try XCTUnwrap(relaunched.openModel).snapshot.title, "Bank statement")
+        let reopened = try XCTUnwrap(relaunched.openModel)
+        XCTAssertEqual(reopened.snapshot.title, "Bank statement")
+        XCTAssertTrue(reopened.hasOriginal, "its original is viewed from the Vault")
+        XCTAssertTrue(reopened.panes(in: .compact).contains(.pane(.original)), "the Original pane is offered")
 
         relaunched.delete(row.id)
         relaunched.commitPendingDelete()

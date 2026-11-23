@@ -523,6 +523,59 @@ final class RealCoreTests: XCTestCase {
         }
     }
 
+    /// A saved PDF's original is viewed from the Vault (#1091 Decision 24):
+    /// from memory when small; otherwise decrypted into the app's viewing
+    /// cache, the copy going when the document closes and at launch.
+    func testAnOriginalIsViewedFromMemoryOrACacheWipedOnClose() throws {
+        let core = try core()
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        let folder = storage.url(.intake).appendingPathComponent("import", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let pdf = folder.appendingPathComponent("upload.pdf")
+        try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 200)).writePDF(to: pdf) { context in
+            context.beginPage()
+            NSString(string: "Reply to maya.ellison@example.com").draw(at: CGPoint(x: 20, y: 20), withAttributes: nil)
+        }
+        let bytes = try Data(contentsOf: pdf)
+        let session = try core.library.importDocument(.file(pdf, .pdf), title: "Statement", into: nil)
+        guard case .pdf(let original) = try session.recognize(observer: TestObserver()).original,
+              case .stored = original else { return XCTFail("viewed from the Vault") }
+        guard case .memory(let data) = try original.resolved() else { return XCTFail("small: in memory") }
+        XCTAssertEqual(data.bytes, bytes)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: storage.viewing.path).isEmpty, "no copy on disk")
+
+        // Over the limit (lowered here), in a fresh run: a viewing copy.
+        library.originalsInMemory = 0
+        let vaultID = try XCTUnwrap((session as? RealSession)?.vaultID)
+        let large = try Self.storedPDF(try reopenedOriginal(library, vaultID))
+        guard case .file(let copy) = try large.resolved(), case .stored(let stored) = large else {
+            return XCTFail("large: a viewing copy")
+        }
+        XCTAssertTrue(copy.path.hasPrefix(storage.viewing.path))
+        XCTAssertEqual(try Data(contentsOf: copy), bytes)
+        XCTAssertEqual(try copy.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+        stored.close()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: copy.path), "wiped on close")
+
+        _ = try large.resolved()
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: storage.viewing.path).isEmpty)
+        _ = try self.core()
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: storage.viewing.path).isEmpty, "wiped at launch")
+    }
+
+    /// Document `id`'s original as a fresh session shows it.
+    private func reopenedOriginal(_ library: RealLibrary, _ id: String) throws -> OriginalSource {
+        let other = try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
+        let otherLibrary = try XCTUnwrap(other.library as? RealLibrary)
+        otherLibrary.originalsInMemory = library.originalsInMemory
+        return try other.library.session(for: DocumentID(rawValue: id)).snapshot().original
+    }
+
+    private static func storedPDF(_ original: OriginalSource) throws -> OriginalBytes {
+        guard case .pdf(let bytes) = original, case .stored = bytes else { throw CoreError.notFound }
+        return bytes
+    }
+
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
         let small = RealSetup(storage: storage, physicalMemory: Fixture.belowFloor).snapshot()
         XCTAssertEqual(small.tier, .belowFloor)

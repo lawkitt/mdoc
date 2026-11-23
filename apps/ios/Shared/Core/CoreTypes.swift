@@ -162,6 +162,18 @@ enum OriginalSource: Equatable, Sendable {
     case images([OriginalBytes])
 }
 
+extension OriginalSource {
+    /// A Vault original's decrypted bytes go; received files stay.
+    func close() {
+        switch self {
+        case .pdf(.stored(let stored)), .docx(.stored(let stored)): stored.close()
+        case .images(let pages):
+            for case .stored(let stored) in pages { stored.close() }
+        default: break
+        }
+    }
+}
+
 /// An original's bytes as the Original pane reads them (#1091 Decision 24):
 /// a file (an import's received file, or a viewing copy in the app's
 /// private cache) or, under about 16 MiB, in memory.
