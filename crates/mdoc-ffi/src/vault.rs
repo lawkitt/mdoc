@@ -10,11 +10,19 @@
 //! sibling `vault` / `vault-dev` folder beside their old storage, chosen
 //! by the same release-or-dev check, never inside the old cases or library
 //! folder.
+//!
+//! AI Replies are saved, listed, restored and deleted here too
+//! ([`replies`]); `ReplyVault` is the Restore extension's handle, which
+//! writes nothing but new replies.
+mod replies;
+
+pub use replies::{ReplyInfo, ReplyOwner, ReplyVault, SavedReply, SharedFrom};
+
 use crate::{
     CoreError,
     document_session::{Category, DocumentOrigin, DocumentPhase},
 };
-use mdoc_vault::{Colour, MoveUndo, Moved, NewProject, Project};
+use mdoc_vault::{Colour, DocumentSummary, MoveUndo, Moved, NewProject, Project, VaultError};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, MutexGuard},
@@ -160,10 +168,7 @@ impl Vault {
     /// is written to it.
     #[uniffi::constructor]
     pub fn open(root: String, key: Vec<u8>) -> Result<Arc<Self>, CoreError> {
-        let key: [u8; 32] = key
-            .as_slice()
-            .try_into()
-            .map_err(|_| CoreError::invalid("The Vault key must be 32 bytes."))?;
+        let key = vault_key(&key)?;
         Ok(Arc::new(Self {
             store: mdoc_vault::Vault::open(root, &key)?,
             writes: Mutex::new(()),
@@ -184,15 +189,7 @@ impl Vault {
 
     /// Every Project, pinned first, then most recently updated.
     pub fn projects(&self) -> Vec<ProjectInfo> {
-        let documents = self.store.documents();
-        (self.store.projects().iter())
-            .map(|project| ProjectInfo {
-                documents: (documents.iter())
-                    .filter(|d| d.project.as_deref() == Some(project.id.as_str()))
-                    .count() as u64,
-                ..summary_info(project)
-            })
-            .collect()
+        project_infos(&self.store)
     }
 
     pub fn project(&self, id: String) -> Result<ProjectInfo, CoreError> {
@@ -413,45 +410,16 @@ impl Vault {
         }
     }
 
-    fn infos(&self, summaries: Vec<mdoc_vault::DocumentSummary>) -> Vec<DocumentInfo> {
-        summaries.into_iter().map(|s| self.info(s)).collect()
+    fn infos(&self, summaries: Vec<DocumentSummary>) -> Vec<DocumentInfo> {
+        document_infos(&self.store, summaries)
     }
 
-    /// As lists show it: the counts its last save recorded, or, when none
-    /// did, as opening it would count them.
-    fn info(&self, summary: mdoc_vault::DocumentSummary) -> DocumentInfo {
-        let counts: crate::document_session::Counts = match summary.counts {
-            Some(counts) => counts.into(),
-            None => self.count(&summary.id).unwrap_or_default(),
-        };
-        DocumentInfo {
-            phase: DocumentPhase::of(summary.scanned, counts.proposed),
-            id: summary.id,
-            title: summary.title,
-            project_id: summary.project,
-            source_kind: summary.source_kind.into(),
-            origin: summary.origin.into(),
-            exclude_from_ai: summary.exclude_from_ai,
-            scanned: summary.scanned,
-            proposed: counts.proposed,
-            replaced: counts.replaced,
-            kept: counts.kept,
-            created: summary.created,
-            updated: summary.updated,
-        }
+    fn info(&self, summary: DocumentSummary) -> DocumentInfo {
+        document_info(&self.store, summary)
     }
 
-    /// Document `id` as opening it counts it.
     fn count(&self, id: &str) -> Result<crate::document_session::Counts, CoreError> {
-        let document = self.store.document(id)?;
-        let project = match &document.project {
-            Some(project) => Some(self.store.project(project)?),
-            None => None,
-        };
-        Ok(crate::document_session::vault_counts(
-            &document,
-            project.as_ref(),
-        ))
+        count(&self.store, id)
     }
 
     /// Record a moved document's counts, which the move cleared, so lists
@@ -481,6 +449,100 @@ impl Vault {
             undo: handle,
         })
     }
+}
+
+/// What lists read of a Vault handle: the app's (`mdoc_vault::Vault`) or
+/// the Restore extension's (`mdoc_vault::ReplyHandle`).
+pub(crate) trait Reads {
+    fn projects(&self) -> Vec<mdoc_vault::ProjectSummary>;
+    fn documents(&self) -> Vec<DocumentSummary>;
+    fn project(&self, id: &str) -> Result<Project, VaultError>;
+    fn document(&self, id: &str) -> Result<mdoc_vault::Document, VaultError>;
+}
+
+macro_rules! reads {
+    ($handle:ty) => {
+        impl Reads for $handle {
+            fn projects(&self) -> Vec<mdoc_vault::ProjectSummary> {
+                <$handle>::projects(self)
+            }
+            fn documents(&self) -> Vec<DocumentSummary> {
+                <$handle>::documents(self)
+            }
+            fn project(&self, id: &str) -> Result<Project, VaultError> {
+                <$handle>::project(self, id)
+            }
+            fn document(&self, id: &str) -> Result<mdoc_vault::Document, VaultError> {
+                <$handle>::document(self, id)
+            }
+        }
+    };
+}
+reads!(mdoc_vault::Vault);
+reads!(mdoc_vault::ReplyHandle);
+
+/// The key as the app passes it: 32 bytes.
+fn vault_key(key: &[u8]) -> Result<[u8; 32], CoreError> {
+    key.try_into()
+        .map_err(|_| CoreError::invalid("The Vault key must be 32 bytes."))
+}
+
+/// Every Project with its count of documents, pinned first, then most
+/// recently updated.
+fn project_infos(store: &impl Reads) -> Vec<ProjectInfo> {
+    let documents = store.documents();
+    (store.projects().iter())
+        .map(|project| ProjectInfo {
+            documents: (documents.iter())
+                .filter(|d| d.project.as_deref() == Some(project.id.as_str()))
+                .count() as u64,
+            ..summary_info(project)
+        })
+        .collect()
+}
+
+fn document_infos(store: &impl Reads, summaries: Vec<DocumentSummary>) -> Vec<DocumentInfo> {
+    summaries
+        .into_iter()
+        .map(|s| document_info(store, s))
+        .collect()
+}
+
+/// As lists show it: the counts its last save recorded, or, when none
+/// did, as opening it would count them.
+fn document_info(store: &impl Reads, summary: DocumentSummary) -> DocumentInfo {
+    let counts: crate::document_session::Counts = match summary.counts {
+        Some(counts) => counts.into(),
+        None => count(store, &summary.id).unwrap_or_default(),
+    };
+    DocumentInfo {
+        phase: DocumentPhase::of(summary.scanned, counts.proposed),
+        id: summary.id,
+        title: summary.title,
+        project_id: summary.project,
+        source_kind: summary.source_kind.into(),
+        origin: summary.origin.into(),
+        exclude_from_ai: summary.exclude_from_ai,
+        scanned: summary.scanned,
+        proposed: counts.proposed,
+        replaced: counts.replaced,
+        kept: counts.kept,
+        created: summary.created,
+        updated: summary.updated,
+    }
+}
+
+/// Document `id` as opening it counts it.
+fn count(store: &impl Reads, id: &str) -> Result<crate::document_session::Counts, CoreError> {
+    let document = store.document(id)?;
+    let project = match &document.project {
+        Some(project) => Some(store.project(project)?),
+        None => None,
+    };
+    Ok(crate::document_session::vault_counts(
+        &document,
+        project.as_ref(),
+    ))
 }
 
 fn summary_info(project: &mdoc_vault::ProjectSummary) -> ProjectInfo {

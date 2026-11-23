@@ -35,8 +35,8 @@ pub use records::{
     SourceKind, UserLists,
 };
 pub use vault::{
-    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, Saved, Stage,
-    Vault, WriteStep,
+    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, ReplyHandle,
+    Saved, Stage, Vault, WriteStep,
 };
 
 use std::io;

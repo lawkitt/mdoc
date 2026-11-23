@@ -1,16 +1,122 @@
 //! AI Replies (#1091 Decisions 4, 16, 18 and 20): saved as received, with
 //! each alias bound to the identity it meant, and restored from those
 //! identities' originals as they are now.
-use super::{Vault, WriteLock};
+use super::{FaultHook, ManifestCheck, Vault, WriteLock};
 use crate::{
     ObjectKind, VaultError, is_id,
     manifest::{Entry, Record, reply_path},
     mapping::{Identity, Mapping},
     new_id,
-    records::{Document, NewReply, Project, Reply, ReplyOwner, ReplySummary, now},
+    records::{
+        Document, DocumentSummary, NewReply, Project, ProjectSummary, Reply, ReplyOwner,
+        ReplySummary, now,
+    },
 };
 use mdoc_pii::restore::{RestoreMap, RestoredText};
-use std::io;
+use std::{io, path::PathBuf};
+
+/// The Restore extension's handle (#1091 Decision 20): it reads the
+/// manifest, Projects and Documents, and writes nothing but new AI Reply
+/// files. The manifest is checked against the object files at open and on
+/// [`Self::refresh`] as [`Vault`]'s is, but only in memory: it is never
+/// written, not even when found stale or missing, so the app's cache is
+/// left alone and the app picks the reply up through its own
+/// [`Vault::refresh`]. The folder must exist already, and no temp file is
+/// swept.
+pub struct ReplyHandle {
+    vault: Vault,
+}
+
+impl ReplyHandle {
+    /// Open the Vault in `root`, an existing folder, for replies only.
+    /// [`VaultError::WrongKey`] as [`Vault::open`] refuses it.
+    pub fn open(root: impl Into<PathBuf>, key: &[u8; 32]) -> Result<Self, VaultError> {
+        let vault = Vault::open_inner(root.into(), key, None, false)?;
+        Ok(Self { vault })
+    }
+
+    /// [`Self::open`] with a hook run at every write step (tests).
+    pub fn open_with_hook(
+        root: impl Into<PathBuf>,
+        key: &[u8; 32],
+        hook: FaultHook,
+    ) -> Result<Self, VaultError> {
+        let vault = Vault::open_inner(root.into(), key, Some(hook), false)?;
+        Ok(Self { vault })
+    }
+
+    /// How the manifest was found when the handle opened; it was not
+    /// rewritten either way.
+    pub fn opened(&self) -> ManifestCheck {
+        self.vault.opened()
+    }
+
+    /// Pick up what other handles wrote; `true` when anything changed.
+    pub fn refresh(&self) -> Result<bool, VaultError> {
+        self.vault.refresh()
+    }
+
+    /// [`Vault::projects`].
+    pub fn projects(&self) -> Vec<ProjectSummary> {
+        self.vault.projects()
+    }
+
+    /// [`Vault::documents`].
+    pub fn documents(&self) -> Vec<DocumentSummary> {
+        self.vault.documents()
+    }
+
+    /// [`Vault::documents_in`].
+    pub fn documents_in(&self, project: Option<&str>) -> Vec<DocumentSummary> {
+        self.vault.documents_in(project)
+    }
+
+    pub fn project(&self, id: &str) -> Result<Project, VaultError> {
+        self.vault.project(id)
+    }
+
+    pub fn document(&self, id: &str) -> Result<Document, VaultError> {
+        self.vault.document(id)
+    }
+
+    /// [`Vault::save_reply`]: only the reply's file is written.
+    pub fn save_reply(&self, new: NewReply) -> Result<Reply, VaultError> {
+        self.vault.save_reply(new)
+    }
+
+    pub fn reply(&self, id: &str) -> Result<Reply, VaultError> {
+        self.vault.reply(id)
+    }
+
+    /// [`Vault::reply_map`].
+    pub fn reply_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError> {
+        self.vault.reply_map(reply)
+    }
+
+    /// [`Vault::reply_map_for`].
+    pub fn reply_map_for(
+        &self,
+        owner: &ReplyOwner,
+        markdown: &str,
+    ) -> Result<RestoreMap, VaultError> {
+        self.vault.reply_map_for(owner, markdown)
+    }
+
+    /// [`Vault::restore_reply`].
+    pub fn restore_reply(&self, id: &str) -> Result<RestoredText, VaultError> {
+        self.vault.restore_reply(id)
+    }
+
+    /// [`Vault::project_replies`].
+    pub fn project_replies(&self, project: &str) -> Vec<ReplySummary> {
+        self.vault.project_replies(project)
+    }
+
+    /// [`Vault::document_replies`].
+    pub fn document_replies(&self, document: &str) -> Vec<ReplySummary> {
+        self.vault.document_replies(document)
+    }
+}
 
 impl Vault {
     /// Save an AI Reply for a Project or a Document, binding each alias in
@@ -45,6 +151,19 @@ impl Vault {
     /// gone restores nothing, and no alias it did not bind is read.
     pub fn reply_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError> {
         Ok(self.owner_mapping(&reply.owner)?.reply_map(&reply.bindings))
+    }
+
+    /// What `markdown` would restore with if it were saved now as a reply
+    /// of `owner`: the identities its aliases name in the owner's mapping
+    /// now, as [`Self::save_reply`] would bind them. For showing a reply
+    /// restored before it is saved.
+    pub fn reply_map_for(
+        &self,
+        owner: &ReplyOwner,
+        markdown: &str,
+    ) -> Result<RestoreMap, VaultError> {
+        let mapping = self.owner_mapping(owner)?;
+        Ok(mapping.reply_map(&mapping.bindings(markdown)))
     }
 
     /// The AI Reply `id` restored for reading: [`Self::reply_map`] applied

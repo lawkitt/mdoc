@@ -5,8 +5,9 @@
 //! originals now (Decision 18).
 use mdoc_pii::{Category, restore::ExportedIdentity};
 use mdoc_vault::{
-    Binding, DocumentOrigin, Fault, FaultHook, Mapping, NewDocument, NewProject, NewReply,
-    ObjectKind, Project, ProjectDocuments, Reply, ReplyOwner, SourceKind, Stage, Vault, VaultError,
+    Binding, DocumentOrigin, Fault, FaultHook, ManifestCheck, Mapping, NewDocument, NewProject,
+    NewReply, ObjectKind, Project, ProjectDocuments, Reply, ReplyHandle, ReplyOwner, SourceKind,
+    Stage, Vault, VaultError,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -373,6 +374,169 @@ fn a_reply_saved_by_a_second_handle_is_picked_up_by_the_first() {
     // A fresh handle finds it too.
     drop(app);
     assert_eq!(ids(&folder.open().replies()), [reply.id]);
+}
+
+/// Every file under `dir` with its bytes, sorted by path.
+fn tree(dir: &std::path::Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut found = Vec::new();
+    for path in files(dir) {
+        if path.is_dir() {
+            found.extend(tree(&path));
+        } else {
+            let bytes = std::fs::read(&path).unwrap();
+            found.push((path, bytes));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// The Restore extension's path (Decision 20): a [`ReplyHandle`] opened on
+/// a stale manifest reads the Projects and Documents as the files hold
+/// them, saves replies for a Project and for an Unfiled document, and
+/// never writes the manifest: not at open, not on save, not on drop. The
+/// app picks the replies up through `refresh()`.
+#[test]
+fn the_extensions_handle_writes_only_replies() {
+    let folder = Folder::new();
+    let app = folder.open();
+    let ivanov = new_project(&app, "Ivanov", &[person("PERSON_1", &["Anna Ivanova"])]);
+    let memo = unfiled(
+        &app,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Carl Fox"])],
+    );
+    let manifest = folder.root.join("manifest.enc");
+    drop(app);
+    let stale = std::fs::read(&manifest).unwrap();
+    // Another handle adds a Project and rewrites the manifest; putting the
+    // old one back leaves it stale.
+    let petrov = new_project(
+        &folder.open(),
+        "Petrov",
+        &[person("PERSON_1", &["Petr Petrov"])],
+    );
+    std::fs::write(&manifest, &stale).unwrap();
+    let before = tree(&folder.root);
+
+    let extension = ReplyHandle::open(&folder.root, &KEY).unwrap();
+    assert_eq!(extension.opened(), ManifestCheck::Stale);
+    assert_eq!(tree(&folder.root), before, "the open writes nothing");
+    let mut names: Vec<_> = extension.projects().into_iter().map(|p| p.name).collect();
+    names.sort();
+    assert_eq!(names, ["Ivanov", "Petrov"], "read as the files hold them");
+    assert_eq!(extension.documents_in(None).len(), 1);
+    assert_eq!(extension.project(&petrov.id).unwrap(), petrov);
+    assert_eq!(extension.document(&memo).unwrap().id, memo);
+
+    let new = |owner: ReplyOwner| NewReply {
+        owner,
+        title: "Reply".into(),
+        source_app: Some("Claude".into()),
+        markdown: "PERSON_1 agrees.".into(),
+    };
+    let preview = extension
+        .reply_map_for(&ReplyOwner::Project(ivanov.id.clone()), "PERSON_1 agrees.")
+        .unwrap()
+        .restore_in_place("PERSON_1 agrees.")
+        .text;
+    assert_eq!(preview, "Anna Ivanova agrees.");
+    let for_project = extension
+        .save_reply(new(ReplyOwner::Project(ivanov.id.clone())))
+        .unwrap();
+    let for_memo = extension
+        .save_reply(new(ReplyOwner::Document(memo.clone())))
+        .unwrap();
+    assert_eq!(extension.reply(&for_memo.id).unwrap(), for_memo);
+    assert_eq!(
+        extension.restore_reply(&for_project.id).unwrap().text,
+        preview
+    );
+    assert_eq!(
+        ids(&extension.project_replies(&ivanov.id)),
+        std::slice::from_ref(&for_project.id)
+    );
+    assert_eq!(
+        ids(&extension.document_replies(&memo)),
+        std::slice::from_ref(&for_memo.id)
+    );
+    assert!(!extension.refresh().unwrap());
+    drop(extension);
+
+    // Only the two reply files were added; every other byte is as it was.
+    let after = tree(&folder.root);
+    let added: Vec<_> = (after.iter())
+        .filter(|file| !before.contains(file))
+        .map(|(path, _)| path.parent().unwrap().to_path_buf())
+        .collect();
+    assert_eq!(
+        added,
+        [folder.root.join("replies"), folder.root.join("replies")]
+    );
+    assert_eq!(after.len(), before.len() + 2);
+    assert_eq!(
+        std::fs::read(&manifest).unwrap(),
+        stale,
+        "never the manifest"
+    );
+
+    let app = folder.open();
+    assert_eq!(app.opened(), ManifestCheck::Stale);
+    assert_eq!(
+        ids(&app.project_replies(&ivanov.id)),
+        std::slice::from_ref(&for_project.id)
+    );
+    assert_eq!(app.restore_reply(&for_project.id).unwrap().text, preview);
+    assert_eq!(
+        app.restore_reply(&for_memo.id).unwrap().text,
+        "Carl Fox agrees."
+    );
+}
+
+/// With no manifest, the extension's handle builds one in memory and still
+/// writes none; a folder that does not exist is refused, not made.
+#[test]
+fn the_extensions_handle_makes_no_manifest_nor_folder() {
+    let folder = Folder::new();
+    assert!(matches!(
+        ReplyHandle::open(&folder.root, &KEY),
+        Err(VaultError::Io(_))
+    ));
+    assert!(!folder.root.exists());
+
+    let app = folder.open();
+    let project = new_project(&app, "Ivanov", &[person("PERSON_1", &["Anna Ivanova"])]);
+    drop(app);
+    let manifest = folder.root.join("manifest.enc");
+    std::fs::remove_file(&manifest).unwrap();
+    let extension = ReplyHandle::open(&folder.root, &KEY).unwrap();
+    assert_eq!(extension.opened(), ManifestCheck::Missing);
+    assert_eq!(extension.projects().len(), 1);
+    let reply = extension
+        .save_reply(NewReply {
+            owner: ReplyOwner::Project(project.id.clone()),
+            title: "Reply".into(),
+            source_app: None,
+            markdown: "PERSON_1 agrees.".into(),
+        })
+        .unwrap();
+    drop(extension);
+    assert!(!manifest.exists());
+    assert_eq!(ids(&folder.open().project_replies(&project.id)), [reply.id]);
+}
+
+/// The extension's handle is refused a folder sealed with another key, as
+/// the app's is, and writes nothing to it.
+#[test]
+fn the_extensions_handle_needs_the_vaults_key() {
+    let folder = Folder::new();
+    new_project(&folder.open(), "Ivanov", &[]);
+    let before = tree(&folder.root);
+    assert!(matches!(
+        ReplyHandle::open(&folder.root, &[8; 32]),
+        Err(VaultError::WrongKey)
+    ));
+    assert_eq!(tree(&folder.root), before);
 }
 
 /// A reply needs an owner that exists, and refuses bad ids.
