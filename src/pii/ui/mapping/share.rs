@@ -311,22 +311,15 @@ impl DocumentView {
                             )),
                         )
                         .child(
-                            ui::primary_button(
-                                "share-open-reply",
-                                "Open as tab",
-                                theme,
-                                restorable,
-                            )
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "share-open-reply".into())
-                            })
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
+                            ui::primary_button("share-open-reply", "Open reply", theme, restorable)
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "share-open-reply".into())
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
                                     if restorable {
-                                        this.open_reply_as_tab(cx)
+                                        this.open_saved_reply(cx)
                                     }
-                                },
-                            )),
+                                })),
                         )
                         // Bordered like its neighbors, not a bare text
                         // control beside them (U25).
@@ -347,6 +340,51 @@ impl DocumentView {
                             )
                         }),
                 )
+                // Saved replies: the Project's, or this document's own while
+                // Unfiled; each opens on its Reply page.
+                .when(!self.saved_replies.is_empty(), |v| {
+                    v.child(
+                        div()
+                            .pt_3()
+                            .pb_1()
+                            .text_size(px(11.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(p.header_muted)
+                            .child("SAVED REPLIES"),
+                    )
+                    .children(self.saved_replies.iter().enumerate().map(|(index, row)| {
+                        let id = row.id.clone();
+                        let key = format!("share-saved-reply-{index}");
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                ui::control(
+                                    gpui::SharedString::from(key.clone()),
+                                    row.title.clone(),
+                                    theme,
+                                    true,
+                                )
+                                .when(cfg!(test), move |v| v.debug_selector(move || key.clone()))
+                                .truncate()
+                                .on_click(cx.listener(
+                                    move |_, _, _, cx| {
+                                        cx.emit(crate::workspace::TabEvent::Reply(
+                                            crate::workspace::ReplyEvent::Open(id.clone()),
+                                        ));
+                                    },
+                                )),
+                            )
+                            .child(
+                                div()
+                                    .px_2()
+                                    .text_size(px(11.))
+                                    .text_color(p.header_muted)
+                                    .truncate()
+                                    .child(row.detail.clone()),
+                            )
+                    }))
+                })
                 .into_any_element(),
         )
     }

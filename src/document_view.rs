@@ -164,6 +164,11 @@ pub(crate) struct DocumentView {
     pub(crate) reply_box: Option<(Entity<EditorState>, Subscription)>,
     /// The reply box's scroll, which keeps its caret in view.
     pub(crate) reply_scroll: gpui::ScrollHandle,
+    /// Saves the box's reply once it settles.
+    pub(crate) reply_save: Option<gpui::Task<()>>,
+    /// The saved replies Share lists: the Project's, or this document's own
+    /// while Unfiled; the workspace keeps them current.
+    pub(crate) saved_replies: Vec<pii::ui::SavedReplyRow>,
     /// The Project this tab's mapping belongs to.
     pub(crate) project: project_link::ProjectState,
     /// The waiting fold of the mapping into the Project.
@@ -398,6 +403,8 @@ impl DocumentView {
             reply: Default::default(),
             reply_box: None,
             reply_scroll: gpui::ScrollHandle::new(),
+            reply_save: None,
+            saved_replies: Vec::new(),
             project: Default::default(),
             project_save: None,
             autosave: None,
@@ -501,11 +508,7 @@ impl DocumentView {
             return;
         }
         let text = self.editor.read(cx).text().to_owned();
-        cx.write_to_clipboard(if self.pii.restore().is_some() {
-            crate::restored_clipboard::item(text)
-        } else {
-            gpui::ClipboardItem::new_string(text)
-        });
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         self.copied_for_ai = false;
         self.copied_reply = false;
         self.show_copy_feedback(cx);
@@ -2432,7 +2435,7 @@ impl Render for DocumentView {
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { "Setting up text recognition…" } else if self.import.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("Text recognized by {} · {} DPI · minimum confidence {}",crate::models::short_name(settings::Model::Ocr(config.model)),config.dpi,config.minimum_confidence))))
-            .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
+            .children(import_notice).children(clipboard_notice).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx))))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.lifecycle.source_only() && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))

@@ -1,5 +1,6 @@
-//! The Project page: its documents, names, categories and lists, from the
-//! window's Projects and the Vault's summaries; it opens no document.
+//! The Project page: a header (colour, title, counts, Add document, ⋯) over
+//! three segments, `Documents`, `Replies` and `Names`, from the window's
+//! Projects and the Vault's summaries; it opens no document.
 use super::ProjectLink;
 use super::{
     Workspace,
@@ -10,11 +11,11 @@ use crate::{
     style, ui,
 };
 use gpui::{
-    AnyElement, Context, Entity, FocusHandle, Focusable, SharedString, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, Context, Entity, FocusHandle, Focusable, PathPromptOptions, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 use mdoc_store::document_id::{DocumentId, VaultId};
-use mdoc_vault::{Colour, Project};
+use mdoc_vault::{Colour, DocumentSummary, Project, ReplySummary, SourceKind};
 use std::{cell::RefCell, collections::HashMap};
 
 /// A swatch's name, as the page reads it out.
@@ -51,17 +52,53 @@ impl ProjectClose {
     }
 }
 
+/// One of the page's three views of its Project.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Segment {
+    Documents,
+    Replies,
+    Names,
+}
+
+impl Segment {
+    pub(crate) const ALL: [Segment; 3] = [Segment::Documents, Segment::Replies, Segment::Names];
+
+    fn label(self) -> &'static str {
+        match self {
+            Segment::Documents => "Documents",
+            Segment::Replies => "Replies",
+            Segment::Names => "Names",
+        }
+    }
+
+    fn control(self) -> &'static str {
+        match self {
+            Segment::Documents => "project-segment-documents",
+            Segment::Replies => "project-segment-replies",
+            Segment::Names => "project-segment-names",
+        }
+    }
+}
+
+/// Where a request to show the page lands.
 #[derive(Clone, Copy)]
 pub(super) enum Place {
+    /// Documents, focus on the colour.
     Header,
     Rename,
+    /// The swatches open.
+    Colour,
+    /// Names, at Categories to detect.
     Categories,
+    Names,
+    /// The page, then the delete question.
     Delete,
 }
 
 /// View state only: never serialized and cleared on any tab activation.
 pub(super) struct ProjectPage {
     id: String,
+    segment: Segment,
     swatches: bool,
     #[cfg(all(
         debug_assertions,
@@ -74,14 +111,28 @@ pub(super) struct ProjectPage {
     scroll: gpui::ScrollHandle,
     color_focus: FocusHandle,
     category_focus: FocusHandle,
-    delete_focus: FocusHandle,
     controls: RefCell<HashMap<String, FocusHandle>>,
     _filter_changes: Subscription,
+}
+
+/// Controls of the header and the segment row, kept across segments.
+fn header_control(id: &str) -> bool {
+    id.starts_with("project-segment-")
+        || id.starts_with("project-swatch-")
+        || matches!(
+            id,
+            "project-page-rename" | "project-page-add-document" | "project-page-menu"
+        )
 }
 
 impl ProjectPage {
     pub(super) fn id(&self) -> &str {
         &self.id
+    }
+
+    #[cfg(test)]
+    pub(crate) fn segment(&self) -> Segment {
+        self.segment
     }
 
     #[cfg(all(
@@ -98,6 +149,7 @@ impl ProjectPage {
         (self.filter.clone(), self.add.clone())
     }
 
+    /// The controls the page draws now: the header's and its segment's.
     #[cfg(test)]
     pub(super) fn test_controls(&self) -> Vec<(String, FocusHandle)> {
         let mut controls: Vec<_> = self
@@ -106,11 +158,10 @@ impl ProjectPage {
             .iter()
             .map(|(id, focus)| (id.clone(), focus.clone()))
             .collect();
-        controls.extend([
-            ("project-page-color".into(), self.color_focus.clone()),
-            ("page-category-PERSON".into(), self.category_focus.clone()),
-            ("project-page-delete".into(), self.delete_focus.clone()),
-        ]);
+        controls.push(("project-page-color".into(), self.color_focus.clone()));
+        if self.segment == Segment::Names {
+            controls.push(("page-category-PERSON".into(), self.category_focus.clone()));
+        }
         controls
     }
     #[cfg(test)]
@@ -139,6 +190,22 @@ impl Workspace {
         let document = tab.record().document.as_ref()?;
         self.projects.link(&self.project_of(document.as_str())?)
     }
+
+    /// Open the Project ⋯ menu for Project `id` at `position`.
+    pub(super) fn open_project_menu(
+        &mut self,
+        id: &str,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.menu_return = window.focused(cx);
+        self.project_ui.header_menu = Some((id.to_string(), position));
+        window.focus(&self.menu_focus, cx);
+        cx.notify();
+    }
+
+    /// The Project ⋯ menu, from the page's header or the sidebar's.
     pub(super) fn project_header_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (id, position) = self.project_ui.header_menu.as_ref()?;
         let theme = self.theme.get();
@@ -170,12 +237,12 @@ impl Workspace {
             }));
         for (key, label, place) in [
             ("project-action-rename", "Rename", Place::Rename),
+            ("project-action-colour", "Colour", Place::Colour),
             (
                 "project-action-categories",
                 "Categories to detect",
                 Place::Categories,
             ),
-            ("project-action-delete", "Delete Project…", Place::Delete),
         ] {
             let id = id.clone();
             menu = menu.child(
@@ -199,27 +266,16 @@ impl Workspace {
                     this.export_project(export.clone(), window, cx);
                 })),
         );
-        let id = id.clone();
-        menu = menu.child(
-            ui::control("project-action-close-all", "Close all", theme, true)
+        let delete = id.clone();
+        menu = menu.child(ui::menu_divider(theme)).child(
+            ui::control("project-action-delete", "Delete Project…", theme, true)
+                .text_color(style::markdown_style(theme).popover_danger)
                 .when(cfg!(test), |v| {
-                    v.debug_selector(|| "project-action-close-all".into())
+                    v.debug_selector(|| "project-action-delete".into())
                 })
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.project_ui.header_menu = None;
-                    let tabs: Vec<_> = this
-                        .tabs
-                        .iter()
-                        .filter(|tab| {
-                            this.sidebar_project_link(tab, cx)
-                                .is_some_and(|link| link.id == id)
-                        })
-                        .map(|tab| tab.id())
-                        .collect();
-                    if let Some(tab) = this.project_ui.closing_members.begin(tabs) {
-                        this.close_tab(tab, window, cx);
-                    }
-                    cx.notify();
+                    this.delete_project(delete.clone(), window, cx);
                 })),
         );
         Some(
@@ -302,6 +358,7 @@ impl Workspace {
                 view.pii.dismiss_popup();
             });
         }
+        self.reply_page = None;
         self.project_ui.list_open = false;
         self.project_list_return = None;
         self.end_rename(true, cx);
@@ -311,12 +368,17 @@ impl Workspace {
                 .with_placeholder(placeholder)
                 .with_key_context(context)
         };
-        let filter = cx.new(|cx| input(cx, "Filter names", "ProjectPageFilter"));
+        let filter = cx.new(|cx| input(cx, "Search names", "ProjectPageFilter"));
         let add = cx.new(|cx| input(cx, "Add a name", "ProjectTerm"));
         let changes = cx.subscribe(&filter, |_, _, _: &SearchInputEvent, cx| cx.notify());
+        let segment = match place {
+            Place::Categories | Place::Names => Segment::Names,
+            Place::Header | Place::Rename | Place::Colour | Place::Delete => Segment::Documents,
+        };
         let page = ProjectPage {
             id: id.into(),
-            swatches: false,
+            segment,
+            swatches: matches!(place, Place::Colour),
             #[cfg(all(
                 debug_assertions,
                 feature = "headless-renders",
@@ -328,23 +390,37 @@ impl Workspace {
             scroll: gpui::ScrollHandle::new(),
             color_focus: cx.focus_handle().tab_index(0).tab_stop(true),
             category_focus: cx.focus_handle().tab_index(0).tab_stop(true),
-            delete_focus: cx.focus_handle().tab_index(0).tab_stop(true),
             controls: RefCell::new(HashMap::new()),
             _filter_changes: changes,
         };
         let focus = match place {
             Place::Categories => page.category_focus.clone(),
-            Place::Delete => page.delete_focus.clone(),
             _ => page.color_focus.clone(),
         };
         self.project_ui.page = Some(page);
         self.note_destination(super::navigation::Arrival::Visit, cx);
-        if matches!(place, Place::Rename) {
-            self.start_rename_project(id.into(), window, cx);
-        } else {
+        match place {
+            Place::Rename => self.start_rename_project(id.into(), window, cx),
+            Place::Delete => self.delete_project(id.into(), window, cx),
             // Controls are mounted on the next frame; GPUI reveals a focused descendant.
-            window.defer(cx, move |window, cx| window.focus(&focus, cx));
+            _ => window.defer(cx, move |window, cx| window.focus(&focus, cx)),
         }
+        cx.notify();
+    }
+
+    /// Show `segment` of the page; focus stays on its toggle.
+    pub(super) fn show_project_segment(&mut self, segment: Segment, cx: &mut Context<Self>) {
+        let Some(page) = self.project_ui.page.as_mut() else {
+            return;
+        };
+        if page.segment == segment {
+            return;
+        }
+        page.segment = segment;
+        page.controls
+            .borrow_mut()
+            .retain(|id, _| header_control(id));
+        page.scroll.set_offset(gpui::point(px(0.), px(0.)));
         cx.notify();
     }
 
@@ -386,15 +462,46 @@ impl Workspace {
         self.open_vault_document(document, window, cx);
     }
 
-    pub(super) fn open_all_project_members(
+    /// Add document: the system file picker; what is chosen is imported
+    /// into Project `id`.
+    pub(super) fn add_document_to_project(
         &mut self,
-        id: &str,
+        id: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        for document in self.members(id) {
-            self.open_project_member(document.0, window, cx);
+        if self.intake_refused(window, cx) {
+            return;
         }
+        let name = self.projects.project(&id).map(|p| p.name.clone());
+        let Some(name) = name else {
+            return;
+        };
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some(format!("Add to \u{201c}{name}\u{201d}").into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let paths = match paths.await {
+                Ok(Ok(Some(paths))) => paths,
+                Ok(Err(error)) => {
+                    let _ = this.update(cx, |this, cx| {
+                        this.notices
+                            .post(format!("Could not show the file chooser: {error}"));
+                        cx.notify();
+                    });
+                    return;
+                }
+                // Cancelled.
+                _ => return,
+            };
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.open_paths_into(paths, None, Some(id), window, cx);
+            });
+        })
+        .detach();
     }
 
     /// The Project page's Move to Unfiled; its document may be closed.
@@ -406,24 +513,39 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.move_document(document, None, window, cx);
-        if let Some(page) = self.project_ui.page.as_ref().filter(|page| page.id == id)
-            && let Some(focus) = page.controls.borrow().get("project-page-open-all")
-        {
-            window.focus(focus, cx);
+        if let Some(page) = self.project_ui.page.as_ref().filter(|page| page.id == id) {
+            let focus = page
+                .controls
+                .borrow()
+                .get(Segment::Documents.control())
+                .cloned();
+            if let Some(focus) = focus {
+                window.focus(&focus, cx);
+            }
         }
         cx.notify();
     }
 
     /// Project `id`'s documents, by title, from the Vault's summaries.
     pub(super) fn members(&self, id: &str) -> Vec<(VaultId, String)> {
+        (self.member_summaries(id).into_iter())
+            .filter_map(|summary| Some((VaultId::parse(&summary.id)?, summary.title)))
+            .collect()
+    }
+
+    /// Project `id`'s documents' summaries, by title.
+    fn member_summaries(&self, id: &str) -> Vec<DocumentSummary> {
         let Some(vault) = self.vault.vault() else {
             return Vec::new();
         };
-        let mut members: Vec<_> = (vault.documents_in(Some(id)).into_iter())
-            .filter_map(|summary| Some((VaultId::parse(&summary.id)?, summary.title)))
-            .collect();
-        members.sort_by_key(|(_, title)| title.to_lowercase());
+        let mut members = vault.documents_in(Some(id));
+        members.sort_by_key(|summary| summary.title.to_lowercase());
         members
+    }
+
+    /// Project `id`'s AI Replies, newest first: its own and its documents'.
+    pub(super) fn project_replies(&self, id: &str) -> Vec<ReplySummary> {
+        (self.vault.vault()).map_or_else(Vec::new, |vault| vault.project_replies(id))
     }
 
     pub(super) fn project_page(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
@@ -473,6 +595,7 @@ impl Workspace {
             .overflow_y_scroll()
             .track_scroll(&page.scroll)
             .child(div().w_full().flex().justify_center().p_6().child(content));
+        let drop_into = project.id.clone();
         div()
             .id("project-page")
             .when(cfg!(test), |v| v.debug_selector(|| "project-page".into()))
@@ -480,6 +603,14 @@ impl Workspace {
             .size_full()
             .flex()
             .flex_col()
+            // Files dropped anywhere on the page are imported into it.
+            .on_drop(
+                cx.listener(move |this, paths: &gpui::ExternalPaths, window, cx| {
+                    cx.stop_propagation();
+                    this.shell.drop = None;
+                    this.drop_on_project(paths, &drop_into, window, cx);
+                }),
+            )
             .child(header)
             .child(if detached {
                 // The card clips its corners; it wraps the scroll area so its
@@ -512,7 +643,6 @@ impl Workspace {
         let focus = match id.as_ref() {
             "project-page-color" => page.color_focus.clone(),
             "page-category-PERSON" => page.category_focus.clone(),
-            "project-page-delete" => page.delete_focus.clone(),
             _ => page
                 .controls
                 .borrow_mut()
@@ -531,11 +661,64 @@ impl Workspace {
 
     fn unlocked_project_page(&self, project: &Project, cx: &mut Context<Self>) -> AnyElement {
         let page = self.project_ui.page.as_ref().unwrap();
+        let members = self.member_summaries(&project.id);
+        let replies = self.project_replies(&project.id);
+        let heading = self.project_heading(project, members.len(), replies.len(), cx);
+        let segments = div()
+            .id("project-segments")
+            .role(gpui::Role::TabList)
+            .aria_label("Project view")
+            .flex()
+            .items_center()
+            .gap_1()
+            .p_1()
+            .rounded_lg()
+            .border_1()
+            .border_color(self.theme.get().pdf_style().border)
+            .children(Segment::ALL.into_iter().map(|segment| {
+                let p = self.theme.get().pdf_style();
+                let selected = page.segment == segment;
+                self.page_control(segment.control(), segment.label(), cx)
+                    .role(gpui::Role::Tab)
+                    .aria_selected(selected)
+                    .px_3()
+                    .when(selected, |v| v.bg(p.placeholder_bg).text_color(p.header_fg))
+                    .when(!selected, |v| v.text_color(p.header_muted))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.show_project_segment(segment, cx)),
+                    )
+            }));
+        let body = match page.segment {
+            Segment::Documents => self.documents_segment(project, &members, cx),
+            Segment::Replies => self.replies_segment(project, &replies, cx),
+            Segment::Names => self.names_segment(project, &members, cx),
+        };
+        div()
+            .w_full()
+            .max_w(px(680.))
+            .flex()
+            .flex_col()
+            .gap_5()
+            .text_size(px(13.))
+            .child(heading)
+            .child(div().flex().child(segments))
+            .child(body)
+            .into_any_element()
+    }
+
+    /// Colour, title, counts, Add document and ⋯.
+    fn project_heading(
+        &self,
+        project: &Project,
+        documents: usize,
+        replies: usize,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let page = self.project_ui.page.as_ref().unwrap();
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let id = project.id.clone();
-        let exported = project.mapping.exported();
-        let members = self.members(&project.id);
+        let names = project.mapping.exported().len();
         let name = match self
             .project_ui
             .renaming
@@ -565,12 +748,10 @@ impl Workspace {
                 .into_any_element(),
             None => self
                 .page_control("project-page-rename", project.name.clone(), cx)
-                .when(cfg!(test), |v| {
-                    v.debug_selector(|| "project-page-rename".into())
-                })
                 .aria_label(format!("Rename {}", project.name))
                 .flex_1()
                 .min_w_0()
+                .truncate()
                 .text_size(px(26.))
                 .on_click(cx.listener({
                     let id = id.clone();
@@ -579,7 +760,8 @@ impl Workspace {
                 .into_any_element(),
         };
         let color = style::project_color(ProjectLink::of(project).hue(), theme);
-        let heading = div()
+        let (add, menu) = (id.clone(), id.clone());
+        div()
             .flex()
             .flex_col()
             .gap_2()
@@ -590,9 +772,6 @@ impl Workspace {
                     .gap_3()
                     .child(
                         self.page_control("project-page-color", "", cx)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "project-page-color".into())
-                            })
                             .aria_label("Project colour")
                             .p_2()
                             .child(div().size(px(16.)).rounded_full().bg(color))
@@ -603,19 +782,36 @@ impl Workspace {
                                 cx.notify();
                             })),
                     )
-                    .child(name),
+                    .child(name)
+                    .child(
+                        self.page_control("project-page-add-document", "Add document", cx)
+                            .flex_shrink_0()
+                            .border_1()
+                            .border_color(p.border)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.add_document_to_project(add.clone(), window, cx)
+                            })),
+                    )
+                    .child(
+                        self.page_control("project-page-menu", "⋯", cx)
+                            .aria_label(format!("Actions for Project {}", project.name))
+                            .flex_shrink_0()
+                            .on_click(cx.listener(
+                                move |this, event: &gpui::ClickEvent, window, cx| {
+                                    this.open_project_menu(&menu, event.position(), window, cx)
+                                },
+                            )),
+                    ),
             )
             .child(
                 div()
+                    .id("project-page-counts")
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "project-page-counts".into())
+                    })
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child(format!(
-                        "{} · {} {} · created {}",
-                        document_count(members.len()),
-                        exported.len(),
-                        if exported.len() == 1 { "name" } else { "names" },
-                        created_date(project.created)
-                    )),
+                    .child(project_counts(documents, replies, names, project.created)),
             )
             .when(page.swatches, |v| {
                 v.child(
@@ -631,9 +827,6 @@ impl Workspace {
                                 name,
                                 cx,
                             )
-                            .when(cfg!(test), move |v| {
-                                v.debug_selector(move || format!("project-swatch-{name}"))
-                            })
                             .flex()
                             .items_center()
                             .gap_2()
@@ -656,121 +849,221 @@ impl Workspace {
                             ))
                         })),
                 )
-            });
-        let documents = div()
+            })
+    }
+
+    /// The Project's documents by title, each opening on a click, with
+    /// Move to Unfiled.
+    fn documents_segment(
+        &self,
+        project: &Project,
+        members: &[DocumentSummary],
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let p = self.theme.get().pdf_style();
+        let mut list = div()
+            .id("project-documents")
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "project-documents".into())
+            })
             .flex()
             .flex_col()
-            .gap_2()
-            .child(
+            .gap_1();
+        if members.is_empty() {
+            list = list.child(empty_line(
+                "No documents yet. Add a document, or drop files on this page.",
+                p,
+            ));
+        }
+        for (index, summary) in members.iter().enumerate() {
+            let Some(document) = VaultId::parse(&summary.id) else {
+                continue;
+            };
+            let (open_document, remove_document) = (document.clone(), document);
+            let id = project.id.clone();
+            let detail = format!(
+                "{}{}",
+                if summary.scanned {
+                    ""
+                } else {
+                    "Needs review · "
+                },
+                format_args!("updated {}", created_date(summary.updated))
+            );
+            list = list.child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
-                    .child(section("Documents"))
-                    .child(div().flex_1())
+                    .gap_2()
+                    .py_1()
+                    .child(kind_badge(summary.source_kind, p))
                     .child(
-                        self.page_control("project-page-open-all", "Open all", cx)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "project-page-open-all".into())
-                            })
-                            .on_click(cx.listener({
-                                let id = id.clone();
-                                move |this, _, window, cx| {
-                                    this.open_all_project_members(&id, window, cx)
-                                }
-                            })),
-                    ),
-            )
-            .children(
-                members
-                    .iter()
-                    .enumerate()
-                    .map(|(index, (document, title))| {
-                        let open = self
-                            .find_document(&DocumentId::Vault(document.clone()), None, cx)
-                            .is_some();
-                        let (open_document, remove_document) = (document.clone(), document.clone());
-                        let id = id.clone();
+                        self.page_control(
+                            SharedString::from(format!("project-document-{index}")),
+                            summary.title.clone(),
+                            cx,
+                        )
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.open_project_member(open_document.clone(), window, cx)
+                            },
+                        )),
+                    )
+                    .child(
                         div()
+                            .flex_shrink_0()
+                            .text_size(px(11.))
+                            .text_color(p.header_muted)
+                            .child(detail),
+                    )
+                    .child(
+                        self.page_control(
+                            SharedString::from(format!("project-remove-{index}")),
+                            "Move to Unfiled",
+                            cx,
+                        )
+                        .flex_shrink_0()
+                        .aria_label(format!("Move “{}” to Unfiled", summary.title))
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.remove_project_member(&id, remove_document.clone(), window, cx)
+                            },
+                        )),
+                    ),
+            );
+        }
+        list.into_any_element()
+    }
+
+    /// The Project's AI Replies, newest first, each opening restored, with
+    /// Delete….
+    fn replies_segment(
+        &self,
+        _project: &Project,
+        replies: &[ReplySummary],
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let p = self.theme.get().pdf_style();
+        let titles: HashMap<String, String> = (self.vault.vault())
+            .map(|vault| {
+                (vault.documents().into_iter())
+                    .map(|summary| (summary.id, summary.title))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut list = div()
+            .id("project-replies")
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "project-replies".into())
+            })
+            .flex()
+            .flex_col()
+            .gap_1();
+        if replies.is_empty() {
+            list = list.child(empty_line(
+                "No saved replies. An AI reply pasted into one of this Project's documents is \
+                 kept here.",
+                p,
+            ));
+        }
+        for (index, reply) in replies.iter().enumerate() {
+            let detail = super::saved_replies::reply_detail(
+                &reply.owner,
+                reply.source_app.as_deref(),
+                reply.created,
+                &titles,
+            );
+            let (open, delete) = (reply.id.clone(), reply.id.clone());
+            list = list.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
                             .flex()
-                            .items_center()
-                            .gap_2()
-                            .py_1()
+                            .flex_col()
                             .child(
                                 self.page_control(
-                                    SharedString::from(format!("project-document-{index}")),
-                                    title.clone(),
+                                    SharedString::from(format!("project-reply-{index}")),
+                                    reply.title.clone(),
                                     cx,
                                 )
-                                .when(cfg!(test), move |v| {
-                                    v.debug_selector(move || format!("project-document-{index}"))
-                                })
-                                .flex_1()
-                                .min_w_0()
                                 .truncate()
                                 .on_click(cx.listener(
-                                    move |this, _, window, cx| {
-                                        this.open_project_member(open_document.clone(), window, cx)
-                                    },
+                                    move |this, _, window, cx| this.open_reply(&open, window, cx),
                                 )),
                             )
                             .child(
                                 div()
+                                    .px_2()
                                     .text_size(px(11.))
                                     .text_color(p.header_muted)
-                                    .child(if open { "Open" } else { "Closed" }),
-                            )
-                            .child(
-                                self.page_control(
-                                    SharedString::from(format!("project-remove-{index}")),
-                                    "Move to Unfiled",
-                                    cx,
-                                )
-                                .when(cfg!(test), move |v| {
-                                    v.debug_selector(move || format!("project-remove-{index}"))
-                                })
-                                .on_click(cx.listener(
-                                    move |this, _, window, cx| {
-                                        this.remove_project_member(
-                                            &id,
-                                            remove_document.clone(),
-                                            window,
-                                            cx,
-                                        )
-                                    },
-                                )),
-                            )
-                    }),
+                                    .truncate()
+                                    .child(detail),
+                            ),
+                    )
+                    .child(
+                        self.page_control(
+                            SharedString::from(format!("project-reply-delete-{index}")),
+                            "Delete…",
+                            cx,
+                        )
+                        .flex_shrink_0()
+                        .aria_label(format!("Delete “{}”", reply.title))
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.confirm_delete_reply(&delete, window, cx)
+                            },
+                        )),
+                    ),
             );
-        let filter = if exported.len() > 10 {
-            page.filter.read(cx).value().to_lowercase()
-        } else {
-            String::new()
-        };
-        let mut names = div().flex().flex_col().gap_2().child(section("Names"));
-        if exported.len() > 10 {
-            names = names.child(ui::reveal_focus(
-                div()
-                    .id("project-page-filter")
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(|| "project-page-filter".into())
-                    })
-                    .border_1()
-                    .border_color(p.border)
-                    .rounded_sm()
-                    .p_1()
-                    .child(page.filter.clone()),
-                page.filter.read(cx).focus_handle(cx),
-                page.scroll.clone(),
-            ));
         }
-        // Mentions in each open member, by alias.
+        list.into_any_element()
+    }
+
+    /// The Project's names, searchable and grouped by category, with Add a
+    /// name, the Always and Never lists and Categories to detect.
+    fn names_segment(
+        &self,
+        project: &Project,
+        members: &[DocumentSummary],
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let page = self.project_ui.page.as_ref().unwrap();
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let id = project.id.clone();
+        let filter = page.filter.read(cx).value().to_lowercase();
+        let mut names = div().flex().flex_col().gap_2().child(ui::reveal_focus(
+            div()
+                .id("project-page-filter")
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "project-page-filter".into())
+                })
+                .border_1()
+                .border_color(p.border)
+                .rounded_sm()
+                .p_1()
+                .child(page.filter.clone()),
+            page.filter.read(cx).focus_handle(cx),
+            page.scroll.clone(),
+        ));
+        // Mentions in each live document of the Project, by alias.
         let open_members: Vec<_> = (members.iter())
-            .filter_map(|(document, title)| {
-                let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx)?;
-                Some((self.tabs.get(tab)?.view()?.clone(), title.clone()))
+            .filter_map(|summary| {
+                let document = DocumentId::Vault(VaultId::parse(&summary.id)?);
+                let tab = self.find_document(&document, None, cx)?;
+                Some((self.tabs.get(tab)?.view()?.clone(), summary.title.clone()))
             })
             .collect();
+        let mut shown = 0;
         for category in mdoc_pii::Category::ALL {
             let identities: Vec<_> = (project.mapping.identities.iter())
                 .filter(|identity| {
@@ -790,6 +1083,7 @@ impl Workspace {
             if identities.is_empty() {
                 continue;
             }
+            shown += identities.len();
             names = names.child(
                 div()
                     .pt_2()
@@ -856,10 +1150,6 @@ impl Workspace {
                                 "Forget identity…",
                                 cx,
                             )
-                            .when(cfg!(test), {
-                                let alias = alias.clone();
-                                move |v| v.debug_selector(move || format!("project-forget-{alias}"))
-                            })
                             .on_click(cx.listener(
                                 move |this, _, window, cx| {
                                     this.confirm_forget_project_identity(&id, &alias, window, cx)
@@ -869,11 +1159,22 @@ impl Workspace {
                 );
             }
         }
+        if shown == 0 {
+            names = names.child(empty_line(
+                if filter.is_empty() {
+                    "No names yet. Names replaced in this Project's documents appear here."
+                } else {
+                    "No names match."
+                },
+                p,
+            ));
+        }
         names = names.child(
             div()
                 .flex()
                 .items_center()
                 .gap_2()
+                .pt_2()
                 .on_action(cx.listener(|this, _: &AddProjectName, _, cx| {
                     this.add_page_name(cx);
                     cx.stop_propagation();
@@ -897,9 +1198,6 @@ impl Workspace {
                 ))
                 .child(
                     self.page_control("project-page-add", "Add a name", cx)
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(|| "project-page-add".into())
-                        })
                         .on_click(cx.listener(|this, _, _, cx| this.add_page_name(cx))),
                 ),
         );
@@ -935,11 +1233,6 @@ impl Workspace {
                             } else {
                                 gpui::Toggled::False
                             })
-                            .when(cfg!(test), move |v| {
-                                v.debug_selector(move || {
-                                    format!("page-category-{}", category.token())
-                                })
-                            })
                             .on_click(cx.listener(
                                 move |this, _, _, cx| {
                                     this.toggle_project_category(&id, category, cx)
@@ -950,27 +1243,12 @@ impl Workspace {
             );
         let lists = self.project_lists(project, cx);
         div()
-            .w_full()
-            .max_w(px(680.))
             .flex()
             .flex_col()
             .gap_6()
-            .text_size(px(13.))
-            .child(heading)
-            .child(documents)
             .child(names)
-            .child(categories)
             .child(lists)
-            .child(
-                self.page_control("project-page-delete", "Delete Project…", cx)
-                    .text_color(style::markdown_style(theme).popover_danger)
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(|| "project-page-delete".into())
-                    })
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.delete_project(id.clone(), window, cx)
-                    })),
-            )
+            .child(categories)
             .into_any_element()
     }
 
@@ -1049,11 +1327,8 @@ impl Workspace {
                                 .child(label)
                         }))
                         .child(
-                            self.page_control(SharedString::from(control.clone()), "Remove", cx)
+                            self.page_control(SharedString::from(control), "Remove", cx)
                                 .aria_label(format!("Remove “{wording}”"))
-                                .when(cfg!(test), move |v| {
-                                    v.debug_selector(move || control.clone())
-                                })
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.remove_project_list_entry(&id, always, &remove, cx)
                                 })),
@@ -1082,8 +1357,60 @@ fn section(label: &'static str) -> gpui::Div {
         .child(label)
 }
 
+fn empty_line(text: &'static str, p: gpui_pdf::PdfStyle) -> gpui::Div {
+    div()
+        .py_2()
+        .text_size(px(12.))
+        .text_color(p.header_muted)
+        .child(text)
+}
+
+/// A document's file family, as its row shows it.
+pub(super) fn kind_label(kind: SourceKind) -> &'static str {
+    match kind {
+        SourceKind::Pdf => "PDF",
+        SourceKind::Word => "DOC",
+        SourceKind::Spreadsheet => "XLS",
+        SourceKind::Presentation => "PPT",
+        SourceKind::Ebook => "BOOK",
+        SourceKind::Image => "IMG",
+        SourceKind::Scan => "SCAN",
+        SourceKind::Markdown => "MD",
+        SourceKind::Text => "TXT",
+    }
+}
+
+fn kind_badge(kind: SourceKind, p: gpui_pdf::PdfStyle) -> gpui::Div {
+    div()
+        .flex_shrink_0()
+        .w(px(40.))
+        .flex()
+        .justify_center()
+        .px_1()
+        .rounded_sm()
+        .border_1()
+        .border_color(p.border)
+        .text_size(px(10.))
+        .text_color(p.header_muted)
+        .child(kind_label(kind))
+}
+
+/// "4 documents · 2 replies · 11 names · created 3 Nov".
+fn project_counts(documents: usize, replies: usize, names: usize, created: u64) -> String {
+    let plural = |count: usize, one: &str, many: &str| {
+        format!("{count} {}", if count == 1 { one } else { many })
+    };
+    format!(
+        "{} · {} · {} · created {}",
+        plural(documents, "document", "documents"),
+        plural(replies, "reply", "replies"),
+        plural(names, "name", "names"),
+        created_date(created)
+    )
+}
+
 /// Gregorian civil date from Unix days; independent of locale and OS access.
-fn created_date(seconds: u64) -> String {
+pub(super) fn created_date(seconds: u64) -> String {
     let days = (seconds / 86400).min(i32::MAX as u64) as i64 + 719468;
     let era = days / 146097;
     let doe = days - era * 146097;
@@ -1100,9 +1427,19 @@ fn created_date(seconds: u64) -> String {
     )
 }
 
-fn document_count(count: usize) -> String {
-    format!(
-        "{count} {}",
-        if count == 1 { "document" } else { "documents" }
-    )
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_counts_line_says_each_count_in_words() {
+        assert_eq!(
+            project_counts(1, 0, 2, 1791763200),
+            "1 document · 0 replies · 2 names · created 12 Oct"
+        );
+        assert_eq!(
+            project_counts(3, 1, 1, 0),
+            "3 documents · 1 reply · 1 name · created 1 Jan"
+        );
+    }
 }

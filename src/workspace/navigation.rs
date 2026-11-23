@@ -5,6 +5,8 @@ pub(super) enum Stop {
     Home,
     Tab(u64),
     Project(String),
+    /// A saved AI Reply's page.
+    Reply(String),
 }
 
 /// How the history records arriving at a place.

@@ -570,7 +570,6 @@ impl DocumentView {
     /// under way or names were found or applied (the toolbar's panel button).
     pub(crate) fn can_show_replacements(&self) -> bool {
         !self.lifecycle.source_only()
-            && self.pii.restore().is_none()
             && (self.pii.reviewing()
                 || self.replacements_open()
                 || !self.pii.review().variants().is_empty()

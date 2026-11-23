@@ -149,9 +149,7 @@ impl DocumentView {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if !matches!(self.pii.popup, Some(Popup::Selection))
-            || self.pii.restore.as_ref().is_some_and(|r| r.popup.is_some())
-        {
+        if !matches!(self.pii.popup, Some(Popup::Selection)) {
             return None;
         }
         let annotation = self.active_annotation()?;

@@ -17,6 +17,8 @@ pub(super) enum Target {
     Project(String),
     /// A move or a delete; each is its own.
     Op(u64),
+    /// The AI reply in tab `u64`'s reply box: only its latest text waits.
+    Reply(u64),
 }
 
 pub(super) struct DocumentWriter<W> {

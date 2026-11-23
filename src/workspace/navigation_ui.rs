@@ -14,7 +14,9 @@ actions!(mdoc_navigation, [Back, Forward]);
 impl Workspace {
     /// The place on screen, as a stop.
     pub(super) fn place(&self, cx: &App) -> Stop {
-        if let Some(page) = &self.project_ui.page {
+        if let Some(page) = &self.reply_page {
+            Stop::Reply(page.id().into())
+        } else if let Some(page) = &self.project_ui.page {
             Stop::Project(page.id().into())
         } else if self.showing_home(cx) {
             Stop::Home
@@ -45,6 +47,7 @@ impl Workspace {
                 .get(*id)
                 .is_some_and(|tab| !self.is_placeholder(tab, cx)),
             Stop::Project(id) => projects.contains(id),
+            Stop::Reply(id) => self.reply_exists(id),
         }
     }
 
@@ -64,6 +67,7 @@ impl Workspace {
                 .into_iter()
                 .find(|project| &project.id == id)
                 .map(|project| format!("Project “{}”", project.name)),
+            Some(Stop::Reply(id)) => self.reply_title(id).map(|title| format!("“{title}”")),
             None => None,
         };
         match destination {
@@ -108,6 +112,7 @@ impl Workspace {
             Stop::Home => self.show_home(window, cx),
             Stop::Tab(id) => self.activate(id, window, cx),
             Stop::Project(id) => self.show_project_page(&id, Place::Header, window, cx),
+            Stop::Reply(id) => self.show_reply_page(&id, Arrival::Visit, window, cx),
         }
     }
 

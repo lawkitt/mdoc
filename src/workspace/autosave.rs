@@ -35,6 +35,8 @@ pub(super) enum Write {
     Project,
     /// A move or a delete, of this document.
     Op(VaultId, Op),
+    /// An AI reply to a tab's document, run at the head of the queue.
+    Reply(super::saved_replies::ReplySave),
 }
 
 /// A move or a delete, run at the head of the writer's queue.
@@ -119,6 +121,12 @@ pub(super) fn first_line_title(text: &str) -> String {
 impl Workspace {
     /// Tab `id`'s document changed: save what it shows now.
     pub(super) fn autosave(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.autosave_document(id, window, cx);
+        // A reply pasted in its box goes after the names it binds.
+        self.queue_box_reply(id, window, cx);
+    }
+
+    fn autosave_document(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
@@ -149,13 +157,12 @@ impl Workspace {
             return;
         }
         // A new or pasted document is created by its first keystroke; a
-        // conversion, an AI reply and an empty tab are not documents yet.
+        // conversion and an empty tab are not documents yet.
         let creatable = view.lifecycle.ready()
             && !view.lifecycle.source_only()
             && view.session.source.is_none()
             && view.preview.source().is_none()
             && view.preview.attachment().is_none()
-            && view.pii.restore().is_none()
             && !text.trim().is_empty();
         if !creatable || self.vault.vault().is_none() || self.document_writer.has(&Target::Tab(id))
         {
@@ -213,6 +220,11 @@ impl Workspace {
                     } => self.run_delete(project, documents, members, window, cx),
                     op => self.run_op(document, op, window, cx),
                 }
+                self.advance_writer(window, cx);
+                return;
+            }
+            Write::Reply(save) => {
+                self.run_reply_save(save, window, cx);
                 self.advance_writer(window, cx);
                 return;
             }
@@ -330,7 +342,7 @@ impl Workspace {
                     self.autosave(tab, window, cx);
                 }
             }
-            (Target::Project(_) | Target::Op(_), Ok(_)) => {}
+            (Target::Project(_) | Target::Op(_) | Target::Reply(_), Ok(_)) => {}
             (Target::Document(document), Ok(_)) => {
                 let tabs: Vec<_> = self
                     .tabs
@@ -363,7 +375,7 @@ impl Workspace {
                 let tab = match &target {
                     Target::Tab(tab) => Some(*tab),
                     Target::Document(document) => self.find_document(document, None, cx),
-                    Target::Project(_) | Target::Op(_) => None,
+                    Target::Project(_) | Target::Op(_) | Target::Reply(_) => None,
                 };
                 if let Some(tab) = tab {
                     self.closing_after_write.remove(&tab);
@@ -385,7 +397,7 @@ impl Workspace {
                         Target::Document(document) => self
                             .find_document(document, None, cx)
                             .and_then(|tab| self.tabs.get(tab)?.view().cloned()),
-                        Target::Project(_) | Target::Op(_) => None,
+                        Target::Project(_) | Target::Op(_) | Target::Reply(_) => None,
                     }
                     .map(|view| view.read(cx).display_name());
                     self.notices.post(match name {
@@ -482,6 +494,7 @@ impl Workspace {
             .and_then(|tab| tab.view())
             .and_then(|view| view.read(cx).session.document.id());
         self.document_writer.has(&Target::Tab(id))
+            || self.document_writer.has(&Target::Reply(id))
             || document
                 .is_some_and(|document| self.document_writer.has(&Target::Document(document)))
     }

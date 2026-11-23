@@ -1180,7 +1180,7 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
 }
 
 #[gpui::test]
-fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut TestAppContext) {
+fn ai_reply_round_trip_saves_the_reply_and_shows_it_restored(cx: &mut TestAppContext) {
     use mdoc_pii::Category;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("contract.md");
@@ -1223,17 +1223,16 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     let reply = "**PERSON_1** owes ORG_1; person 1 and PERSON_7 disagree.";
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(reply.into()));
     more(cx, "more-paste-reply");
-    let restored = active(&tabs, cx);
+    cx.run_until_parked();
+    let restored =
+        "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree.";
     cx.update(|_, cx| {
-        assert_ne!(tabs.read(cx).tabs.active(), first_id);
-        let view = restored.read(cx);
-        assert_eq!(
-            view.editor.read(cx).text(),
-            "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree."
-        );
-        assert_eq!(view.display_name(), "Restored – contract.md");
-        assert_eq!(view.pii.review().remaining(), 3);
-        assert_eq!(view.unresolved_tokens(cx).len(), 1);
+        let w = tabs.read(cx);
+        assert_eq!(w.tabs.active(), first_id, "no tab is opened");
+        let page = w.reply_page.as_ref().expect("the Reply page shows");
+        assert_eq!(page.restored().text, restored);
+        assert_eq!(page.restored().unresolved.len(), 1);
+        assert_eq!(page.summary(), "2 values restored · 1 unrecognized");
         assert_eq!(
             first.read(cx).editor.read(cx).text(),
             "PERSON_1 met ORG_1.",
@@ -1241,33 +1240,28 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
         );
     });
     draw(cx);
-    assert!(cx.debug_bounds("restore-summary").is_some());
-
-    // Applying the proposals re-pseudonymizes with the source's aliases.
-    restored.update_in(cx, |view, window, cx| {
-        view.apply_all_pii(&PiiApplyAll, window, cx)
-    });
-    cx.run_until_parked();
+    assert!(cx.debug_bounds("reply-page").is_some());
+    // Saved as received, aliases and all.
+    let saved = vault(&tabs, cx).replies();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(
+        vault(&tabs, cx).reply(&saved[0].id).unwrap().markdown,
+        reply
+    );
+    // Copy reply copies the restored text, marked as restored.
+    click_toolbar(cx, "reply-page-copy");
     cx.update(|_, cx| {
-        assert_eq!(
-            restored.read(cx).editor.read(cx).text(),
-            "**PERSON_1** owes ORG_1; PERSON_1 and PERSON_7 disagree."
-        );
+        let item = cx.read_from_clipboard().unwrap();
+        assert_eq!(item.text().unwrap(), restored);
+        assert!(crate::restored_clipboard::is_restored(&item));
     });
-    // Undo returns to the restored text, then to the reply as pasted.
-    for expected in [
-        "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree.",
-        reply,
-    ] {
-        cx.update(|window, cx| {
-            window.focus(&restored.read(cx).editor.read(cx).focus_handle(cx), cx)
-        });
-        cx.dispatch_action(mdoc_editor::Undo);
-        cx.run_until_parked();
-        cx.update(|_, cx| assert_eq!(restored.read(cx).editor.read(cx).text(), expected));
-    }
-
-    // Unsaved restored replies are not written to the session manifest.
+    // Next unrecognized walks the unknown token.
+    click_toolbar(cx, "reply-page-next");
+    cx.update(|_, cx| {
+        let range = tabs.read(cx).current_saved_unrecognised().unwrap();
+        assert_eq!(&restored[range], "PERSON_7");
+    });
+    // The session keeps no reply text.
     cx.update(|_, cx| {
         let session = tabs.read(cx).snapshot(cx);
         assert_eq!(session.tabs.len(), 1);
@@ -1490,12 +1484,12 @@ fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppConte
         "PERSON_1 owes ORG_1.".into(),
     ));
     click_toolbar(cx, "home-restore");
-    let restored = active(&tabs, cx);
-    assert_ne!(source, restored);
     cx.update(|_, cx| {
-        assert!(!tabs.read(cx).showing_home(cx));
+        let w = tabs.read(cx);
+        assert!(!w.showing_home(cx));
+        let page = w.reply_page.as_ref().expect("the Reply page");
         assert_eq!(
-            restored.read(cx).editor.read(cx).text(),
+            page.restored().text,
             "Anna Petrova owes Northwind Traders Ltd."
         );
     });

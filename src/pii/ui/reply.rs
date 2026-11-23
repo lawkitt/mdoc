@@ -1,7 +1,9 @@
 //! Restore in place: the Share panel's "AI reply" box restores a
 //! pasted reply at once, with Restore's matching rules, and the
 //! view switcher's read-only Reply segment shows the result, following the
-//! mapping live. One reply per document, kept while the tab is open.
+//! mapping live. A reply in the box is saved to the Vault once it settles
+//! (the workspace saves it); edits while the box holds it replace that
+//! saved reply, and clearing the box keeps it.
 use super::{compare::CompareMode, restore::UNRESOLVED_ID};
 use crate::document_view::DocumentView;
 use gpui::{Context, Entity, Focusable, Window, prelude::*};
@@ -37,6 +39,8 @@ pub(crate) struct ReplyBox {
     /// changes, the reply's tokens for it follow.
     bound: Vec<(u64, ExportedIdentity)>,
     bound_at: Option<u64>,
+    /// The saved AI Reply this box's text is, and the revision saved.
+    saved: Option<(String, u64)>,
 }
 
 impl ReplyBox {
@@ -64,6 +68,10 @@ impl ReplyBox {
         }
         let had = self.exists();
         self.set(text.to_owned());
+        if !self.exists() {
+            // A cleared box keeps the reply it saved and starts a new one.
+            self.saved = None;
+        }
         let mut effects = vec![ReplyEffect::Store];
         if self.exists() {
             if !showing_reply {
@@ -82,7 +90,7 @@ impl ReplyBox {
             return;
         }
         if let Some(text) = RestoreMap::new(names).realias(&self.text, aliases) {
-            self.set(text);
+            self.set_followed(text);
         }
     }
 
@@ -90,6 +98,48 @@ impl ReplyBox {
         self.text = text;
         self.revision += 1;
         self.next = 0;
+    }
+
+    /// Rewrite the text's aliases, naming the same people: a reply saved as
+    /// it was stays saved, since it restores by identity.
+    fn set_followed(&mut self, text: String) {
+        let current = self
+            .saved
+            .as_ref()
+            .is_some_and(|(_, at)| *at == self.revision);
+        self.set(text);
+        if current && let Some((_, at)) = self.saved.as_mut() {
+            *at = self.revision;
+        }
+    }
+
+    /// The saved reply this box holds, and the revision it saved.
+    pub(crate) fn saved(&self) -> Option<(String, u64)> {
+        self.saved.clone()
+    }
+
+    /// The text and revision to save, when the box holds a reply not
+    /// saved as it is now.
+    pub(crate) fn unsaved(&self) -> Option<(String, u64)> {
+        let current = self
+            .saved
+            .as_ref()
+            .is_some_and(|(_, at)| *at == self.revision);
+        (self.exists() && !current).then(|| (self.text.clone(), self.revision))
+    }
+
+    /// Reply `id` saved this box's text at `revision`.
+    pub(crate) fn mark_saved(&mut self, id: &str, revision: u64) {
+        if self.exists() {
+            self.saved = Some((id.to_string(), revision));
+        }
+    }
+
+    /// Reply `id` was deleted: a change makes a new one.
+    pub(crate) fn forget_saved(&mut self, id: &str) {
+        if self.saved.as_ref().is_some_and(|(saved, _)| saved == id) {
+            self.saved = None;
+        }
     }
 
     /// Read the reply's alias tokens against the mapping at `review` (its
@@ -136,7 +186,7 @@ impl ReplyBox {
         let map = RestoreMap::new(before.into_iter().map(|(_, e)| e).collect());
         match map.realias(&self.text, &aliases) {
             Some(text) => {
-                self.set(text);
+                self.set_followed(text);
                 true
             }
             None => false,
@@ -345,6 +395,7 @@ impl DocumentView {
                 ReplyEffect::Store => {
                     // A new reply's tokens name today's identities.
                     self.bind_reply();
+                    self.save_reply_soon(cx);
                 }
                 ReplyEffect::ShowReply => {
                     // Typing goes on in the box while the view opens beside it.
@@ -390,14 +441,34 @@ impl DocumentView {
         self.show_copy_feedback(cx);
     }
 
-    /// Open as tab: the restore tab Paste AI Response makes, from this reply,
-    /// with its guard when no identities are left to restore.
-    pub(crate) fn open_reply_as_tab(&mut self, cx: &mut Context<Self>) {
-        if !self.reply.exists() || !self.has_identities_to_restore("Open as tab", cx) {
+    /// Open reply: the box's reply, saved now if it changed, on the Reply
+    /// page.
+    pub(crate) fn open_saved_reply(&mut self, cx: &mut Context<Self>) {
+        if !self.reply.exists() {
             return;
         }
-        let text = self.reply.text().to_owned();
-        self.open_restore_tab(text, cx);
+        self.reply_save = None;
+        cx.emit(crate::workspace::TabEvent::Reply(
+            crate::workspace::ReplyEvent::Settled { open: true },
+        ));
+    }
+
+    /// Once the box's text settles, the workspace saves it; a cleared box
+    /// saves nothing.
+    fn save_reply_soon(&mut self, cx: &mut Context<Self>) {
+        if self.reply.unsaved().is_none() {
+            self.reply_save = None;
+            return;
+        }
+        self.reply_save = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(REPLY_SETTLE).await;
+            let _ = this.update(cx, |this, cx| {
+                this.reply_save = None;
+                cx.emit(crate::workspace::TabEvent::Reply(
+                    crate::workspace::ReplyEvent::Settled { open: false },
+                ));
+            });
+        }));
     }
 
     /// Next unrecognised: show the Reply view at the next unresolved token.
@@ -420,32 +491,7 @@ impl DocumentView {
     /// The reply editor's annotations: restored values in the original's
     /// gold, unresolved tokens red as in the restore tab.
     pub(super) fn reply_annotations(&self) -> Vec<mdoc_editor::SourceAnnotation> {
-        let theme = self.theme.get();
-        let gold = theme.proposed();
-        let red = crate::style::markdown_style(theme).alert_caution;
-        let mark = |id, range, accent: gpui::Hsla| mdoc_editor::SourceAnnotation {
-            id,
-            range,
-            color: gpui::Hsla { a: 0.16, ..accent },
-            active_color: gpui::Hsla { a: 0.34, ..accent },
-            border: gpui::Hsla { a: 0.5, ..accent },
-            text_color: Some(accent),
-            underline: None,
-            dotted: false,
-        };
-        let restored = self.reply.restored();
-        restored
-            .restored
-            .iter()
-            .enumerate()
-            .map(|(i, (range, _))| mark(i as u64, range.clone(), gold))
-            .chain(
-                restored
-                    .unresolved
-                    .iter()
-                    .map(|range| mark(UNRESOLVED_ID | range.start as u64, range.clone(), red)),
-            )
-            .collect()
+        reply_marks(self.reply.restored(), self.theme.get())
     }
 
     /// Focus the box (a click on its padding).
@@ -454,6 +500,45 @@ impl DocumentView {
             window.focus(&editor.read(cx).focus_handle(cx), cx);
         }
     }
+}
+
+/// How long the box's text rests before it is saved, as a document's.
+const REPLY_SETTLE: std::time::Duration = std::time::Duration::from_millis(700);
+
+/// A saved reply as Share lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SavedReplyRow {
+    pub id: String,
+    pub title: String,
+    /// Where it came from and when.
+    pub detail: String,
+}
+
+/// A restored reply's marks: restored values in the original's gold,
+/// unresolved tokens red, as the restore tab marked them.
+pub(crate) fn reply_marks(
+    restored: &RestoredText,
+    theme: crate::style::Theme,
+) -> Vec<mdoc_editor::SourceAnnotation> {
+    let gold = theme.proposed();
+    let red = crate::style::markdown_style(theme).alert_caution;
+    let mark = |id, range, accent: gpui::Hsla| mdoc_editor::SourceAnnotation {
+        id,
+        range,
+        color: gpui::Hsla { a: 0.16, ..accent },
+        active_color: gpui::Hsla { a: 0.34, ..accent },
+        border: gpui::Hsla { a: 0.5, ..accent },
+        text_color: Some(accent),
+        underline: None,
+        dotted: false,
+    };
+    (restored.restored.iter().enumerate())
+        .map(|(i, (range, _))| mark(i as u64, range.clone(), gold))
+        .chain(
+            (restored.unresolved.iter())
+                .map(|range| mark(UNRESOLVED_ID | range.start as u64, range.clone(), red)),
+        )
+        .collect()
 }
 
 #[cfg(test)]

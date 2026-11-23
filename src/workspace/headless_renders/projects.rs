@@ -1,8 +1,9 @@
 //! Projects: the Open Project list, a move into a Project with its toast,
+//! the Project page's three segments and its ⋯ menu,
 //! the Project page with its rename, categories and lists, the Keychain
 //! explainer, and the delete question.
 use super::{Driver, Result};
-use crate::workspace::project_page::Place;
+use crate::workspace::project_page::{Place, Segment};
 
 /// Moves the fixture document into the fixture Project; returns the
 /// Project's id.
@@ -42,6 +43,35 @@ pub(super) fn scenes(d: &mut Driver) -> Result<String> {
         w.open_project(&id, window, cx);
     })?;
     d.capture("project-page")?;
+    // Its saved replies: one of the Project's, from ChatGPT.
+    d.change(|w, _, cx| -> Result<()> {
+        let vault = w.vault.vault().cloned().ok_or("fixture Vault")?;
+        let alias = (w.projects.project(&id))
+            .and_then(|project| project.mapping.exported().first().map(|i| i.alias.clone()))
+            .ok_or("a fixture name")?;
+        vault
+            .save_reply(mdoc_vault::NewReply {
+                owner: mdoc_vault::ReplyOwner::Project(id.clone()),
+                title: "Reply to Public fixture".into(),
+                source_app: Some("ChatGPT".into()),
+                markdown: format!("{alias} keeps the deposit."),
+            })
+            .map_err(|e| e.to_string())?;
+        w.show_project_segment(Segment::Replies, cx);
+        Ok(())
+    })??;
+    d.capture("project-page-replies")?;
+    d.change(|w, _, cx| w.show_project_segment(Segment::Names, cx))?;
+    d.capture("project-page-names")?;
+    // The header's ⋯ menu, opened under its button.
+    d.change(|w, window, cx| {
+        w.show_project_segment(Segment::Documents, cx);
+        let width = window.viewport_size().width;
+        let at = gpui::point(width / 2. + gpui::px(260.), gpui::px(118.));
+        w.open_project_menu(&id, at, window, cx);
+    })?;
+    d.capture("project-page-menu")?;
+    d.key("escape")?;
     d.change(|w, window, cx| w.start_rename_project(id.clone(), window, cx))?;
     d.capture("rename-project")?;
     d.key("escape")?;
@@ -61,7 +91,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<String> {
             project.lists.add_never("Riverside Clinic");
             Some(())
         });
-        w.show_project_page(&id, Place::Delete, window, cx);
+        w.show_project_page(&id, Place::Names, window, cx);
     })?;
     d.capture("project-page-lists")?;
     d.change(|w, _, _| {

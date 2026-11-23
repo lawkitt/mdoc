@@ -207,6 +207,7 @@ impl Workspace {
         for id in ids {
             self.attach_project(id, cx);
         }
+        self.refresh_saved_replies(cx);
         cx.notify();
     }
 
@@ -567,6 +568,8 @@ impl Workspace {
 
     /// Save Project `id` through the writer, as it is when its write runs.
     pub(super) fn write_project(&mut self, id: &str, cx: &mut Context<Self>) {
+        // A reply on show restores with the names as they are now.
+        self.refresh_reply_page(cx);
         if !self.project_ui.unwritten.insert(id.to_string()) {
             return;
         }
@@ -849,6 +852,8 @@ impl Workspace {
             }
         }
         self.checkpoint(window, cx);
+        self.refresh_saved_replies(cx);
+        self.refresh_reply_page(cx);
         cx.notify();
     }
 
