@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -111,8 +112,17 @@ class ProjectScreensTest {
         tap("Paste")
         compose.waitForText("Paste text")
         compose.shown(hasSetTextAction() and hasText("Paste or type the text to check")).performTextInput("Ann Lee signed the lease.")
-        // The sheet's Add, not the page's button behind it.
-        compose.shown(hasText("Add") and hasClickAction() and !hasContentDescription("Add")).performScrollTo().performClick()
+        // The sheet's Add button, not the page's behind it; a touch, as its
+        // click action comes and goes while the sheet settles.
+        val sheetAdd = hasText("Add") and !hasContentDescription("Add") and
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button,
+            )
+        // Not by its bounds: a sheet's window can report none for a moment,
+        // and the closed sidebar has no button like it.
+        compose.waitUntil(15_000) { compose.onAllNodes(sheetAdd).fetchSemanticsNodes().isNotEmpty() }
+        runCatching { compose.onAllNodes(sheetAdd).onFirst().performScrollTo() }
+        compose.onAllNodes(sheetAdd).onFirst().performClick()
         compose.waitUntil(15_000) { app.core.vault.documents().isNotEmpty() }
         assertEquals(project.raw, app.core.vault.documents().single().projectId)
     }
