@@ -1,7 +1,7 @@
 //! The Vault: opening a file it already holds, and Home when there is no
 //! key store to keep documents with.
-use super::{Driver, Result};
-use std::path::Path;
+use super::{Driver, Result, Workspace};
+use std::path::{Path, PathBuf};
 
 /// The repeated-import question, for one file and for several; each is
 /// cancelled. The files are imported and closed first, beside the fixture.
@@ -22,34 +22,65 @@ pub(super) fn repeated_import(d: &mut Driver, folder: &Path) -> Result<()> {
     ] {
         std::fs::write(path, text).map_err(|e| e.to_string())?;
     }
-    let both = vec![one.clone(), two.clone()];
+    // Opened files are known by their normalized path: on macOS a temporary
+    // folder's /var is /private/var.
+    let both: Vec<PathBuf> = [&one, &two]
+        .into_iter()
+        .map(|path| mdoc_store::session_store::identity(path))
+        .collect();
+    let open_tabs = {
+        let both = both.clone();
+        move |w: &Workspace| -> Vec<u64> {
+            (w.admitted_from.iter())
+                .filter(|(_, from)| both.contains(from))
+                .map(|(id, _)| *id)
+                .collect()
+        }
+    };
     d.change({
         let both = both.clone();
         move |w, window, cx| w.open_paths(both, window, cx)
     })?;
-    d.settle()?;
+    // Imports run on a background thread: give them real time.
+    wait_until(d, "the imports", |w, _| open_tabs(w).len() == 2)?;
     // Closed, they are still in the Vault: opening them again asks.
     d.change({
-        let both = both.clone();
+        let open_tabs = open_tabs.clone();
         move |w, window, cx| {
-            let ids: Vec<u64> = (w.admitted_from.iter())
-                .filter(|(_, from)| both.contains(from))
-                .map(|(id, _)| *id)
-                .collect();
-            for id in ids {
+            for id in open_tabs(w) {
                 w.close_tab(id, window, cx);
             }
         }
     })?;
-    d.settle()?;
-    d.change(move |w, window, cx| w.open_paths(vec![one], window, cx))?;
-    d.settle()?;
+    wait_until(d, "the closes", |w, _| open_tabs(w).is_empty())?;
+    d.change({
+        let one = both[0].clone();
+        move |w, window, cx| w.open_paths(vec![one], window, cx)
+    })?;
+    wait_until(d, "the question", |_, window| window.has_active_prompt())?;
     d.capture("import-repeated")?;
     d.key("escape")?;
+    wait_until(d, "the answer", |_, window| !window.has_active_prompt())?;
     d.change(move |w, window, cx| w.open_paths(both, window, cx))?;
-    d.settle()?;
+    wait_until(d, "the question", |_, window| window.has_active_prompt())?;
     d.capture("import-repeated-several")?;
     d.key("escape")
+}
+
+/// Settle until `done` holds, for up to a minute of real time.
+fn wait_until(
+    d: &mut Driver,
+    what: &str,
+    done: impl Fn(&Workspace, &gpui::Window) -> bool,
+) -> Result<()> {
+    for _ in 0..600 {
+        d.settle()?;
+        if d.change(|w, window, _| done(w, window))? {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Err(format!("timed out waiting for {what}"))
 }
 
 /// Home and its banner with the Vault Unavailable; the Vault opens again
