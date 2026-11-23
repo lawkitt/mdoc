@@ -34,7 +34,7 @@ impl Vault {
     /// (Decision 7). They are found by the bytes an import keeps (a photo's
     /// without its metadata), whatever the file is called now.
     pub fn documents_from_source(&self, path: String) -> Result<Vec<DocumentInfo>, CoreError> {
-        let Some(source) = Source::of(Path::new(&path), false) else {
+        let Some(source) = Source::of(Path::new(&path), false)? else {
             return Ok(Vec::new());
         };
         let sha256 = mdoc_vault::source_sha256(source.reader()?)?;
@@ -65,9 +65,8 @@ impl Vault {
     pub fn copy_original(&self, id: String, folder: String) -> Result<String, CoreError> {
         let original = (self.store().document(&id)?.original)
             .ok_or_else(|| CoreError::case("This document keeps no original."))?;
-        let path =
-            self.store()
-                .copy_original_to(&id, Path::new(&folder), &original.info.file_name)?;
+        let name = file_name(&original.info.file_name);
+        let path = (self.store()).copy_original_to(&id, Path::new(&folder), &name)?;
         Ok(path.display().to_string())
     }
 
@@ -82,8 +81,41 @@ impl Vault {
             ));
         }
         let mut bytes = Vec::with_capacity(original.len as usize);
-        self.store().open_original(&id)?.read_to_end(&mut bytes)?;
+        (self.store().open_original(&id)?.take(IN_MEMORY + 1))
+            .read_to_end(&mut bytes)
+            .map_err(damaged)?;
+        if bytes.len() as u64 > IN_MEMORY {
+            return Err(CoreError::invalid(
+                "This original is too large to hold in memory: copy it to a folder.",
+            ));
+        }
         Ok(bytes)
+    }
+}
+
+/// `name` as a bare file name a viewing copy can take: a name kept from a
+/// phone may hold a colon or a backslash, which a copy refuses.
+fn file_name(name: &str) -> String {
+    let name: String = (name.chars())
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':') {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    match name.trim() {
+        "" | "." | ".." => "original".into(),
+        name => name.into(),
+    }
+}
+
+/// A read error, as the Vault's own when the original is damaged.
+fn damaged(error: std::io::Error) -> CoreError {
+    match (error.get_ref()).and_then(|inner| inner.downcast_ref::<mdoc_vault::VaultError>()) {
+        Some(inner) => CoreError::case(inner.to_string()),
+        None => error.into(),
     }
 }
 

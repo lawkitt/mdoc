@@ -592,7 +592,8 @@ impl Pending {
                         let info = mdoc_vault::OriginalInfo {
                             file_name: source.file_name.clone(),
                             password_protected: source.password_protected,
-                            import_warning: note.warning.clone(),
+                            // The notice alone: the left-out line is beside it.
+                            import_warning: note.notice.clone(),
                             left_out: note.left_out.clone(),
                         };
                         store.import_document(new, reader, info)?

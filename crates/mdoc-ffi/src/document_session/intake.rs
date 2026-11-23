@@ -71,7 +71,7 @@ pub(super) fn import_file(
             title,
             markdown,
             source_kind: source_kind(path),
-            source: Source::of(path, false),
+            source: Source::of(path, false)?,
             note: ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -115,7 +115,10 @@ pub(super) fn import_file(
             None,
         ),
     };
-    let source = Source::of(path, password.is_some());
+    // Locked as imported: an Office file the password unlocked in memory,
+    // or a PDF, which the apps give a password only once it asked for one.
+    let locked = imported.source.unlocked() || (imported.is_pdf && password.is_some());
+    let source = Source::of(path, locked)?;
     finish(
         title,
         source_kind(path),
@@ -200,7 +203,7 @@ pub(super) fn import_images(
     // One photo is its own original; pages picked together have none of
     // their own yet.
     let source = match images {
-        [image] => Source::of(image, false),
+        [image] => Source::of(image, false)?,
         _ => None,
     };
     finish(
@@ -278,21 +281,34 @@ enum SourceBytes {
 }
 
 impl Source {
-    /// What `path` keeps: `None` for a photo the core cannot strip of its
-    /// metadata, which is never kept with it.
-    pub(crate) fn of(path: &Path, password_protected: bool) -> Option<Self> {
-        let file_name = path.file_name()?.to_string_lossy().into_owned();
-        let bytes = if ImageFormat::from_path(path).is_some() {
-            let image = std::fs::read(path).ok()?;
-            SourceBytes::Memory(mdoc_import::image_pdf::without_metadata(&image)?)
-        } else {
-            SourceBytes::File(std::path::absolute(path).ok()?)
+    /// What `path` keeps: `None` for an image the core cannot strip of its
+    /// metadata (HEIC, TIFF, one it does not parse, one past the import's
+    /// size limit), which is never kept with it. An image is told by its
+    /// bytes, as the import tells it, whatever its name.
+    pub(crate) fn of(path: &Path, password_protected: bool) -> std::io::Result<Option<Self>> {
+        let Some(file_name) = path.file_name() else {
+            return Ok(None);
         };
-        Some(Self {
+        let file_name = file_name.to_string_lossy().into_owned();
+        let bytes = match mdoc_import::image_pdf::format_of_file(path)? {
+            Some(ImageFormat::Tiff | ImageFormat::Heic) => return Ok(None),
+            Some(_) => {
+                if std::fs::metadata(path)?.len() > mdoc_import::import::MAX_PDF_BYTES {
+                    return Ok(None);
+                }
+                let image = std::fs::read(path)?;
+                match mdoc_import::image_pdf::without_metadata(&image) {
+                    Some(stripped) => SourceBytes::Memory(stripped),
+                    None => return Ok(None),
+                }
+            }
+            None => SourceBytes::File(std::path::absolute(path)?),
+        };
+        Ok(Some(Self {
             bytes,
             file_name,
             password_protected,
-        })
+        }))
     }
 
     /// The bytes it keeps, to read once.

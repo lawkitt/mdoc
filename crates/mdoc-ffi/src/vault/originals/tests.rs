@@ -138,7 +138,9 @@ fn a_photo_keeps_no_metadata_in_its_original() {
     let raw = std::fs::read(&photo).unwrap();
     let stripped = mdoc_import::image_pdf::without_metadata(&raw).unwrap();
     assert_ne!(stripped, raw);
-    let source = crate::document_session::Source::of(&photo, false).unwrap();
+    let source = (crate::document_session::Source::of(&photo, false))
+        .unwrap()
+        .unwrap();
     assert_eq!(source.file_name, "Photo.jpg");
     let mut kept = Vec::new();
     std::io::Read::read_to_end(&mut source.reader().unwrap(), &mut kept).unwrap();
@@ -148,6 +150,152 @@ fn a_photo_keeps_no_metadata_in_its_original() {
             .unwrap()
             .is_empty()
     );
+}
+
+/// A locked PDF keeps its original locked too; an open file given a
+/// password anyway is not marked locked (review 4).
+#[test]
+fn a_locked_pdf_stays_locked_and_an_open_file_is_not_marked() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let password = || ImportOptions {
+        password: Some("Petrov-2026".into()),
+        ..ImportOptions::default()
+    };
+    let pdf = fixture("pdf-source/comments-aes256.pdf");
+    let id = imported(&vault, &pdf, password());
+    assert!(
+        vault
+            .original(id.clone())
+            .unwrap()
+            .unwrap()
+            .password_protected
+    );
+    assert_eq!(
+        vault.original_bytes(id).unwrap(),
+        std::fs::read(&pdf).unwrap()
+    );
+    let open = imported(&vault, &fixture("locked-office/word-open.docx"), password());
+    assert!(!vault.original(open).unwrap().unwrap().password_protected);
+}
+
+/// The original keeps the import's notice and left-out line apart: a PDF
+/// with comments has a left-out line and no notice (review 3).
+#[test]
+fn the_original_keeps_the_notice_and_the_left_out_line_apart() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let id = imported(
+        &vault,
+        &fixture("pdf-source/comments.pdf"),
+        ImportOptions::default(),
+    );
+    let original = vault.original(id).unwrap().unwrap();
+    assert_eq!(original.import_warning, None);
+    assert!(
+        original
+            .left_out
+            .is_some_and(|line| line.contains("comment"))
+    );
+}
+
+/// A name a phone allows but a copy refuses becomes one it takes; an
+/// image named as something else is still told by its bytes and kept
+/// without its metadata (reviews 1 and 2).
+#[test]
+fn names_never_decide_what_is_kept_or_block_a_copy() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let notes = scratch.path().join("Notes 11:23.md");
+    std::fs::write(&notes, "Ann Lee wrote.").unwrap();
+    let id = imported(&vault, &notes, ImportOptions::default());
+    assert_eq!(
+        vault.original(id.clone()).unwrap().unwrap().file_name,
+        "Notes 11:23.md"
+    );
+    let view = scratch.path().join("view");
+    let copy = vault.copy_original(id, view.display().to_string()).unwrap();
+    assert_eq!(PathBuf::from(copy), view.join("Notes 11-23.md"));
+
+    let disguised = scratch.path().join("scan.bin");
+    std::fs::copy(fixture("images/gps-rotated.jpg"), &disguised).unwrap();
+    let raw = std::fs::read(&disguised).unwrap();
+    let source = (crate::document_session::Source::of(&disguised, false))
+        .unwrap()
+        .unwrap();
+    let mut kept = Vec::new();
+    std::io::Read::read_to_end(&mut source.reader().unwrap(), &mut kept).unwrap();
+    assert_eq!(
+        kept,
+        mdoc_import::image_pdf::without_metadata(&raw).unwrap()
+    );
+    let missing = scratch.path().join("gone.jpg");
+    assert!(
+        vault
+            .documents_from_source(missing.display().to_string())
+            .is_err()
+    );
+}
+
+/// Over 16 MiB an original is refused in memory and still copies; a
+/// damaged one fails both ways, as damaged, and leaves no copy (review 5).
+#[test]
+fn a_large_or_damaged_original() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let root = scratch.path().join("vault");
+    let large = {
+        let store = mdoc_vault::Vault::open(&root, &[9; 32]).unwrap();
+        let bytes = vec![b'x'; 16 * 1024 * 1024 + 1];
+        store
+            .import_document(
+                mdoc_vault::NewDocument {
+                    project: None,
+                    title: "Large".into(),
+                    source_kind: mdoc_vault::SourceKind::Text,
+                    origin: mdoc_vault::DocumentOrigin::Ordinary,
+                    markdown: String::new(),
+                },
+                bytes.as_slice(),
+                mdoc_vault::OriginalInfo {
+                    file_name: "large.txt".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .id
+    };
+    vault.refresh().unwrap();
+    assert!(matches!(
+        vault.original_bytes(large.clone()),
+        Err(crate::CoreError::Invalid { .. })
+    ));
+    let view = scratch.path().join("view");
+    let copy = vault
+        .copy_original(large, view.display().to_string())
+        .unwrap();
+    assert_eq!(std::fs::metadata(copy).unwrap().len(), 16 * 1024 * 1024 + 1);
+
+    let docx = fixture("../../docs/product-media/Settlement agreement.docx");
+    let id = imported(&vault, &docx, ImportOptions::default());
+    let sealed = root.join("docs").join(&id).join("original.enc");
+    let mut bytes = std::fs::read(&sealed).unwrap();
+    *bytes.last_mut().unwrap() ^= 1;
+    std::fs::write(&sealed, bytes).unwrap();
+    assert!(matches!(
+        vault.original_bytes(id.clone()),
+        Err(crate::CoreError::Case { .. })
+    ));
+    let damaged_view = scratch.path().join("damaged");
+    assert!(
+        vault
+            .copy_original(id, damaged_view.display().to_string())
+            .is_err()
+    );
+    let left: Vec<_> = (std::fs::read_dir(&damaged_view).into_iter().flatten())
+        .flatten()
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
 }
 
 /// The original is read at the first save: a file gone by then fails the
