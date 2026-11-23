@@ -63,17 +63,22 @@ impl Vault {
         summaries.sort_by(|a, b| (a.created, &a.title, &a.id).cmp(&(b.created, &b.title, &b.id)));
         for summary in summaries {
             let written = self.document(&summary.id).and_then(|document| {
+                // Moved out of the Project since the list was read.
+                if document.project.as_deref() != Some(id) {
+                    return Ok(false);
+                }
                 if !document.markdown.is_empty() || document.original.is_none() {
-                    let name = names.take(&safe_stem(&document.title), ".md");
-                    write_new(&folder.join(name), document.markdown.as_bytes())?;
+                    let (_, mut file) =
+                        names.create(&folder, &safe_stem(&document.title), ".md")?;
+                    file.write_all(document.markdown.as_bytes())?;
+                    file.sync_all()?;
                 }
                 if let Some(kept) = &document.original {
                     let (stem, extension) = split_name(&kept.info.file_name);
                     let dir = folder.join(ORIGINALS);
                     std::fs::create_dir_all(&dir)?;
-                    let path = dir.join(originals.take(&safe_stem(stem), &extension));
                     let mut reader = self.open_original(&document.id)?;
-                    let mut file = create_new(&path)?;
+                    let (path, mut file) = originals.create(&dir, &safe_stem(stem), &extension)?;
                     let copied = io::copy(&mut reader, &mut file)
                         .map_err(original::read_error)
                         .and_then(|_| file.sync_all().map_err(VaultError::from));
@@ -83,10 +88,11 @@ impl Vault {
                         return Err(error);
                     }
                 }
-                Ok(())
+                Ok(true)
             });
             match written {
-                Ok(()) => exported.documents += 1,
+                Ok(true) => exported.documents += 1,
+                Ok(false) => {}
                 Err(error) => exported.failed.push((summary.title.clone(), error)),
             }
         }
@@ -114,6 +120,20 @@ impl Names {
                 return name;
             }
             n += 1;
+        }
+    }
+
+    /// A new file in `dir` under the next free name: one the file system
+    /// already holds, as a name equal to another only once normalized,
+    /// takes the next.
+    fn create(&mut self, dir: &Path, stem: &str, extension: &str) -> io::Result<(PathBuf, File)> {
+        loop {
+            let path = dir.join(self.take(stem, extension));
+            match create_new(&path) {
+                Ok(file) => return Ok((path, file)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
         }
     }
 }
@@ -157,12 +177,6 @@ fn resolved(path: &Path) -> io::Result<PathBuf> {
 
 fn create_new(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(path)
-}
-
-fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut file = create_new(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()
 }
 
 /// A file name's stem and its extension with the dot (empty when none).
@@ -213,18 +227,18 @@ pub(crate) fn safe_stem(title: &str) -> String {
     if stem.is_empty() {
         return "Untitled".into();
     }
+    // Windows reads a device name in the part before the first dot, with
+    // trailing spaces, and COM and LPT take ¹, ² and ³ as digits too.
     let device = stem.split('.').next().unwrap_or_default().trim_end();
-    let reserved = matches!(
-        device.to_ascii_uppercase().as_str(),
-        "CON" | "PRN" | "AUX" | "NUL"
-    ) || (device.len() == 4
-        && device.is_ascii()
-        && ["COM", "LPT"]
-            .iter()
-            .any(|p| device[..3].eq_ignore_ascii_case(p))
-        && device.as_bytes()[3].is_ascii_digit());
+    let upper = device.to_uppercase();
+    let mut chars = upper.chars();
+    let prefix: String = chars.by_ref().take(3).collect();
+    let rest: Vec<char> = chars.collect();
+    let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (matches!(prefix.as_str(), "COM" | "LPT")
+            && matches!(rest.as_slice(), [c] if c.is_ascii_digit() || matches!(c, '¹' | '²' | '³')));
     if reserved {
-        stem.push('-');
+        stem.insert(0, '-');
     }
     stem
 }
@@ -240,8 +254,11 @@ mod tests {
         assert_eq!(safe_stem("..hidden"), "hidden");
         assert_eq!(safe_stem("ends with dots. . "), "ends with dots");
         assert_eq!(safe_stem("   "), "Untitled");
-        assert_eq!(safe_stem("con"), "con-");
-        assert_eq!(safe_stem("COM1.notes"), "COM1.notes-");
+        assert_eq!(safe_stem("con"), "-con");
+        assert_eq!(safe_stem("COM1.notes"), "-COM1.notes");
+        assert_eq!(safe_stem("lpt²"), "-lpt²");
+        assert_eq!(safe_stem("nul .txt"), "-nul .txt");
+        assert_eq!(safe_stem("COM10"), "COM10");
         assert_eq!(safe_stem("Console"), "Console");
         assert_eq!(safe_stem("line\nbreak"), "line-break");
         let long = safe_stem(&"ё".repeat(200));

@@ -28,6 +28,8 @@ impl Workspace {
                 return;
             }
         };
+        // Edits not written yet go first, so the export has them.
+        self.autosave_all(window, cx);
         let folder = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -35,12 +37,33 @@ impl Workspace {
             prompt: Some(format!("Export \u{201c}{name}\u{201d} Here").into()),
         });
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(mut folders))) = folder.await else {
+            let into = match folder.await {
+                Ok(Ok(Some(mut folders))) => folders.pop(),
+                // Cancelled.
+                Ok(Ok(None)) | Err(_) => None,
+                Ok(Err(error)) => {
+                    let _ = this.update(cx, |this, cx| {
+                        this.notices.post(format!(
+                            "Could not export \u{201c}{name}\u{201d}: the folder chooser \
+                             didn't open. {error}"
+                        ));
+                        cx.notify();
+                    });
+                    None
+                }
+            };
+            let Some(into) = into else {
                 return;
             };
-            let Some(into) = folders.pop() else {
-                return;
-            };
+            // Wait for the autosaves queued above, and any still running.
+            while this
+                .update(cx, |this, _| this.document_writer.busy())
+                .unwrap_or(false)
+            {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(50))
+                    .await;
+            }
             let exported = cx
                 .background_executor()
                 .spawn(async move { vault.export_project(&project, &into) })
