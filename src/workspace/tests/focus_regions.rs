@@ -623,14 +623,10 @@ fn opening_a_project_with_enter_closes_the_list_and_focuses_its_page(cx: &mut Te
         let w = tabs.read(cx);
         assert_eq!(w.project_ui.page.as_ref().unwrap().id(), project);
         assert!(w.focus_regions.home().contains_focused(window, cx));
+        // No document opened; the empty New under the page went.
         assert!(
             w.active_view()
-                .unwrap()
-                .read(cx)
-                .session
-                .document
-                .path
-                .is_none()
+                .is_none_or(|view| view.read(cx).session.document.id().is_none())
         );
         assert_eq!(w.project_ui.member_reads, 0);
     });

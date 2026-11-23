@@ -81,15 +81,11 @@ pub(super) struct VaultTree {
     cursor: Option<RowKey>,
 }
 
-/// Unfiled's order: newest import first, so a row never moves while its
-/// document is edited.
+/// Unfiled's order: newest import first, then by id, neither of which an
+/// edit changes, so a row never moves while its document is edited.
 fn unfiled(documents: &[DocumentSummary]) -> Vec<&DocumentSummary> {
     let mut unfiled: Vec<_> = documents.iter().filter(|d| d.project.is_none()).collect();
-    unfiled.sort_by(|a, b| {
-        (b.created.cmp(&a.created))
-            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    unfiled.sort_by(|a, b| (b.created.cmp(&a.created)).then_with(|| a.id.cmp(&b.id)));
     unfiled
 }
 

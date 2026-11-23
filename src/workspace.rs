@@ -323,6 +323,11 @@ pub(super) struct Workspace {
     /// Tabs whose close waits for their last text to be written: a write
     /// that fails keeps the tab and its edit.
     closing_after_write: std::collections::HashSet<u64>,
+    /// Of those, the ones eviction closes: viewing one again keeps it.
+    evicting: std::collections::HashSet<u64>,
+    /// Views whose last write failed: their edit is in no file, so eviction
+    /// keeps them.
+    unsaved: std::collections::HashSet<u64>,
     /// One admission at a time, so a repeat waits for the import before it.
     admitting: bool,
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
@@ -550,6 +555,8 @@ impl Workspace {
             document_writer: Default::default(),
             admitted_from: Default::default(),
             closing_after_write: Default::default(),
+            evicting: Default::default(),
+            unsaved: Default::default(),
             admitting: false,
             admit_queue: Default::default(),
             // Tests name their own; they never touch the real cache.
@@ -1202,8 +1209,9 @@ impl Workspace {
                 if let Ok(loaded) = &result {
                     this.tabs.set_document(id, loaded.document.id());
                 }
-                // A dialog keeps the keyboard while the document loads behind it.
-                let dialog = this.dialog_up(window);
+                // A dialog, or the recency switcher, keeps the keyboard while
+                // the document loads behind it.
+                let dialog = this.dialog_up(window) || this.switcher.is_some();
                 let _ = weak.update(cx, |view, cx| {
                     if !view.lifecycle.finish_load(generation, result.is_ok()) {
                         return;
@@ -1290,6 +1298,8 @@ impl Workspace {
                     cx.notify();
                 });
                 this.attach_project(id, cx);
+                // A view kept while it loaded may be evicted now.
+                this.evict(window, cx);
                 cx.notify();
             });
         })
@@ -1318,8 +1328,11 @@ impl Workspace {
         }
         self.project_ui.page = None;
         self.end_rename(true, cx);
-        // Viewed again before its eviction's write ended: it stays.
-        self.closing_after_write.remove(&id);
+        // Viewed again before its eviction's write ended: it stays. An
+        // explicit close (a Project's Close all) goes on.
+        if self.evicting.remove(&id) {
+            self.closing_after_write.remove(&id);
+        }
         let left = self.tabs.active();
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| {
@@ -1796,6 +1809,8 @@ impl Workspace {
             self.switcher = None;
         }
         self.closing_after_write.remove(&id);
+        self.evicting.remove(&id);
+        self.unsaved.remove(&id);
         self.vault.forget(id);
         self.admitted_from.remove(&id);
         if let Some(dir) = self.viewing_dir(id) {
@@ -1836,10 +1851,14 @@ impl Workspace {
             Arrival::Unrecorded
         };
         if let Some(LiveViewsEffect::Activate(next)) = effect {
-            if self.tabs.home() {
-                // Home stays over the next most recent view.
+            if self.tabs.home() || self.project_ui.page.is_some() {
+                // Home, or a Project page, stays over the next most recent
+                // view.
+                let home = self.tabs.home();
                 self.tabs.activate(next);
-                self.tabs.show_home();
+                if home {
+                    self.tabs.show_home();
+                }
             } else {
                 self.activate_as(next, arrival, window, cx);
             }

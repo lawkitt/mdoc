@@ -426,3 +426,84 @@ fn an_empty_new_document_is_dropped_when_left(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| assert!(tabs.read(cx).tabs.contains(typed)));
 }
+
+#[gpui::test]
+fn an_empty_new_document_is_dropped_when_a_project_page_covers_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let [note] = open_notes(&tabs, cx, dir.path(), &["a"])[..] else {
+        unreachable!()
+    };
+    let project = new_project(&tabs, cx, note);
+    tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
+    let blank = tabs.update_in(cx, |w, window, cx| w.new_tab(window, cx));
+    cx.run_until_parked();
+    tabs.update_in(cx, |w, window, cx| w.open_project(&project, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        assert!(!w.tabs.contains(blank));
+        assert!(w.project_ui.page.is_some(), "the page stays");
+    });
+}
+
+#[gpui::test]
+fn views_kept_while_they_load_are_evicted_once_loaded(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("vault");
+    let ids: Vec<String> = {
+        let vault = mdoc_vault::Vault::open(&root, &[3; 32]).unwrap();
+        (0..=LIMIT)
+            .map(|i| {
+                vault
+                    .create_document(mdoc_vault::NewDocument {
+                        project: None,
+                        title: format!("Note {i}"),
+                        source_kind: mdoc_vault::SourceKind::Markdown,
+                        origin: mdoc_vault::DocumentOrigin::Ordinary,
+                        markdown: format!("note {i}"),
+                    })
+                    .unwrap()
+                    .id
+            })
+            .collect()
+    };
+    let (tabs, cx) = boot_on_vault(cx, Session::default(), &root);
+    // Nine opened in one go, as a Project's Open all does: each is loading,
+    // so none can go yet.
+    tabs.update_in(cx, |w, window, cx| {
+        for id in &ids {
+            let id = mdoc_store::document_id::VaultId::parse(id).unwrap();
+            w.open_vault_document(id, window, cx);
+        }
+    });
+    cx.run_until_parked();
+    assert_eq!(live(&tabs, cx), LIMIT);
+}
+
+#[gpui::test]
+fn back_reaches_a_new_document_by_its_id_once_evicted(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |w, window, cx| {
+        w.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_input("fresh words");
+    // The autosave's pause, then its write: the New document has an id.
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(800));
+    cx.run_until_parked();
+    let fresh = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let document = document_of(&tabs, fresh, cx);
+    let names: Vec<String> = (1..=LIMIT).map(|i| format!("n{i}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    open_notes(&tabs, cx, dir.path(), &names);
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(fresh), "evicted"));
+    for _ in 0..LIMIT {
+        tabs.update_in(cx, |w, window, cx| w.navigate(true, window, cx));
+        cx.run_until_parked();
+    }
+    let shown = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    assert_eq!(document_of(&tabs, shown, cx), document);
+}

@@ -144,6 +144,7 @@ impl Workspace {
         };
         if busy
             || document.as_ref().is_some_and(|d| self.moving.contains(d))
+            || self.unsaved.contains(&tab.id())
             || self.write_pending_for(tab.id(), cx)
         {
             Weight::Busy
@@ -161,7 +162,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if id == self.tabs.active() && !self.tabs.home() {
+        if id == self.tabs.active() && !self.tabs.home() && self.project_ui.page.is_none() {
             return;
         }
         let Some(tab) = self.tabs.get(id) else {
@@ -198,6 +199,7 @@ impl Workspace {
             .tabs
             .evictable(LIMIT, |tab| self.eviction_weight(tab, cx));
         for id in evicted {
+            self.evicting.insert(id);
             self.close_tab(id, window, cx);
         }
     }
@@ -437,9 +439,26 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let vault = self.vault.vault().cloned();
+        let Some(vault) = self.vault.vault().cloned() else {
+            for document in &documents {
+                self.moving.remove(document);
+            }
+            return;
+        };
         let mut failed = None;
         for document in &documents {
+            // A failure after its record went (its folder's cleanup) still
+            // deleted it; one before keeps it, and its live view and edits.
+            let result = vault.delete_document(document.as_str());
+            let gone = result.is_ok()
+                || !(vault.documents().iter()).any(|summary| summary.id == document.as_str());
+            if let Err(error) = result {
+                failed = Some(error);
+            }
+            self.moving.remove(document);
+            if !gone {
+                continue;
+            }
             if let Some(tab) = self.find_document(&DocumentId::Vault(document.clone()), None, cx) {
                 // Home takes a shown document's page.
                 if tab == self.tabs.active() && !self.showing_overview(cx) {
@@ -447,12 +466,6 @@ impl Workspace {
                 }
                 self.remove(tab, window, cx);
             }
-            if let Some(vault) = &vault
-                && let Err(error) = vault.delete_document(document.as_str())
-            {
-                failed = Some(error);
-            }
-            self.moving.remove(document);
             self.navigation.forget(&Stop::Document(document.clone()));
         }
         let now = self.tree_now();

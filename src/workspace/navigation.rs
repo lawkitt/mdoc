@@ -71,6 +71,16 @@ impl History {
         self.before = false;
     }
 
+    /// `from` is known as `to` from now on: a New document got its id.
+    pub(super) fn rename(&mut self, from: &Stop, to: Stop) {
+        for stop in &mut self.stops {
+            if stop == from {
+                *stop = to.clone();
+            }
+        }
+        self.normalize(|_| true);
+    }
+
     /// A tab closed or a Project was deleted: drop its stops. The position stays
     /// on the stop it was on, or on the one before when that one went, or
     /// before the rest when nothing preceded it.
@@ -213,6 +223,17 @@ mod tests {
         assert_eq!(travel(&mut history, true, live), None);
         assert_eq!(travel(&mut history, false, live), Some(Stop::Tab(3)));
         assert_eq!(travel(&mut history, false, live), None);
+    }
+
+    #[test]
+    fn a_renamed_stop_keeps_its_place_and_forward() {
+        let id = mdoc_store::document_id::VaultId::parse(&"a".repeat(32)).unwrap();
+        let mut history = visited([Stop::Home, Stop::Tab(1), Stop::Tab(2)]);
+        history.go(1);
+        history.rename(&Stop::Tab(1), Stop::Document(id.clone()));
+        assert_eq!(history.current(), Some(&Stop::Document(id)));
+        assert_eq!(target(&history, false), Some(&Stop::Tab(2)));
+        assert_eq!(target(&history, true), Some(&Stop::Home));
     }
 
     #[test]
