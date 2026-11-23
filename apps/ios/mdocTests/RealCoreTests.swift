@@ -257,7 +257,7 @@ final class RealCoreTests: XCTestCase {
     }
 
     /// File names from titles follow the core's rule (#683, `file_stem` in
-    /// `crates/mdoc-ffi/src/library.rs`): a look-alike for each character a
+    /// `crates/mdoc-ffi/src/file_names.rs`): a look-alike for each character a
     /// file name cannot hold, control characters as "-", no leading dot,
     /// at most 240 bytes before the extension, cut on a character.
     func testFileNamesFollowTheCoresRule() {

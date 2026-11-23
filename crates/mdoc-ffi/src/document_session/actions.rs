@@ -1,7 +1,7 @@
 //! What a tap on the review screen does, in one core call (refactor
-//! grill Q12): `DocumentSession::review` takes the action by mention id,
-//! saves into the library when something changed, and returns the snapshot
-//! after it, so the app neither looks the mention up in a snapshot first nor
+//! grill Q12): `DocumentSession::review` takes the action by mention id
+//! and returns the snapshot after it (`save_pending_into_vault` saves it),
+//! so the app neither looks the mention up in a snapshot first nor
 //! takes a second one. Its refusals are typed (`ReviewError`). Beside it:
 //! Copy for AI's hand-off, which refuses while proposals are pending, and
 //! what the session holds, read without a snapshot.
@@ -9,9 +9,8 @@ use super::{Document, DocumentSession, no_document, review::Scope, span};
 use crate::{
     CoreError, ReviewError,
     document_session::{Category, DocumentPhase, ReviewSnapshot},
-    library::{Library, TextRange},
+    text::TextRange,
 };
-use std::sync::Arc;
 
 /// One review action. Mentions are named by `Mention::id`, identities by
 /// `IdentityRow::id`.
@@ -115,8 +114,6 @@ pub struct HandOff {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct SessionInfo {
     pub title: String,
-    /// The library file, once saved.
-    pub path: Option<String>,
     pub case_id: Option<String>,
     pub scanned: bool,
     pub phase: DocumentPhase,
@@ -164,32 +161,18 @@ pub fn occurrences(text: String, wording: String) -> Vec<TextRange> {
 
 #[uniffi::export]
 impl DocumentSession {
-    /// Apply `action`, then, given `library`, save as `save` does unless
-    /// nothing changed since the last save; the snapshot after. Without
-    /// `library` the change waits for `save_pending`, which saves every
-    /// action since the last save at once (the save follows the
-    /// tap).
-    pub fn review(
-        &self,
-        action: ReviewAction,
-        library: Option<Arc<Library>>,
-    ) -> Result<ReviewSnapshot, ReviewError> {
-        let _saving = library.as_ref().map(|_| self.lock_saving());
+    /// Apply `action`; the snapshot after. The change waits for
+    /// `save_pending_into_vault`, which saves every action since the last
+    /// save at once (the save follows the tap).
+    pub fn review(&self, action: ReviewAction) -> Result<ReviewSnapshot, ReviewError> {
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
         document.apply(action)?;
-        match library {
-            Some(library) if document.saved != Some(document.change_key()) => {
-                Ok(document.save(&library)?.review)
-            }
-            _ => Ok(document.snapshot()),
-        }
+        Ok(document.snapshot())
     }
 
-    /// Copy for AI and Share: refused while proposals are pending. Given
-    /// `library`, the document's case becomes the current one, as sharing
-    /// makes it (`Library::note_shared`).
-    pub fn hand_off(&self, library: Option<Arc<Library>>) -> Result<HandOff, ReviewError> {
+    /// Copy for AI and Share: refused while proposals are pending.
+    pub fn hand_off(&self) -> Result<HandOff, ReviewError> {
         let guard = self.lock_document();
         let document = guard.as_ref().ok_or_else(no_document)?;
         let count = document.proposed();
@@ -200,9 +183,6 @@ impl DocumentSession {
             text: document.review.copy_for_ai(),
             file_name: document.share_file_name(),
         };
-        if let (Some(library), Some(case)) = (library, &document.case) {
-            library.note_shared(case.clone())?;
-        }
         Ok(hand_off)
     }
 
@@ -254,15 +234,14 @@ impl DocumentSession {
         })
     }
 
-    /// The title, file, case and phase; `None` before a document is read.
+    /// The title, Project and phase; `None` before a document is read.
     pub fn info(&self) -> Option<SessionInfo> {
         let guard = self.lock_document();
         let document = guard.as_ref()?;
         let proposed = document.proposed();
         Some(SessionInfo {
             title: document.title.clone(),
-            path: document.path.as_ref().map(|p| p.display().to_string()),
-            case_id: document.case_or_project().map(str::to_owned),
+            case_id: document.project().map(str::to_owned),
             scanned: document.scanned,
             phase: DocumentPhase::of(document.scanned, proposed),
             proposed,
@@ -422,7 +401,8 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{document_session::MentionState, test_support::Scratch};
+    use crate::{document_session::MentionState, test_support::Scratch, vault::Vault};
+    use std::sync::Arc;
 
     fn names(names: &[(&str, Category)]) -> ReviewAction {
         ReviewAction::ProposeNames {
@@ -440,7 +420,7 @@ mod tests {
         let session = DocumentSession::new();
         session.import_text(text.into(), "Letter".into()).unwrap();
         let people: Vec<_> = proposed.iter().map(|w| (*w, Category::Person)).collect();
-        let snapshot = session.review(names(&people), None).unwrap();
+        let snapshot = session.review(names(&people)).unwrap();
         (session, snapshot)
     }
 
@@ -473,13 +453,10 @@ mod tests {
             id(&start, "Ann Lee", 1),
         );
         let replaced = session
-            .review(
-                ReviewAction::Replace {
-                    mention: ann,
-                    scope: Scope::This,
-                },
-                None,
-            )
+            .review(ReviewAction::Replace {
+                mention: ann,
+                scope: Scope::This,
+            })
             .unwrap();
         assert_eq!(replaced.text, "PERSON_1 met Bob Hart. Ann Lee left.");
         assert_eq!(
@@ -491,35 +468,26 @@ mod tests {
             ]
         );
         let kept = session
-            .review(
-                ReviewAction::Keep {
-                    mention: bob,
-                    scope: Scope::All,
-                },
-                None,
-            )
+            .review(ReviewAction::Keep {
+                mention: bob,
+                scope: Scope::All,
+            })
             .unwrap();
         assert_eq!(id(&kept, "Bob Hart", 0), bob);
-        let all = session.review(ReviewAction::ReplaceAll, None).unwrap();
+        let all = session.review(ReviewAction::ReplaceAll).unwrap();
         assert_eq!(all.text, "PERSON_1 met Bob Hart. PERSON_1 left.");
         assert_eq!(id(&all, "Ann Lee", 1), again);
-        let undone = session.review(ReviewAction::Undo, None).unwrap();
+        let undone = session.review(ReviewAction::Undo).unwrap();
         assert_eq!(ids(&undone), ids(&kept));
-        let undone = session.review(ReviewAction::Undo, None).unwrap();
+        let undone = session.review(ReviewAction::Undo).unwrap();
         assert_eq!(ids(&undone), ids(&replaced));
-        session.review(ReviewAction::Redo, None).unwrap();
-        assert_eq!(
-            ids(&session.review(ReviewAction::Redo, None).unwrap()),
-            ids(&all)
-        );
+        session.review(ReviewAction::Redo).unwrap();
+        assert_eq!(ids(&session.review(ReviewAction::Redo).unwrap()), ids(&all));
         assert!(matches!(
-            session.review(
-                ReviewAction::Keep {
-                    mention: 999,
-                    scope: Scope::This
-                },
-                None
-            ),
+            session.review(ReviewAction::Keep {
+                mention: 999,
+                scope: Scope::This
+            }),
             Err(ReviewError::NotFound)
         ));
     }
@@ -540,23 +508,17 @@ mod tests {
         assert!(start.kept_identities.is_empty());
         let ann = id(&start, "Ann Lee", 0);
         session
-            .review(
-                ReviewAction::Replace {
-                    mention: ann,
-                    scope: Scope::All,
-                },
-                None,
-            )
+            .review(ReviewAction::Replace {
+                mention: ann,
+                scope: Scope::All,
+            })
             .unwrap();
         let bob = id(&start, "Bob Hart", 0);
         let snapshot = session
-            .review(
-                ReviewAction::Keep {
-                    mention: bob,
-                    scope: Scope::All,
-                },
-                None,
-            )
+            .review(ReviewAction::Keep {
+                mention: bob,
+                scope: Scope::All,
+            })
             .unwrap();
         let row = |alias: &str| {
             snapshot
@@ -588,7 +550,7 @@ mod tests {
         assert!(!imported.scanned);
         assert_eq!(imported.phase, DocumentPhase::Unscanned);
         let scanned = session
-            .review(names(&[("Ann Lee", Category::Person)]), None)
+            .review(names(&[("Ann Lee", Category::Person)]))
             .unwrap();
         assert!(scanned.scanned && scanned.mentions.is_empty());
         assert_eq!(scanned.phase, DocumentPhase::Ready);
@@ -632,20 +594,20 @@ mod tests {
             scope: Scope::All,
             alias: alias.into(),
         };
-        match session.review(rename(" PERSON_2 "), None) {
+        match session.review(rename(" PERSON_2 ")) {
             Err(ReviewError::AliasTaken { alias, identity }) => {
                 assert_eq!((alias.as_str(), identity), ("PERSON_2", bob));
             }
             other => panic!("{other:?}"),
         }
         assert!(matches!(
-            session.review(rename("not an alias"), None),
+            session.review(rename("not an alias")),
             Err(ReviewError::Refused { .. })
         ));
-        let renamed = session.review(rename("CLIENT"), None).unwrap();
+        let renamed = session.review(rename("CLIENT")).unwrap();
         assert!(renamed.identities.iter().any(|i| i.alias == "CLIENT"));
         // Its own alias again is no refusal.
-        session.review(rename("CLIENT"), None).unwrap();
+        session.review(rename("CLIENT")).unwrap();
     }
 
     /// Fix the words on a replaced name: the draft shows its original as a
@@ -655,7 +617,7 @@ mod tests {
     fn fix_the_words_runs_from_the_draft() {
         let text = "Mr Ann Lee signed.\nMr Ann Lee paid.";
         let (session, start) = session(text, &["Mr Ann Lee"]);
-        let replaced = session.review(ReviewAction::ReplaceAll, None).unwrap();
+        let replaced = session.review(ReviewAction::ReplaceAll).unwrap();
         assert_eq!(replaced.text, "PERSON_1 signed.\nPERSON_1 paid.");
         let mention = id(&replaced, "Mr Ann Lee", 0);
         assert_eq!(mention, id(&start, "Mr Ann Lee", 0));
@@ -675,7 +637,7 @@ mod tests {
         assert_eq!(target.wording, "Ann Lee signed");
         let words = TextRange { start: 3, end: 10 };
         let fixed = session
-            .review(ReviewAction::FixWords { mention, words }, None)
+            .review(ReviewAction::FixWords { mention, words })
             .unwrap();
         assert_eq!(fixed.text, "Mr PERSON_1 signed.\nMr PERSON_1 paid.");
         let step = fixed.undo_step.unwrap();
@@ -683,114 +645,23 @@ mod tests {
         assert_eq!(step.range, Some(TextRange { start: 3, end: 11 }));
         assert_eq!(fixed.identities.len(), 1);
         assert_eq!(fixed.identities[0].originals, ["Ann Lee"]);
-        let undone = session.review(ReviewAction::Undo, None).unwrap();
+        let undone = session.review(ReviewAction::Undo).unwrap();
         assert_eq!(undone.text, replaced.text);
     }
 
     /// Copy for AI refuses while proposals are pending; then it is the
-    /// text and file name the separate calls give, and its case is current.
+    /// text and file name the separate calls give.
     #[test]
     fn hand_off_waits_for_every_proposal() {
-        let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
         let (session, _) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
         assert!(matches!(
-            session.hand_off(None),
+            session.hand_off(),
             Err(ReviewError::PendingProposals { count: 2 })
         ));
-        let saved = session
-            .review(ReviewAction::ReplaceAll, Some(library.clone()))
-            .unwrap();
-        let hand_off = session.hand_off(Some(library.clone())).unwrap();
+        session.review(ReviewAction::ReplaceAll).unwrap();
+        let hand_off = session.hand_off().unwrap();
         assert_eq!(hand_off.text, session.copy_for_ai().unwrap());
         assert_eq!(hand_off.file_name, "Letter.md");
-        assert_eq!(library.current_case().map(|c| c.id), saved.case_id);
-    }
-
-    /// With a library each change saves; a call that changes nothing
-    /// writes nothing (a save would refuse the file changed elsewhere).
-    #[test]
-    fn review_saves_only_what_changed() {
-        let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        let (session, start) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
-        assert_eq!(session.info().unwrap().path, None);
-        let ann = id(&start, "Ann Lee", 0);
-        let replace = ReviewAction::Replace {
-            mention: ann,
-            scope: Scope::This,
-        };
-        let replaced = session
-            .review(replace.clone(), Some(library.clone()))
-            .unwrap();
-        let info = session.info().unwrap();
-        let path = info.path.clone().unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), replaced.text);
-        assert_eq!(info.case_id, replaced.case_id);
-        assert_eq!((info.title.as_str(), info.proposed), ("Letter", 1));
-        assert_eq!(info.phase, DocumentPhase::Reviewing);
-        std::fs::write(&path, "Edited in Files.").unwrap();
-        session.review(replace, Some(library.clone())).unwrap();
-        let bob = id(&replaced, "Bob Hart", 0);
-        let keep = ReviewAction::Keep {
-            mention: bob,
-            scope: Scope::This,
-        };
-        assert!(matches!(
-            session.review(keep, Some(library.clone())),
-            Err(ReviewError::Storage { .. })
-        ));
-        assert!(DocumentSession::new().info().is_none());
-    }
-
-    /// Scanned is kept with the document: a scan that found nothing reopens
-    /// as scanned, and a document never scanned as unscanned whatever its
-    /// mentions; a rename keeps it. Documents saved before it was kept
-    /// count as scanned when they have mentions.
-    #[test]
-    fn scanned_is_kept_with_the_document() {
-        let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        let reopened = |path: &str| {
-            DocumentSession::new()
-                .open_document(library.clone(), path.into())
-                .unwrap()
-        };
-        let empty = DocumentSession::new();
-        empty
-            .import_text("Nothing here.".into(), "Empty".into())
-            .unwrap();
-        empty
-            .review(names(&[("Ann Lee", Category::Person)]), None)
-            .unwrap();
-        let empty = empty.save(library.clone()).unwrap().path;
-        let again = reopened(&empty);
-        assert!(again.scanned);
-        assert_eq!(again.phase, DocumentPhase::Ready);
-        let marked = DocumentSession::new();
-        let text = marked
-            .import_text("Ann Lee wrote.".into(), "Marked".into())
-            .unwrap();
-        let range = TextRange { start: 0, end: 7 };
-        assert_eq!(&text.text[..7], "Ann Lee");
-        marked
-            .review(
-                ReviewAction::ReplaceSelection {
-                    range,
-                    category: Category::Person,
-                },
-                Some(library.clone()),
-            )
-            .unwrap();
-        let marked = marked.info().unwrap().path.unwrap();
-        let again = reopened(&marked);
-        assert!(!again.scanned && !again.mentions.is_empty());
-        let renamed = library.rename_document(empty, "Renamed".into()).unwrap();
-        assert!(reopened(&renamed.path.clone().unwrap()).scanned);
-        // Saved before the library kept it.
-        std::fs::remove_file(scratch.path().join("documents.json")).unwrap();
-        assert!(!reopened(&renamed.path.unwrap()).scanned);
-        assert!(reopened(&marked).scanned);
     }
 
     /// What a review tap costs on a long document (async calls
@@ -802,7 +673,7 @@ mod tests {
     fn measure_a_review_tap() {
         use std::time::Instant;
         let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
         let mut text = String::new();
         for page in 0..20 {
             text += &format!("## Page {page}\n\n");
@@ -821,11 +692,12 @@ mod tests {
             })
             .collect();
         let start = session
-            .review(
-                ReviewAction::ProposeNames { names: people },
-                Some(library.clone()),
-            )
+            .review(ReviewAction::ProposeNames { names: people })
             .unwrap();
+        session.save_into_vault(vault.clone()).unwrap();
+        let save = || {
+            session.save_pending_into_vault(vault.clone()).unwrap();
+        };
         eprintln!(
             "{} bytes, {} mentions",
             start.text.len(),
@@ -852,61 +724,42 @@ mod tests {
         time("review: Replace one, no save", &mut || {
             let mention = mentions.next().unwrap();
             session
-                .review(
-                    ReviewAction::Replace {
-                        mention,
-                        scope: Scope::This,
-                    },
-                    None,
-                )
+                .review(ReviewAction::Replace {
+                    mention,
+                    scope: Scope::This,
+                })
                 .unwrap();
         });
-        time("review: Replace one, saved", &mut || {
-            let mention = mentions.next().unwrap();
-            session
-                .review(
-                    ReviewAction::Replace {
+        time(
+            "review: Replace one, then save_pending_into_vault",
+            &mut || {
+                let mention = mentions.next().unwrap();
+                session
+                    .review(ReviewAction::Replace {
                         mention,
                         scope: Scope::This,
-                    },
-                    Some(library.clone()),
-                )
-                .unwrap();
-        });
-        time("review: Undo, saved", &mut || {
-            session
-                .review(ReviewAction::Undo, Some(library.clone()))
-                .unwrap();
+                    })
+                    .unwrap();
+                save();
+            },
+        );
+        time("review: Undo, then save_pending_into_vault", &mut || {
+            session.review(ReviewAction::Undo).unwrap();
+            save();
         });
         // Replace on a replaced mention changes nothing: no save.
         let replaced = start.mentions[0].id;
-        time("review: nothing changed, library given", &mut || {
-            let action = ReviewAction::Replace {
-                mention: replaced,
-                scope: Scope::This,
-            };
-            session.review(action, Some(library.clone())).unwrap();
-        });
-    }
-
-    /// documents.json that cannot be written never stops a save, nor the
-    /// saves after it.
-    #[test]
-    fn an_unwritable_index_never_stops_saving() {
-        let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        // Its temporary file is a folder: every write of it fails.
-        std::fs::create_dir_all(scratch.path().join("documents.json.part")).unwrap();
-        let (session, start) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
-        let first = session.save(library.clone()).unwrap();
-        assert_eq!(session.info().unwrap().case_id, Some(first.case.id.clone()));
-        let keep = ReviewAction::Keep {
-            mention: id(&start, "Bob Hart", 0),
-            scope: Scope::This,
-        };
-        let kept = session.review(keep, Some(library.clone())).unwrap();
-        assert_eq!(kept.case_id, Some(first.case.id));
-        assert!(!scratch.path().join("documents.json").exists());
+        time(
+            "review: nothing changed, then save_pending_into_vault",
+            &mut || {
+                let action = ReviewAction::Replace {
+                    mention: replaced,
+                    scope: Scope::This,
+                };
+                session.review(action).unwrap();
+                save();
+            },
+        );
     }
 
     /// Ids stay through the identity tools too: Rename, Category, New
@@ -916,7 +769,7 @@ mod tests {
     fn mention_ids_survive_the_identity_tools() {
         let text = "Ann Lee met Ann Lee and Bob Hart. Mia paid.";
         let (session, _) = session(text, &["Ann Lee", "Bob Hart"]);
-        let start = session.review(ReviewAction::ReplaceAll, None).unwrap();
+        let start = session.review(ReviewAction::ReplaceAll).unwrap();
         let column = |snapshot: &ReviewSnapshot| -> Vec<u64> {
             snapshot.mentions.iter().map(|m| m.id).collect()
         };
@@ -943,7 +796,7 @@ mod tests {
         ];
         let mut texts = vec![start.text.clone()];
         for step in steps {
-            let after = session.review(step.clone(), None).unwrap();
+            let after = session.review(step.clone()).unwrap();
             assert_eq!(column(&after), before, "{step:?}");
             texts.push(after.text);
         }
@@ -951,64 +804,85 @@ mod tests {
         assert_eq!(texts.len(), 5, "each tool rewrote the text: {texts:?}");
         let mia = texts[4].find("Mia").unwrap() as u64;
         let marked = session
-            .review(
-                ReviewAction::Mark {
-                    range: TextRange {
-                        start: mia,
-                        end: mia + 3,
-                    },
-                    category: Some(Category::Person),
+            .review(ReviewAction::Mark {
+                range: TextRange {
+                    start: mia,
+                    end: mia + 3,
                 },
-                None,
-            )
+                category: Some(Category::Person),
+            })
             .unwrap();
         let ids = column(&marked);
         assert_eq!(ids[..3], before[..]);
         assert!(!before.contains(&ids[3]));
     }
 
-    /// Refused for its pending proposals, Copy for AI leaves the current
-    /// case as it was.
+    /// `info` reads the session without a snapshot: the title, the
+    /// Project, the proposals left and the phase.
     #[test]
-    fn a_refused_hand_off_keeps_the_current_case() {
+    fn info_reads_the_session_without_a_snapshot() {
         let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        let (shared, _) = session("Ann Lee wrote.", &["Ann Lee"]);
-        let shared = shared
-            .review(ReviewAction::ReplaceAll, Some(library.clone()))
+        let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let project = vault.create_project("Case".into()).unwrap();
+        assert!(DocumentSession::new().info().is_none());
+        let (session, start) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
+        session
+            .join_project(vault.clone(), project.id.clone())
             .unwrap();
-        let first = DocumentSession::new();
-        first
-            .import_text("Ann Lee wrote.".into(), "First".into())
+        let replaced = session
+            .review(ReviewAction::Replace {
+                mention: id(&start, "Ann Lee", 0),
+                scope: Scope::This,
+            })
             .unwrap();
-        first
-            .review(ReviewAction::ReplaceAll, Some(library.clone()))
-            .unwrap();
-        first.hand_off(Some(library.clone())).unwrap();
-        let current = library.current_case().unwrap().id;
-        let (pending, _) = session("Bob Hart wrote.", &["Bob Hart"]);
-        pending.save(library.clone()).unwrap();
-        assert!(matches!(
-            pending.hand_off(Some(library.clone())),
-            Err(ReviewError::PendingProposals { count: 1 })
-        ));
-        assert_eq!(library.current_case().unwrap().id, current);
-        assert_ne!(shared.case_id, Some(current));
+        let info = session.info().unwrap();
+        assert_eq!(info.case_id, replaced.case_id);
+        assert_eq!(info.case_id, Some(project.id));
+        assert_eq!((info.title.as_str(), info.proposed), ("Letter", 1));
+        assert_eq!(info.phase, DocumentPhase::Reviewing);
     }
 
-    /// An entry whose file is gone goes when the library lists documents.
+    /// Scanned is kept with the document: a scan that found nothing reopens
+    /// as scanned, and a document never scanned as unscanned whatever its
+    /// mentions; a rename keeps it.
     #[test]
-    fn the_index_forgets_documents_that_are_gone() {
+    fn scanned_is_kept_with_the_document() {
         let scratch = Scratch::new();
-        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        let index = || std::fs::read_to_string(scratch.path().join("documents.json")).unwrap();
-        let (session, _) = session("Ann Lee wrote.", &["Ann Lee"]);
-        let path = session.save(library.clone()).unwrap().path;
-        assert!(index().contains("Letter"));
-        library.documents().unwrap();
-        assert!(index().contains("Letter"), "its file is there");
-        std::fs::remove_file(&path).unwrap();
-        assert!(library.documents().unwrap().is_empty());
-        assert!(!index().contains("Letter"));
+        let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let reopened = |id: &str| {
+            DocumentSession::new()
+                .open_from_vault(vault.clone(), id.into())
+                .unwrap()
+        };
+        let empty = DocumentSession::new();
+        empty
+            .import_text("Nothing here.".into(), "Empty".into())
+            .unwrap();
+        empty
+            .review(names(&[("Ann Lee", Category::Person)]))
+            .unwrap();
+        let empty = empty.save_into_vault(vault.clone()).unwrap().id;
+        let again = reopened(&empty);
+        assert!(again.scanned);
+        assert_eq!(again.phase, DocumentPhase::Ready);
+        let marked = DocumentSession::new();
+        let text = marked
+            .import_text("Ann Lee wrote.".into(), "Marked".into())
+            .unwrap();
+        let range = TextRange { start: 0, end: 7 };
+        assert_eq!(&text.text[..7], "Ann Lee");
+        marked
+            .review(ReviewAction::ReplaceSelection {
+                range,
+                category: Category::Person,
+            })
+            .unwrap();
+        let marked = marked.save_into_vault(vault.clone()).unwrap().id;
+        let again = reopened(&marked);
+        assert!(!again.scanned && !again.mentions.is_empty());
+        vault
+            .rename_document(empty.clone(), "Renamed".into())
+            .unwrap();
+        assert!(reopened(&empty).scanned);
     }
 }

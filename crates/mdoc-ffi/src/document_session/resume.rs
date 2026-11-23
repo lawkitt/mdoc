@@ -1,10 +1,8 @@
-//! Resumable OCR outside the library (#1109's notes for Vault & Projects
-//! item 9): a Vault document's import keeps its finished OCR pages in a
-//! folder the app names, beside its intake files, so the old library's
-//! `imports` folder stays untouched. The app picks the folder, as it picks
-//! the Vault's (Decision 21); the core never does. Android keeps the
-//! library's calls (`import_file_in`, `import_images_in`,
-//! `Library::discard_import`) until it switches.
+//! Resumable OCR (#1109's notes for Vault & Projects item 9): a Vault
+//! document's import keeps its finished OCR pages in a folder the app
+//! names, beside its intake files, so the old mobile library's `imports`
+//! folder stays untouched (Decision 2). The app picks the folder, as it
+//! picks the Vault's (Decision 21); the core never does.
 use super::{DocumentSession, ImportOptions, JobProgress, ReviewSnapshot, intake};
 use crate::CoreError;
 use mdoc_import::resume::KeptPages;

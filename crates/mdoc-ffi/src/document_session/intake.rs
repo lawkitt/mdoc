@@ -387,11 +387,11 @@ pub(super) struct ImportNote {
     pub left_out: Option<String>,
 }
 
-/// A document's title: its file name without the extension, read as a
-/// library document's is (`library::title_of`), so a file the platform
-/// named after a title gives that title back.
+/// A document's title: its file name without the extension
+/// (`file_names::title_of`), so a file the platform named after a title
+/// gives that title back.
 pub(super) fn title(path: &Path) -> String {
-    match crate::library::title_of(path) {
+    match crate::file_names::title_of(path) {
         title if title.is_empty() => "Document".into(),
         title => title,
     }

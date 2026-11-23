@@ -24,8 +24,8 @@ use mdoc_editor_core::turn_into::TurnKind;
 use mdoc_editor_core::{Edit, EditResult};
 use mdoc_markdown::tables::Align;
 
-use crate::library::TextRange;
 use crate::markdown::{MarkdownAlign, MarkdownTableStyle};
+use crate::text::TextRange;
 
 /// One replacement: the byte range it replaces and the new text. A change's
 /// edits are sorted, don't overlap, and are in the offsets of the text

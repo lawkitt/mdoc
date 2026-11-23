@@ -107,7 +107,7 @@ final class ParityTests: XCTestCase {
 
     /// The Restore extension's path: its handle on the Vault restores a
     /// reply to a saved document exactly as the document's session does.
-    func testLibraryRestoreMatchesTheSession() throws {
+    func testReplyVaultRestoreMatchesTheSession() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-parity-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let key = Data(repeating: 42, count: 32)

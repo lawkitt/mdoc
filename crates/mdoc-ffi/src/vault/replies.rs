@@ -1,8 +1,7 @@
 //! AI Replies through the Vault (#1091 Decisions 4, 18, 20 and 37): saved
 //! as received with the identity each alias meant, listed for a Project or
 //! a document, restored from those identities as they are now, and
-//! deleted. They stand beside the library's replies (`Library::save_reply`,
-//! `Library::restore`), which the apps use until they switch.
+//! deleted.
 //!
 //! Whose a reply is: one to text shared from a document in a Project is
 //! the Project's, and one to text shared from an Unfiled document is that
@@ -13,7 +12,7 @@
 //! manifest (Decision 20). The app picks a reply it saved up through
 //! `Vault::refresh`.
 use super::{DocumentInfo, ProjectInfo, Vault, document_infos, project_infos, vault_key};
-use crate::{CoreError, library::RestoredReply};
+use crate::{CoreError, text::RestoredReply};
 use mdoc_pii::restore::RestoreMap;
 use mdoc_vault::{Mapping, Reply, ReplySummary, VaultError};
 use std::sync::Arc;
