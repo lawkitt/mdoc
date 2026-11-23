@@ -801,3 +801,50 @@ fn projects_list_pinned_first_then_most_recently_updated() {
     );
     assert_eq!(Colour::for_id(&"0".repeat(32)), Colour::Red);
 }
+
+#[test]
+fn a_documents_review_survives_a_reopen_and_restores_over_its_text() {
+    use mdoc_pii::{Category, Detection, Recognizer, Review};
+    let folder = Folder::new();
+    let markdown = "Ann met Bob.";
+    let saved = {
+        let mut review = Review::default();
+        let detections = ["Ann", "Bob"]
+            .map(|name| {
+                let start = markdown.find(name).unwrap();
+                Detection {
+                    range: start..start + name.len(),
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                }
+            })
+            .to_vec();
+        review.ingest(markdown, detections).unwrap();
+        review.save()
+    };
+    let id = {
+        let vault = folder.open();
+        let created = document(&vault, None, "Memo", markdown);
+        assert_eq!(created.review, None);
+        vault
+            .update_document(&created.id, |d| d.review = Some(saved.clone()))
+            .unwrap()
+            .id
+    };
+    let reopened = folder.open().document(&id).unwrap();
+    assert_eq!(reopened.review.as_ref(), Some(&saved));
+    let restored = Review::restore(reopened.review.unwrap(), &reopened.markdown, 0).unwrap();
+    assert_eq!(restored.save(), saved);
+}
+
+#[test]
+fn a_document_without_a_review_is_stored_without_the_field() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let created = document(&vault, None, "Memo", "Text.");
+    let json = serde_json::to_value(&created).unwrap();
+    assert!(json.get("review").is_none());
+    let read: Document = serde_json::from_value(json).unwrap();
+    assert_eq!(read.review, None);
+}

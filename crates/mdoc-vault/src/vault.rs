@@ -351,6 +351,7 @@ impl Vault {
             scanned: false,
             ready_fingerprint: None,
             mapping: Mapping::default(),
+            review: None,
         };
         self.write_record(&lock, &document)?;
         Ok(document)

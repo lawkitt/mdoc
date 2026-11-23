@@ -14,7 +14,7 @@ use mdoc_pii::{
 };
 
 /// What a move did.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Moved {
     /// The Document as saved in its new place, its text in the aliases it
     /// has there.
@@ -253,6 +253,9 @@ impl Vault {
         moved.project = joined.as_ref().map(|p| p.id.clone());
         // Readiness was of the text in the mapping it left.
         moved.ready_fingerprint = None;
+        // The review's ranges and identities were of that text and mapping
+        // too: the next open scans again.
+        moved.review = None;
         let moved = match self.place_document(lock, moved) {
             Ok(moved) => moved,
             Err(error) => {
