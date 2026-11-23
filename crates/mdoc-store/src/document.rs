@@ -1,5 +1,7 @@
-//! Plain-file persistence; never opens the old journal database.
-use crate::document_id::DocumentId;
+//! What a view holds of its document: a Vault document's id, or a Markdown
+//! file's path, and the text last saved. Never opens the old journal
+//! database.
+use crate::document_id::{DocumentId, VaultId};
 use std::{
     io::{self, Write},
     path::{Path, PathBuf},
@@ -7,27 +9,43 @@ use std::{
 
 #[derive(Default)]
 pub struct Document {
+    /// The Vault document this is; such a document has no `path`.
+    pub vault: Option<VaultId>,
     pub path: Option<PathBuf>,
     pub saved: String,
 }
 
 impl Document {
-    /// The document this is, once it was opened or saved.
+    /// A Vault document whose text was last saved as `saved`.
+    pub fn in_vault(id: VaultId, saved: String) -> Self {
+        Self {
+            vault: Some(id),
+            path: None,
+            saved,
+        }
+    }
+
+    /// The document this is, once it was opened, saved or created.
     pub fn id(&self) -> Option<DocumentId> {
-        self.path.clone().map(DocumentId::File)
+        match &self.vault {
+            Some(id) => Some(DocumentId::Vault(id.clone())),
+            None => self.path.clone().map(DocumentId::File),
+        }
     }
 
     /// Whether this is `document`, without building an id.
     pub fn is(&self, document: &DocumentId) -> bool {
-        document
-            .file()
-            .is_some_and(|file| self.path.as_deref() == Some(file))
+        match document {
+            DocumentId::Vault(id) => self.vault.as_ref() == Some(id),
+            DocumentId::File(file) => self.vault.is_none() && self.path.as_deref() == Some(file),
+        }
     }
 
     pub fn open(path: PathBuf) -> io::Result<Self> {
         let path = std::path::absolute(path)?;
         let saved = std::fs::read_to_string(&path)?;
         Ok(Self {
+            vault: None,
             path: Some(path),
             saved,
         })

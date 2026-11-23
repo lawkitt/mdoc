@@ -1085,7 +1085,10 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
-        let DocumentId::File(path) = document;
+        // Vault documents load from the Vault once the window opens it.
+        let DocumentId::File(path) = document else {
+            return;
+        };
         let shown = path.clone();
         let task = cx
             .background_executor()

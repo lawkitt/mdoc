@@ -956,6 +956,29 @@ fn deny_os_service(what: &str) -> bool {
     )
 }
 
+/// The Vault's folder in app data: `vault` beside `cases`, or `vault-dev`
+/// beside `cases-dev`, so a dev build never opens the release Vault.
+pub fn vault_dir() -> Option<PathBuf> {
+    crate::app_paths::data_local_dir().map(|p| p.join("mdoc").join(key::vault_folder()))
+}
+
+/// The Vault key, which is the OS-held case key, created on first use.
+/// `quiet` reads it with dialogs off: `None` when reading it would show the
+/// macOS password dialog. Elsewhere a quiet read is the real one.
+pub fn vault_key(quiet: bool) -> Result<Option<[u8; 32]>, CaseError> {
+    if crate::app_paths::isolated() {
+        return Err(CaseError::KeysDisabled);
+    }
+    #[cfg(feature = "deny-os-services")]
+    deny_os_service("the Vault key");
+    let dir = Store::default_dir().ok_or(CaseError::NoAppData)?;
+    if quiet {
+        key::load_quietly(&dir)
+    } else {
+        key::load_or_create(&dir).map(Some)
+    }
+}
+
 /// Public build label, using the same runtime identity as case storage.
 /// This inspects signing metadata only; it never reads the case key.
 pub fn build_identity() -> &'static str {
@@ -1048,6 +1071,15 @@ mod key {
             return "cases-dev";
         }
         "cases"
+    }
+
+    /// The Vault's folder name in app data, picked as [`folder`] is.
+    pub fn vault_folder() -> &'static str {
+        if folder() == "cases-dev" {
+            "vault-dev"
+        } else {
+            "vault"
+        }
     }
 
     /// Read (or create) the key with Keychain dialogs turned off, so this
