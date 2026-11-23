@@ -3,7 +3,7 @@ import Observation
 
 /// The sidebar's section rows: each opens a page in the main area.
 enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case cases, documents
+    case projects, documents
     var id: String { rawValue }
 }
 
@@ -27,11 +27,11 @@ enum Presentation: Identifiable {
     /// Rename…: the document's new title.
     case renameDocument(DocumentID)
     /// Rename… on the Cases page: the case's new name.
-    case renameCase(CaseID)
+    case renameProject(ProjectID)
     /// Move to case › New case…: a name for the case the document moves to.
-    case moveToNewCase(DocumentID)
-    /// Move to case › All cases…: every other case, to move the document to.
-    case chooseCase(DocumentID)
+    case moveToNewProject(DocumentID)
+    /// Move to case › All projects…: every other case, to move the document to.
+    case chooseProject(DocumentID)
     /// Share from a document's menu: the reviewed text.
     case share(ShareItems)
     case settings
@@ -47,9 +47,9 @@ enum Presentation: Identifiable {
     var id: String {
         switch self {
         case .renameDocument(let id): "rename-\(id.rawValue)"
-        case .renameCase(let id): "rename-case-\(id.rawValue)"
-        case .moveToNewCase(let id): "new-case-\(id.rawValue)"
-        case .chooseCase(let id): "choose-case-\(id.rawValue)"
+        case .renameProject(let id): "rename-project-\(id.rawValue)"
+        case .moveToNewProject(let id): "new-project-\(id.rawValue)"
+        case .chooseProject(let id): "choose-project-\(id.rawValue)"
         case .share(let items): "share-\(items.id)"
         case .settings: "settings"
         case .intake(let intake): "intake-\(intake.rawValue)"

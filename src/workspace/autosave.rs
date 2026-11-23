@@ -535,6 +535,8 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, job: Job) -> Result<(), S
             // Its text is written: it opens as text from now on.
             document.unconverted = false;
             document.review = review.map(|review| *review);
+            // Counted from the review it replaces: lists count it again.
+            document.counts = None;
             if let (Some(notes), Some(original)) = (notes, document.original.as_mut()) {
                 original.info.import_warning = notes.warning;
                 original.info.left_out = notes.left_out;

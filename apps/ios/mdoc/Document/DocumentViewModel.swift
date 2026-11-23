@@ -250,12 +250,13 @@ final class DocumentViewModel {
         await recognize(password: password)
     }
 
-    /// The Original's card: unlocks the locked PDF it shows, in memory.
-    /// False when `password` doesn't open it.
+    /// The Original's card: unlocks the locked PDF it shows (`original`,
+    /// the snapshot's unless a job just gave a newer one), in memory. False
+    /// when `password` doesn't open it.
     @discardableResult
-    func unlockOriginal(password: String) -> Bool {
-        guard case .pdf(let url) = snapshot.original,
-              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+    func unlockOriginal(password: String, in original: OriginalSource? = nil) -> Bool {
+        guard case .pdf(let bytes) = original ?? snapshot.original,
+              let data = try? bytes.data(),
               let document = PDFDocument(data: data),
               document.isLocked, document.unlock(withPassword: password)
         else { return false }
@@ -265,9 +266,12 @@ final class DocumentViewModel {
 
     /// The Original asks again on reopening, even if this model stayed for
     /// a job's notice. Work started by the closed screen cannot restore it.
+    /// A Vault original's decrypted bytes and viewing copy go too
+    /// (#1091 Decision 24).
     func closeOriginal() {
         originalUnlock = nil
         originalUnlockGeneration += 1
+        session.closeOriginal()
     }
 
     var importUnlockAction: @MainActor (String) async -> Void {
@@ -318,14 +322,16 @@ final class DocumentViewModel {
         case .failed(CoreError.wrongPassword):
             passwordPrompt = .wrong
             return
-        case .finished:
+        case .finished(let finished):
             passwordPrompt = nil
             let docx = session.takeUnlockedDocx()
             if generation == originalUnlockGeneration {
                 if let docx {
                     originalUnlock = .docx(docx)
                 } else if let password {
-                    unlockOriginal(password: password)
+                    // The first save kept the received file in the Vault:
+                    // the finished snapshot's original is the one to open.
+                    unlockOriginal(password: password, in: finished.original)
                 }
             }
         case .cancelled, .failed, .busy:
@@ -719,6 +725,11 @@ final class DocumentViewModel {
         state.apply(new)
         if state != review { review = state }
         if new.reply == nil && pane == .reply {
+            pane = .text
+        }
+        // An original that went (pages picked together keep none once
+        // saved) leaves no pane to show: the text comes back (review 2).
+        if new.original == .none && pane == .original {
             pane = .text
         }
         settleIdentities()

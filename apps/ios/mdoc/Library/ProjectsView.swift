@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Cases page (the sidebar's Cases row): each case with its colour and
 /// how many documents it holds; a tap shows its documents.
-struct CasesView: View {
+struct ProjectsView: View {
     @Bindable var app: AppModel
     @Environment(\.showSidebar) private var showSidebar
 
@@ -10,19 +10,19 @@ struct CasesView: View {
 
     var body: some View {
         List {
-            if library.cases.isEmpty {
+            if library.projects.isEmpty {
                 ContentUnavailableView(
-                    "No cases yet",
+                    "No Projects yet",
                     systemImage: "briefcase",
-                    description: Text("Each document you add starts a case, or joins one you choose."))
+                    description: Text("Each document you add lands in Unfiled, or in the Project you choose."))
                     .listRowBackground(Color.clear)
             }
-            ForEach(library.cases) { summary in
+            ForEach(library.projects) { summary in
                 Button {
-                    app.openCase(summary.id)
+                    app.openProject(summary.id)
                 } label: {
                     HStack(spacing: Space.s) {
-                        CaseDot(colour: summary.colour)
+                        ProjectDot(colour: summary.colour)
                         VStack(alignment: .leading, spacing: Space.xxs) {
                             Text(summary.name)
                                 .font(Typography.body.weight(.medium))
@@ -44,20 +44,20 @@ struct CasesView: View {
                 .accessibilityElement(children: .combine)
                 .contextMenu {
                     Button {
-                        app.navigator.present(.renameCase(summary.id))
+                        app.navigator.present(.renameProject(summary.id))
                     } label: {
                         Label("Rename…", systemImage: "pencil")
                     }
                 }
                 .swipeActions {
-                    Button("Rename") { app.navigator.present(.renameCase(summary.id)) }
+                    Button("Rename") { app.navigator.present(.renameProject(summary.id)) }
                         .tint(Palette.swipeAccent)
                 }
-                .accessibilityAction(named: Text("Rename")) { app.navigator.present(.renameCase(summary.id)) }
-                .accessibilityIdentifier("case-row")
+                .accessibilityAction(named: Text("Rename")) { app.navigator.present(.renameProject(summary.id)) }
+                .accessibilityIdentifier("project-row")
             }
         }
-        .navigationTitle("Cases")
+        .navigationTitle("Projects")
         .toolbar {
             if let showSidebar {
                 SidebarButton(action: showSidebar)
@@ -65,8 +65,8 @@ struct CasesView: View {
         }
     }
 
-    func count(_ summary: CaseSummary) -> String {
-        let documents = library.documents.filter { $0.caseID == summary.id }
+    func count(_ summary: ProjectSummary) -> String {
+        let documents = library.documents.filter { $0.projectID == summary.id }
         let toReview = documents.filter { $0.phase == .reviewing }.count
         let base = documents.count == 1 ? String(localized: "1 document") : String(localized: "\(documents.count) documents")
         return toReview > 0 ? base + " · " + String(localized: "\(toReview) to review") : base

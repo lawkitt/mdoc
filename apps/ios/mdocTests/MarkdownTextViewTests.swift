@@ -27,7 +27,7 @@ final class MarkdownTextViewTests: XCTestCase {
 
     private func harness(text: String = text, name: String = "Maya Bennett") throws -> Harness {
         let (core, _) = try Fixture.core()
-        let session = try core.library.importDocument(.text(text), title: "Agreement", into: .newCase(name: "Bennett"))
+        let session = try core.library.importDocument(.text(text), title: "Agreement", into: nil)
         _ = try session.recognize(observer: TestObserver())
         _ = try session.propose([SampleDocument.Name(wording: name, category: .person)])
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
@@ -296,7 +296,7 @@ final class MarkdownTextViewTests: XCTestCase {
     /// should, not at an old name (review of #699).
     func testANewViewIgnoresAnEarlierReveal() throws {
         let (core, _) = try Fixture.core()
-        let session = try core.library.importDocument(.text(Self.text), title: "Agreement", into: .newCase(name: "Bennett"))
+        let session = try core.library.importDocument(.text(Self.text), title: "Agreement", into: nil)
         _ = try session.recognize(observer: TestObserver())
         let snapshot = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
         let last = try XCTUnwrap(snapshot.candidates.max { $0.range.start < $1.range.start })

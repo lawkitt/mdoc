@@ -113,7 +113,7 @@ struct RootView: View {
                 } else {
                     StartView(app: app)
                 }
-            case .section(.cases): CasesView(app: app)
+            case .section(.projects): ProjectsView(app: app)
             case .section(.documents): DocumentsPage(app: app)
             case .start: StartView(app: app)
             }

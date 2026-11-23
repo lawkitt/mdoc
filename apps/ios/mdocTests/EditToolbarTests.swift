@@ -29,7 +29,7 @@ final class EditToolbarTests: XCTestCase, TextViewHarnessTests {
     /// text holds an alias and a proposed name.
     func harness(text: String = text, rendered: Bool = true, scanned: Bool = false) throws -> Harness {
         let harness = try textViewHarness(
-            text: text, title: "Lease", caseName: "Lease", rendered: rendered, editing: true
+            text: text, title: "Lease", projectName: "Lease", rendered: rendered, editing: true
         ) { session in
             if scanned, let first = try session.scan(observer: TestObserver()).candidates.first {
                 _ = try session.decide(first.id, .replace, scope: .this)

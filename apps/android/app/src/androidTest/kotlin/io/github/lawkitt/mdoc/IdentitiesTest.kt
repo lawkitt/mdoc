@@ -9,7 +9,6 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
@@ -36,7 +35,7 @@ class IdentitiesTest {
         val title = "Identities ${System.nanoTime()}"
         // The name only at the end of a long letter, far below the first screen.
         val letter = (1..80).joinToString("\n\n") { "Paragraph $it of the letter." } + "\n\nSigned, Priya Shah."
-        val session = core.app.core.documents.importDocument(ImportSource.Text(letter), title, CaseChoice.New(title))
+        val session = core.app.core.documents.importDocument(ImportSource.Text(letter), title)
         session.recognize(object : JobObserver {
             override fun stage(stage: JobStage) = Unit
 
@@ -59,7 +58,7 @@ class IdentitiesTest {
     fun aLongPressKeepsAllOfAnIdentity() {
         val title = "Keep all ${System.nanoTime()}"
         val letter = "Dear Priya Shah, Priya Shah's claim is ready."
-        val session = core.app.core.documents.importDocument(ImportSource.Text(letter), title, CaseChoice.New(title))
+        val session = core.app.core.documents.importDocument(ImportSource.Text(letter), title)
         session.recognize(object : JobObserver {
             override fun stage(stage: JobStage) = Unit
 

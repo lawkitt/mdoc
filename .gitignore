@@ -9,3 +9,6 @@
 # Xcode per-user state
 xcuserdata/
 **/*.xcodeproj/project.xcworkspace/
+
+# Python bytecode caches (scripts run by the lint and iOS tools)
+__pycache__/

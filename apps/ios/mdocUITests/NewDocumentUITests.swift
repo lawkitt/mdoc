@@ -3,7 +3,7 @@ import XCTest
 /// New document (ADR 0109, slice 6): New document is first in the
 /// sidebar's + menu and ⌘N, and opens in edit mode with the keyboard up;
 /// left empty it leaves no row. Its title and Find names again are
-/// NewDocumentTests' (ADR 0112's sweep).
+/// NewDocumentTests' (ADR 0112's sweep). Paste starts in Unfiled.
 final class NewDocumentUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -75,5 +75,21 @@ final class NewDocumentUITests: XCTestCase {
         documents.tap()
         XCTAssertTrue(row(app, title: "New document").waitForNonExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["document-row"].firstMatch.exists)
+    }
+
+    /// Paste's sheet asks for a Project, not a case, and starts on
+    /// Unfiled: no import makes a Project of its own (#1091 Decision 35).
+    @MainActor
+    func testPasteStartsInUnfiled() throws {
+        let app = launch()
+        MdocUITest.revealSidebar(app)
+        app.buttons["new-menu"].firstMatch.tap()
+        let paste = app.collectionViews.buttons["Paste text"].firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: MdocUITest.timeout))
+        paste.tap()
+        // The picker reads "Project, Unfiled" (its title, then its choice).
+        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Project' AND label CONTAINS 'Unfiled'")).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: MdocUITest.timeout), "the Project picker on Unfiled")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'new case'")).firstMatch.exists)
     }
 }

@@ -4,7 +4,7 @@
 //! `tests/fixtures/mobile-parity/` are the Swift parity suite's too; with
 //! `MDOC_BLESS_PARITY=1` this test rewrites them.
 use mdoc_ffi::{
-    DocumentSession, Library,
+    DocumentSession, Library, Vault,
     document_session::{Candidate, Category, ImportOptions, MentionState, ReviewSnapshot, Scope},
     library::TextRange,
 };
@@ -979,4 +979,130 @@ fn scoped_identity_tools_and_undo_match_desktop() {
     let snapshot = session.undo().unwrap();
     desktop.travel(true);
     same(&snapshot, &desktop, "new alias, proposed, undone");
+}
+
+// ---- Through the Vault ----------------------------------------------------
+
+/// The Vault's handle for a parity test, its Project `names` made with
+/// `mdoc_vault` directly, as desktop will save them.
+fn vault_with_project(scratch: &Scratch, names: &[ExportedIdentity]) -> (Arc<Vault>, String) {
+    let root = scratch.0.join("vault");
+    let project = {
+        let store = mdoc_vault::Vault::open(&root, &KEY).unwrap();
+        let project = store
+            .create_project(mdoc_vault::NewProject {
+                name: "Bennett".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .update_project(&project.id, |p| p.mapping.merge(names))
+            .unwrap();
+        project.id
+    };
+    let vault = Vault::open(root.display().to_string(), KEY.to_vec()).unwrap();
+    (vault, project)
+}
+
+/// The captured round trip through the new objects: the document joins a
+/// Project in the Vault, is saved there and opened again by id, and Copy
+/// for AI, the Vault's outbound text and the restored reply are desktop's
+/// bytes.
+#[test]
+fn the_captured_claude_round_trip_matches_desktop_through_the_vault() {
+    let scratch = Scratch::new("claude-vault");
+    let capture = repo().join("tests/fixtures/restore/claude-en");
+    let mapping = identities(&read(&capture.join("identities.json")));
+    let (vault, project) = vault_with_project(&scratch, &mapping);
+    let demo = repo().join("docs/product-media/Settlement agreement.md");
+
+    let session = DocumentSession::new();
+    session
+        .import_file(demo.display().to_string(), ImportOptions::default(), None)
+        .unwrap();
+    session
+        .join_project(vault.clone(), project.clone())
+        .unwrap();
+    // As a scan that finds no other name: Ready needs one.
+    session.add_candidates(Vec::new()).unwrap();
+    assert_eq!(session.replace_all().unwrap().proposed, 0);
+    let sent = read(&capture.join("sent.md"));
+    assert_eq!(session.copy_for_ai().unwrap(), sent);
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    assert_eq!(saved.project.unwrap().id, project);
+
+    let reopened = DocumentSession::new();
+    let snapshot = reopened
+        .open_from_vault(vault.clone(), saved.id.clone())
+        .unwrap();
+    assert_eq!(snapshot.proposed, 0);
+    assert_eq!(snapshot.text, sent.split_once("\n\n---\n\n").unwrap().1);
+    assert_eq!(reopened.copy_for_ai().unwrap(), sent);
+    assert_eq!(vault.text_for_ai(saved.id).unwrap(), sent);
+
+    let source = read(&demo);
+    let mut review = Review::default();
+    let exported = vault.project_page(project).unwrap().names;
+    assert_eq!(exported.len(), mapping.len());
+    review.seed(&mapping, &source);
+    let text = desktop_apply_all(&mut review, &source, 1);
+    assert_eq!(desktop_copy_for_ai(&review, &text), sent);
+    let reply = read(&capture.join("reply.md"));
+    let expected = read(&capture.join("expected.md"));
+    let restored = reopened.restore_reply(reply).unwrap();
+    assert_eq!(restored.text, expected);
+    assert_eq!(restored.unrecognised, 0);
+}
+
+fn listed_id(vault: &Vault) -> String {
+    vault.unfiled()[0].id.clone()
+}
+
+/// The demo DOCX's review saved Unfiled into the Vault and opened again by
+/// id gives the goldens' mentions and Copy for AI, with no rescan.
+#[test]
+fn the_demo_docx_reopened_from_the_vault_matches_the_goldens() {
+    let scratch = Scratch::new("docx-vault");
+    let docx = repo().join("docs/product-media/Settlement agreement.docx");
+    let mapping = identities(&read(
+        &repo().join("tests/fixtures/restore/claude-en/identities.json"),
+    ));
+    let vault = Vault::open(scratch.0.join("vault").display().to_string(), KEY.to_vec()).unwrap();
+    let session = DocumentSession::new();
+    let opened = session
+        .import_file(docx.display().to_string(), ImportOptions::default(), None)
+        .unwrap();
+    let found = candidates(&opened.text, &mapping);
+    session
+        .add_candidates(
+            found
+                .iter()
+                .map(|(range, category)| Candidate {
+                    range: text_range(range),
+                    category: Category::from(*category),
+                    score: 0.9,
+                })
+                .collect(),
+        )
+        .unwrap();
+    session.replace_all().unwrap();
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    assert_eq!(saved.project, None);
+
+    let reopened = DocumentSession::new();
+    let snapshot = reopened.open_from_vault(vault.clone(), saved.id).unwrap();
+    golden("settlement-docx/replaced.tsv", &mentions(&snapshot));
+    golden(
+        "settlement-docx/copy-for-ai.md",
+        &reopened.copy_for_ai().unwrap(),
+    );
+    assert_eq!(
+        vault.text_for_ai(listed_id(&vault)).unwrap(),
+        reopened.copy_for_ai().unwrap()
+    );
+    let listed = &vault.unfiled()[0];
+    assert_eq!(
+        (listed.proposed, listed.replaced, listed.kept),
+        (snapshot.proposed, snapshot.replaced, snapshot.kept)
+    );
 }

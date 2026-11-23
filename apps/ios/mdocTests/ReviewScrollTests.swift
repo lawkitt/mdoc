@@ -141,7 +141,7 @@ final class ReviewScrollTests: XCTestCase {
 
         init(text: String = ReviewScrollTests.form) throws {
             let (core, _) = try Fixture.core()
-            session = try core.library.importDocument(.text(text), title: "Form", into: .newCase(name: "Form"))
+            session = try core.library.importDocument(.text(text), title: "Form", into: nil)
             _ = try session.recognize(observer: TestObserver())
             snapshot = try session.propose(ReviewScrollTests.names)
             state = ReviewState(snapshot)

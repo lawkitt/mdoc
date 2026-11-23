@@ -154,6 +154,9 @@ pub(crate) trait Record: Clone + Serialize + DeserializeOwned {
     /// Before a write over `stored`: keep the fields only the Vault
     /// changes, and stamp `revision` and `now`.
     fn settle(&mut self, stored: &Self, revision: u64, now: u64);
+    /// As read from its file, before anyone sees it: fill in what an older
+    /// build left out.
+    fn loaded(&mut self) {}
 }
 
 impl Record for Project {
@@ -215,6 +218,11 @@ impl Record for Document {
         self.revision = revision;
         self.updated = now;
     }
+    /// A Document imported before `unconverted` existed says so here, so a
+    /// write that changes something else keeps it waiting.
+    fn loaded(&mut self) {
+        self.unconverted = self.pending_conversion();
+    }
 }
 
 impl Record for Reply {
@@ -264,7 +272,8 @@ pub(crate) fn load<R: Record>(
     let bytes = read_limited(&mut file).map_err(unseal_error)?;
     let stamp = metadata.and_then(|metadata| Stamp::of(&metadata, &bytes));
     let plain = sealer.open(R::KIND, id, &bytes).map_err(unseal_error)?;
-    let record: R = serde_json::from_slice(&plain).map_err(|_| LoadError::Damaged)?;
+    let mut record: R = serde_json::from_slice(&plain).map_err(|_| LoadError::Damaged)?;
+    record.loaded();
     if record.id() != id {
         return Err(LoadError::Damaged);
     }

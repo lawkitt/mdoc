@@ -146,15 +146,15 @@ final class AppModel {
     /// before (#676).
     func open(_ section: SidebarSection) {
         if section == .documents {
-            library.caseFilter = nil
+            library.projectFilter = nil
         }
         show(.section(section))
     }
 
     /// A case's row: the Documents page filtered to that case.
-    func openCase(_ id: CaseID) {
+    func openProject(_ id: ProjectID) {
         open(.documents)
-        if library.cases.contains(where: { $0.id == id }) { library.caseFilter = id }
+        if library.projects.contains(where: { $0.id == id }) { library.projectFilter = id }
     }
 
     /// Start: no document and no section.
@@ -303,15 +303,22 @@ final class AppModel {
 
     // MARK: Intake
 
-    /// New document (ADR 0109; also ⌘N): an empty document in a case of its own,
-    /// open in edit mode with the keyboard up. It is named after its first
+    /// The Project an intake is started from: the Documents page filtered
+    /// to one (today's Project page), else nil, Unfiled (#1091 Decision 35).
+    var intakeProject: ProjectID? {
+        guard case .section(.documents) = navigator.destination else { return nil }
+        return library.projectFilter
+    }
+
+    /// New document (ADR 0109; also ⌘N): an empty document in Unfiled or the
+    /// Project it was started from, open in edit mode with the keyboard up. It is named after its first
     /// line until renamed, and goes if it is left empty.
     func newDocument() {
         if case .settings = navigator.presentation { navigator.dismiss() }
         let title = String(localized: "New document")
         do {
             let session = try library.importDocument(
-                PendingImport(source: .newDocument, suggestedTitle: title), title: title, into: .newCase(name: title))
+                PendingImport(source: .newDocument, suggestedTitle: title), title: title, into: intakeProject)
             // Its empty text is read now, outside the one job slot: a job on
             // another document never holds it back (ADR 0085 Long jobs).
             _ = try session.recognize(observer: JobToken { _ in })
@@ -322,12 +329,12 @@ final class AppModel {
         }
     }
 
-    /// Imports into the chosen case, opens the document and starts
-    /// recognition, which the user asked for by adding it.
+    /// Imports into Unfiled or the chosen Project, opens the document and
+    /// starts recognition, which the user asked for by adding it.
     @discardableResult
-    func finishImport(_ pending: PendingImport, title: String, into caseChoice: CaseChoice) -> DocumentViewModel? {
+    func finishImport(_ pending: PendingImport, title: String, into project: ProjectID?) -> DocumentViewModel? {
         do {
-            let session = try library.importDocument(pending, title: title, into: caseChoice)
+            let session = try library.importDocument(pending, title: title, into: project)
             if case .importing = navigator.presentation { navigator.dismiss() }
             open(session.id)
             guard let model = documents.model(for: session.id) else { return nil }
@@ -381,14 +388,15 @@ final class AppModel {
         }
     }
 
-    /// Paste's one sheet: the text, its title and its case at once (ADR 0087).
-    func addText(_ text: String, title: String, into caseChoice: CaseChoice) {
+    /// Paste's one sheet: the text, its title and its Project at once
+    /// (ADR 0087).
+    func addText(_ text: String, title: String, into project: ProjectID?) {
         guard let pending = Importer.text(text) else { return }
-        finishImport(pending, title: title, into: caseChoice)
+        finishImport(pending, title: title, into: project)
     }
 
     /// Try a sample (ADR 0099): the made-up agreement in the phone's
-    /// language, in a case of its own, opened for review. The sample is
+    /// language, in Unfiled, opened for review. The sample is
     /// editable; trying it again opens it with its text as it came, asking
     /// first when it was edited (ADR 0109).
     func trySample() {
@@ -411,7 +419,7 @@ final class AppModel {
         // finder is downloaded; only into the sample itself, never the
         // document open before when the import fails.
         let pending = PendingImport(source: .sample(sample.text), suggestedTitle: sample.title)
-        finishImport(pending, title: sample.title, into: .newCase(name: sample.title))?.proposeStored(sample.names)
+        finishImport(pending, title: sample.title, into: nil)?.proposeStored(sample.names)
     }
 
     /// "Restore the sample?" answered Restore: its text as it came, with its
@@ -434,10 +442,10 @@ final class AppModel {
         }
     }
 
-    func renameCase(_ id: CaseID, to name: String) {
+    func renameProject(_ id: ProjectID, to name: String) {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         do {
-            try library.renameCase(id, to: name)
+            try library.renameProject(id, to: name)
             documents.all.forEach { $0.refresh() }
             Haptics.decision()
         } catch {
@@ -447,26 +455,26 @@ final class AppModel {
 
     /// Move to case: the names take the case's aliases; the toast offers
     /// Undo, which moves the document back.
-    func move(_ id: DocumentID, to target: CaseChoice) {
+    func move(_ id: DocumentID, to target: ProjectChoice) {
         do {
             guard let move = try library.move(id, to: target) else { return }
             documents.model(for: id)?.refresh()
             Haptics.decision()
             show(ToastMessage(
-                text: String(localized: "Moved to \(move.to.name)"),
-                actionTitle: move.from == nil ? nil : String(localized: "Undo"),
-                action: move.from == nil ? nil : { [weak self] in self?.undoMove(move) }))
+                text: String(localized: "Moved to \(move.placeName)"),
+                actionTitle: String(localized: "Undo"),
+                action: { [weak self] in self?.undoMove(move) }))
         } catch {
             present(error)
         }
     }
 
-    private func undoMove(_ move: CaseMove) {
+    private func undoMove(_ move: ProjectMove) {
         do {
             let back = try library.undoMove(move)
             documents.model(for: move.document)?.refresh()
             Haptics.warning()
-            show(ToastMessage(text: String(localized: "Moved back to \(back.to.name)")))
+            show(ToastMessage(text: String(localized: "Moved back to \(back.placeName)")))
         } catch {
             present(error)
         }

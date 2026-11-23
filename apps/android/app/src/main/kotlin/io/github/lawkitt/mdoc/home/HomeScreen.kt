@@ -74,9 +74,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.R
-import io.github.lawkitt.mdoc.core.CaseChoice
-import io.github.lawkitt.mdoc.core.CaseId
-import io.github.lawkitt.mdoc.core.CaseSummary
+import io.github.lawkitt.mdoc.core.ProjectId
+import io.github.lawkitt.mdoc.core.ProjectSummary
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentSummary
 import io.github.lawkitt.mdoc.ui.Palette
@@ -85,7 +84,7 @@ import io.github.lawkitt.mdoc.ui.Palette
 enum class AddOption { Paste, Files, Photos, Scan }
 
 /**
- * Home: a flat list of documents, newest first, each with its case's dot and
+ * Home: a flat list of documents, newest first, each with its Project's dot and
  * a status line, or how to add the first one. A library that could
  * not be opened says so rather than looking empty.
  */
@@ -153,7 +152,7 @@ fun HomeScreen(
                 items(state.documents, key = { it.id.raw }) { document ->
                     DocumentRow(
                         document,
-                        state.cases.firstOrNull { it.id == document.caseId },
+                        state.projects.firstOrNull { it.id == document.projectId },
                         state.canFindNames,
                         onDelete = { onDelete(document.id) },
                     ) {
@@ -185,7 +184,7 @@ private val AddOption.label: Int
 @Composable
 private fun DocumentRow(
     document: DocumentSummary,
-    case: CaseSummary?,
+    project: ProjectSummary?,
     canFindNames: Boolean,
     onDelete: () -> Unit,
     onClick: () -> Unit,
@@ -204,25 +203,25 @@ private fun DocumentRow(
         StatusLine.NothingFound -> stringResource(R.string.status_nothing_found)
     }
     // The status as a symbol and words, never a colour of its own:
-    // the case's dot is the row's one colour. Something to review reads strongest.
+    // the Project's dot is the row's one colour. Something to review reads strongest.
     val toReview = line is StatusLine.ToReview
     val tone = if (toReview) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-    // The case's name only when it differs from the title.
-    val caseName = case?.name?.takeIf { it != document.title }
+    // The Project's name only when it differs from the title.
+    val projectName = project?.name?.takeIf { it != document.title }
     Box {
         ListItem(
             modifier = Modifier
                 .combinedClickable(onClick = onClick, onLongClick = { actions = true }, onLongClickLabel = deleteLabel)
                 .semantics { customActions = listOf(CustomAccessibilityAction(deleteLabel) { onDelete(); true }) },
-            leadingContent = case?.let {
+            leadingContent = project?.let {
                 {
-                    Box(Modifier.size(10.dp).background(Color(Palette.case(it.colour)), CircleShape))
+                    Box(Modifier.size(10.dp).background(Color(Palette.project(it.colour)), CircleShape))
                 }
             },
             headlineContent = { Text(document.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    caseName?.let { Text(stringResource(R.string.case_named, it), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    projectName?.let { Text(stringResource(R.string.project_named, it), maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(statusIcon(line), contentDescription = null, tint = tone, modifier = Modifier.size(16.dp))
                         Text(status, color = tone, fontWeight = if (toReview) FontWeight.SemiBold else null)
@@ -289,15 +288,16 @@ private fun EmptyHome(canFindNames: Boolean, modifier: Modifier = Modifier) {
 }
 
 /**
- * Adding a document: pasted text, a title and a case in one sheet;
- * a new case unless an existing one is chosen.
+ * Adding a document: pasted text, a title and a Project in one sheet. It
+ * lands in Unfiled unless a Project is chosen; no import makes a Project
+ * (#1091 Decision 35).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddSheet(
     adding: PendingAdd,
-    cases: List<CaseSummary>,
-    onAdd: (text: String?, title: String, case: CaseChoice) -> Unit,
+    projects: List<ProjectSummary>,
+    onAdd: (text: String?, title: String, project: ProjectId?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val pasting = adding is PendingAdd.Text
@@ -310,7 +310,7 @@ fun AddSheet(
         text = value
         if (pasting && !titleTyped) title = HomeViewModel.suggestedTitle(value, fallback)
     }
-    var case by rememberSaveable { mutableStateOf<String?>(null) }
+    var project by rememberSaveable { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp, 0.dp, 24.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
@@ -337,18 +337,18 @@ fun AddSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(stringResource(R.string.case_label), style = MaterialTheme.typography.titleSmall)
-            CaseOption(stringResource(R.string.new_case), null, case == null) { case = null }
-            cases.forEach { option -> CaseOption(option.name, option, case == option.id.raw) { case = option.id.raw } }
+            Text(stringResource(R.string.project_label), style = MaterialTheme.typography.titleSmall)
+            ProjectOption(stringResource(R.string.unfiled), null, project == null) { project = null }
+            projects.forEach { option -> ProjectOption(option.name, option, project == option.id.raw) { project = option.id.raw } }
             Text(
-                stringResource(R.string.case_explanation),
+                stringResource(R.string.project_explanation),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(
                 onClick = {
                     val name = title.trim().ifEmpty { adding.suggestedTitle }
-                    onAdd(if (pasting) text else null, name, case?.let { CaseChoice.Existing(CaseId(it)) } ?: CaseChoice.New(name))
+                    onAdd(if (pasting) text else null, name, project?.let(::ProjectId))
                 },
                 enabled = !pasting || text.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
@@ -358,10 +358,10 @@ fun AddSheet(
 }
 
 @Composable
-private fun CaseOption(label: String, case: CaseSummary?, selected: Boolean, onClick: () -> Unit) {
+private fun ProjectOption(label: String, project: ProjectSummary?, selected: Boolean, onClick: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         RadioButton(selected = selected, onClick = onClick)
-        case?.let { Box(Modifier.size(10.dp).background(Color(Palette.case(it.colour)), CircleShape)) }
+        project?.let { Box(Modifier.size(10.dp).background(Color(Palette.project(it.colour)), CircleShape)) }
         Text(label, modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyLarge)
     }
 }

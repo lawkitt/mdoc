@@ -25,7 +25,7 @@ struct SidebarView: View {
         Array(library.documents.filter { $0.phase != .reviewing }.prefix(Self.recentLimit))
     }
 
-    private var matches: (documents: [LibraryDocument], cases: [CaseSummary]) {
+    private var matches: (documents: [LibraryDocument], projects: [ProjectSummary]) {
         library.search(query)
     }
 
@@ -75,7 +75,7 @@ struct SidebarView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                TextField("Search documents and cases", text: $query)
+                TextField("Search documents and Projects", text: $query)
                     .focused($searching)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -109,16 +109,16 @@ struct SidebarView: View {
         if query.isEmpty {
             header("Recent")
             ForEach(library.documents.prefix(8)) { row($0) }
-        } else if found.documents.isEmpty && found.cases.isEmpty {
-            Text("No documents or cases match “\(query)”.")
+        } else if found.documents.isEmpty && found.projects.isEmpty {
+            Text("No documents or Projects match “\(query)”.")
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .padding(Space.s)
         } else {
-            if !found.cases.isEmpty {
-                header("Cases")
-                ForEach(found.cases) { summary in
-                    caseRow(summary)
+            if !found.projects.isEmpty {
+                header("Projects")
+                ForEach(found.projects) { summary in
+                    projectRow(summary)
                 }
             }
             if !found.documents.isEmpty {
@@ -132,7 +132,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sections: some View {
-        navRow(.cases, title: "Cases", systemImage: "briefcase")
+        navRow(.projects, title: "Projects", systemImage: "briefcase")
         navRow(.documents, title: "Documents", systemImage: "doc.on.doc")
         if !toReview.isEmpty {
             header("To review")
@@ -171,8 +171,8 @@ struct SidebarView: View {
                     .accessibilityHidden(true)
                 Text(title)
                 Spacer(minLength: 0)
-                if section == .cases, !library.cases.isEmpty {
-                    Text("\(library.cases.count)")
+                if section == .projects, !library.projects.isEmpty {
+                    Text("\(library.projects.count)")
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -183,12 +183,12 @@ struct SidebarView: View {
         .accessibilityIdentifier("sidebar-\(section.rawValue)")
     }
 
-    private func caseRow(_ summary: CaseSummary) -> some View {
+    private func projectRow(_ summary: ProjectSummary) -> some View {
         Button {
-            app.openCase(summary.id)
+            app.openProject(summary.id)
         } label: {
             SidebarRowLabel(isSelected: false) {
-                CaseDot(colour: summary.colour)
+                ProjectDot(colour: summary.colour)
                     .frame(width: iconWidth)
                 Text(summary.name)
                     .lineLimit(1)
@@ -265,8 +265,8 @@ struct SidebarView: View {
             parts.append(String(localized: "working"))
         }
         parts.append(LibraryModel.status(of: document, findsNames: library.findsNames))
-        if let summary = library.caseSummary(of: document) {
-            parts.append(String(localized: "case \(summary.name)"))
+        if let summary = library.projectSummary(of: document) {
+            parts.append(String(localized: "Project \(summary.name)"))
         }
         return parts.joined(separator: ", ")
     }

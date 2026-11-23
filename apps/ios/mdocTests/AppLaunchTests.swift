@@ -40,13 +40,13 @@ final class AppLaunchTests: XCTestCase {
 
 /// A Keychain stand-in that refuses the key while "locked", as iOS does with
 /// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
-private final class LockableKeyStore: CaseKeyStore, @unchecked Sendable {
+private final class LockableKeyStore: VaultKeyStore, @unchecked Sendable {
     var locked = false
     private let bytes = Data(repeating: 7, count: 32)
 
     func key() throws -> Data {
         if locked {
-            throw CaseKeyError.keychain(errSecInteractionNotAllowed)
+            throw VaultKeyError.keychain(errSecInteractionNotAllowed)
         }
         return bytes
     }

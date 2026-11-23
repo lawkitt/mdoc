@@ -52,21 +52,22 @@ final class NewDocumentTests: XCTestCase {
     func testANewDocumentOpensInEditModeAndGoesWhenLeftEmpty() throws {
         let app = try app()
         let before = app.library.documents.count
-        let cases = app.library.cases.count
+        let projects = app.library.projects.count
         let model = try newDocument(app)
         XCTAssertEqual(app.navigator.openDocument, model.id)
         XCTAssertEqual(model.snapshot.origin, .new)
         XCTAssertEqual(model.snapshot.title, "New document")
         XCTAssertEqual(model.snapshot.markdown, "")
         XCTAssertEqual(app.library.documents.count, before + 1)
-        XCTAssertEqual(app.library.cases.count, cases + 1, "a case of its own")
+        XCTAssertEqual(app.library.projects.count, projects, "Unfiled: no Project of its own")
+        XCTAssertNil(model.snapshot.projectID)
 
-        // Typed and deleted again, then left: no empty row, no empty case.
+        // Typed and deleted again, then left: no empty row.
         type("x", in: model)
         XCTAssertNotNil(model.typed(SourceRange(start: 0, end: 1), ""))
         app.showStart()
         XCTAssertEqual(app.library.documents.count, before)
-        XCTAssertEqual(app.library.cases.count, cases)
+        XCTAssertEqual(app.library.projects.count, projects)
         XCTAssertFalse(app.library.documents.contains { $0.id == model.id })
         XCTAssertNil(app.documents.model(for: model.id))
     }
@@ -81,7 +82,7 @@ final class NewDocumentTests: XCTestCase {
         await model.discoverNow()
         XCTAssertEqual(model.snapshot.title, "Lease agreement")
         XCTAssertEqual(app.library.document(model.id)?.title, "Lease agreement")
-        XCTAssertEqual(app.library.caseSummary(of: try XCTUnwrap(app.library.document(model.id)))?.name, "Lease agreement")
+        XCTAssertNil(app.library.document(model.id)?.projectID, "no Project follows it")
 
         model.doneEditing()
         app.rename(model.id, to: "Flat 3")

@@ -3,7 +3,7 @@ import UIKit
 
 /// Paste reply: the AI's answer, restored with this document's case.
 struct ReplySheet: View {
-    let caseName: String?
+    let projectName: String?
     let onRestore: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var reply = ""
@@ -11,8 +11,8 @@ struct ReplySheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
-                Text(caseName.map { String(localized: "mdoc puts back the names from the case “\($0)”.") }
-                    ?? String(localized: "mdoc puts back the names from this document's case."))
+                Text(projectName.map { String(localized: "mdoc puts back the names from the Project “\($0)”.") }
+                    ?? String(localized: "mdoc puts back the names from this document."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     // Its full height up to six lines (a case is named after a

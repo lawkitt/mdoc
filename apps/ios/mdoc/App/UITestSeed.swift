@@ -31,7 +31,7 @@ enum UITestSeed {
             let title = file.deletingPathExtension().lastPathComponent
             guard let source = source(file, storage: app.storage),
                   let session = try? app.library.importDocument(
-                    PendingImport(source: source, suggestedTitle: title), title: title, into: .newCase(name: title)),
+                    PendingImport(source: source, suggestedTitle: title), title: title, into: nil),
                   let model = try? app.documents.open(session.id) else { return }
             await model.recognize()
             // A scan waits here for its OCR model.
@@ -45,7 +45,7 @@ enum UITestSeed {
     private static func source(_ file: URL, storage: MdocStorage) -> ImportSource? {
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: file.path, isDirectory: &isFolder), isFolder.boolValue {
-            let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let folder = storage.url(.intake).appendingPathComponent(UUID().uuidString, isDirectory: true)
             let pages = ((try? FileManager.default.contentsOfDirectory(at: file, includingPropertiesForKeys: nil)) ?? [])
                 .filter { $0.pathExtension.lowercased() == "jpg" }
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -60,7 +60,7 @@ enum UITestSeed {
         if file.pathExtension.lowercased() == "md" {
             return (try? String(contentsOf: file, encoding: .utf8)).map { .text($0) }
         }
-        guard let copy = try? storage.importCopy(of: file, in: .originals),
+        guard let copy = try? storage.importCopy(of: file, in: .intake),
               let kind = Importer.kind(of: copy) else { return nil }
         return .file(copy, kind)
     }

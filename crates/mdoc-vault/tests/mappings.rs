@@ -1478,6 +1478,11 @@ fn a_move_clears_the_documents_saved_review() {
     let folder = Folder::new();
     let vault = folder.open();
     let review = Some(mdoc_pii::Review::default().save());
+    let counts = Some(mdoc_vault::ReviewCounts {
+        proposed: 1,
+        replaced: 2,
+        kept: 0,
+    });
     let (project, _) = saved(
         &vault,
         "PERSON_1 wrote.",
@@ -1485,18 +1490,37 @@ fn a_move_clears_the_documents_saved_review() {
         "Brief",
     );
     let memo = new_document(&vault, None, "Memo", "Ann met Bob.");
+    let summary = |vault: &Vault| {
+        (vault.documents().into_iter())
+            .find(|d| d.id == memo)
+            .unwrap()
+            .counts
+    };
     vault
-        .update_document(&memo, |d| d.review = review.clone())
+        .update_document(&memo, |d| {
+            d.review = review.clone();
+            d.counts = counts;
+        })
         .unwrap();
+    assert_eq!(summary(&vault), counts);
     let moved = vault.move_document(&memo, Some(&project)).unwrap();
     assert_eq!(moved.document.review, None);
     assert_eq!(vault.document(&memo).unwrap().review, None);
+    // The counts were of that review.
+    assert_eq!(vault.document(&memo).unwrap().counts, None);
+    assert_eq!(summary(&vault), None);
 
     vault
-        .update_document(&memo, |d| d.review = review.clone())
+        .update_document(&memo, |d| {
+            d.review = review.clone();
+            d.counts = counts;
+        })
         .unwrap();
     vault
         .delete_project(&project, ProjectDocuments::MoveToUnfiled)
         .unwrap();
     assert_eq!(vault.document(&memo).unwrap().review, None);
+    assert_eq!(vault.document(&memo).unwrap().counts, None);
+    drop(vault);
+    assert_eq!(summary(&folder.open()), None);
 }

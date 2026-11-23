@@ -256,6 +256,7 @@ impl Vault {
         // The review's ranges and identities were of that text and mapping
         // too: the next open scans again.
         moved.review = None;
+        moved.counts = None;
         // Its text is still to be made, though the move writes it.
         moved.unconverted = stored.pending_conversion();
         let moved = match self.place_document(lock, moved) {
@@ -476,8 +477,9 @@ mod tests {
     };
 
     /// A Document imported before `unconverted` existed (revision 1, no
-    /// text, the flag absent) stays waiting for its conversion through the
-    /// move a Project delete makes.
+    /// text, the flag absent) reads as waiting for its conversion, and
+    /// stays so through a write of something else and the move a Project
+    /// delete makes.
     #[test]
     fn an_import_from_before_the_flag_stays_unconverted_through_a_move() {
         let temp = tempfile::tempdir().unwrap();
@@ -509,8 +511,10 @@ mod tests {
         };
         let vault = Vault::open(&root, &[7; 32]).unwrap();
         let stored = vault.document(&id).unwrap();
-        assert!(!stored.unconverted && stored.revision == 1);
-        assert!(stored.pending_conversion());
+        assert!(stored.unconverted && stored.revision == 1, "filled in");
+        let renamed = (vault.update_document(&id, |d| d.title = "Lease brief".into())).unwrap();
+        assert!(renamed.revision > 1);
+        assert!(renamed.unconverted && renamed.pending_conversion());
         vault
             .delete_project(&project, ProjectDocuments::MoveToUnfiled)
             .unwrap();

@@ -35,23 +35,25 @@ class ScaffoldTest {
     }
 
     @Test
-    fun libraryStoresADocumentUnderTheKeystoreKey() {
+    fun vaultStoresADocumentUnderTheKeystoreKey() {
         val storage = MdocStorage.app(context, folder = "scaffold-test").prepare()
+        val key = storage.caseKeyFile
         try {
             val core = AppCore.make(
                 context,
                 storage = storage,
-                keys = KeystoreCaseKeyStore(storage.caseKeyFile, "mdoc-case-key-test"),
+                keys = KeystoreCaseKeyStore(key, "mdoc-case-key-test"),
             )
             DocumentSession().use { session ->
                 session.importText("Letter to Maya Bennett.", "Letter")
-                session.save(core.library)
+                session.saveIntoVault(core.vault)
             }
-            assertEquals(listOf("Letter"), core.library.documents().map { it.title })
-            assertEquals(1, core.library.cases().cases.size)
+            assertEquals(listOf("Letter"), core.vault.documents().map { it.title })
+            // Unfiled: saving makes no Project.
+            assertEquals(emptyList<String>(), core.vault.projects().map { it.name })
         } finally {
-            storage.root.deleteRecursively()
-            storage.caseKeyFile.delete()
+            storage.folders.forEach { it.deleteRecursively() }
+            key.delete()
         }
     }
 }

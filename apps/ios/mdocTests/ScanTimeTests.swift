@@ -51,7 +51,7 @@ final class ScanTimeTests: XCTestCase {
     /// The estimate shows under Find names, and not once the scan runs.
     func testTheEstimateShowsBeforeTheScanOnly() async throws {
         let (core, storage) = try Fixture.core()
-        let real = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: .newCase(name: "Note"))
+        let real = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: nil)
         _ = try real.recognize(observer: TestObserver())
         let session = SlowJobs(real, seconds: 0.3)
         session.estimate = 3
@@ -77,7 +77,7 @@ final class ScanTimeTests: XCTestCase {
             setup: setup, downloader: FakeModelDownloader(seconds: 0), network: FakeNetwork(.wifi),
             jobs: LongJobRunner(background: NoBackgroundContinuation()), preferences: Fixture.preferences())
         let (core, storage) = try Fixture.core()
-        let real = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: .newCase(name: "Note"))
+        let real = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: nil)
         _ = try real.recognize(observer: TestObserver())
         let document = DocumentViewModel(
             session: real, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage,
@@ -125,7 +125,7 @@ final class ScanTimeTests: XCTestCase {
     /// A detector-tier phone that is not timed yet shows no estimate.
     func testNoEstimateBeforeThePhoneIsTimed() throws {
         let (core, _) = try Fixture.core(memory: Fixture.detectorTier)
-        let session = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: .newCase(name: "Note"))
+        let session = try core.library.importDocument(.text("Ann Lee signed.\n"), title: "Note", into: nil)
         _ = try session.recognize(observer: TestObserver())
         XCTAssertNil(session.scanEstimate())
         XCTAssertNil(core.setup.snapshot().tenPagesSeconds)

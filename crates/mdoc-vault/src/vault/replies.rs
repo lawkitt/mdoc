@@ -1,16 +1,130 @@
 //! AI Replies (#1091 Decisions 4, 16, 18 and 20): saved as received, with
 //! each alias bound to the identity it meant, and restored from those
 //! identities' originals as they are now.
-use super::{Vault, WriteLock};
+use super::{FaultHook, ManifestCheck, Vault, WriteLock};
 use crate::{
     ObjectKind, VaultError, is_id,
     manifest::{Entry, Record, reply_path},
     mapping::{Identity, Mapping},
     new_id,
-    records::{Document, NewReply, Project, Reply, ReplyOwner, ReplySummary, now},
+    records::{
+        Document, DocumentSummary, NewReply, Project, ProjectSummary, Reply, ReplyOwner,
+        ReplySummary, SharedFrom, now,
+    },
 };
 use mdoc_pii::restore::{RestoreMap, RestoredText};
-use std::io;
+use std::{io, path::PathBuf};
+
+/// The Restore extension's handle (#1091 Decision 20): it reads the
+/// manifest, Projects and Documents, and writes nothing but new AI Reply
+/// files. The manifest is checked against the object files at open and on
+/// [`Self::refresh`] as [`Vault`]'s is, but only in memory: it is never
+/// written, not even when found stale or missing, so the app's cache is
+/// left alone and the app picks the reply up through its own
+/// [`Vault::refresh`]. The folder must exist already, and no temp file is
+/// swept.
+pub struct ReplyHandle {
+    vault: Vault,
+}
+
+impl ReplyHandle {
+    /// Open the Vault in `root`, an existing folder, for replies only.
+    /// [`VaultError::WrongKey`] as [`Vault::open`] refuses it.
+    pub fn open(root: impl Into<PathBuf>, key: &[u8; 32]) -> Result<Self, VaultError> {
+        let vault = Vault::open_inner(root.into(), key, None, false)?;
+        Ok(Self { vault })
+    }
+
+    /// [`Self::open`] with a hook run at every write step (tests).
+    pub fn open_with_hook(
+        root: impl Into<PathBuf>,
+        key: &[u8; 32],
+        hook: FaultHook,
+    ) -> Result<Self, VaultError> {
+        let vault = Vault::open_inner(root.into(), key, Some(hook), false)?;
+        Ok(Self { vault })
+    }
+
+    /// How the manifest was found when the handle opened; it was not
+    /// rewritten either way.
+    pub fn opened(&self) -> ManifestCheck {
+        self.vault.opened()
+    }
+
+    /// Pick up what other handles wrote; `true` when anything changed.
+    pub fn refresh(&self) -> Result<bool, VaultError> {
+        self.vault.refresh()
+    }
+
+    /// [`Vault::projects`].
+    pub fn projects(&self) -> Vec<ProjectSummary> {
+        self.vault.projects()
+    }
+
+    /// [`Vault::documents`].
+    pub fn documents(&self) -> Vec<DocumentSummary> {
+        self.vault.documents()
+    }
+
+    /// [`Vault::documents_in`].
+    pub fn documents_in(&self, project: Option<&str>) -> Vec<DocumentSummary> {
+        self.vault.documents_in(project)
+    }
+
+    pub fn project(&self, id: &str) -> Result<Project, VaultError> {
+        self.vault.project(id)
+    }
+
+    pub fn document(&self, id: &str) -> Result<Document, VaultError> {
+        self.vault.document(id)
+    }
+
+    /// [`Vault::save_reply`]: only the reply's file is written.
+    pub fn save_reply(&self, new: NewReply) -> Result<Reply, VaultError> {
+        self.vault.save_reply(new)
+    }
+
+    pub fn reply(&self, id: &str) -> Result<Reply, VaultError> {
+        self.vault.reply(id)
+    }
+
+    /// [`Vault::save_shared_reply`]: only the reply's file is written.
+    pub fn save_shared_reply(
+        &self,
+        from: &SharedFrom,
+        title: String,
+        source_app: Option<String>,
+        markdown: String,
+    ) -> Result<Reply, VaultError> {
+        self.vault
+            .save_shared_reply(from, title, source_app, markdown)
+    }
+
+    /// [`Vault::shared_owner`].
+    pub fn shared_owner(&self, from: &SharedFrom) -> Result<(ReplyOwner, Mapping), VaultError> {
+        self.vault.shared_owner(from)
+    }
+
+    /// [`Vault::owner_mapping`].
+    pub fn owner_mapping(&self, owner: &ReplyOwner) -> Result<Mapping, VaultError> {
+        self.vault.owner_mapping(owner)
+    }
+
+    /// [`Vault::restore_reply`].
+    pub fn restore_reply(&self, id: &str) -> Result<RestoredText, VaultError> {
+        self.vault.restore_reply(id)
+    }
+
+    /// [`Vault::project_replies`].
+    pub fn project_replies(&self, project: &str) -> Vec<ReplySummary> {
+        self.vault.project_replies(project)
+    }
+
+    /// [`Vault::document_replies`].
+    pub fn document_replies(&self, document: &str) -> Vec<ReplySummary> {
+        self.vault.document_replies(document)
+    }
+}
 
 impl Vault {
     /// Save an AI Reply for a Project or a Document, binding each alias in
@@ -22,6 +136,39 @@ impl Vault {
     pub fn save_reply(&self, new: NewReply) -> Result<Reply, VaultError> {
         let lock = self.write_lock()?;
         let mapping = self.owner_mapping(&new.owner)?;
+        self.save_reply_locked(&lock, new, &mapping)
+    }
+
+    /// Save an AI Reply to text shared from `from`, owned as #1091
+    /// Decision 4 has it: one shared from a Document in a Project is the
+    /// Project's, one from an Unfiled Document is that Document's, which
+    /// it follows into a Project later. The owner is found and the aliases
+    /// bound under the write lock, from one read of the Document, so a move
+    /// meanwhile cannot split them. Only the reply's file is written.
+    pub fn save_shared_reply(
+        &self,
+        from: &SharedFrom,
+        title: String,
+        source_app: Option<String>,
+        markdown: String,
+    ) -> Result<Reply, VaultError> {
+        let lock = self.write_lock()?;
+        let (owner, mapping) = self.shared_owner(from)?;
+        let new = NewReply {
+            owner,
+            title,
+            source_app,
+            markdown,
+        };
+        self.save_reply_locked(&lock, new, &mapping)
+    }
+
+    fn save_reply_locked(
+        &self,
+        lock: &WriteLock<'_>,
+        new: NewReply,
+        mapping: &Mapping,
+    ) -> Result<Reply, VaultError> {
         let reply = Reply {
             id: new_id()?,
             bindings: mapping.bindings(&new.markdown),
@@ -31,8 +178,30 @@ impl Vault {
             markdown: new.markdown,
             created: now(),
         };
-        self.write_reply(&lock, &reply)?;
+        self.write_reply(lock, &reply)?;
         Ok(reply)
+    }
+
+    /// Whose a reply to text shared from `from` would be now
+    /// ([`Self::save_shared_reply`]) and the mapping it would bind and
+    /// restore with, from one read of the Document.
+    pub fn shared_owner(&self, from: &SharedFrom) -> Result<(ReplyOwner, Mapping), VaultError> {
+        match from {
+            SharedFrom::Project(id) => Ok((
+                ReplyOwner::Project(id.clone()),
+                self.load_record::<Project>(id)?.mapping,
+            )),
+            SharedFrom::Document(id) => {
+                let document: Document = self.load_record(id)?;
+                match document.project {
+                    Some(project) => {
+                        let mapping = self.load_record::<Project>(&project)?.mapping;
+                        Ok((ReplyOwner::Project(project), mapping))
+                    }
+                    None => Ok((ReplyOwner::Document(id.clone()), document.mapping)),
+                }
+            }
+        }
     }
 
     /// The AI Reply `id`, read from its file.
@@ -173,8 +342,8 @@ impl Vault {
         Ok(identities)
     }
 
-    /// The mapping a reply of `owner` binds and restores with.
-    fn owner_mapping(&self, owner: &ReplyOwner) -> Result<Mapping, VaultError> {
+    /// The mapping a reply of `owner` binds and restores with now.
+    pub fn owner_mapping(&self, owner: &ReplyOwner) -> Result<Mapping, VaultError> {
         match owner {
             ReplyOwner::Project(id) => Ok(self.load_record::<Project>(id)?.mapping),
             ReplyOwner::Document(id) => {

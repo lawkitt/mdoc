@@ -14,12 +14,12 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.lawkitt.mdoc.MdocApplication
 import io.github.lawkitt.mdoc.core.AppCore
 import io.github.lawkitt.mdoc.core.CameraCapture
-import io.github.lawkitt.mdoc.core.CaseChoice
-import io.github.lawkitt.mdoc.core.CaseSummary
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentPhase
 import io.github.lawkitt.mdoc.core.DocumentSummary
 import io.github.lawkitt.mdoc.core.ImportSource
+import io.github.lawkitt.mdoc.core.ProjectId
+import io.github.lawkitt.mdoc.core.ProjectSummary
 import io.github.lawkitt.mdoc.core.Originals
 import io.github.lawkitt.mdoc.core.ScanSession
 import io.github.lawkitt.mdoc.core.SourceKind
@@ -55,7 +55,7 @@ sealed interface PendingAdd {
 /** Home's view state, built from the core's snapshots. */
 data class HomeState(
     val documents: List<DocumentSummary> = emptyList(),
-    val cases: List<CaseSummary> = emptyList(),
+    val projects: List<ProjectSummary> = emptyList(),
     /** Above the detector floor: Find names is offered. */
     val canFindNames: Boolean = true,
     /** The library has been read at least once. */
@@ -135,7 +135,7 @@ class HomeViewModel(
                 val library = core.documents.snapshot()
                 HomeState(
                     documents = library.documents,
-                    cases = library.cases,
+                    projects = library.projects,
                     canFindNames = core.models.snapshot().detector != null,
                     loaded = true,
                 )
@@ -149,7 +149,7 @@ class HomeViewModel(
         replaceAdding(PendingAdd.Text(title))
     }
 
-    /** Stages clean copies before asking for a title and case. */
+    /** Stages clean copies before asking for a title and Project. */
     fun received(resolver: ContentResolver, uris: List<Uri>, kind: SourceKind?, fallbackTitle: String) {
         if (uris.isEmpty()) return
         receiving?.cancel()
@@ -288,8 +288,8 @@ class HomeViewModel(
 
     fun refusalShown() = mutable.update { it.copy(refused = null) }
 
-    /** Stores the document in its case and returns its id; the caller opens it and reads it. */
-    suspend fun add(text: String?, title: String, case: CaseChoice): DocumentId? {
+    /** Keeps the document, Unfiled or in `project`, and returns its id; the caller opens it and reads it. */
+    suspend fun add(text: String?, title: String, project: ProjectId? = null): DocumentId? {
         val adding = mutable.getAndUpdate { it.copy(adding = null) }.adding ?: return null
         val source = when (adding) {
             is PendingAdd.Text -> ImportSource.Text(text.orEmpty())
@@ -298,7 +298,7 @@ class HomeViewModel(
         var handedOff = false
         try {
             return withContext(Dispatchers.IO) {
-                core().documents.importDocument(source, title, case).id.also { handedOff = true }
+                core().documents.importDocument(source, title, project).id.also { handedOff = true }
             }
         } catch (error: CancellationException) {
             throw error

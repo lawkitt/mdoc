@@ -739,3 +739,33 @@ fn an_unconverted_member_moved_to_unfiled_by_a_delete_still_converts(cx: &mut Te
     assert_eq!(converted.markdown, text);
     assert!(!converted.unconverted);
 }
+
+/// Review of #1126: a desktop save replaces the review, so the counts a
+/// phone saved with the old one go, and lists count it again.
+#[gpui::test]
+fn a_desktop_save_drops_the_counts_of_the_review_it_replaces(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let note = dir.path().join("Note.md");
+    std::fs::write(&note, "# Note").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![note], cx);
+    wait(cx, 1000);
+    let id = documents(dir.path())[0].id.clone();
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    let counts = mdoc_vault::ReviewCounts {
+        proposed: 3,
+        replaced: 1,
+        kept: 0,
+    };
+    (vault.update_document(&id, |d| d.counts = Some(counts))).unwrap();
+    active(&tabs, cx).update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            editor.set_text(String::from("# Note, edited"), cx)
+        });
+        view.save_now(cx);
+    });
+    wait(cx, 1000);
+    let saved = open_vault(dir.path()).document(&id).unwrap();
+    assert_eq!(saved.markdown, "# Note, edited");
+    assert_eq!(saved.counts, None);
+}
