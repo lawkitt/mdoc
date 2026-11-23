@@ -51,6 +51,9 @@ impl DocumentView {
                 {
                     this.pii.review.apply_discovery(result);
                     this.refresh_review_exclusions(cx);
+                    // A write made while it was finding them recorded the
+                    // review as not ready: write it again.
+                    this.schedule_autosave(cx);
                     cx.notify();
                 }
                 if this.pii.discovery_pending {

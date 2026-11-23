@@ -1,10 +1,12 @@
 //! The menu bar shelf's model, GPUI-free: which documents it
 //! lists and whether each is ready, the pseudonymized row it shows, the
 //! text Copy for AI and a drag carry, the temporary `.md` exports a drag
-//! drops, and Restore Clipboard. The window collects what it lists; the
-//! shelf's view shows it.
+//! drops, and Restore Clipboard. The window collects what it lists, from
+//! its open tabs and the Vault; the shelf's view shows it.
 //!
-//! Invariants: nothing leaves through the shelf that is not ready; rows and
+//! Invariants: nothing leaves through the shelf that is not ready, and a
+//! row is ready only once the Vault's outbound check passes
+//! (`Vault::text_for_ai`), whose text is all a row hands out; rows and
 //! exports carry pseudonymized text only; no document text goes to app
 //! data, and exports live in a private temporary folder until quit.
 
@@ -19,6 +21,7 @@ use mdoc_pii::{
     Category,
     restore::{ExportedIdentity, RestoreMap},
 };
+use mdoc_store::document_id::VaultId;
 use std::{ops::Range, time::SystemTime};
 
 /// The shelf lists at most this many documents.
@@ -43,11 +46,16 @@ pub(crate) enum Readiness {
     Ready,
     /// An open tab with this many proposals still to review.
     LeftToReview(usize),
-    /// An open tab just edited: its proposals are being found again.
+    /// An open tab just edited: its proposals are being found again, or
+    /// its text, or a document's Project names, are not written to the
+    /// Vault yet.
     Checking,
     /// A document whose text still holds this many known names by an
-    /// original wording: a kept mention.
+    /// original wording: a kept mention, or a name another document added
+    /// to its Project since.
     NamesNotReplaced(usize),
+    /// A document whose stored text is not the text it saved while ready.
+    ChangedSinceReview,
 }
 
 impl Readiness {
@@ -61,16 +69,35 @@ impl Readiness {
             Self::Ready => "ready".into(),
             Self::LeftToReview(n) => format!("{n} left to review"),
             Self::Checking => "Checking names".into(),
+            Self::ChangedSinceReview => "Changed since review".into(),
             Self::NamesNotReplaced(1) => "1 name not replaced".into(),
             Self::NamesNotReplaced(n) => format!("{n} names not replaced"),
         }
     }
 }
 
-/// What a row opens: an open tab.
+/// What a row opens: an open tab, or a Vault document no tab shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ShelfKey {
     Tab(u64),
+    Document(VaultId),
+}
+
+/// What the Vault's outbound check (`Vault::text_for_ai`) gave for a
+/// document as stored: the text Copy for AI sends, or why it may not leave.
+pub(crate) type Outbound = Result<String, mdoc_vault::Readiness>;
+
+/// A stored document's state as the shelf shows it, when the outbound
+/// check refused it.
+fn refused(readiness: mdoc_vault::Readiness) -> Readiness {
+    match readiness {
+        mdoc_vault::Readiness::NamesNotReplaced(n) => Readiness::NamesNotReplaced(n),
+        // Never saved while ready, or changed since: as a case member with
+        // no or another fingerprint showed.
+        mdoc_vault::Readiness::Ready
+        | mdoc_vault::Readiness::NotReviewed
+        | mdoc_vault::Readiness::ChangedSinceReview => Readiness::ChangedSinceReview,
+    }
 }
 
 /// A ready document's preview: its first real prose as one paragraph,
@@ -130,28 +157,82 @@ pub(crate) struct OpenTab<'a> {
     pub names: Vec<ExportedIdentity>,
     pub project: Option<ProjectLink>,
     pub edited: SystemTime,
+    /// The outbound check of its Vault document, asked only once its review
+    /// is ready; `None` while its text or review is not written yet.
+    pub stored: Option<Outbound>,
+}
+
+impl OpenTab<'_> {
+    /// Its review's readiness, as a write records it: an applied alias
+    /// assumed, nothing pending or still being found, and no known name
+    /// left as written. The Vault is not asked.
+    pub(crate) fn review_readiness(&self) -> Readiness {
+        self.review_readiness_with(&RestoreMap::new(self.names.clone()))
+    }
+
+    /// As if what it shows was written and the outbound check passed with
+    /// the editor's Copy for AI text, for tests and renders.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn checked(mut self) -> Self {
+        let text = mdoc_pii::handoff::for_ai(self.text, self.aliases.iter().copied());
+        self.stored = Some(Ok(text));
+        self
+    }
+
+    fn review_readiness_with(&self, names: &RestoreMap) -> Readiness {
+        if self.pending > 0 {
+            Readiness::LeftToReview(self.pending)
+        } else if self.checking {
+            Readiness::Checking
+        } else {
+            match names.known_names(self.text) {
+                0 => Readiness::Ready,
+                missed => Readiness::NamesNotReplaced(missed),
+            }
+        }
+    }
+}
+
+/// A Vault document no open tab shows, as stored.
+pub(crate) struct StoredDocument<'a> {
+    pub id: VaultId,
+    pub title: &'a str,
+    /// Its Markdown as stored.
+    pub text: &'a str,
+    /// The names it lives with: its Project's as stored, or its own while
+    /// Unfiled.
+    pub names: Vec<ExportedIdentity>,
+    pub project: Option<ProjectLink>,
+    /// When it was last written.
+    pub edited: SystemTime,
+    /// `None` while a move of it, or a change to its Project's names, is
+    /// not written yet.
+    pub outbound: Option<Outbound>,
 }
 
 impl ShelfDocument {
     /// An open tab's row; `None` without an applied alias (not listed).
+    /// Ready only when its review is and the outbound check of what it
+    /// wrote passes; Copy for AI's text is that check's.
     pub(crate) fn of_tab(tab: OpenTab<'_>) -> Option<Self> {
         if tab.aliases.is_empty() {
             return None;
         }
-        let names = RestoreMap::new(tab.names);
-        let readiness = if tab.pending > 0 {
-            Readiness::LeftToReview(tab.pending)
-        } else if tab.checking {
-            Readiness::Checking
-        } else {
-            match names.known_names(tab.text) {
-                0 => Readiness::Ready,
-                missed => Readiness::NamesNotReplaced(missed),
-            }
+        let names = RestoreMap::new(tab.names.clone());
+        let (readiness, for_ai) = match (tab.review_readiness_with(&names), tab.stored) {
+            (Readiness::Ready, Some(Ok(text))) => (Readiness::Ready, Some(text)),
+            (Readiness::Ready, Some(Err(readiness))) => (refused(readiness), None),
+            // Its last edit is still on its way to the Vault.
+            (Readiness::Ready, None) => (Readiness::Checking, None),
+            (readiness, _) => (readiness, None),
         };
-        let for_ai = readiness
-            .is_ready()
-            .then(|| mdoc_pii::handoff::for_ai(tab.text, tab.aliases.iter().copied()));
         Some(Self::new(
             ShelfKey::Tab(tab.id),
             tab.title,
@@ -160,6 +241,32 @@ impl ShelfDocument {
             tab.project,
             readiness,
             tab.edited,
+            for_ai,
+        ))
+    }
+
+    /// A stored document's row: ready only when the outbound check passes,
+    /// as it leaves with that check's text. `None` when its text holds no
+    /// alias its names know (not listed), as a tab without an applied
+    /// alias is not: reopened, it would have none.
+    pub(crate) fn of_stored(document: StoredDocument<'_>) -> Option<Self> {
+        let names = RestoreMap::new(document.names);
+        if names.exact_aliases(document.text).is_empty() {
+            return None;
+        }
+        let (readiness, for_ai) = match document.outbound {
+            Some(Ok(text)) => (Readiness::Ready, Some(text)),
+            Some(Err(readiness)) => (refused(readiness), None),
+            None => (Readiness::Checking, None),
+        };
+        Some(Self::new(
+            ShelfKey::Document(document.id),
+            document.title,
+            document.text,
+            &names,
+            document.project,
+            readiness,
+            document.edited,
             for_ai,
         ))
     }
@@ -995,12 +1102,16 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     })
 }
 
-/// The shelf's list: open tabs, most recently edited first; at most
+/// The shelf's list: open tabs, most recently edited first, then stored
+/// documents no tab shows, most recently written first; at most
 /// [`MAX_DOCUMENTS`].
-pub(crate) fn list(mut tabs: Vec<ShelfDocument>) -> Vec<ShelfDocument> {
+pub(crate) fn list(
+    mut tabs: Vec<ShelfDocument>,
+    mut stored: Vec<ShelfDocument>,
+) -> Vec<ShelfDocument> {
     tabs.sort_by_key(|row| std::cmp::Reverse(row.edited));
-    tabs.truncate(MAX_DOCUMENTS);
-    tabs
+    stored.sort_by_key(|row| std::cmp::Reverse(row.edited));
+    tabs.into_iter().chain(stored).take(MAX_DOCUMENTS).collect()
 }
 
 /// What Restore Clipboard did.
