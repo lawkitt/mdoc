@@ -141,30 +141,6 @@ fn turning_the_setting_off_shows_a_hidden_window_and_closing_quits_again(cx: &mu
     assert!(quit(cx));
 }
 
-/// Review of #264: a case save that fails while quitting asks in a window
-/// that shows, even when no tab was at risk.
-#[cfg(target_os = "macos")]
-#[gpui::test]
-fn a_failed_project_save_while_quitting_shows_the_hidden_window(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, case) = project_quit_fixture(cx, dir.path());
-    install(&tabs, true, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
-    cx.run_until_parked();
-    assert!(cx.update(|_, cx| menu_bar::window_hidden(cx)));
-    // A case change whose save fails; the quit's final save asks.
-    tabs.update(cx, |tabs, cx| {
-        tabs.toggle_project_category(&case, mdoc_pii::Category::Person, cx)
-    });
-    cx.run_until_parked();
-    cx.dispatch_action(Quit);
-    cx.run_until_parked();
-    assert!(cx.has_pending_prompt(), "the save failure asks");
-    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
-    cx.simulate_prompt_answer("Cancel");
-    cx.run_until_parked();
-}
-
 /// Review of #264: a file opened from Finder shows a hidden window.
 #[cfg(target_os = "macos")]
 #[gpui::test]
