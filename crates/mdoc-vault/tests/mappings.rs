@@ -1472,3 +1472,31 @@ fn deleting_a_project_moves_its_documents_to_unfiled_or_deletes_them() {
     assert!(vault.projects().is_empty());
     assert_eq!(ids_in(&vault, None), both);
 }
+
+#[test]
+fn a_move_clears_the_documents_saved_review() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let review = Some(mdoc_pii::Review::default().save());
+    let (project, _) = saved(
+        &vault,
+        "PERSON_1 wrote.",
+        &[person("PERSON_1", &["Ann Lee"])],
+        "Brief",
+    );
+    let memo = new_document(&vault, None, "Memo", "Ann met Bob.");
+    vault
+        .update_document(&memo, |d| d.review = review.clone())
+        .unwrap();
+    let moved = vault.move_document(&memo, Some(&project)).unwrap();
+    assert_eq!(moved.document.review, None);
+    assert_eq!(vault.document(&memo).unwrap().review, None);
+
+    vault
+        .update_document(&memo, |d| d.review = review.clone())
+        .unwrap();
+    vault
+        .delete_project(&project, ProjectDocuments::MoveToUnfiled)
+        .unwrap();
+    assert_eq!(vault.document(&memo).unwrap().review, None);
+}

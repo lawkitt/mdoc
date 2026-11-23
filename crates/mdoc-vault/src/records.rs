@@ -116,7 +116,7 @@ pub struct Document {
     /// reopened Document needs no rescan; `None` until it has one. Its
     /// ranges are in `markdown` as saved with it: restore it only over that
     /// text (`mdoc_pii::Review::restore` refuses ranges that do not fit).
-    /// A move rewrites the text but not this yet (item 7).
+    /// A move clears it, as its text and mapping change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<SavedReview>,
 }
