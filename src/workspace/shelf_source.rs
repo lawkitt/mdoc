@@ -1,45 +1,170 @@
 //! What the window gives the menu bar shelf: its open tabs with applied
-//! aliases, and its Projects' names for the clipboard rows.
+//! aliases, then the Vault's other documents, each ready only once the
+//! Vault's outbound check passes; and its Projects' names for the
+//! clipboard rows.
 
-use super::{Workspace, navigation::Arrival};
+use super::{ProjectLink, Workspace, navigation::Arrival};
 use crate::{
     document_view::DocumentView,
-    shelf::{self, OpenTab, ShelfDocument, ShelfKey},
+    shelf::{self, OpenTab, Outbound, ShelfDocument, ShelfKey, StoredDocument},
 };
 use gpui::{App, Context, Window};
 use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
-use mdoc_store::settings;
-use std::time::SystemTime;
+use mdoc_store::{
+    document_id::{DocumentId, VaultId},
+    settings,
+};
+use mdoc_vault::{DocumentSummary, Vault, VaultError};
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime},
+};
+
+/// The shelf opens at most this many stored documents to fill its list:
+/// one whose text holds no alias is not listed.
+const STORED_READS: usize = 4 * shelf::MAX_DOCUMENTS;
 
 impl Workspace {
-    /// The shelf's documents: open tabs with applied aliases, at most
-    /// `shelf::MAX_DOCUMENTS`.
+    /// The shelf's documents: open tabs with applied aliases, then the
+    /// Vault's documents no tab shows, at most `shelf::MAX_DOCUMENTS`.
+    /// Opens up to [`STORED_READS`] stored documents; nothing about them is
+    /// kept.
     pub(crate) fn shelf_documents(&self, cx: &App) -> Vec<ShelfDocument> {
-        let tabs = (self.tabs.iter())
-            .filter_map(|tab| shelf_tab(tab.id(), tab.view()?.read(cx), cx))
-            .collect();
-        shelf::list(tabs)
+        let mut shown = HashSet::new();
+        let mut tabs = Vec::new();
+        for tab in &self.tabs {
+            let Some(view) = tab.view() else {
+                continue;
+            };
+            let view = view.read(cx);
+            if let Some(DocumentId::Vault(id)) = view.session.document.id() {
+                shown.insert(id.as_str().to_owned());
+            }
+            tabs.extend(self.shelf_tab(tab.id(), view, cx));
+        }
+        let room = shelf::MAX_DOCUMENTS.saturating_sub(tabs.len());
+        let stored = match self.vault.vault() {
+            Some(vault) if room > 0 => {
+                let mut summaries: Vec<_> = (vault.documents().into_iter())
+                    .filter(|summary| !summary.exclude_from_ai && !shown.contains(&summary.id))
+                    .collect();
+                summaries.sort_by_key(|summary| std::cmp::Reverse(summary.updated));
+                (summaries.iter().take(STORED_READS))
+                    .filter_map(|summary| self.stored_row(vault, summary))
+                    .take(room)
+                    .collect()
+            }
+            _ => Vec::new(),
+        };
+        shelf::list(tabs, stored)
+    }
+
+    /// Row `key` as it stands now, checked again as its text is about to
+    /// leave; `None` when it is gone.
+    pub(crate) fn shelf_row(&self, key: &ShelfKey, cx: &App) -> Option<ShelfDocument> {
+        match key {
+            ShelfKey::Tab(id) => {
+                let view = self.tabs.get(*id)?.view()?.read(cx);
+                self.shelf_tab(*id, view, cx)
+            }
+            ShelfKey::Document(id) => {
+                let vault = self.vault.vault()?;
+                let summary = (vault.documents().into_iter())
+                    .find(|summary| summary.id == id.as_str() && !summary.exclude_from_ai)?;
+                self.stored_row(vault, &summary)
+            }
+        }
+    }
+
+    /// An open tab's shelf row; `None` without an applied alias. The Vault
+    /// is asked only once its review is ready.
+    fn shelf_tab(&self, id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
+        let names = view.known_identities();
+        let title = view.display_name();
+        let mut tab = open_tab(id, view, &title, &names, cx)?;
+        if tab.review_readiness().is_ready() {
+            tab.stored = self.outbound(id, view, cx);
+        }
+        ShelfDocument::of_tab(tab)
+    }
+
+    /// The outbound check of tab `id`'s Vault document, once what it shows
+    /// is written; `None` until then.
+    fn outbound(&self, id: u64, view: &DocumentView, cx: &App) -> Option<Outbound> {
+        let vault = self.vault.vault()?;
+        let Some(DocumentId::Vault(document)) = view.session.document.id() else {
+            return None;
+        };
+        let unwritten = view.unsaved(cx)
+            || self.moving.contains(&document)
+            || self.write_pending_for(id, cx)
+            || view.saved_review() != view.session.document.review;
+        if unwritten {
+            return None;
+        }
+        Some(checked(vault.text_for_ai(document.as_str())))
+    }
+
+    /// A stored document's row, with the names it lives with as stored;
+    /// `None` when it can't be read or holds no alias.
+    fn stored_row(&self, vault: &Vault, summary: &DocumentSummary) -> Option<ShelfDocument> {
+        let id = VaultId::parse(&summary.id)?;
+        let document = vault.document(&summary.id).ok()?;
+        let (names, project) = match &document.project {
+            Some(project) => {
+                let stored = vault.project(project).ok()?;
+                let link =
+                    (self.projects.link(project)).unwrap_or_else(|| ProjectLink::of(&stored));
+                (stored.mapping.exported(), Some(link))
+            }
+            None => (document.mapping.exported(), None),
+        };
+        ShelfDocument::of_stored(StoredDocument {
+            id,
+            title: &document.title,
+            text: &document.markdown,
+            names,
+            project,
+            edited: SystemTime::UNIX_EPOCH + Duration::from_secs(document.updated),
+            outbound: checked(vault.text_for_ai(&summary.id)),
+        })
     }
 }
 
-/// A tab is ready as the shelf counts it: an applied alias,
-/// nothing pending or still being found, and no known name left as written.
-pub(super) fn ready(view: &DocumentView, cx: &App) -> bool {
-    shelf_tab(0, view, cx).is_some_and(|row| row.readiness.is_ready())
+/// What `Vault::text_for_ai` said, as the shelf shows it: a document that
+/// can't be checked can't leave.
+fn checked(outbound: Result<String, VaultError>) -> Outbound {
+    match outbound {
+        Ok(text) => Ok(text),
+        Err(VaultError::NotReady(readiness)) => Err(readiness),
+        Err(_) => Err(mdoc_vault::Readiness::NotReviewed),
+    }
 }
 
-/// An open tab's shelf row; `None` without an applied alias.
-fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
+/// A tab's review is ready as a write records it: an applied alias,
+/// nothing pending or still being found, and no known name left as
+/// written. The Vault's own check is the shelf's, as text leaves.
+pub(super) fn ready(view: &DocumentView, cx: &App) -> bool {
+    let names = view.known_identities();
+    open_tab(0, view, "", &names, cx).is_some_and(|tab| tab.review_readiness().is_ready())
+}
+
+/// An open tab as the shelf reads it, the Vault not asked yet; `None`
+/// without an applied alias or before it has loaded.
+fn open_tab<'a>(
+    id: u64,
+    view: &'a DocumentView,
+    title: &'a str,
+    names: &[ExportedIdentity],
+    cx: &'a App,
+) -> Option<OpenTab<'a>> {
     let review = view.pii.review();
     if review.applied().is_empty() || !view.lifecycle.ready() {
         return None;
     }
-    let names = view.known_identities();
-    let edited = view.lifecycle.edited_at().unwrap_or(SystemTime::UNIX_EPOCH);
-    let title = view.display_name();
-    ShelfDocument::of_tab(OpenTab {
+    Some(OpenTab {
         id,
-        title: &title,
+        title,
         text: view.editor.read(cx).text(),
         aliases: review
             .applied()
@@ -48,9 +173,10 @@ fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
             .collect(),
         pending: review.remaining(),
         checking: review.awaiting_discovery(),
-        names,
+        names: names.to_vec(),
         project: view.project.link().cloned(),
-        edited,
+        edited: view.lifecycle.edited_at().unwrap_or(SystemTime::UNIX_EPOCH),
+        stored: None,
     })
 }
 
@@ -100,7 +226,9 @@ impl Workspace {
                 if view.project.link().is_some() || view.pii.review().applied().is_empty() {
                     return None;
                 }
-                let row = shelf_tab(tab.id(), view, cx)?;
+                // Only its title is shown: the Vault is not asked.
+                let (names, title) = (view.known_identities(), view.display_name());
+                let row = ShelfDocument::of_tab(open_tab(tab.id(), view, &title, &names, cx)?)?;
                 Some(ClipboardSource::Tab {
                     id: tab.id(),
                     title: row.display_title().to_string(),
@@ -165,8 +293,9 @@ impl Workspace {
         }
     }
 
-    /// A shelf row's click: the tab comes forward in its current view, and
-    /// a document that is not ready shows its first pending proposal.
+    /// A shelf row's click: the tab comes forward in its current view, a
+    /// stored document opens in a tab, and a document that is not ready
+    /// shows its first pending proposal once it has loaded.
     pub(crate) fn open_from_shelf(
         &mut self,
         key: &ShelfKey,
@@ -174,11 +303,23 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let ShelfKey::Tab(tab) = *key;
-        if !self.tabs.contains(tab) {
-            return;
-        }
-        self.activate_as(tab, Arrival::Visit, window, cx);
+        let tab = match key {
+            ShelfKey::Tab(tab) => {
+                if !self.tabs.contains(*tab) {
+                    return;
+                }
+                self.activate_as(*tab, Arrival::Visit, window, cx);
+                *tab
+            }
+            ShelfKey::Document(id) => {
+                self.open_vault_document(id.clone(), window, cx);
+                let document = DocumentId::Vault(id.clone());
+                match self.find_document(&document, None, cx) {
+                    Some(tab) => tab,
+                    None => return,
+                }
+            }
+        };
         if ready {
             self.focus_active(window, cx);
             return;

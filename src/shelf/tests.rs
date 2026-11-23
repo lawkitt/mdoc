@@ -34,6 +34,24 @@ fn tab<'a>(id: u64, title: &'a str, text: &'a str, pending: usize) -> OpenTab<'a
         names: names(),
         project: None,
         edited: at(id),
+        stored: None,
+    }
+    .checked()
+}
+
+fn document_id(n: u8) -> VaultId {
+    VaultId::parse(&format!("{n:032x}")).unwrap()
+}
+
+fn stored<'a>(n: u8, title: &'a str, text: &'a str, outbound: Outbound) -> StoredDocument<'a> {
+    StoredDocument {
+        id: document_id(n),
+        title,
+        text,
+        names: names(),
+        project: None,
+        edited: at(n.into()),
+        outbound,
     }
 }
 
@@ -123,14 +141,116 @@ fn a_lone_word_of_a_known_full_name_is_a_name_not_replaced() {
     assert_eq!(row.unwrap().readiness, Readiness::Ready);
 }
 
+/// An open tab is ready only once what it shows is written and the
+/// Vault's outbound check passes; what leaves is that check's text.
 #[test]
-fn the_list_puts_the_latest_edited_tabs_first_and_stops_at_eight() {
-    let tabs: Vec<_> = (1..=10)
-        .map(|id| ShelfDocument::of_tab(tab(id, "t.md", "PERSON_1", 0)).unwrap())
+fn an_open_tab_is_ready_only_once_its_written_text_passes_the_outbound_check() {
+    let text = "PERSON_1 met ORG_1.";
+    let mut unwritten = tab(1, "a.md", text, 0);
+    unwritten.stored = None;
+    let row = ShelfDocument::of_tab(unwritten).unwrap();
+    assert_eq!(row.readiness, Readiness::Checking);
+    assert_eq!(row.text_for_ai(), None);
+    assert!(row.preview.is_none());
+
+    // A name another document added to its Project since.
+    let mut refused = tab(2, "b.md", text, 0);
+    refused.stored = Some(Err(mdoc_vault::Readiness::NamesNotReplaced(1)));
+    let row = ShelfDocument::of_tab(refused).unwrap();
+    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
+    assert_eq!(row.text_for_ai(), None);
+    assert_eq!(row.drag_card(), None);
+
+    let mut changed = tab(3, "c.md", text, 0);
+    changed.stored = Some(Err(mdoc_vault::Readiness::ChangedSinceReview));
+    let row = ShelfDocument::of_tab(changed).unwrap();
+    assert_eq!(row.readiness, Readiness::ChangedSinceReview);
+
+    let mut checked = tab(4, "d.md", text, 0);
+    checked.stored = Some(Ok("the Vault's text".into()));
+    let row = ShelfDocument::of_tab(checked).unwrap();
+    assert_eq!(row.readiness, Readiness::Ready);
+    assert_eq!(row.text_for_ai(), Some("the Vault's text"));
+
+    // A review not ready stays so, whatever the Vault says.
+    let mut pending = tab(5, "e.md", text, 1);
+    pending.stored = Some(Ok("the Vault's text".into()));
+    let row = ShelfDocument::of_tab(pending).unwrap();
+    assert_eq!(row.readiness, Readiness::LeftToReview(1));
+    assert_eq!(row.text_for_ai(), None);
+}
+
+#[test]
+fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
+    let text = "PERSON_1 met ORG_1.";
+    let sent = mdoc_pii::handoff::for_ai(text, ["PERSON_1", "ORG_1"]);
+    let mut ready = stored(5, "Anna Petrova", text, Ok(sent.clone()));
+    ready.project = Some(ProjectLink {
+        id: "p".repeat(32),
+        name: "Anna Petrova v Northwind Ltd".into(),
+        colour: None,
+    });
+    let row = ShelfDocument::of_stored(ready).unwrap();
+    assert_eq!(row.readiness, Readiness::Ready);
+    assert_eq!(row.key, ShelfKey::Document(document_id(5)));
+    assert_eq!(row.title, "PERSON_1");
+    assert_eq!(row.project_label.as_deref(), Some("PERSON_1 v ORG_1"));
+    assert_eq!(row.text_for_ai(), Some(sent.as_str()));
+    assert_eq!(row.preview.as_ref().unwrap().text, text);
+    assert_eq!(row.file_name(), "PERSON_1.md");
+
+    let refused = |outbound| ShelfDocument::of_stored(stored(6, "a", text, Err(outbound))).unwrap();
+    let changed = refused(mdoc_vault::Readiness::ChangedSinceReview);
+    assert_eq!(changed.readiness, Readiness::ChangedSinceReview);
+    assert_eq!(changed.readiness.label(), "Changed since review");
+    assert_eq!(changed.text_for_ai(), None);
+    assert!(changed.preview.is_none());
+    assert_eq!(changed.drag_card(), None);
+    // Never saved while ready: as a case member with no fingerprint was.
+    let never = refused(mdoc_vault::Readiness::NotReviewed);
+    assert_eq!(never.readiness, Readiness::ChangedSinceReview);
+    let missed = refused(mdoc_vault::Readiness::NamesNotReplaced(2));
+    assert_eq!(missed.readiness, Readiness::NamesNotReplaced(2));
+    assert_eq!(missed.readiness.label(), "2 names not replaced");
+    assert_eq!(missed.text_for_ai(), None);
+}
+
+/// A stored document whose text holds no alias its names know would reopen
+/// with none applied: like such a tab, it is not listed.
+#[test]
+fn a_stored_document_without_an_alias_is_not_listed() {
+    let not_reviewed = || Err(mdoc_vault::Readiness::NotReviewed);
+    let plain = stored(
+        1,
+        "Notes",
+        "Anna Petrova met Northwind Ltd.",
+        not_reviewed(),
+    );
+    assert!(ShelfDocument::of_stored(plain).is_none());
+    // Only an alias written exactly counts, as reopening relinks it.
+    let loose = stored(2, "Notes", "person 1 met them.", not_reviewed());
+    assert!(ShelfDocument::of_stored(loose).is_none());
+}
+
+#[test]
+fn the_list_puts_open_tabs_first_and_stops_at_eight() {
+    let tab_row = |id| ShelfDocument::of_tab(tab(id, "t.md", "PERSON_1", 0)).unwrap();
+    // Stored documents are newer than every tab; tabs still come first.
+    let documents: Vec<_> = (100..106)
+        .map(|n| {
+            ShelfDocument::of_stored(stored(n, "s", "PERSON_1", Ok("PERSON_1".into()))).unwrap()
+        })
         .collect();
-    let list = list(tabs);
-    assert_eq!(list.len(), MAX_DOCUMENTS);
+    let list = list((1..=5).map(tab_row).collect(), documents);
     let keys: Vec<_> = list.iter().map(|r| r.key.clone()).collect();
+    let mut expected: Vec<_> = (1..=5).rev().map(ShelfKey::Tab).collect();
+    expected.extend((103..106).rev().map(|n| ShelfKey::Document(document_id(n))));
+    assert_eq!(keys, expected);
+    // Tabs alone: the latest edited eight.
+    let keys: Vec<_> = super::list((1..=10).map(tab_row).collect(), Vec::new())
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
     assert_eq!(keys, (3..=10).rev().map(ShelfKey::Tab).collect::<Vec<_>>());
 }
 
