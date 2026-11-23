@@ -103,3 +103,5 @@ narrow-minimum-sidebar
 home-recents
 review-scanning
 review-long-counts
+home-vault-unavailable
+home-vault-unavailable-notice

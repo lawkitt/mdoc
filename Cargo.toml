@@ -78,6 +78,8 @@ mdoc-markdown = { path = "crates/mdoc-markdown" }
 mdoc-pii = { path = "crates/mdoc-pii" }
 mdoc-spell = { path = "crates/mdoc-spell" }
 mdoc-store = { path = "crates/mdoc-store" }
+# Documents live in the Vault and save themselves (ADR 0125).
+mdoc-vault = { path = "crates/mdoc-vault" }
 mdoc-import = { path = "crates/mdoc-import" }
 mdoc-detect = { path = "crates/mdoc-detect" }
 gpui-pdf = { path = "crates/gpui-pdf" }

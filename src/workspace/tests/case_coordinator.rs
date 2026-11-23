@@ -1108,7 +1108,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.case_coordinator.denied());
-        assert_eq!(tabs.case_key_banner().map(|b| b.1), Some("Try again…"));
+        assert_eq!(tabs.case_key_banner().and_then(|b| b.1), Some("Try again…"));
         assert_eq!(
             tabs.snapshot(cx).tabs.last().unwrap().case.as_deref(),
             Some(case.id.as_str())

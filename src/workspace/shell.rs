@@ -980,7 +980,10 @@ impl Workspace {
         } else {
             illustration.into_any_element()
         };
+        // No Vault this run: nothing can be added, and the zone says why.
+        let unavailable = self.vault.unavailable();
         let title = match self.shell.drop {
+            _ if unavailable.is_some() => "Documents are unavailable".to_string(),
             Some(0) => "These files can't be opened".to_string(),
             Some(1) => "Drop to open".to_string(),
             Some(n) => format!("Drop {n} files"),
@@ -1019,7 +1022,7 @@ impl Workspace {
                     .child(title),
             )
             .child(
-                ui::filled_button("home-open", "Open files…", theme, true)
+                ui::filled_button("home-open", "Open files…", theme, unavailable.is_none())
                     .when(cfg!(test), |v| v.debug_selector(|| "home-open".into()))
                     .mt_1()
                     .child(ui::key_hint(key(&Open)))
@@ -1034,8 +1037,12 @@ impl Workspace {
                     .px_4()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child(mdoc_import::import::supported_formats())
-                    .child("Several at once open in their own tabs"),
+                    .map(|v| match unavailable {
+                        Some(why) => v.max_w(px(460.)).child(why.to_owned()),
+                        None => v
+                            .child(mdoc_import::import::supported_formats())
+                            .child("Several at once open in their own tabs"),
+                    }),
             )
             .into_any_element()
     }
@@ -1058,9 +1065,14 @@ impl Workspace {
             .items_center()
             .gap_2()
             .child(
-                ui::primary_button("home-paste", "Paste text", theme, true)
-                    .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
+                ui::primary_button(
+                    "home-paste",
+                    "Paste text",
+                    theme,
+                    self.vault.unavailable().is_none(),
+                )
+                .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
+                .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
             .child(
                 ui::primary_button("home-restore", "Paste AI reply", theme, true)
@@ -1349,6 +1361,9 @@ impl Workspace {
     }
 
     pub(super) fn paste_as_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.intake_refused(cx) {
+            return;
+        }
         let item = cx.read_from_clipboard();
         // A copied file carries its path as text; the editor's Paste skips it.
         let has_files = item.as_ref().is_some_and(|item| {

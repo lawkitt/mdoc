@@ -137,6 +137,10 @@ impl Workspace {
         if self.case_coordinator.store().is_some() {
             return false;
         }
+        // The Vault's key is the case key: a Locked Vault means it may ask.
+        if self.vault.needs_key() {
+            return true;
+        }
         #[cfg(test)]
         let staged = {
             self.cases.key_reads += 1;
@@ -204,6 +208,19 @@ impl Workspace {
     /// locked members and run the waiting action.
     pub(super) fn continue_unlock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_explainer(window, cx);
+        // Documents first: the same read opens saved cases too.
+        if self.vault.needs_key() {
+            let unlocked = self.unlock_vault(window, cx);
+            if unlocked.is_err() {
+                self.stop_quit_key_wait(window, cx);
+                cx.notify();
+                return;
+            }
+            if self.cases.then.is_none() && self.case_coordinator.key_wait().is_none() {
+                cx.notify();
+                return;
+            }
+        }
         let then = self.cases.then.take();
         match self.case_store() {
             Ok(_) => {
@@ -272,8 +289,11 @@ impl Workspace {
         }
     }
     /// The banner for members waiting on the key, or a declined dialog.
-    pub(super) fn case_key_banner(&self) -> Option<(gpui::SharedString, &'static str)> {
-        Some(match self.case_coordinator.key_wait()? {
+    pub(super) fn case_key_banner(&self) -> Option<(gpui::SharedString, Option<&'static str>)> {
+        if let Some(banner) = self.vault_banner() {
+            return Some(banner);
+        }
+        let (text, action) = match self.case_coordinator.key_wait()? {
             KeyWait::Denied => (
                 "Saved cases need Keychain access to open their replacements.".into(),
                 "Try again…",
@@ -295,7 +315,8 @@ impl Workspace {
                 },
                 "Unlock…",
             ),
-        })
+        };
+        Some((text, Some(action)))
     }
     /// The Open Case list's line above Unlock, when cases wait for the key;
     /// none when the folder holds no case files.
@@ -320,9 +341,10 @@ impl Workspace {
     /// declined after an action, or an open tab belongs to a case whose
     /// mapping is locked. Otherwise it waits behind the bell.
     pub(super) fn case_key_needed(&self) -> bool {
-        self.case_key_banner().is_some()
-            && (self.case_coordinator.denied()
-                || self.tabs.iter().any(|tab| tab.record().case.is_some()))
+        self.vault_banner().is_some()
+            || self.case_key_banner().is_some()
+                && (self.case_coordinator.denied()
+                    || self.tabs.iter().any(|tab| tab.record().case.is_some()))
     }
     /// Read every case in the background, then attach loaded member tabs.
     /// Nothing touches the key until a cases folder exists, and launch never

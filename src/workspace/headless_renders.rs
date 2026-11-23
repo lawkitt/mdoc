@@ -64,6 +64,7 @@ mod search;
 mod settings;
 mod shelf;
 mod shell;
+mod vault;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
 use crate::{bind_all_keys, pii::ui::CompareMode};
@@ -410,6 +411,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::scanning(d)?;
     recents::scenes(d, path)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
+    vault::unavailable_home(d)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;
     cases::locked_home(d)
@@ -431,6 +433,8 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     for result in [
         mdoc_store::cases::Store::open(cases.clone()).map(|_| ()),
         mdoc_store::cases::Store::open_quietly(cases).map(|_| ()),
+        mdoc_store::cases::vault_key(true).map(|_| ()),
+        mdoc_store::cases::vault_key(false).map(|_| ()),
     ] {
         if !matches!(result, Err(mdoc_store::cases::CaseError::KeysDisabled)) {
             return Err("OS case-key guard is not active".into());
@@ -487,6 +491,10 @@ pub(crate) fn run(out: &Path) -> Result<()> {
                     let case = mdoc_store::cases::Case::new("Public fixture".into(), &[], None);
                     store.save(&case).expect("temporary fixture case");
                     workspace.use_case_store(store);
+                    workspace.use_vault(
+                        mdoc_vault::Vault::open(profile.path().join(tag).join("vault"), &[3; 32])
+                            .expect("temporary Vault"),
+                    );
                     workspace.case_coordinator.finish_load(vec![case]);
                     workspace.user_lists_read(Ok(Default::default()), cx);
                     workspace.restore(

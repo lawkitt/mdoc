@@ -426,7 +426,7 @@ impl Workspace {
                                     .gap_1()
                                     .text_size(px(13.))
                                     .child(line(
-                                        "Saved cases are encrypted, and the key lives in your \
+                                        "Documents and saved cases are encrypted, and the key lives in your \
                                          Mac’s Keychain.",
                                     ))
                                     .child(line(
@@ -526,11 +526,11 @@ impl Workspace {
                 .border_color(palette.border)
                 .child(div().text_color(accent).child("ⓘ"))
                 .child(div().flex_1().min_w_0().child(text))
-                .child(
+                .children(action.map(|action| {
                     ui::control("unlock-cases", action, theme, true)
                         .when(cfg!(test), |v| v.debug_selector(|| "unlock-cases".into()))
-                        .on_click(cx.listener(|this, _, window, cx| this.unlock_cases(window, cx))),
-                )
+                        .on_click(cx.listener(|this, _, window, cx| this.unlock_cases(window, cx)))
+                }))
                 .into_any_element(),
         )
     }

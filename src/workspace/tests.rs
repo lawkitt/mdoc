@@ -55,6 +55,7 @@ mod sidebar;
 mod tab_menu;
 mod tab_set;
 mod user_lists;
+mod vault_documents;
 mod window_shell;
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather
@@ -76,6 +77,16 @@ fn boot_home(
     cx: &mut TestAppContext,
     session: Session,
 ) -> (Entity<Workspace>, &mut VisualTestContext) {
+    boot_home_with(cx, session, |_, _, _| {})
+}
+
+/// [`boot_home`], with `launch` run where launch opens the Vault: after the
+/// window is built and before its tabs restore.
+fn boot_home_with(
+    cx: &mut TestAppContext,
+    session: Session,
+    launch: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) + 'static,
+) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
     cx.update(gpui_pdf::bind_keys);
@@ -86,6 +97,7 @@ fn boot_home(
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = Workspace::empty(window, cx);
+        launch(&mut tabs, window, cx);
         tabs.restore(session, window, cx);
         tabs
     });

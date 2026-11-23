@@ -66,6 +66,8 @@ mod live_views;
 mod sidebar;
 mod tab_menu;
 mod user_lists;
+mod vault_state;
+mod vault_ui;
 pub(crate) use cases_ui::{
     AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName, bind_keys as bind_case_keys,
 };
@@ -312,6 +314,14 @@ pub(super) struct Workspace {
     folder_sheets: folder_sheet::FolderSheets,
     folder_sheet_focus: Option<folder_sheet_ui::SheetFocus>,
     case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
+    /// The Vault, once the key opened it.
+    vault: vault_state::VaultState,
+    /// What a test's loud key read yields.
+    #[cfg(test)]
+    staged_vault: Option<Result<mdoc_vault::Vault, mdoc_store::cases::CaseError>>,
+    /// A test window's own Vault folder, removed with it.
+    #[cfg(test)]
+    test_vault_dir: Option<tempfile::TempDir>,
     /// The sidebar's theme pick; `theme` holds what it resolves to.
     theme_choice: ThemeChoice,
     /// The theme button's tooltip reads the choice live.
@@ -374,12 +384,19 @@ impl Workspace {
             mdoc_store::app_paths::data_local_dir().map(|path| path.join("mdoc/session.json"))
         });
         let path = this.session_writer.path().cloned();
+        // Tabs name Vault documents, so the Vault opens before they restore.
         let task = cx.background_executor().spawn(async move {
-            path.map_or_else(|| Ok(Session::default()), |path| session_store::load(&path))
+            let session =
+                path.map_or_else(|| Ok(Session::default()), |path| session_store::load(&path));
+            (session, (!cfg!(test)).then(Self::open_vault_at_launch))
         });
         cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
+            let (result, opening) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                if let Some((opening, key)) = opening {
+                    this.key_read_at_launch(key);
+                    this.vault_opened(opening, window, cx);
+                }
                 let session = match result {
                     Ok(session) => session,
                     Err(error) => {
@@ -510,6 +527,11 @@ impl Workspace {
             folder_sheets: Default::default(),
             folder_sheet_focus: None,
             case_coordinator: Default::default(),
+            vault: Default::default(),
+            #[cfg(test)]
+            staged_vault: None,
+            #[cfg(test)]
+            test_vault_dir: None,
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
             window_title: String::new(),
@@ -519,6 +541,9 @@ impl Workspace {
             _appearance: None,
             _checkpoint: None,
         };
+        // A test window opens as launch would: with a Vault of its own.
+        #[cfg(test)]
+        this.use_temp_vault();
         this._appearance =
             Some(cx.observe_window_appearance(window, |this, window, cx| {
                 this.apply_theme(window, cx)
@@ -1085,21 +1110,49 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
-        // Vault documents load from the Vault once the window opens it.
-        let DocumentId::File(path) = document else {
-            return;
+        let task: gpui::Task<Result<(Document, Option<String>), String>> = match document {
+            DocumentId::File(path) => cx.background_executor().spawn(async move {
+                Document::open(session_store::identity(&path))
+                    .map(|document| (document, None))
+                    .map_err(|error| format!("Could not open {}: {error}", path.display()))
+            }),
+            DocumentId::Vault(document) => match self.vault.vault().cloned() {
+                Some(vault) => cx.background_executor().spawn(async move {
+                    vault
+                        .document(document.as_str())
+                        .map(|stored| {
+                            (
+                                Document::in_vault(document, stored.markdown),
+                                Some(stored.title),
+                            )
+                        })
+                        .map_err(|error| format!("Could not open the document. {error}"))
+                }),
+                None => {
+                    match self.vault.unavailable() {
+                        // No Vault this run: say why where the text would be.
+                        Some(why) => {
+                            let error = format!("This document can't open. {why}");
+                            view.update(cx, |view, cx| {
+                                view.lifecycle.finish_load(generation, false);
+                                view.error = Some(error);
+                                cx.notify();
+                            });
+                        }
+                        // It loads once the key opens the Vault.
+                        None => self.vault.wait(id),
+                    }
+                    return;
+                }
+            },
         };
-        let shown = path.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { Document::open(session_store::identity(&path)) });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if !this.tabs.contains(id) {
                     return;
                 }
-                if let Ok(document) = &result {
+                if let Ok((document, _)) = &result {
                     this.tabs.set_document(id, document.id());
                 }
                 // A dialog keeps the keyboard while the document loads behind it.
@@ -1109,8 +1162,9 @@ impl Workspace {
                         return;
                     }
                     match result {
-                        Ok(document) => {
+                        Ok((document, title)) => {
                             view.session.replace(document);
+                            view.session.name = title;
                             view.reset_pii(cx);
                             view.editor.update(cx, |editor, cx| {
                                 editor.set_text(view.session.document.saved.clone(), cx);
@@ -1133,10 +1187,7 @@ impl Workspace {
                                 window.focus(&view.editor.read(cx).focus_handle(cx), cx);
                             }
                         }
-                        Err(error) => {
-                            view.error =
-                                Some(format!("Could not open {}: {error}", shown.display()));
-                        }
+                        Err(error) => view.error = Some(error),
                     }
                     cx.notify();
                 });
@@ -1324,6 +1375,9 @@ impl Workspace {
             self.pending_open.push((paths, at, case));
             return;
         }
+        if self.intake_refused(cx) {
+            return;
+        }
         // Opening activates a tab and takes focus; a confirm dialog keeps it
         // until answered, and the paths open after. Checked before
         // quitting, so a cancelled quit still opens them.
@@ -1483,7 +1537,9 @@ impl Workspace {
         }
         match event {
             TabEvent::Tabs(TabsEvent::New) if !self.quit_flow.quitting() => {
-                self.new_tab(window, cx);
+                if !self.intake_refused(cx) {
+                    self.new_tab(window, cx);
+                }
             }
             TabEvent::Tabs(TabsEvent::Open(paths)) => self.open_paths(paths.clone(), window, cx),
             TabEvent::Tabs(TabsEvent::Restored(reply)) if !self.quit_flow.quitting() => {
@@ -1731,6 +1787,7 @@ impl Workspace {
         self.sidebar_row_focus.borrow_mut().remove(&id);
         let removed_opener = self.compact_row_focus.borrow_mut().remove(&id);
         let closed_reveal = self.sidebar.forget_opener(removed_opener.as_ref());
+        self.vault.forget(id);
         let Some(tab) = self.tabs.get(id) else {
             return;
         };
