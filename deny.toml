@@ -23,6 +23,7 @@ ignore = [
     { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6). Transitive via gpui-pre-linux -> accesskit_unix/atspi; revisit at each gpui pull." },
     { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (no safe upgrade; jiff or time recommended). Transitive via gpui-pre, gpui-pre-scheduler and lopdf, and a direct dependency of mdoc; dropping ours alone does not clear it. Revisit at each gpui/lopdf pull." },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6). Transitive via zvariant <- gpui-pre-linux; revisit at each gpui pull." },
+    { id = "RUSTSEC-2026-0592", reason = "url 2.5.8 stack overflow in Url::origin(). The fix (url 2.5.9, form_urlencoded 1.2.3) was published 2026-11-20, inside the 14-day publish-age rule. Remove this and bump both on 2026-12-04 (#1102)." },
 ]
 
 [licenses]

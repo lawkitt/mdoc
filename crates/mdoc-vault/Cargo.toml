@@ -1,0 +1,20 @@
+[package]
+name = "mdoc-vault"
+version = "0.1.0"
+edition = "2024"
+description = "GUI-free encrypted Vault: sealed Project and Document records, a manifest cache, the write lock and revisions (ADR 0125)."
+license = "GPL-3.0-or-later"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+[dependencies]
+# Sealed records in the case store's format (#1091 Decision 13); bump with
+# mdoc-store's, deliberately (docs/development.md).
+aes-gcm = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+
+[lints]
+workspace = true
