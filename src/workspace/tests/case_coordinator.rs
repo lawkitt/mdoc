@@ -1077,7 +1077,7 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
             &[3; 32],
         )));
         // Opened from disk: no session record names its case.
-        tabs.open_paths(vec![path.clone()], window, cx);
+        tabs.open_case_files(vec![path.clone()], window, cx);
     });
     cx.run_until_parked();
     draw(cx);
@@ -1443,7 +1443,7 @@ fn merge_hint_dismissed_before_save_as_case_stays_dismissed(cx: &mut TestAppCont
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.use_case_store(store());
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);

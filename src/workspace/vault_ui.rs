@@ -114,6 +114,12 @@ impl Workspace {
         self.vault.reopen(vault);
     }
 
+    /// Tests: the notice showing.
+    #[cfg(test)]
+    pub(crate) fn notice_text(&self) -> Option<String> {
+        self.notices.message().map(str::to_owned)
+    }
+
     /// Tests: the Vault this window opened.
     #[cfg(test)]
     pub(crate) fn opened_vault(&self) -> Option<Arc<Vault>> {
@@ -126,6 +132,7 @@ impl Workspace {
         let dir = tempfile::tempdir().expect("temporary Vault folder");
         let vault = Vault::open(dir.path().join("vault"), &[3; 32]).expect("temporary Vault");
         self.use_vault(vault);
+        self.viewing_root = Some(dir.path().join("viewing"));
         self.test_vault_dir = Some(dir);
     }
 

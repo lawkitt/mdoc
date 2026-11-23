@@ -100,7 +100,7 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
         let path = dir.path().join(format!("{name}.md"));
         std::fs::write(&path, sent).unwrap();
         tabs.update_in(cx, |tabs, window, cx| {
-            tabs.open_paths(vec![path], window, cx)
+            tabs.open_case_files(vec![path], window, cx)
         });
         cx.run_until_parked();
         let view = active(&tabs, cx);
@@ -367,7 +367,7 @@ fn a_case_member_keeps_its_reply_encrypted_across_reopening(cx: &mut TestAppCont
     assert!(!cx.has_pending_prompt(), "saved document, saved case");
     cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);
@@ -435,7 +435,7 @@ fn without_a_case_the_reply_lives_only_in_the_tab(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
+        tabs.open_case_files(vec![path], window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);
@@ -489,7 +489,7 @@ fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut Test
     let plain = dir.path().join("plain.md");
     std::fs::write(&plain, "Nothing here was replaced.").unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![plain], window, cx)
+        tabs.open_case_files(vec![plain], window, cx)
     });
     cx.run_until_parked();
     let other = active(&tabs, cx);
@@ -811,7 +811,7 @@ fn a_join_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut Tes
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt(), "saved document, saved case");
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);

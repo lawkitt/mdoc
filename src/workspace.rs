@@ -49,6 +49,7 @@ mod folder_sheet_ui;
     any(target_os = "macos", target_os = "windows")
 ))]
 pub(crate) mod headless_renders;
+mod intake;
 mod keychain_ui;
 mod navigation;
 use navigation::Arrival;
@@ -314,6 +315,11 @@ pub(super) struct Workspace {
     vault: vault_state::VaultState,
     /// Documents' autosaves, one write at a time.
     document_writer: autosave::Writer,
+    /// Where each imported tab's file was opened from: what Recents lists.
+    admitted_from: std::collections::HashMap<u64, PathBuf>,
+    /// Viewing copies of originals: an app-private cache folder, one
+    /// subfolder per tab, removed when the tab closes and cleared at launch.
+    viewing_root: Option<PathBuf>,
     /// What a test's loud key read yields.
     #[cfg(test)]
     staged_vault: Option<Result<mdoc_vault::Vault, mdoc_store::cases::CaseError>>,
@@ -383,7 +389,12 @@ impl Workspace {
         });
         let path = this.session_writer.path().cloned();
         // Tabs name Vault documents, so the Vault opens before they restore.
+        let viewing = this.viewing_root.clone();
         let task = cx.background_executor().spawn(async move {
+            // Viewing copies a crash left behind go before anything opens.
+            if let Some(viewing) = viewing {
+                let _ = std::fs::remove_dir_all(viewing);
+            }
             let session =
                 path.map_or_else(|| Ok(Session::default()), |path| session_store::load(&path));
             (session, (!cfg!(test)).then(Self::open_vault_at_launch))
@@ -526,6 +537,13 @@ impl Workspace {
             case_coordinator: Default::default(),
             vault: Default::default(),
             document_writer: Default::default(),
+            admitted_from: Default::default(),
+            // Tests name their own; they never touch the real cache.
+            viewing_root: if cfg!(test) {
+                None
+            } else {
+                mdoc_store::app_paths::cache_dir().map(|dir| dir.join("mdoc").join("viewing"))
+            },
             #[cfg(test)]
             staged_vault: None,
             #[cfg(test)]
@@ -970,7 +988,11 @@ impl Workspace {
             }) {
                 continue;
             }
-            self.push(record);
+            let vault = record.document.is_some();
+            let id = self.push(record);
+            if vault {
+                self.name_from_vault(id);
+            }
         }
         self.ready = true;
         // Nothing to restore: Home shows over a hidden placeholder tab until
@@ -1108,27 +1130,21 @@ impl Workspace {
             generation
         });
         let weak = view.downgrade();
-        // The document, and a Vault document's title and whether it follows
-        // its first line.
-        type Loaded = (Document, Option<(String, bool)>);
         let task: gpui::Task<Result<Loaded, String>> = match document {
             DocumentId::File(path) => cx.background_executor().spawn(async move {
                 Document::open(session_store::identity(&path))
-                    .map(|document| (document, None))
+                    .map(|document| Loaded {
+                        document,
+                        vault: None,
+                    })
                     .map_err(|error| format!("Could not open {}: {error}", path.display()))
             }),
             DocumentId::Vault(document) => match self.vault.vault().cloned() {
-                Some(vault) => cx.background_executor().spawn(async move {
-                    vault
-                        .document(document.as_str())
-                        .map(|stored| {
-                            let mut loaded = Document::in_vault(document, stored.markdown);
-                            loaded.review = stored.review;
-                            let follows = stored.origin == mdoc_vault::DocumentOrigin::New;
-                            (loaded, Some((stored.title, follows)))
-                        })
-                        .map_err(|error| format!("Could not open the document. {error}"))
-                }),
+                Some(vault) => {
+                    let viewing = self.viewing_dir(id);
+                    cx.background_executor()
+                        .spawn(async move { load_from_vault(&vault, document, viewing) })
+                }
                 None => {
                     match self.vault.unavailable() {
                         // No Vault this run: say why where the text would be.
@@ -1153,8 +1169,8 @@ impl Workspace {
                 if !this.tabs.contains(id) {
                     return;
                 }
-                if let Ok((document, _)) = &result {
-                    this.tabs.set_document(id, document.id());
+                if let Ok(loaded) = &result {
+                    this.tabs.set_document(id, loaded.document.id());
                 }
                 // A dialog keeps the keyboard while the document loads behind it.
                 let dialog = this.dialog_up(window);
@@ -1163,12 +1179,35 @@ impl Workspace {
                         return;
                     }
                     match result {
-                        Ok((document, vault)) => {
+                        Ok(Loaded { document, vault }) => {
                             let review = document.review.clone();
                             view.session.replace(document);
-                            if let Some((title, follows)) = vault {
-                                view.session.name = Some(title);
-                                view.session.follows_first_line = follows;
+                            let mut copy = None;
+                            if let Some(vault) = vault {
+                                view.session.name = Some(vault.title);
+                                view.session.follows_first_line = vault.follows;
+                                view.session.warning = vault.warning;
+                                view.session.left_out = vault.left_out;
+                                copy = vault.copy;
+                                // Admitted but not converted: its source shows
+                                // and converts as an opened file does.
+                                if vault.unconverted
+                                    && let Some(source) = copy.clone()
+                                {
+                                    view.reset_pii(cx);
+                                    view.import
+                                        .queue_auto(source.extension().is_some_and(|ext| {
+                                            ext.eq_ignore_ascii_case("pdf")
+                                                || ext.eq_ignore_ascii_case("docx")
+                                        }));
+                                    view.open_source(source, window, cx);
+                                    if view.active {
+                                        view.try_auto_convert(window, cx);
+                                    }
+                                    cx.notify();
+                                    return;
+                                }
+                                view.session.source = copy.clone();
                             }
                             view.reset_pii(cx);
                             view.editor.update(cx, |editor, cx| {
@@ -1186,9 +1225,22 @@ impl Workspace {
                             view.replace_images(view.save_directory(), window, cx);
                             view.scroll
                                 .set_offset(gpui::point(px(0.), px(record.scroll_y.min(0.))));
+                            // A Vault document's Source is its viewing copy.
+                            let from_vault = copy.is_some();
+                            let attachment = copy.or(record.attachment);
+                            if from_vault {
+                                view.preview.restore(
+                                    attachment.clone(),
+                                    record.preview_visible,
+                                    record.preview_split,
+                                    record.preview_zoom.map(|zoom| {
+                                        (record.preview_page, zoom, record.preview_fit)
+                                    }),
+                                );
+                            }
                             if record.preview_visible
                                 && view.preview.generation() == 0
-                                && let Some(path) = record.attachment
+                                && let Some(path) = attachment
                             {
                                 view.open_path(path, window, cx);
                             }
@@ -1205,6 +1257,11 @@ impl Workspace {
             });
         })
         .detach();
+    }
+
+    /// Where tab `id` keeps its viewing copy.
+    fn viewing_dir(&self, id: u64) -> Option<PathBuf> {
+        Some(self.viewing_root.as_ref()?.join(id.to_string()))
     }
 
     fn activate(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
@@ -1424,7 +1481,7 @@ impl Workspace {
                     this.open_after_prompt(window, cx);
                     return;
                 }
-                this.finish_open(paths, at, window, cx);
+                this.finish_open(paths, at, false, window, cx);
                 for folder in folders {
                     let pending = folder_sheet::Pending {
                         folder,
@@ -1438,14 +1495,38 @@ impl Workspace {
         .detach();
     }
 
+    /// Open `paths`, supported or not, before the tab now at `at`. They
+    /// become Vault documents; with `files`, Markdown files open as files a
+    /// case can list, which only a case's own flows ask for until cases
+    /// become Projects.
     fn finish_open(
         &mut self,
         paths: Vec<(PathBuf, bool)>,
         at: Option<usize>,
+        files: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (Vec<u64>, Vec<u64>) {
         if !self.quit_flow.may_quit() {
+            return Default::default();
+        }
+        if !files && self.vault.vault().is_some() {
+            let (supported, unsupported): (Vec<_>, Vec<_>) =
+                paths.into_iter().partition(|(_, supported)| *supported);
+            self.post_unsupported(unsupported.into_iter().map(|(path, _)| path));
+            // A file open already, as a case's Markdown file or a document
+            // opened from it, comes to the front.
+            let (open, new): (Vec<_>, Vec<_>) = supported
+                .into_iter()
+                .map(|(path, _)| path)
+                .partition(|path| self.open_tab_for(path, cx).is_some());
+            if new.is_empty()
+                && let Some(id) = open.first().and_then(|path| self.open_tab_for(path, cx))
+            {
+                self.activate(id, window, cx);
+            }
+            self.admit(new, at, window, cx);
+            cx.notify();
             return Default::default();
         }
         // Anchor on a tab, not an index: tabs may close while paths resolve.
@@ -1501,6 +1582,34 @@ impl Workspace {
             ));
         }
         if let Some(first) = first {
+            self.show_opened(first, window, cx);
+        }
+        cx.notify();
+        (opened, created)
+    }
+
+    /// Unsupported files are skipped, by name: the notice is no place for
+    /// the full path.
+    fn post_unsupported(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        let names: Vec<_> = paths
+            .into_iter()
+            .map(|path| {
+                path.file_name()
+                    .unwrap_or(path.as_os_str())
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        if !names.is_empty() {
+            self.notices
+                .post(format!("Unsupported files skipped: {}", names.join(", ")));
+        }
+    }
+
+    /// Activate `first`, newly opened, and drop the placeholder tabs it
+    /// replaces.
+    fn show_opened(&mut self, first: u64, window: &mut Window, cx: &mut Context<Self>) {
+        {
             let disposable: Vec<_> = self
                 .tabs
                 .iter()
@@ -1521,8 +1630,6 @@ impl Workspace {
                 self.remove(id, window, cx);
             }
         }
-        cx.notify();
-        (opened, created)
     }
 
     pub fn refresh_import(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1770,6 +1877,10 @@ impl Workspace {
         let removed_opener = self.compact_row_focus.borrow_mut().remove(&id);
         let closed_reveal = self.sidebar.forget_opener(removed_opener.as_ref());
         self.vault.forget(id);
+        self.admitted_from.remove(&id);
+        if let Some(dir) = self.viewing_dir(id) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
         let Some(tab) = self.tabs.get(id) else {
             return;
         };
@@ -2023,6 +2134,13 @@ impl Workspace {
                     .attachment()
                     .cloned()
                     .or_else(|| view.preview.source().cloned());
+                // A Vault tab's Source is a viewing copy, made again on load.
+                if record.document.is_some() {
+                    record.attachment = None;
+                    record.source_only = false;
+                    record.blank = false;
+                    record.blank_disposable = false;
+                }
                 record.preview_visible = view.preview.visible();
                 record.preview_split = view.preview.split_ratio();
                 if let Some(pdf) = view.preview.pdf() {
@@ -2035,6 +2153,10 @@ impl Workspace {
                         None => session_store::PreviewFit::Manual,
                     };
                 }
+            }
+            // A Vault tab is its id: no title, ever.
+            if record.document.is_some() {
+                record.name = None;
             }
             if !record.names_document() && !record.source_only && !record.blank {
                 continue;
@@ -3266,9 +3388,77 @@ struct TabLabel {
     source: Option<PathBuf>,
 }
 
+/// A document as it loaded.
+struct Loaded {
+    document: Document,
+    vault: Option<VaultLoaded>,
+}
+
+/// What a Vault document brings beside its text.
+struct VaultLoaded {
+    title: String,
+    /// A new document's title follows its first line.
+    follows: bool,
+    /// Its original's viewing copy, when it has a Source to show.
+    copy: Option<PathBuf>,
+    /// Admitted and not converted yet.
+    unconverted: bool,
+    warning: Option<String>,
+    left_out: Option<String>,
+}
+
+/// Read Vault document `id`; a document with a Source gets a viewing copy
+/// in `viewing`. Off the main thread.
+fn load_from_vault(
+    vault: &mdoc_vault::Vault,
+    id: mdoc_store::document_id::VaultId,
+    viewing: Option<PathBuf>,
+) -> Result<Loaded, String> {
+    let stored = vault
+        .document(id.as_str())
+        .map_err(|error| format!("Could not open the document. {error}"))?;
+    let original = stored
+        .original
+        .as_ref()
+        .filter(|_| !intake::is_text(stored.source_kind));
+    let copy = match (original, viewing) {
+        (Some(original), Some(dir)) => Some(
+            vault
+                .copy_original_to(id.as_str(), &dir, &original.info.file_name)
+                .map_err(|error| format!("Could not open the document's source. {error}"))?,
+        ),
+        _ => None,
+    };
+    let unconverted = copy.is_some() && stored.markdown.is_empty();
+    let (warning, left_out) = original.map_or((None, None), |original| {
+        (
+            original.info.import_warning.clone(),
+            original.info.left_out.clone(),
+        )
+    });
+    let mut document = Document::in_vault(id, stored.markdown);
+    document.review = stored.review;
+    Ok(Loaded {
+        document,
+        vault: Some(VaultLoaded {
+            title: stored.title,
+            follows: stored.origin == mdoc_vault::DocumentOrigin::New,
+            copy,
+            unconverted,
+            warning,
+            left_out,
+        }),
+    })
+}
+
 fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
     let view = tab.view().map(|v| v.read(cx));
     let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
+        if tab.record().document.is_some()
+            && let Some(name) = &tab.record().name
+        {
+            return name.clone();
+        }
         // A source tab not loaded yet shows the name it showed when the
         // session was saved; a record from before that is named as a
         // finished conversion is (`DocumentSession::display_name`).

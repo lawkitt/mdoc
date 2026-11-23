@@ -333,7 +333,7 @@ fn home_first_tab_is_open_files_not_the_bell(cx: &mut TestAppContext) {
     cx.update(|_, cx| assert!(!tabs.read(cx).title.notices_open.get()));
     cx.simulate_path_prompt_response(|_| Some(vec![file.clone()]));
     cx.run_until_parked();
-    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a"]);
 }
 
 #[gpui::test]
@@ -1003,6 +1003,6 @@ fn home_recents_rows_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppCo
     assert!(cx.update(|_, cx| !tabs.read(cx).showing_home(cx)));
     assert_eq!(
         tab_names(&tabs, cx).last().map(String::as_str),
-        Some("recent-2.md")
+        Some("recent-2")
     );
 }

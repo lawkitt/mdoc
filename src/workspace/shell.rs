@@ -313,7 +313,13 @@ impl Workspace {
         // file, not as a fresh conversion of its source (#76).
         let saved = view.session.document.path.as_ref();
         let source = view.preview.attachment().or(view.preview.source());
-        let path = saved.or(source);
+        // A Vault document is listed by the file it was opened from, never
+        // by its viewing copy.
+        let path = if view.session.document.vault.is_some() {
+            self.admitted_from.get(&id)
+        } else {
+            saved.or(source)
+        };
         let opened = self.tabs.note_recent(id, path);
         if let Some(path) = path {
             // The badge means replacements were applied, not just a scan (#306).

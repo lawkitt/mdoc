@@ -38,6 +38,9 @@ fn file_open_and_home_drop_show_the_same_scanned_pdf_card(cx: &mut TestAppContex
     let center = cx.debug_bounds("home-drop").unwrap().center();
     drag_files(cx, std::slice::from_ref(&source), center);
     drop_files(cx, center);
+    // The scan is in mdoc already: its document opens again.
+    cx.simulate_prompt_answer("Open Existing");
+    cx.run_until_parked();
     assert_scanned_pdf_card(&tabs, &source, cx);
 }
 
@@ -53,7 +56,9 @@ fn assert_scanned_pdf_card(
         let view = tabs.active_view().unwrap();
         let view = view.read(cx);
         assert!(view.lifecycle.source_only(), "the source tab must open");
-        assert_eq!(view.preview.source().map(PathBuf::as_path), Some(source));
+        // Its viewing copy, by the file's name.
+        let shown = view.preview.source().and_then(|path| path.file_name());
+        assert_eq!(shown, source.file_name());
         assert_eq!(view.import.ocr_required(), Some(&[1][..]));
         assert!(!view.import.busy());
         assert!(!tabs.import_busy.load(Ordering::Relaxed));
@@ -495,9 +500,11 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
         assert_eq!(view.preview.pdf(), Some(&pdf));
         assert!(!view.import.slot_busy());
         assert_eq!(tabs.read(cx).tabs.len(), 1);
+        // The conversion is its Vault document's text: the tab names it.
+        let snapshot = tabs.read(cx).snapshot(cx);
         assert!(
-            tabs.read(cx).snapshot(cx).tabs.is_empty(),
-            "unsaved conversion is not persisted as a source-only tab"
+            snapshot.tabs[0].document.is_some() && snapshot.tabs[0].attachment.is_none(),
+            "the tab names its document, never the scan"
         );
     });
     tabs.update_in(cx, |tabs, window, cx| {
@@ -602,17 +609,21 @@ fn automatic_conversion_is_disposable_and_closes_without_asking(cx: &mut TestApp
     cx.update(|_, cx| {
         assert!(!view.read(cx).lifecycle.source_only());
         assert!(view.read(cx).lifecycle.generated_unedited());
-        assert!(!view.read(cx).unsaved(cx));
         assert!(!view.read(cx).editor.read(cx).text().is_empty());
         assert!(view.read(cx).preview.pdf().is_some());
+        // An automatic conversion is its document's text, not a source tab.
         let snapshot = tabs.read(cx).snapshot(cx);
-        assert!(snapshot.tabs[0].source_only);
-        assert_eq!(snapshot.tabs[0].attachment.as_ref(), Some(&source));
+        assert!(!snapshot.tabs[0].source_only);
+        assert!(snapshot.tabs[0].document.is_some());
+        assert!(snapshot.tabs[0].attachment.is_none());
     });
     cx.dispatch_action(Close);
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
     tabs.update_in(cx, |tabs, window, cx| tabs.open_path(source, window, cx));
+    cx.run_until_parked();
+    // It is in mdoc already: its document opens again.
+    cx.simulate_prompt_answer("Open Existing");
     cx.run_until_parked();
     cx.simulate_input("edited ");
     cx.run_until_parked();
@@ -882,14 +893,9 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     assert!(shown(&view, cx), "drawn again with the hidden text");
 
     // Saved, the Markdown is the user's; the session saves nothing unlocked.
-    let markdown = dir.path().join("Locked comments.md");
-    active(&tabs, cx).update(cx, |view, cx| view.save_as_file(markdown.clone(), cx));
-    cx.run_until_parked();
-    assert!(
-        std::fs::read_to_string(&markdown)
-            .unwrap()
-            .contains("quoted paragraph")
-    );
+    // The conversion saves itself into the Vault.
+    wait(cx, 1000);
+    let root = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap().root().to_path_buf());
     let session_path = dir.path().join("session.json");
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.session_writer.set_path(Some(session_path.clone()));
@@ -898,7 +904,7 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let saved = std::fs::read(&session_path).unwrap();
     let text = String::from_utf8_lossy(&saved);
-    assert!(text.contains("Locked comments.docx"), "{text}");
+    assert!(!text.contains("Locked comments"), "{text}");
     assert!(!text.contains(PASSWORD), "{text}");
     assert!(!text.contains("quoted paragraph"), "{text}");
 
@@ -927,14 +933,8 @@ fn a_tab_keeps_its_unlock_in_memory_until_it_closes(cx: &mut TestAppContext) {
     std::fs::write(&kept, &saved).unwrap();
     let restored = session_store::load(&kept).unwrap();
     assert_eq!(restored.tabs.len(), 1);
-    assert_eq!(
-        restored.tabs[0]
-            .attachment
-            .as_ref()
-            .and_then(|path| path.file_name()),
-        source.file_name()
-    );
-    let (tabs, cx) = boot(cx, restored);
+    assert!(restored.tabs[0].document.is_some());
+    let (tabs, cx) = boot_on_vault(cx, restored, &root);
     cx.simulate_resize(size(px(1100.), px(760.)));
     cx.run_until_parked();
     draw(cx);
@@ -1138,14 +1138,8 @@ fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut 
     }
 
     // Saved, the Markdown is the user's; the session saves no password.
-    let markdown = dir.path().join("Locked agreement.md");
-    active(&tabs, cx).update(cx, |view, cx| view.save_as_file(markdown.clone(), cx));
-    cx.run_until_parked();
-    assert!(
-        std::fs::read_to_string(&markdown)
-            .unwrap()
-            .contains("agreement")
-    );
+    // The conversion saves itself into the Vault.
+    wait(cx, 1000);
     let session_path = dir.path().join("session.json");
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.session_writer.set_path(Some(session_path.clone()));
@@ -1153,7 +1147,7 @@ fn a_locked_pdf_asks_for_its_password_and_opens_its_original_in_memory(cx: &mut 
     });
     cx.run_until_parked();
     let text = String::from_utf8_lossy(&std::fs::read(&session_path).unwrap()).into_owned();
-    assert!(text.contains("Locked agreement.pdf"), "{text}");
+    assert!(!text.contains("Locked agreement"), "{text}");
     assert!(!text.contains(PASSWORD), "{text}");
 
     tabs.update_in(cx, |tabs, window, cx| {
@@ -1453,9 +1447,9 @@ fn a_restored_locked_pdf_tab_asks_again_on_its_original(cx: &mut TestAppContext)
     });
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    let markdown = dir.path().join("Locked agreement.md");
-    active(&tabs, cx).update(cx, |view, cx| view.save_as_file(markdown.clone(), cx));
-    cx.run_until_parked();
+    // The conversion saves itself into the Vault.
+    wait(cx, 1000);
+    let root = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap().root().to_path_buf());
     let session_path = dir.path().join("session.json");
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.session_writer.set_path(Some(session_path.clone()));
@@ -1468,7 +1462,7 @@ fn a_restored_locked_pdf_tab_asks_again_on_its_original(cx: &mut TestAppContext)
     let kept = dir.path().join("kept-session.json");
     std::fs::write(&kept, &saved).unwrap();
     let restored = session_store::load(&kept).unwrap();
-    let (tabs, cx) = boot(cx, restored);
+    let (tabs, cx) = boot_on_vault(cx, restored, &root);
     cx.run_until_parked();
     let view = active(&tabs, cx);
     tabs.update_in(cx, |_, window, cx| {

@@ -340,7 +340,9 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     click_toolbar(cx, "header-source");
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible());
-        assert_eq!(view.read(cx).preview.attachment(), Some(&path));
+        // Its Source is the viewing copy of the file.
+        let attachment = view.read(cx).preview.attachment().cloned().unwrap();
+        assert_eq!(attachment.file_name(), path.file_name());
     });
 }
 
@@ -512,7 +514,7 @@ fn open_recent_follows_recents_and_clear_menu_empties_it(cx: &mut TestAppContext
         cx.dispatch_action(crate::workspace::OpenRecent(path.clone()));
         cx.run_until_parked();
     }
-    assert_eq!(tab_names(&tabs, cx), ["first.md", "second.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["first", "second"]);
     assert_eq!(titles(cx), ["second.md", "first.md", "Clear Menu"]);
     cx.dispatch_action(crate::workspace::ClearRecentFiles);
     cx.run_until_parked();
@@ -1894,7 +1896,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
     let unknown = dir.path().join("unknown.bin");
     for path in [&a, &b, &unknown] {
-        std::fs::write(path, "x").unwrap();
+        std::fs::write(path, path.display().to_string()).unwrap();
     }
     let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
@@ -1912,7 +1914,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     drag_files(cx, &[a.clone(), b.clone(), unknown.clone()], center);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(2)));
     drop_files(cx, center);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     cx.update(|_, cx| {
         assert!(
             tabs.read(cx)
@@ -1928,7 +1930,7 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     drag_files(cx, std::slice::from_ref(&b), center);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, None));
     drop_files(cx, center);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
 }
 
 #[gpui::test]
@@ -2056,7 +2058,7 @@ fn saving_with_pending_proposals_writes_the_text_and_keeps_them(cx: &mut TestApp
     std::fs::write(&path, source).unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);

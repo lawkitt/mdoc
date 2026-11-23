@@ -29,7 +29,8 @@ fn active_name(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> String {
     cx.update(|_, cx| view.read(cx).display_name())
 }
 
-/// Open `names` as saved files in `dir`, in order; returns their tab ids.
+/// Open `names` as Markdown files in `dir`, as a case's members open, in
+/// order; returns their tab ids.
 fn open_saved(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
@@ -42,7 +43,7 @@ fn open_saved(
             let path = dir.join(name);
             std::fs::write(&path, *name).unwrap();
             tabs.update_in(cx, |tabs, window, cx| {
-                tabs.open_paths(vec![path], window, cx)
+                tabs.open_case_files(vec![path], window, cx)
             });
             cx.run_until_parked();
             active_id(tabs, cx)

@@ -70,6 +70,12 @@ impl DocumentSession {
     }
 
     pub fn display_name(&self) -> String {
+        // A Vault document goes by its title.
+        if self.document.vault.is_some()
+            && let Some(name) = &self.name
+        {
+            return name.clone();
+        }
         let suggested = self.source.as_ref().map(|path| path.with_extension("md"));
         self.document
             .path

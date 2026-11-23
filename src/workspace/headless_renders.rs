@@ -411,6 +411,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::scanning(d)?;
     recents::scenes(d, path)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
+    vault::repeated_import(d, path.parent().ok_or("fixture folder")?)?;
     vault::unavailable_home(d)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;

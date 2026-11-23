@@ -112,16 +112,13 @@ fn tab_menus(d: &mut Driver) -> Result<()> {
 }
 
 fn document(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
-    // Use the same admission and identity normalization as an OS file drop.
-    // Injecting Document::open into a blank tab bypasses its identity and can
-    // leave /var and /private/var spellings on opposite sides of a case join.
+    // The fixture joins the fixture case, so it opens as the Markdown file a
+    // case lists, with the identity normalization a drop uses: injecting
+    // Document::open into a blank tab can leave /var and /private/var
+    // spellings on opposite sides of a case join.
     d.change(|w, window, cx| {
-        w.drop_files(
-            &gpui::ExternalPaths(vec![path.to_path_buf()].into()),
-            false,
-            window,
-            cx,
-        );
+        let path = mdoc_store::session_store::identity(path);
+        w.finish_open(vec![(path, true)], None, true, window, cx);
     })?;
     d.settle()?;
     d.change(|w, window, cx| {

@@ -883,7 +883,8 @@ impl Workspace {
         if view.read(cx).case.link().is_some_and(|l| l.id == case_id) {
             return;
         }
-        if !view.read(cx).can_copy_markdown() {
+        // A case lists Markdown files: a Vault document can't join one.
+        if !view.read(cx).can_copy_markdown() || view.read(cx).session.document.path.is_none() {
             return;
         }
         if view.read(cx).case.link().is_some() {

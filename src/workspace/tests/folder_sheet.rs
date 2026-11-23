@@ -152,7 +152,7 @@ fn open_files_never_reads_the_case_key(cx: &mut TestAppContext) {
     drop_paths(&tabs, cx, vec![path]);
     click_toolbar(cx, "folder-open-files");
     load_all(&tabs, cx);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     assert_eq!(tab_cases(&tabs, cx), [None, None]);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
@@ -315,9 +315,11 @@ fn an_open_file_without_a_case_joins_the_new_case(cx: &mut TestAppContext) {
     );
     click_toolbar(cx, "folder-primary");
     load_all(&tabs, cx);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    // a.md opened as a Vault document, which can't join a case until cases
+    // become Projects; b.md opens for the case as its Markdown file.
+    assert_eq!(tab_names(&tabs, cx), ["a", "b.md"]);
     let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
-    assert_eq!(tab_cases(&tabs, cx), vec![Some(case); 2]);
+    assert_eq!(tab_cases(&tabs, cx), vec![None, Some(case)]);
 }
 
 #[gpui::test]
@@ -381,7 +383,7 @@ fn several_folders_get_their_sheets_in_turn(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     drop_paths(&tabs, cx, vec![first, loose, second]);
     // Plain files open at once; the folders wait.
-    assert_eq!(tab_names(&tabs, cx), ["loose.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["loose"]);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert_eq!(tabs.folder_sheets.sheet().unwrap().name(), "First");
@@ -394,10 +396,10 @@ fn several_folders_get_their_sheets_in_turn(cx: &mut TestAppContext) {
             "Second"
         );
     });
-    assert_eq!(tab_names(&tabs, cx), ["loose.md"], "Cancel opens nothing");
+    assert_eq!(tab_names(&tabs, cx), ["loose"], "Cancel opens nothing");
     click_toolbar(cx, "folder-open-files");
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tab_names(&tabs, cx), ["loose.md", "three.md", "two.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["loose", "three", "two"]);
 }
 
 #[gpui::test]
@@ -491,7 +493,7 @@ fn without_the_key_the_files_open_without_a_case(cx: &mut TestAppContext) {
     draw(cx);
     click_toolbar(cx, "keychain-continue");
     assert!(!sheet_open(&tabs, cx));
-    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a"]);
     assert_eq!(tab_cases(&tabs, cx), [None]);
     cx.update(|_, cx| {
         let notice = tabs.read(cx).notices.message().unwrap().to_string();
@@ -508,7 +510,7 @@ fn without_the_key_the_files_open_without_a_case(cx: &mut TestAppContext) {
     });
     drop_paths(&tabs, cx, vec![other]);
     click_toolbar(cx, "folder-primary");
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     assert_eq!(tab_cases(&tabs, cx), [None, None]);
 }
 
@@ -532,7 +534,7 @@ fn a_declined_key_never_answers_a_later_sheet(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     draw(cx);
     click_toolbar(cx, "keychain-continue");
-    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a"]);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).folder_sheets.sheet().unwrap().name(), "B"));
     // B: this time the key opens. A's leftover action must not answer C.
     tabs.update(cx, |tabs, _| tabs.stage_case_key(Ok(store(dir.path()))));
@@ -545,7 +547,7 @@ fn a_declined_key_never_answers_a_later_sheet(cx: &mut TestAppContext) {
         assert_eq!(tabs.case_coordinator.cases().len(), 1);
         assert_eq!(tabs.case_coordinator.cases()[0].name, "B");
     });
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b.md"]);
 }
 
 #[gpui::test]

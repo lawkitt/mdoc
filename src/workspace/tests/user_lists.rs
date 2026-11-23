@@ -182,7 +182,7 @@ fn user_wide_lists_apply_outside_and_inside_cases_and_survive_a_restart(cx: &mut
         })
     });
     restored.update_in(cx, |w, window, cx| {
-        w.open_paths(vec![path.clone()], window, cx)
+        w.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     cx.update(|_, cx| {

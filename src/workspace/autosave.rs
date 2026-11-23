@@ -25,6 +25,8 @@ pub(super) enum Write {
         title: Option<String>,
         /// Its review, whose ranges are in `markdown`.
         review: Option<Box<SavedReview>>,
+        /// A conversion's warning and left-out line, kept with its original.
+        notes: Option<(Option<String>, Option<String>)>,
     },
     File {
         text: String,
@@ -82,6 +84,11 @@ impl Workspace {
                         .then(|| first_line_title(&text)),
                     markdown: text,
                     review: review.map(Box::new),
+                    notes: view
+                        .session
+                        .source
+                        .is_some()
+                        .then(|| (view.session.warning.clone(), view.session.left_out.clone())),
                 },
                 DocumentId::File(_) => Write::File {
                     text,
@@ -178,6 +185,7 @@ impl Workspace {
                         markdown,
                         title,
                         review,
+                        notes,
                     },
                 ) => {
                     let vault = vault.ok_or_else(no_vault)?;
@@ -185,6 +193,12 @@ impl Workspace {
                         .update_document(id.as_str(), |document| {
                             document.markdown = markdown;
                             document.review = review.map(|review| *review);
+                            if let (Some((warning, left_out)), Some(original)) =
+                                (notes, document.original.as_mut())
+                            {
+                                original.info.import_warning = warning;
+                                original.info.left_out = left_out;
+                            }
                             if let Some(title) = title {
                                 document.title = title;
                             }

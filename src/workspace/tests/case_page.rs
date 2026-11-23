@@ -26,12 +26,7 @@ fn dropped_document_join_uses_the_open_tabs_identity_and_live_mentions(cx: &mut 
                 &[],
                 None,
             )]);
-        tabs.drop_files(
-            &gpui::ExternalPaths(vec![path.clone()].into()),
-            false,
-            window,
-            cx,
-        );
+        tabs.open_case_files(vec![path.clone()], window, cx);
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
@@ -843,7 +838,7 @@ fn case_close_all_closes_every_member_and_writes_their_edits(cx: &mut TestAppCon
     let path = dir.path().join("second.md");
     std::fs::write(&path, "# Second").unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let second = cx.update(|_, cx| tabs.read(cx).tabs.active());

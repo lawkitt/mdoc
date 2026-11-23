@@ -72,6 +72,18 @@ fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Workspace>, &mut V
     (tabs, cx)
 }
 
+/// Boot `session` on the Vault in `root`, as a restart does.
+fn boot_on_vault<'a>(
+    cx: &'a mut TestAppContext,
+    session: Session,
+    root: &std::path::Path,
+) -> (Entity<Workspace>, &'a mut VisualTestContext) {
+    let root = root.to_path_buf();
+    boot_home_with(cx, session, move |tabs, _, _| {
+        tabs.use_vault(mdoc_vault::Vault::open(root, &[3; 32]).unwrap())
+    })
+}
+
 /// Boot exactly as launch does: an empty session shows Home.
 fn boot_home(
     cx: &mut TestAppContext,
@@ -298,6 +310,11 @@ fn open_scan(
         tabs.open_paths(vec![path], window, cx)
     });
     cx.run_until_parked();
+    // Copies of one scan are one source: each becomes its own document.
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Import Again");
+        cx.run_until_parked();
+    }
     let view = active(tabs, cx);
     draw(cx);
     cx.update(|_, cx| assert!(view.read(cx).import.ocr_required().is_some()));
@@ -340,14 +357,7 @@ fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String
             .map(|tab| {
                 tab.view()
                     .map(|view| view.read(cx).display_name())
-                    .unwrap_or_else(|| {
-                        tab.record()
-                            .markdown
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .into()
-                    })
+                    .unwrap_or_else(|| tab_label(tab, cx).name)
             })
             .collect()
     })
@@ -375,7 +385,7 @@ fn applied_document<'a>(
             dir.join("cases"),
             &[3; 32],
         ));
-        tabs.open_paths(vec![path.clone()], window, cx)
+        tabs.open_case_files(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
@@ -410,7 +420,7 @@ fn open_applied(
     let path = dir.join(name);
     std::fs::write(&path, text).unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
+        tabs.open_case_files(vec![path], window, cx)
     });
     cx.run_until_parked();
     let view = active(tabs, cx);

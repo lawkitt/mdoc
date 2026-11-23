@@ -101,3 +101,5 @@ review-scanning
 review-long-counts
 home-vault-unavailable
 home-vault-unavailable-notice
+import-repeated
+import-repeated-several

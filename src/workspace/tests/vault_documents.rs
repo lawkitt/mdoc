@@ -354,3 +354,214 @@ fn new_while_locked_asks_to_unlock_first(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| assert!(tabs.read(cx).vault.vault().is_some()));
 }
+
+/// Open `paths` as the user would and let the imports finish.
+fn open(tabs: &Entity<Workspace>, paths: Vec<std::path::PathBuf>, cx: &mut VisualTestContext) {
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_paths(paths, window, cx));
+    cx.run_until_parked();
+}
+
+fn original(root: &Path, id: &str) -> Vec<u8> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    open_vault(root)
+        .open_original(id)
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    bytes
+}
+
+#[gpui::test]
+fn each_opened_file_is_one_unfiled_document_with_its_original(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let pdf = fixtures.join("reference.pdf");
+    let docx = fixtures.join("import/text.docx");
+    let note = dir.path().join("Note.md");
+    std::fs::write(&note, "# Note\n\nWords.").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![pdf.clone(), docx.clone(), note.clone()], cx);
+    let listed = documents(dir.path());
+    assert_eq!(listed.len(), 3);
+    for (path, kind) in [
+        (&pdf, SourceKind::Pdf),
+        (&docx, SourceKind::Word),
+        (&note, SourceKind::Markdown),
+    ] {
+        let name = path.file_stem().unwrap().to_string_lossy();
+        let summary = listed.iter().find(|d| d.title == name).unwrap();
+        assert_eq!(summary.source_kind, kind, "{name}");
+        assert_eq!(summary.origin, DocumentOrigin::Ordinary);
+        assert!(summary.project.is_none());
+        assert_eq!(
+            original(dir.path(), &summary.id),
+            std::fs::read(path).unwrap()
+        );
+    }
+    // A Markdown file is its own text; the tab is the Vault document.
+    let note_id = listed
+        .iter()
+        .find(|d| d.title == "Note")
+        .unwrap()
+        .id
+        .clone();
+    let stored = open_vault(dir.path()).document(&note_id).unwrap();
+    assert_eq!(stored.markdown, "# Note\n\nWords.");
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let names: Vec<_> = tabs
+            .tabs
+            .iter()
+            .map(|tab| super::super::tab_label(tab, cx).name)
+            .collect();
+        assert_eq!(tabs.tabs.len(), 3, "{names:?}");
+        for tab in tabs.tabs.iter() {
+            assert!(tab.record().document.is_some());
+        }
+        // The session names them by id alone.
+        let json = serde_json::to_string(&tabs.snapshot(cx)).unwrap();
+        assert!(
+            !json.contains("reference") && !json.contains("Note"),
+            "{json}"
+        );
+    });
+}
+
+#[gpui::test]
+fn a_converted_pdf_comes_back_from_the_vault_with_its_source(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let pdf =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![pdf], cx);
+    let view = active(&tabs, cx);
+    let (text, copy) = view.read_with(cx, |view, cx| {
+        assert!(!view.lifecycle.source_only(), "converted on its own");
+        (
+            view.editor.read(cx).text().to_string(),
+            view.preview.source().cloned().unwrap(),
+        )
+    });
+    assert!(!text.is_empty());
+    wait(cx, 1000);
+    let id = documents(dir.path())[0].id.clone();
+    assert_eq!(open_vault(dir.path()).document(&id).unwrap().markdown, text);
+    // The viewing copy lives outside the Vault and goes with the tab.
+    assert!(copy.exists() && !copy.starts_with(dir.path().join("vault")));
+    let session = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    assert!(!copy.exists());
+
+    let (restored, cx) = boot_on(&mut cx.cx, dir.path(), session);
+    let view = active(&restored, cx);
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.editor.read(cx).text(), text);
+        assert_eq!(view.session.display_name(), "reference");
+        assert!(view.preview.source().is_some_and(|source| source.exists()));
+    });
+}
+
+fn repeated(cx: &mut TestAppContext, answer: &str) -> (tempfile::TempDir, usize, usize) {
+    let dir = tempfile::tempdir().unwrap();
+    let note = dir.path().join("Note.md");
+    std::fs::write(&note, "# Note").unwrap();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, vec![note.clone()], cx);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let document = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .get(first)
+            .unwrap()
+            .record()
+            .document
+            .clone()
+    });
+    // Still open, it only comes to the front.
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    open(&tabs, vec![note.clone()], cx);
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), first);
+    // Closed, opening it again asks.
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(first, window, cx));
+    cx.run_until_parked();
+    open(&tabs, vec![note], cx);
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "“Note.md” is already in mdoc"
+    );
+    cx.simulate_prompt_answer(answer);
+    cx.run_until_parked();
+    let active_is_first = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        tabs.tabs.active_tab().unwrap().record().document == document
+    });
+    let open = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .iter()
+            .filter(|tab| tab.record().document.is_some())
+            .count()
+    });
+    if answer == "Open Existing" {
+        assert!(active_is_first, "the existing document comes to the front");
+    }
+    let count = documents(dir.path()).len();
+    (dir, count, open)
+}
+
+#[gpui::test]
+fn a_repeated_import_opens_the_existing_document(cx: &mut TestAppContext) {
+    let (_dir, documents, tabs) = repeated(cx, "Open Existing");
+    assert_eq!((documents, tabs), (1, 1));
+}
+
+#[gpui::test]
+fn a_repeated_import_can_import_again(cx: &mut TestAppContext) {
+    let (dir, documents_now, tabs) = repeated(cx, "Import Again");
+    assert_eq!((documents_now, tabs), (2, 1));
+    let listed = documents(dir.path());
+    assert_eq!(listed[0].source_sha256, listed[1].source_sha256);
+}
+
+#[gpui::test]
+fn cancelling_a_repeated_import_adds_nothing(cx: &mut TestAppContext) {
+    let (_dir, documents, tabs) = repeated(cx, "Cancel");
+    assert_eq!((documents, tabs), (1, 0));
+}
+
+#[gpui::test]
+fn several_repeats_ask_one_question_and_new_files_open_anyway(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let paths: Vec<_> = ["A.md", "B.md", "C.md"]
+        .iter()
+        .map(|name| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, format!("# {name}")).unwrap();
+            path
+        })
+        .collect();
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    open(&tabs, paths[..2].to_vec(), cx);
+    let ids: Vec<u64> = cx.update(|_, cx| tabs.read(cx).tabs.iter().map(|tab| tab.id()).collect());
+    tabs.update_in(cx, |tabs, window, cx| {
+        for id in ids {
+            tabs.close_tab(id, window, cx);
+        }
+    });
+    cx.run_until_parked();
+    open(&tabs, paths.clone(), cx);
+    let (question, detail) = cx.pending_prompt().unwrap();
+    assert_eq!(question, "2 files are already in mdoc");
+    assert!(detail.contains("A.md") && detail.contains("B.md") && !detail.contains("C.md"));
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    // Cancel skips only the repeats.
+    let titles: Vec<_> = documents(dir.path()).into_iter().map(|d| d.title).collect();
+    assert_eq!(titles.len(), 3, "{titles:?}");
+    assert!(titles.contains(&"C".to_string()));
+}

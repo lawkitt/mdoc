@@ -709,8 +709,15 @@ impl DocumentView {
                     && !self
                         .preview
                         .shows_other_annotations(&imported.source.path, &imported.annotations);
+                // A Vault document stays itself: the conversion fills its text.
+                let kept =
+                    (self.session.document.vault.clone()).map(|id| (id, self.session.name.clone()));
                 self.session
                     .import(imported.source.path.clone(), imported.warning);
+                if let Some((id, name)) = kept {
+                    self.session.document = Document::in_vault(id, String::new());
+                    self.session.name = name;
+                }
                 self.session.left_out = imported.left_out.line(true);
                 self.session.comments_left_out = imported.left_out.comments_not_shown();
                 self.preview

@@ -304,7 +304,7 @@ fn kept_names_and_scans_in_flight_keep_an_open_tab_on_the_shelf(cx: &mut TestApp
     let source = "Anna Petrova met Clara Moss.";
     std::fs::write(&path, source).unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_paths(vec![path], window, cx)
+        tabs.open_case_files(vec![path], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);

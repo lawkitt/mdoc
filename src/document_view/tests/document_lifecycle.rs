@@ -32,10 +32,13 @@ fn failed_open_preserves_current_document(cx: &mut TestAppContext) {
         app.open_path(dir.path().join("missing.md"), window, cx)
     });
     cx.run_until_parked();
-    let failed = active_document(&app, cx);
-    assert!(cx.update(|_, cx| failed.read(cx).error.is_some()));
-    assert!(cx.update(|_, cx| failed.read(cx).lifecycle.unavailable()));
-    assert_ne!(failed, app);
+    // Nothing to import: no tab opens, and the notice names the file.
+    assert_eq!(active_document(&app, cx), app);
+    cx.update(|window, cx| {
+        let tabs = window.root::<workspace::Workspace>().flatten().unwrap();
+        let notice = tabs.read(cx).notice_text().unwrap();
+        assert!(notice.contains("missing.md"), "{notice}");
+    });
     assert!(cx.update(|_, cx| app.read(cx).session.document.path.is_none()));
 }
 

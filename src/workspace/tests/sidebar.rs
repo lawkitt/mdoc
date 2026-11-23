@@ -425,7 +425,7 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
     let dir = tempfile::tempdir().unwrap();
     let [a, b, c, d] = ["a.md", "b.md", "two-b.md", "two-c.md"].map(|n| dir.path().join(n));
     for path in [&a, &b, &c, &d] {
-        std::fs::write(path, "x").unwrap();
+        std::fs::write(path, path.display().to_string()).unwrap();
     }
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
@@ -442,7 +442,12 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
                 format!(
                     "tooltip-{}\n{}",
                     label.name,
-                    label.identity.as_path().parent().unwrap().display()
+                    label
+                        .identity
+                        .as_path()
+                        .parent()
+                        .map(|parent| parent.display().to_string())
+                        .unwrap_or_default()
                 )
                 .into_boxed_str(),
             ) as &'static str,
@@ -466,7 +471,7 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
     // Finish the drop's resolved admission without another MouseMove or an
     // extra frame: the old tooltip must disappear on the first changed frame.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.finish_open(vec![(c, true), (d, true)], Some(1), window, cx);
+        tabs.finish_open(vec![(c, true), (d, true)], Some(1), true, window, cx);
     });
     draw(cx);
     assert!(
@@ -474,10 +479,7 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
         "moved row's tooltip must not name the new row"
     );
     cx.run_until_parked();
-    assert_eq!(
-        tab_names(&tabs, cx),
-        ["a.md", "two-b.md", "two-c.md", "b.md"]
-    );
+    assert_eq!(tab_names(&tabs, cx), ["a", "two-b.md", "two-c.md", "b"]);
 
     // A fresh hover shows the inserted row's own name and folder.
     cx.simulate_mouse_move(
@@ -511,7 +513,7 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
 fn sidebar_context_menu_dismisses_the_tab_tooltip(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("a.md");
-    std::fs::write(&path, "x").unwrap();
+    std::fs::write(&path, path.display().to_string()).unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_paths(vec![path], window, cx)
@@ -527,7 +529,12 @@ fn sidebar_context_menu_dismisses_the_tab_tooltip(cx: &mut TestAppContext) {
                 format!(
                     "tooltip-{}\n{}",
                     label.name,
-                    label.identity.as_path().parent().unwrap().display()
+                    label
+                        .identity
+                        .as_path()
+                        .parent()
+                        .map(|parent| parent.display().to_string())
+                        .unwrap_or_default()
                 )
                 .into_boxed_str(),
             ) as &'static str,
@@ -605,8 +612,8 @@ fn a_background_conversion_is_named_as_its_source(cx: &mut TestAppContext) {
         assert!(tab.view().is_none(), "the second tab is not activated");
         (tab.id(), tab_label(tab, cx))
     });
-    assert_eq!(label.name, "encrypted--errors.odt");
-    assert_eq!(label.identity, odt);
+    // Named as its document, which takes the file's name.
+    assert_eq!(label.name, "encrypted--errors");
 
     let row = cx
         .debug_bounds(Box::leak(format!("tab-{id}").into_boxed_str()))
@@ -622,12 +629,16 @@ fn a_background_conversion_is_named_as_its_source(cx: &mut TestAppContext) {
     cx.run_until_parked();
     draw(cx);
     let tip = format!(
-        "tooltip-encrypted--errors.odt\n{}",
-        label.identity.parent().unwrap().display()
+        "tooltip-encrypted--errors\n{}",
+        label
+            .identity
+            .parent()
+            .map(|parent| parent.display().to_string())
+            .unwrap_or_default()
     );
     assert!(
         cx.debug_bounds(Box::leak(tip.into_boxed_str())).is_some(),
-        "the tooltip names the source and its folder"
+        "the tooltip names the document"
     );
 }
 
@@ -636,7 +647,7 @@ fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let [a, b, c, d] = ["a.md", "b.md", "c.md", "d.md"].map(|name| dir.path().join(name));
     for path in [&a, &b, &c, &d] {
-        std::fs::write(path, "x").unwrap();
+        std::fs::write(path, path.display().to_string()).unwrap();
     }
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
@@ -653,7 +664,7 @@ fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     drag_files(cx, &[c.clone(), a.clone()], upper);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(1)));
     drop_files(cx, upper);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "c.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "c", "b"]);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), None));
 
     // Below the last row the files open at the end.
@@ -662,14 +673,14 @@ fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     drag_files(cx, std::slice::from_ref(&d), below);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(3)));
     drop_files(cx, below);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "c.md", "b.md", "d.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "c", "b", "d"]);
 }
 
 #[gpui::test]
 fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (a, unknown) = (dir.path().join("a.md"), dir.path().join("образец.xyz"));
-    std::fs::write(&a, "x").unwrap();
+    std::fs::write(&a, a.display().to_string()).unwrap();
     std::fs::write(&unknown, "x").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
@@ -688,7 +699,7 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
         assert_eq!(tabs.read(cx).file_drop_index(), None);
     });
     drop_files(cx, row.center());
-    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a"]);
     cx.update(|_, cx| {
         assert!(!tabs.read(cx).sidebar.drop_refused());
         assert!(
@@ -699,7 +710,7 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
 
     // With an openable file beside it, the skipped one is named, not its path.
     let b = dir.path().join("b.md");
-    std::fs::write(&b, "x").unwrap();
+    std::fs::write(&b, b.display().to_string()).unwrap();
     drag_files(cx, &[b.clone(), unknown.clone()], row.center());
     cx.update(|_, cx| assert!(!tabs.read(cx).sidebar.drop_refused()));
     drop_files(cx, row.center());
@@ -723,7 +734,7 @@ fn the_refusal_shows_above_a_long_list(cx: &mut TestAppContext) {
     let paths: Vec<_> = (0..40)
         .map(|i| {
             let path = dir.path().join(format!("doc{i:02}.md"));
-            std::fs::write(&path, "x").unwrap();
+            std::fs::write(&path, path.display().to_string()).unwrap();
             path
         })
         .collect();
@@ -773,7 +784,7 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(1)));
     drop_files(cx, list);
-    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "b"]);
     // The reveal behaves as for hover: it closes once the pointer leaves.
     cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     hover(cx, gpui::point(px(600.), px(400.)));

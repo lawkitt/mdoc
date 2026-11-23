@@ -1,6 +1,6 @@
-//! Home › Recent after an unapplied scan and a saved conversion (#306): the
-//! badge only on documents with applied replacements, and the converted
-//! demo listed once, as its `.md`.
+//! Home › Recent after an unapplied scan and a conversion (#306): the badge
+//! only on documents with applied replacements, each listed by the file it
+//! was opened from.
 use super::{Driver, Result};
 use crate::{document_view::DocumentView, pii::ui::PiiApplyAll};
 use gpui::Entity;
@@ -44,7 +44,7 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<()> {
     })??;
     d.settle()?;
 
-    // The Russian demo DOCX: converted, one name applied, saved as .md.
+    // The Russian demo DOCX: converted, one name applied.
     let demo = folder.join(format!("{DEMO}.docx"));
     std::fs::copy(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("docs/product-media/{DEMO}.docx")),
@@ -72,19 +72,6 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<()> {
         })
     })??;
     d.settle()?;
-    let saved = folder.join(format!("{DEMO}.md"));
-    d.change(|_, window, cx| {
-        // A case's Markdown file, as a saved conversion was before the Vault.
-        view.update(cx, |v, cx| {
-            let text = v.editor.read(cx).text().to_string();
-            mdoc_store::document::export(&saved, &text).expect("fixture folder");
-            v.session.document = mdoc_store::document::Document::open(saved).expect("just written");
-            v.replace_images(v.save_directory(), window, cx);
-            cx.notify();
-        });
-    })?;
-    d.settle()?;
-
     d.change(|w, window, cx| {
         let files = &w.shell.recents.files;
         let badged = |name: &str| {
@@ -95,8 +82,7 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<()> {
         };
         assert_eq!(files.len(), 2, "{files:?}");
         assert_eq!(badged("Meeting notes.md"), Some(false), "{files:?}");
-        assert_eq!(badged(&format!("{DEMO}.md")), Some(true), "{files:?}");
-        assert_eq!(badged(&format!("{DEMO}.docx")), None, "{files:?}");
+        assert_eq!(badged(&format!("{DEMO}.docx")), Some(true), "{files:?}");
         w.show_home(window, cx);
         window.focus(w.focus_regions.home(), cx);
     })?;

@@ -59,15 +59,16 @@ pub(crate) fn active_document(
     })
 }
 
+/// Open the Markdown file `path` as a file, as a case's member opens, so
+/// what the view does to it reaches the disk.
 pub(crate) fn open_document(
     app: &Entity<DocumentView>,
     path: PathBuf,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    app.update(cx, |_, cx| {
-        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
-            path,
-        ])))
+    cx.update(|window, cx| {
+        let tabs = window.root::<workspace::Workspace>().flatten().unwrap();
+        tabs.update(cx, |tabs, cx| tabs.open_case_files(vec![path], window, cx));
     });
     cx.run_until_parked();
     active_document(app, cx)
