@@ -1152,13 +1152,23 @@ fn an_unfiled_documents_mapping_follows_it_into_a_project() {
     let back = vault.undo_move(&moved.undo).unwrap();
     assert_eq!(back.project, None);
     assert_eq!(back.document.markdown, "PERSON_1 wrote to PERSON_2.");
-    assert_eq!(back.document.mapping, local, "its names, aliases and ids");
+    // Its names, aliases and ids; Bob also answers to the Memo's Bob, so a
+    // reply saved for it there still finds him.
+    let memo_bob = joined
+        .mapping
+        .identity_named("PERSON_1")
+        .unwrap()
+        .id
+        .clone();
+    let mut expected = local.clone();
+    expected.identities[1].folded = vec![memo_bob];
+    assert_eq!(back.document.mapping, expected);
     assert_eq!(ids_in(&vault, None), std::slice::from_ref(&note));
     let memo_mapping = vault.project(&memo_project).unwrap().mapping;
     assert!(memo_mapping.identity(&ann).is_none(), "Ann goes with it");
     assert_eq!(back.left.unwrap().mapping, memo_mapping);
     drop(vault);
-    assert_eq!(folder.open().document(&note).unwrap().mapping, local);
+    assert_eq!(folder.open().document(&note).unwrap().mapping, expected);
 }
 
 /// A document moved out of a Project keeps, as its own mapping, the names
