@@ -124,11 +124,11 @@ impl Fit {
     }
 }
 
-/// Case `id` among the sources, named as the shelf shows it.
-fn case_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSource> {
+/// Project `id` among the sources, named as the shelf shows it.
+fn project_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSource> {
     sources
         .iter()
-        .find(|s| matches!(s, ClipboardSource::Case { id: case, .. } if case == id))
+        .find(|s| matches!(s, ClipboardSource::Project { id: case, .. } if case == id))
         .cloned()
 }
 
@@ -150,7 +150,7 @@ pub(crate) struct ShelfContent {
     pub drag_hint: bool,
 }
 
-/// The clipboard rows' case, as last picked on the shelf this session.
+/// The clipboard rows' Project, as last picked on the shelf this session.
 #[derive(Default)]
 struct PickedSource(Option<ClipboardSource>);
 impl Global for PickedSource {}
@@ -184,14 +184,14 @@ impl ShelfContent {
             .and_then(|picked| picked.0.clone())
             .filter(|picked| sources.contains(picked));
         // The document used last: a pick on the shelf, the active tab, or
-        // the case of the most recent row.
+        // the Project of the most recent row.
         let source = picked
             .or_else(|| workspace.active_clipboard_source(cx))
             .or_else(|| {
                 documents
                     .iter()
-                    .find_map(|d| d.case.as_ref())
-                    .and_then(|case| case_source(&sources, &case.id))
+                    .find_map(|d| d.project.as_ref())
+                    .and_then(|project| project_source(&sources, &project.id))
             })
             .or_else(|| sources.first().cloned());
         let update = match crate::updater::state(cx).install {
@@ -477,15 +477,14 @@ impl ShelfView {
         let Some(document) = self.content.documents.get(index) else {
             return;
         };
-        let source = match (&document.case, &document.key) {
-            (Some(case), _) => case_source(&self.content.sources, &case.id),
+        let source = match (&document.project, &document.key) {
+            (Some(project), _) => project_source(&self.content.sources, &project.id),
             (None, ShelfKey::Tab(id)) => self
                 .content
                 .sources
                 .iter()
                 .find(|s| matches!(s, ClipboardSource::Tab { id: tab, .. } if tab == id))
                 .cloned(),
-            (None, ShelfKey::Member { .. }) => None,
         };
         if let Some(source) = source {
             self.pick(source, cx);
@@ -829,7 +828,7 @@ impl ShelfView {
     }
 
     /// "Clipboard", Pseudonymize and Restore (or one Unlock button for a
-    /// locked case), then the quiet source line with its ▾.
+    /// locked Vault), then the quiet source line with its ▾.
     fn clipboard_section(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
@@ -837,7 +836,7 @@ impl ShelfView {
         let buttons = if enabled && self.clipboard_locked(cx) {
             div().flex().flex_row().child(self.clipboard_button(
                 "shelf-unlock",
-                "Unlock cases in mdoc…",
+                "Unlock in mdoc…",
                 true,
                 cx,
                 |this, window, cx| this.clipboard(ClipboardRow::Restore, window, cx),

@@ -135,9 +135,6 @@ fn untitled_numbering_counts_lazy_restored_tabs_and_keeps_their_names(cx: &mut T
 fn untitled_numbering_reserves_later_restored_names_before_naming_legacy_blanks(
     cx: &mut TestAppContext,
 ) {
-    let dir = tempfile::tempdir().unwrap();
-    let saved = dir.path().join("Untitled 2.md");
-    std::fs::write(&saved, "saved").unwrap();
     // The older manifest's unnamed blank precedes named, lazy records.
     let (tabs, cx) = boot(
         cx,
@@ -154,10 +151,6 @@ fn untitled_numbering_reserves_later_restored_names_before_naming_legacy_blanks(
                     name: Some("Untitled.md".into()),
                     ..TabRecord::default()
                 },
-                TabRecord {
-                    markdown: saved,
-                    ..TabRecord::default()
-                },
             ],
             ..Session::default()
         },
@@ -165,7 +158,7 @@ fn untitled_numbering_reserves_later_restored_names_before_naming_legacy_blanks(
     cx.update(|_, cx| {
         assert_eq!(
             tabs.read(cx).active_view().unwrap().read(cx).display_name(),
-            "Untitled 4.md"
+            "Untitled 2.md"
         );
     });
     tabs.update_in(cx, |tabs, window, cx| {
@@ -377,7 +370,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
         tabs.finish_open(
             vec![(dir.path().join("bad.bin"), false)],
             None,
-            true,
+            None,
             window,
             cx,
         )

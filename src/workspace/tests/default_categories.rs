@@ -1,5 +1,5 @@
 //! Settings › Detection › Categories to detect: the default for
-//! documents without a case and the list each new case starts from.
+//! documents outside a Project and the list each new Project starts from.
 use super::*;
 use mdoc_pii::Category;
 
@@ -10,8 +10,13 @@ fn set_default(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, category: C
     cx.run_until_parked();
 }
 
-fn cases(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<mdoc_store::cases::Case> {
-    cx.update(|_, cx| tabs.read(cx).case_coordinator.cases().to_vec())
+fn projects(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<mdoc_vault::Project> {
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        (w.projects.summaries().into_iter())
+            .filter_map(|summary| w.projects.project(&summary.id).cloned())
+            .collect()
+    })
 }
 
 fn originals(view: &Entity<DocumentView>, cx: &mut VisualTestContext) -> Vec<String> {
@@ -49,50 +54,41 @@ fn detect(view: &Entity<DocumentView>, cx: &mut VisualTestContext, names: &[(&st
 }
 
 #[gpui::test]
-fn a_saved_mapping_case_starts_from_the_default_and_keeps_its_list(cx: &mut TestAppContext) {
+fn a_saved_mapping_project_starts_from_the_default_and_keeps_its_list(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     set_default(&tabs, cx, Category::Address, false);
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
-    cx.run_until_parked();
-    assert_eq!(cases(&tabs, cx)[0].skip, ["ADDRESS"]);
+    let id = new_project(&tabs, cx, tab);
+    assert_eq!(projects(&tabs, cx)[0].skip, ["ADDRESS"]);
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
         assert_eq!(view.read(cx).scan_skip(), [Category::Address].into());
     });
 
-    // A later Settings change leaves the existing case and its member alone.
+    // A later Settings change leaves the existing Project and its member
+    // alone.
     set_default(&tabs, cx, Category::Address, true);
     set_default(&tabs, cx, Category::Email, false);
-    assert_eq!(cases(&tabs, cx)[0].skip, ["ADDRESS"]);
-    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    assert_eq!(store.list().0[0].skip, ["ADDRESS"]);
+    assert_eq!(projects(&tabs, cx)[0].skip, ["ADDRESS"]);
+    assert_eq!(vault(&tabs, cx).project(&id).unwrap().skip, ["ADDRESS"]);
     cx.update(|_, cx| {
         assert_eq!(view.read(cx).scan_skip(), [Category::Address].into());
     });
-    // Leaving the case hands the tab back to the default.
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.remove_from_case(tab, window, cx)
-    });
+    // Leaving the Project hands the tab back to the default.
+    move_tab(&tabs, cx, tab, None);
     cx.update(|_, cx| {
         assert_eq!(view.read(cx).scan_skip(), [Category::Email].into());
     });
 }
 
 #[gpui::test]
-fn a_folder_opened_as_a_case_starts_from_the_default(cx: &mut TestAppContext) {
+fn a_folder_opened_as_a_project_starts_from_the_default(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("Matter");
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::write(folder.join("a.md"), "Text").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     set_default(&tabs, cx, Category::Phone, false);
     set_default(&tabs, cx, Category::Bank, false);
     tabs.update_in(cx, |tabs, window, cx| {
@@ -102,14 +98,14 @@ fn a_folder_opened_as_a_case_starts_from_the_default(cx: &mut TestAppContext) {
     draw(cx);
     click_toolbar(cx, "folder-primary");
     cx.run_until_parked();
-    let created = cases(&tabs, cx);
+    let created = projects(&tabs, cx);
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].name, "Matter");
     assert_eq!(created[0].skip, ["PHONE", "BANK"]);
-    // Its member scans with the case's list.
+    // Its member scans with the Project's list.
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
-        assert!(view.read(cx).case.link().is_some());
+        assert!(view.read(cx).project.link().is_some());
         assert_eq!(
             view.read(cx).scan_skip(),
             [Category::Phone, Category::Bank].into()
@@ -118,15 +114,9 @@ fn a_folder_opened_as_a_case_starts_from_the_default(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn unticking_withdraws_unapplied_proposals_only_in_tabs_without_a_case(cx: &mut TestAppContext) {
+fn unticking_withdraws_unapplied_proposals_only_in_tabs_without_a_project(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let text = "Anna Petrova met Bob Day and Cara Lin at 1 Main St.";
     // A member tab: its case decides, whatever Settings says.
     let member = open_applied(
@@ -137,8 +127,7 @@ fn unticking_withdraws_unapplied_proposals_only_in_tabs_without_a_case(cx: &mut 
         text,
         &[("Anna Petrova", Category::Person)],
     );
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(member, window, cx));
-    cx.run_until_parked();
+    new_project(&tabs, cx, member);
     let member_view = active(&tabs, cx);
     detect(&member_view, cx, &[("Bob Day", Category::Person)]);
     // A tab without a case: an applied name, a manual one and scan proposals.
@@ -147,7 +136,7 @@ fn unticking_withdraws_unapplied_proposals_only_in_tabs_without_a_case(cx: &mut 
         cx,
         dir.path(),
         "loose.md",
-        text,
+        &format!("{text} "),
         &[("Anna Petrova", Category::Person)],
     );
     let loose = active(&tabs, cx);

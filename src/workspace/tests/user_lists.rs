@@ -32,16 +32,10 @@ fn settle(cx: &mut VisualTestContext) {
 }
 
 #[gpui::test]
-fn a_keep_in_one_case_stays_out_of_another(cx: &mut TestAppContext) {
+fn a_keep_in_one_project_stays_out_of_another(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let first = open_applied(
         &tabs,
         cx,
@@ -51,8 +45,7 @@ fn a_keep_in_one_case_stays_out_of_another(cx: &mut TestAppContext) {
         &[("Anna Petrova", Person)],
     );
     let first_view = active(&tabs, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
-    cx.run_until_parked();
+    new_project(&tabs, cx, first);
     let second = open_applied(
         &tabs,
         cx,
@@ -62,18 +55,17 @@ fn a_keep_in_one_case_stays_out_of_another(cx: &mut TestAppContext) {
         &[("Boris Ivanov", Person)],
     );
     let second_view = active(&tabs, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(second, window, cx));
-    cx.run_until_parked();
-    let case_of = |view: &Entity<DocumentView>, cx: &mut VisualTestContext| {
-        cx.update(|_, cx| view.read(cx).case.link().unwrap().id.clone())
+    new_project(&tabs, cx, second);
+    let project_of = |view: &Entity<DocumentView>, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| view.read(cx).project.link().unwrap().id.clone())
     };
-    let (a, b) = (case_of(&first_view, cx), case_of(&second_view, cx));
+    let (a, b) = (project_of(&first_view, cx), project_of(&second_view, cx));
     assert_ne!(a, b);
-    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = vault(&tabs, cx);
 
     keep_all(&first_view, "Riverside", cx);
-    assert_eq!(store.load(&a).unwrap().lists.never, ["Riverside"]);
-    assert!(store.load(&b).unwrap().lists.is_empty());
+    assert_eq!(store.project(&a).unwrap().lists.never, ["Riverside"]);
+    assert!(store.project(&b).unwrap().lists.is_empty());
     cx.update(|_, cx| {
         assert!(first_view.read(cx).scan_lists(cx).never_has("riverside"));
         assert!(!second_view.read(cx).scan_lists(cx).never_has("riverside"));
@@ -90,7 +82,7 @@ fn a_keep_in_one_case_stays_out_of_another(cx: &mut TestAppContext) {
         view.review_changed(cx);
     });
     settle(cx);
-    assert!(store.load(&a).unwrap().lists.is_empty());
+    assert!(store.project(&a).unwrap().lists.is_empty());
 
     // Kept again, then removed on the case page.
     first_view.update(cx, |view, cx| {
@@ -106,31 +98,30 @@ fn a_keep_in_one_case_stays_out_of_another(cx: &mut TestAppContext) {
         view.review_changed(cx);
     });
     settle(cx);
-    assert_eq!(store.load(&a).unwrap().lists.never, ["Riverside"]);
-    tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&a, window, cx));
+    assert_eq!(store.project(&a).unwrap().lists.never, ["Riverside"]);
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_project(&a, window, cx));
     cx.run_until_parked();
     draw(cx);
     assert!(
-        cx.debug_bounds("case-never-remove-0").is_some(),
-        "the case page lists Never"
+        cx.debug_bounds("project-never-remove-0").is_some(),
+        "the Project page lists Never"
     );
-    assert!(cx.debug_bounds("case-always-remove-0").is_none());
+    assert!(cx.debug_bounds("project-always-remove-0").is_none());
     tabs.update(cx, |tabs, cx| {
-        tabs.remove_case_list_entry(&a, false, "riverside", cx)
+        tabs.remove_project_list_entry(&a, false, "riverside", cx)
     });
     cx.run_until_parked();
-    assert!(store.load(&a).unwrap().lists.is_empty());
+    assert!(store.project(&a).unwrap().lists.is_empty());
     cx.update(|_, cx| assert!(!first_view.read(cx).scan_lists(cx).never_has("riverside")));
 }
 
 #[gpui::test]
-fn user_wide_lists_apply_outside_and_inside_cases_and_survive_a_restart(cx: &mut TestAppContext) {
+fn user_wide_lists_apply_outside_and_inside_projects_and_survive_a_restart(
+    cx: &mut TestAppContext,
+) {
     let dir = tempfile::tempdir().unwrap();
-    let cases = dir.path().join("cases");
-    let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(cases.clone(), &[3; 32]))
-    });
+    let root = dir.path().join("vault");
+    let (tabs, cx) = boot_on_vault(cx, Session::default(), &root);
     let tab = open_applied(
         &tabs,
         cx,
@@ -139,7 +130,6 @@ fn user_wide_lists_apply_outside_and_inside_cases_and_survive_a_restart(cx: &mut
         "The Supreme Court heard Maya Bennett for Acme Ltd.",
         &[("Maya Bennett", Person)],
     );
-    let path = dir.path().join("note.md");
     let settings = cx.update(|_, cx| tabs.read(cx).settings.clone());
     settings.update(cx, |panel, cx| {
         panel.type_user_list_entry(false, "Supreme Court", cx);
@@ -148,9 +138,7 @@ fn user_wide_lists_apply_outside_and_inside_cases_and_survive_a_restart(cx: &mut
         panel.add_user_list_entry(true, cx);
     });
     cx.run_until_parked();
-    let saved = mdoc_store::cases::Store::with_key(cases.clone(), &[3; 32])
-        .load_lists()
-        .unwrap();
+    let saved = vault(&tabs, cx).user_lists().unwrap();
     assert!(saved.lists.never_has("supreme court"));
     assert_eq!(
         saved.lists.always_for("acme ltd").map(|e| e.category()),
@@ -164,27 +152,17 @@ fn user_wide_lists_apply_outside_and_inside_cases_and_survive_a_restart(cx: &mut
         let lists = view.read(cx).scan_lists(cx);
         assert!(lists.never_has("Supreme Court") && lists.always_for("Acme Ltd").is_some());
     });
-    // In a case: the user-wide lists still apply under the case's own.
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
-    cx.run_until_parked();
+    // In a Project: the user-wide lists still apply under the Project's own.
+    new_project(&tabs, cx, tab);
     cx.update(|_, cx| {
-        assert!(view.read(cx).case.link().is_some());
+        assert!(view.read(cx).project.link().is_some());
         assert!(view.read(cx).scan_lists(cx).never_has("Supreme Court"));
     });
 
-    // The next launch reads them back with the cases.
-    let restored = cx.update(|window, cx| {
-        cx.new(|cx| {
-            let mut restored = Workspace::empty(window, cx);
-            restored.use_case_store(mdoc_store::cases::Store::with_key(cases.clone(), &[3; 32]));
-            restored.restore(Session::default(), window, cx);
-            restored
-        })
-    });
-    restored.update_in(cx, |w, window, cx| {
-        w.open_case_files(vec![path.clone()], window, cx)
-    });
+    // The next launch reads them back from the Vault.
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
+    let (restored, cx) = boot_on_vault(&mut cx.cx, Session::default(), &root);
     cx.update(|_, cx| {
         let lists = restored.read(cx).settings.read(cx).user_lists().clone();
         assert!(lists.never_has("Supreme Court"));
@@ -197,12 +175,6 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let first = open_applied(
         &tabs,
         cx,
@@ -212,9 +184,8 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
         &[("Anna Petrova", Person)],
     );
     let first_view = active(&tabs, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
-    cx.run_until_parked();
-    let case = cx.update(|_, cx| first_view.read(cx).case.link().unwrap().id.clone());
+    new_project(&tabs, cx, first);
+    let case = cx.update(|_, cx| first_view.read(cx).project.link().unwrap().id.clone());
     let second = open_applied(
         &tabs,
         cx,
@@ -224,14 +195,11 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
         &[("Boris Ivanov", Person)],
     );
     let second_view = active(&tabs, cx);
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.join_case(second, &case, window, cx)
-    });
-    cx.run_until_parked();
+    move_tab(&tabs, cx, second, Some(&case));
     keep_all(&first_view, "Riverside", cx);
     keep_all(&second_view, "Riverside", cx);
-    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    assert_eq!(store.load(&case).unwrap().lists.never, ["Riverside"]);
+    let store = vault(&tabs, cx);
+    assert_eq!(store.project(&case).unwrap().lists.never, ["Riverside"]);
     first_view.update(cx, |view, cx| {
         let text = view.editor.read(cx).text().to_owned();
         let start = text.find("Riverside").unwrap();
@@ -242,22 +210,16 @@ fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
         view.review_changed(cx);
     });
     settle(cx);
-    assert_eq!(store.load(&case).unwrap().lists.never, ["Riverside"]);
+    assert_eq!(store.project(&case).unwrap().lists.never, ["Riverside"]);
 }
 
 /// Not a name on a saved, replaced name: its case save takes the
 /// wording out of the case, alias reserved, and puts it on no list.
 #[gpui::test]
-fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {
+fn not_a_name_leaves_the_project_and_its_lists(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let tab = open_applied(
         &tabs,
         cx,
@@ -267,15 +229,16 @@ fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {
         &[("Anna Petrova", Person)],
     );
     let view = active(&tabs, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
-    cx.run_until_parked();
+    new_project(&tabs, cx, tab);
     settle(cx);
-    let id = cx.update(|_, cx| view.read(cx).case.link().unwrap().id.clone());
-    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    let anna = |store: &mdoc_store::cases::Store| {
+    let id = cx.update(|_, cx| view.read(cx).project.link().unwrap().id.clone());
+
+    let store = vault(&tabs, cx);
+    let anna = |store: &mdoc_vault::Vault| {
         store
-            .load(&id)
+            .project(&id)
             .unwrap()
+            .mapping
             .identities
             .into_iter()
             .find(|i| i.alias == "PERSON_1")
@@ -289,8 +252,9 @@ fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {
     });
     cx.dispatch_action(Save);
     settle(cx);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
     assert_eq!(
-        std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+        store.document(document.as_str()).unwrap().markdown,
         "PERSON_1 met staff at Riverside."
     );
 
@@ -305,12 +269,16 @@ fn not_a_name_leaves_the_case_and_its_lists(cx: &mut TestAppContext) {
     cx.dispatch_action(Save);
     settle(cx);
     assert_eq!(
-        std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+        store.document(document.as_str()).unwrap().markdown,
         "Anna Petrova met staff at Riverside."
     );
-    assert!(anna(&store).is_empty(), "the wording left the case");
-    let case = store.load(&id).unwrap();
-    assert!(case.reserved_aliases().contains(&"PERSON_1".to_string()));
+    assert!(anna(&store).is_empty(), "the wording left the Project");
+    let case = store.project(&id).unwrap();
+    assert!(
+        case.mapping
+            .reserved_aliases()
+            .contains(&"PERSON_1".to_string())
+    );
     assert!(case.lists.is_empty(), "no list entry");
     cx.update(|_, cx| {
         assert_eq!(

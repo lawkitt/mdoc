@@ -271,13 +271,13 @@ impl DocumentView {
             .min_w_0()
             .flex_shrink(1.)
             .text_size(px(13.))
-            .when_some(self.case.link().cloned(), |v, link| {
+            .when_some(self.project.link().cloned(), |v, link| {
                 v.child(
                     div()
                         .size(px(7.))
                         .rounded_full()
                         .flex_shrink_0()
-                        .bg(style::case_color(link.hue(), theme)),
+                        .bg(style::project_color(link.hue(), theme)),
                 )
                 .child(
                     div()

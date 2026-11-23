@@ -1,5 +1,5 @@
-//! The menu bar shelf: ready, not-ready and changed-since-review
-//! rows with prose previews, case labels and the drag hint; the applied
+//! The menu bar shelf: ready and not-ready rows with prose previews,
+//! Project labels and the drag hint; the applied
 //! demos and their "N replaced" hovered (#304); a row's "Copied"; the
 //! first-close note; the empty shelf and the locked shelf.
 //! The shelf is drawn on a stage window of the usual size, at the top right
@@ -7,18 +7,16 @@
 //! its blur) is involved.
 use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
-    shelf::{ClosedMember, OpenTab, ShelfDocument, fingerprint},
+    shelf::{OpenTab, ShelfDocument},
     shelf_ui::{NOTE_HEIGHT, NOTE_WIDTH, NoteView, ShelfContent, ShelfView},
     style::Theme,
-    workspace::{ClipboardSource, Workspace},
+    workspace::{ClipboardSource, ProjectLink, Workspace},
 };
 use gpui::{AnyView, App, Entity, Render, Window, div, prelude::*, px, size};
 use mdoc_pii::{Category, restore::ExportedIdentity};
-use mdoc_store::cases::{Case, CaseLink};
 use serde_json::{Value, json};
 use std::{
     cell::Cell,
-    path::Path,
     rc::Rc,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -100,19 +98,19 @@ fn at(hours: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_763_200 + hours * 3600)
 }
 
-/// Ready, not-ready and changed-since-review documents of one public,
-/// synthetic case. Only its pseudonymized text ever reaches a row.
-fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
+/// Ready and not-ready documents, two of them in one public, synthetic
+/// Project. Only their pseudonymized text ever reaches a row.
+fn documents() -> (Vec<ShelfDocument>, ClipboardSource) {
     let names = vec![
         identity("PERSON_1", Category::Person, "Anna Petrova"),
         identity("ORG_1", Category::Organization, "Northwind Traders Ltd"),
         identity("PERSON_2", Category::Person, "Boris Ivanov"),
     ];
-    let member = Path::new("/Cases/Anna Petrova notice.md");
-    let reviewed = "PERSON_1 gives notice to ORG_1 under clause 9.\n";
-    let mut case = Case::new("Petrova v Northwind".into(), &names, Some(member.into()));
-    case.set_reviewed(member, Some(fingerprint(reviewed)));
-    let link = CaseLink::of(&case);
+    let link = ProjectLink {
+        id: "c".repeat(32),
+        name: "Petrova v Northwind".into(),
+        colour: None,
+    };
     // Page furniture and a heading come first; the preview starts at the
     // prose, with its Markdown hidden.
     let ready = "— 1 —\n\n# Services Agreement\n\nPage 1 of 5\n\nThis **agreement** between \
@@ -120,7 +118,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
                  and the _notice_ either may give.\n\nPERSON_2 signs for ORG_1.\n";
     let uncased = "Minutes of the meeting held with PERSON_1 on the revised payment schedule.\n";
     let pending = "PERSON_1 asked Boris Ivanov to review the draft.\n";
-    let mut documents = vec![
+    let documents = vec![
         ShelfDocument::of_tab(OpenTab {
             id: 1,
             title: "Anna Petrova services agreement.md",
@@ -129,7 +127,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
             pending: 0,
             checking: false,
             names: names.clone(),
-            case: Some(link.clone()),
+            project: Some(link.clone()),
             edited: at(14),
         }),
         ShelfDocument::of_tab(OpenTab {
@@ -140,7 +138,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
             pending: 0,
             checking: false,
             names: names.clone(),
-            case: None,
+            project: None,
             edited: at(13),
         }),
         ShelfDocument::of_tab(OpenTab {
@@ -151,25 +149,16 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
             pending: 2,
             checking: false,
             names: names.clone(),
-            case: Some(link),
+            project: Some(link.clone()),
             edited: at(12),
         }),
     ]
     .into_iter()
     .flatten()
     .collect::<Vec<_>>();
-    // Cases locked: closed members are hidden.
-    if !locked {
-        documents.push(ShelfDocument::of_member(ClosedMember {
-            case: &case,
-            path: member,
-            text: Some("PERSON_1 gives notice to ORG_1 under clause 9 and 10.\n"),
-            edited: at(9),
-        }));
-    }
-    let source = ClipboardSource::Case {
-        id: case.id.clone(),
-        name: case.name.clone(),
+    let source = ClipboardSource::Project {
+        id: link.id.clone(),
+        name: link.name.clone(),
     };
     (documents, source)
 }
@@ -225,7 +214,7 @@ fn demos() -> Result<Vec<ShelfDocument>> {
             pending: 0,
             checking: false,
             names: names.clone(),
-            case: None,
+            project: None,
             edited: at(14 - index as u64),
         }));
     }
@@ -339,14 +328,14 @@ fn shelf_hovering(
 }
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
-    let (rows, source) = documents(false);
+    let (rows, source) = documents();
     shelf(d, "shelf", content(rows, source.clone()), None)?;
     for (name, hover) in [("shelf-demos", None), ("shelf-demos-count", Some(0))] {
         let mut demos = content(demos()?, source.clone());
         demos.drag_hint = false;
         shelf_hovering(d, name, demos, None, hover)?;
     }
-    let (rows, _) = documents(false);
+    let (rows, _) = documents();
     let mut copied = content(rows, source.clone());
     copied.drag_hint = false;
     shelf(d, "shelf-copied", copied, Some(0))?;
@@ -364,9 +353,9 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // Locked as on a launch whose quiet probe could not read the key: open
     // tabs still show; the clipboard buttons ask to unlock.
     d.change(|w, _, _| {
-        w.case_coordinator.reopen(None);
-        w.case_coordinator.lock();
+        w.vault.opened(super::super::vault_state::Opening::MayAsk);
+        w.projects.clear();
     })?;
-    let (rows, source) = documents(true);
+    let (rows, source) = documents();
     shelf(d, "shelf-locked", content(rows, source), None)
 }

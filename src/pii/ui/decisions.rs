@@ -1,6 +1,6 @@
 //! What you did: each pseudonymization decision is listed on the
 //! undo point it created, and travelling to an entry presses ⌘Z or ⇧⌘Z that
-//! many times. The log is memory only and never reaches the session or case.
+//! many times. The log is memory only and never reaches the session or Project.
 use super::{ReviewUi, mapping::MappingAction};
 use crate::document_view::DocumentView;
 use gpui::{App, Context, Window};

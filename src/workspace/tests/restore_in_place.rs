@@ -100,9 +100,14 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
         let path = dir.path().join(format!("{name}.md"));
         std::fs::write(&path, sent).unwrap();
         tabs.update_in(cx, |tabs, window, cx| {
-            tabs.open_case_files(vec![path], window, cx)
+            tabs.open_paths(vec![path], window, cx)
         });
         cx.run_until_parked();
+        // Two captures sent the same text: each is its own document.
+        if cx.has_pending_prompt() {
+            cx.simulate_prompt_answer("Import Again");
+            cx.run_until_parked();
+        }
         let view = active(&tabs, cx);
         view.update(cx, |view, cx| {
             let text = view.editor.read(cx).text().to_owned();
@@ -298,7 +303,7 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
     cx.run_until_parked();
     source.update_in(cx, |view, window, cx| {
         view.set_view_mode(Some(CompareMode::Reply), window, cx);
-        view.forget_case_identity(&["PERSON_1"], &["Anna Petrova".into()], &[], cx);
+        view.forget_project_identity(&["PERSON_1"], &["Anna Petrova".into()], &[], cx);
     });
     draw(cx);
     assert_eq!(
@@ -310,7 +315,7 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
     // Reply is independent of the document's before/after views. Removing
     // the last applied identity must leave the reply readable and editable.
     source.update(cx, |view, cx| {
-        view.forget_case_identity(&["ORG_1"], &["Northwind Traders Ltd".into()], &[], cx);
+        view.forget_project_identity(&["ORG_1"], &["Northwind Traders Ltd".into()], &[], cx);
     });
     draw(cx);
     assert_eq!(mode(&source, cx), Some(CompareMode::Reply));
@@ -331,94 +336,18 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
     cx.update(|_, cx| assert!(!source.read(cx).reply.exists()));
 }
 
-/// In a case the reply is kept encrypted in the case file, survives closing
-/// and reopening the member, and clearing the box removes it from the case.
-/// It never reaches the session manifest.
+/// Until replies are saved with their documents, a pasted reply lives only
+/// while its tab is open, in a Project or not: nothing writes it.
 #[gpui::test]
-fn a_case_member_keeps_its_reply_encrypted_across_reopening(cx: &mut TestAppContext) {
+fn a_pasted_reply_lives_only_in_its_tab(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
-    let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
-    cx.run_until_parked();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case_id = tabs
-        .update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx))
-        .unwrap();
-    cx.run_until_parked();
-    open_share(&view, cx);
-    let reply = "PERSON_1 must pay ORG_1 by Friday, says the reply-only line.";
-    fill(&view, reply, cx);
-    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    let member = session_store::identity(&path);
-    assert_eq!(store.load(&case_id).unwrap().reply(&member), Some(reply));
-    let bytes = std::fs::read(dir.path().join("cases").join(format!("{case_id}.case"))).unwrap();
-    assert!(!String::from_utf8_lossy(&bytes).contains("reply-only"));
-
-    // The session manifest holds no reply text, pasted or restored.
-    let manifest = dir.path().join("session.json");
-    cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
-    let json = std::fs::read_to_string(&manifest).unwrap();
-    assert!(!json.contains("reply-only") && !json.contains("Friday"));
-
-    // Close the member, then open it again: the reply comes back with it.
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
-    cx.run_until_parked();
-    assert!(!cx.has_pending_prompt(), "saved document, saved case");
-    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![path.clone()], window, cx)
-    });
-    cx.run_until_parked();
-    let reopened = active(&tabs, cx);
-    cx.update(|_, cx| {
-        let view = reopened.read(cx);
-        assert_eq!(
-            view.case.link().map(|l| l.id.as_str()),
-            Some(case_id.as_str())
-        );
-        assert_eq!(view.reply.text(), reply);
-    });
-    assert_eq!(mode(&reopened, cx), None, "reopening does not switch views");
-    open_share(&reopened, cx);
-    cx.update(|_, cx| {
-        let view = reopened.read(cx);
-        assert_eq!(view.reply_box().unwrap().read(cx).text(), reply);
-    });
-    assert_eq!(summary(&reopened, cx), "2 values restored · 0 unrecognized");
-    reopened.update_in(cx, |view, window, cx| {
-        view.set_view_mode(Some(CompareMode::Reply), window, cx)
-    });
-    draw(cx);
-    assert_eq!(
-        reply_view_text(&reopened, cx),
-        "Anna Petrova must pay Northwind Traders Ltd by Friday, says the reply-only line."
-    );
-
-    // Clearing the box removes it from the case too.
-    fill(&reopened, "", cx);
-    assert_eq!(store.load(&case_id).unwrap().reply(&member), None);
-    assert!(store.load(&case_id).unwrap().replies.is_empty());
-}
-
-/// Without a case the reply lives only while the tab is open.
-#[gpui::test]
-fn without_a_case_the_reply_lives_only_in_the_tab(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    new_project(&tabs, cx, tab);
     let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
-    cx.run_until_parked();
     open_share(&view, cx);
     fill(&view, "PERSON_1 replied, tab-only.", cx);
-    assert!(
-        !dir.path().join("cases").exists()
-            || std::fs::read_dir(dir.path().join("cases"))
-                .unwrap()
-                .next()
-                .is_none(),
-        "no case file is written"
-    );
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
     let manifest = dir.path().join("session.json");
     cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
     assert!(
@@ -426,55 +355,19 @@ fn without_a_case_the_reply_lives_only_in_the_tab(cx: &mut TestAppContext) {
             .unwrap()
             .contains("tab-only")
     );
-    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    // The file is saved; only the memory-only mapping needs a close answer.
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
     cx.run_until_parked();
-    assert!(cx.has_pending_prompt());
-    cx.simulate_prompt_answer("Close");
-    cx.run_until_parked();
-    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+    assert!(!cx.has_pending_prompt(), "a Vault document asks nothing");
+    assert!(vault(&tabs, cx).replies().is_empty());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![path], window, cx)
+        tabs.open_vault_document(document, window, cx)
     });
     cx.run_until_parked();
     let reopened = active(&tabs, cx);
-    cx.update(|_, cx| assert!(!reopened.read(cx).reply.exists()));
-}
-
-#[gpui::test]
-fn a_reply_follows_case_creation_leave_and_join(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
-    let view = active(&tabs, cx);
-    open_share(&view, cx);
-    let reply = "PERSON_1 owes ORG_1 a response.";
-    fill(&view, reply, cx);
-    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
-    cx.run_until_parked();
-    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case = tabs.update_in(cx, |tabs, window, cx| {
-        tabs.create_case(tab, window, cx).unwrap()
+    cx.update(|_, cx| {
+        assert!(reopened.read(cx).project.link().is_some());
+        assert!(!reopened.read(cx).reply.exists());
     });
-    cx.run_until_parked();
-    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    let old = session_store::identity(&path);
-    assert_eq!(store.load(&case).unwrap().reply(&old), Some(reply));
-    let member = old;
-
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.remove_from_case(tab, window, cx)
-    });
-    cx.run_until_parked();
-    assert!(store.load(&case).unwrap().replies.is_empty());
-    cx.update(|_, cx| assert_eq!(view.read(cx).reply.text(), reply));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.join_case(tab, &case, window, cx)
-    });
-    cx.run_until_parked();
-    assert_eq!(store.load(&case).unwrap().reply(&member), Some(reply));
-    fill(&view, " \n  ", cx);
-    assert!(store.load(&case).unwrap().replies.is_empty());
 }
 
 /// The box shows while aliases are applied or a reply exists. With the
@@ -489,7 +382,7 @@ fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut Test
     let plain = dir.path().join("plain.md");
     std::fs::write(&plain, "Nothing here was replaced.").unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![plain], window, cx)
+        tabs.open_paths(vec![plain], window, cx)
     });
     cx.run_until_parked();
     let other = active(&tabs, cx);
@@ -509,8 +402,8 @@ fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut Test
     cx.update(|_, cx| assert!(source.read(cx).reply.restorable()));
 
     source.update(cx, |view, cx| {
-        view.forget_case_identity(&["PERSON_1"], &["Anna Petrova".into()], &[], cx);
-        view.forget_case_identity(&["ORG_1"], &["Northwind Traders Ltd".into()], &[], cx);
+        view.forget_project_identity(&["PERSON_1"], &["Anna Petrova".into()], &[], cx);
+        view.forget_project_identity(&["ORG_1"], &["Northwind Traders Ltd".into()], &[], cx);
     });
     draw(cx);
     cx.update(|_, cx| assert!(!source.read(cx).has_applied_aliases()));
@@ -613,62 +506,16 @@ fn typing_in_the_reply_box_stays_out_of_the_replacements_list(cx: &mut TestAppCo
     assert_eq!(state(cx), before, "the list and document are untouched");
 }
 
-/// An untitled restore tab in a case keeps its reply in memory until its
-/// first Save As, which stores it in the case under the new path.
-#[gpui::test]
-fn an_untitled_case_tab_stores_its_reply_on_first_save_as(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
-    let member = active(&tabs, cx);
-    member.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
-    cx.run_until_parked();
-    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let case = tabs
-        .update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx))
-        .unwrap();
-    cx.run_until_parked();
-    open_share(&member, cx);
-    let first = "PERSON_1 owes ORG_1 the member's reply.";
-    fill(&member, first, cx);
-    click_toolbar(cx, "share-open-reply");
-    let restored = active(&tabs, cx);
-    cx.update(|_, cx| {
-        let view = restored.read(cx);
-        assert_ne!(restored.entity_id(), member.entity_id());
-        assert!(view.session.document.path.is_none(), "an untitled tab");
-        assert_eq!(view.case.link().map(|l| l.id.as_str()), Some(case.as_str()));
-    });
-    let second = "PERSON_1 answered in the untitled tab.";
-    restored.update_in(cx, |view, window, cx| view.fill_reply(second, window, cx));
-    cx.run_until_parked();
-    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    let saved = store.load(&case).unwrap();
-    assert_eq!(saved.replies.len(), 1, "only in memory until saved");
-    assert_eq!(saved.reply(&session_store::identity(&path)), Some(first));
-
-    let new_path = dir.path().join("restored.md");
-    restored.update(cx, |view, cx| view.save_as_file(new_path.clone(), cx));
-    cx.run_until_parked();
-    let saved = store.load(&case).unwrap();
-    assert_eq!(
-        saved.reply(&session_store::identity(&new_path)),
-        Some(second)
-    );
-    assert_eq!(saved.reply(&session_store::identity(&path)), Some(first));
-}
-
-/// Two saved members whose people hold opposite aliases: the case's `a.md`
-/// has Boris as PERSON_1 and Anna as PERSON_2; `b.md`, not in the case yet,
-/// has Anna as PERSON_1 and Boris as PERSON_2, and a reply naming both.
+/// Two documents whose people hold opposite aliases: the Project's `a.md`
+/// has Boris as PERSON_1 and Anna as PERSON_2; `b.md`, Unfiled, has Anna as
+/// PERSON_1 and Boris as PERSON_2, and a reply naming both.
 struct Swapped<'a> {
     tabs: Entity<Workspace>,
     cx: &'a mut VisualTestContext,
     first: u64,
     second: u64,
     view: Entity<DocumentView>,
-    path: PathBuf,
     case: String,
-    store: mdoc_store::cases::Store,
 }
 
 const SWAPPED_REPLY: &str = "PERSON_1 owes PERSON_2, says person 1.";
@@ -678,12 +525,6 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
     use mdoc_pii::Category::Person;
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.join("cases"),
-            &[3; 32],
-        ))
-    });
     let first = open_applied(
         &tabs,
         cx,
@@ -693,12 +534,7 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
         &[("Boris Ivanov", Person), ("Anna Petrova", Person)],
     );
     let first_view = active(&tabs, cx);
-    first_view.update(cx, |view, cx| view.save_as_file(dir.join("a.md"), cx));
-    cx.run_until_parked();
-    let case = tabs
-        .update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx))
-        .unwrap();
-    cx.run_until_parked();
+    let case = new_project(&tabs, cx, first);
     let second = open_applied(
         &tabs,
         cx,
@@ -708,9 +544,6 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
         &[("Anna Petrova", Person), ("Boris Ivanov", Person)],
     );
     let view = active(&tabs, cx);
-    let path = dir.join("b.md");
-    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
-    cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(
             first_view.read(cx).editor.read(cx).text(),
@@ -730,9 +563,7 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
         first,
         second,
         view,
-        path,
         case,
-        store: mdoc_store::cases::Store::with_key(dir.join("cases"), &[3; 32]),
     }
 }
 
@@ -744,38 +575,30 @@ fn restored_reply(view: &Entity<DocumentView>, cx: &mut VisualTestContext) -> St
     })
 }
 
-/// Joining a case that holds the same people under each other's aliases
-/// renumbers the document, and the reply's tokens follow: it still restores
-/// to the same people, in the box, Copy reply and the encrypted case, across
-/// Undo, Redo and reopening the member.
+/// A move into a Project that holds the same people under each other's
+/// aliases renumbers the document, and the reply's tokens follow: it still
+/// restores to the same people, in the box and Copy reply, and after Undo.
 #[gpui::test]
-fn a_join_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut TestAppContext) {
+fn a_move_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let Swapped {
         tabs,
         cx,
         second,
         view,
-        path,
         case,
-        store,
         ..
     } = swapped(cx, dir.path());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.join_case(second, &case, window, cx)
-    });
-    cx.run_until_parked();
+    move_tab(&tabs, cx, second, Some(&case));
     draw(cx);
-    let member = session_store::identity(&path);
     let joined = "PERSON_2 owes PERSON_1, says person 2.";
     cx.update(|_, cx| {
         let view = view.read(cx);
         assert_eq!(view.editor.read(cx).text(), "PERSON_2 wrote to PERSON_1.");
         assert_eq!(view.reply.text(), joined, "the tokens follow their people");
-        assert_eq!(view.reply_box().unwrap().read(cx).text(), joined);
     });
     assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
-    assert_eq!(store.load(&case).unwrap().reply(&member), Some(joined));
+    open_share(&view, cx);
     click_toolbar(cx, "share-copy-reply");
     cx.update(|_, cx| {
         assert_eq!(
@@ -783,10 +606,8 @@ fn a_join_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut Tes
             SWAPPED_RESTORED
         )
     });
-
-    // Undo in the document reverts the renumbering, and the reply with it.
-    cx.update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
-    cx.dispatch_action(mdoc_editor::Undo);
+    // The toast's Undo moves it back, and the reply with it.
+    tabs.update_in(cx, |tabs, window, cx| tabs.undo_move(window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
         let view = view.read(cx);
@@ -794,37 +615,10 @@ fn a_join_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut Tes
         assert_eq!(view.reply.text(), SWAPPED_REPLY);
     });
     assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
-    cx.dispatch_action(mdoc_editor::Redo);
-    cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(view.read(cx).reply.text(), joined));
-    assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
-
-    // Close the saved member and open it again from the encrypted case.
-    view.update(cx, |view, cx| view.save_as_file(path.clone(), cx));
-    cx.executor()
-        .advance_clock(std::time::Duration::from_secs(1));
-    cx.run_until_parked();
-    assert_eq!(store.load(&case).unwrap().reply(&member), Some(joined));
-    let bytes = std::fs::read(dir.path().join("cases").join(format!("{case}.case"))).unwrap();
-    assert!(!String::from_utf8_lossy(&bytes).contains("owes"));
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(second, window, cx));
-    cx.run_until_parked();
-    assert!(!cx.has_pending_prompt(), "saved document, saved case");
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![path.clone()], window, cx)
-    });
-    cx.run_until_parked();
-    let reopened = active(&tabs, cx);
-    cx.update(|_, cx| {
-        let view = reopened.read(cx);
-        assert_eq!(view.case.link().map(|l| l.id.as_str()), Some(case.as_str()));
-        assert_eq!(view.reply.text(), joined);
-    });
-    assert_eq!(restored_reply(&reopened, cx), SWAPPED_RESTORED);
 }
 
 /// A rename in one member reaches another as its own edit; that member's
-/// reply follows the renamed identity and the case keeps it so.
+/// reply follows the renamed identity.
 #[gpui::test]
 fn a_member_synced_after_another_member_renames_keeps_its_reply(cx: &mut TestAppContext) {
     use mdoc_pii::Category::Person;
@@ -835,14 +629,9 @@ fn a_member_synced_after_another_member_renames_keeps_its_reply(cx: &mut TestApp
         first,
         second,
         view,
-        path,
         case,
-        store,
     } = swapped(cx, dir.path());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.join_case(second, &case, window, cx)
-    });
-    cx.run_until_parked();
+    move_tab(&tabs, cx, second, Some(&case));
     let first_view = cx.update(|_, cx| {
         tabs.read(cx)
             .tabs
@@ -865,8 +654,6 @@ fn a_member_synced_after_another_member_renames_keeps_its_reply(cx: &mut TestApp
         assert_eq!(view.reply.text(), renamed);
     });
     assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
-    let member = session_store::identity(&path);
-    assert_eq!(store.load(&case).unwrap().reply(&member), Some(renamed));
 }
 
 /// A real paste into the box is kept exactly: no Markdown paste rules split

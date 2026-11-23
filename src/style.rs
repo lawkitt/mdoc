@@ -24,7 +24,7 @@ pub struct TitleBar {
     /// Sidebar collapsed: headers sit in the window's title row, beside the
     /// traffic lights, and the content gets its own card below.
     pub detached: std::rc::Rc<std::cell::Cell<bool>>,
-    /// Workspace notices waiting (locked cases, a crash report, messages):
+    /// Workspace notices waiting (locked Projects, a crash report, messages):
     /// headers show a bell with this count.
     pub notices: std::rc::Rc<std::cell::Cell<usize>>,
     /// The notices popover is open.
@@ -66,8 +66,8 @@ pub fn app_appearance(choice: ThemeChoice) -> Option<gpui::WindowAppearance> {
     }
 }
 
-/// The sidebar dot of a case with this hue (degrees).
-pub fn case_color(hue: u32, theme: Theme) -> Hsla {
+/// The sidebar dot of a Project with this hue (degrees).
+pub fn project_color(hue: u32, theme: Theme) -> Hsla {
     hsla(
         hue as f32 / 360.,
         0.65,
@@ -509,7 +509,7 @@ mod contrast_tests {
     }
 
     #[test]
-    fn all_case_swatches_meet_nontext_contrast_in_both_themes() {
+    fn all_project_swatches_meet_nontext_contrast_in_both_themes() {
         let mut failed = Vec::new();
         for theme in [Theme::Light, Theme::Dark] {
             let p = theme.pdf_style();
@@ -519,11 +519,12 @@ mod contrast_tests {
                 ("hover", p.placeholder_bg),
                 ("selected", theme.sidebar_selected()),
             ];
-            for swatch in mdoc_store::cases::CaseColor::ALL {
+            for swatch in mdoc_vault::Colour::ALL {
+                let name = format!("{swatch:?}");
                 failed.extend(failures(
                     theme,
                     3.,
-                    &[(swatch.name(), case_color(swatch.hue(), theme), &grounds)],
+                    &[(&name, project_color(swatch.hue(), theme), &grounds)],
                 ));
             }
         }

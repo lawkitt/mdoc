@@ -1,7 +1,7 @@
 //! Settings › Detection's user-wide Always and Never lists,
-//! edited by hand: add a typed wording, remove one. They are kept with the
-//! saved cases under the OS-held key, never in `settings.json`, so the
-//! window loads and saves them; while cases are locked they wait too.
+//! edited by hand: add a typed wording, remove one. They are kept in the
+//! Vault under the OS-held key, never in `settings.json`, so the window
+//! loads and saves them; while the Vault is locked they wait too.
 use super::{Event, Panel};
 use crate::{markdown_search::SearchInput, style::Theme, ui};
 use gpui::{AnyElement, Context, Entity, Focusable, actions, div, prelude::*, px};
@@ -11,7 +11,7 @@ actions!(model_settings, [AddUserListEntry]);
 
 /// The lists and their two inputs.
 pub struct UserListsUi {
-    /// `None` until the window has read them, or while cases are locked.
+    /// `None` until the window has read them, or while Projects are locked.
     lists: Option<Lists>,
     always: Entity<SearchInput>,
     never: Entity<SearchInput>,
@@ -45,7 +45,7 @@ impl Panel {
         };
         self.user_lists.lists.as_ref().unwrap_or(&EMPTY)
     }
-    /// The window read the lists (`None`: cases are locked).
+    /// The window read the lists (`None`: Projects are locked).
     pub fn set_user_lists(&mut self, lists: Option<Lists>, cx: &mut Context<Self>) {
         self.user_lists.lists = lists;
         cx.notify();
@@ -156,7 +156,7 @@ impl Panel {
                                 .text_size(px(12.))
                                 .text_color(p.header_muted)
                                 .child(
-                                    "Your lists are kept with your saved cases, which are locked.",
+                                    "Your lists are kept with your documents, which are locked.",
                                 ),
                         )
                         .child(

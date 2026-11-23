@@ -241,8 +241,8 @@ fn drops_work(label: &str) -> bool {
 /// first entry is the default: the buttons before the gap, then after it.
 ///
 /// macOS: buttons that drop work at the left; then Cancel, the other
-/// choices, and the default at the right (Don't Save … Cancel · Save · Save
-/// as Case). Windows: in the caller's order, default first, Cancel last.
+/// choices, and the default at the right (Don't Save … Cancel · Save).
+/// Windows: in the caller's order, default first, Cancel last.
 fn platform_order(labels: &[&str], cancel: Option<usize>, mac: bool) -> (Vec<usize>, Vec<usize>) {
     if !mac {
         return (Vec::new(), (0..labels.len()).collect());
@@ -281,16 +281,23 @@ mod tests {
             (vec!["Don't Save"], vec!["Cancel", "Save"])
         );
         assert_eq!(
-            order(&["Save as Case", "Save", "Don't Save", "Cancel"], 3, true),
-            (vec!["Don't Save"], vec!["Cancel", "Save", "Save as Case"])
+            order(
+                &["Delete Documents", "Save", "Don't Save", "Cancel"],
+                3,
+                true
+            ),
+            (
+                vec!["Don't Save"],
+                vec!["Cancel", "Save", "Delete Documents"]
+            )
         );
         assert_eq!(
             order(&["Review…", "Discard All", "Cancel"], 2, true),
             (vec!["Discard All"], vec!["Cancel", "Review…"])
         );
         assert_eq!(
-            order(&["Save as Case", "Close", "Cancel"], 2, true),
-            (vec!["Close"], vec!["Cancel", "Save as Case"])
+            order(&["Delete Documents", "Close", "Cancel"], 2, true),
+            (vec!["Close"], vec!["Cancel", "Delete Documents"])
         );
     }
 
@@ -320,7 +327,7 @@ mod tests {
 
     #[test]
     fn windows_keeps_the_callers_order_default_first() {
-        let labels = ["Save as Case", "Save", "Don't Save", "Cancel"];
+        let labels = ["Delete Documents", "Save", "Don't Save", "Cancel"];
         assert_eq!(order(&labels, 3, false), (vec![], labels.to_vec()));
     }
 }

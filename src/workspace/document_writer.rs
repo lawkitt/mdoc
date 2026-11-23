@@ -1,9 +1,9 @@
-//! Documents' autosaves: one write at a time, with the latest text of each
-//! document waiting behind it, so a document is never written older than it
-//! was last written. Generic over the write, so the queue rules run without
-//! a window or a Vault; the workspace view snapshots documents, runs the
-//! writes in the background and reports when each ends. A quit waits until
-//! it is idle.
+//! The window's writes into the Vault: documents' autosaves, Projects, and
+//! moves and deletes, one at a time, with the latest write of each target
+//! waiting behind it, so nothing is ever written older than it was last
+//! written. Generic over the write, so the queue rules run without a window
+//! or a Vault; the workspace view snapshots documents, runs the writes and
+//! reports when each ends. A quit waits until it is idle.
 use mdoc_store::document_id::DocumentId;
 use std::collections::VecDeque;
 
@@ -13,6 +13,10 @@ pub(super) enum Target {
     /// The document tab `u64` is becoming: created by its first write.
     Tab(u64),
     Document(DocumentId),
+    /// A Project, as the window holds it when its write starts.
+    Project(String),
+    /// A move or a delete; each is its own.
+    Op(u64),
 }
 
 pub(super) struct DocumentWriter<W> {

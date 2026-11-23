@@ -1,7 +1,6 @@
-//! Closing a tab whose mapping a case would lose, and quitting: each such
-//! tab is asked in turn, then documents and the session are written and the
-//! window closes. The workspace view asks, writes, flushes cases and closes
-//! the window; this owner decides what comes next.
+//! Quitting: each tab queued is asked in turn, then documents, Projects and
+//! the session are written and the window closes. The workspace view asks,
+//! writes and closes the window; this owner decides what comes next.
 
 use std::{cell::Cell, collections::VecDeque, rc::Rc};
 
@@ -106,15 +105,7 @@ impl QuitFlow {
         self.advance()
     }
 
-    /// The user cancelled the quit.
-    pub(super) fn cancel(&mut self) {
-        self.queue = None;
-        self.restore = None;
-        self.publish();
-    }
-
-    /// The quit stops: a session save failed, or the user cancelled the
-    /// final case saves. Returns whether it was finishing.
+    /// The quit stops: a write failed. Returns whether it was finishing.
     pub(super) fn abandon(&mut self) -> bool {
         let finishing = std::mem::take(&mut self.finishing);
         self.queue = None;
@@ -144,13 +135,8 @@ mod tests {
     }
 
     #[test]
-    fn cancelling_or_a_failed_save_ends_the_quit() {
+    fn a_failed_save_ends_the_quit() {
         let mut quit = QuitFlow::default();
-        quit.quit(1, [1, 2].into());
-        assert!(quit.watch().resolving());
-        quit.cancel();
-        assert!(quit.may_quit() && quit.may_close() && !quit.watch().resolving());
-        assert_eq!(quit.advance(), None);
         quit.quit(1, VecDeque::new());
         quit.settle();
         assert!(quit.watch().resolving());

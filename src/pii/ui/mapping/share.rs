@@ -70,7 +70,6 @@ impl DocumentView {
         let p = theme.pdf_style();
         let aliases = self.has_applied_aliases();
         let copied = self.copy_feedback.is_some();
-        let applied = self.pii.review.applied().len();
         let entities = self.replacement_entity_count(cx);
         let section = |title: &'static str| {
             div()
@@ -88,10 +87,9 @@ impl DocumentView {
                 .child(text)
         };
         let status = self.share_status(cx);
-        let case = self.case.link().cloned();
-        // Only a Markdown file can join a case; a Vault document keeps its
-        // own replacements.
-        let file = self.session.document.path.is_some();
+        let case = self.project.link().cloned();
+        // Only a document in the Vault can move into a Project.
+        let movable = self.session.document.vault.is_some();
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
             .m_2()
@@ -159,39 +157,36 @@ impl DocumentView {
                             ),
                     )
                     .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
-                    .child(section("Case"))
+                    .child(section("Project"))
                     .child(match case {
-                        Some(link) => ui::control("share-case-page", "", theme, true)
-                            .when(cfg!(test), |v| v.debug_selector(|| "share-case-page".into()))
-                            .aria_label(format!("Open case {}", link.name))
-                            .on_click(cx.listener(|_, _, _, cx| cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::OpenPage))))
+                        Some(link) => ui::control("share-project-page", "", theme, true)
+                            .when(cfg!(test), |v| v.debug_selector(|| "share-project-page".into()))
+                            .aria_label(format!("Open Project {}", link.name))
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::OpenPage))))
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size(px(8.)).rounded_full().bg(style::case_color(link.hue(), theme)))
+                            .child(div().size(px(8.)).rounded_full().bg(style::project_color(link.hue(), theme)))
                             .child(div().flex_1().truncate().child(link.name.clone()))
-                            .child(note("saved".into()))
                             .into_any_element(),
-                        None if !file => note("Kept with the document, encrypted on this computer.".into()).into_any_element(),
+                        None if !movable => note("Kept with the document, encrypted on this computer.".into()).into_any_element(),
                         None => div()
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .child(note("Save which original each alias stands for, encrypted on this computer, to restore replies later.".into()))
+                            .child(note("Unfiled. Its names are kept with it, encrypted on this computer; in a Project, its documents share them.".into()))
                             // A row, so the button keeps its label width like
                             // Copy Markdown instead of stretching into a field.
                             .child(
                                 div().flex().child(
-                                    ui::primary_button("share-save-case", "Save as case", theme, applied > 0)
-                                        .when(cfg!(test), |v| v.debug_selector(|| "share-save-case".into()))
+                                    ui::primary_button("share-new-project", "Move to New Project", theme, true)
+                                        .when(cfg!(test), |v| v.debug_selector(|| "share-new-project".into()))
                                         .on_click(cx.listener(move |this, _, window, cx| {
-                                            if applied > 0 {
-                                                // The button leaves with the click; the panel
-                                                // stays in every view, so shortcuts keep a
-                                                // focused target (#79).
-                                                window.focus(&this.pii.mapping.focus, cx);
-                                                cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::Create { close: false }));
-                                            }
+                                            // The button leaves with the click; the panel
+                                            // stays in every view, so shortcuts keep a
+                                            // focused target (#79).
+                                            window.focus(&this.pii.mapping.focus, cx);
+                                            cx.emit(crate::workspace::TabEvent::Project(crate::workspace::ProjectEvent::MoveToNew));
                                         })),
                                 ),
                             )

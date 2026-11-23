@@ -32,7 +32,7 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// × hides the hint for this pair: in the case when the document has one,
+    /// × hides the hint for this pair: in the Project when the document has one,
     /// otherwise for the tab's life.
     pub(super) fn dismiss_merge_hint(
         &mut self,
@@ -40,9 +40,9 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pii.mapping.dismiss_hint(hint.pair.clone()) && self.case.link().is_some() {
-            cx.emit(crate::workspace::TabEvent::Case(
-                crate::workspace::CaseEvent::DismissHint(
+        if self.pii.mapping.dismiss_hint(hint.pair.clone()) && self.project.link().is_some() {
+            cx.emit(crate::workspace::TabEvent::Project(
+                crate::workspace::ProjectEvent::DismissHint(
                     hint.pair.0.to_string(),
                     hint.pair.1.to_string(),
                 ),
@@ -53,13 +53,13 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// The hints dismissed in this tab, which a case made from it keeps.
+    /// The hints dismissed in this tab, which a Project made from it keeps.
     pub(crate) fn dismissed_merge_hints(&self) -> Vec<(String, String)> {
         self.pii.mapping.dismissed_hint_pairs()
     }
 
-    /// Hints the case's members dismissed stay hidden here.
-    pub(crate) fn dismiss_case_hints(
+    /// Hints the Project's members dismissed stay hidden here.
+    pub(crate) fn dismiss_project_hints(
         &mut self,
         pairs: &[(String, String)],
         cx: &mut Context<Self>,

@@ -1,8 +1,8 @@
-//! Carry out destination history without reopening closed tabs or reading case keys.
+//! Carry out destination history without reopening closed tabs or reading the key.
 use super::{
     Workspace,
-    case_page::Place,
     navigation::{Arrival, Stop},
+    project_page::Place,
 };
 use crate::{style, ui};
 use gpui::{
@@ -14,8 +14,8 @@ actions!(mdoc_navigation, [Back, Forward]);
 impl Workspace {
     /// The place on screen, as a stop.
     pub(super) fn place(&self, cx: &App) -> Stop {
-        if let Some(page) = &self.cases.page {
-            Stop::Case(page.id().into())
+        if let Some(page) = &self.project_ui.page {
+            Stop::Project(page.id().into())
         } else if self.showing_home(cx) {
             Stop::Home
         } else {
@@ -29,14 +29,14 @@ impl Workspace {
     }
 
     /// The one liveness rule for the buttons, their tooltips and the
-    /// actions: Home, an open tab that isn't Home's placeholder, a case
+    /// actions: Home, an open tab that isn't Home's placeholder, a Project
     /// that still exists.
     fn live_stops<'a>(&'a self, cx: &'a App) -> impl Fn(&Stop) -> bool + 'a {
-        let cases: Vec<String> = self
-            .case_coordinator
+        let projects: Vec<String> = self
+            .projects
             .summaries()
             .into_iter()
-            .map(|case| case.id)
+            .map(|project| project.id)
             .collect();
         move |stop| match stop {
             Stop::Home => true,
@@ -44,7 +44,7 @@ impl Workspace {
                 .tabs
                 .get(*id)
                 .is_some_and(|tab| !self.is_placeholder(tab, cx)),
-            Stop::Case(id) => cases.contains(id),
+            Stop::Project(id) => projects.contains(id),
         }
     }
 
@@ -58,12 +58,12 @@ impl Workspace {
         let destination = match self.navigation_target(backwards, cx) {
             Some(Stop::Home) => Some("Home".into()),
             Some(Stop::Tab(id)) => self.tabs.get(*id).map(|tab| super::tab_label(tab, cx).name),
-            Some(Stop::Case(id)) => self
-                .case_coordinator
+            Some(Stop::Project(id)) => self
+                .projects
                 .summaries()
                 .into_iter()
-                .find(|case| &case.id == id)
-                .map(|case| format!("Case “{}”", case.name)),
+                .find(|project| &project.id == id)
+                .map(|project| format!("Project “{}”", project.name)),
             None => None,
         };
         match destination {
@@ -80,8 +80,8 @@ impl Workspace {
     ) {
         // Navigation must preserve the restrictions of stacked modal surfaces.
         if self.settings.read(cx).open
-            || self.cases.list_open
-            || self.cases.explainer
+            || self.project_ui.list_open
+            || self.project_ui.explainer
             || self.folder_sheets.open()
             || self.shell.palette.is_some()
             || window.has_active_prompt()
@@ -100,14 +100,14 @@ impl Workspace {
         self.close_shortcuts(window, cx);
         // A menu belongs to the page it was opened over.
         self.tab_menu = None;
-        self.cases.header_menu = None;
+        self.project_ui.header_menu = None;
         self.menu_return = None;
         // The cursor is already on this stop, so the destination's own
         // visit is a no-op and preserves the forward branch.
         match stop {
             Stop::Home => self.show_home(window, cx),
             Stop::Tab(id) => self.activate(id, window, cx),
-            Stop::Case(id) => self.show_case_page(&id, Place::Header, window, cx),
+            Stop::Project(id) => self.show_project_page(&id, Place::Header, window, cx),
         }
     }
 

@@ -18,26 +18,33 @@ fn forward_key() -> &'static str {
     }
 }
 
+/// A Project named `name` in the window's Vault, loaded; its id.
+fn add_project(w: &mut Workspace, name: &str) -> String {
+    let project = (w.vault.vault().unwrap())
+        .create_project(mdoc_vault::NewProject {
+            name: name.into(),
+            colour: None,
+            pinned: false,
+        })
+        .unwrap();
+    let id = project.id.clone();
+    w.projects.put(project);
+    id
+}
+
 #[gpui::test]
-fn back_forward_revisits_tabs_home_and_cases_without_key_or_member_reads(cx: &mut TestAppContext) {
+fn back_forward_revisits_tabs_home_and_projects_without_key_or_member_reads(
+    cx: &mut TestAppContext,
+) {
     cx.update(crate::bind_all_keys);
-    let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
-    let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let id = case.id.clone();
-    let first = tabs.update_in(cx, |w, window, cx| {
-        w.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-        w.case_coordinator.finish_load(vec![case]);
-        w.new_tab(window, cx)
-    });
-    tabs.update_in(cx, |w, window, cx| w.open_case(&id, window, cx));
+    let id = tabs.update(cx, |w, _| add_project(w, "Raman"));
+    let first = tabs.update_in(cx, |w, window, cx| w.new_tab(window, cx));
+    tabs.update_in(cx, |w, window, cx| w.open_project(&id, window, cx));
     cx.run_until_parked();
     let second = tabs.update_in(cx, |w, window, cx| w.new_tab(window, cx));
     cx.run_until_parked();
-    let before = tabs.read_with(cx, |w, _| (w.cases.key_reads, w.cases.member_reads));
+    let before = tabs.read_with(cx, |w, _| w.project_ui.member_reads);
     cx.update(|window, cx| {
         let focus = tabs.read(cx).focus.clone();
         window.focus(&focus, cx);
@@ -46,8 +53,8 @@ fn back_forward_revisits_tabs_home_and_cases_without_key_or_member_reads(cx: &mu
     cx.simulate_keystrokes(back_key());
     cx.run_until_parked();
     tabs.read_with(cx, |w, _| {
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), id);
-        assert_eq!((w.cases.key_reads, w.cases.member_reads), before);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), id);
+        assert_eq!(w.project_ui.member_reads, before);
     });
     cx.simulate_keystrokes(back_key());
     cx.run_until_parked();
@@ -64,46 +71,18 @@ fn back_forward_revisits_tabs_home_and_cases_without_key_or_member_reads(cx: &mu
     assert_eq!(tabs.read_with(cx, |w, _| w.tabs.active()), first);
     tabs.update_in(cx, |w, window, cx| w.navigate(false, window, cx));
     assert_eq!(
-        tabs.read_with(cx, |w, _| w.cases.page.as_ref().unwrap().id().to_owned()),
+        tabs.read_with(cx, |w, _| w
+            .project_ui
+            .page
+            .as_ref()
+            .unwrap()
+            .id()
+            .to_owned()),
         id
     );
     tabs.update_in(cx, |w, window, cx| w.navigate(false, window, cx));
     assert_eq!(tabs.read_with(cx, |w, _| w.tabs.active()), second);
-    assert_eq!(
-        tabs.read_with(cx, |w, _| (w.cases.key_reads, w.cases.member_reads)),
-        before
-    );
-}
-
-#[gpui::test]
-fn back_to_a_locked_cached_case_never_reads_the_injected_store(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let (tabs, cx) = boot_home(
-        cx,
-        Session {
-            cases: vec![mdoc_store::cases::CaseSummary::of(&case)],
-            ..Session::default()
-        },
-    );
-    tabs.update_in(cx, |w, window, cx| {
-        w.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-        w.cases.test_may_ask = true;
-        w.open_case(&case.id, window, cx);
-        w.new_tab(window, cx);
-        w.navigate(true, window, cx);
-    });
-    cx.run_until_parked();
-    tabs.read_with(cx, |w, _| {
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), case.id);
-        assert!(w.case_coordinator.case(&case.id).is_none());
-        assert_eq!(w.cases.key_reads, 0);
-        assert_eq!(w.cases.member_reads, 0);
-        assert!(!w.cases.explainer);
-    });
+    assert_eq!(tabs.read_with(cx, |w, _| w.project_ui.member_reads), before);
 }
 
 #[gpui::test]
@@ -127,22 +106,24 @@ fn closed_tabs_are_skipped_and_a_new_stop_after_back_discards_forward(cx: &mut T
 }
 
 #[gpui::test]
-fn navigation_tooltips_follow_live_tab_and_case_titles_and_skip_deleted_cases(
+fn navigation_tooltips_follow_live_tab_and_project_titles_and_skip_deleted_projects(
     cx: &mut TestAppContext,
 ) {
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |w, window, cx| {
         let tab = w.new_tab(window, cx);
-        let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-        let id = case.id.clone();
-        w.case_coordinator.finish_load(vec![case]);
-        w.open_case(&id, window, cx);
+        let id = add_project(w, "Raman");
+        w.open_project(&id, window, cx);
         assert_eq!(w.navigation_label(true, cx), "Back to Untitled.md");
         w.show_home(window, cx);
-        assert_eq!(w.navigation_label(true, cx), "Back to Case “Raman”");
-        w.case_coordinator.cases_mut()[0].name = "Renamed".into();
-        assert_eq!(w.navigation_label(true, cx), "Back to Case “Renamed”");
-        w.forget_case(&id, window, cx);
+        assert_eq!(w.navigation_label(true, cx), "Back to Project “Raman”");
+        w.projects.edit(&id, |project| {
+            project.name = "Renamed".into();
+            Some(())
+        });
+        assert_eq!(w.navigation_label(true, cx), "Back to Project “Renamed”");
+        w.projects.remove(&id);
+        w.navigation.forget(&Stop::Project(id.clone()));
         assert_eq!(w.navigation_target(true, cx), Some(&Stop::Tab(tab)));
         w.navigate(true, window, cx);
         assert_eq!(w.navigation_label(true, cx), "Back to Home");
@@ -341,29 +322,26 @@ fn closing_the_active_tab_after_back_keeps_forward(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn deleting_a_case_from_its_page_shows_home_and_keeps_forward(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
+fn deleting_a_project_from_its_page_shows_home_and_keeps_forward(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
-    let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let id = case.id.clone();
     let tab = tabs.update_in(cx, |w, window, cx| {
-        w.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-        w.case_coordinator.finish_load(vec![case]);
-        w.open_case(&id, window, cx);
+        let id = add_project(w, "Raman");
+        w.open_project(&id, window, cx);
         let tab = w.new_tab(window, cx);
         w.navigate(true, window, cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), id);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), id);
         tab
     });
-    tabs.update_in(cx, |w, window, cx| w.delete_case(id.clone(), window, cx));
-    cx.simulate_prompt_answer("Delete Case");
+    let id = tabs.read_with(cx, |w, _| {
+        w.project_ui.page.as_ref().unwrap().id().to_string()
+    });
+    tabs.update_in(cx, |w, window, cx| w.delete_project(id.clone(), window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Delete");
     cx.run_until_parked();
     tabs.read_with(cx, |w, cx| {
         assert!(w.showing_home(cx));
-        // Home took the case page's stop: Back doesn't offer Home again.
+        // Home took the Project page's stop: Back doesn't offer Home again.
         assert_eq!(w.navigation_target(true, cx), None);
         assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(tab)));
         assert_eq!(w.navigation_label(false, cx), "Forward to Untitled.md");
@@ -371,36 +349,33 @@ fn deleting_a_case_from_its_page_shows_home_and_keeps_forward(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn each_case_page_is_its_own_stop(cx: &mut TestAppContext) {
+fn each_project_page_is_its_own_stop(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
-    let raman = mdoc_store::cases::Case::new("Raman".into(), &[], None);
-    let petrova = mdoc_store::cases::Case::new("Petrova".into(), &[], None);
-    let (first, second) = (raman.id.clone(), petrova.id.clone());
     tabs.update_in(cx, |w, window, cx| {
-        w.case_coordinator.finish_load(vec![raman, petrova]);
-        w.open_case(&first, window, cx);
-        w.open_case(&second, window, cx);
-        assert_eq!(w.navigation_label(true, cx), "Back to Case “Raman”");
+        let first = add_project(w, "Raman");
+        let second = add_project(w, "Petrova");
+        w.open_project(&first, window, cx);
+        w.open_project(&second, window, cx);
+        assert_eq!(w.navigation_label(true, cx), "Back to Project “Raman”");
         w.navigate(true, window, cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), first);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), first);
         assert_eq!(w.navigation_label(true, cx), "Back to Home");
-        assert_eq!(w.navigation_label(false, cx), "Forward to Case “Petrova”");
+        assert_eq!(
+            w.navigation_label(false, cx),
+            "Forward to Project “Petrova”"
+        );
         w.navigate(false, window, cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), second);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), second);
         assert_eq!(w.navigation_target(false, cx), None);
     });
 }
 
 #[gpui::test]
 fn a_restored_workspace_starts_with_no_history(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let records = ["one.md", "two.md"].map(|name| {
-        let path = dir.path().join(name);
-        std::fs::write(&path, name).unwrap();
-        TabRecord {
-            markdown: path,
-            ..TabRecord::default()
-        }
+    let records = ["One.md", "Two.md"].map(|name| TabRecord {
+        blank: true,
+        name: Some(name.into()),
+        ..TabRecord::default()
     });
     let (tabs, cx) = boot(
         cx,
@@ -438,7 +413,7 @@ fn buttons_and_actions_share_one_liveness_rule(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn navigating_closes_the_tab_and_case_header_menus(cx: &mut TestAppContext) {
+fn navigating_closes_the_tab_and_project_header_menus(cx: &mut TestAppContext) {
     cx.update(crate::bind_all_keys);
     let (tabs, cx) = boot(cx, Session::default());
     let first = tabs.read_with(cx, |w, _| w.tabs.active());
@@ -454,9 +429,9 @@ fn navigating_closes_the_tab_and_case_header_menus(cx: &mut TestAppContext) {
         assert!(w.tab_menu.is_none());
     });
     tabs.update_in(cx, |w, window, cx| {
-        w.cases.header_menu = Some(("case".into(), gpui::point(px(10.), px(10.))));
+        w.project_ui.header_menu = Some(("case".into(), gpui::point(px(10.), px(10.))));
         w.navigate(false, window, cx);
         assert_eq!(w.tabs.active(), second);
-        assert!(w.cases.header_menu.is_none());
+        assert!(w.project_ui.header_menu.is_none());
     });
 }

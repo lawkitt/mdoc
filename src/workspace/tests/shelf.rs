@@ -1,5 +1,5 @@
 //! The menu bar shelf's list and handoff: what it lists from the
-//! window's tabs and cases, and that nothing leaves it unless ready.
+//! window's tabs and Projects, and that nothing leaves it unless ready.
 use super::*;
 use crate::shelf::{Readiness, ShelfExports, ShelfKey};
 use mdoc_pii::Category::{Organization, Person};
@@ -12,39 +12,15 @@ const ORIGINALS: [&str; 5] = [
     "Clara Moss",
 ];
 
-fn save(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) {
-    let view = cx.update(|_, cx| tabs.read(cx).tabs.get(id).unwrap().view().cloned().unwrap());
-    let path = cx.update(|_, cx| view.read(cx).session.document.path.clone().unwrap());
-    view.update(cx, |view, cx| view.save_as_file(path, cx));
-    cx.run_until_parked();
-}
-
-fn join_and_apply(tabs: &Entity<Workspace>, id: u64, case: &str, cx: &mut VisualTestContext) {
-    tabs.update_in(cx, |tabs, window, cx| tabs.join_case(id, case, window, cx));
-    cx.run_until_parked();
-    let view = active(tabs, cx);
-    view.update_in(cx, |view, window, cx| {
-        view.apply_all_pii(&PiiApplyAll, window, cx)
-    });
-    cx.run_until_parked();
-}
-
-/// Done when: ready, not-ready and changed-since-review
-/// documents are copied and dragged from the shelf, and no export holds an
-/// original.
+/// Done when: ready and not-ready documents are copied and dragged from the
+/// shelf, and no export holds an original.
 #[gpui::test]
 fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
 
-    // Ready and open: saved while ready, then made a case.
+    // Ready and open, in a Project.
     let ready = open_applied(
         &tabs,
         cx,
@@ -53,75 +29,9 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         "Anna Petrova met Northwind Ltd.\n\nThe second line.",
         &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
     );
-    save(&tabs, ready, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(ready, window, cx));
-    cx.run_until_parked();
-    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
+    let project = new_project(&tabs, cx, ready);
 
-    // Ready and closed, untouched since its save.
-    let closed = open_applied(
-        &tabs,
-        cx,
-        dir.path(),
-        "Clara Moss notes.md",
-        "Clara Moss paid Anna Petrova.",
-        &[("Clara Moss", Person)],
-    );
-    join_and_apply(&tabs, closed, &case, cx);
-    save(&tabs, closed, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(closed, window, cx));
-    cx.run_until_parked();
-
-    // Changed since review: saved while ready, closed, then edited elsewhere.
-    let changed = open_applied(
-        &tabs,
-        cx,
-        dir.path(),
-        "Ivan Ivanov settlement.md",
-        "Ivan Ivanov owes Northwind Ltd.",
-        &[("Ivan Ivanov", Person)],
-    );
-    join_and_apply(&tabs, changed, &case, cx);
-    save(&tabs, changed, cx);
-    let changed_path = cx.update(|_, cx| {
-        tabs.read(cx)
-            .tabs
-            .get(changed)
-            .unwrap()
-            .view()
-            .unwrap()
-            .read(cx)
-            .session
-            .document
-            .path
-            .clone()
-            .unwrap()
-    });
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(changed, window, cx));
-    cx.run_until_parked();
-    let mut text = std::fs::read_to_string(&changed_path).unwrap();
-    text.push_str("\n\nA paragraph added in another editor.");
-    std::fs::write(&changed_path, &text).unwrap();
-
-    // Names not replaced: a closed member that gained an original.
-    let missed = open_applied(
-        &tabs,
-        cx,
-        dir.path(),
-        "letter.md",
-        "Northwind Ltd wrote again.",
-        &[("Northwind Ltd", Organization)],
-    );
-    join_and_apply(&tabs, missed, &case, cx);
-    save(&tabs, missed, cx);
-    let missed_path = dir.path().join("letter.md");
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(missed, window, cx));
-    cx.run_until_parked();
-    let mut text = std::fs::read_to_string(&missed_path).unwrap();
-    text.push_str("\n\nCopy to Anna Petrova.");
-    std::fs::write(&missed_path, &text).unwrap();
-
-    // Not ready: open, joined, with the case's names still proposed.
+    // Not ready: open, moved in, with the Project's names still proposed.
     let pending = open_applied(
         &tabs,
         cx,
@@ -130,10 +40,7 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         "Boris Ivanov wrote to Anna Petrova.",
         &[("Boris Ivanov", Person)],
     );
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.join_case(pending, &case, window, cx)
-    });
-    cx.run_until_parked();
+    move_tab(&tabs, cx, pending, Some(&project));
 
     let rows = cx.update(|_, cx| tabs.read(cx).shelf_documents(cx));
     let state = |key: &ShelfKey| {
@@ -142,27 +49,17 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
             .unwrap_or_else(|| panic!("{key:?} is listed"))
             .readiness
     };
-    let member = |name: &str| ShelfKey::Member {
-        case: case.clone(),
-        path: session_store::identity(&dir.path().join(name)),
-    };
-    assert_eq!(rows.len(), 5);
-    // Open tabs first, most recently edited first; then closed members.
-    assert_eq!(rows[0].key, ShelfKey::Tab(pending));
-    assert_eq!(rows[1].key, ShelfKey::Tab(ready));
-    assert!(
-        rows[2..]
-            .iter()
-            .all(|r| matches!(r.key, ShelfKey::Member { .. }))
+    assert_eq!(
+        rows.len(),
+        2,
+        "only open tabs until the shelf reads the Vault"
     );
     assert_eq!(state(&ShelfKey::Tab(ready)), Readiness::Ready);
     assert_eq!(state(&ShelfKey::Tab(pending)), Readiness::LeftToReview(1));
-    assert_eq!(state(&member("Clara Moss notes.md")), Readiness::Ready);
-    assert_eq!(
-        state(&member("Ivan Ivanov settlement.md")),
-        Readiness::ChangedSinceReview
+    assert!(
+        rows.iter()
+            .all(|row| row.project.as_ref().unwrap().id == project)
     );
-    assert_eq!(state(&member("letter.md")), Readiness::NamesNotReplaced(1));
 
     // Copy for AI is the editor's bytes for an open tab.
     let ready_view = cx.update(|_, cx| {
@@ -175,7 +72,11 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
             .unwrap()
     });
     let editor_copy = cx.update(|_, cx| ready_view.read(cx).text_for_ai(cx));
-    assert_eq!(rows[1].text_for_ai(), Some(editor_copy.as_str()));
+    let ready_row = rows
+        .iter()
+        .find(|row| row.key == ShelfKey::Tab(ready))
+        .unwrap();
+    assert_eq!(ready_row.text_for_ai(), Some(editor_copy.as_str()));
 
     // Copy and drag every row; only ready ones carry anything.
     let exports = ShelfExports::create_in(dir.path()).unwrap();
@@ -198,7 +99,7 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         }
         // What the shelf shows is handed to anyone watching the screen.
         handed.push(row.title.clone());
-        handed.extend(row.case_label.clone());
+        handed.extend(row.project_label.clone());
         handed.extend(row.preview.iter().map(|line| line.text.clone()));
         // The drag card shows under the pointer, in other apps too.
         let card = row.drag_card();
@@ -218,18 +119,12 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
     exports.clear();
 }
 
-/// Saving records the ready text's fingerprint in the case, and saving
-/// while not ready forgets it; the case keeps no text.
+/// A write records the Ready text's fingerprint in the Vault document, and
+/// a write while not Ready forgets it; the outbound check then refuses it.
 #[gpui::test]
-fn saving_records_the_ready_fingerprint_in_the_case(cx: &mut TestAppContext) {
+fn a_write_records_whether_the_document_is_ready(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let id = open_applied(
         &tabs,
         cx,
@@ -238,21 +133,16 @@ fn saving_records_the_ready_fingerprint_in_the_case(cx: &mut TestAppContext) {
         "Anna Petrova met Northwind Ltd.",
         &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
     );
-    save(&tabs, id, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(id, window, cx));
+    new_project(&tabs, cx, id);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(id, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| tabs.autosave(id, window, cx));
     cx.run_until_parked();
-    let member = session_store::identity(&dir.path().join("a.md"));
-    let reviewed = |cx: &mut VisualTestContext| {
-        cx.update(|_, cx| {
-            tabs.read(cx).case_coordinator.cases()[0]
-                .reviewed(&member)
-                .map(str::to_owned)
-        })
-    };
-    let saved = std::fs::read_to_string(&member).unwrap();
-    assert_eq!(reviewed(cx), Some(crate::shelf::fingerprint(&saved)));
+    let vault = vault(&tabs, cx);
+    let stored = vault.document(document.as_str()).unwrap();
+    assert!(stored.scanned && stored.ready_fingerprint.is_some());
+    assert!(vault.readiness(document.as_str()).unwrap().is_ready());
 
-    // A new proposal makes it not ready; saving now forgets the fingerprint.
+    // A new proposal makes it not ready; its next write forgets it.
     let view = active(&tabs, cx);
     view.update(cx, |view, cx| {
         let text = view.editor.read(cx).text().to_owned();
@@ -267,8 +157,13 @@ fn saving_records_the_ready_fingerprint_in_the_case(cx: &mut TestAppContext) {
         });
     });
     cx.run_until_parked();
-    save(&tabs, id, cx);
-    assert_eq!(reviewed(cx), None);
+    tabs.update_in(cx, |tabs, window, cx| tabs.autosave(id, window, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        vault.document(document.as_str()).unwrap().ready_fingerprint,
+        None
+    );
+    assert!(!vault.readiness(document.as_str()).unwrap().is_ready());
 }
 
 /// #304: the row's "N replaced" is the editor's Share tab count, mentions
@@ -304,7 +199,7 @@ fn kept_names_and_scans_in_flight_keep_an_open_tab_on_the_shelf(cx: &mut TestApp
     let source = "Anna Petrova met Clara Moss.";
     std::fs::write(&path, source).unwrap();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![path], window, cx)
+        tabs.open_paths(vec![path], window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
@@ -401,12 +296,6 @@ fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui:
 fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let ready = open_applied(
         &tabs,
         cx,
@@ -415,9 +304,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         "Anna Petrova met Northwind Ltd.",
         &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
     );
-    save(&tabs, ready, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(ready, window, cx));
-    cx.run_until_parked();
+    let project = new_project(&tabs, cx, ready);
     let pending = open_applied(
         &tabs,
         cx,
@@ -426,11 +313,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         "Boris Ivanov wrote to Anna Petrova.",
         &[("Boris Ivanov", Person)],
     );
-    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.join_case(pending, &case, window, cx)
-    });
-    cx.run_until_parked();
+    move_tab(&tabs, cx, pending, Some(&project));
     let editor_copy = cx.update(|_, cx| {
         let view = tabs
             .read(cx)
@@ -549,65 +432,12 @@ fn assert_first_proposal_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestCont
     });
 }
 
-/// Review of #265: a closed member that is not ready opens as a tab and,
-/// once loaded, shows its first pending proposal.
-#[gpui::test]
-fn a_closed_member_that_is_not_ready_opens_at_its_first_proposal(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
-    let id = open_applied(
-        &tabs,
-        cx,
-        dir.path(),
-        "letter.md",
-        "Northwind Ltd wrote to PERSON_9.",
-        &[("Northwind Ltd", Organization)],
-    );
-    save(&tabs, id, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(id, window, cx));
-    cx.run_until_parked();
-    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(id, window, cx));
-    cx.run_until_parked();
-    let path = session_store::identity(&dir.path().join("letter.md"));
-    std::fs::write(&path, "ORG_1 wrote again. Copy to Northwind Ltd.").unwrap();
-    let row = cx
-        .update(|_, cx| tabs.read(cx).shelf_documents(cx))
-        .into_iter()
-        .find(|row| matches!(&row.key, ShelfKey::Member { path: p, .. } if *p == path))
-        .unwrap();
-    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_from_shelf(&row.key, false, window, cx)
-    });
-    for _ in 0..20 {
-        wait(cx, 100);
-        cx.run_until_parked();
-    }
-    assert!(
-        cx.update(|_, cx| tabs.read(cx).find_path(&path, None, cx))
-            .is_some()
-    );
-    assert_first_proposal_shown(&tabs, cx);
-}
-
 /// Review of #265: every shelf control is reachable by keyboard, and the
 /// picker keeps focus inside the shelf.
 #[gpui::test]
 fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     // Two sources: a case, and a tab without one through its mapping.
     let cased = open_applied(
         &tabs,
@@ -617,9 +447,7 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
         "Anna Petrova met Northwind Ltd.",
         &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
     );
-    save(&tabs, cased, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(cased, window, cx));
-    cx.run_until_parked();
+    new_project(&tabs, cx, cased);
     open_applied(
         &tabs,
         cx,
@@ -688,12 +516,6 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
 fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let cased = open_applied(
         &tabs,
         cx,
@@ -702,9 +524,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         "Anna Petrova met Northwind Ltd about the lease renewal terms.",
         &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
     );
-    save(&tabs, cased, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(cased, window, cx));
-    cx.run_until_parked();
+    new_project(&tabs, cx, cased);
     open_applied(
         &tabs,
         cx,
@@ -857,12 +677,6 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
 fn the_shelf_popup_follows_its_content_height(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ))
-    });
     let cased = open_applied(
         &tabs,
         cx,
@@ -871,9 +685,7 @@ fn the_shelf_popup_follows_its_content_height(cx: &mut TestAppContext) {
         "Anna Petrova met Northwind Ltd about the lease renewal terms.",
         &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
     );
-    save(&tabs, cased, cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(cased, window, cx));
-    cx.run_until_parked();
+    new_project(&tabs, cx, cased);
     open_applied(
         &tabs,
         cx,

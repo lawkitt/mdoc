@@ -5,18 +5,16 @@ use super::{
     vault_state::{Opening, VaultEffect},
 };
 use gpui::{Context, SharedString, Window};
-use mdoc_store::cases::{self, CaseError, Store};
+use mdoc_store::cases::{self, CaseError};
 use mdoc_vault::Vault;
-use std::sync::Arc;
 
 impl Workspace {
-    /// Read the key quietly and open the Vault; off the main thread. The key
-    /// comes back too, so the case store needs no second read.
-    pub(super) fn open_vault_at_launch() -> (Opening, Option<[u8; 32]>) {
+    /// Read the key quietly and open the Vault; off the main thread.
+    pub(super) fn open_vault_at_launch() -> Opening {
         match cases::vault_key(true) {
-            Ok(Some(key)) => (Self::open_vault(&key), Some(key)),
-            Ok(None) => (Opening::MayAsk, None),
-            Err(error) => (Opening::Key(error), None),
+            Ok(Some(key)) => Self::open_vault(&key),
+            Ok(None) => Opening::MayAsk,
+            Err(error) => Opening::Key(error),
         }
     }
 
@@ -27,17 +25,6 @@ impl Workspace {
         match Vault::open(root, key) {
             Ok(vault) => Opening::Opened(Box::new(vault)),
             Err(error) => Opening::Vault(error),
-        }
-    }
-
-    /// The key was read for the Vault: saved cases use it too.
-    pub(super) fn key_read_at_launch(&mut self, key: Option<[u8; 32]>) {
-        if let Some(key) = key
-            && self.case_coordinator.store().is_none()
-            && let Some(dir) = Store::default_dir()
-        {
-            self.case_coordinator
-                .open(Arc::new(Store::with_key(dir, &key)));
         }
     }
 
@@ -76,6 +63,12 @@ impl Workspace {
             }
             VaultEffect::None => {}
         }
+        // Its Projects and the user-wide lists come with it.
+        if self.vault.vault().is_some() {
+            self.load_projects(cx);
+        } else if self.vault.unavailable().is_some() {
+            self.projects.clear();
+        }
         cx.notify();
     }
 
@@ -98,7 +91,7 @@ impl Workspace {
         feature = "headless-renders",
         any(target_os = "macos", target_os = "windows")
     ))]
-    pub(super) fn vault_unavailable_for_render(&mut self) -> Option<Arc<Vault>> {
+    pub(super) fn vault_unavailable_for_render(&mut self) -> Option<std::sync::Arc<Vault>> {
         let vault = self.vault.vault().cloned();
         self.vault.opened(Opening::Key(CaseError::NoKeyStore));
         vault
@@ -110,7 +103,7 @@ impl Workspace {
         feature = "headless-renders",
         any(target_os = "macos", target_os = "windows")
     ))]
-    pub(super) fn restore_vault_for_render(&mut self, vault: Arc<Vault>) {
+    pub(super) fn restore_vault_for_render(&mut self, vault: std::sync::Arc<Vault>) {
         self.vault.reopen(vault);
     }
 
@@ -122,7 +115,7 @@ impl Workspace {
 
     /// Tests: the Vault this window opened.
     #[cfg(test)]
-    pub(crate) fn opened_vault(&self) -> Option<Arc<Vault>> {
+    pub(crate) fn opened_vault(&self) -> Option<std::sync::Arc<Vault>> {
         self.vault.vault().cloned()
     }
 
@@ -145,8 +138,8 @@ impl Workspace {
     }
 
     /// The explainer's Continue for a Locked or Denied Vault: read the key,
-    /// which may show the macOS dialog, and open the Vault. Saved cases get
-    /// the same key. `Err` only when the dialog was declined.
+    /// which may show the macOS dialog, and open the Vault. `Err` only when
+    /// the dialog was declined.
     pub(super) fn unlock_vault(
         &mut self,
         window: &mut Window,
@@ -160,10 +153,7 @@ impl Workspace {
         };
         #[cfg(not(test))]
         let opening = match cases::vault_key(false) {
-            Ok(Some(key)) => {
-                self.key_read_at_launch(Some(key));
-                Self::open_vault(&key)
-            }
+            Ok(Some(key)) => Self::open_vault(&key),
             Ok(None) => Opening::MayAsk,
             Err(error) => Opening::Key(error),
         };
@@ -202,7 +192,7 @@ impl Workspace {
     /// run, say why. Either way nothing is added now.
     pub(super) fn intake_refused(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if self.vault.needs_key() {
-            self.unlock_cases(window, cx);
+            self.unlock_projects(window, cx);
             return true;
         }
         let Some(why) = self.vault.unavailable() else {

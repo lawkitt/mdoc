@@ -145,16 +145,16 @@ fn turning_the_setting_off_shows_a_hidden_window_and_closing_quits_again(cx: &mu
 /// that shows, even when no tab was at risk.
 #[cfg(target_os = "macos")]
 #[gpui::test]
-fn a_failed_case_save_while_quitting_shows_the_hidden_window(cx: &mut TestAppContext) {
+fn a_failed_project_save_while_quitting_shows_the_hidden_window(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    let (tabs, cx, case) = project_quit_fixture(cx, dir.path());
     install(&tabs, true, cx);
     tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
     cx.run_until_parked();
     assert!(cx.update(|_, cx| menu_bar::window_hidden(cx)));
     // A case change whose save fails; the quit's final save asks.
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+        tabs.toggle_project_category(&case, mdoc_pii::Category::Person, cx)
     });
     cx.run_until_parked();
     cx.dispatch_action(Quit);

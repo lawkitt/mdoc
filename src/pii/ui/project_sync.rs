@@ -1,12 +1,13 @@
-//! Keeping a tab in step with its case (phase 3): joining aligns its
-//! aliases with the case in one undo step, and alias or category changes made
-//! in another member tab arrive as an edit in this tab's own history.
+//! Keeping a tab in step with its Project: an undo that brings back an alias
+//! the Project retired lines the tab up with it again, and alias or category
+//! changes made in another member tab arrive as an edit in this tab's own
+//! history.
 use crate::{document_view::DocumentView, markdown_search, ui};
 use gpui::{AnyElement, AppContext, Context, Focusable, div, prelude::*, px};
 use mdoc_pii::Category;
 use mdoc_pii::restore::{ExportedIdentity, plan_join};
 
-/// What joining a case changed in this tab, for the notice.
+/// What lining a tab up with its Project changed.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct JoinSummary {
     pub renumbered: usize,
@@ -16,7 +17,7 @@ pub(crate) struct JoinSummary {
 impl DocumentView {
     /// Forget this case identity without touching a different identity whose
     /// alias collided before it joined. An older scan may not re-seed it.
-    pub(crate) fn forget_case_identity(
+    pub(crate) fn forget_project_identity(
         &mut self,
         aliases: &[&str],
         originals: &[String],
@@ -25,14 +26,14 @@ impl DocumentView {
     ) {
         self.pii.cancel();
         self.pii.review.forget_case_identity(aliases, originals);
-        self.pii.mapping.forget_case_originals(originals);
+        self.pii.mapping.forget_project_originals(originals);
         self.pii.review.reserve_aliases(
             &aliases
                 .iter()
                 .map(|alias| alias.to_string())
                 .collect::<Vec<_>>(),
         );
-        self.case.set_names(case.to_vec());
+        self.project.set_names(case.to_vec());
         self.review_changed(cx);
         cx.notify();
     }
@@ -65,10 +66,10 @@ impl DocumentView {
         }
         Ok(())
     }
-    /// Line this tab up with `case`: names the case knows take its aliases,
-    /// colliding ones the next free number, and the case's other names are
+    /// Line this tab up with `Project`: names the Project knows take its aliases,
+    /// colliding ones the next free number, and the Project's other names are
     /// proposed wherever they occur.
-    pub(crate) fn join_case_identities(
+    pub(crate) fn join_project_identities(
         &mut self,
         case: &[ExportedIdentity],
         reserved: &[String],
@@ -77,7 +78,7 @@ impl DocumentView {
         let document = self.pii.review.export_identities_with_ids();
         let plan = plan_join(case, &document, reserved);
         self.pii.review.reserve_aliases(reserved);
-        self.case.set_names(case.to_vec());
+        self.project.set_names(case.to_vec());
         let history = self.editor.read(cx).history_id();
         let old = self.pii.review.identity_snapshot();
         self.retag_identities(&plan.changes, cx)?;
@@ -112,29 +113,15 @@ impl DocumentView {
         cx.notify();
         Ok(summary)
     }
-    /// Join case `name` as one decision in What you did.
-    pub(crate) fn join_case(
-        &mut self,
-        name: &str,
-        case: &[ExportedIdentity],
-        reserved: &[String],
-        cx: &mut Context<Self>,
-    ) -> Result<JoinSummary, String> {
-        let before = self.editor.read(cx).history_id();
-        let summary = self.join_case_identities(case, reserved, cx)?;
-        let decision = mdoc_pii::decisions::Decision::JoinCase { case: name.into() };
-        self.record_decision(before, decision, cx);
-        Ok(summary)
-    }
     /// Follow changes another member made: `renames` maps an alias this tab
-    /// may use to the identity it became; case names this tab lacks are added.
-    pub(crate) fn sync_case_identities(
+    /// may use to the identity it became; Project names this tab lacks are added.
+    pub(crate) fn sync_project_identities(
         &mut self,
         renames: &[(String, ExportedIdentity)],
         case: &[ExportedIdentity],
         cx: &mut Context<Self>,
     ) {
-        self.case.set_names(case.to_vec());
+        self.project.set_names(case.to_vec());
         let review = &self.pii.review;
         let changes: Vec<_> = renames
             .iter()
@@ -146,7 +133,7 @@ impl DocumentView {
             })
             .collect();
         if let Err(error) = self.retag_identities(&changes, cx) {
-            self.pii.error = Some(format!("Could not follow a change to the case: {error}"));
+            self.pii.error = Some(format!("Could not follow a change to the Project: {error}"));
         }
         let missing: Vec<_> = case
             .iter()
@@ -163,50 +150,50 @@ impl DocumentView {
 }
 
 impl DocumentView {
-    /// Case names this document doesn't mention, folded under the panel
-    /// footer, with a field to add a name to the case.
-    pub(crate) fn case_names_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let link = self.case.link()?;
+    /// Project names this document doesn't mention, folded under the panel
+    /// footer, with a field to add a name to the Project.
+    pub(crate) fn project_names_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let link = self.project.link()?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let absent: Vec<_> = self
-            .case
+            .project
             .names()
             .iter()
-            .filter(|c| !self.case_alias_is_present(&c.alias, cx))
+            .filter(|c| !self.project_alias_is_present(&c.alias, cx))
             .collect();
-        let open = self.case_names_open;
+        let open = self.project_names_open;
         Some(
             div()
                 .flex()
                 .flex_col()
                 .gap_1()
                 .on_action(cx.listener(
-                    |this, _: &crate::workspace::ConfirmCaseName, window, cx| {
-                        let Some(input) = this.case_term.clone() else {
+                    |this, _: &crate::workspace::ConfirmProjectName, window, cx| {
+                        let Some(input) = this.project_term.clone() else {
                             return;
                         };
                         let term = input.read(cx).value().trim().to_string();
                         if !term.is_empty() {
-                            cx.emit(crate::workspace::TabEvent::Case(
-                                crate::workspace::CaseEvent::AddTerm(term),
+                            cx.emit(crate::workspace::TabEvent::Project(
+                                crate::workspace::ProjectEvent::AddTerm(term),
                             ));
                         }
                         input.update(cx, |input, cx| input.reset(cx));
                         window.focus(&input.read(cx).focus_handle(cx), cx);
                     },
                 ))
-                .on_action(
-                    cx.listener(|this, _: &crate::workspace::CancelCaseName, window, cx| {
-                        if let Some(input) = &this.case_term {
+                .on_action(cx.listener(
+                    |this, _: &crate::workspace::CancelProjectName, window, cx| {
+                        if let Some(input) = &this.project_term {
                             input.update(cx, |input, cx| input.reset(cx));
                         }
                         window.focus(&this.editor.read(cx).focus_handle(cx), cx);
-                    }),
-                )
+                    },
+                ))
                 .child(
                     ui::control(
-                        "case-names-toggle",
+                        "project-names-toggle",
                         if absent.is_empty() {
                             // Nothing to list: keep only the way to add a name.
                             format!(
@@ -226,21 +213,24 @@ impl DocumentView {
                         true,
                     )
                     .when(cfg!(test), |v| {
-                        v.debug_selector(|| "case-names-toggle".into())
+                        v.debug_selector(|| "project-names-toggle".into())
                     })
                     .text_size(px(12.))
                     .text_color(palette.header_muted)
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.case_names_open = !this.case_names_open;
-                        if this.case_names_open && this.case_term.is_none() {
-                            this.case_term = Some(cx.new(|cx| {
+                        this.project_names_open = !this.project_names_open;
+                        if this.project_names_open && this.project_term.is_none() {
+                            this.project_term = Some(cx.new(|cx| {
                                 markdown_search::SearchInput::new(cx)
                                     .with_theme(this.theme.clone())
-                                    .with_key_context("CaseName")
-                                    .with_placeholder("Add a name to the case…")
+                                    .with_key_context("ProjectName")
+                                    .with_placeholder("Add a name to the Project…")
                             }));
                         }
-                        if let Some(input) = this.case_term.clone().filter(|_| this.case_names_open)
+                        if let Some(input) = this
+                            .project_term
+                            .clone()
+                            .filter(|_| this.project_names_open)
                         {
                             window.focus(&input.read(cx).focus_handle(cx), cx);
                         }
@@ -251,8 +241,8 @@ impl DocumentView {
                     v.when(!absent.is_empty(), |v| {
                         v.child(
                             div()
-                                .id("case-names")
-                                .when(cfg!(test), |v| v.debug_selector(|| "case-names".into()))
+                                .id("project-names")
+                                .when(cfg!(test), |v| v.debug_selector(|| "project-names".into()))
                                 .max_h(px(160.))
                                 .overflow_y_scroll()
                                 .flex()
@@ -279,7 +269,7 @@ impl DocumentView {
                                 })),
                         )
                     })
-                    .children(self.case_term.clone().map(|input| {
+                    .children(self.project_term.clone().map(|input| {
                         div()
                             .mx_2()
                             .px_1()

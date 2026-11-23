@@ -13,8 +13,8 @@ use crate::{
     style::{self, Theme},
     ui,
     workspace::{
-        Close, Import, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Quit,
-        RetryDocument, Settings, ToggleSidebar, ToggleTheme,
+        Close, Import, New, Open, OpenProject, PasteAiResponse, PseudonymizeClipboard, Quit,
+        Settings, ToggleSidebar, ToggleTheme,
     },
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
@@ -34,8 +34,6 @@ use std::{
     },
 };
 
-mod case_coordinator;
-mod case_page;
 mod comment_rail;
 mod decision_history;
 mod default_categories;
@@ -46,6 +44,8 @@ mod import_flow;
 mod menu_bar;
 mod navigation;
 mod notices;
+mod project_page;
+mod projects;
 mod quit_flow;
 mod restore_in_place;
 mod session_writer;
@@ -363,8 +363,7 @@ fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String
     })
 }
 
-/// A workspace with one saved document whose names are replaced, and an
-/// isolated case store.
+/// A workspace with one imported document whose names are replaced.
 fn applied_document<'a>(
     cx: &'a mut TestAppContext,
     dir: &std::path::Path,
@@ -381,18 +380,11 @@ fn applied_document<'a>(
     let (tabs, cx) = boot_home(cx, session);
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.join("cases"),
-            &[3; 32],
-        ));
-        tabs.open_case_files(vec![path.clone()], window, cx)
+        tabs.open_path(path.clone(), window, cx)
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        if view.case.link().is_some() {
-            return;
-        }
         view.pii.set_reviewing(true);
         view.pii
             .review_mut()
@@ -408,7 +400,7 @@ fn applied_document<'a>(
     (tabs, cx, path)
 }
 
-/// Open `text` at `name` in `dir`, mark `names` and apply them.
+/// Import `text` as `name` in `dir`, mark `names` and apply them.
 fn open_applied(
     tabs: &Entity<Workspace>,
     cx: &mut VisualTestContext,
@@ -419,9 +411,7 @@ fn open_applied(
 ) -> u64 {
     let path = dir.join(name);
     std::fs::write(&path, text).unwrap();
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![path], window, cx)
-    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
     cx.run_until_parked();
     let view = active(tabs, cx);
     view.update_in(cx, |view, window, cx| {
@@ -439,46 +429,86 @@ fn open_applied(
     cx.update(|_, cx| tabs.read(cx).tabs.active())
 }
 
-/// A case to restore, saved in an isolated store under `dir`.
-fn saved_case(dir: &std::path::Path) -> (mdoc_store::cases::Case, std::path::PathBuf) {
-    let store = mdoc_store::cases::Store::with_key(dir.join("cases"), &[3; 32]);
-    let path = dir.join("contract.md");
-    std::fs::write(&path, "PERSON_1 met Bob.").unwrap();
-    let case = mdoc_store::cases::Case::new(
-        "Petrova".into(),
-        &[mdoc_pii::restore::ExportedIdentity {
-            alias: "PERSON_1".into(),
-            previous: vec![],
-            category: mdoc_pii::Category::Person,
-            custom: false,
-            originals: vec!["Anna Petrova".into()],
-        }],
-        Some(session_store::identity(&path)),
-    );
-    store.save(&case).unwrap();
-    (case, path)
+/// Move tab `id`'s document into a new Project named after it; its id.
+fn new_project(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64) -> String {
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_to_new_project(id, window, cx)
+    });
+    cx.run_until_parked();
+    project_of_tab(tabs, cx, id).expect("the tab moved into a new Project")
 }
 
-fn case_quit_fixture<'a>(
-    cx: &'a mut TestAppContext,
-    dir: &std::path::Path,
-) -> (Entity<Workspace>, &'a mut VisualTestContext, String) {
-    let (tabs, cx, path) = applied_document(cx, dir, Session::default());
-    let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.save_as_file(path, cx));
-    let id = tabs
-        .update_in(cx, |tabs, window, cx| {
-            tabs.create_case(tabs.tabs.active(), window, cx)
+/// Move tab `id`'s document into Project `to`, or Unfiled.
+fn move_tab(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64, to: Option<&str>) {
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_tab(id, to.map(str::to_owned), window, cx)
+    });
+    cx.run_until_parked();
+}
+
+/// The Project tab `id`'s view belongs to.
+fn project_of_tab(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: u64) -> Option<String> {
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).tabs.get(id)?.view()?.clone();
+        view.read(cx).project.link().map(|link| link.id.clone())
+    })
+}
+
+/// The window's copy of Project `id`.
+fn project(tabs: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str) -> mdoc_vault::Project {
+    cx.update(|_, cx| tabs.read(cx).projects.project(id).cloned().unwrap())
+}
+
+/// The window's Vault.
+fn vault(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Arc<mdoc_vault::Vault> {
+    cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap())
+}
+
+/// A Project to reopen: "Anna Petrova" is PERSON_1, and its one document,
+/// "PERSON_1 met Bob.", in `vault`. Its id and the document's.
+fn saved_project(vault: &mdoc_vault::Vault) -> (String, String) {
+    let project = vault
+        .create_project(mdoc_vault::NewProject {
+            name: "Petrova".into(),
+            colour: None,
+            pinned: false,
         })
         .unwrap();
-    cx.run_until_parked();
-    // A regular file at the store directory gives a real, portable IO failure.
-    let blocked = dir.join("blocked-store");
-    std::fs::write(&blocked, "keep this file").unwrap();
-    tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(blocked, &[3; 32]));
-    });
-    (tabs, cx, id)
+    vault
+        .update_project(&project.id, |project| {
+            project
+                .mapping
+                .merge(&[mdoc_pii::restore::ExportedIdentity {
+                    alias: "PERSON_1".into(),
+                    previous: vec![],
+                    category: mdoc_pii::Category::Person,
+                    custom: false,
+                    originals: vec!["Anna Petrova".into()],
+                }])
+        })
+        .unwrap();
+    let document = vault
+        .create_document(mdoc_vault::NewDocument {
+            project: Some(project.id.clone()),
+            title: "contract".into(),
+            source_kind: mdoc_vault::SourceKind::Markdown,
+            origin: mdoc_vault::DocumentOrigin::Ordinary,
+            markdown: "PERSON_1 met Bob.".into(),
+        })
+        .unwrap();
+    (project.id, document.id)
+}
+
+/// A session restoring Vault document `id`.
+fn session_of(id: &str) -> Session {
+    let mut record = TabRecord::default();
+    record.set_document(mdoc_store::document_id::DocumentId::Vault(
+        mdoc_store::document_id::VaultId::parse(id).unwrap(),
+    ));
+    Session {
+        tabs: vec![record],
+        ..Session::default()
+    }
 }
 
 // Keyboard reach.

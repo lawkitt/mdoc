@@ -1,9 +1,9 @@
-//! The folder sheet in the window: a modal dialog listing a
-//! dropped folder's files as checkboxes, with Open as case (or Add to “X”),
-//! Open files and Cancel. Open files never touches the case key; the case
-//! actions read it only after the click.
+//! The folder sheet in the window: a modal dialog listing a dropped
+//! folder's files as checkboxes, with Open as New Project (or Add to “X”),
+//! Open files and Cancel. New files are imported into the Project; open
+//! Unfiled ones move into it.
 use super::{
-    Close, Import, New, NextTab, Open, OpenCase, OpenPalette, PasteAiResponse, PreviousTab,
+    Close, Import, New, NextTab, Open, OpenPalette, OpenProject, PasteAiResponse, PreviousTab,
     PseudonymizeClipboard, RetryDocument, Settings, ToggleSidebar, Workspace,
     folder_sheet::{CAP, CAP_NOTE, DroppedFolder, Pending, Sheet, Status, Target},
     shortcuts_ui::ShowShortcuts,
@@ -13,7 +13,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, KeyDownEvent, ScrollHandle, Window, div,
     prelude::*, px,
 };
-use mdoc_store::cases::{Case, CaseError};
+use mdoc_vault::NewProject;
 use std::path::{Path, PathBuf};
 
 /// The sheet's focus: its group, one handle per row, and where focus goes
@@ -54,7 +54,7 @@ impl Workspace {
             .iter()
             .map(|path| self.folder_file_status(path, cx))
             .collect();
-        let target = self.folder_target(&pending.folder, pending.case.as_deref(), cx);
+        let target = self.folder_target(&pending.folder, pending.project.as_deref(), cx);
         let sheet = Sheet::new(&pending.folder, statuses, target, pending.at);
         let rows = sheet
             .rows()
@@ -111,55 +111,48 @@ impl Workspace {
         let Some(tab) = self.open_tab_for(path, cx).and_then(|id| self.tabs.get(id)) else {
             return Status::New;
         };
-        if let Some(link) = tab.view().and_then(|v| v.read(cx).case.link().cloned()) {
-            return Status::InCase(Some(link.name));
-        }
-        match &tab.record().case {
-            // A member of a locked case, or of one not loaded yet.
-            Some(id) => Status::InCase(self.case_coordinator.case(id).map(|c| c.name.clone())),
+        match self.sidebar_project_link(tab, cx) {
+            Some(link) => Status::InProject(link.name),
             None => Status::Open,
         }
     }
 
-    /// The loaded case the folder belongs to: the case header it was dropped
-    /// on, else the one holding most of its files. Locked cases are not
-    /// checked, so a new case is offered.
+    /// The Project the folder goes into: the header it was dropped on, else
+    /// the one holding most of its open files.
     fn folder_target(
         &self,
         folder: &DroppedFolder,
         header: Option<&str>,
         cx: &gpui::App,
     ) -> Option<Target> {
-        let target = |case: &Case| Target {
-            id: case.id.clone(),
-            name: case.name.clone(),
+        let target = |link: super::ProjectLink| Target {
+            id: link.id,
+            name: link.name,
         };
-        if let Some(case) = header.and_then(|id| self.case_coordinator.case(id)) {
-            return Some(target(case));
+        if let Some(link) = header.and_then(|id| self.projects.link(id)) {
+            return Some(target(link));
         }
         let inside = |path: &Path| path.parent() == Some(folder.path.as_path());
-        let mut best: Option<(&Case, usize)> = None;
-        for case in self.case_coordinator.cases() {
-            let mut count = case.members.iter().filter(|m| inside(m)).count();
-            count += self
-                .tabs
-                .iter()
-                .filter(|tab| {
-                    tab.view().is_some_and(|v| {
-                        let v = v.read(cx);
-                        v.case.link().is_some_and(|l| l.id == case.id)
-                            && [v.session.document.path.as_ref(), v.session.source.as_ref()]
-                                .into_iter()
-                                .flatten()
-                                .any(|p| inside(p))
-                    })
-                })
-                .count();
-            if count > 0 && best.is_none_or(|(_, most)| count > most) {
-                best = Some((case, count));
+        let mut counts: Vec<(super::ProjectLink, usize)> = Vec::new();
+        for path in folder.files.iter().filter(|path| inside(path)) {
+            let Some(link) = (self.open_tab_for(path, cx))
+                .and_then(|id| self.tabs.get(id))
+                .and_then(|tab| self.sidebar_project_link(tab, cx))
+            else {
+                continue;
+            };
+            match counts.iter_mut().find(|(l, _)| l.id == link.id) {
+                Some((_, count)) => *count += 1,
+                None => counts.push((link, 1)),
             }
         }
-        best.map(|(case, _)| target(case))
+        let mut best: Option<(super::ProjectLink, usize)> = None;
+        for (link, count) in counts {
+            if best.as_ref().is_none_or(|(_, most)| count > *most) {
+                best = Some((link, count));
+            }
+        }
+        best.map(|(link, _)| target(link))
     }
 
     /// Hide the sheet and give focus back where it was.
@@ -184,8 +177,7 @@ impl Workspace {
         self.show_next_folder(window, cx);
     }
 
-    /// Open files: the ticked files open without a case. The case key is
-    /// never read.
+    /// Open files: the ticked files open Unfiled.
     pub(super) fn open_folder_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.folder_sheets.waiting()
             || self
@@ -196,22 +188,21 @@ impl Workspace {
             return;
         }
         if let Some(sheet) = self.close_folder_sheet(window, cx) {
-            self.open_ticked(&sheet, sheet.at(), false, window, cx);
+            self.open_ticked(&sheet, sheet.at(), None, window, cx);
         }
         self.show_next_folder(window, cx);
     }
 
-    /// Open the ticked files; `files` for a case, which lists Markdown
-    /// files until cases become Projects.
+    /// Open the ticked files: those not open yet are imported, Unfiled or
+    /// into `project`; the cap holds against the tabs open now.
     fn open_ticked(
         &mut self,
         sheet: &Sheet,
         at: Option<usize>,
-        files: bool,
+        project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (Vec<u64>, Vec<u64>) {
-        // The cap holds against the tabs open now, not when the sheet showed.
+    ) {
         let mut new = 0;
         let paths = sheet
             .ticked()
@@ -224,12 +215,13 @@ impl Workspace {
             })
             .map(|path| (path, true))
             .collect();
-        self.finish_open(paths, at, files, window, cx)
+        self.finish_open(paths, at, project, window, cx);
     }
 
-    /// Open as case / Add to “X”: read the key now, after the Keychain
-    /// explainer when reading might ask. Not now returns to the
-    /// sheet.
+    /// Open as New Project / Add to “X”: the ticked files go into that
+    /// Project. A file open Unfiled moves into it; one in another Project
+    /// stays there. While the Vault's key is locked, the Keychain explainer
+    /// comes first, and Not now returns to the sheet.
     pub(super) fn folder_primary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.folder_sheets.waiting()
             || self
@@ -240,119 +232,84 @@ impl Workspace {
             return;
         }
         let id = self.folder_sheets.sheet().map_or(0, Sheet::id);
-        if !self.case_key_ready(
-            move |this, window, cx| this.folder_case_now(id, window, cx),
+        if !self.vault_key_ready(
+            move |this, window, cx| this.folder_project_now(id, window, cx),
             cx,
         ) {
             self.folder_sheets.set_waiting(true);
             return;
         }
-        self.folder_case_now(id, window, cx);
+        self.folder_project_now(id, window, cx);
     }
 
-    /// The key is readable: open the ticked files into the case. Without it
-    /// they open without a case, and a notice says so.
-    fn folder_case_now(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        // Only for the sheet that asked: after a declined dialog its files
-        // opened without a case, and Try again must not answer the next.
+    fn folder_project_now(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        // Only for the sheet that asked: a later sheet is not answered.
         if self.folder_sheets.sheet().is_none_or(|s| s.id() != id) {
             return;
         }
-        if let Err(error) = self.case_store() {
-            self.folder_without_case(&error, window, cx);
+        self.folder_sheets.set_waiting(false);
+        let Some(vault) = self.vault.vault().cloned() else {
             return;
-        }
+        };
         let Some(sheet) = self.close_folder_sheet(window, cx) else {
             return;
         };
-        self.resume_locked(window, cx);
+        self.load_projects(cx);
         let target = sheet
             .target()
-            .filter(|t| self.case_coordinator.case(&t.id).is_some());
-        let (case_id, at) = match target {
-            Some(target) => (target.id.clone(), None),
+            .filter(|t| self.projects.project(&t.id).is_some())
+            .map(|t| t.id.clone());
+        let project = match target {
+            Some(project) => project,
             None => {
-                let case = self.new_case(sheet.name().to_string(), &[], None);
-                let id = case.id.clone();
-                let effect = self.case_coordinator.create(case);
-                self.carry_out_cases(effect.into_iter().collect(), cx);
-                (id, sheet.at())
+                let new = NewProject {
+                    name: sheet.name().to_string(),
+                    colour: None,
+                    pinned: false,
+                };
+                let skip = self
+                    .preferences
+                    .borrow()
+                    .current
+                    .as_ref()
+                    .map(|p| p.categories.skip.clone())
+                    .unwrap_or_default();
+                let made = vault.create_project(new).and_then(|project| {
+                    vault.update_project(&project.id, |project| project.skip = skip)
+                });
+                match made {
+                    Ok(project) => {
+                        let id = project.id.clone();
+                        self.projects.put(project);
+                        id
+                    }
+                    Err(error) => {
+                        self.notices.post(format!(
+                            "“{}” could not become a Project: {error}",
+                            sheet.name()
+                        ));
+                        self.open_ticked(&sheet, sheet.at(), None, window, cx);
+                        self.show_next_folder(window, cx);
+                        return;
+                    }
+                }
             }
         };
-        let (ids, created) = self.open_ticked(&sheet, at, true, window, cx);
-        if target.is_some() {
-            // New members sit after the case's others in the sidebar.
-            let last = self.tabs.iter().rposition(|tab| {
-                !created.contains(&tab.id())
-                    && (tab.record().case.as_deref() == Some(case_id.as_str())
-                        || tab.view().is_some_and(|v| {
-                            v.read(cx).case.link().is_some_and(|l| l.id == case_id)
-                        }))
-            });
-            if let Some(last) = last {
-                let anchor = self
+        // Open Unfiled files move in; the others are imported into it.
+        for path in sheet.ticked() {
+            if let Some(tab) = self.open_tab_for(&path, cx)
+                && self
                     .tabs
-                    .iter()
-                    .skip(last + 1)
-                    .find(|tab| !created.contains(&tab.id()))
-                    .map(|tab| tab.id());
-                self.tabs.place(&created, anchor);
+                    .get(tab)
+                    .is_some_and(|tab| self.sidebar_project_link(tab, cx).is_none())
+            {
+                self.move_tab(tab, Some(project.clone()), window, cx);
             }
         }
-        for id in ids {
-            let Some(tab) = self.tabs.get(id) else {
-                continue;
-            };
-            // A tab moves between cases only through Move to case.
-            let linked = tab.view().is_some_and(|v| v.read(cx).case.link().is_some());
-            if linked || tab.record().case.is_some() {
-                continue;
-            }
-            let ready = !created.contains(&id)
-                && tab.view().is_some_and(|v| v.read(cx).can_copy_markdown());
-            if ready {
-                self.join_case(id, &case_id, window, cx);
-            } else {
-                // Joins when its Markdown loads or conversion finishes.
-                self.tabs.set_case(id, Some(case_id.clone()));
-                self.attach_case(id, window, cx);
-            }
-        }
+        self.open_ticked(&sheet, sheet.at(), Some(project), window, cx);
         self.checkpoint(window, cx);
         cx.notify();
         self.show_next_folder(window, cx);
-    }
-
-    /// The key could not be had: the ticked files open without a case.
-    fn folder_without_case(
-        &mut self,
-        error: &CaseError,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(sheet) = self.close_folder_sheet(window, cx) else {
-            return;
-        };
-        self.open_ticked(&sheet, sheet.at(), false, window, cx);
-        self.notices
-            .post(format!("“{}” opened without a case: {error}", sheet.name()));
-        cx.notify();
-        self.show_next_folder(window, cx);
-    }
-
-    /// The explainer's Continue failed: a sheet waiting on it opens its
-    /// files without a case. True if one did.
-    pub(super) fn folder_key_failed(
-        &mut self,
-        error: &CaseError,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let waiting = self.folder_sheets.waiting();
-        if waiting {
-            self.folder_without_case(error, window, cx);
-        }
-        waiting
     }
 
     /// The explainer's Not now: back to the sheet.
@@ -435,7 +392,7 @@ impl Workspace {
         let focus = self.folder_sheet_focus.as_ref()?;
         // The sheet keeps focus while it is the top dialog: a document that
         // finishes loading behind it must not take the keyboard.
-        if !self.cases.explainer
+        if !self.project_ui.explainer
             && !window.has_active_prompt()
             && !focus.group.contains_focused(window, cx)
             && let Some(row) = focus.rows.get(sheet.cursor())
@@ -565,7 +522,7 @@ impl Workspace {
                             .on_action(|_: &New, _, _| {})
                             .on_action(|_: &Open, _, _| {})
                             .on_action(|_: &Import, _, _| {})
-                            .on_action(|_: &OpenCase, _, _| {})
+                            .on_action(|_: &OpenProject, _, _| {})
                             .on_action(|_: &Settings, _, _| {})
                             .on_action(|_: &OpenPalette, _, _| {})
                             .on_action(|_: &ShowShortcuts, _, _| {})

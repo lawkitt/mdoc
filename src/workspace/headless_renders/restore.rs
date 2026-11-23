@@ -139,7 +139,7 @@ pub(super) fn restored_reply(d: &mut Driver) -> Result<()> {
         text: include_str!("../../../tests/fixtures/restore/claude-en/reply.md").into(),
         identities,
         source_name: "Claude public EN fixture".into(),
-        case: None,
+        project: None,
     };
     d.change(|w, window, cx| {
         w.new_tab(window, cx);

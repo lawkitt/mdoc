@@ -7,15 +7,16 @@ use std::path::Path;
 /// Opens the fixture document and returns its view for later scenes.
 pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
     d.capture("home")?;
-    // Home with no cases and the header's bell: "Open a case…" ends under
-    // the local note, and the Tab walk starts at Open files… (U25).
-    let cases = d.change(|w, _, cx| {
-        let cases = w.case_coordinator.cases().to_vec();
-        w.case_coordinator.hide_for_locked_render();
-        w.case_coordinator.restore_summaries(Vec::new());
+    // Home with no Projects and the header's bell: "Open a Project…" ends
+    // under the local note, and the Tab walk starts at Open files… (U25).
+    let projects = d.change(|w, _, cx| {
+        let projects: Vec<_> = (w.projects.summaries().into_iter())
+            .filter_map(|summary| w.projects.project(&summary.id).cloned())
+            .collect();
+        w.projects.finish_load(Vec::new());
         w.notices.post("Saved elsewhere");
         cx.notify();
-        cases
+        projects
     })?;
     d.settle()?;
     d.change(|w, window, cx| {
@@ -26,7 +27,7 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>
     d.capture("home-notice")?;
     d.change(|w, _, cx| {
         w.notices.dismiss();
-        w.case_coordinator.finish_load(cases);
+        w.projects.finish_load(projects);
         cx.notify();
     })?;
     // The local note's explanation, as hovering it shows it (U16).
@@ -74,8 +75,9 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>
     Ok(view)
 }
 
-/// The sidebar tab menu of the saved fixture and of the untitled tab beside
-/// it (UI polish decision 13), opened under each row as a right-click does.
+/// The sidebar tab menu of the imported fixture and of the untitled tab
+/// beside it (UI polish decision 13), opened under each row as a right-click
+/// does.
 fn tab_menus(d: &mut Driver) -> Result<()> {
     for (name, untitled) in [("tab-menu-saved", false), ("tab-menu-untitled", true)] {
         d.change(|w, window, cx| {
@@ -88,7 +90,7 @@ fn tab_menus(d: &mut Driver) -> Result<()> {
             let (row, id) = rows
                 .iter()
                 .enumerate()
-                .find(|(_, id)| w.tab_file(**id, cx).is_none() == untitled)
+                .find(|(_, id)| w.tab_document(**id, cx).is_none() == untitled)
                 .map(|(row, id)| (row, *id))
                 .ok_or("no such tab")?;
             // Under the row's label: rows are 31 pt apart from 160 pt.
@@ -112,20 +114,17 @@ fn tab_menus(d: &mut Driver) -> Result<()> {
 }
 
 fn document(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
-    // The fixture joins the fixture case, so it opens as the Markdown file a
-    // case lists, with the identity normalization a drop uses: injecting
-    // Document::open into a blank tab can leave /var and /private/var
-    // spellings on opposite sides of a case join.
+    // The fixture is imported as a drop imports it.
     d.change(|w, window, cx| {
         let path = mdoc_store::session_store::identity(path);
-        w.finish_open(vec![(path, true)], None, true, window, cx);
+        w.finish_open(vec![(path, true)], None, None, window, cx);
     })?;
     d.settle()?;
     d.change(|w, window, cx| {
         window.focus(&w.focus, cx);
         w.active_view().filter(|view| {
             let view = view.read(cx);
-            !view.lifecycle.loading() && view.session.document.path.is_some()
+            !view.lifecycle.loading() && view.session.document.vault.is_some()
         })
     })?
     .ok_or_else(|| "fixture drop did not open its document".into())
