@@ -54,8 +54,7 @@ class InterruptedTest {
         job.await()
 
         compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(title).performClick()
+        compose.openDocument(title)
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("The import stopped when mdoc left the screen", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }

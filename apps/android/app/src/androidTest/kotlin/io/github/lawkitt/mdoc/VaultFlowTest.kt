@@ -71,7 +71,7 @@ class VaultFlowTest {
         waitFor("Paste text")
         compose.onNode(hasSetTextAction() and hasText("Paste or type the text to check")).performTextInput(letter)
         compose.onNode(hasSetTextAction() and hasText("Title")).performTextReplacement(title)
-        compose.onNodeWithText("Unfiled").assertExists()
+        compose.shownText("Unfiled").assertExists()
         // The sheet's Add, not the button behind it that opened the menu.
         compose.onNode(hasText("Add") and hasClickAction() and !hasContentDescription("Add")).performScrollTo().performClick()
         waitFor("Copy")
@@ -102,6 +102,7 @@ class VaultFlowTest {
         // Reopen: mdoc starts again and finds the document by its id, as reviewed.
         app.reopenCore()
         compose.activityRule.scenario.onActivity { it.recreate() }
+        compose.sidebar("All Documents")
         waitFor(title)
         assertEquals(vaultId, app.core.documents.snapshot().documents.single().id.raw)
 
@@ -115,7 +116,7 @@ class VaultFlowTest {
         }
 
         // The document shows it, restored.
-        compose.onNodeWithText(title).performClick()
+        compose.shownText(title).performClick()
         waitFor("Reply")
         compose.onAllNodesWithText("Reply").onFirst().performClick()
         waitFor("1 value restored")
