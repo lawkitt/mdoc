@@ -33,6 +33,10 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// `MDOC_UI_NOTICE`: the notice card's UI test gives the open document
     /// this import notice, since a phone's import seldom skips pages.
     var uiNotice: String?
+    /// `MDOC_SEED_RESTORE=1`: the Restore extension's device test seeds a
+    /// Project document and an Unfiled document, both reviewed
+    /// (`UITestSeed.seedRestorePlaces`).
+    var seedsRestorePlaces = false
 
     init() {}
 
@@ -49,6 +53,7 @@ struct LaunchConfiguration: Sendable, Equatable {
         keepsLibrary = environment["MDOC_KEEP_LIBRARY"] == "1"
         showsTips = environment["MDOC_SHOW_TIPS"] == "1"
         uiNotice = environment["MDOC_UI_NOTICE"]
+        seedsRestorePlaces = environment["MDOC_SEED_RESTORE"] == "1"
         #endif
     }
 

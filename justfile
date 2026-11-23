@@ -174,7 +174,7 @@ ios-release: ios-core
 ios-test device="iPhone 17" *only: ios-core
     os=$(source scripts/lib.sh && load_tools && echo "$IOS_SIM_RUNTIME"); skip=$(bash scripts/ci/quarantine.sh ios) || exit 1; workers=${MDOC_IOS_TEST_WORKERS:-}; retry=${MDOC_IOS_TEST_RETRY:-}; action=${MDOC_IOS_TEST_ACTION:-test}; only=; for t in {{only}}; do only="$only -only-testing:$t"; done; xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet ${workers:+-parallel-testing-enabled YES -parallel-testing-worker-count "$workers"} ${retry:+-retry-tests-on-failure -test-iterations 2} "$action" $only $skip
 
-# The device UI tests on a connected iPhone: the review flow, then the long jobs or, below the floor, the below-floor test (ADR 0088)
+# The device UI tests on a connected iPhone: the review flow, Restore with mdoc from Notes, then the long jobs or, below the floor, the below-floor test (ADR 0088)
 [macos]
 ios-device-test udid tier="auto": ios-core
     scripts/ios/ios-device-test.sh "{{udid}}" "{{tier}}"

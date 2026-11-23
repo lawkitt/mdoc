@@ -94,6 +94,9 @@ final class AppModel {
             if let seed = launch.seedFile {
                 UITestSeed.run(UITestSeed.fixture(seed), in: app)
             }
+            if launch.seedsRestorePlaces {
+                UITestSeed.seedRestorePlaces(in: app)
+            }
             #endif
             return app
         } catch {

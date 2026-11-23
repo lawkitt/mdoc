@@ -306,6 +306,32 @@ final class StorageTests: XCTestCase {
         XCTAssertFalse(storage.url(.ocr).path.hasPrefix(storage.root.path + "/"))
     }
 
+    /// The restore place's file sits beside the Vault, outside the old
+    /// library's folder, named for the Vault: the app and the Restore
+    /// extension open the same storage, so they name the same file. Written
+    /// by the app's path and read by the extension's, it names the place.
+    func testTheRestorePlaceFileIsBesideTheVault() throws {
+        let release = try MdocStorage.shared()
+        let base = release.vault.deletingLastPathComponent()
+        XCTAssertEqual(release.restorePlace, base.appendingPathComponent("restore-place.json"))
+        XCTAssertFalse(release.restorePlace.path.hasPrefix(release.root.path + "/"))
+        let dev = try MdocStorage.shared(folder: "mdoc-ui-testing", vaultFolder: "vault-dev")
+        XCTAssertEqual(dev.restorePlace, base.appendingPathComponent("restore-place-dev.json"))
+
+        let storage = try MdocStorage.shared(folder: "mdoc-place-test", vaultFolder: "vault-place-test")
+        defer { try? FileManager.default.removeItem(at: storage.restorePlace) }
+        XCTAssertEqual(storage.restorePlace.lastPathComponent, "restore-place-place-test.json")
+        let place = RestorePlace.document(DocumentID(rawValue: String(repeating: "a", count: 32)))
+        try RestorePlaceFile(storage).write(place)
+        let again = try MdocStorage.shared(folder: "mdoc-place-test", vaultFolder: "vault-place-test")
+        XCTAssertEqual(RestorePlaceFile(again).read(), place)
+        let values = try storage.restorePlace.resourceValues(forKeys: [.isExcludedFromBackupKey, .fileProtectionKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+        #if !targetEnvironment(simulator)
+        XCTAssertEqual(values.fileProtection, .complete)
+        #endif
+    }
+
     func testModelsKeepTheDefaultProtection() {
         XCTAssertNil(MdocStorage.Area.models.protection)
         XCTAssertEqual(MdocStorage.Area.intake.protection, .complete)
