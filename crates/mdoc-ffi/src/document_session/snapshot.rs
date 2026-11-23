@@ -3,7 +3,7 @@
 //! hints and the undo history's ends. Swift and Kotlin keep only view state
 //! beside it.
 use super::review::{Focus, ReviewText, Step, StepKind};
-use crate::library::TextRange;
+use crate::text::TextRange;
 use std::collections::HashMap;
 
 /// `mdoc_pii::Category`, as the platforms see it.

@@ -101,7 +101,7 @@ final class ScreenSnapshotTests: XCTestCase {
         XCTAssertEqual(ModelDetailView.memoryText(7_900_000_000), "8 GB")
     }
 
-    func testDocumentsSearchAndProjectFilter() throws {
+    func testAllDocumentsSearch() throws {
         let home = LibraryModel(library: try Fixture.seeded().library)
         XCTAssertEqual(home.shownDocuments.count, home.documents.count)
         let first = try XCTUnwrap(home.documents.first)
@@ -110,9 +110,6 @@ final class ScreenSnapshotTests: XCTestCase {
         home.query = "zzzz-no-such-document"
         XCTAssertTrue(home.shownDocuments.isEmpty)
         home.query = ""
-        if let projectID = first.projectID {
-            home.projectFilter = projectID
-            XCTAssertTrue(home.shownDocuments.allSatisfy { $0.projectID == projectID })
-        }
+        XCTAssertEqual(home.shownDocuments, home.documents, "every Project's documents, and Unfiled")
     }
 }

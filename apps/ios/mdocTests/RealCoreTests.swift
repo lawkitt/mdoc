@@ -136,9 +136,9 @@ final class RealCoreTests: XCTestCase {
     }
 
     /// The reply and the Project's name are read once, not on every review
-    /// tap; a cleared reply and a renamed Project still show at once. The
-    /// reply pasted shows while the session lives, and not when the
-    /// document opens again (#1091 Q2, until Vault & Projects item 10).
+    /// tap; a removed reply and a renamed Project still show at once. The
+    /// Reply pane lists the replies saved in the Vault, also when the
+    /// document opens again (Vault & Projects item 10).
     @MainActor
     func testTheReplyAndProjectNameFollowEveryChange() throws {
         let core = try core()
@@ -151,16 +151,23 @@ final class RealCoreTests: XCTestCase {
         let restored = try session.restoreReply("Write to \(alias).")
         XCTAssertEqual(restored.reply?.restored.text, "Write to maya.ellison@example.com.")
         XCTAssertEqual(session.snapshot().reply, restored.reply, "the same reply from the cache")
-        // A tap that changes the names restores the reply again.
-        let email = try XCTUnwrap(ready.candidates.first { $0.category == .email })
-        let kept = try session.decide(email.id, .keep, scope: .all)
-        XCTAssertEqual(kept.reply?.aliasText, "Write to \(alias).")
-        XCTAssertEqual(kept.reply?.restored.text, "Write to \(alias).", "kept: the alias no longer restores")
-        XCTAssertEqual(try session.undo().reply?.restored.text, "Write to maya.ellison@example.com.")
+        let first = try XCTUnwrap(restored.reply?.id)
+        XCTAssertEqual(restored.replies.map(\.id), [first])
 
-        XCTAssertEqual(try session.restoreReply("Reply to \(alias).").reply?.aliasText, "Reply to \(alias).")
+        // A second reply shows; the pane picks either, and Remove deletes
+        // the one shown from the Vault.
+        let second = try session.restoreReply("Reply to \(alias).")
+        let secondID = try XCTUnwrap(second.reply?.id)
+        XCTAssertEqual(second.reply?.aliasText, "Reply to \(alias).")
+        XCTAssertEqual(Set(second.replies.map(\.id)), [first, secondID])
+        XCTAssertEqual(session.showReply(first).reply?.aliasText, "Write to \(alias).")
+        let removed = try session.clearReply()
+        XCTAssertEqual(removed.replies.map(\.id), [secondID])
+        XCTAssertEqual(removed.reply?.id, secondID, "the newest left")
         XCTAssertNil(try session.clearReply().reply)
         XCTAssertNil(session.snapshot().reply)
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        XCTAssertTrue(library.vault.projectReplies(projectId: try XCTUnwrap(ready.projectID).rawValue).isEmpty)
 
         XCTAssertEqual(session.snapshot().projectName, "Ellison")
         try core.library.renameProject(try XCTUnwrap(ready.projectID), to: "Ellison v Brightwater")
@@ -170,7 +177,48 @@ final class RealCoreTests: XCTestCase {
         try core.library.saveChanges()
         let vaultID = try XCTUnwrap((session as? RealSession)?.vaultID)
         let reopened = try self.core().library.session(for: DocumentID(rawValue: vaultID))
-        XCTAssertNil(reopened.snapshot().reply, "empty when opened again")
+        XCTAssertEqual(
+            reopened.snapshot().reply?.restored.text, "Write to maya.ellison@example.com.", "listed when opened again")
+    }
+
+    /// A saved reply restores by the identity each alias meant when it was
+    /// saved (#1091 Decision 18): what the pane shows follows the names as
+    /// saved, once a tap's change is saved.
+    @MainActor
+    func testASavedReplyFollowsTheNamesAsSaved() throws {
+        let core = try core()
+        let session = try reviewed(core)
+        let ready = try session.replaceAllPending()
+        let email = try XCTUnwrap(ready.candidates.first { $0.category == .email })
+        _ = try session.restoreReply("Write to \(email.alias).")
+        _ = try session.notAName(email.id, scope: .all)
+        try session.saveChanges()
+        XCTAssertEqual(session.snapshot().reply?.restored.text, "Write to \(email.alias).", "no longer a name")
+        _ = try session.undo()
+        try session.saveChanges()
+        XCTAssertEqual(session.snapshot().reply?.restored.text, "Write to maya.ellison@example.com.")
+    }
+
+    /// Copy for AI and Share remember where the text went, by id only:
+    /// the Restore extension restores with it by default (#1091, the
+    /// maintainer's (a)).
+    func testSharingRemembersThePlaceForRestore() throws {
+        let core = try core()
+        let session = try reviewed(core)
+        let ready = try session.replaceAllPending()
+        XCTAssertNil(RestorePlaceFile(storage).read())
+        _ = try session.copyForAI()
+        XCTAssertEqual(RestorePlaceFile(storage).read(), .project(try XCTUnwrap(ready.projectID)))
+
+        let memo = try core.library.importDocument(.text("Write to ann@example.com."), title: "Memo", into: nil)
+        _ = try memo.recognize(observer: TestObserver())
+        _ = try memo.scan(observer: TestObserver())
+        _ = try memo.replaceAllPending()
+        _ = try memo.copyForAI()
+        let memoID = try XCTUnwrap((memo as? RealSession)?.vaultID)
+        XCTAssertEqual(RestorePlaceFile(storage).read(), .document(DocumentID(rawValue: memoID)))
+        let file = try String(contentsOf: storage.restorePlace, encoding: .utf8)
+        XCTAssertEqual(file, "{\"document\":\"\(memoID)\"}", "the id only")
     }
 
     /// An Unfiled document has no Project, and renaming it makes none.
@@ -209,7 +257,7 @@ final class RealCoreTests: XCTestCase {
     }
 
     /// File names from titles follow the core's rule (#683, `file_stem` in
-    /// `crates/mdoc-ffi/src/library.rs`): a look-alike for each character a
+    /// `crates/mdoc-ffi/src/file_names.rs`): a look-alike for each character a
     /// file name cannot hold, control characters as "-", no leading dot,
     /// at most 240 bytes before the extension, cut on a character.
     func testFileNamesFollowTheCoresRule() {

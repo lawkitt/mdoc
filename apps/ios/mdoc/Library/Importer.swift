@@ -43,14 +43,35 @@ struct Importer {
         }
         if kind == .image {
             guard let data = try? Data(contentsOf: url),
-                  let pending = try images([data], scanned: false, title: url.deletingPathExtension().lastPathComponent)
+                  var pending = try images([data], scanned: false, title: url.deletingPathExtension().lastPathComponent)
             else { throw Failure.unsupported }
             removeInboxCopy(url)
+            pending.fileName = url.lastPathComponent
             return pending
         }
         let copy = try storage.importCopy(of: url, in: .intake)
         removeInboxCopy(url)
-        return PendingImport(source: .file(copy, kind), suggestedTitle: url.deletingPathExtension().lastPathComponent)
+        return PendingImport(
+            source: .file(copy, kind), suggestedTitle: url.deletingPathExtension().lastPathComponent,
+            fileName: url.lastPathComponent)
+    }
+
+    /// What was brought in and won't be imported goes from mdoc's storage:
+    /// its copies, and the folder each was copied into once it is empty.
+    static func discard(_ pending: PendingImport) {
+        let files = FileManager.default
+        let urls: [URL] = switch pending.source {
+        case .file(let url, _): [url]
+        case .scan(let urls), .photos(let urls): urls
+        case .text, .newDocument, .sample: []
+        }
+        for url in urls {
+            try? files.removeItem(at: url)
+        }
+        for folder in Set(urls.map { $0.deletingLastPathComponent() })
+        where (try? files.contentsOfDirectory(atPath: folder.path))?.isEmpty == true {
+            try? files.removeItem(at: folder)
+        }
     }
 
     private func removeInboxCopy(_ url: URL) {

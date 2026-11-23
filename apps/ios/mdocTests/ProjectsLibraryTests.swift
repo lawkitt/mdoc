@@ -133,17 +133,15 @@ final class ProjectsLibraryTests: XCTestCase {
         XCTAssertEqual(found.documents.map(\.id), [seeded.tenancy])
     }
 
-    /// The Documents page lists what its case filter and its search both
-    /// let through; the Documents row lifts the filter, not the search.
-    func testTheDocumentsPageAppliesTheFilterAndTheSearch() throws {
+    /// All Documents lists what its search lets through, from every
+    /// Project and Unfiled.
+    func testAllDocumentsAppliesTheSearch() throws {
         let app = try app()
-        app.openProject(seeded.ellison)
+        app.open(.documents)
         app.library.query = "quotation"
         XCTAssertEqual(app.library.shownDocuments.map(\.id), [seeded.quotation])
         app.library.query = "tenancy"
-        XCTAssertTrue(app.library.shownDocuments.isEmpty, "another case's document")
-        app.open(.documents)
-        XCTAssertEqual(app.library.shownDocuments.map(\.id), [seeded.tenancy])
+        XCTAssertEqual(app.library.shownDocuments.map(\.id), [seeded.tenancy], "another Project's document")
     }
 
     // MARK: Intake
@@ -164,8 +162,8 @@ final class ProjectsLibraryTests: XCTestCase {
         }
     }
 
-    /// Intake started from a Project's page (the Documents page filtered to
-    /// it) lands in that Project; from the unfiltered page, in Unfiled.
+    /// Intake started from a Project's page lands in that Project; from All
+    /// Documents, Unfiled or Home, in Unfiled.
     func testIntakeStartedFromAProjectsPageLandsInIt() throws {
         let app = try app()
         app.openProject(seeded.harbour)
@@ -173,13 +171,15 @@ final class ProjectsLibraryTests: XCTestCase {
         let typed = try newDocument(app, typing: "Inventory of the flat")
         XCTAssertEqual(typed.snapshot.projectID, seeded.harbour)
         app.openProject(seeded.harbour)
-        XCTAssertTrue(app.library.shownDocuments.contains { $0.id == typed.id })
+        XCTAssertTrue(app.library.documents(in: seeded.harbour).contains { $0.id == typed.id })
 
         app.open(.documents)
         XCTAssertNil(app.intakeProject)
+        app.open(.unfiled)
+        XCTAssertNil(app.intakeProject)
         app.openProject(seeded.ellison)
         app.showStart()
-        XCTAssertNil(app.intakeProject, "Start is no Project's page")
+        XCTAssertNil(app.intakeProject, "Home is no Project's page")
     }
 
     // MARK: Case colours

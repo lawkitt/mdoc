@@ -1,16 +1,33 @@
 use super::*;
 use crate::{
-    document_session::{DocumentPhase, MentionState, ReviewAction, Scope},
-    library::TextRange,
+    document_session::{DocumentPhase, DocumentSession, MentionState, ReviewAction, Scope},
     test_support::Scratch,
+    text::TextRange,
+    vault::Vault,
 };
+use std::sync::Arc;
 
-fn library(scratch: &Scratch) -> Arc<Library> {
-    Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap()
+fn vault(scratch: &Scratch) -> Arc<Vault> {
+    Vault::open(
+        scratch.path().join("vault").display().to_string(),
+        vec![3; 32],
+    )
+    .unwrap()
 }
 
 fn title(text: &str) -> Option<String> {
     first_line_title(text.into())
+}
+
+/// A new document as the apps make one: begun empty, then saved, as the
+/// import's save does; its session and id.
+fn new_document(vault: &Arc<Vault>, name: &str) -> (Arc<DocumentSession>, String) {
+    let session = DocumentSession::new();
+    session
+        .import_text_as(String::new(), name.into(), DocumentOrigin::New)
+        .unwrap();
+    let id = session.save_into_vault(vault.clone()).unwrap().id;
+    (session, id)
 }
 
 fn end(session: &DocumentSession) -> TextRange {
@@ -19,19 +36,6 @@ fn end(session: &DocumentSession) -> TextRange {
         start: len,
         end: len,
     }
-}
-
-/// A new document as the apps make one: begun empty in a case of its own
-/// named after it, then saved, as the import's save does.
-fn new_document(library: &Arc<Library>, name: &str) -> Arc<DocumentSession> {
-    let case = library.create_case(name.into()).unwrap();
-    let session = DocumentSession::new();
-    session
-        .import_text_as(String::new(), name.into(), DocumentOrigin::New)
-        .unwrap();
-    session.join_case(library.clone(), case.id).unwrap();
-    session.save(library.clone()).unwrap();
-    session
 }
 
 fn typed(session: &DocumentSession, text: &str) {
@@ -88,170 +92,125 @@ fn a_long_first_line_is_cut_at_a_word() {
     assert_eq!(title(&word).unwrap().chars().count(), MAX_TITLE_CHARS);
 }
 
-/// A new document's title, its file and its case follow the first line
-/// as it is typed, and keep following after it reopens.
+/// A new document's title follows the first line as it is typed, in its
+/// record too, and keeps following after it reopens, until the user
+/// renames it.
 #[test]
 fn a_new_document_follows_its_first_line_until_renamed() {
     let scratch = Scratch::new();
-    let library = library(&scratch);
-    let session = new_document(&library, "New document");
+    let vault = vault(&scratch);
+    let (session, id) = new_document(&vault, "New document");
     assert_eq!(session.info().unwrap().origin, DocumentOrigin::New);
-    assert_eq!(session.follow_first_line(library.clone()).unwrap(), None);
+    let follow = |session: &DocumentSession| session.follow_first_line_in_vault(vault.clone());
+    assert_eq!(follow(&session).unwrap(), None);
 
     typed(&session, "# Lease");
-    let renamed = session.follow_first_line(library.clone()).unwrap().unwrap();
-    assert_eq!(renamed.title, "Lease");
-    assert_eq!(renamed.case.unwrap().name, "Lease");
-    assert!(renamed.path.unwrap().ends_with("Lease.md"));
+    assert_eq!(follow(&session).unwrap().as_deref(), Some("Lease"));
     // The line as it was: nothing to rename.
-    assert_eq!(session.follow_first_line(library.clone()).unwrap(), None);
+    assert_eq!(follow(&session).unwrap(), None);
     typed(&session, " agreement\n\nThe tenant pays.");
     assert_eq!(
-        session
-            .follow_first_line(library.clone())
-            .unwrap()
-            .unwrap()
-            .title,
-        "Lease agreement"
+        follow(&session).unwrap().as_deref(),
+        Some("Lease agreement")
     );
-    let saved = session.save_pending(library.clone()).unwrap().unwrap();
-    let summary = library.document_summaries().unwrap();
-    assert_eq!(summary[0].title, "Lease agreement");
-    assert_eq!(summary[0].origin, DocumentOrigin::New);
+    session
+        .save_pending_into_vault(vault.clone())
+        .unwrap()
+        .unwrap();
+    let listed = vault.document(id.clone()).unwrap();
+    assert_eq!(listed.title, "Lease agreement");
+    assert_eq!(listed.origin, DocumentOrigin::New);
 
     // Reopened, it is still a new document, and its line still names it.
     let reopened = DocumentSession::new();
-    reopened.open_document(library.clone(), saved.path).unwrap();
+    reopened.open_from_vault(vault.clone(), id.clone()).unwrap();
     assert_eq!(reopened.info().unwrap().origin, DocumentOrigin::New);
-    assert_eq!(reopened.follow_first_line(library.clone()).unwrap(), None);
+    assert_eq!(follow(&reopened).unwrap(), None);
     reopened
         .type_text(TextRange { start: 2, end: 7 }, "Rental".into())
         .unwrap();
     assert_eq!(
-        reopened
-            .follow_first_line(library.clone())
-            .unwrap()
-            .unwrap()
-            .title,
-        "Rental agreement"
+        follow(&reopened).unwrap().as_deref(),
+        Some("Rental agreement")
     );
 
     // Renamed by the user, it stops following, also when reopened.
-    let renamed = reopened
-        .rename_document(library.clone(), "Flat 3".into())
+    reopened
+        .rename_in_vault(vault.clone(), "Flat 3".into())
         .unwrap();
     assert_eq!(reopened.info().unwrap().origin, DocumentOrigin::Ordinary);
     typed(&reopened, "\nMore");
     reopened
         .type_text(TextRange { start: 2, end: 8 }, "Office".into())
         .unwrap();
-    assert_eq!(reopened.follow_first_line(library.clone()).unwrap(), None);
-    reopened.save_pending(library.clone()).unwrap();
+    assert_eq!(follow(&reopened).unwrap(), None);
+    reopened.save_pending_into_vault(vault.clone()).unwrap();
     let again = DocumentSession::new();
-    again
-        .open_document(library.clone(), renamed.path.unwrap())
-        .unwrap();
+    again.open_from_vault(vault.clone(), id).unwrap();
     assert_eq!(again.info().unwrap().origin, DocumentOrigin::Ordinary);
     assert_eq!(again.snapshot().unwrap().title, "Flat 3");
 }
 
-/// A first line another document's title has gives a numbered title once,
-/// not a rename at every pause.
-#[test]
-fn a_taken_title_is_numbered_once() {
-    let scratch = Scratch::new();
-    let library = library(&scratch);
-    let other = DocumentSession::new();
-    other.import_text("Taken".into(), "Lease".into()).unwrap();
-    other.save(library.clone()).unwrap();
-    let session = new_document(&library, "New document");
-    typed(&session, "Lease");
-    let renamed = session.follow_first_line(library.clone()).unwrap().unwrap();
-    assert_eq!(renamed.title, "Lease 2");
-    assert_eq!(session.follow_first_line(library.clone()).unwrap(), None);
-}
-
-/// Before its first save only the title and its empty case change.
+/// Before its first save only the title changes; the save keeps it.
 #[test]
 fn an_unsaved_new_document_follows_too() {
     let scratch = Scratch::new();
-    let library = library(&scratch);
-    let case = library.create_case("New document".into()).unwrap();
+    let vault = vault(&scratch);
     let session = DocumentSession::new();
     session
         .import_text_as(String::new(), "New document".into(), DocumentOrigin::New)
         .unwrap();
-    session.join_case(library.clone(), case.id.clone()).unwrap();
     typed(&session, "Notes");
-    let renamed = session.follow_first_line(library.clone()).unwrap().unwrap();
-    assert_eq!((renamed.path, renamed.title.as_str()), (None, "Notes"));
-    assert_eq!(library.case_info(case.id).unwrap().name, "Notes");
-    let saved = session.save(library.clone()).unwrap();
-    assert!(saved.path.ends_with("Notes.md"));
+    assert_eq!(
+        session.follow_first_line_in_vault(vault.clone()).unwrap(),
+        Some("Notes".into())
+    );
+    assert!(vault.documents().is_empty());
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    assert_eq!(vault.document(saved.id).unwrap().title, "Notes");
 }
 
-/// Left empty, a new document goes with its own case; with text, renamed,
-/// or not new, it stays.
+/// Left empty, a new document goes; with text, renamed, or not new, it
+/// stays.
 #[test]
-fn an_empty_new_document_is_discarded_with_its_case() {
+fn an_empty_new_document_is_discarded() {
     let scratch = Scratch::new();
-    let library = library(&scratch);
-    let session = new_document(&library, "New document");
+    let vault = vault(&scratch);
+    let discard = |session: &DocumentSession| session.discard_if_empty_in_vault(vault.clone());
+    let (session, _) = new_document(&vault, "New document");
     // Typed and deleted again: empty is empty.
     typed(&session, "x\n");
     session
         .type_text(TextRange { start: 0, end: 2 }, String::new())
         .unwrap();
-    assert!(session.discard_if_empty(library.clone()).unwrap());
-    assert!(library.document_summaries().unwrap().is_empty());
-    assert!(library.cases().cases.is_empty());
+    assert!(discard(&session).unwrap());
+    assert!(vault.documents().is_empty());
     assert!(session.snapshot().is_err());
-    assert!(!session.discard_if_empty(library.clone()).unwrap());
+    assert!(!discard(&session).unwrap());
 
-    let kept = new_document(&library, "New document");
+    let (kept, _) = new_document(&vault, "New document");
     typed(&kept, "Words");
-    assert!(!kept.discard_if_empty(library.clone()).unwrap());
+    assert!(!discard(&kept).unwrap());
 
-    let renamed = new_document(&library, "Second");
+    let (renamed, _) = new_document(&vault, "Second");
     renamed
-        .rename_document(library.clone(), "Named".into())
+        .rename_in_vault(vault.clone(), "Named".into())
         .unwrap();
-    assert!(!renamed.discard_if_empty(library.clone()).unwrap());
+    assert!(!discard(&renamed).unwrap());
 
     let ordinary = DocumentSession::new();
     ordinary.import_text(String::new(), "Empty".into()).unwrap();
-    ordinary.save(library.clone()).unwrap();
-    assert!(!ordinary.discard_if_empty(library.clone()).unwrap());
-    assert_eq!(library.document_summaries().unwrap().len(), 3);
+    ordinary.save_into_vault(vault.clone()).unwrap();
+    assert!(!discard(&ordinary).unwrap());
+    assert_eq!(vault.documents().len(), 3);
 }
 
-/// A case that holds something else stays when the new document goes.
-#[test]
-fn a_case_with_other_documents_stays() {
-    let scratch = Scratch::new();
-    let library = library(&scratch);
-    let case = library.create_case("Riverside".into()).unwrap();
-    let member = DocumentSession::new();
-    member.import_text("Kept".into(), "Kept".into()).unwrap();
-    member.join_case(library.clone(), case.id.clone()).unwrap();
-    member.save(library.clone()).unwrap();
-    let session = DocumentSession::new();
-    session
-        .import_text_as(String::new(), "New document".into(), DocumentOrigin::New)
-        .unwrap();
-    session.join_case(library.clone(), case.id.clone()).unwrap();
-    session.save(library.clone()).unwrap();
-    assert!(session.discard_if_empty(library.clone()).unwrap());
-    let info = library.case_info(case.id).unwrap();
-    assert_eq!(info.documents.len(), 1);
-}
-
-/// The sample is told apart in the library's list, so Try a sample finds
-/// it whatever it is called now.
+/// The sample is told apart in the Vault's list, so Try a sample finds it
+/// whatever it is called now.
 #[test]
 fn the_sample_is_known_in_the_list() {
     let scratch = Scratch::new();
-    let library = library(&scratch);
+    let vault = vault(&scratch);
     let session = DocumentSession::new();
     session
         .import_text_as(
@@ -260,15 +219,18 @@ fn the_sample_is_known_in_the_list() {
             DocumentOrigin::Sample,
         )
         .unwrap();
-    let saved = session.save(library.clone()).unwrap();
-    library
-        .rename_document(saved.path, "Mine now".into())
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    vault
+        .rename_document(saved.id.clone(), "Mine now".into())
         .unwrap();
-    let summaries = library.document_summaries().unwrap();
-    assert_eq!(summaries[0].title, "Mine now");
-    assert_eq!(summaries[0].origin, DocumentOrigin::Sample);
+    let listed = vault.document(saved.id).unwrap();
+    assert_eq!(listed.title, "Mine now");
+    assert_eq!(listed.origin, DocumentOrigin::Sample);
     // Its follow does nothing: only a new document follows its line.
-    assert_eq!(session.follow_first_line(library.clone()).unwrap(), None);
+    assert_eq!(
+        session.follow_first_line_in_vault(vault.clone()).unwrap(),
+        None
+    );
 }
 
 /// Find names again: a second scan over the edited text
@@ -283,13 +245,10 @@ fn finding_names_again_proposes_typed_names_and_keeps_decisions() {
     assert_eq!(first.proposed, 1);
     let mention = first.mentions[0].range;
     session
-        .review(
-            ReviewAction::Replace {
-                mention: mention_id(&first, mention),
-                scope: Scope::All,
-            },
-            None,
-        )
+        .review(ReviewAction::Replace {
+            mention: mention_id(&first, mention),
+            scope: Scope::All,
+        })
         .unwrap();
     typed(&session, " Copy bob@example.com.");
     let again = session.scan(None, None).unwrap();

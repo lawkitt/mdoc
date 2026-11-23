@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Usage: scripts/ios/ios-device-test.sh <hardware UDID> [auto|detector|below-floor]
-# The device UI tests on a connected iPhone: the review flow and,
-# by the phone's tier, the long jobs at the detector tier
+# The device UI tests on a connected iPhone: the review flow, Restore with
+# mdoc from Notes (DeviceRestoreUITests: it makes a scratch note and deletes
+# it) and, by the phone's tier, the long jobs at the detector tier
 # (DeviceLongJobsUITests) or the below-floor test (DeviceBelowFloorUITests),
 # through the real background task the Simulator refuses. `auto` (the
 # default) reads the tier from the phone's model; `below-floor` also runs on
@@ -93,6 +94,7 @@ status=0
 xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "id=$device" \
   -derivedDataPath "$derived" -resultBundlePath "$result" \
   -only-testing:mdocUITests/ReviewFlowUITests -only-testing:"mdocUITests/$tier_test" \
+  -only-testing:mdocUITests/DeviceRestoreUITests \
   -quiet test-without-building || status=$?
 
 if ! after=$(crash_logs); then

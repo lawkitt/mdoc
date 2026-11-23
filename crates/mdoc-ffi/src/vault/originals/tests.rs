@@ -121,7 +121,7 @@ fn a_saved_import_is_never_pending_conversion() {
     let text = (session.import_file(docx.display().to_string(), ImportOptions::default(), None))
         .unwrap()
         .text;
-    let all = crate::library::TextRange {
+    let all = crate::text::TextRange {
         start: 0,
         end: text.len() as u64,
     };
@@ -455,11 +455,7 @@ fn a_source_gone_at_the_end_of_its_import_keeps_no_original() {
 fn a_three_page_scan_import_keeps_its_pdf_end_to_end() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
-    let library = crate::Library::new(
-        scratch.path().join("library").display().to_string(),
-        vec![3; 32],
-    )
-    .unwrap();
+    let kept = scratch.path().join("ocr").display().to_string();
     let models = scratch.path().join("models");
     let installed = mdoc_import::ocr::install_config_in(
         &models,
@@ -493,7 +489,7 @@ fn a_three_page_scan_import_keeps_its_pdf_end_to_end() {
         .collect();
     let session = DocumentSession::new();
     session
-        .import_images_in(library, pages, "Lease".into(), options, None)
+        .import_images_resuming(kept, pages, "Lease".into(), options, None)
         .unwrap();
     let id = session.save_into_vault(vault.clone()).unwrap().id;
     let original = vault.original(id.clone()).unwrap().unwrap();

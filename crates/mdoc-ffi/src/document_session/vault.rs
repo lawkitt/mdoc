@@ -1,10 +1,8 @@
 //! A document kept in the Vault (`crate::vault::Vault`, #1091): opened by
 //! id, saved with its review, and its names kept in its Project's mapping
-//! or, Unfiled, in its own (Decisions 4, 16 and 17). It stands beside the
-//! library's path (`saving`), which the apps use until they switch; a
-//! document is kept by one or the other, never both.
+//! or, Unfiled, in its own (Decisions 4, 16 and 17).
 //!
-//! A save is the library's: under the Vault handle's write lock, the
+//! A save runs under the Vault handle's write lock: the
 //! document first joins its Project as stored now when another document
 //! changed it since, then its names go into the Project and its record is
 //! written with its text, review and counts. The Project is written
@@ -76,15 +74,6 @@ pub struct SavedVaultChange {
     pub rejoined: bool,
 }
 
-/// A library call on a Vault document.
-pub(super) fn in_vault() -> CoreError {
-    CoreError::invalid("This document is in the Vault.")
-}
-
-fn in_library() -> CoreError {
-    CoreError::invalid("This document is in the library, not the Vault.")
-}
-
 fn changed_elsewhere() -> CoreError {
     CoreError::case("The document changed elsewhere. Open it again.")
 }
@@ -95,8 +84,8 @@ impl DocumentSession {
     /// rescan, its names lined up with its Project's as they are now (a
     /// name another document renamed takes its new alias, one it added is
     /// proposed), and Undo starting afresh. A document with no saved
-    /// review (a move clears it) opens as a reopened case member does: its
-    /// Project's names proposed, and its aliases replaced.
+    /// review (a move clears it) opens with its Project's names proposed,
+    /// and its aliases replaced.
     pub fn open_from_vault(
         &self,
         vault: Arc<Vault>,
@@ -119,13 +108,7 @@ impl DocumentSession {
             unlocked_docx: None,
         };
         let opened = super::Opened {
-            path: None,
-            stored: Default::default(),
-            case: None,
-            member: None,
-            scanned: Some(document.scanned),
             origin: document.origin.into(),
-            reopened: true,
             vault: Some(FromVault { document, project }),
         };
         self.open(imported, &cancel, Some(opened))
@@ -142,34 +125,29 @@ impl DocumentSession {
     ) -> Result<ReviewSnapshot, CoreError> {
         let project = vault.store().project(&project_id)?;
         let _saving = self.lock_saving();
-        self.with_document(|document| {
-            if document.path.is_some() || document.case.is_some() {
-                return Err(in_library());
+        self.with_document(|document| match &document.vault {
+            Some(place) if place.project.as_deref() == Some(project_id.as_str()) => Ok(()),
+            Some(place) if place.id.is_some() => Err(CoreError::case(
+                "This document is saved in the Vault: move it instead.",
+            )),
+            Some(place) if place.project.is_some() => {
+                Err(CoreError::case("This document is in another Project."))
             }
-            match &document.vault {
-                Some(place) if place.project.as_deref() == Some(project_id.as_str()) => Ok(()),
-                Some(place) if place.id.is_some() => Err(CoreError::case(
-                    "This document is saved in the Vault: move it instead.",
-                )),
-                Some(place) if place.project.is_some() => {
-                    Err(CoreError::case("This document is in another Project."))
-                }
-                _ => {
-                    document.review.join(
-                        &project.mapping.exported(),
-                        &project.mapping.reserved_aliases(),
-                    )?;
-                    document.review.dismiss_pairs(&project.dismissed_hints);
-                    document.skip = project.skipped();
-                    document.vault = Some(Place {
-                        id: None,
-                        project: Some(project_id.clone()),
-                        revision: 0,
-                        synced: Some(project.mapping.identities.clone()),
-                        ready: false,
-                    });
-                    Ok(())
-                }
+            _ => {
+                document.review.join(
+                    &project.mapping.exported(),
+                    &project.mapping.reserved_aliases(),
+                )?;
+                document.review.dismiss_pairs(&project.dismissed_hints);
+                document.skip = project.skipped();
+                document.vault = Some(Place {
+                    id: None,
+                    project: Some(project_id.clone()),
+                    revision: 0,
+                    synced: Some(project.mapping.identities.clone()),
+                    ready: false,
+                });
+                Ok(())
             }
         })
     }
@@ -184,9 +162,6 @@ impl DocumentSession {
         let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
-        if document.path.is_some() || document.case.is_some() {
-            return Err(in_library());
-        }
         document.vault.get_or_insert_with(Place::default);
         loop {
             let mut pending = document.vault_pending();
@@ -210,10 +185,14 @@ impl DocumentSession {
         }
     }
 
-    /// `save_pending` for a Vault document: what changed since the last
-    /// save, saved as `save_into_vault` does; none when nothing did, or the
-    /// document was never saved into the Vault (its first save is
-    /// `save_into_vault`).
+    /// Save what changed since the last save, as `save_into_vault` does;
+    /// none when nothing did, no document is read, or the document was
+    /// never saved into the Vault (its first save is `save_into_vault`).
+    /// Several review actions before it make one save. Safe to call from
+    /// any thread while review actions go on: an action during the save is
+    /// not in it and stays unsaved. A save that fails keeps the change
+    /// unsaved, for the next call. A document replaced by an import or open
+    /// during the save is not recorded as saved: save before replacing it.
     pub fn save_pending_into_vault(
         &self,
         vault: Arc<Vault>,
@@ -224,9 +203,6 @@ impl DocumentSession {
             let mut pending = {
                 let guard = self.lock_document();
                 match guard.as_ref() {
-                    Some(document) if document.path.is_some() || document.case.is_some() => {
-                        return Err(in_library().into());
-                    }
                     Some(document)
                         if document.saved.is_some()
                             && (document.has_unsaved_changes() || document.ready_owed(by_hand))
@@ -317,9 +293,6 @@ impl DocumentSession {
         if document.origin != DocumentOrigin::New || !document.review.text.trim().is_empty() {
             return Ok(false);
         }
-        if document.path.is_some() || document.case.is_some() {
-            return Err(in_library());
-        }
         if let Some(id) = document.vault.as_ref().and_then(|p| p.id.as_ref()) {
             vault.delete_document(id.clone())?;
         }
@@ -329,7 +302,7 @@ impl DocumentSession {
 
     /// The file family a first save into the Vault records, when the app
     /// knows better than the import: a camera page is `Scan`, where
-    /// `import_images_in` takes every image as `Image`. A document saved
+    /// `import_images_resuming` takes every image as `Image`. A document saved
     /// already keeps the kind it was saved with.
     pub fn set_source_kind(&self, kind: DocumentSourceKind) -> Result<(), CoreError> {
         let mut guard = self.lock_document();
@@ -492,9 +465,6 @@ impl Document {
         title: &str,
         origin: DocumentOrigin,
     ) -> Result<(), CoreError> {
-        if self.path.is_some() || self.case.is_some() {
-            return Err(in_library());
-        }
         let origin = if self.origin == DocumentOrigin::New {
             origin
         } else {
@@ -625,6 +595,13 @@ impl Pending {
     /// one last joined or saved it, which must be joined first.
     fn write(&mut self, vault: &Vault) -> Result<Option<Written>, CoreError> {
         let _writes = vault.lock_writes();
+        #[cfg(test)]
+        if let Some(hook) = (vault.during_save.lock())
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            hook();
+        }
         let store = vault.store();
         let id = match &self.place.id {
             Some(id) => {
@@ -734,7 +711,7 @@ impl Pending {
         let mut changed = project.clone();
         changed.mapping.merge_from(&self.identities, Some(document));
         changed.mapping.refill(&self.kept, document);
-        // Under the aliases the merge gave, as the case save checked them.
+        // Under the aliases the merge gave.
         let used = self.used_elsewhere(vault, &changed.mapping, id, document);
         (changed.mapping).drop_wordings(&self.not_names, document, |identity| {
             used.contains(&identity.alias)

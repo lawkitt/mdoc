@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// The sidebar (docs/specs/mobile.md, Navigation), after the Claude app's: search
-/// at the top, the Cases and Documents rows, then *To review* and *Recent*,
-/// with Settings and New floating at the bottom. On iPhone it lies under the
-/// screen, which slides aside to show it; on a wide iPad it is the standing
-/// left column.
+/// The sidebar (docs/specs/mobile.md, Navigation), after the Claude app's:
+/// search at the top, then Home, *To review*, the Projects, Unfiled and All
+/// Documents, with Settings and New floating at the bottom. On iPhone it
+/// lies under the screen, which slides aside to show it; on a wide iPad it
+/// is the standing left column.
 struct SidebarView: View {
     @Bindable var app: AppModel
     @State private var query = ""
@@ -16,14 +16,7 @@ struct SidebarView: View {
     private var library: LibraryModel { app.library }
     private var navigator: Navigator { app.navigator }
 
-    /// Recent stops at this many; the Documents page has the rest.
-    static let recentLimit = 20
-
     private var toReview: [LibraryDocument] { library.toReview }
-
-    private var recent: [LibraryDocument] {
-        Array(library.documents.filter { $0.phase != .reviewing }.prefix(Self.recentLimit))
-    }
 
     private var matches: (documents: [LibraryDocument], projects: [ProjectSummary]) {
         library.search(query)
@@ -130,25 +123,62 @@ struct SidebarView: View {
 
     // MARK: Sections
 
+    /// Home, To review while names wait, the Projects (the first five,
+    /// All Projects and New Project), then Unfiled and All Documents
+    /// (#1091 Decision 33).
     @ViewBuilder
     private var sections: some View {
-        navRow(.projects, title: "Projects", systemImage: "briefcase")
-        navRow(.documents, title: "Documents", systemImage: "doc.on.doc")
+        homeRow
         if !toReview.isEmpty {
             header("To review")
             ForEach(toReview) { row($0) }
         }
-        if !recent.isEmpty {
-            header("Recent")
-            ForEach(recent) { row($0) }
+        header("Projects")
+        ForEach(library.topProjects) { summary in
+            projectRow(summary)
         }
-        if library.isEmpty {
-            Text("Documents you add show here.")
-                .font(Typography.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, Space.s)
-                .padding(.top, Space.m)
+        navRow(.projects, title: "All Projects", systemImage: "briefcase")
+        actionRow(title: "New Project", systemImage: "plus", id: "sidebar-new-project") {
+            navigator.present(.newProject)
         }
+        navRow(.unfiled, title: "Unfiled", systemImage: "tray")
+            .padding(.top, Space.m)
+        navRow(.documents, title: "All Documents", systemImage: "doc.on.doc")
+    }
+
+    private var homeRow: some View {
+        Button {
+            app.showStart()
+        } label: {
+            SidebarRowLabel(isSelected: navigator.destination == .start) {
+                Image(systemName: "house")
+                    .frame(width: iconWidth)
+                    .accessibilityHidden(true)
+                Text("Home")
+                Spacer(minLength: 0)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(navigator.destination == .start ? .isSelected : [])
+        .accessibilityIdentifier("sidebar-home")
+    }
+
+    private func actionRow(
+        title: LocalizedStringKey, systemImage: String, id: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            SidebarRowLabel(isSelected: false) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
+                    .frame(width: iconWidth)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
     }
 
     private func header(_ title: LocalizedStringKey) -> some View {
@@ -171,8 +201,8 @@ struct SidebarView: View {
                     .accessibilityHidden(true)
                 Text(title)
                 Spacer(minLength: 0)
-                if section == .projects, !library.projects.isEmpty {
-                    Text("\(library.projects.count)")
+                if let count = count(of: section), count > 0 {
+                    Text("\(count)")
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -183,11 +213,22 @@ struct SidebarView: View {
         .accessibilityIdentifier("sidebar-\(section.rawValue)")
     }
 
+    /// All Projects counts the Projects, Unfiled its documents.
+    private func count(of section: SidebarSection) -> Int? {
+        switch section {
+        case .projects: library.projects.count
+        case .unfiled: library.unfiled.count
+        case .documents: nil
+        }
+    }
+
     private func projectRow(_ summary: ProjectSummary) -> some View {
         Button {
             app.openProject(summary.id)
+            query = ""
+            searching = false
         } label: {
-            SidebarRowLabel(isSelected: false) {
+            SidebarRowLabel(isSelected: navigator.project == summary.id) {
                 ProjectDot(colour: summary.colour)
                     .frame(width: iconWidth)
                 Text(summary.name)
@@ -196,6 +237,8 @@ struct SidebarView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(navigator.project == summary.id ? .isSelected : [])
+        .accessibilityIdentifier("sidebar-project")
     }
 
     // MARK: Document rows

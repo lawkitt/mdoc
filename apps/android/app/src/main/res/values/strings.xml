@@ -28,6 +28,64 @@
     <string name="status_not_recognized">Text not recognized yet</string>
     <string name="status_import_not_finished">Import not finished</string>
     <string name="status_nothing_found">Nothing found</string>
+    <string name="continue_label">Continue</string>
+    <string name="names_left">%1$d left</string>
+    <string name="continue_spoken">Continue %1$s, %2$s</string>
+    <string name="undo">Undo</string>
+    <string name="deleted_named">Deleted %1$s</string>
+
+    <!-- Sidebar (#1091 Decision 33) -->
+    <string name="show_sidebar">Show sidebar</string>
+    <string name="search_documents_and_projects">Search documents and Projects</string>
+    <string name="home">Home</string>
+    <string name="to_review">To review</string>
+    <string name="all_projects">All Projects</string>
+    <string name="new_project">New Project</string>
+    <string name="all_documents">All Documents</string>
+    <string name="documents">Documents</string>
+
+    <!-- Projects (#1091 Decisions 9, 29, 34) -->
+    <string name="no_projects_yet">No Projects yet</string>
+    <string name="no_projects_body">Each document you add lands in Unfiled, or in the Project whose page you add it from.</string>
+    <string name="name">Name</string>
+    <string name="create">Create</string>
+    <string name="new_project_body">Documents you add from its page land in it.</string>
+    <string name="rename_ellipsis">Rename…</string>
+    <string name="rename">Rename</string>
+    <string name="rename_project">Rename Project</string>
+    <string name="delete_project_ellipsis">Delete Project…</string>
+    <string name="delete_named_question">Delete “%1$s”?</string>
+    <string name="move_documents_to_unfiled">Move its documents to Unfiled</string>
+    <string name="delete_them">Delete them</string>
+    <string name="delete_project_question">Delete Project?</string>
+    <string name="project_has_no_documents">“%1$s” has no documents. Its names and its AI replies are deleted with it.</string>
+    <string name="project_menu">Project</string>
+    <string name="replies">Replies</string>
+    <string name="names">Names</string>
+    <string name="project_no_documents_body">What you add with + lands in this Project.</string>
+    <string name="no_replies_yet">No replies yet</string>
+    <string name="no_replies_body">AI replies you save with Restore with mdoc or Paste reply show here, restored.</string>
+    <string name="project_no_names_body">The names its documents replace show here, with their aliases.</string>
+    <string name="names_and_wordings">Names and wordings</string>
+    <string name="always_replace">Always replace</string>
+    <string name="never_replace">Never replace</string>
+    <string name="none">None</string>
+    <string name="remove">Remove</string>
+    <string name="remove_named">Remove “%1$s”</string>
+    <string name="no_results">No results for “%1$s”</string>
+    <string name="copied">Copied</string>
+
+    <!-- Unfiled (#1091 Decision 5) -->
+    <string name="nothing_in_unfiled">Nothing in Unfiled</string>
+    <string name="unfiled_body">Documents you add outside a Project land here.</string>
+    <string name="select">Select</string>
+    <string name="close">Close</string>
+
+    <!-- Repeated imports (#1091 Decision 7) -->
+    <string name="already_in_mdoc">“%1$s” is already in mdoc</string>
+    <string name="already_in_mdoc_body">Open the document you imported before, or import the file again as a new document.</string>
+    <string name="open_existing">Open Existing</string>
+    <string name="import_again">Import Again</string>
 
     <!-- Adding a document -->
     <string name="paste_text">Paste text</string>
@@ -215,6 +273,30 @@
     <plurals name="values_restored">
         <item quantity="one">%1$d value restored</item>
         <item quantity="other">%1$d values restored</item>
+    </plurals>
+    <plurals name="document_count">
+        <item quantity="one">%1$d document</item>
+        <item quantity="other">%1$d documents</item>
+    </plurals>
+    <plurals name="deleted_documents">
+        <item quantity="one">Deleted %1$d document</item>
+        <item quantity="other">Deleted %1$d documents</item>
+    </plurals>
+    <plurals name="delete_count">
+        <item quantity="one">Delete %1$d</item>
+        <item quantity="other">Delete %1$d</item>
+    </plurals>
+    <plurals name="selected_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <plurals name="names_left_spoken">
+        <item quantity="one">%1$d name left to review</item>
+        <item quantity="other">%1$d names left to review</item>
+    </plurals>
+    <plurals name="delete_project_body">
+        <item quantity="one">Its document can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way.</item>
+        <item quantity="other">Its %1$d documents can move to Unfiled, or be deleted with it. Its own AI replies are deleted either way.</item>
     </plurals>
     <plurals name="pages_scanned">
         <item quantity="one">%1$d page scanned.</item>

@@ -70,16 +70,39 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertFalse(app.navigator.searchPending)
     }
 
-    /// The Documents row lists every document, whatever case was tapped
-    /// before (#676).
-    func testTheDocumentsRowClearsAProjectsFilter() throws {
+    /// A Project's row opens its page, never a filtered list; All Documents
+    /// lists every document, and Unfiled those in no Project (#1091
+    /// Decisions 33 and 34).
+    func testAProjectsRowOpensItsPage() throws {
         let app = try app()
+        app.navigator.showsSidebar = true
         app.openProject(seeded.harbour)
-        XCTAssertEqual(app.navigator.section, .documents)
-        XCTAssertEqual(app.library.projectFilter, seeded.harbour)
+        XCTAssertEqual(app.navigator.destination, .project(seeded.harbour))
+        XCTAssertNil(app.navigator.section)
+        XCTAssertFalse(app.navigator.showsSidebar)
+        XCTAssertEqual(app.library.documents(in: seeded.harbour).map(\.id), [seeded.tenancy])
+
         app.open(.documents)
-        XCTAssertNil(app.library.projectFilter)
+        XCTAssertNil(app.navigator.project)
         XCTAssertEqual(app.library.shownDocuments.count, app.library.documents.count)
+        app.open(.unfiled)
+        XCTAssertTrue(app.library.unfiled.isEmpty, "every seeded document is in a Project")
+
+        // A Project that is gone opens nothing.
+        app.openProject(ProjectID(rawValue: String(repeating: "0", count: 32)))
+        XCTAssertEqual(app.navigator.destination, .section(.unfiled))
+    }
+
+    /// The sidebar's Projects: the first five in the Vault's order, pinned
+    /// first, then most recently updated (#1091 Decision 28); All Projects
+    /// has the rest.
+    func testTheSidebarShowsFiveProjects() throws {
+        let app = try app()
+        for name in ["One", "Two", "Three", "Four", "Five"] {
+            app.newProject(named: name)
+        }
+        XCTAssertEqual(app.library.projects.count, 7)
+        XCTAssertEqual(app.library.topProjects.map(\.id), Array(app.library.projects.prefix(5)).map(\.id))
     }
 
     /// Move to case › New case… names the case as every new case is named

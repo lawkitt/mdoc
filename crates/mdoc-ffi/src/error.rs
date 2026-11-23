@@ -23,8 +23,8 @@ pub enum CoreError {
     /// A review transition did not apply: the text or mention changed.
     #[error("{message}")]
     Review { message: String },
-    /// Reading or writing a case or the Vault, or one of their rules (one
-    /// case per document, a document saved elsewhere since it was read).
+    /// Reading or writing the Vault, or one of its rules (one Project per
+    /// document, a document saved elsewhere since it was read).
     #[error("{message}")]
     Case { message: String },
     /// Verifying or installing a model file.
@@ -54,7 +54,7 @@ pub enum ReviewError {
     /// mention that moved, no document), in its own words.
     #[error("{message}")]
     Refused { message: String },
-    /// Reading or writing the document or its case failed.
+    /// Reading or writing the document or its Project failed.
     #[error("{message}")]
     Storage { message: String },
 }
@@ -119,12 +119,6 @@ impl From<mdoc_detect::DetectError> for CoreError {
                 message: error.to_string(),
             },
         }
-    }
-}
-
-impl From<mdoc_store::cases::CaseError> for CoreError {
-    fn from(error: mdoc_store::cases::CaseError) -> Self {
-        Self::case(error.to_string())
     }
 }
 

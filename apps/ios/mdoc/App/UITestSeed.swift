@@ -42,6 +42,34 @@ enum UITestSeed {
         }
     }
 
+    /// The Restore extension's device test (`MDOC_SEED_RESTORE=1`): a
+    /// Project with a document and an Unfiled document, each with an email
+    /// replaced, so both can be shared at once.
+    static let restoreProject = "Restore check"
+    static let restoreProjectDocument = "Project letter"
+    static let restoreUnfiledDocument = "Unfiled note"
+
+    static func seedRestorePlaces(in app: AppModel) {
+        Task {
+            guard let library = app.core.library as? RealLibrary,
+                  let project = try? library.vault.createProject(name: restoreProject) else { return }
+            let seeds: [(String, String, ProjectID?)] = [
+                (restoreProjectDocument, "Write to maya.ellison@example.com today.", ProjectID(rawValue: project.id)),
+                (restoreUnfiledDocument, "Ask ann.baker@example.com first.", nil),
+            ]
+            for (title, text, project) in seeds {
+                guard let session = try? app.library.importDocument(
+                        PendingImport(source: .text(text), suggestedTitle: title), title: title, into: project),
+                      let model = try? app.documents.open(session.id) else { return }
+                await model.recognize()
+                await model.findNames()
+                model.replaceAllPending()
+            }
+            app.saveChanges()
+            app.library.refresh()
+        }
+    }
+
     private static func source(_ file: URL, storage: MdocStorage) -> ImportSource? {
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: file.path, isDirectory: &isFolder), isFolder.boolValue {

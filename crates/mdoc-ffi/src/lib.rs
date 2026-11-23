@@ -1,12 +1,10 @@
 //! The mobile apps' bridge to the GUI-free core, through UniFFI.
 //!
-//! Rust owns document, review, case and restore state; Swift and Kotlin hold
-//! view state only. Coarse objects, one module each:
-//! [`library`] (cases, stored documents, storage paths, restoring replies),
-//! [`vault`] (the encrypted Vault's Projects and Documents, which replace
-//! the library's cases and files once the apps switch),
-//! [`document_session`] (import and OCR, scan, review, Copy for AI and Share
-//! text, saving into a case or the Vault) and [`setup`] (models that fit
+//! Rust owns document, review, Project and restore state; Swift and Kotlin
+//! hold view state only. Coarse objects, one module each:
+//! [`vault`] (the encrypted Vault's Projects, Documents, originals and AI
+//! Replies), [`document_session`] (import and OCR, scan, review, Copy for
+//! AI and Share text, saving into the Vault) and [`setup`] (models that fit
 //! the device, verifying and installing downloads). [`editor`] exports the stateless
 //! editing rules edit mode calls, and [`original`] renders a DOCX
 //! file for the Original pane.
@@ -15,16 +13,16 @@ uniffi::setup_scaffolding!();
 pub mod document_session;
 pub mod editor;
 mod error;
-pub mod library;
+pub mod file_names;
 pub mod markdown;
 #[cfg(not(target_os = "android"))]
 pub mod original;
 pub mod setup;
+pub mod text;
 pub mod vault;
 
 pub use document_session::DocumentSession;
 pub use error::{CoreError, ReviewError};
-pub use library::Library;
 pub use setup::Setup;
 pub use vault::Vault;
 

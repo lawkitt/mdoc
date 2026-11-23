@@ -105,12 +105,13 @@ final class ParityTests: XCTestCase {
         XCTAssertEqual(restored.unrecognised, 0)
     }
 
-    /// The Restore extension's path: a saved document's case restores a
-    /// reply exactly as the document's session does.
-    func testLibraryRestoreMatchesTheSession() throws {
+    /// The Restore extension's path: its handle on the Vault restores a
+    /// reply to a saved document exactly as the document's session does.
+    func testReplyVaultRestoreMatchesTheSession() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-parity-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
-        let library = try MdocFFI.Library(root: root.path, caseKey: Data(repeating: 42, count: 32))
+        let key = Data(repeating: 42, count: 32)
+        let vault = try Vault.open(root: root.path, key: key)
         let identities = try JSONDecoder().decode(
             [ExportedIdentity].self, from: Data(read("tests/fixtures/restore/claude-en/identities.json").utf8))
         let markdown = try read("docs/product-media/Settlement agreement.md")
@@ -119,11 +120,12 @@ final class ParityTests: XCTestCase {
         _ = try session.importText(text: markdown, title: "Settlement agreement")
         _ = try session.addCandidates(candidates: Self.candidates(markdown, identities))
         _ = try session.replaceAll()
-        let saved = try session.save(library: library)
+        let saved = try session.saveIntoVault(vault: vault)
         let copied = try session.copyForAi()
         let reply = "Summary:\n\n" + copied[try XCTUnwrap(copied.range(of: "\n\n---\n\n")).upperBound...]
         let inSession = try session.restoreReply(reply: reply)
-        let inExtension = try library.restore(caseId: saved.case.id, reply: reply)
+        let inExtension = try ReplyVault.open(root: root.path, key: key)
+            .restoreText(sharedFrom: .document(id: saved.id), markdown: reply)
         XCTAssertEqual(inExtension.text, inSession.text)
         // "Maya" alone joined her full name (ADR 0092), so it restores as that.
         XCTAssertEqual(

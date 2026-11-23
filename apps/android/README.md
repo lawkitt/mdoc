@@ -88,9 +88,8 @@ emulator: a keep rule R8 needs and the rules lack fails the job.
 
 ## How it fits together
 
-- `core/AppCore.kt` makes the core's `MdocLibrary` (cases, stored documents)
-  and `Setup` (models). In Kotlin the core's `Library` is `MdocLibrary`
-  (`crates/mdoc-ffi/uniffi.toml`).
+- `core/AppCore.kt` makes the core's `Vault` (Projects, documents, replies),
+  the Restore screen's `ReplyVault`, and `Setup` (models).
 - The case key is 32 random bytes wrapped by an Android Keystore key
   (`storage/CaseKeyStore.kt`); documents, cases and models stay out of
   backups and device transfers (`res/xml/data_extraction_rules.xml`).

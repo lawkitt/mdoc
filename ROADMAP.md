@@ -149,9 +149,6 @@ Features are frozen until items 13–19 land (Q4).
     grill ideas and Q7.* After sharing, Start offers to restore a reply
     whose aliases match the case, through the system paste button, so
     there's no paste prompt. *Done when:* grilled and built, after item 19.
-22. **[Mobile] To grill: a case's page.** *From the sidebar grill ideas.*
-    A case's names, documents and replies (desktop's ADR 0077), with Delete
-    a case (Later) on it. *Done when:* grilled and built, after 20 and 21.
 
 23. **[Mobile] Editing (iOS 0.3).** *From the
     [mobile editor grill](https://github.com/lawkitt/mdoc/blob/0aaf8f706e754d8b4c9ad905305b7bac194218a1/docs/design/mobile-editor-grill-2026-11-09.md)
@@ -390,20 +387,6 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–22 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
-10. **[iOS] Restore extension and saved replies on the Vault.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Restore with mdoc
-    reads a Project and saves the reply through the Vault; the app lists it
-    and shows it restored. *Blocked by:* items 8, 9. *Done when:* a reply
-    shared to the extension on a device appears in the app, restored.
-11. **[iOS] Vault sidebar and Project page.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Sidebar: Search,
-    Home, To review, the top five Projects with All Projects and New Project,
-    Unfiled / All Documents. A Project page titled with its colour and name:
-    `Documents` · `Replies` · `Names`, a `+` that adds into it, and Delete
-    with the move-or-delete question. Unfiled has multi-select delete. Folds
-    in iOS items 22 and 37. *Blocked by:* items 9, 10. *Done when:* UI tests
-    cover the page, the delete question and multi-select delete, and a device
-    check passes.
 13. **[Android] Android sidebar and Project page.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As item 11.
     *Blocked by:* item 12. *Done when:* the Android job passes with tests of

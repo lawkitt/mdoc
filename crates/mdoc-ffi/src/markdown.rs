@@ -21,7 +21,7 @@ use mdoc_markdown::{
     tables::{Align, table_cell_breaks, table_cell_ranges, table_cell_spans, table_regions},
 };
 
-use crate::library::TextRange;
+use crate::text::TextRange;
 
 /// An inline piece of Markdown. A span can be several kinds at once (a bold
 /// link inside a highlight), so the kinds are flags.

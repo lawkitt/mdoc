@@ -40,8 +40,7 @@ class OriginalTest {
         assertTrue(session.snapshot().original is OriginalSource.Pdf)
 
         compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(title).performClick()
+        compose.openDocument(title)
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Original")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Original").performClick()
         compose.waitUntil(10_000) {
@@ -76,8 +75,7 @@ class OriginalTest {
         assertTrue((session.snapshot().original as OriginalSource.Pdf).file is OriginalData.Stored)
 
         compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(title).performClick()
+        compose.openDocument(title)
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Original")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Original").performClick()
         compose.waitUntil(10_000) {

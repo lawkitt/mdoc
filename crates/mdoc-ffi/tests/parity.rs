@@ -4,9 +4,10 @@
 //! `tests/fixtures/mobile-parity/` are the Swift parity suite's too; with
 //! `MDOC_BLESS_PARITY=1` this test rewrites them.
 use mdoc_ffi::{
-    DocumentSession, Library, Vault,
+    DocumentSession, Vault,
     document_session::{Candidate, Category, ImportOptions, MentionState, ReviewSnapshot, Scope},
-    library::TextRange,
+    text::TextRange,
+    vault::{ReplyVault, SharedFrom},
 };
 use mdoc_history::{EditorTransaction, HistoryChange, SourceEdit};
 use mdoc_pii::{
@@ -591,70 +592,6 @@ fn candidates(
 
 // ---- Tests ----------------------------------------------------------------
 
-/// The captured Claude round trip: the demo joins a case holding
-/// the reviewed mapping, Copy for AI gives exactly what desktop put on the
-/// clipboard (`sent.md`), and the reply restores to `expected.md` through
-/// the session (desktop's reply box) and through the library (the Restore
-/// extension).
-#[test]
-fn the_captured_claude_round_trip_matches_desktop() {
-    let scratch = Scratch::new("claude");
-    let capture = repo().join("tests/fixtures/restore/claude-en");
-    let mapping = identities(&read(&capture.join("identities.json")));
-    let case = mdoc_store::cases::Case::new("Bennett".into(), &mapping, None);
-    mdoc_store::cases::Store::with_key(scratch.0.join("cases"), &KEY)
-        .save(&case)
-        .unwrap();
-    let library = Library::new(scratch.0.display().to_string(), KEY.to_vec()).unwrap();
-    let demo = repo().join("docs/product-media/Settlement agreement.md");
-
-    let session = DocumentSession::new();
-    session
-        .import_file(demo.display().to_string(), ImportOptions::default(), None)
-        .unwrap();
-    session.join_case(library.clone(), case.id.clone()).unwrap();
-    let snapshot = session.replace_all().unwrap();
-    assert_eq!(snapshot.proposed, 0);
-    let sent = read(&capture.join("sent.md"));
-    let copied = session.copy_for_ai().unwrap();
-    assert_eq!(copied, sent, "Copy for AI differs from desktop's capture");
-    assert_eq!(session.share_text().unwrap(), sent);
-
-    // The desktop's GUI-free path on the same input.
-    let source = read(&demo);
-    let mut review = Review::default();
-    review.seed(&case.exported(), &source);
-    let text = desktop_apply_all(&mut review, &source, 1);
-    assert_eq!(desktop_copy_for_ai(&review, &text), copied);
-
-    let reply = read(&capture.join("reply.md"));
-    let expected = read(&capture.join("expected.md"));
-    let desktop = RestoreMap::new(review.export_identities()).restore_in_place(&reply);
-    assert_eq!(desktop.text, expected);
-    let in_session = session.restore_reply(reply.clone()).unwrap();
-    assert_eq!(in_session.text, expected);
-    assert_eq!(in_session.values, desktop.values as u64);
-    assert_eq!(in_session.unrecognised, 0);
-    let in_extension = library.restore(case.id.clone(), reply.clone()).unwrap();
-    assert_eq!(in_extension.text, expected);
-
-    // Saving keeps the mapping in the case and the reply with the document.
-    let saved = session.save(library.clone()).unwrap();
-    assert_eq!(saved.case.id, case.id);
-    assert_eq!(
-        read(Path::new(&saved.path)),
-        copied.split_once("\n\n---\n\n").unwrap().1
-    );
-    library
-        .save_reply(case.id.clone(), saved.path.clone(), reply.clone())
-        .unwrap();
-    assert_eq!(
-        library.reply(case.id.clone(), saved.path).unwrap(),
-        Some(reply.clone())
-    );
-    assert_eq!(library.restore(case.id, reply).unwrap().text, expected);
-}
-
 /// The demo's DOCX, converted in-process, reviewed with injected candidates
 /// (no scan), replaced, copied for AI and restored: the FFI objects and the
 /// desktop's GUI-free path give the same bytes, and those are the goldens.
@@ -1004,10 +941,13 @@ fn vault_with_project(scratch: &Scratch, names: &[ExportedIdentity]) -> (Arc<Vau
     (vault, project)
 }
 
-/// The captured round trip through the new objects: the document joins a
-/// Project in the Vault, is saved there and opened again by id, and Copy
-/// for AI, the Vault's outbound text and the restored reply are desktop's
-/// bytes.
+/// A real Claude round trip, captured on desktop
+/// (`tests/fixtures/restore/claude-en`): the document joins a Project in
+/// the Vault holding the reviewed mapping, is saved there and opened again
+/// by id, and Copy for AI and the Vault's outbound text give exactly what
+/// desktop put on the clipboard (`sent.md`). The reply restores to
+/// `expected.md` through the session (desktop's reply box) and through the
+/// Restore extension's `ReplyVault`, before and after it is saved.
 #[test]
 fn the_captured_claude_round_trip_matches_desktop_through_the_vault() {
     let scratch = Scratch::new("claude-vault");
@@ -1038,7 +978,7 @@ fn the_captured_claude_round_trip_matches_desktop_through_the_vault() {
     assert_eq!(snapshot.proposed, 0);
     assert_eq!(snapshot.text, sent.split_once("\n\n---\n\n").unwrap().1);
     assert_eq!(reopened.copy_for_ai().unwrap(), sent);
-    assert_eq!(vault.text_for_ai(saved.id).unwrap(), sent);
+    assert_eq!(vault.text_for_ai(saved.id.clone()).unwrap(), sent);
 
     let source = read(&demo);
     let mut review = Review::default();
@@ -1049,9 +989,25 @@ fn the_captured_claude_round_trip_matches_desktop_through_the_vault() {
     assert_eq!(desktop_copy_for_ai(&review, &text), sent);
     let reply = read(&capture.join("reply.md"));
     let expected = read(&capture.join("expected.md"));
-    let restored = reopened.restore_reply(reply).unwrap();
+    let desktop = RestoreMap::new(review.export_identities()).restore_in_place(&reply);
+    assert_eq!(desktop.text, expected);
+    let restored = reopened.restore_reply(reply.clone()).unwrap();
     assert_eq!(restored.text, expected);
+    assert_eq!(restored.values, desktop.values as u64);
     assert_eq!(restored.unrecognised, 0);
+
+    // The Restore extension's handle on the same folder, before and after
+    // the reply is saved.
+    let extension =
+        ReplyVault::open(scratch.0.join("vault").display().to_string(), KEY.to_vec()).unwrap();
+    let from = SharedFrom::Document { id: saved.id };
+    let shown = extension.restore_text(from.clone(), reply.clone()).unwrap();
+    assert_eq!(shown.text, expected);
+    let info = extension
+        .save_reply(from, "Reply".into(), None, reply)
+        .unwrap();
+    vault.refresh().unwrap();
+    assert_eq!(vault.restore_reply(info.id).unwrap().text, expected);
 }
 
 fn listed_id(vault: &Vault) -> String {

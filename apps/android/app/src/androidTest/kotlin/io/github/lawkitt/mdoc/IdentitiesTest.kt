@@ -45,8 +45,7 @@ class IdentitiesTest {
         session.addReplacement(SourceRange(start, start + "Priya Shah".length), Category.Person)
 
         compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(title).performClick()
+        compose.openDocument(title)
         compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Identities")).fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(hasContentDescription("Identities")).onFirst().performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Priya Shah")).fetchSemanticsNodes().isNotEmpty() }
@@ -75,8 +74,7 @@ class IdentitiesTest {
         )
 
         compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(title).performClick()
+        compose.openDocument(title)
         compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Identities")).fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(hasContentDescription("Identities")).onFirst().performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Proposed", substring = true)).fetchSemanticsNodes().isNotEmpty() }

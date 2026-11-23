@@ -91,7 +91,7 @@ pub(crate) struct ReviewText {
 }
 
 /// A review's counts (`ReviewText::counts`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Counts {
     pub proposed: u64,
     pub replaced: u64,
@@ -179,12 +179,6 @@ impl ReviewText {
             replaced: review.applied().len() as u64,
             kept: review.kept_mentions().len() as u64,
         }
-    }
-
-    /// Any mention at all: how a document saved before scans were recorded
-    /// tells it was scanned, on opening and in lists alike.
-    pub(crate) fn has_mentions(&self) -> bool {
-        !self.mention_ranges().is_empty()
     }
 
     /// Give the mentions as they are now their ids.
@@ -813,23 +807,10 @@ impl ReviewText {
         Ok(())
     }
 
-    /// A saved member reopened (`open_case_mapping`): the case's names are
-    /// proposed, and alias tokens already in the text become their applied
-    /// replacements, so Copy for AI and restore know them.
-    /// Open in `case` as its member `member`: the case's names
-    /// proposed with every retired alias reserved, and the Not a name
-    /// pairs the case keeps for this document left off again. No step.
-    pub fn open_in_case(
-        &mut self,
-        case: &mdoc_store::cases::Case,
-        member: Option<&std::path::Path>,
-    ) {
-        self.open_case(&case.exported(), &case.reserved_aliases());
-        if let Some(member) = member {
-            self.review.leave_off(&case.not_names_of(member));
-        }
-    }
-
+    /// A saved document reopened (`open_case_mapping`): its mapping's
+    /// names are proposed with every retired alias in `reserved` kept
+    /// back, and alias tokens already in the text become their applied
+    /// replacements, so Copy for AI and restore know them. No step.
     pub fn open_case(&mut self, case: &[ExportedIdentity], reserved: &[String]) {
         let text = self.text.clone();
         self.review.reserve_aliases(reserved);
