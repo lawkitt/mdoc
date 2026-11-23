@@ -300,3 +300,31 @@ fn the_extensions_handle_needs_the_vault_and_its_key() {
     assert!(ReplyVault::open(root(&scratch), vec![9; 16]).is_err());
     assert_eq!(extension(&scratch).projects().len(), 1);
 }
+
+/// Copy and Share follow the owner's names, as the library's restore does:
+/// a reply that names none of them is still restorable while its Project
+/// has names, and not in a Project with none.
+#[test]
+fn a_reply_is_restorable_while_its_owner_has_names() {
+    let scratch = Scratch::new();
+    let app = app(&scratch);
+    let ivanov = app.create_project("Ivanov".into()).unwrap();
+    saved(
+        &app,
+        Some(&ivanov.id),
+        "Anna Ivanova wrote.",
+        &["Anna Ivanova"],
+    );
+    let empty = app.create_project("Empty".into()).unwrap();
+    for (project, restorable) in [(ivanov, true), (empty, false)] {
+        let from = SharedFrom::Project { id: project.id };
+        let text = "Looks good; PERSON_9 agreed.";
+        let preview = app.restore_text(from.clone(), text.into()).unwrap();
+        assert_eq!(preview.text, text);
+        assert_eq!(preview.restorable, restorable);
+        let reply = app
+            .save_reply(from, "Reply".into(), None, text.into())
+            .unwrap();
+        assert_eq!(app.restore_reply(reply.id).unwrap(), preview);
+    }
+}

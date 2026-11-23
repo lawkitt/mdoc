@@ -285,12 +285,17 @@ impl Vault {
     pub fn refresh(&self) -> Result<bool, VaultError> {
         let mut state = self.state();
         let changed = state.manifest.check(&self.sealer, &self.root)?.changed;
-        state.dirty |= changed;
+        // A handle that never writes the manifest never marks it either, so
+        // its drop takes no lock.
+        state.dirty |= changed && self.writes_manifest;
         Ok(changed)
     }
 
     /// Write the manifest now if a summary changed since it was written.
     pub fn flush(&self) -> Result<(), VaultError> {
+        if !self.writes_manifest {
+            return Ok(());
+        }
         let _lock = self.write_lock()?;
         let mut state = self.state();
         if state.dirty {
@@ -818,7 +823,7 @@ impl Vault {
 impl Drop for Vault {
     /// Write a manifest the debounce held back.
     fn drop(&mut self) {
-        if self.crashed.load(Ordering::SeqCst) || !self.state().dirty {
+        if !self.writes_manifest || self.crashed.load(Ordering::SeqCst) || !self.state().dirty {
             return;
         }
         let _ = self.flush();

@@ -6,8 +6,8 @@
 use mdoc_pii::{Category, restore::ExportedIdentity};
 use mdoc_vault::{
     Binding, DocumentOrigin, Fault, FaultHook, ManifestCheck, Mapping, NewDocument, NewProject,
-    NewReply, ObjectKind, Project, ProjectDocuments, Reply, ReplyHandle, ReplyOwner, SourceKind,
-    Stage, Vault, VaultError,
+    NewReply, ObjectKind, Project, ProjectDocuments, Reply, ReplyHandle, ReplyOwner, SharedFrom,
+    SourceKind, Stage, Vault, VaultError,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -435,18 +435,27 @@ fn the_extensions_handle_writes_only_replies() {
         source_app: Some("Claude".into()),
         markdown: "PERSON_1 agrees.".into(),
     };
-    let preview = extension
-        .reply_map_for(&ReplyOwner::Project(ivanov.id.clone()), "PERSON_1 agrees.")
-        .unwrap()
+    let (owner, mapping) = extension
+        .shared_owner(&SharedFrom::Project(ivanov.id.clone()))
+        .unwrap();
+    assert_eq!(owner, ReplyOwner::Project(ivanov.id.clone()));
+    let preview = (mapping.reply_map(&mapping.bindings("PERSON_1 agrees.")))
         .restore_in_place("PERSON_1 agrees.")
         .text;
     assert_eq!(preview, "Anna Ivanova agrees.");
     let for_project = extension
         .save_reply(new(ReplyOwner::Project(ivanov.id.clone())))
         .unwrap();
+    // Shared from an Unfiled document: the document's.
     let for_memo = extension
-        .save_reply(new(ReplyOwner::Document(memo.clone())))
+        .save_shared_reply(
+            &SharedFrom::Document(memo.clone()),
+            "Reply".into(),
+            Some("Claude".into()),
+            "PERSON_1 agrees.".into(),
+        )
         .unwrap();
+    assert_eq!(for_memo.owner, ReplyOwner::Document(memo.clone()));
     assert_eq!(extension.reply(&for_memo.id).unwrap(), for_memo);
     assert_eq!(
         extension.restore_reply(&for_project.id).unwrap().text,
@@ -523,6 +532,30 @@ fn the_extensions_handle_makes_no_manifest_nor_folder() {
     drop(extension);
     assert!(!manifest.exists());
     assert_eq!(ids(&folder.open().project_replies(&project.id)), [reply.id]);
+}
+
+/// A refresh that finds changes leaves the extension's handle nothing to
+/// write, so its drop never waits for `.lock` while the app holds it.
+#[test]
+fn the_extensions_handle_drops_without_the_lock() {
+    let folder = Folder::new();
+    let app = folder.open();
+    let extension = ReplyHandle::open(&folder.root, &KEY).unwrap();
+    new_project(&app, "Ivanov", &[]);
+    assert!(extension.refresh().unwrap());
+    let held = std::fs::File::options()
+        .write(true)
+        .open(folder.root.join(".lock"))
+        .unwrap();
+    held.lock().unwrap();
+    let (done, dropped) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        drop(extension);
+        let _ = done.send(());
+    });
+    let waited = dropped.recv_timeout(std::time::Duration::from_secs(5));
+    held.unlock().unwrap();
+    assert!(waited.is_ok(), "the drop waited for the lock");
 }
 
 /// The extension's handle is refused a folder sealed with another key, as

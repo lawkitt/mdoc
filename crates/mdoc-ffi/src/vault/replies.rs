@@ -12,10 +12,10 @@
 //! Projects and documents and writes only new reply files, never the
 //! manifest (Decision 20). The app picks a reply it saved up through
 //! `Vault::refresh`.
-use super::{DocumentInfo, ProjectInfo, Reads, Vault, document_infos, project_infos, vault_key};
+use super::{DocumentInfo, ProjectInfo, Vault, document_infos, project_infos, vault_key};
 use crate::{CoreError, library::RestoredReply};
 use mdoc_pii::restore::RestoreMap;
-use mdoc_vault::{NewReply, Reply, ReplySummary, VaultError};
+use mdoc_vault::{Mapping, Reply, ReplySummary, VaultError};
 use std::sync::Arc;
 
 /// Where the text a reply answers was shared from.
@@ -193,37 +193,46 @@ impl ReplyVault {
     }
 }
 
-/// What saving and restoring replies needs of a Vault handle, beside
-/// [`Reads`].
-trait Replies: Reads {
-    fn save_reply(&self, new: NewReply) -> Result<Reply, VaultError>;
-    fn reply(&self, id: &str) -> Result<Reply, VaultError>;
-    fn reply_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError>;
-    fn reply_map_for(
+/// What saving and restoring replies needs of a Vault handle.
+trait Replies {
+    fn save_shared_reply(
         &self,
-        owner: &mdoc_vault::ReplyOwner,
-        markdown: &str,
-    ) -> Result<RestoreMap, VaultError>;
+        from: &mdoc_vault::SharedFrom,
+        title: String,
+        source_app: Option<String>,
+        markdown: String,
+    ) -> Result<Reply, VaultError>;
+    fn shared_owner(
+        &self,
+        from: &mdoc_vault::SharedFrom,
+    ) -> Result<(mdoc_vault::ReplyOwner, Mapping), VaultError>;
+    fn owner_mapping(&self, owner: &mdoc_vault::ReplyOwner) -> Result<Mapping, VaultError>;
+    fn reply(&self, id: &str) -> Result<Reply, VaultError>;
 }
 
 macro_rules! replies {
     ($handle:ty) => {
         impl Replies for $handle {
-            fn save_reply(&self, new: NewReply) -> Result<Reply, VaultError> {
-                <$handle>::save_reply(self, new)
+            fn save_shared_reply(
+                &self,
+                from: &mdoc_vault::SharedFrom,
+                title: String,
+                source_app: Option<String>,
+                markdown: String,
+            ) -> Result<Reply, VaultError> {
+                <$handle>::save_shared_reply(self, from, title, source_app, markdown)
+            }
+            fn shared_owner(
+                &self,
+                from: &mdoc_vault::SharedFrom,
+            ) -> Result<(mdoc_vault::ReplyOwner, Mapping), VaultError> {
+                <$handle>::shared_owner(self, from)
+            }
+            fn owner_mapping(&self, owner: &mdoc_vault::ReplyOwner) -> Result<Mapping, VaultError> {
+                <$handle>::owner_mapping(self, owner)
             }
             fn reply(&self, id: &str) -> Result<Reply, VaultError> {
                 <$handle>::reply(self, id)
-            }
-            fn reply_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError> {
-                <$handle>::reply_map(self, reply)
-            }
-            fn reply_map_for(
-                &self,
-                owner: &mdoc_vault::ReplyOwner,
-                markdown: &str,
-            ) -> Result<RestoreMap, VaultError> {
-                <$handle>::reply_map_for(self, owner, markdown)
             }
         }
     };
@@ -231,18 +240,17 @@ macro_rules! replies {
 replies!(mdoc_vault::Vault);
 replies!(mdoc_vault::ReplyHandle);
 
-/// Whose a reply to text shared from `from` is (Decision 4): a Project's,
-/// or an Unfiled document's.
-fn owner_of(store: &impl Reads, from: &SharedFrom) -> Result<mdoc_vault::ReplyOwner, CoreError> {
-    Ok(match from {
-        SharedFrom::Project { id } => mdoc_vault::ReplyOwner::Project(id.clone()),
-        SharedFrom::Document { id } => match store.document(id)?.project {
-            Some(project) => mdoc_vault::ReplyOwner::Project(project),
-            None => mdoc_vault::ReplyOwner::Document(id.clone()),
-        },
-    })
+impl From<&SharedFrom> for mdoc_vault::SharedFrom {
+    fn from(from: &SharedFrom) -> Self {
+        match from {
+            SharedFrom::Project { id } => Self::Project(id.clone()),
+            SharedFrom::Document { id } => Self::Document(id.clone()),
+        }
+    }
 }
 
+/// Saved with the owner Decision 4 gives, found under the Vault's write
+/// lock (`mdoc_vault::Vault::save_shared_reply`).
 fn save(
     store: &impl Replies,
     from: &SharedFrom,
@@ -260,12 +268,7 @@ fn save(
     let source_app = source_app
         .map(|app| app.trim().to_string())
         .filter(|app| !app.is_empty());
-    let reply = store.save_reply(NewReply {
-        owner: owner_of(store, from)?,
-        title: title.into(),
-        source_app,
-        markdown,
-    })?;
+    let reply = store.save_shared_reply(&from.into(), title.into(), source_app, markdown)?;
     Ok(info(ReplySummary::of(&reply)))
 }
 
@@ -274,16 +277,27 @@ fn restore_text(
     from: &SharedFrom,
     markdown: &str,
 ) -> Result<RestoredReply, CoreError> {
-    let map = store.reply_map_for(&owner_of(store, from)?, markdown)?;
-    Ok(RestoredReply::of(&map, markdown))
+    let (_, mapping) = store.shared_owner(&from.into())?;
+    let map = mapping.reply_map(&mapping.bindings(markdown));
+    Ok(restored(&map, &mapping, markdown))
 }
 
 fn restore(store: &impl Replies, id: &str) -> Result<RestoredReply, CoreError> {
     let reply = store.reply(id)?;
-    Ok(RestoredReply::of(
-        &store.reply_map(&reply)?,
-        &reply.markdown,
-    ))
+    let mapping = store.owner_mapping(&reply.owner)?;
+    let map = mapping.reply_map(&reply.bindings);
+    Ok(restored(&map, &mapping, &reply.markdown))
+}
+
+/// `reply` restored with `map`, the identities it binds. Copy and Share
+/// follow the owner's names (`mapping`), as the library's do: a reply
+/// that names none of them can still be copied.
+fn restored(map: &RestoreMap, mapping: &Mapping, reply: &str) -> RestoredReply {
+    let restorable = (mapping.identities.iter()).any(|i| i.exported().is_some());
+    RestoredReply {
+        restorable,
+        ..RestoredReply::of(map, reply)
+    }
 }
 
 fn saved(reply: Reply) -> SavedReply {

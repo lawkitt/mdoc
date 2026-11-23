@@ -32,7 +32,7 @@ pub use original::{OriginalReader, source_sha256};
 pub use records::{
     Colour, Document, DocumentOrigin, DocumentSummary, NewDocument, NewProject, NewReply, Original,
     OriginalInfo, Project, ProjectSummary, Reply, ReplyOwner, ReplySummary, ReviewCounts,
-    SourceKind, UserLists,
+    SharedFrom, SourceKind, UserLists,
 };
 pub use vault::{
     Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, ReplyHandle,

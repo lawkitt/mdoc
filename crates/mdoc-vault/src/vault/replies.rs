@@ -9,7 +9,7 @@ use crate::{
     new_id,
     records::{
         Document, DocumentSummary, NewReply, Project, ProjectSummary, Reply, ReplyOwner,
-        ReplySummary, now,
+        ReplySummary, SharedFrom, now,
     },
 };
 use mdoc_pii::restore::{RestoreMap, RestoredText};
@@ -88,18 +88,26 @@ impl ReplyHandle {
         self.vault.reply(id)
     }
 
-    /// [`Vault::reply_map`].
-    pub fn reply_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError> {
-        self.vault.reply_map(reply)
+    /// [`Vault::save_shared_reply`]: only the reply's file is written.
+    pub fn save_shared_reply(
+        &self,
+        from: &SharedFrom,
+        title: String,
+        source_app: Option<String>,
+        markdown: String,
+    ) -> Result<Reply, VaultError> {
+        self.vault
+            .save_shared_reply(from, title, source_app, markdown)
     }
 
-    /// [`Vault::reply_map_for`].
-    pub fn reply_map_for(
-        &self,
-        owner: &ReplyOwner,
-        markdown: &str,
-    ) -> Result<RestoreMap, VaultError> {
-        self.vault.reply_map_for(owner, markdown)
+    /// [`Vault::shared_owner`].
+    pub fn shared_owner(&self, from: &SharedFrom) -> Result<(ReplyOwner, Mapping), VaultError> {
+        self.vault.shared_owner(from)
+    }
+
+    /// [`Vault::owner_mapping`].
+    pub fn owner_mapping(&self, owner: &ReplyOwner) -> Result<Mapping, VaultError> {
+        self.vault.owner_mapping(owner)
     }
 
     /// [`Vault::restore_reply`].
@@ -128,6 +136,39 @@ impl Vault {
     pub fn save_reply(&self, new: NewReply) -> Result<Reply, VaultError> {
         let lock = self.write_lock()?;
         let mapping = self.owner_mapping(&new.owner)?;
+        self.save_reply_locked(&lock, new, &mapping)
+    }
+
+    /// Save an AI Reply to text shared from `from`, owned as #1091
+    /// Decision 4 has it: one shared from a Document in a Project is the
+    /// Project's, one from an Unfiled Document is that Document's, which
+    /// it follows into a Project later. The owner is found and the aliases
+    /// bound under the write lock, from one read of the Document, so a move
+    /// meanwhile cannot split them. Only the reply's file is written.
+    pub fn save_shared_reply(
+        &self,
+        from: &SharedFrom,
+        title: String,
+        source_app: Option<String>,
+        markdown: String,
+    ) -> Result<Reply, VaultError> {
+        let lock = self.write_lock()?;
+        let (owner, mapping) = self.shared_owner(from)?;
+        let new = NewReply {
+            owner,
+            title,
+            source_app,
+            markdown,
+        };
+        self.save_reply_locked(&lock, new, &mapping)
+    }
+
+    fn save_reply_locked(
+        &self,
+        lock: &WriteLock<'_>,
+        new: NewReply,
+        mapping: &Mapping,
+    ) -> Result<Reply, VaultError> {
         let reply = Reply {
             id: new_id()?,
             bindings: mapping.bindings(&new.markdown),
@@ -137,8 +178,30 @@ impl Vault {
             markdown: new.markdown,
             created: now(),
         };
-        self.write_reply(&lock, &reply)?;
+        self.write_reply(lock, &reply)?;
         Ok(reply)
+    }
+
+    /// Whose a reply to text shared from `from` would be now
+    /// ([`Self::save_shared_reply`]) and the mapping it would bind and
+    /// restore with, from one read of the Document.
+    pub fn shared_owner(&self, from: &SharedFrom) -> Result<(ReplyOwner, Mapping), VaultError> {
+        match from {
+            SharedFrom::Project(id) => Ok((
+                ReplyOwner::Project(id.clone()),
+                self.load_record::<Project>(id)?.mapping,
+            )),
+            SharedFrom::Document(id) => {
+                let document: Document = self.load_record(id)?;
+                match document.project {
+                    Some(project) => {
+                        let mapping = self.load_record::<Project>(&project)?.mapping;
+                        Ok((ReplyOwner::Project(project), mapping))
+                    }
+                    None => Ok((ReplyOwner::Document(id.clone()), document.mapping)),
+                }
+            }
+        }
     }
 
     /// The AI Reply `id`, read from its file.
@@ -151,19 +214,6 @@ impl Vault {
     /// gone restores nothing, and no alias it did not bind is read.
     pub fn reply_map(&self, reply: &Reply) -> Result<RestoreMap, VaultError> {
         Ok(self.owner_mapping(&reply.owner)?.reply_map(&reply.bindings))
-    }
-
-    /// What `markdown` would restore with if it were saved now as a reply
-    /// of `owner`: the identities its aliases name in the owner's mapping
-    /// now, as [`Self::save_reply`] would bind them. For showing a reply
-    /// restored before it is saved.
-    pub fn reply_map_for(
-        &self,
-        owner: &ReplyOwner,
-        markdown: &str,
-    ) -> Result<RestoreMap, VaultError> {
-        let mapping = self.owner_mapping(owner)?;
-        Ok(mapping.reply_map(&mapping.bindings(markdown)))
     }
 
     /// The AI Reply `id` restored for reading: [`Self::reply_map`] applied
@@ -292,8 +342,8 @@ impl Vault {
         Ok(identities)
     }
 
-    /// The mapping a reply of `owner` binds and restores with.
-    fn owner_mapping(&self, owner: &ReplyOwner) -> Result<Mapping, VaultError> {
+    /// The mapping a reply of `owner` binds and restores with now.
+    pub fn owner_mapping(&self, owner: &ReplyOwner) -> Result<Mapping, VaultError> {
         match owner {
             ReplyOwner::Project(id) => Ok(self.load_record::<Project>(id)?.mapping),
             ReplyOwner::Document(id) => {
