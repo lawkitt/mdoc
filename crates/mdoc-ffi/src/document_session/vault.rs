@@ -212,6 +212,9 @@ impl DocumentSession {
             let mut pending = {
                 let guard = self.lock_document();
                 match guard.as_ref() {
+                    Some(document) if document.path.is_some() || document.case.is_some() => {
+                        return Err(in_library().into());
+                    }
                     Some(document)
                         if document.saved.is_some()
                             && document.has_unsaved_changes()
@@ -339,6 +342,9 @@ struct Pending {
     kept: Vec<(String, String)>,
     dismissed: Vec<(String, String)>,
     counts: super::Counts,
+    /// Typing took a proposal away and discovery has not run since: the
+    /// counts may miss a name, so it is not Ready.
+    awaiting_discovery: bool,
     scanned: bool,
     review: SavedReview,
 }
@@ -366,6 +372,7 @@ impl Document {
             kept: self.review.review.kept_pairs(),
             dismissed: self.review.dismissed_pairs(),
             counts: self.review.counts(),
+            awaiting_discovery: self.review.review.awaiting_discovery(),
             scanned: self.scanned,
             review: self.review.saved_review(),
         }
@@ -415,9 +422,10 @@ impl Document {
             Some(document) => project.mapping.reserved_aliases_for(document),
             None => project.mapping.reserved_aliases(),
         };
-        place.synced = Some(project.mapping.identities.clone());
         self.review.join(&project.mapping.exported(), &reserved)?;
         self.review.dismiss_pairs(&project.dismissed_hints);
+        // Only once joined: a join that failed must be tried again.
+        place.synced = Some(project.mapping.identities);
         Ok(())
     }
 
@@ -445,10 +453,19 @@ impl Document {
             if stored.revision != place.revision {
                 return Err(changed_elsewhere());
             }
+            let mut moved = false;
             let saved = vault.store().update_document(id, |record| {
+                // Checked again under the Vault's own lock.
+                if record.revision != place.revision {
+                    moved = true;
+                    return;
+                }
                 record.title = title.to_owned();
                 record.origin = origin.into();
             })?;
+            if moved {
+                return Err(changed_elsewhere());
+            }
             place.revision = saved.revision;
         }
         self.title = title.to_owned();
@@ -469,8 +486,9 @@ impl Document {
             self.skip = project.skipped();
         }
         // As saved, unless lining its names up with its Project's changed
-        // the text: then that change waits for the next save.
-        let as_saved = self.review.text == stored.markdown;
+        // the text, or it has no saved review (a move cleared it, with its
+        // Ready fingerprint): then the next save stores them.
+        let as_saved = self.review.text == stored.markdown && stored.review.is_some();
         self.saved = Some(if as_saved {
             self.change_key()
         } else {
@@ -496,15 +514,18 @@ fn open_review(
 ) {
     let mapping: &Mapping = project.map_or(&stored.mapping, |p| &p.mapping);
     let restored = (stored.review.clone()).is_some_and(|saved| review.reopen(saved).is_ok());
+    // Every retired alias stays retired, this document's own Not a name's
+    // too: Undo starts afresh, so nothing here can give it back.
+    let reserved = mapping.reserved_aliases();
     if !restored {
-        review.open_case(&mapping.exported(), &mapping.reserved_aliases());
-    } else if project.is_some() {
-        // A join that cannot apply leaves the review as it was saved.
-        let _ = review.join(
-            &mapping.exported(),
-            &mapping.reserved_aliases_for(&stored.id),
-        );
-        review.forget_undo();
+        review.open_case(&mapping.exported(), &reserved);
+    } else {
+        review.review.reserve_aliases(&reserved);
+        if project.is_some() {
+            // A join that cannot apply leaves the review as it was saved.
+            let _ = review.join(&mapping.exported(), &reserved);
+            review.forget_undo();
+        }
     }
     review.review.leave_off(&mapping.not_names_of(&stored.id));
 }
@@ -558,8 +579,16 @@ impl Pending {
             },
             None => None,
         };
-        let ready = self.scanned && self.counts.proposed == 0;
+        let ready = self.scanned && self.counts.proposed == 0 && !self.awaiting_discovery;
+        // Checked again under the Vault's own lock: another handle's write
+        // since is never overwritten (it is rewritten unchanged instead).
+        let (revision, place) = (self.place.revision, self.place.project.clone());
+        let mut moved = false;
         let saved = store.update_document(&id, |record| {
+            if record.revision != revision || record.project != place {
+                moved = true;
+                return;
+            }
             record.title.clone_from(&self.title);
             record.origin = self.origin.into();
             record.markdown.clone_from(&self.text);
@@ -568,10 +597,15 @@ impl Pending {
             record.counts = Some(self.counts.into());
             if record.project.is_none() {
                 // Unfiled: no other document shares its names.
-                self.record_names(&mut record.mapping, &id, |_| false);
+                record.mapping.merge_from(&self.identities, Some(&id));
+                record.mapping.refill(&self.kept, &id);
+                (record.mapping).drop_wordings(&self.not_names, &id, |_| false);
             }
             record.set_ready(ready);
         })?;
+        if moved {
+            return Err(changed_elsewhere());
+        }
         self.place.revision = saved.revision;
         Ok(Some(Written {
             id,
@@ -595,9 +629,12 @@ impl Pending {
         if self.place.synced.as_ref() != Some(&project.mapping.identities) {
             return Ok(None);
         }
-        let used = self.used_elsewhere(vault, &project, document);
         let mut changed = project.clone();
-        self.record_names(&mut changed.mapping, document, |identity| {
+        changed.mapping.merge_from(&self.identities, Some(document));
+        changed.mapping.refill(&self.kept, document);
+        // Under the aliases the merge gave, as the case save checked them.
+        let used = self.used_elsewhere(vault, &changed.mapping, id, document);
+        (changed.mapping).drop_wordings(&self.not_names, document, |identity| {
             used.contains(&identity.alias)
         });
         for (a, b) in &self.dismissed {
@@ -627,31 +664,29 @@ impl Pending {
         Ok((!raced).then_some(stored))
     }
 
-    /// Merge the identities into `mapping` from `document`, give back the
-    /// wordings an undone Not a name shows again, and drop those it takes
-    /// off now unless `in_use` finds them restored elsewhere.
-    fn record_names(
+    /// The aliases of `mapping` restored in Project `project`'s other
+    /// documents' saved text, so this one's Not a name leaves those
+    /// wordings alone; every alias while a document cannot be read, as it
+    /// may be one of them.
+    fn used_elsewhere(
         &self,
-        mapping: &mut Mapping,
+        vault: &Vault,
+        mapping: &Mapping,
+        project: &str,
         document: &str,
-        in_use: impl Fn(&Identity) -> bool,
-    ) {
-        mapping.merge_from(&self.identities, Some(document));
-        mapping.refill(&self.kept, document);
-        mapping.drop_wordings(&self.not_names, document, in_use);
-    }
-
-    /// The aliases restored in the Project's other documents' saved text,
-    /// so their Not a name leaves those wordings alone; every alias for a
-    /// document that cannot be read now.
-    fn used_elsewhere(&self, vault: &Vault, project: &Project, document: &str) -> HashSet<String> {
+    ) -> HashSet<String> {
         if self.not_names.is_empty() {
             return HashSet::new();
         }
         let store = vault.store();
-        let map = RestoreMap::new(project.mapping.exported());
-        let all = || map.identities().iter().map(|i| i.alias.clone()).collect();
-        (store.documents_in(Some(&project.id)).iter())
+        let map = RestoreMap::new(mapping.exported());
+        let all = || -> Vec<String> { map.identities().iter().map(|i| i.alias.clone()).collect() };
+        let unreadable = store.refresh().is_err()
+            || (store.damaged().iter()).any(|(kind, _)| *kind == mdoc_vault::ObjectKind::Document);
+        if unreadable {
+            return all().into_iter().collect();
+        }
+        (store.documents_in(Some(project)).iter())
             .filter(|other| other.id != document)
             .flat_map(|other| match store.document(&other.id) {
                 Ok(other) => map.restored_aliases(&other.markdown),

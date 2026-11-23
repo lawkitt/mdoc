@@ -242,20 +242,17 @@ impl Vault {
     /// A delete stopped part way is finished by deleting again.
     pub fn delete_project(&self, id: String, documents: ProjectDocuments) -> Result<(), CoreError> {
         let _writes = self.lock_writes();
-        let moving: Vec<String> = match documents {
-            ProjectDocuments::MoveToUnfiled => (self.store.documents_in(Some(&id)).into_iter())
-                .map(|d| d.id)
-                .collect(),
-            ProjectDocuments::Delete => Vec::new(),
-        };
         let documents = match documents {
             ProjectDocuments::MoveToUnfiled => mdoc_vault::ProjectDocuments::MoveToUnfiled,
             ProjectDocuments::Delete => mdoc_vault::ProjectDocuments::Delete,
         };
         let deleted = self.store.delete_project(&id, documents);
-        // The ones that moved, counted again in Unfiled.
-        for document in moving {
-            let _ = self.recount(&document);
+        // The ones that moved, counted again in Unfiled, even when the
+        // delete stopped part way.
+        for document in self.store.documents_in(None) {
+            if document.counts.is_none() {
+                let _ = self.recount(&document.id);
+            }
         }
         Ok(deleted?)
     }

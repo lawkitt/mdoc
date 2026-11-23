@@ -607,6 +607,7 @@ fn library_calls_refuse_a_vault_document_and_back() {
     let in_library = session("Bob Hart.", "Library");
     in_library.save(library.clone()).unwrap();
     assert!(in_library.save_into_vault(vault.clone()).is_err());
+    assert!(in_library.save_pending_into_vault(vault.clone()).is_err());
     let project = vault.create_project("P".into()).unwrap();
     assert!(in_library.join_project(vault.clone(), project.id).is_err());
     assert!(
@@ -702,6 +703,106 @@ fn text_leaves_the_vault_only_when_ready() {
     assert_eq!(
         vault.readiness(id.clone()).unwrap(),
         crate::vault::Readiness::Ready
+    );
+}
+
+/// An alias a document's own Not a name retired stays retired when it is
+/// opened again, Unfiled or in a Project: Undo starts afresh, so nothing
+/// can give it back, and another name taking it would restore old replies
+/// as someone else (review 1).
+#[test]
+fn an_alias_retired_by_not_a_name_stays_retired_when_reopened() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let project = vault.create_project("Case".into()).unwrap();
+    for place in [None, Some(project.id.as_str())] {
+        let (session, saved) = saved(
+            &vault,
+            place,
+            "Ann Lee met Bob Hart.",
+            &["Ann Lee", "Bob Hart"],
+            "Letter",
+        );
+        let ann = (session.snapshot().unwrap().mentions.into_iter())
+            .find(|m| m.original == "Ann Lee")
+            .unwrap();
+        assert_eq!(ann.alias.as_deref(), Some("PERSON_1"));
+        session
+            .review(
+                ReviewAction::NotAName {
+                    mention: ann.id,
+                    scope: Scope::All,
+                },
+                None,
+            )
+            .unwrap();
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .unwrap();
+
+        let (reopened, opened) = reopened(&vault, &saved.id);
+        let bob = (opened.mentions.iter())
+            .find(|m| m.original == "Bob Hart")
+            .unwrap()
+            .range;
+        assert!(
+            reopened.rename(bob, Scope::All, "PERSON_1".into()).is_err(),
+            "{place:?}"
+        );
+        vault.delete_document(saved.id).unwrap();
+    }
+}
+
+/// A Ready document moved keeps no Ready fingerprint (its text changed);
+/// opened again with nothing left to review, its next save makes it Ready
+/// again without an edit (review 3).
+#[test]
+fn a_moved_ready_document_is_ready_again_after_its_next_save() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let project = vault.create_project("Case".into()).unwrap();
+    let (_, memo) = saved(&vault, None, "Ann Lee wrote.", &["Ann Lee"], "Memo");
+    let ready = crate::vault::Readiness::Ready;
+    assert_eq!(vault.readiness(memo.id.clone()).unwrap(), ready);
+    vault
+        .move_document(memo.id.clone(), Some(project.id))
+        .unwrap();
+    assert_ne!(vault.readiness(memo.id.clone()).unwrap(), ready);
+    let (session, opened) = reopened(&vault, &memo.id);
+    assert_eq!(opened.proposed, 0);
+    assert!(
+        session
+            .save_pending_into_vault(vault.clone())
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(vault.readiness(memo.id.clone()).unwrap(), ready);
+    assert!(vault.store().document(&memo.id).unwrap().review.is_some());
+}
+
+/// Typing that takes a proposal away leaves the document waiting for
+/// discovery: saved then, it is not Ready, as the counts may miss a name
+/// (review 4).
+#[test]
+fn a_document_awaiting_discovery_is_not_saved_ready() {
+    let scratch = Scratch::new();
+    let vault = vault(&scratch);
+    let session = session("Ann Lee met Bob Hart.", "Letter");
+    propose(&session, &["Ann Lee", "Bob Hart"]);
+    let text = session.snapshot().unwrap().text;
+    session
+        .replace(at(&text, "Bob Hart", 0), Scope::All)
+        .unwrap();
+    let text = session.snapshot().unwrap().text;
+    session
+        .type_text(at(&text, "Lee", 0), "Lea".into())
+        .unwrap();
+    assert_eq!(session.snapshot().unwrap().proposed, 0);
+    let saved = session.save_into_vault(vault.clone()).unwrap();
+    assert_eq!(
+        vault.readiness(saved.id).unwrap(),
+        crate::vault::Readiness::NotReviewed
     );
 }
 
