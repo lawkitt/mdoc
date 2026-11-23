@@ -1,7 +1,6 @@
 //! Project, Document and AI Reply records (#1091 Decision 16), stored as
 //! JSON.
-//! Later items add their fields with `#[serde(default)]`: the source hash
-//! and the original's metadata (item 3).
+//! Later items add their fields with `#[serde(default)]`.
 use crate::mapping::{Binding, Mapping};
 use mdoc_pii::{Category, saved::SavedReview};
 use mdoc_store::lists::Lists;
@@ -119,6 +118,41 @@ pub struct Document {
     /// A move clears it, as its text and mapping change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<SavedReview>,
+    /// The Source Original kept in `original.enc`; `None` for a pasted or
+    /// new document. Set only by [`crate::Vault::import_document`]: a save
+    /// or update keeps it as stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original: Option<Original>,
+}
+
+/// What the Document record knows of its Source Original; the sealed file
+/// holds the source's bytes only (#1091 Decisions 14 and 16).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Original {
+    /// The SHA-256, in lowercase hex, of the source's bytes: a repeated
+    /// import of the same file finds this Document (#1091 Decision 7).
+    pub sha256: String,
+    /// The source's length in bytes.
+    pub len: u64,
+    #[serde(flatten)]
+    pub info: OriginalInfo,
+}
+
+/// What the importer tells the Vault about a source beside its bytes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OriginalInfo {
+    /// The file name it was imported from, without its folder.
+    pub file_name: String,
+    /// Password-protected: the original stays locked as imported
+    /// (#1091 Decision 23).
+    #[serde(default)]
+    pub password_protected: bool,
+    /// The import's warning, as shown when it was imported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_warning: Option<String>,
+    /// The left-out line: what else the Markdown leaves out, counted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left_out: Option<String>,
 }
 
 /// What a new Document starts with.
@@ -254,6 +288,9 @@ pub struct DocumentSummary {
     pub scanned: bool,
     pub created: u64,
     pub updated: u64,
+    /// The original's SHA-256 in hex, for the repeated-import check.
+    #[serde(default)]
+    pub source_sha256: Option<String>,
 }
 
 impl DocumentSummary {
@@ -268,6 +305,7 @@ impl DocumentSummary {
             scanned: document.scanned,
             created: document.created,
             updated: document.updated,
+            source_sha256: (document.original.as_ref()).map(|original| original.sha256.clone()),
         }
     }
 }
