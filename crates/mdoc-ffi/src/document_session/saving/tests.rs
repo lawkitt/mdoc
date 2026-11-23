@@ -144,7 +144,7 @@ fn originals(vault: &Vault, id: &str, alias: &str) -> Vec<String> {
 /// A tap changes the session only; `save_pending_into_vault` saves it,
 /// and lists count it from the record it writes (#686).
 #[test]
-fn a_tap_waits_for_save_pending() {
+fn a_tap_waits_for_the_pending_save() {
     let scratch = Scratch::new();
     let vault = vault(&scratch);
     let (session, id) = saved_letter(&vault);

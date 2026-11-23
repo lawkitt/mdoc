@@ -36,9 +36,11 @@ impl DocumentSession {
         self.open(imported, &cancel, None)
     }
 
-    /// `import_images_in` with the pages kept in `kept`, as
-    /// `import_file_resuming` keeps them; `discard_kept_images` removes
-    /// them for the same images.
+    /// Photos or camera pages picked together, as one document titled
+    /// `title`, a page each in the order given: JPEG, PNG, WebP or GIF,
+    /// each wrapped in memory as `import_file` wraps one. OCR keeps its
+    /// finished pages in `kept` as `import_file_resuming` does;
+    /// `discard_kept_images` removes them for the same images.
     pub fn import_images_resuming(
         &self,
         kept: String,
