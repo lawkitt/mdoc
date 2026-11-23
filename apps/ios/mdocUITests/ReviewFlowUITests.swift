@@ -230,11 +230,26 @@ enum MdocUITest {
         app.buttons["settings-button"].firstMatch.tap()
     }
 
-    /// The first document row in the sidebar, which it slides out for.
+    /// The first document row on All Documents, which the sidebar opens:
+    /// the sidebar lists only documents to review (#1091 Decision 33).
     @MainActor
     static func anyDocumentRow(_ app: XCUIApplication) -> XCUIElement {
+        listedRow(app, NSPredicate(format: "identifier == 'document-row'"))
+    }
+
+    /// A row on All Documents matching `predicate`, whatever its status.
+    @MainActor
+    static func listedRow(_ app: XCUIApplication, _ predicate: NSPredicate) -> XCUIElement {
         revealSidebar(app)
-        return app.descendants(matching: .any).matching(identifier: "document-row").firstMatch
+        let all = app.descendants(matching: .any)["sidebar-documents"].firstMatch
+        if all.waitForExistence(timeout: timeout) { all.tap() }
+        return app.descendants(matching: .any).matching(predicate).firstMatch
+    }
+
+    /// A row on All Documents by title, whatever its status.
+    @MainActor
+    static func listedRow(_ app: XCUIApplication, title: String) -> XCUIElement {
+        listedRow(app, NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@", "\(title),"))
     }
 
     @MainActor

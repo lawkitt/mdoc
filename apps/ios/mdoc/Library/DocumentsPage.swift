@@ -1,15 +1,14 @@
 import SwiftUI
 import VisionKit
 
-/// The Documents page (the sidebar's Documents row): every document,
-/// newest first, with search, the case filter and adding at the bottom
-/// (ADR 0099). Its empty state is the setup card and Start's ways in.
+/// All Documents (the sidebar's All Documents row): every document, newest
+/// first, with search and adding at the bottom (ADR 0099). A Project's own
+/// documents are on its page. Its empty state is the setup card and Home's
+/// ways in.
 struct DocumentsPage: View {
     @Bindable var app: AppModel
 
     @Environment(\.showSidebar) private var showSidebar
-    /// A saved reply shown restored, from the Project's Replies.
-    @State private var shownReply: SavedReply?
 
     private var library: LibraryModel { app.library }
 
@@ -40,62 +39,21 @@ struct DocumentsPage: View {
             // Its own section, so the setup card above reads apart from it.
             Section {
                 ForEach(library.shownDocuments) { document in
-                    DocumentRow(document: document, projectSummary: library.projectSummary(of: document), findsNames: library.findsNames)
+                    DocumentListRow(app: app, document: document)
                         .tag(document.id)
-                        .swipeActions {
-                            Button("Delete", role: .destructive) {
-                                app.delete(document.id)
-                            }
-                        }
-                        .contextMenu {
-                            Button {
-                                app.open(document.id)
-                            } label: {
-                                Label("Open", systemImage: "doc.text")
-                            }
-                            DocumentMenuItems(app: app, document: document)
-                        } preview: {
-                            DocumentPreview(document: document, projectSummary: library.projectSummary(of: document), findsNames: library.findsNames)
-                        }
                 }
             }
-            // Filtered to a Project: its saved AI replies, which a tap shows
-            // restored (Vault & Projects item 11 moves them to the Project
-            // page's Replies).
-            if let project = library.projectFilter, !library.replies(in: project).isEmpty {
-                Section("Replies") {
-                    ForEach(library.replies(in: project)) { reply in
-                        Button {
-                            shownReply = reply
-                        } label: {
-                            SavedReplyRow(reply: reply)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("reply-row")
-                    }
-                }
-            }
-        }
-        .sheet(item: $shownReply) { reply in
-            SavedReplySheet(reply: reply, restored: library.restore(reply.id))
         }
         .overlay {
             if showsEmptyState && !showsSetupCard {
                 emptyState
             }
         }
-        .navigationTitle("Documents")
+        .navigationTitle("All Documents")
         .modifier(DocumentsSearch(library: library))
         .toolbar {
             if let showSidebar {
                 SidebarButton(action: showSidebar)
-            }
-            if library.offersProjectFilter {
-                ToolbarItem(placement: .primaryAction) {
-                    projectFilterMenu
-                }
             }
             // Adding sits within thumb reach: Scan prominent, the rest in
             // the + menu (ADR 0099).
@@ -121,11 +79,7 @@ struct DocumentsPage: View {
         }
     }
 
-    /// No documents, and no replies of the Project filtered to: a
-    /// Project's own replies stay when its documents go.
-    private var showsEmptyState: Bool {
-        library.isEmpty && !(library.projectFilter.map { !library.replies(in: $0).isEmpty } ?? false)
-    }
+    private var showsEmptyState: Bool { library.isEmpty }
 
     private var showsSetupCard: Bool {
         app.setup.showsCard && !app.openDocumentShowsSetup
@@ -138,29 +92,17 @@ struct DocumentsPage: View {
             .frame(maxWidth: 520)
     }
 
-    /// From two projects: the page shows one case's documents, or all.
-    private var projectFilterMenu: some View {
-        Menu {
-            Picker("Project", selection: Bindable(library).projectFilter) {
-                Text("All Projects").tag(ProjectID?.none)
-                ForEach(library.projects) { summary in
-                    Label {
-                        Text(summary.name)
-                    } icon: {
-                        Image(systemName: "circle.fill")
-                    }
-                    .tint(summary.colour.color)
-                    .tag(ProjectID?.some(summary.id))
-                }
-            }
-        } label: {
-            Label("Project", systemImage: library.projectFilter == nil
-                ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-        }
-        .accessibilityIdentifier("case-filter")
-    }
-
     private var addMenu: some View {
+        AddMenu(app: app)
+    }
+}
+
+/// The + menu of a page's bottom bar: what it adds lands in the Project
+/// whose page shows, else in Unfiled (#1091 Decision 35).
+struct AddMenu: View {
+    let app: AppModel
+
+    var body: some View {
         Menu {
             NewMenuItems(app: app)
         } label: {
@@ -168,6 +110,36 @@ struct DocumentsPage: View {
         }
         .menuOrder(.priority)
         .accessibilityIdentifier("add-menu")
+    }
+}
+
+/// A document's row in a page's list: Delete on a swipe, and its menu on a
+/// long press. The Project tag shows where the list mixes Projects.
+struct DocumentListRow: View {
+    let app: AppModel
+    let document: LibraryDocument
+    var showsProject = true
+
+    private var library: LibraryModel { app.library }
+    private var summary: ProjectSummary? { showsProject ? library.projectSummary(of: document) : nil }
+
+    var body: some View {
+        DocumentRow(document: document, projectSummary: summary, findsNames: library.findsNames)
+            .swipeActions {
+                Button("Delete", role: .destructive) {
+                    app.delete(document.id)
+                }
+            }
+            .contextMenu {
+                Button {
+                    app.open(document.id)
+                } label: {
+                    Label("Open", systemImage: "doc.text")
+                }
+                DocumentMenuItems(app: app, document: document)
+            } preview: {
+                DocumentPreview(document: document, projectSummary: summary, findsNames: library.findsNames)
+            }
     }
 }
 

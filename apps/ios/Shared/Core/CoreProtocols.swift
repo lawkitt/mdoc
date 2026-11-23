@@ -64,6 +64,26 @@ protocol Library: AnyObject, Sendable {
     /// their old aliases there. The names the move added go again where
     /// nothing uses them, unless text was shared from there since.
     func undoMove(_ move: ProjectMove) throws -> ProjectMove
+    /// New Project: an empty Project named `name`, trimmed; a blank name is
+    /// refused.
+    func createProject(named name: String) throws -> ProjectSummary
+    /// A Project page's names and its Always and Never lists.
+    func projectDetails(_ projectID: ProjectID) throws -> ProjectDetails
+    /// Deletes a Project with its own AI replies; its documents go to
+    /// Unfiled or are deleted, as `documents` says. A document open in
+    /// this run follows: moved, it opens again in Unfiled; deleted, nothing
+    /// saves it again.
+    func deleteProject(_ projectID: ProjectID, documents: ProjectDeletion) throws
+    /// Unfiled's multi-select delete. A failure stops it, and the documents
+    /// deleted before it stay deleted.
+    func deleteDocuments(_ documents: [DocumentID]) throws
+    /// Takes `wording` off a Project's Always list, or its Never list when
+    /// `always` is false.
+    func removeListed(_ wording: String, always: Bool, from projectID: ProjectID) throws
+    /// The saved documents imported from a file of the same bytes, most
+    /// recently updated first (#1091 Decision 7); none when it can't be
+    /// read.
+    func documentsFromSource(_ file: URL) -> [DocumentID]
 }
 
 /// How a save that followed review taps went (`Library.observeSaves`).
@@ -86,6 +106,14 @@ extension Library {
     func moveDocument(_ document: DocumentID, to target: ProjectChoice) throws -> ProjectMove { throw CoreError.notFound }
     func undoMove(_ move: ProjectMove) throws -> ProjectMove { throw CoreError.noProject }
     func discardIfEmpty(_ document: DocumentID) throws -> Bool { false }
+    func createProject(named name: String) throws -> ProjectSummary { throw CoreError.noProject }
+    func projectDetails(_ projectID: ProjectID) throws -> ProjectDetails { throw CoreError.noProject }
+    func deleteProject(_ projectID: ProjectID, documents: ProjectDeletion) throws { throw CoreError.noProject }
+    func deleteDocuments(_ documents: [DocumentID]) throws {
+        for document in documents { try deleteDocument(document) }
+    }
+    func removeListed(_ wording: String, always: Bool, from projectID: ProjectID) throws { throw CoreError.noProject }
+    func documentsFromSource(_ file: URL) -> [DocumentID] { [] }
 }
 
 /// One document's import, OCR, review and hand-off.

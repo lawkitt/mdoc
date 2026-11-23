@@ -114,7 +114,11 @@ struct RootView: View {
                     StartView(app: app)
                 }
             case .section(.projects): ProjectsView(app: app)
+            case .section(.unfiled): UnfiledPage(app: app)
             case .section(.documents): DocumentsPage(app: app)
+            case .project(let id):
+                ProjectPage(app: app, projectID: id)
+                    .id(id)
             case .start: StartView(app: app)
             }
         }

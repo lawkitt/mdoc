@@ -69,7 +69,13 @@ final class NewDocumentUITests: XCTestCase {
         let app = launch()
         _ = newDocument(app)
         MdocUITest.revealSidebar(app)
+        // The sidebar's search lists recent documents before anything is
+        // typed.
+        let search = app.textFields["sidebar-search"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: MdocUITest.timeout))
+        search.tap()
         XCTAssertTrue(row(app, title: "New document").waitForExistence(timeout: MdocUITest.timeout), "listed while it is open")
+        app.buttons["Cancel search"].firstMatch.tap()
         let documents = app.descendants(matching: .any)["sidebar-documents"].firstMatch
         XCTAssertTrue(documents.waitForExistence(timeout: MdocUITest.timeout))
         documents.tap()

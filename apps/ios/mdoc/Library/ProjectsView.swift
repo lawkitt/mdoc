@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The Cases page (the sidebar's Cases row): each case with its colour and
-/// how many documents it holds; a tap shows its documents.
+/// All Projects (the sidebar's All Projects row): each Project, pinned first,
+/// then most recently updated, with its colour and how many documents it
+/// holds; a tap opens its page.
 struct ProjectsView: View {
     @Bindable var app: AppModel
     @Environment(\.showSidebar) private var showSidebar
@@ -14,7 +15,7 @@ struct ProjectsView: View {
                 ContentUnavailableView(
                     "No Projects yet",
                     systemImage: "briefcase",
-                    description: Text("Each document you add lands in Unfiled, or in the Project you choose."))
+                    description: Text("Each document you add lands in Unfiled, or in the Project whose page you add it from."))
                     .listRowBackground(Color.clear)
             }
             ForEach(library.projects) { summary in
@@ -48,6 +49,11 @@ struct ProjectsView: View {
                     } label: {
                         Label("Rename…", systemImage: "pencil")
                     }
+                    Button(role: .destructive) {
+                        app.askToDeleteProject(summary.id)
+                    } label: {
+                        Label("Delete Project…", systemImage: "trash")
+                    }
                 }
                 .swipeActions {
                     Button("Rename") { app.navigator.present(.renameProject(summary.id)) }
@@ -57,10 +63,18 @@ struct ProjectsView: View {
                 .accessibilityIdentifier("project-row")
             }
         }
-        .navigationTitle("Projects")
+        .navigationTitle("All Projects")
         .toolbar {
             if let showSidebar {
                 SidebarButton(action: showSidebar)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    app.navigator.present(.newProject)
+                } label: {
+                    Label("New Project", systemImage: "plus")
+                }
+                .accessibilityIdentifier("new-project")
             }
         }
     }
