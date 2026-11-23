@@ -178,7 +178,7 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
             names: names.clone(),
             project: Some(link.clone()),
             edited: at(9),
-            outbound: Err(mdoc_vault::Readiness::ChangedSinceReview),
+            outbound: Some(Err(mdoc_vault::Readiness::ChangedSinceReview)),
         }));
     }
     let source = ClipboardSource::Project {

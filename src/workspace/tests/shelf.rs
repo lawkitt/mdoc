@@ -338,6 +338,98 @@ fn a_stored_document_that_is_not_ready_opens_at_its_first_proposal(cx: &mut Test
     assert_first_proposal_shown(&tabs, cx);
 }
 
+/// Review of #1127: a name applied in an open member reaches the Vault
+/// only once the Project is written; until then a stored member of that
+/// Project is not checked against the old names, and does not leave.
+#[gpui::test]
+fn a_stored_row_waits_for_its_projects_unwritten_names(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let letter = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        "Anna Petrova wrote to Boris Ivanov about the lease.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, letter);
+    written(cx);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(letter, cx).unwrap());
+    close(&tabs, letter, cx);
+    let memo = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "memo.md",
+        "Boris Ivanov signed for Anna Petrova.",
+        &[],
+    );
+    move_tab(&tabs, cx, memo, Some(&project));
+    apply_all(&tabs, cx);
+    written(cx);
+    let key = ShelfKey::Document(document);
+    let state = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            tabs.read(cx)
+                .shelf_documents(cx)
+                .into_iter()
+                .find(|row| row.key == key)
+                .unwrap()
+                .readiness
+        })
+    };
+    assert_eq!(state(cx), Readiness::Ready);
+
+    // The memo names Boris Ivanov: its mapping change waits to be folded
+    // into the Project, then the Project's write.
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("Boris Ivanov").unwrap();
+        view.pii
+            .review_mut()
+            .add_manual(&text, start..start + 12, Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(state(cx), Readiness::Checking);
+    written(cx);
+    assert_eq!(state(cx), Readiness::NamesNotReplaced(1));
+}
+
+/// Review of #1127: a save made while an edit's names were still being
+/// found recorded the review as not ready; once they are found it is
+/// written again, so the row does not stay on "Checking names".
+#[gpui::test]
+fn a_save_during_a_scan_is_written_again_once_the_scan_ends(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    written(cx);
+    assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::Ready);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, " Later.", cx);
+        });
+        // ⌘S at once: written while the scan still runs.
+        view.save_now(cx);
+    });
+    cx.run_until_parked();
+    written(cx);
+    assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::Ready);
+}
+
 /// A write records the Ready text's fingerprint in the Vault document, and
 /// a write while not Ready forgets it; the outbound check then refuses it.
 #[gpui::test]

@@ -51,7 +51,7 @@ fn stored<'a>(n: u8, title: &'a str, text: &'a str, outbound: Outbound) -> Store
         names: names(),
         project: None,
         edited: at(n.into()),
-        outbound,
+        outbound: Some(outbound),
     }
 }
 
@@ -213,6 +213,12 @@ fn a_stored_document_is_ready_only_when_the_outbound_check_passes() {
     assert_eq!(missed.readiness, Readiness::NamesNotReplaced(2));
     assert_eq!(missed.readiness.label(), "2 names not replaced");
     assert_eq!(missed.text_for_ai(), None);
+    // Its Project's names, or a move of it, not written yet: not asked.
+    let mut waiting = stored(7, "a", text, Ok(sent));
+    waiting.outbound = None;
+    let row = ShelfDocument::of_stored(waiting).unwrap();
+    assert_eq!(row.readiness, Readiness::Checking);
+    assert_eq!(row.text_for_ai(), None);
 }
 
 /// A stored document whose text holds no alias its names know would reopen

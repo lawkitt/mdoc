@@ -3,7 +3,7 @@
 //! Vault's outbound check passes; and its Projects' names for the
 //! clipboard rows.
 
-use super::{ProjectLink, Workspace, navigation::Arrival};
+use super::{ProjectLink, Workspace, document_writer::Target, navigation::Arrival};
 use crate::{
     document_view::DocumentView,
     shelf::{self, OpenTab, Outbound, ShelfDocument, ShelfKey, StoredDocument},
@@ -50,7 +50,7 @@ impl Workspace {
                     .collect();
                 summaries.sort_by_key(|summary| std::cmp::Reverse(summary.updated));
                 (summaries.iter().take(STORED_READS))
-                    .filter_map(|summary| self.stored_row(vault, summary))
+                    .filter_map(|summary| self.stored_row(vault, summary, cx))
                     .take(room)
                     .collect()
             }
@@ -71,7 +71,7 @@ impl Workspace {
                 let vault = self.vault.vault()?;
                 let summary = (vault.documents().into_iter())
                     .find(|summary| summary.id == id.as_str() && !summary.exclude_from_ai)?;
-                self.stored_row(vault, &summary)
+                self.stored_row(vault, &summary, cx)
             }
         }
     }
@@ -79,6 +79,13 @@ impl Workspace {
     /// An open tab's shelf row; `None` without an applied alias. The Vault
     /// is asked only once its review is ready.
     fn shelf_tab(&self, id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
+        if let (Some(vault), Some(DocumentId::Vault(document))) =
+            (self.vault.vault(), view.session.document.id())
+            && (vault.documents().iter())
+                .any(|summary| summary.id == document.as_str() && summary.exclude_from_ai)
+        {
+            return None;
+        }
         let names = view.known_identities();
         let title = view.display_name();
         let mut tab = open_tab(id, view, &title, &names, cx)?;
@@ -98,7 +105,8 @@ impl Workspace {
         let unwritten = view.unsaved(cx)
             || self.moving.contains(&document)
             || self.write_pending_for(id, cx)
-            || view.saved_review() != view.session.document.review;
+            || view.saved_review() != view.session.document.review
+            || (view.project.link()).is_some_and(|link| self.project_unwritten(&link.id, cx));
         if unwritten {
             return None;
         }
@@ -107,7 +115,12 @@ impl Workspace {
 
     /// A stored document's row, with the names it lives with as stored;
     /// `None` when it can't be read or holds no alias.
-    fn stored_row(&self, vault: &Vault, summary: &DocumentSummary) -> Option<ShelfDocument> {
+    fn stored_row(
+        &self,
+        vault: &Vault,
+        summary: &DocumentSummary,
+        cx: &App,
+    ) -> Option<ShelfDocument> {
         let id = VaultId::parse(&summary.id)?;
         let document = vault.document(&summary.id).ok()?;
         let (names, project) = match &document.project {
@@ -119,6 +132,10 @@ impl Workspace {
             }
             None => (document.mapping.exported(), None),
         };
+        // Checked against names the Vault doesn't hold yet, it could leave
+        // with one of them as written.
+        let unwritten = self.moving.contains(&id)
+            || (document.project.as_deref()).is_some_and(|p| self.project_unwritten(p, cx));
         ShelfDocument::of_stored(StoredDocument {
             id,
             title: &document.title,
@@ -126,8 +143,20 @@ impl Workspace {
             names,
             project,
             edited: SystemTime::UNIX_EPOCH + Duration::from_secs(document.updated),
-            outbound: checked(vault.text_for_ai(&summary.id)),
+            outbound: (!unwritten).then(|| checked(vault.text_for_ai(&summary.id))),
         })
+    }
+
+    /// Project `id`'s names in the window are not all in the Vault yet: its
+    /// write waits, runs or failed, or an open member's mapping change
+    /// waits to be folded into it.
+    fn project_unwritten(&self, id: &str, cx: &App) -> bool {
+        self.project_ui.is_unwritten(id)
+            || self.document_writer.has(&Target::Project(id.to_string()))
+            || self.tabs.iter().filter_map(|tab| tab.view()).any(|view| {
+                let view = view.read(cx);
+                view.project_save_pending() && view.project.link().is_some_and(|l| l.id == id)
+            })
     }
 }
 

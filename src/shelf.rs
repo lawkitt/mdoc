@@ -47,7 +47,8 @@ pub(crate) enum Readiness {
     /// An open tab with this many proposals still to review.
     LeftToReview(usize),
     /// An open tab just edited: its proposals are being found again, or
-    /// its text is not written to the Vault yet.
+    /// its text, or a document's Project names, are not written to the
+    /// Vault yet.
     Checking,
     /// A document whose text still holds this many known names by an
     /// original wording: a kept mention, or a name another document added
@@ -211,7 +212,9 @@ pub(crate) struct StoredDocument<'a> {
     pub project: Option<ProjectLink>,
     /// When it was last written.
     pub edited: SystemTime,
-    pub outbound: Outbound,
+    /// `None` while a move of it, or a change to its Project's names, is
+    /// not written yet.
+    pub outbound: Option<Outbound>,
 }
 
 impl ShelfDocument {
@@ -252,8 +255,9 @@ impl ShelfDocument {
             return None;
         }
         let (readiness, for_ai) = match document.outbound {
-            Ok(text) => (Readiness::Ready, Some(text)),
-            Err(readiness) => (refused(readiness), None),
+            Some(Ok(text)) => (Readiness::Ready, Some(text)),
+            Some(Err(readiness)) => (refused(readiness), None),
+            None => (Readiness::Checking, None),
         };
         Some(Self::new(
             ShelfKey::Document(document.id),
