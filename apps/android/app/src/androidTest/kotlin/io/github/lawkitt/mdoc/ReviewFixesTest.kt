@@ -34,6 +34,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.JobStage
@@ -41,6 +42,10 @@ import uniffi.mdoc_ffi.JobStage
 /** Regressions from the review of the review flow (lawkitt/mdoc#315). */
 @RunWith(AndroidJUnit4::class)
 class ReviewFixesTest {
+    /** Its own Vault, below the floor: names marked by hand make a document Ready to share. */
+    @get:Rule
+    val core = TestCore()
+
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val app get() = context.applicationContext as MdocApplication

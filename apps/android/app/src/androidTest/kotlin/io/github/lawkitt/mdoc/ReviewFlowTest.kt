@@ -31,7 +31,11 @@ import uniffi.mdoc_ffi.JobStage
  */
 @RunWith(AndroidJUnit4::class)
 class ReviewFlowTest {
-    @get:Rule
+    /** Its own Vault, below the floor: names marked by hand make a document Ready to share. */
+    @get:Rule(order = 0)
+    val core = TestCore()
+
+    @get:Rule(order = 1)
     val compose = createAndroidComposeRule<MainActivity>()
 
     private val app get() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as MdocApplication
