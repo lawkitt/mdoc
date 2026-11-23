@@ -276,7 +276,7 @@ impl Workspace {
             .child(
                 div()
                     .w_full()
-                    .max_w(px(460.))
+                    .max_w(px(680.))
                     .flex()
                     .items_center()
                     .gap_2()

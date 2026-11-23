@@ -203,7 +203,8 @@ impl Workspace {
         }
         if self.vault.wrong_key_root().is_some() {
             return Some((
-                "Your documents were saved with a different key. Enter your recovery key on \n                 Home to open them."
+                "Your documents were saved with a different key. Enter your recovery key on \
+                 Home to open them."
                     .into(),
                 None,
             ));
@@ -233,7 +234,8 @@ impl Workspace {
         }
         if self.vault.wrong_key_root().is_some() {
             self.notices.post(
-                "Documents can't be added until your recovery key opens the documents you \n                 have. Enter it on Home.",
+                "Documents can't be added until your recovery key opens the documents you \
+                 have. Enter it on Home.",
             );
             cx.notify();
             return true;

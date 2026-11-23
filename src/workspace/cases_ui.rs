@@ -338,6 +338,11 @@ impl Workspace {
     /// declined after an action, or an open tab belongs to a case whose
     /// mapping is locked. Otherwise it waits behind the bell.
     pub(super) fn case_key_needed(&self) -> bool {
+        // A Vault sealed with another key waits behind the bell: Home asks
+        // for its recovery key.
+        if self.vault.wrong_key_root().is_some() {
+            return false;
+        }
         self.vault_banner().is_some()
             || self.case_key_banner().is_some()
                 && (self.case_coordinator.denied()
