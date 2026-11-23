@@ -3349,11 +3349,8 @@ fn load_from_vault(
         _ => None,
     };
     // Admitted and its text never written, though a move may have changed
-    // its place: a text emptied by its user stays so. Revision 1 stands in
-    // for the flag in a document imported before it.
-    let unconverted = copy.is_some()
-        && stored.markdown.is_empty()
-        && (stored.unconverted || stored.revision == 1);
+    // its place: a text emptied by its user stays so.
+    let unconverted = copy.is_some() && stored.pending_conversion();
     let (warning, left_out) = original.map_or((None, None), |original| {
         (
             original.info.import_warning.clone(),
