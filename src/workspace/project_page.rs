@@ -90,7 +90,6 @@ pub(super) enum Place {
     Colour,
     /// Names, at Categories to detect.
     Categories,
-    Names,
     /// The page, then the delete question.
     Delete,
 }
@@ -372,7 +371,7 @@ impl Workspace {
         let add = cx.new(|cx| input(cx, "Add a name", "ProjectTerm"));
         let changes = cx.subscribe(&filter, |_, _, _: &SearchInputEvent, cx| cx.notify());
         let segment = match place {
-            Place::Categories | Place::Names => Segment::Names,
+            Place::Categories => Segment::Names,
             Place::Header | Place::Rename | Place::Colour | Place::Delete => Segment::Documents,
         };
         let page = ProjectPage {
@@ -527,6 +526,14 @@ impl Workspace {
     }
 
     /// Project `id`'s documents, by title, from the Vault's summaries.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
     pub(super) fn members(&self, id: &str) -> Vec<(VaultId, String)> {
         (self.member_summaries(id).into_iter())
             .filter_map(|summary| Some((VaultId::parse(&summary.id)?, summary.title)))

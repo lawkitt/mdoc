@@ -91,7 +91,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<String> {
             project.lists.add_never("Riverside Clinic");
             Some(())
         });
-        w.show_project_page(&id, Place::Names, window, cx);
+        w.show_project_page(&id, Place::Categories, window, cx);
     })?;
     d.capture("project-page-lists")?;
     d.change(|w, _, _| {

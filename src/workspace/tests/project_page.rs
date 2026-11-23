@@ -421,8 +421,7 @@ fn project_page_scrolls(cx: &mut TestAppContext, sidebar_visible: bool) {
         cx.update(|_, cx| (tabs.read(cx).project_ui.page.as_ref().unwrap()).test_scroll_bounds());
     let last = mdoc_pii::Category::ALL
         .into_iter()
-        .filter(|category| *category != mdoc_pii::Category::Other)
-        .last()
+        .rfind(|category| *category != mdoc_pii::Category::Other)
         .unwrap();
     let last: &'static str = Box::leak(format!("page-category-{}", last.token()).into_boxed_str());
     let delete = cx.debug_bounds(last).unwrap();
