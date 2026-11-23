@@ -160,6 +160,20 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.regex-syntax]
 opt-level = 2
+# The Vault's originals (#1091 item 3): its 256 MiB round-trip test ran into
+# nextest's 2-minute kill with these three at level 0, took 32 s with only
+# mdoc-vault at 2, and takes 3 s with all three (the Windows PC). The cold
+# test build of mdoc-vault alone grows 3-4 s.
+# AES-GCM's generic encrypt and decrypt compile into mdoc-vault: 4.6 MiB/s
+# at level 0, 476 at 2.
+[profile.dev.package.mdoc-vault]
+opt-level = 2
+# SHA-256's block function (the source hash of every import).
+[profile.dev.package.sha2]
+opt-level = 2
+# GHASH's block function (GCM's authentication of every chunk).
+[profile.dev.package.polyval]
+opt-level = 2
 
 # Full debug information for lldb/CodeLLDB, in its own target/debugging/.
 [profile.debugging]

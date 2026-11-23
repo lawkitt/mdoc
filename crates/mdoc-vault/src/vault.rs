@@ -13,13 +13,14 @@ use crate::{
     ObjectKind, VaultError, is_id,
     manifest::{
         Entry, LoadError, MANIFEST_ID, Manifest, Record, Stamp, document_dir, document_path, load,
-        write_dirs,
+        original_path, write_dirs,
     },
     mapping::Mapping,
     new_id,
+    original::{self, IMPORT_PREFIX, OriginalReader},
     records::{
-        Document, DocumentSummary, NewDocument, NewProject, Project, ProjectSummary, ReplyOwner,
-        UserLists, now,
+        Document, DocumentSummary, NewDocument, NewProject, Original, OriginalInfo, Project,
+        ProjectSummary, ReplyOwner, UserLists, now,
     },
     seal::{MAX_FILE, Sealer, TEMP_PREFIX, Unseal, read_limited, temp_beside},
 };
@@ -27,13 +28,13 @@ use mdoc_store::lists::Lists;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{self, Write},
-    path::{Path, PathBuf},
+    io::{self, Read, Write},
+    path::{Component, Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 /// The user-wide lists' id in their authenticated data.
@@ -42,6 +43,9 @@ const USER_LISTS_ID: &str = "user-lists";
 /// A summary change rewrites the manifest at most this often; the rest wait
 /// for the next write after it, [`Vault::flush`] or the handle's drop.
 const MANIFEST_DEBOUNCE: Duration = Duration::from_secs(2);
+/// A document folder without a record, untouched this long, is what an
+/// import that died before its record left.
+const ORPHAN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 /// What this handle last wrote of an object.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Last {
@@ -177,6 +181,7 @@ impl Vault {
             // Every write holds the lock, so a temp file now is one a dead
             // write left.
             sweep_temp_files(&vault.root);
+            sweep_orphans(&vault.root);
             let (mut manifest, mut opened) =
                 match Manifest::read(&vault.sealer, &vault.manifest_path()) {
                     Ok(Some(manifest)) => (manifest, ManifestCheck::Current),
@@ -336,25 +341,129 @@ impl Vault {
         if let Some(project) = &new.project {
             self.load_record::<Project>(project)?;
         }
-        let now = now();
-        let document = Document {
-            id: new_id()?,
-            project: new.project,
-            title: new.title,
-            source_kind: new.source_kind,
-            origin: new.origin,
-            exclude_from_ai: false,
-            created: now,
-            updated: now,
-            revision: 1,
-            markdown: new.markdown,
-            scanned: false,
-            ready_fingerprint: None,
-            mapping: Mapping::default(),
-            review: None,
-        };
+        let document = new_document(new_id()?, new, None);
         self.write_record(&lock, &document)?;
         Ok(document)
+    }
+
+    /// A new Document with its Source Original, Unfiled or in an existing
+    /// Project. `source` is sealed into `docs/<id>/original.enc` one chunk
+    /// at a time, in bounded memory and outside the write lock; the lock is
+    /// taken for the rename and the record only. Until the record is
+    /// written there is no Document: a failure removes the folder, and one
+    /// a crash leaves is removed by an open a day later.
+    pub fn import_document(
+        &self,
+        new: NewDocument,
+        source: impl Read,
+        info: OriginalInfo,
+    ) -> Result<Document, VaultError> {
+        if self.crashed.load(Ordering::SeqCst) {
+            return Err(VaultError::Crashed);
+        }
+        let id = new_id()?;
+        let dir = document_dir(&self.root, &id);
+        std::fs::create_dir_all(&dir)?;
+        let imported = self.import_into(&id, &dir, new, source, info);
+        if !matches!(imported, Ok(_) | Err(VaultError::Crashed)) {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        imported
+    }
+
+    fn import_into(
+        &self,
+        id: &str,
+        dir: &Path,
+        new: NewDocument,
+        source: impl Read,
+        info: OriginalInfo,
+    ) -> Result<Document, VaultError> {
+        let mut temp = tempfile::Builder::new()
+            .prefix(IMPORT_PREFIX)
+            .tempfile_in(dir)?;
+        // Held until the file is renamed: an opening handle never removes a
+        // folder whose file is locked, however long the source stalls.
+        temp.as_file().lock()?;
+        let sealed = original::seal(&self.sealer, id, source, temp.as_file_mut())?;
+        temp.as_file().sync_all()?;
+        let lock = self.write_lock()?;
+        if let Some(project) = &new.project {
+            self.load_record::<Project>(project)?;
+        }
+        if self.fault(ObjectKind::Original, id, Stage::BeforeRename) {
+            let _ = temp.into_temp_path().keep();
+            return Err(VaultError::Crashed);
+        }
+        temp.persist(original_path(&self.root, id))
+            .map_err(|error| error.error)?;
+        if self.fault(ObjectKind::Original, id, Stage::AfterRename) {
+            return Err(VaultError::Crashed);
+        }
+        let original = Original {
+            sha256: sealed.sha256,
+            len: sealed.len,
+            info,
+        };
+        let document = new_document(id.to_string(), new, Some(original));
+        self.write_record(&lock, &document)?;
+        Ok(document)
+    }
+
+    /// The Source Original of Document `id`, to read in bounded memory.
+    /// [`OriginalReader`] says what an error in the middle of it means. An
+    /// original whose record was never written is not there.
+    pub fn open_original(&self, id: &str) -> Result<OriginalReader, VaultError> {
+        if !is_id(id) {
+            return Err(VaultError::InvalidId);
+        }
+        if !document_path(&self.root, id).is_file() {
+            return Err(VaultError::NotFound {
+                kind: ObjectKind::Original,
+                id: id.to_string(),
+            });
+        }
+        OriginalReader::open(&self.sealer, id, &original_path(&self.root, id))
+    }
+
+    /// A viewing copy: Document `id`'s original decrypted into `dir`, a
+    /// folder outside the Vault that the caller names and wipes, as
+    /// `file_name`, replacing a file of that name. It is written to a temp
+    /// file first, so an original found damaged part way leaves nothing in
+    /// `dir`.
+    pub fn copy_original_to(
+        &self,
+        id: &str,
+        dir: &Path,
+        file_name: &str,
+    ) -> Result<PathBuf, VaultError> {
+        if !is_file_name(file_name) {
+            return Err(VaultError::InvalidCopyTarget);
+        }
+        let mut reader = self.open_original(id)?;
+        std::fs::create_dir_all(dir)?;
+        // Plaintext never lands in the Vault, nor over one of its files,
+        // whatever alias the folder is reached by.
+        if std::fs::canonicalize(dir)?.starts_with(std::fs::canonicalize(&self.root)?) {
+            return Err(VaultError::InvalidCopyTarget);
+        }
+        let mut temp = tempfile::Builder::new().prefix(".copy-").tempfile_in(dir)?;
+        io::copy(&mut reader, temp.as_file_mut()).map_err(original::read_error)?;
+        let path = dir.join(file_name);
+        temp.persist(&path).map_err(|error| error.error)?;
+        Ok(path)
+    }
+
+    /// The Documents whose original has the SHA-256 `sha256` (hex, as
+    /// [`crate::source_sha256`] gives it), most recently updated first:
+    /// what a repeated import offers to open (#1091 Decision 7).
+    pub fn documents_with_source(&self, sha256: &str) -> Vec<DocumentSummary> {
+        let mut documents = self.documents();
+        documents.retain(|document| {
+            (document.source_sha256.as_deref())
+                .is_some_and(|hash| hash.eq_ignore_ascii_case(sha256))
+        });
+        documents
     }
 
     /// The Document `id`, read from its file.
@@ -601,6 +710,12 @@ impl Vault {
     ) -> Result<Stamp, VaultError> {
         self.check_alive()?;
         let bytes = self.sealer.seal(kind, id, plain)?;
+        if bytes.len() as u64 > MAX_FILE {
+            return Err(VaultError::TooLarge {
+                kind,
+                id: id.to_string(),
+            });
+        }
         let temp = temp_beside(path, &bytes)?;
         if self.fault(kind, id, Stage::BeforeRename) {
             let _ = temp.into_temp_path().keep();
@@ -694,6 +809,37 @@ impl Drop for Vault {
     }
 }
 
+fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Document {
+    let now = now();
+    Document {
+        id,
+        project: new.project,
+        title: new.title,
+        source_kind: new.source_kind,
+        origin: new.origin,
+        exclude_from_ai: false,
+        created: now,
+        updated: now,
+        revision: 1,
+        markdown: new.markdown,
+        scanned: false,
+        ready_fingerprint: None,
+        mapping: Mapping::default(),
+        review: None,
+        original,
+    }
+}
+
+/// A bare file name: one plain component, no folder, drive or stream.
+fn is_file_name(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    let plain = matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(component)), None) if component == name
+    );
+    plain && !name.contains(['/', '\\', ':'])
+}
+
 fn not_found<R: Record>(id: &str) -> VaultError {
     VaultError::NotFound {
         kind: R::KIND,
@@ -721,6 +867,53 @@ fn remove_sealed(path: &Path) -> io::Result<()> {
         file.sync_all()?;
     }
     doomed.close()
+}
+
+/// Remove the document folders without a record that have not changed for
+/// [`ORPHAN_AGE`]: what an import that died before its record left. An
+/// import still running writes into its folder all the time.
+fn sweep_orphans(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root.join("docs")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(id) = name.to_str().filter(|id| is_id(id)) else {
+            continue;
+        };
+        let dir = entry.path();
+        if !dir.is_dir() || !matches!(document_path(root, id).try_exists(), Ok(false)) {
+            continue;
+        }
+        let old =
+            last_change(&dir).is_some_and(|at| at.elapsed().is_ok_and(|age| age > ORPHAN_AGE));
+        if old && !in_use(&dir) {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
+
+/// A file in `dir` is locked: an import is still writing it.
+fn in_use(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return true;
+    };
+    entries.flatten().any(|entry| {
+        File::open(entry.path()).map_or(true, |file| {
+            matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+        })
+    })
+}
+
+/// When anything in `dir` last changed: its newest file's modification
+/// time, or the folder's own when it holds none; `None` when unreadable.
+fn last_change(dir: &Path) -> Option<SystemTime> {
+    let mut newest = None;
+    for entry in std::fs::read_dir(dir).ok()? {
+        let modified = entry.ok()?.metadata().ok()?.modified().ok()?;
+        newest = newest.max(Some(modified));
+    }
+    newest.or_else(|| std::fs::metadata(dir).ok()?.modified().ok())
 }
 
 /// Remove the temp files dead writes left.
