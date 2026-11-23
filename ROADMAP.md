@@ -400,30 +400,6 @@ not coherent between them and `main` stays releasable; item 23 lands them.
    byte, a truncated file, swapped chunks and a file placed under another
    document all fail to open; a second import of the same bytes finds the
    first.
-4. **[Core] Mappings in the Vault.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Identities with
-   stable ids; an Unfiled document's local mapping; a move into or out of a
-   Project reconciles names to the target's aliases, rewrites the text and can
-   be undone; deleting a Project moves its documents to Unfiled or deletes
-   them; Project and user-wide Always and Never lists; members and Not-a-name
-   owners as Document ids. Ports the case's and the mobile move's rules.
-   *Blocked by:* item 1. *Done when:* the case store's and the mobile move's
-   behaviour tests pass against the Vault with ids in place of paths.
-5. **[Core] AI Replies bound to identities.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* A saved reply keeps
-   its text as received and, for each alias token, the identity id it meant;
-   restoring reads those identities' current originals; a reply on an Unfiled
-   document follows it into a Project. *Blocked by:* item 4. *Done when:* a
-   reply restores the same people after its document moves and its aliases are
-   rewritten; a forgotten identity stops restoring; a reply file written by a
-   second handle is picked up by the first.
-6. **[Core] Readiness checked when text leaves.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Ready stays
-   "scanned, and no proposals left", kept as a fingerprint; the AI text is
-   computed on demand and checked against the Project's known names on every
-   outbound read. *Blocked by:* item 4. *Done when:* a name another document
-   adds to the Project makes a closed Ready document not Ready, and the Vault
-   holds no stored copy of AI text.
 7. **[Mobile] The mobile core stores documents and Projects through the
    Vault.** *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* New
    exported objects beside the old ones, so both apps keep building until they
