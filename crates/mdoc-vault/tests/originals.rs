@@ -452,6 +452,62 @@ fn a_save_or_update_keeps_the_stored_original() {
     assert_eq!(ids(vault.documents_with_source(hash)), vec![document.id]);
 }
 
+/// An import with no text stays unconverted through moves and a Project
+/// delete; a save of its text clears it, and no later save sets it again.
+#[test]
+fn an_unconverted_import_stays_so_until_its_text_is_saved() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let unconverted = NewDocument {
+        markdown: String::new(),
+        ..new_document("Brief")
+    };
+    let document = (vault.import_document(unconverted, &b"source"[..], info("a.pdf"))).unwrap();
+    assert!(document.unconverted);
+    assert!(
+        !import(&vault, &bytes(10, 3)).unconverted,
+        "it came with text"
+    );
+    let created = vault.create_document(NewDocument {
+        markdown: String::new(),
+        ..new_document("New")
+    });
+    assert!(!created.unwrap().unconverted, "no original");
+    let project = vault
+        .create_project(NewProject {
+            name: "Lease".into(),
+            ..NewProject::default()
+        })
+        .unwrap();
+    let moved = vault
+        .move_document(&document.id, Some(&project.id))
+        .unwrap();
+    assert!(moved.document.unconverted);
+    assert!(moved.document.revision > 1);
+    let back = vault.undo_move(&moved.undo).unwrap();
+    assert!(back.document.unconverted);
+    vault
+        .move_document(&document.id, Some(&project.id))
+        .unwrap();
+    (vault.delete_project(&project.id, mdoc_vault::ProjectDocuments::MoveToUnfiled)).unwrap();
+    let reopened = folder.open().document(&document.id).unwrap();
+    assert!(reopened.unconverted && reopened.markdown.is_empty());
+    assert_eq!(reopened.project, None);
+    // Converted: its text saved; a stale copy cannot make it unconverted.
+    let stale = reopened.clone();
+    let saved = vault
+        .update_document(&document.id, |d| {
+            d.markdown = "# Brief".into();
+            d.unconverted = false;
+        })
+        .unwrap();
+    assert!(!saved.unconverted);
+    let mut copy = stale;
+    copy.revision = saved.revision + 1;
+    vault.save_document(&copy).unwrap();
+    assert!(!vault.document(&document.id).unwrap().unconverted);
+}
+
 #[test]
 fn a_password_protected_source_stays_locked() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))

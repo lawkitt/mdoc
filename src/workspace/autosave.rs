@@ -532,6 +532,8 @@ fn save_vault(vault: &mdoc_vault::Vault, id: &VaultId, job: Job) -> Result<(), S
     vault
         .update_document(id.as_str(), |document| {
             document.markdown = markdown;
+            // Its text is written: it opens as text from now on.
+            document.unconverted = false;
             document.review = review.map(|review| *review);
             if let (Some(notes), Some(original)) = (notes, document.original.as_mut()) {
                 original.info.import_warning = notes.warning;

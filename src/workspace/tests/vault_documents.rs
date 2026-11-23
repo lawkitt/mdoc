@@ -680,3 +680,62 @@ fn a_second_open_of_a_file_still_importing_asks_as_a_repeat(cx: &mut TestAppCont
     assert!(!cx.has_pending_prompt());
     assert_eq!(documents(dir.path()).len(), 1);
 }
+
+/// Review of #1122: a Project delete with Move to Unfiled moves an
+/// unconverted member as it is: it opens from its source and converts,
+/// though the move wrote it again.
+#[gpui::test]
+fn an_unconverted_member_moved_to_unfiled_by_a_delete_still_converts(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let pdf =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (project, id) = {
+        let vault = open_vault(dir.path());
+        let project = vault
+            .create_project(mdoc_vault::NewProject {
+                name: "Lease".into(),
+                ..mdoc_vault::NewProject::default()
+            })
+            .unwrap();
+        let new = NewDocument {
+            project: Some(project.id.clone()),
+            title: "reference".into(),
+            source_kind: SourceKind::Pdf,
+            origin: DocumentOrigin::Ordinary,
+            markdown: String::new(),
+        };
+        let info = mdoc_vault::OriginalInfo {
+            file_name: "reference.pdf".into(),
+            ..mdoc_vault::OriginalInfo::default()
+        };
+        let source = std::fs::File::open(&pdf).unwrap();
+        let document = vault.import_document(new, source, info).unwrap();
+        (project.id, document.id)
+    };
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.delete_project(project.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Move to Unfiled");
+    cx.run_until_parked();
+    let moved = open_vault(dir.path()).document(&id).unwrap();
+    assert_eq!(moved.project, None);
+    assert!(moved.revision > 1, "the move wrote it");
+    assert!(moved.unconverted && moved.markdown.is_empty());
+
+    let vault_id = mdoc_store::document_id::VaultId::parse(&id).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_vault_document(vault_id, window, cx)
+    });
+    cx.run_until_parked();
+    let text = active(&tabs, cx).read_with(cx, |view, cx| {
+        assert!(!view.lifecycle.source_only(), "converted from its source");
+        view.editor.read(cx).text().to_string()
+    });
+    assert!(!text.is_empty());
+    wait(cx, 1000);
+    let converted = open_vault(dir.path()).document(&id).unwrap();
+    assert_eq!(converted.markdown, text);
+    assert!(!converted.unconverted);
+}

@@ -99,6 +99,12 @@ pub struct Document {
     /// last it wrote.
     pub revision: u64,
     pub markdown: String,
+    /// Imported with no text yet: the app converts its Source Original when
+    /// it opens. Set only by [`crate::Vault::import_document`] with empty
+    /// text; a move keeps it; the app clears it when it saves the text, and
+    /// no later save sets it again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unconverted: bool,
     /// Scanned for names, so a scan that found nothing reopens as scanned.
     #[serde(default)]
     pub scanned: bool,

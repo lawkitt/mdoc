@@ -202,11 +202,12 @@ impl Record for Document {
     }
     /// A Document's Project changes only by a move, so a stale copy saved
     /// after a move cannot undo it; in a Project it keeps no mapping of its
-    /// own; its original never changes.
+    /// own; its original never changes; once converted it stays so.
     fn settle(&mut self, stored: &Self, revision: u64, now: u64) {
         self.id.clone_from(&stored.id);
         self.project.clone_from(&stored.project);
         self.original.clone_from(&stored.original);
+        self.unconverted &= stored.unconverted;
         if self.project.is_some() {
             self.mapping = crate::mapping::Mapping::default();
         }
