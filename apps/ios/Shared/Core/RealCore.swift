@@ -711,7 +711,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// session; nil shows the newest.
     private var shownReply: ReplyID?
     /// The shown reply as restored, while it and the Vault stay.
-    private var restoredReply: (key: RestoredReplyKey, reply: ReplySnapshot?)?
+    private var restoredReply: (key: RestoredReplyKey, reply: ReplySnapshot)?
 
     private struct RestoredReplyKey: Equatable {
         let id: ReplyID
@@ -916,9 +916,12 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             return restored.reply
         }
         let vault = library.vault
-        let reply = try? ReplySnapshot(
+        // One that can't be read now (a locked phone) is read again next
+        // time, not kept as none.
+        guard let reply = try? ReplySnapshot(
             id: shown.id, aliasText: vault.reply(id: shown.id.rawValue).markdown,
             restored: RestoreResult(vault.restoreReply(id: shown.id.rawValue)))
+        else { return nil }
         lock.withLock { restoredReply = (restoredKey, reply) }
         return reply
     }

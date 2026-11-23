@@ -30,7 +30,7 @@ struct DocumentsPage: View {
                 }
                 // Under the card, not over the list: the card grows while
                 // the models download.
-                if library.isEmpty {
+                if showsEmptyState {
                     Section {
                         emptyState
                             .listRowBackground(Color.clear)
@@ -82,7 +82,7 @@ struct DocumentsPage: View {
             SavedReplySheet(reply: reply, restored: library.restore(reply.id))
         }
         .overlay {
-            if library.isEmpty && !showsSetupCard {
+            if showsEmptyState && !showsSetupCard {
                 emptyState
             }
         }
@@ -119,6 +119,12 @@ struct DocumentsPage: View {
             app.takeInChanges()
             library.refresh()
         }
+    }
+
+    /// No documents, and no replies of the Project filtered to: a
+    /// Project's own replies stay when its documents go.
+    private var showsEmptyState: Bool {
+        library.isEmpty && !(library.projectFilter.map { !library.replies(in: $0).isEmpty } ?? false)
     }
 
     private var showsSetupCard: Bool {

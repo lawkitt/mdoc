@@ -184,7 +184,9 @@ private struct Sheets: ViewModifier {
                     app.addText(text, title: title, into: project)
                 }
             }
-            .sheet(item: navigator.presented(Sheet.init)) { sheet in
+            // A reply saved through Restore with mdoc from a share sheet
+            // shows once it closes.
+            .sheet(item: navigator.presented(Sheet.init), onDismiss: { app.takeInChanges() }) { sheet in
                 switch sheet {
                 case .chooseProject(let id):
                     ProjectPicker(projects: library.projects.filter { $0.id != library.document(id)?.projectID }) { projectID in

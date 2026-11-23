@@ -275,6 +275,11 @@ final class AppModel {
     func takeInChanges() {
         guard core.library.takeInChanges() else { return }
         library.refresh()
+        refreshDocuments()
+    }
+
+    /// Every open document shows the Vault as it is now.
+    private func refreshDocuments() {
         for model in documents.all {
             model.refresh()
         }
@@ -470,7 +475,8 @@ final class AppModel {
     func move(_ id: DocumentID, to target: ProjectChoice) {
         do {
             guard let move = try library.move(id, to: target) else { return }
-            documents.model(for: id)?.refresh()
+            // Every open document: a Project's replies follow its documents.
+            refreshDocuments()
             Haptics.decision()
             show(ToastMessage(
                 text: String(localized: "Moved to \(move.placeName)"),
@@ -484,7 +490,7 @@ final class AppModel {
     private func undoMove(_ move: ProjectMove) {
         do {
             let back = try library.undoMove(move)
-            documents.model(for: move.document)?.refresh()
+            refreshDocuments()
             Haptics.warning()
             show(ToastMessage(text: String(localized: "Moved back to \(back.placeName)")))
         } catch {
@@ -564,6 +570,8 @@ final class AppModel {
         documents.remove(pending.id)
         do {
             try library.delete(pending.id)
+            // Its replies went with it, from other documents' Reply panes too.
+            refreshDocuments()
         } catch {
             present(error)
         }

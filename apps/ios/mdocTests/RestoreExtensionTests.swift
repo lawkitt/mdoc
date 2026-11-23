@@ -42,7 +42,8 @@ final class RestoreExtensionTests: XCTestCase {
     func testAReplySavedInTheExtensionShowsInTheAppRestored() throws {
         let (seeded, alias) = try seeded()
         let app = Fixture.app(seeded)
-        let letter = try seeded.model(seeded.letter)
+        app.open(seeded.letter)
+        let letter = try XCTUnwrap(app.openModel)
         XCTAssertNil(letter.snapshot.reply)
         let manifest = seeded.storage.vault.appendingPathComponent(manifestName)
         let before = try Data(contentsOf: manifest)
@@ -58,8 +59,8 @@ final class RestoreExtensionTests: XCTestCase {
 
         letter.refresh()
         XCTAssertTrue(letter.snapshot.replies.isEmpty, "nothing until the app takes it in")
+        // As mdoc comes back to the foreground: the open document shows it.
         app.takeInChanges()
-        letter.refresh()
         XCTAssertEqual(app.library.replies(in: seeded.ellison).map(\.id), [saved.id])
         XCTAssertEqual(letter.snapshot.replies.map(\.id), [saved.id], "the Project's: every document in it lists it")
         XCTAssertEqual(letter.snapshot.reply?.id, saved.id)
@@ -94,6 +95,26 @@ final class RestoreExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot.replies.map(\.id), [saved.id])
         XCTAssertEqual(snapshot.reply?.restored.text, "Ask ann@example.com.")
         XCTAssertTrue(app.library.replies(in: seeded.ellison).isEmpty, "not a Project's")
+    }
+
+    /// An Unfiled document's reply follows it into a Project: a document
+    /// open in that Project lists it at once (review 3).
+    func testAMovedDocumentsRepliesShowInTheOpenDocumentsOfItsProject() throws {
+        let seeded = try Fixture.seeded()
+        let app = Fixture.app(seeded)
+        let (memo, _, alias) = try sharedUnfiled(seeded)
+        let sheet = try extensionModel(seeded, reply: "Ask \(alias).")
+        sheet.save()
+        let saved = try XCTUnwrap(sheet.saved)
+        app.takeInChanges()
+        app.open(seeded.letter)
+        let letter = try XCTUnwrap(app.openModel)
+        XCTAssertTrue(letter.snapshot.replies.isEmpty)
+
+        app.move(memo.id, to: .existing(seeded.ellison))
+        XCTAssertEqual(letter.snapshot.replies.map(\.id), [saved.id])
+        XCTAssertEqual(letter.snapshot.reply?.restored.text, "Ask ann@example.com.")
+        XCTAssertEqual(app.library.replies(in: seeded.ellison).map(\.id), [saved.id])
     }
 
     /// The picker lists Projects, pinned then most recently updated, then
