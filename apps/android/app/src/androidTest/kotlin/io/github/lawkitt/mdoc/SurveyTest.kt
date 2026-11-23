@@ -84,7 +84,7 @@ class SurveyTest {
                 waitFor("Copy")
                 shot("33-hand-off-largest-font-light")
                 back()
-                compose.onNodeWithContentDescriptionFirst("Settings").performClick()
+                compose.sidebar("Settings")
                 waitFor("About mdoc")
                 shot("31-settings-largest-font-light")
             }
@@ -110,7 +110,7 @@ class SurveyTest {
     }
 
     private fun steps(tone: String) {
-        waitFor("Settlement agreement")
+        waitFor("Continue")
         shot("01-home-$tone")
         compose.onNodeWithContentDescriptionFirst("Add").performClick()
         shot("02-add-menu-$tone")
@@ -118,6 +118,40 @@ class SurveyTest {
         waitFor("Paste text")
         shot("03-paste-sheet-$tone")
         back()
+
+        // The sidebar and its pages (#1091 Decisions 33, 34).
+        if (app.resources.configuration.screenWidthDp < 840) {
+            compose.onNodeWithContentDescriptionFirst("Show sidebar").performClick()
+            waitFor("All Documents")
+            shot("14-sidebar-$tone")
+            back()
+        }
+        compose.sidebar("All Documents")
+        shot("15-all-documents-$tone")
+        compose.sidebar("Unfiled")
+        shot("16-unfiled-$tone")
+        compose.sidebar(PROJECT)
+        waitFor("Letter of engagement")
+        shot("17-project-documents-$tone")
+        click("Replies")
+        waitFor("Reply to $PROJECT")
+        shot("18-project-replies-$tone")
+        click("Names")
+        waitFor("Always replace")
+        shot("19-project-names-$tone")
+        compose.onNodeWithContentDescriptionFirst("More options").performClick()
+        waitFor("Delete Project…")
+        shot("20-project-menu-$tone")
+        click("Delete Project…")
+        waitFor("Move its documents to Unfiled")
+        shot("21-delete-project-$tone")
+        click("Cancel")
+        compose.sidebar("All Projects")
+        shot("22-all-projects-$tone")
+        compose.sidebar("New Project")
+        waitFor("Documents you add from its page land in it.")
+        shot("23-new-project-$tone")
+        click("Cancel")
 
         open(settlement)
         shot("04-review-proposed-$tone")
@@ -149,7 +183,7 @@ class SurveyTest {
         shot("11-original-$tone")
         back()
 
-        compose.onNodeWithContentDescriptionFirst("Settings").performClick()
+        compose.sidebar("Settings")
         waitFor("About mdoc")
         shot("12-settings-$tone")
         back()
@@ -173,6 +207,14 @@ class SurveyTest {
         val pdf = File(folder, "Scanned letter.pdf")
         assets.open("english.pdf").use { input -> pdf.outputStream().use(input::copyTo) }
         scan = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), "Scanned letter").id.raw
+        // A Project with a document, a replaced name and a reply of its own, for its page.
+        val project = app.core.documents.createProject(PROJECT)
+        val letter = "Dear Maya Bennett, we confirm our engagement."
+        val engagement = app.core.documents.importDocument(ImportSource.Text(letter), "Letter of engagement", project.id)
+        engagement.recognize(Quiet)
+        val start = letter.indexOf("Maya Bennett")
+        engagement.addReplacement(io.github.lawkitt.mdoc.core.SourceRange(start, start + 12), io.github.lawkitt.mdoc.core.Category.Person)
+        app.core.vault.saveReply(uniffi.mdoc_ffi.SharedFrom.Project(project.id.raw), "Reply to $PROJECT", null, "Thank you, PERSON_1.")
     }
 
     private fun candidates(markdown: String): List<Candidate> {
@@ -216,8 +258,9 @@ class SurveyTest {
 
     private fun open(document: String) {
         val title = app.core.documents.session(io.github.lawkitt.mdoc.core.DocumentId(document)).snapshot().title
+        compose.sidebar("All Documents")
         waitFor(title)
-        compose.onAllNodesWithText(title).onFirst().performClick()
+        compose.shownText(title).performClick()
         compose.waitForIdle()
         Thread.sleep(500)
     }
@@ -286,6 +329,8 @@ class SurveyTest {
         onAllNodes(hasContentDescription(description)).onFirst()
 
     private companion object {
+        const val PROJECT = "Harrow & Finch"
+
         /** Where the screenshots wait for scripts/android/android-survey.sh to pull them. */
         const val SURVEY = "/data/local/tmp/mdoc-survey"
     }

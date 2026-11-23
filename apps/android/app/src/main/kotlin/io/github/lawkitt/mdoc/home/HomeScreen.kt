@@ -25,7 +25,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Edit
@@ -34,6 +38,8 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,11 +53,15 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,8 +73,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
@@ -74,19 +86,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.R
-import io.github.lawkitt.mdoc.core.ProjectId
-import io.github.lawkitt.mdoc.core.ProjectSummary
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentSummary
+import io.github.lawkitt.mdoc.core.ProjectId
+import io.github.lawkitt.mdoc.core.ProjectSummary
 import io.github.lawkitt.mdoc.ui.Palette
 
 /** The four ways in, in menu order: the camera last, furthest from the button. */
 enum class AddOption { Paste, Files, Photos, Scan }
 
+/** All Documents' search shows from this many documents (iOS `searchThreshold`, ADR 0099). */
+const val SEARCH_THRESHOLD = 8
+
 /**
- * Home: a flat list of documents, newest first, each with its Project's dot and
- * a status line, or how to add the first one. A library that could
- * not be opened says so rather than looking empty.
+ * Home (#1091 Decision 33; iOS's Start): the setup card while models are
+ * missing, the document to go back to, and what mdoc does. Lists live in
+ * the sidebar and its pages. A library that could not be opened says so
+ * rather than looking empty.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,65 +114,225 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     setupCard: (@Composable () -> Unit)? = null,
     onSettings: () -> Unit = {},
-    onDelete: (DocumentId) -> Unit = {},
+    onMenu: (() -> Unit)? = null,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() },
 ) {
-    var menu by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
+                navigationIcon = { onMenu?.let { MenuButton(it) } },
                 actions = {
                     IconButton(onSettings) { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings)) }
                 },
             )
         },
-        floatingActionButton = {
-            Box {
-                val addLabel = stringResource(R.string.add)
-                ExtendedFloatingActionButton(
-                    onClick = { menu = true },
-                    // The button's own label: its text alone does not reach TalkBack.
-                    modifier = Modifier.semantics { contentDescription = addLabel },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text(stringResource(R.string.add)) },
-                )
-                // Opens upward from the button: Scan, the camera, ends furthest away.
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    AddOption.entries.reversed().forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(stringResource(option.label)) },
-                            leadingIcon = { Icon(painterResource(option.icon), contentDescription = null) },
-                            onClick = {
-                                menu = false
-                                onAdd(option)
-                            },
-                        )
-                    }
-                }
-            }
-        },
+        floatingActionButton = { AddButton(onAdd) },
     ) { padding ->
-        // A tablet keeps the list to a readable width, centred.
+        // A tablet keeps it to a readable width, centred.
         val inner = Modifier.padding(padding).fillMaxWidth().wrapContentWidth().widthIn(max = 720.dp)
         when {
             state.error != null -> CoreFailed(state.error, onRetry, inner)
             !state.loaded -> Box(inner.fillMaxSize())
             // Scrolls, so the setup card's buttons stay reachable on a short screen or at large text.
-            state.documents.isEmpty() -> Column(inner.verticalScroll(rememberScrollState())) {
-                setupCard?.let { Box(Modifier.padding(16.dp)) { it() } }
-                EmptyHome(state.canFindNames, Modifier.heightIn(min = 320.dp))
+            else -> Column(inner.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                setupCard?.invoke()
+                state.continueDocument?.let { ContinueCard(it) { onOpen(it.id) } }
+                EmptyHome(state.canFindNames, empty = state.listed.isEmpty(), Modifier.heightIn(min = 320.dp))
+            }
+        }
+    }
+}
+
+/** The sidebar's button, on each page's bar while the sidebar is a drawer. */
+@Composable
+fun MenuButton(onClick: () -> Unit) {
+    IconButton(onClick) { Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.show_sidebar)) }
+}
+
+/** Add: the four ways in, from the page's floating button. What it adds lands where the page says. */
+@Composable
+fun AddButton(onAdd: (AddOption) -> Unit) {
+    var menu by rememberSaveable { mutableStateOf(false) }
+    Box {
+        val addLabel = stringResource(R.string.add)
+        ExtendedFloatingActionButton(
+            onClick = { menu = true },
+            // The button's own label: its text alone does not reach TalkBack.
+            modifier = Modifier.semantics { contentDescription = addLabel },
+            icon = { Icon(Icons.Default.Add, contentDescription = null) },
+            text = { Text(stringResource(R.string.add)) },
+        )
+        // Opens upward from the button: Scan, the camera, ends furthest away.
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            AddOption.entries.reversed().forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(option.label)) },
+                    leadingIcon = { Icon(painterResource(option.icon), contentDescription = null) },
+                    onClick = {
+                        menu = false
+                        onAdd(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** "Continue · Services agreement · 3 left". */
+@Composable
+private fun ContinueCard(document: DocumentSummary, onOpen: () -> Unit) {
+    val spoken = stringResource(
+        R.string.continue_spoken,
+        document.title,
+        pluralStringResource(R.plurals.names_left_spoken, document.pendingCount, document.pendingCount),
+    )
+    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = spoken }) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Outlined.Info, contentDescription = null)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.continue_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(document.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.names_left, document.pendingCount), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+        }
+    }
+}
+
+/**
+ * All Documents, or Unfiled: documents newest first, each with its
+ * Project's dot (where the list mixes Projects) and a status line.
+ * Unfiled's Select picks several to delete at once (#1091 Decision 5),
+ * also entered by a long press; their snackbar offers Undo.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DocumentListScreen(
+    title: String,
+    documents: List<DocumentSummary>,
+    state: HomeState,
+    onOpen: (DocumentId) -> Unit,
+    onAdd: (AddOption) -> Unit,
+    onDelete: (List<DocumentId>) -> Unit,
+    modifier: Modifier = Modifier,
+    showsProject: Boolean = true,
+    selectable: Boolean = false,
+    searchable: Boolean = false,
+    emptyTitle: Int = R.string.home_empty_title,
+    emptyBody: Int? = null,
+    onMenu: (() -> Unit)? = null,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() },
+) {
+    var selecting by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var query by rememberSaveable { mutableStateOf("") }
+    // A document deleted or moved elsewhere leaves the selection.
+    val ids = documents.map { it.id.raw }
+    LaunchedEffect(ids) { selected = selected.filter { it in ids } }
+    val shown = if (searchable && query.isNotBlank()) {
+        val found = state.search(query).first.map { it.id }.toSet()
+        documents.filter { it.id in found }
+    } else {
+        documents
+    }
+    fun endSelecting() {
+        selecting = false
+        selected = emptyList()
+    }
+    Scaffold(
+        modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            if (selecting) {
+                // Material's contextual bar while documents are picked.
+                TopAppBar(
+                    title = { Text(pluralStringResource(R.plurals.selected_count, selected.size, selected.size)) },
+                    navigationIcon = {
+                        IconButton(::endSelecting) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close)) }
+                    },
+                    actions = {
+                        val delete = if (selected.isEmpty()) {
+                            stringResource(R.string.delete)
+                        } else {
+                            pluralStringResource(R.plurals.delete_count, selected.size, selected.size)
+                        }
+                        TextButton(
+                            onClick = {
+                                onDelete(documents.map { it.id }.filter { it.raw in selected })
+                                endSelecting()
+                            },
+                            enabled = selected.isNotEmpty(),
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(delete)
+                        }
+                    },
+                )
+            } else {
+                TopAppBar(
+                    title = { Text(title) },
+                    navigationIcon = { onMenu?.let { MenuButton(it) } },
+                    actions = {
+                        if (selectable && documents.isNotEmpty()) {
+                            TextButton(onClick = { selecting = true }) { Text(stringResource(R.string.select)) }
+                        }
+                    },
+                )
+            }
+        },
+        floatingActionButton = { if (!selecting) AddButton(onAdd) },
+    ) { padding ->
+        val inner = Modifier.padding(padding).fillMaxWidth().wrapContentWidth().widthIn(max = 720.dp)
+        when {
+            !state.loaded -> Box(inner.fillMaxSize())
+            documents.isEmpty() -> Column(inner.verticalScroll(rememberScrollState())) {
+                EmptyState(stringResource(emptyTitle), emptyBody?.let { stringResource(it) }, R.drawable.ic_find_in_page)
             }
             else -> LazyColumn(inner) {
-                setupCard?.let { card -> item(key = "setup") { Box(Modifier.padding(16.dp)) { card() } } }
-                items(state.documents, key = { it.id.raw }) { document ->
-                    DocumentRow(
-                        document,
-                        state.projects.firstOrNull { it.id == document.projectId },
-                        state.canFindNames,
-                        onDelete = { onDelete(document.id) },
-                    ) {
-                        onOpen(document.id)
+                if (searchable && (documents.size >= SEARCH_THRESHOLD || query.isNotEmpty())) {
+                    item(key = "search") {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text(stringResource(R.string.search_documents_and_projects)) },
+                            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp),
+                        )
+                    }
+                }
+                items(shown, key = { it.id.raw }) { document ->
+                    if (selecting) {
+                        val isSelected = document.id.raw in selected
+                        fun toggle() {
+                            selected = if (isSelected) selected - document.id.raw else selected + document.id.raw
+                        }
+                        DocumentRow(
+                            document, null, state.canFindNames,
+                            leading = { Checkbox(checked = isSelected, onCheckedChange = { toggle() }) },
+                            onClick = ::toggle,
+                        )
+                    } else {
+                        DocumentRow(
+                            document,
+                            if (showsProject) state.project(document.projectId) else null,
+                            state.canFindNames,
+                            onDelete = { onDelete(listOf(document.id)) },
+                            onSelect = if (selectable) {
+                                {
+                                    selecting = true
+                                    selected = listOf(document.id.raw)
+                                }
+                            } else {
+                                null
+                            },
+                        ) {
+                            onOpen(document.id)
+                        }
                     }
                 }
             }
@@ -181,17 +357,24 @@ private val AddOption.label: Int
         AddOption.Scan -> R.string.scan
     }
 
+/**
+ * A document's row in a list: its Project's dot where the list mixes
+ * Projects, its title and status. A long press offers Delete (iOS's
+ * swipe) and, in Unfiled, Select; TalkBack has them as actions.
+ */
 @Composable
-private fun DocumentRow(
+fun DocumentRow(
     document: DocumentSummary,
     project: ProjectSummary?,
     canFindNames: Boolean,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onSelect: (() -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    // A long press offers Delete (iOS's swipe); TalkBack has it as an action.
     var actions by remember { mutableStateOf(false) }
     val deleteLabel = stringResource(R.string.delete)
+    val selectLabel = stringResource(R.string.select)
     val line = HomeViewModel.status(document, canFindNames)
     val status = when (line) {
         StatusLine.NotRecognized -> stringResource(R.string.status_not_recognized)
@@ -208,14 +391,24 @@ private fun DocumentRow(
     val tone = if (toReview) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
     // The Project's name only when it differs from the title.
     val projectName = project?.name?.takeIf { it != document.title }
+    val hasActions = onDelete != null || onSelect != null
     Box {
         ListItem(
             modifier = Modifier
-                .combinedClickable(onClick = onClick, onLongClick = { actions = true }, onLongClickLabel = deleteLabel)
-                .semantics { customActions = listOf(CustomAccessibilityAction(deleteLabel) { onDelete(); true }) },
-            leadingContent = project?.let {
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = if (hasActions) ({ actions = true }) else null,
+                    onLongClickLabel = if (hasActions) deleteLabel else null,
+                )
+                .semantics {
+                    customActions = listOfNotNull(
+                        onSelect?.let { CustomAccessibilityAction(selectLabel) { it(); true } },
+                        onDelete?.let { CustomAccessibilityAction(deleteLabel) { it(); true } },
+                    )
+                },
+            leadingContent = leading ?: project?.let {
                 {
-                    Box(Modifier.size(10.dp).background(Color(Palette.project(it.colour)), CircleShape))
+                    ProjectDot(it)
                 }
             },
             headlineContent = { Text(document.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
@@ -230,15 +423,32 @@ private fun DocumentRow(
             },
         )
         DropdownMenu(expanded = actions, onDismissRequest = { actions = false }) {
-            DropdownMenuItem(
-                text = { Text(deleteLabel) },
-                onClick = {
-                    actions = false
-                    onDelete()
-                },
-            )
+            onSelect?.let { select ->
+                DropdownMenuItem(
+                    text = { Text(selectLabel) },
+                    onClick = {
+                        actions = false
+                        select()
+                    },
+                )
+            }
+            onDelete?.let { delete ->
+                DropdownMenuItem(
+                    text = { Text(deleteLabel) },
+                    onClick = {
+                        actions = false
+                        delete()
+                    },
+                )
+            }
         }
     }
+}
+
+/** A Project's colour: it marks the Project, never a state. */
+@Composable
+fun ProjectDot(project: ProjectSummary, size: Int = 10) {
+    Box(Modifier.size(size.dp).background(Color(Palette.project(project.colour)), CircleShape))
 }
 
 /** iOS's status symbols, in Material's core set. */
@@ -264,33 +474,42 @@ private fun CoreFailed(error: String, onRetry: () -> Unit, modifier: Modifier = 
     }
 }
 
+/** What mdoc does, under "No documents yet" while there are none. */
 @Composable
-private fun EmptyHome(canFindNames: Boolean, modifier: Modifier = Modifier) {
+private fun EmptyHome(canFindNames: Boolean, empty: Boolean, modifier: Modifier = Modifier) {
+    EmptyState(
+        if (empty) stringResource(R.string.home_empty_title) else null,
+        stringResource(if (canFindNames) R.string.home_empty_body else R.string.home_empty_body_below_floor),
+        R.drawable.ic_find_in_page,
+        modifier,
+    )
+}
+
+/** A page's empty state: a symbol, a title and a line, centred. */
+@Composable
+fun EmptyState(title: String?, body: String?, icon: Int, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxWidth().padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            painterResource(R.drawable.ic_find_in_page),
+            painterResource(icon),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(48.dp),
         )
-        Text(stringResource(R.string.home_empty_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-        Text(
-            stringResource(if (canFindNames) R.string.home_empty_body else R.string.home_empty_body_below_floor),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+        title?.let { Text(it, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() }) }
+        body?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        }
     }
 }
 
 /**
  * Adding a document: pasted text, a title and a Project in one sheet. It
- * lands in Unfiled unless a Project is chosen; no import makes a Project
- * (#1091 Decision 35).
+ * lands in Unfiled, or in the Project whose page it was started from,
+ * unless another is chosen; no import makes a Project (#1091 Decision 35).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -299,6 +518,7 @@ fun AddSheet(
     projects: List<ProjectSummary>,
     onAdd: (text: String?, title: String, project: ProjectId?) -> Unit,
     onDismiss: () -> Unit,
+    initialProject: ProjectId? = null,
 ) {
     val pasting = adding is PendingAdd.Text
     var text by rememberSaveable { mutableStateOf("") }
@@ -310,7 +530,7 @@ fun AddSheet(
         text = value
         if (pasting && !titleTyped) title = HomeViewModel.suggestedTitle(value, fallback)
     }
-    var project by rememberSaveable { mutableStateOf<String?>(null) }
+    var project by rememberSaveable { mutableStateOf(initialProject?.raw?.takeIf { id -> projects.any { it.id.raw == id } }) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp, 0.dp, 24.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
@@ -361,7 +581,7 @@ fun AddSheet(
 private fun ProjectOption(label: String, project: ProjectSummary?, selected: Boolean, onClick: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         RadioButton(selected = selected, onClick = onClick)
-        project?.let { Box(Modifier.size(10.dp).background(Color(Palette.project(it.colour)), CircleShape)) }
+        project?.let { ProjectDot(it) }
         Text(label, modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyLarge)
     }
 }

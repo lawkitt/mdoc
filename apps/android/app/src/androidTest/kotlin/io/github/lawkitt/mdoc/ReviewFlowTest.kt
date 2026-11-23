@@ -60,10 +60,9 @@ class ReviewFlowTest {
 
     @Test
     fun openReviewShareRestore() {
-        // Home lists it, ready to share.
+        // All Documents lists it, ready to share.
         compose.activityRule.scenario.onActivity { it.recreate() }
-        waitFor(title)
-        compose.onNodeWithText(title).performClick()
+        compose.openDocument(title)
 
         // Copy for AI: the alias, never the original.
         waitFor("Copy")

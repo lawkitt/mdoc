@@ -3,6 +3,7 @@ package io.github.lawkitt.mdoc
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -38,9 +39,11 @@ class LabelsTest {
             override fun onCancel(handler: () -> Unit) = Unit
         })
         compose.activityRule.scenario.onActivity { it.recreate() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitForShown(hasContentDescription("Add"))
         assertNamed("Home")
-        compose.onNodeWithText(title).performClick()
+        compose.sidebar("All Documents")
+        assertNamed("All Documents")
+        compose.openDocument(title)
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Text")).fetchSemanticsNodes().isNotEmpty() || compose.onAllNodes(hasText("Copy")).fetchSemanticsNodes().isNotEmpty() }
         assertNamed("the document")
     }
