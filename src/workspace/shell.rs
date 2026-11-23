@@ -11,7 +11,7 @@ use crate::{
     style::{self, Theme},
     ui,
     workspace::{
-        Close, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Settings,
+        Close, New, Open, OpenProject, PasteAiResponse, PseudonymizeClipboard, Settings,
         ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
@@ -127,7 +127,7 @@ enum Command {
     /// Stop the active tab's running conversion (#950); no key of its own.
     CancelConversion,
     ToggleSidebar,
-    OpenCase,
+    OpenProject,
     Home,
     Settings,
     SettingsCategory(crate::settings_ui::Category),
@@ -136,7 +136,7 @@ enum Command {
     /// The active document's heading whose line starts at this offset.
     Heading(usize),
     Tab(u64),
-    Case(String),
+    Project(String),
     Recent(PathBuf),
 }
 
@@ -157,7 +157,7 @@ impl Command {
             Command::CloseTab => Box::new(Close),
             Command::BeforeAfter => Box::new(ToggleCompare),
             Command::ToggleSidebar => Box::new(ToggleSidebar),
-            Command::OpenCase => Box::new(OpenCase),
+            Command::OpenProject => Box::new(OpenProject),
             Command::Home => Box::new(ShowHome),
             Command::Settings => Box::new(Settings),
             Command::Shortcuts => Box::new(ShowShortcuts),
@@ -170,7 +170,7 @@ impl Command {
             | Command::SettingsCategory(_)
             | Command::Heading(_)
             | Command::Tab(_)
-            | Command::Case(_)
+            | Command::Project(_)
             | Command::Recent(_) => return None,
         })
     }
@@ -262,7 +262,7 @@ impl Workspace {
     }
 
     pub(super) fn showing_home(&self, cx: &App) -> bool {
-        self.cases.page.is_none()
+        self.project_ui.page.is_none()
             && (self.tabs.home()
                 || self
                     .tabs
@@ -271,7 +271,7 @@ impl Workspace {
     }
 
     pub(super) fn showing_overview(&self, cx: &App) -> bool {
-        self.cases.page.is_some() || self.showing_home(cx)
+        self.project_ui.page.is_some() || self.showing_home(cx)
     }
 
     pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -288,7 +288,7 @@ impl Workspace {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| view.pii.dismiss_popup());
         }
-        self.cases.page = None;
+        self.project_ui.page = None;
         self.end_rename(true, cx);
         self.tabs.show_home();
         self.note_destination(arrival, cx);
@@ -423,7 +423,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// A small section label, e.g. "Open" over tabs without a case.
+    /// A small section label, e.g. "Open" over tabs without a Project.
     pub(super) fn section_label(&self, label: &'static str) -> AnyElement {
         let p = self.theme.get().pdf_style();
         div()
@@ -516,7 +516,7 @@ impl Workspace {
     }
 
     /// The notices popover under the title row's right end:
-    /// locked cases, a crash report and session messages, with their actions.
+    /// locked Projects, a crash report and session messages, with their actions.
     pub(super) fn notices_view(
         &self,
         window: &Window,
@@ -528,7 +528,7 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let cards: Vec<AnyElement> = [
-            self.case_key_bar(cx),
+            self.project_key_bar(cx),
             self.crash_bar(cx),
             self.notice_bar(cx),
         ]
@@ -870,7 +870,7 @@ impl Workspace {
                                     )
                                     .child(self.drop_zone(cx))
                                     .child(self.home_actions(cx))
-                                    .children(self.home_cases(cx))
+                                    .children(self.home_projects(cx))
                                     .children(self.home_recents(cx)),
                             ),
                     ),
@@ -1064,7 +1064,7 @@ impl Workspace {
             "this computer"
         };
         let detail = format!(
-            "Detection, conversion and saved cases run on {machine}. mdoc goes online only \
+            "Detection, conversion and Projects run on {machine}. mdoc goes online only \
              to check for updates and to download models you choose."
         );
         div()
@@ -1147,12 +1147,12 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn home_cases(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn home_projects(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let cases = self.case_coordinator.summaries();
+        let projects = self.projects.summaries();
         let mut list = div().flex().flex_col();
-        if cases.is_empty() {
+        if projects.is_empty() {
             return Some(
                 // The label's top padding moves to the row, so the label and
                 // the link share a center line.
@@ -1161,7 +1161,7 @@ impl Workspace {
                     .items_center()
                     .gap_2()
                     .pt_2()
-                    .child(home_label("Cases", theme).pt_0())
+                    .child(home_label("Projects", theme).pt_0())
                     .child(div().flex_1())
                     .child(
                         // The list opens below this link (#307). The link's
@@ -1171,35 +1171,47 @@ impl Workspace {
                             .relative()
                             .mr(px(-8.))
                             .child({
-                                let bounds = self.cases.home_link.clone();
+                                let bounds = self.project_ui.home_link.clone();
                                 gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
                                     .absolute()
                                     .inset_0()
                             })
                             .child(
-                                ui::link_button("home-open-case", "Open a case…", theme, true)
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "home-open-case".into())
-                                    })
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        let link = this.cases.home_link.get();
-                                        this.show_case_list_at(link, window, cx);
-                                    })),
+                                ui::link_button(
+                                    "home-open-project",
+                                    "Open a Project…",
+                                    theme,
+                                    true,
+                                )
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "home-open-project".into())
+                                })
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
+                                        let link = this.project_ui.home_link.get();
+                                        this.show_project_list_at(link, window, cx);
+                                    },
+                                )),
                             ),
                     )
                     .into_any_element(),
             );
         }
-        for case in cases.iter().take(6) {
-            let link = case.link();
-            let id = case.id.clone();
-            let documents = case.documents;
+        for project in projects.iter().take(6) {
+            let link = super::ProjectLink {
+                id: project.id.clone(),
+                name: project.name.clone(),
+                colour: project.colour,
+            };
+            let id = project.id.clone();
+            let documents =
+                (self.vault.vault()).map_or(0, |vault| vault.documents_in(Some(&project.id)).len());
             list = list.child(
                 home_row(
-                    SharedString::from(format!("home-case-{}", case.id)),
+                    SharedString::from(format!("home-project-{}", project.id)),
                     format!(
-                        "Case {}, {documents} {}",
-                        case.name,
+                        "Project {}, {documents} {}",
+                        project.name,
                         if documents == 1 {
                             "document"
                         } else {
@@ -1212,10 +1224,16 @@ impl Workspace {
                     div()
                         .size(px(8.))
                         .rounded_full()
-                        .bg(style::case_color(link.hue(), theme))
+                        .bg(style::project_color(link.hue(), theme))
                         .flex_shrink_0(),
                 )
-                .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(project.name.clone()),
+                )
                 .child(
                     div()
                         .text_size(px(12.))
@@ -1229,7 +1247,9 @@ impl Workspace {
                             }
                         )),
                 )
-                .on_click(cx.listener(move |this, _, window, cx| this.open_case(&id, window, cx))),
+                .on_click(
+                    cx.listener(move |this, _, window, cx| this.open_project(&id, window, cx)),
+                ),
             );
         }
         Some(
@@ -1237,7 +1257,7 @@ impl Workspace {
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(home_label("Cases", theme))
+                .child(home_label("Projects", theme))
                 .child(list)
                 .into_any_element(),
         )
@@ -1412,11 +1432,9 @@ impl Workspace {
             .active_tab()
             .is_some_and(|tab| !self.is_placeholder(tab, cx));
         if !real {
-            // The notice opens even over an earlier one; check quietly whether
-            // locked cases belong in it.
-            self.load_cases(window, cx);
+            // The notice opens even over an earlier one.
             let effect = self.notices.post_now(format!(
-                "{action} works from a pseudonymized document. Open one, or open a case, first."
+                "{action} works from a pseudonymized document. Open one, or open a Project, first."
             ));
             self.carry_out_notices(effect);
             cx.notify();
@@ -1596,9 +1614,9 @@ impl Workspace {
             },
             Row {
                 section: "Actions",
-                label: "Open a case…".into(),
+                label: "Open a Project…".into(),
                 detail: None,
-                command: Command::OpenCase,
+                command: Command::OpenProject,
             },
             Row {
                 section: "Actions",
@@ -1670,12 +1688,14 @@ impl Workspace {
                 command: Command::Tab(tab.id()),
             });
         }
-        for case in self.case_coordinator.summaries() {
+        for project in self.projects.summaries() {
+            let documents =
+                (self.vault.vault()).map_or(0, |vault| vault.documents_in(Some(&project.id)).len());
             rows.push(Row {
-                section: "Cases",
-                label: case.name.clone(),
-                detail: Some(format!("{} documents", case.documents)),
-                command: Command::Case(case.id.clone()),
+                section: "Projects",
+                label: project.name.clone(),
+                detail: Some(format!("{documents} documents")),
+                command: Command::Project(project.id.clone()),
             });
         }
         for recent in &self.shell.recents.files {
@@ -1792,7 +1812,7 @@ impl Workspace {
                 }
             }
             Command::ToggleSidebar => dispatch(window, cx, Box::new(ToggleSidebar)),
-            Command::OpenCase => dispatch(window, cx, Box::new(OpenCase)),
+            Command::OpenProject => dispatch(window, cx, Box::new(OpenProject)),
             Command::Home => self.show_home(window, cx),
             Command::Settings => dispatch(window, cx, Box::new(Settings)),
             Command::SettingsCategory(category) => self
@@ -1817,7 +1837,7 @@ impl Workspace {
                 self.focus_active(window, cx);
             }
             Command::Tab(id) => self.activate(id, window, cx),
-            Command::Case(id) => self.open_case(&id, window, cx),
+            Command::Project(id) => self.open_project(&id, window, cx),
             Command::Recent(path) => self.open_paths(vec![path], window, cx),
         }
     }
@@ -1862,7 +1882,7 @@ impl Workspace {
                 Command::CollapseIdentities => ui::Icon::CollapseAll,
                 Command::ToggleSidebar => ui::Icon::Sidebar,
                 Command::Pseudonymize | Command::PseudonymizeClipboard => ui::Icon::Anonymous,
-                Command::Case(_) | Command::OpenCase => ui::Icon::Sidebar,
+                Command::Project(_) | Command::OpenProject => ui::Icon::Sidebar,
             };
             list = list.child(
                 div()

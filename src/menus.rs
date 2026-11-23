@@ -12,8 +12,8 @@ use crate::{
     pii::ui::{CopyForAi, Pseudonymize},
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
-        CheckForUpdates, ClearRecentFiles, Close, Import, New, NextTab, Open, OpenCase,
-        OpenPalette, OpenRecent, PasteAiResponse, PreviousTab, PseudonymizeClipboard, Quit,
+        CheckForUpdates, ClearRecentFiles, Close, Import, New, NextTab, Open, OpenPalette,
+        OpenProject, OpenRecent, PasteAiResponse, PreviousTab, PseudonymizeClipboard, Quit,
         RestoreClipboard, Settings, ShowHome, ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
@@ -191,7 +191,7 @@ fn menus(recent: &[PathBuf]) -> Vec<Menu> {
             MenuItem::action("New", New),
             MenuItem::action("Open…", Open),
             MenuItem::submenu(open_recent(recent)),
-            MenuItem::action("Open Case…", OpenCase),
+            MenuItem::action("Open Project…", OpenProject),
             MenuItem::action("Convert to Markdown", Import),
             MenuItem::separator(),
             MenuItem::action("Save", Save),

@@ -349,7 +349,6 @@ mod scheduling_tests {
     use super::*;
     use crate::document_view::tests::boot;
     use crate::style::Theme;
-    use mdoc_store::cases;
 
     #[gpui::test]
     fn typing_captures_only_one_snapshot_after_the_debounce(cx: &mut gpui::TestAppContext) {
@@ -401,18 +400,21 @@ mod scheduling_tests {
     }
 
     #[gpui::test]
-    fn theme_refresh_does_not_schedule_spelling_or_case_saves(cx: &mut gpui::TestAppContext) {
+    fn theme_refresh_does_not_schedule_spelling_or_project_saves(cx: &mut gpui::TestAppContext) {
         let (app, cx) = boot(cx);
         app.update(cx, |app, cx| {
-            let case = cases::Case::new("Fixture".into(), &[], None);
-            app.case.attach(Some(cases::CaseLink::of(&case)));
+            app.project.attach(Some(crate::workspace::ProjectLink {
+                id: "a".repeat(32),
+                name: "Fixture".into(),
+                colour: None,
+            }));
             let key = app.spelling.scheduled;
             let snapshots = app.spelling.snapshots;
             app.theme.set(Theme::Light);
             app.sync_pii_theme(cx);
             assert_eq!(app.spelling.scheduled, key);
             assert_eq!(app.spelling.snapshots, snapshots);
-            assert!(!app.case_save_pending());
+            assert!(!app.project_save_pending());
         });
     }
 

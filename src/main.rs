@@ -332,7 +332,7 @@ pub(crate) fn bind_all_keys(cx: &mut App) {
     );
     markdown_search::bind_keys(cx);
     pii::ui::bind_keys(cx);
-    workspace::bind_case_keys(cx);
+    workspace::bind_project_keys(cx);
     shelf_ui::bind_keys(cx);
     workspace::bind_shell_keys(cx);
     settings_ui::bind_keys(cx);

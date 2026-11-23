@@ -12,19 +12,14 @@ mod exports;
 #[cfg(test)]
 mod tests;
 
+use crate::workspace::ProjectLink;
 pub(crate) use exports::ShelfExports;
 use mdoc_markdown::{lines, spans, tables};
 use mdoc_pii::{
     Category,
     restore::{ExportedIdentity, RestoreMap},
 };
-use mdoc_store::cases::{Case, CaseLink};
-use sha2::Digest;
-use std::{
-    ops::Range,
-    path::{Path, PathBuf},
-    time::SystemTime,
-};
+use std::{ops::Range, time::SystemTime};
 
 /// The shelf lists at most this many documents.
 pub(crate) const MAX_DOCUMENTS: usize = 8;
@@ -40,8 +35,6 @@ const PARAGRAPH_BYTES: usize = 32 * 1024;
 /// rules, "Page 1 of 5").
 const PROSE_WORDS: usize = 3;
 const PROSE_LETTERS: usize = 12;
-/// A closed member larger than this is not read; it lists as changed.
-pub(crate) const MAX_MEMBER_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Whether a listed document may leave through the shelf.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,11 +46,8 @@ pub(crate) enum Readiness {
     /// An open tab just edited: its proposals are being found again.
     Checking,
     /// A document whose text still holds this many known names by an
-    /// original wording: a kept mention in an open tab, or a closed member
-    /// that gained one.
+    /// original wording: a kept mention.
     NamesNotReplaced(usize),
-    /// A closed member whose file is not the text it saved while ready.
-    ChangedSinceReview,
 }
 
 impl Readiness {
@@ -71,18 +61,16 @@ impl Readiness {
             Self::Ready => "ready".into(),
             Self::LeftToReview(n) => format!("{n} left to review"),
             Self::Checking => "Checking names".into(),
-            Self::ChangedSinceReview => "Changed since review".into(),
             Self::NamesNotReplaced(1) => "1 name not replaced".into(),
             Self::NamesNotReplaced(n) => format!("{n} names not replaced"),
         }
     }
 }
 
-/// What a row opens: an open tab, or a closed member of a case.
+/// What a row opens: an open tab.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ShelfKey {
     Tab(u64),
-    Member { case: String, path: PathBuf },
 }
 
 /// A ready document's preview: its first real prose as one paragraph,
@@ -103,10 +91,10 @@ pub(crate) struct ShelfDocument {
     pub key: ShelfKey,
     /// The title with known originals pseudonymized.
     pub title: String,
-    pub case: Option<CaseLink>,
-    /// The case's name as the row shows it, pseudonymized with the names
-    /// the document knows: a case is often named after a person.
-    pub case_label: Option<String>,
+    pub project: Option<ProjectLink>,
+    /// The Project's name as the row shows it, pseudonymized with the
+    /// names the document knows: a Project is often named after a person.
+    pub project_label: Option<String>,
     pub readiness: Readiness,
     pub edited: SystemTime,
     pub words: usize,
@@ -140,26 +128,8 @@ pub(crate) struct OpenTab<'a> {
     /// the title and preview, and any left in the text keeps it from
     /// leaving.
     pub names: Vec<ExportedIdentity>,
-    pub case: Option<CaseLink>,
+    pub project: Option<ProjectLink>,
     pub edited: SystemTime,
-}
-
-/// A closed member's file, read while the shelf is open.
-pub(crate) struct ClosedMember<'a> {
-    pub case: &'a Case,
-    /// The member as in [`Case::members`].
-    pub path: &'a Path,
-    /// The file's text; `None` when it could not be read or is too large.
-    pub text: Option<&'a str>,
-    pub edited: SystemTime,
-}
-
-/// The fingerprint of a text saved while ready: SHA-256, hex.
-pub(crate) fn fingerprint(text: &str) -> String {
-    sha2::Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 impl ShelfDocument {
@@ -187,58 +157,11 @@ impl ShelfDocument {
             tab.title,
             tab.text,
             &names,
-            tab.case,
+            tab.project,
             readiness,
             tab.edited,
             for_ai,
         ))
-    }
-
-    /// A closed member's row: ready only while its file matches the
-    /// fingerprint saved while ready, and holds none of the case's names.
-    pub(crate) fn of_member(member: ClosedMember<'_>) -> Self {
-        let names = RestoreMap::new(member.case.exported());
-        let title = title_of(member.path);
-        let key = ShelfKey::Member {
-            case: member.case.id.clone(),
-            path: member.path.to_path_buf(),
-        };
-        let link = Some(CaseLink::of(member.case));
-        let Some(text) = member.text else {
-            return Self::new(
-                key,
-                &title,
-                "",
-                &names,
-                link,
-                Readiness::ChangedSinceReview,
-                member.edited,
-                None,
-            );
-        };
-        let missed = names.known_names(text);
-        let readiness = if missed > 0 {
-            Readiness::NamesNotReplaced(missed)
-        } else if member.case.reviewed(member.path) == Some(fingerprint(text).as_str()) {
-            Readiness::Ready
-        } else {
-            Readiness::ChangedSinceReview
-        };
-        let for_ai = readiness.is_ready().then(|| {
-            // The aliases reopening it relinks as applied, as the editor's
-            // Copy for AI would name them.
-            mdoc_pii::handoff::for_ai(text, names.exact_aliases(text))
-        });
-        Self::new(
-            key,
-            &title,
-            text,
-            &names,
-            link,
-            readiness,
-            member.edited,
-            for_ai,
-        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -247,7 +170,7 @@ impl ShelfDocument {
         title: &str,
         text: &str,
         names: &RestoreMap,
-        case: Option<CaseLink>,
+        project: Option<ProjectLink>,
         readiness: Readiness,
         edited: SystemTime,
         for_ai: Option<String>,
@@ -260,8 +183,8 @@ impl ShelfDocument {
         Self {
             key,
             title: names.pseudonymize(title).0,
-            case_label: case.as_ref().map(|case| names.pseudonymize(&case.name).0),
-            case,
+            project_label: (project.as_ref()).map(|project| names.pseudonymize(&project.name).0),
+            project,
             readiness,
             edited,
             words: text
@@ -349,13 +272,6 @@ impl ShelfDocument {
     }
 }
 
-/// A document's title from its path: the file name, as the sidebar shows it.
-pub(crate) fn title_of(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string())
-}
-
 /// The mentions `text` holds by an alias, and the distinct names they are,
 /// per category.
 fn replaced(text: &str, names: &RestoreMap) -> (usize, Vec<(Category, usize)>) {
@@ -368,7 +284,7 @@ fn replaced(text: &str, names: &RestoreMap) -> (usize, Vec<(Category, usize)>) {
             continue;
         };
         mentions += 1;
-        // The tab's names list one person in its mapping and its case.
+        // The tab's names list one person in its mapping and its Project.
         if seen.contains(&identity.alias.as_str()) {
             continue;
         }
@@ -1079,61 +995,22 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     })
 }
 
-/// The shelf's list: open tabs, most recently edited first, then closed
-/// members, most recently saved first; at most [`MAX_DOCUMENTS`].
-pub(crate) fn list(
-    mut tabs: Vec<ShelfDocument>,
-    mut members: Vec<ShelfDocument>,
-) -> Vec<ShelfDocument> {
+/// The shelf's list: open tabs, most recently edited first; at most
+/// [`MAX_DOCUMENTS`].
+pub(crate) fn list(mut tabs: Vec<ShelfDocument>) -> Vec<ShelfDocument> {
     tabs.sort_by_key(|row| std::cmp::Reverse(row.edited));
-    members.sort_by_key(|row| std::cmp::Reverse(row.edited));
-    tabs.into_iter()
-        .chain(members)
-        .take(MAX_DOCUMENTS)
-        .collect()
-}
-
-/// Closed members worth reading for a shelf with `room` rows left: every
-/// member of `cases` that is not `open`, whose file exists, most recently
-/// modified first. Only their metadata is read here.
-pub(crate) fn closed_members<'a>(
-    cases: &'a [Case],
-    open: &[PathBuf],
-    room: usize,
-) -> Vec<(&'a Case, &'a Path, SystemTime)> {
-    let mut found: Vec<_> = cases
-        .iter()
-        .flat_map(|case| case.members.iter().map(move |path| (case, path)))
-        .filter(|(_, path)| !open.contains(path))
-        .filter_map(|(case, path)| {
-            let metadata = std::fs::metadata(path).ok().filter(|m| m.is_file())?;
-            Some((case, path.as_path(), metadata.modified().ok()?))
-        })
-        .collect();
-    found.sort_by_key(|a| std::cmp::Reverse(a.2));
-    found.dedup_by(|a, b| a.1 == b.1);
-    found.truncate(room);
-    found
-}
-
-/// Read a closed member's text while the shelf is open; `None` when it
-/// cannot be read as UTF-8 or is larger than [`MAX_MEMBER_BYTES`].
-pub(crate) fn read_member(path: &Path) -> Option<String> {
-    let metadata = std::fs::metadata(path).ok()?;
-    if metadata.len() > MAX_MEMBER_BYTES {
-        return None;
-    }
-    std::fs::read_to_string(path).ok()
+    tabs.truncate(MAX_DOCUMENTS);
+    tabs
 }
 
 /// What Restore Clipboard did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ClipboardRestore {
-    /// The clipboard text with the case's aliases restored.
+    /// The clipboard text with the Project's aliases restored.
     pub text: String,
     /// Distinct names restored, as the reply box counts them.
     pub restored: usize,
-    /// Alias-shaped tokens naming none of the case's identities.
+    /// Alias-shaped tokens naming none of the Project's identities.
     pub unrecognised: usize,
 }
 
@@ -1149,8 +1026,8 @@ impl ClipboardRestore {
     }
 }
 
-/// Restore Clipboard: replace one case's aliases in `text` with their
-/// primary wordings, matching as Restore does. Cases are never mixed.
+/// Restore Clipboard: replace one Project's aliases in `text` with their
+/// primary wordings, matching as Restore does. Projects are never mixed.
 pub(crate) fn restore_clipboard(text: &str, names: Vec<ExportedIdentity>) -> ClipboardRestore {
     let restored = RestoreMap::new(names).restore_in_place(text);
     ClipboardRestore {

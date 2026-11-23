@@ -201,22 +201,6 @@ impl<V> LiveViews<V> {
         }
     }
 
-    /// Tab `id` joined case `case`, or left its case (none).
-    pub(super) fn set_case(&mut self, id: u64, case: Option<String>) {
-        if let Some(tab) = self.get_mut(id) {
-            tab.record.case = case;
-        }
-    }
-
-    /// Case `case` is gone: no tab belongs to it any more.
-    pub(super) fn forget_case(&mut self, case: &str) {
-        for tab in &mut self.tabs {
-            if tab.record.case.as_deref() == Some(case) {
-                tab.record.case = None;
-            }
-        }
-    }
-
     /// The user acted on blank tab `id` (none: on every tab), so it is no
     /// longer a placeholder that Home may replace.
     pub(super) fn keep_blank(&mut self, id: Option<u64>) {
@@ -400,15 +384,6 @@ mod tests {
         assert!(tabs.get(b).unwrap().record().blank_disposable);
         tabs.keep_blank(None);
         assert!(!tabs.get(b).unwrap().record().blank_disposable);
-        tabs.set_case(a, Some("case-1".into()));
-        tabs.set_case(b, Some("case-1".into()));
-        tabs.forget_case("case-2");
-        assert_eq!(
-            tabs.get(a).unwrap().record().case.as_deref(),
-            Some("case-1")
-        );
-        tabs.forget_case("case-1");
-        assert!(tabs.iter().all(|tab| tab.record().case.is_none()));
         assert_eq!(tabs.set_document(a, Some(file("/cases/a.md"))), None);
         assert_eq!(
             tabs.set_document(a, Some(file("/cases/b.md"))),

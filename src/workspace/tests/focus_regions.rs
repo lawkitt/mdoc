@@ -14,7 +14,7 @@ fn app_commands_work_without_control_focus(cx: &mut TestAppContext) {
         crate::menus::About.boxed_clone(),
         New.boxed_clone(),
         Open.boxed_clone(),
-        OpenCase.boxed_clone(),
+        OpenProject.boxed_clone(),
         ToggleTheme.boxed_clone(),
         ToggleSidebar.boxed_clone(),
     ] {
@@ -66,7 +66,7 @@ fn app_commands_preserve_confirmation_focus(cx: &mut TestAppContext) {
         crate::menus::About.boxed_clone(),
         New.boxed_clone(),
         Open.boxed_clone(),
-        OpenCase.boxed_clone(),
+        OpenProject.boxed_clone(),
         ToggleTheme.boxed_clone(),
         ToggleSidebar.boxed_clone(),
     ] {
@@ -566,35 +566,34 @@ fn escape_in_the_notices_popover_closes_it(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn the_open_case_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (case, _) = saved_case(dir.path());
+fn the_open_project_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
+    let (project, _) = saved_project(&vault(&tabs, cx));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        )));
-        tabs.cases.test_may_ask = false;
-        tabs.case_coordinator.cases_mut().push(case);
+        let project = tabs.opened_vault().unwrap().project(&project).unwrap();
+        tabs.projects.put(project);
         tabs.focus_active(window, cx);
     });
     draw(cx);
-    tabs.update_in(cx, |tabs, window, cx| tabs.show_case_list(window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_project_list(window, cx));
     cx.run_until_parked();
     draw(cx);
     let in_list = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
-        cx.update(|window, cx| tabs.read(cx).case_list_focus.contains_focused(window, cx))
+        cx.update(|window, cx| {
+            tabs.read(cx)
+                .project_list_focus
+                .contains_focused(window, cx)
+        })
     };
-    assert!(cx.update(|_, cx| tabs.read(cx).cases.list_open));
+    assert!(cx.update(|_, cx| tabs.read(cx).project_ui.list_open));
     assert!(in_list(&tabs, cx));
-    // Tab and Shift+Tab stay inside, through the case row and Close.
+    // Tab and Shift+Tab stay inside, through the Project row and Close.
     for keys in ["tab", "tab", "tab", "shift-tab", "shift-tab"] {
         key(cx, keys);
         assert!(in_list(&tabs, cx), "{keys}");
     }
     key(cx, "escape");
-    assert!(!cx.update(|_, cx| tabs.read(cx).cases.list_open));
+    assert!(!cx.update(|_, cx| tabs.read(cx).project_ui.list_open));
     assert!(editor_focused(&tabs, cx));
 }
 
@@ -626,29 +625,24 @@ fn closing_notices_with_its_button_returns_to_the_document(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-fn opening_a_case_with_enter_closes_the_list_and_focuses_its_page(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let (case, _) = saved_case(dir.path());
+fn opening_a_project_with_enter_closes_the_list_and_focuses_its_page(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
+    let (project, _) = saved_project(&vault(&tabs, cx));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        )));
-        tabs.cases.test_may_ask = false;
-        tabs.case_coordinator.cases_mut().push(case.clone());
-        tabs.show_case_list(window, cx);
+        let project = tabs.opened_vault().unwrap().project(&project).unwrap();
+        tabs.projects.put(project);
+        tabs.show_project_list(window, cx);
     });
     cx.run_until_parked();
     draw(cx);
-    assert!(cx.debug_bounds("open-case-row").is_some());
+    assert!(cx.debug_bounds("open-project-row").is_some());
     key(cx, "tab"); // Close.
-    key(cx, "tab"); // The case's Open button.
+    key(cx, "tab"); // The Project's Open button.
     activate_control(cx);
-    assert!(!cx.update(|_, cx| tabs.read(cx).cases.list_open));
+    assert!(!cx.update(|_, cx| tabs.read(cx).project_ui.list_open));
     cx.update(|window, cx| {
         let w = tabs.read(cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), case.id);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), project);
         assert!(w.focus_regions.home().contains_focused(window, cx));
         assert!(
             w.active_view()
@@ -659,7 +653,7 @@ fn opening_a_case_with_enter_closes_the_list_and_focuses_its_page(cx: &mut TestA
                 .path
                 .is_none()
         );
-        assert_eq!(w.cases.member_reads, 0);
+        assert_eq!(w.project_ui.member_reads, 0);
     });
 }
 
@@ -733,17 +727,12 @@ fn ctrl_enter_opens_a_tabs_menu_in_both_sidebar_layouts(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
-fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppContext) {
+fn sidebar_project_actions_and_categories_work_without_a_pointer(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
-    let view = active(&tabs, cx);
-    view.update(cx, |view, cx| view.save_as_file(path, cx));
-    let case = tabs
-        .update_in(cx, |tabs, window, cx| {
-            tabs.create_case(tabs.tabs.active(), window, cx)
-        })
-        .unwrap();
-    cx.run_until_parked();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let case = new_project(&tabs, cx, tab);
+    tabs.update(cx, |tabs, cx| tabs.dismiss_toast(cx));
     draw(cx);
     let row = cx.update(|_, cx| {
         let tabs = tabs.read(cx);
@@ -756,14 +745,14 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
     activate_control(cx);
     cx.update(|window, cx| {
         let w = tabs.read(cx);
-        assert_eq!(w.cases.page.as_ref().unwrap().id(), case);
+        assert_eq!(w.project_ui.page.as_ref().unwrap().id(), case);
         assert!(w.focus_regions.home().contains_focused(window, cx));
     });
     activate_control(cx);
     assert!(cx.update(|_, cx| {
         tabs.read(cx)
-            .case_coordinator
-            .case(&case)
+            .projects
+            .project(&case)
             .unwrap()
             .skipped()
             .contains(&mdoc_pii::Category::Person)

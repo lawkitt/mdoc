@@ -2274,7 +2274,7 @@ fn panel_projection_reuses_rows_and_invalidates_on_keep_history_filter_and_query
         assert_eq!(app.replacement_entity_count(cx), 3);
         assert_eq!(app.kept_mention_count(cx), 0);
         let alias = app.pii.review.identity(identity).unwrap().alias.clone();
-        assert!(app.case_alias_is_present(&alias, cx));
+        assert!(app.project_alias_is_present(&alias, cx));
         app.sync_pii_theme(cx);
         assert!(
             Arc::ptr_eq(&initial, &app.replacement_entries(cx)),
@@ -2284,7 +2284,7 @@ fn panel_projection_reuses_rows_and_invalidates_on_keep_history_filter_and_query
         let kept = app.replacement_entries(cx);
         assert!(!Arc::ptr_eq(&initial, &kept));
         assert_eq!(app.kept_mention_count(cx), 1);
-        assert!(!app.case_alias_is_present(&alias, cx));
+        assert!(!app.project_alias_is_present(&alias, cx));
         assert!(
             kept.iter()
                 .any(|(row, item)| row.id == identity && matches!(item, PanelItem::Kept(_)))

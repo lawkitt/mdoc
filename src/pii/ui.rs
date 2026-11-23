@@ -1,8 +1,8 @@
 //! Live-document PII state, scan lifecycle and replacement actions.
-mod case_sync;
 mod chooser;
 mod compare;
 mod decisions;
+mod project_sync;
 pub(crate) use compare::CompareMode;
 pub(crate) use compare::{CompareState, SwitcherRest};
 mod discovery;
@@ -381,9 +381,9 @@ impl DocumentView {
         self.editor
             .update(cx, |editor, _| editor.set_copy_metadata(None));
         self.pii.decisions.clear();
-        // The new review lists nothing; what the old one put on the case's
+        // The new review lists nothing; what the old one put on the Project's
         // lists stays there.
-        self.case.forget_listed();
+        self.project.forget_listed();
         self.review_changed(cx);
     }
     pub(crate) fn pii_edited(&mut self, cx: &mut Context<Self>) {
@@ -406,11 +406,11 @@ impl DocumentView {
     pub(crate) fn sync_pii_theme(&mut self, cx: &mut Context<Self>) {
         self.sync_annotations(cx);
     }
-    /// Domain changes schedule spellcheck and a case save. Derived review data
+    /// Domain changes schedule spellcheck and a fold into the Project. Derived review data
     /// needs no bump here: it follows `Review::revision`.
     pub(crate) fn review_changed(&mut self, cx: &mut Context<Self>) {
         self.refresh_review_exclusions(cx);
-        self.schedule_case_save(cx);
+        self.schedule_project_save(cx);
     }
     fn refresh_review_exclusions(&mut self, cx: &mut Context<Self>) {
         self.sync_annotations(cx);
@@ -1164,7 +1164,7 @@ impl DocumentView {
                     .all(|edit| edit.range.is_empty() && edit.new_len == 0)
         }) {
             self.schedule_spellcheck(false, cx);
-            self.schedule_case_save(cx);
+            self.schedule_project_save(cx);
         }
         cx.notify();
     }

@@ -213,7 +213,7 @@ pub(super) fn applied_alias(d: &mut Driver, view: &Entity<DocumentView>) -> Resu
 }
 
 /// A synthetic proposal pair, rendered on both shipped targets
-/// in each theme. No scan, model, case key or native window is involved.
+/// in each theme. No scan, model, Project key or native window is involved.
 pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
     d.change(|w, window, cx| {
         w.new_tab(window, cx);

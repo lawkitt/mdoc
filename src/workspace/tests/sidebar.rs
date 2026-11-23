@@ -471,15 +471,17 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
     // Finish the drop's resolved admission without another MouseMove or an
     // extra frame: the old tooltip must disappear on the first changed frame.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.finish_open(vec![(c, true), (d, true)], Some(1), true, window, cx);
+        tabs.finish_open(vec![(c, true), (d, true)], Some(1), None, window, cx);
     });
+    // Admission imports them off the main thread; no frame is drawn meanwhile.
+    cx.run_until_parked();
     draw(cx);
     assert!(
         cx.debug_bounds(old_tip).is_none(),
         "moved row's tooltip must not name the new row"
     );
     cx.run_until_parked();
-    assert_eq!(tab_names(&tabs, cx), ["a", "two-b.md", "two-c.md", "b"]);
+    assert_eq!(tab_names(&tabs, cx), ["a", "two-b", "two-c", "b"]);
 
     // A fresh hover shows the inserted row's own name and folder.
     cx.simulate_mouse_move(
@@ -498,7 +500,9 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
             format!(
                 "tooltip-{}\n{}",
                 label.name,
-                label.identity.as_path().parent().unwrap().display()
+                (label.identity.as_path().parent())
+                    .map(|parent| parent.display().to_string())
+                    .unwrap_or_default()
             )
             .into_boxed_str(),
         ) as &'static str

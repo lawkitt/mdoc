@@ -29,7 +29,7 @@ fn install_scan(app: &mut DocumentView, cx: &mut Context<DocumentView>) -> (u64,
 }
 
 #[gpui::test]
-fn forgetting_a_case_identity_rejects_an_older_scan_result(cx: &mut gpui::TestAppContext) {
+fn forgetting_a_project_identity_rejects_an_older_scan_result(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
@@ -43,7 +43,7 @@ fn forgetting_a_case_identity_rejects_an_older_scan_result(cx: &mut gpui::TestAp
             .unwrap();
         let (generation, identity, revision) = install_scan(app, cx);
         let cancel = app.pii.job.as_ref().unwrap().cancel.clone();
-        app.forget_case_identity(&["PERSON_1"], &["Anna".into()], &[], cx);
+        app.forget_project_identity(&["PERSON_1"], &["Anna".into()], &[], cx);
         assert!(cancel.load(std::sync::atomic::Ordering::Relaxed));
         app.complete_pii_scan(
             generation,
@@ -1695,7 +1695,7 @@ fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::T
             originals: vec!["Anna Petrova".into()],
         }],
         source_name: "contract".into(),
-        case: None,
+        project: None,
     };
     app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
     cx.run_until_parked();
@@ -1793,7 +1793,7 @@ fn restore_tab_copies_are_restored_text(cx: &mut gpui::TestAppContext) {
             originals: vec!["Anna Petrova".into()],
         }],
         source_name: "contract".into(),
-        case: None,
+        project: None,
     };
     app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
     cx.run_until_parked();
@@ -1839,7 +1839,7 @@ fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::Test
         text: "PERSON_1 met PERSON_2, then PERSON_1 left.".into(),
         identities: vec![person("PERSON_1"), person("PERSON_2")],
         source_name: "contract".into(),
-        case: None,
+        project: None,
     };
     app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
     cx.run_until_parked();
@@ -1857,7 +1857,7 @@ fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::Test
 }
 
 #[gpui::test]
-fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
+fn scans_skip_categories_the_project_switched_off(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
@@ -1865,14 +1865,14 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        app.case.attach(Some(mdoc_store::cases::CaseLink {
+        app.project.attach(Some(crate::workspace::ProjectLink {
             id: "a".into(),
-            color: None,
+            colour: None,
             name: "Acme".into(),
         }));
-        let mut skip = app.case.skip().clone();
+        let mut skip = app.project.skip().clone();
         skip.insert(Category::Address);
-        app.case.set_skip(skip);
+        app.project.set_skip(skip);
         let (generation, identity, revision) = install_scan(app, cx);
         let detection = |range, category| mdoc_pii::Detection {
             range,
@@ -1902,7 +1902,9 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
-fn caseless_scans_follow_the_default_and_a_joined_tab_its_case(cx: &mut gpui::TestAppContext) {
+fn projectless_scans_follow_the_default_and_a_joined_tab_its_project(
+    cx: &mut gpui::TestAppContext,
+) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Alice at 1 Main St";
     app.update(cx, |app, cx| {
@@ -1945,12 +1947,12 @@ fn caseless_scans_follow_the_default_and_a_joined_tab_its_case(cx: &mut gpui::Te
     // Once the tab joins a case, the case's list wins: this one detects all.
     app.update(cx, |app, cx| {
         app.pii.review = Default::default();
-        app.case.attach(Some(mdoc_store::cases::CaseLink {
+        app.project.attach(Some(crate::workspace::ProjectLink {
             id: "a".into(),
-            color: None,
+            colour: None,
             name: "Acme".into(),
         }));
-        app.case.set_skip(Default::default());
+        app.project.set_skip(Default::default());
         assert_eq!(scan(app, cx), [Category::Person, Category::Address]);
         // A member ignores Settings changes; its case decides.
         app.default_categories_unticked(&[Category::Person].into(), cx);

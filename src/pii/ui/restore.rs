@@ -25,8 +25,8 @@ pub(crate) struct RestoredReply {
     pub text: String,
     pub identities: Vec<ExportedIdentity>,
     pub source_name: String,
-    /// The source tab's case: the reply joins it.
-    pub case: Option<mdoc_store::cases::CaseLink>,
+    /// The source tab's Project: the reply restores with its names.
+    pub project: Option<crate::workspace::ProjectLink>,
 }
 
 pub(crate) struct RestoreState {
@@ -68,13 +68,13 @@ impl DocumentView {
     pub(crate) fn has_applied_aliases(&self) -> bool {
         !self.pii.review.applied().is_empty()
     }
-    /// Every name the tab knows: its mapping, its case's names and every
+    /// Every name the tab knows: its mapping, its Project's names and every
     /// variant, pending and kept ones included. Any of them left in the
     /// text keeps the tab from being ready.
     pub(crate) fn known_identities(&self) -> Vec<ExportedIdentity> {
         let review = &self.pii.review;
         let mut names = review.export_identities();
-        names.extend(self.case.names().iter().cloned());
+        names.extend(self.project.names().iter().cloned());
         names.extend(review.variants().iter().map(|variant| ExportedIdentity {
             alias: variant.replacement.clone(),
             previous: Vec::new(),
@@ -111,26 +111,26 @@ impl DocumentView {
         self.show_copy_feedback(cx);
     }
     /// Replace the clipboard text with this tab's aliases:
-    /// the case's names, or the tab's own mapping. Exact known names only.
+    /// the Project's names, or the tab's own mapping. Exact known names only.
     pub(crate) fn pseudonymize_clipboard(
         &mut self,
         _: &PseudonymizeClipboard,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let identities = if self.case.link().is_some() {
-            self.case.names().to_vec()
+        let identities = if self.project.link().is_some() {
+            self.project.names().to_vec()
         } else {
             self.pii.review.export_identities()
         };
         if identities.is_empty() {
             self.show_clipboard_notice(
-                "This tab has no names to replace yet. Pseudonymize a document or open a case first."
+                "This tab has no names to replace yet. Pseudonymize a document or open a Project first."
                     .into(),
                 cx,
             );
-            cx.emit(crate::workspace::TabEvent::Case(
-                crate::workspace::CaseEvent::MappingMissing,
+            cx.emit(crate::workspace::TabEvent::Project(
+                crate::workspace::ProjectEvent::MappingMissing,
             ));
             return;
         }
@@ -143,7 +143,7 @@ impl DocumentView {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(replaced));
         }
         let source = self
-            .case
+            .project
             .link()
             .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
         let notice = match count {
@@ -157,26 +157,26 @@ impl DocumentView {
         self.show_clipboard_notice(notice, cx);
     }
     /// Edit › Restore Clipboard: the shelf's Restore with this
-    /// tab's names, its case's or its live mapping's.
+    /// tab's names, its Project's or its live mapping's.
     pub(crate) fn restore_clipboard(
         &mut self,
         _: &RestoreClipboard,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let identities = if self.case.link().is_some() {
-            self.case.names().to_vec()
+        let identities = if self.project.link().is_some() {
+            self.project.names().to_vec()
         } else {
             self.pii.review.export_identities()
         };
         if identities.is_empty() {
             self.show_clipboard_notice(
-                "This tab has no names to restore yet. Pseudonymize a document or open a case first."
+                "This tab has no names to restore yet. Pseudonymize a document or open a Project first."
                     .into(),
                 cx,
             );
-            cx.emit(crate::workspace::TabEvent::Case(
-                crate::workspace::CaseEvent::MappingMissing,
+            cx.emit(crate::workspace::TabEvent::Project(
+                crate::workspace::ProjectEvent::MappingMissing,
             ));
             return;
         }
@@ -189,7 +189,7 @@ impl DocumentView {
             cx.write_to_clipboard(crate::restored_clipboard::item(restored.text.clone()));
         }
         let source = self
-            .case
+            .project
             .link()
             .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
         let plural =
@@ -248,7 +248,7 @@ impl DocumentView {
         self.open_restore_tab(text, cx);
     }
     /// Restoring needs identities: without any, `action` explains why and
-    /// a locked case key gets its banner. Returns whether there are some.
+    /// a locked Vault gets its banner. Returns whether there are some.
     pub(crate) fn has_identities_to_restore(
         &mut self,
         action: &str,
@@ -261,8 +261,8 @@ impl DocumentView {
             "{action} needs a document whose names were replaced with aliases. \
              Apply replacements, copy the text for the AI, then paste its reply here."
         ));
-        cx.emit(crate::workspace::TabEvent::Case(
-            crate::workspace::CaseEvent::MappingMissing,
+        cx.emit(crate::workspace::TabEvent::Project(
+            crate::workspace::ProjectEvent::MappingMissing,
         ));
         cx.notify();
         false
@@ -278,7 +278,7 @@ impl DocumentView {
                 text,
                 identities,
                 source_name: stem,
-                case: self.case.link().cloned(),
+                project: self.project.link().cloned(),
             })),
         ));
     }
@@ -290,7 +290,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         self.session.name = Some(format!("Restored – {}.md", reply.source_name));
-        self.case.attach(reply.case.clone());
+        self.project.attach(reply.project.clone());
         self.lifecycle.keep_blank();
         self.editor.update(cx, |editor, cx| {
             editor.set_text(reply.text.clone(), cx);

@@ -59,8 +59,6 @@ pub struct TabRecord {
     pub preview_zoom: Option<f32>,
     pub preview_fit: PreviewFit,
     pub preview_split: Option<f32>,
-    /// The saved case this document belongs to; never its contents.
-    pub case: Option<String>,
 }
 
 impl TabRecord {
@@ -108,12 +106,9 @@ pub struct Session {
     pub sidebar_visible: bool,
     #[serde(default)]
     pub sidebar_choice: Option<bool>,
-    /// Saved cases folded in the sidebar, by id.
+    /// Projects folded in the sidebar, by id.
     #[serde(default)]
-    pub collapsed_cases: Vec<String>,
-    /// Case labels and counts for locked pages; never originals or member contents.
-    #[serde(default)]
-    pub cases: Vec<crate::cases::CaseSummary>,
+    pub collapsed_projects: Vec<String>,
     /// The sidebar's System / Light / Dark pick.
     #[serde(default)]
     pub theme_choice: ThemeChoice,
@@ -131,8 +126,7 @@ impl Default for Session {
             active: 0,
             sidebar_visible: true,
             sidebar_choice: None,
-            collapsed_cases: Vec::new(),
-            cases: Vec::new(),
+            collapsed_projects: Vec::new(),
             theme_choice: Default::default(),
         }
     }
@@ -163,12 +157,11 @@ pub fn load(path: &Path) -> io::Result<Session> {
         _ => return Err(io::Error::other("Unsupported session version")),
     }
     if session
-        .collapsed_cases
+        .collapsed_projects
         .iter()
-        .chain(session.cases.iter().map(|case| &case.id))
         .any(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
     {
-        return Err(io::Error::other("Invalid case id in session"));
+        return Err(io::Error::other("Invalid Project id in session"));
     }
     if session.tabs.iter().any(|tab| {
         !(if tab.document.is_some() {
@@ -190,10 +183,6 @@ pub fn load(path: &Path) -> io::Result<Session> {
             .attachment
             .as_ref()
             .is_some_and(|path| !path.is_absolute())
-            || tab
-                .case
-                .as_ref()
-                .is_some_and(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
             || !tab.scroll_y.is_finite()
             || tab.preview_zoom.is_some_and(|z| !z.is_finite())
             || tab
@@ -259,31 +248,20 @@ mod tests {
             preview_zoom: Some(1.25),
             preview_fit: PreviewFit::Manual,
             preview_split: Some(0.6),
-            case: Some("ab".repeat(16)),
         });
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);
-        // A case is referenced by id only; anything else is rejected.
-        session.tabs[0].case = Some("../secret".into());
-        save(&path, &session).unwrap();
-        assert!(load(&path).is_err());
-        session.tabs[0].case = Some("ab".repeat(16));
         session.tabs.clear();
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
     #[test]
-    fn cached_case_summary_ids_are_validated_on_load() {
+    fn folded_project_ids_are_validated_on_load() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("session.json");
         let mut session = Session {
-            cases: vec![crate::cases::CaseSummary {
-                id: "aB0123456789cdef".repeat(2),
-                name: "Example case".into(),
-                documents: 3,
-                color: None,
-            }],
+            collapsed_projects: vec!["aB0123456789cdef".repeat(2)],
             ..Session::default()
         };
         save(&path, &session).unwrap();
@@ -296,12 +274,12 @@ mod tests {
             format!("{}é", "a".repeat(30)),
             "../secret".into(),
         ] {
-            session.cases[0].id = invalid.clone();
+            session.collapsed_projects[0] = invalid.clone();
             save(&path, &session).unwrap();
             let error = load(&path).unwrap_err();
             assert_eq!(
                 error.to_string(),
-                "Invalid case id in session",
+                "Invalid Project id in session",
                 "{invalid:?}"
             );
         }

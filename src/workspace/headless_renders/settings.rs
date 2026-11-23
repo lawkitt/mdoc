@@ -91,7 +91,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
             .update(cx, |p, cx| p.render_categories(&[], "", window, cx))
     })?;
     // The user-wide Always and Never lists, a wording typed to add, then
-    // the same section while cases are locked.
+    // the same section while Projects are locked.
     d.change(|w, window, cx| {
         w.settings.update(cx, |p, cx| {
             p.show_category(Category::Detection, window, cx);

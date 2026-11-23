@@ -65,12 +65,12 @@ fn a_locked_key_keeps_restored_documents_waiting_until_unlock(cx: &mut TestAppCo
     assert_eq!(text_of(&tabs, cx), "");
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        let (line, action) = tabs.case_key_banner().unwrap();
+        let (line, action) = tabs.vault_banner().unwrap();
         assert!(line.contains("locked"), "{line}");
         assert_eq!(action, Some("Unlock…"));
-        assert!(tabs.case_key_needed());
+        assert!(tabs.vault_banner().is_some());
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.unlock_cases(window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.unlock_projects(window, cx));
     draw(cx);
     let button = cx.debug_bounds("keychain-continue").unwrap();
     cx.simulate_click(button.center(), Default::default());
@@ -79,7 +79,7 @@ fn a_locked_key_keeps_restored_documents_waiting_until_unlock(cx: &mut TestAppCo
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.vault.vault().is_some());
-        assert!(tabs.case_key_banner().is_none());
+        assert!(tabs.vault_banner().is_none());
         // Opening documents read the key once, and asked about no case.
         assert!(tabs.notices.message().is_none());
     });
@@ -92,20 +92,20 @@ fn a_declined_dialog_offers_try_again_and_keeps_documents_waiting(cx: &mut TestA
     let (tabs, cx) = boot_home_with(cx, session, |tabs, _, _| {
         tabs.stage_vault_key(Err(CaseError::KeyDenied))
     });
-    tabs.update_in(cx, |tabs, window, cx| tabs.unlock_cases(window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.unlock_projects(window, cx));
     draw(cx);
     let button = cx.debug_bounds("keychain-continue").unwrap();
     cx.simulate_click(button.center(), Default::default());
     cx.run_until_parked();
     cx.update(|_, cx| {
-        let (line, action) = tabs.read(cx).case_key_banner().unwrap();
+        let (line, action) = tabs.read(cx).vault_banner().unwrap();
         assert!(line.contains("Keychain"), "{line}");
         assert_eq!(action, Some("Try again…"));
     });
     let root = dir.path().to_path_buf();
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.staged_vault = Some(Ok(open_vault(&root)));
-        tabs.unlock_cases(window, cx);
+        tabs.unlock_projects(window, cx);
     });
     draw(cx);
     let button = cx.debug_bounds("keychain-continue").unwrap();
@@ -130,7 +130,7 @@ fn no_key_store_leaves_documents_unavailable_and_adds_nothing(cx: &mut TestAppCo
         assert!(error.contains("can't open"), "{error}");
     });
     cx.update(|_, cx| {
-        let (line, action) = tabs.read(cx).case_key_banner().unwrap();
+        let (line, action) = tabs.read(cx).vault_banner().unwrap();
         assert!(line.contains("Windows data protection"), "{line}");
         assert_eq!(action, None);
     });
@@ -609,15 +609,29 @@ fn a_close_whose_write_fails_keeps_the_tab_and_its_edit(cx: &mut TestAppContext)
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("member.md");
     std::fs::write(&path, "original").unwrap();
-    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    // The Vault stops at the next Document write, as a full disk would.
+    let fail = Arc::new(AtomicBool::new(false));
+    let root = dir.path().join("vault");
+    let hook: mdoc_vault::FaultHook = {
+        let fail = fail.clone();
+        Arc::new(move |step| {
+            if fail.load(Ordering::SeqCst) && step.kind == mdoc_vault::ObjectKind::Document {
+                mdoc_vault::Fault::Crash
+            } else {
+                mdoc_vault::Fault::Continue
+            }
+        })
+    };
+    let (tabs, cx) = boot_home_with(cx, Session::default(), move |tabs, _, _| {
+        tabs.use_vault(Vault::open_with_hook(root, &[3; 32], hook).unwrap())
+    });
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_case_files(vec![path.clone()], window, cx)
+        tabs.open_paths(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    fail.store(true, Ordering::SeqCst);
     cx.simulate_input("my edit ");
-    // Changed on disk meanwhile: the write is refused.
-    std::fs::write(&path, "changed elsewhere").unwrap();
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -627,7 +641,6 @@ fn a_close_whose_write_fails_keeps_the_tab_and_its_edit(cx: &mut TestAppContext)
         assert!(notice.starts_with("Could not save"), "{notice}");
     });
     assert!(text_of(&tabs, cx).contains("my edit"));
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "changed elsewhere");
 }
 
 #[gpui::test]
@@ -666,4 +679,63 @@ fn a_second_open_of_a_file_still_importing_asks_as_a_repeat(cx: &mut TestAppCont
     // The first admission is open in a tab by now: the second only shows it.
     assert!(!cx.has_pending_prompt());
     assert_eq!(documents(dir.path()).len(), 1);
+}
+
+/// Review of #1122: a Project delete with Move to Unfiled moves an
+/// unconverted member as it is: it opens from its source and converts,
+/// though the move wrote it again.
+#[gpui::test]
+fn an_unconverted_member_moved_to_unfiled_by_a_delete_still_converts(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let pdf =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (project, id) = {
+        let vault = open_vault(dir.path());
+        let project = vault
+            .create_project(mdoc_vault::NewProject {
+                name: "Lease".into(),
+                ..mdoc_vault::NewProject::default()
+            })
+            .unwrap();
+        let new = NewDocument {
+            project: Some(project.id.clone()),
+            title: "reference".into(),
+            source_kind: SourceKind::Pdf,
+            origin: DocumentOrigin::Ordinary,
+            markdown: String::new(),
+        };
+        let info = mdoc_vault::OriginalInfo {
+            file_name: "reference.pdf".into(),
+            ..mdoc_vault::OriginalInfo::default()
+        };
+        let source = std::fs::File::open(&pdf).unwrap();
+        let document = vault.import_document(new, source, info).unwrap();
+        (project.id, document.id)
+    };
+    let (tabs, cx) = boot_on(cx, dir.path(), Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.delete_project(project.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Move to Unfiled");
+    cx.run_until_parked();
+    let moved = open_vault(dir.path()).document(&id).unwrap();
+    assert_eq!(moved.project, None);
+    assert!(moved.revision > 1, "the move wrote it");
+    assert!(moved.unconverted && moved.markdown.is_empty());
+
+    let vault_id = mdoc_store::document_id::VaultId::parse(&id).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_vault_document(vault_id, window, cx)
+    });
+    cx.run_until_parked();
+    let text = active(&tabs, cx).read_with(cx, |view, cx| {
+        assert!(!view.lifecycle.source_only(), "converted from its source");
+        view.editor.read(cx).text().to_string()
+    });
+    assert!(!text.is_empty());
+    wait(cx, 1000);
+    let converted = open_vault(dir.path()).document(&id).unwrap();
+    assert_eq!(converted.markdown, text);
+    assert!(!converted.unconverted);
 }

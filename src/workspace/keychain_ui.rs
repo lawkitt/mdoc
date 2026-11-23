@@ -1,4 +1,4 @@
-//! The Keychain explainer: before mdoc reads the case key in a way
+//! The Keychain explainer: before mdoc reads the Vault key in a way
 //! that may show the macOS password dialog, say why, and preview that dialog
 //! with a short, captioned animation below the text so the real one is
 //! expected, not suspicious, and the drawing is never taken for it.
@@ -7,7 +7,7 @@ use crate::{
     style::{self, Theme},
     ui,
     workspace::{
-        Close, Import, New, NextTab, Open, OpenCase, PreviousTab, RetryDocument, Settings,
+        Close, Import, New, NextTab, Open, OpenProject, PreviousTab, RetryDocument, Settings,
         ToggleSidebar,
     },
 };
@@ -325,13 +325,13 @@ fn preview(theme: Theme, cx: &App) -> AnyElement {
 }
 
 impl Workspace {
-    /// The explainer dialog, shown before a case action reads the key.
+    /// The explainer dialog, shown before an action reads the Vault key.
     pub(super) fn keychain_explainer(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if !self.cases.explainer {
+        if !self.project_ui.explainer {
             return None;
         }
         if std::mem::take(&mut self.explainer_focus_pending) {
@@ -390,7 +390,7 @@ impl Workspace {
                             .on_action(|_: &New, _, _| {})
                             .on_action(|_: &Open, _, _| {})
                             .on_action(|_: &Import, _, _| {})
-                            .on_action(|_: &OpenCase, _, _| {})
+                            .on_action(|_: &OpenProject, _, _| {})
                             .on_action(|_: &Settings, _, _| {})
                             .on_action(|_: &crate::menus::About, _, _| {})
                             .on_action(|_: &super::CheckForUpdates, _, _| {})
@@ -426,7 +426,7 @@ impl Workspace {
                                     .gap_1()
                                     .text_size(px(13.))
                                     .child(line(
-                                        "Documents and saved cases are encrypted, and the key lives in your \
+                                        "Documents and Projects are encrypted, and the key lives in your \
                                          Mac’s Keychain.",
                                     ))
                                     .child(line(
@@ -507,9 +507,10 @@ impl Workspace {
         )
     }
 
-    /// Locked or declined cases: one line with Unlock / Try again.
-    pub(super) fn case_key_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let (text, action) = self.case_key_banner()?;
+    /// A locked, declined or unavailable Vault: one line, with Unlock or
+    /// Try again when the key can still open it.
+    pub(super) fn project_key_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (text, action) = self.vault_banner()?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let accent = style::markdown_style(theme).alert_warning;
@@ -527,9 +528,11 @@ impl Workspace {
                 .child(div().text_color(accent).child("ⓘ"))
                 .child(div().flex_1().min_w_0().child(text))
                 .children(action.map(|action| {
-                    ui::control("unlock-cases", action, theme, true)
-                        .when(cfg!(test), |v| v.debug_selector(|| "unlock-cases".into()))
-                        .on_click(cx.listener(|this, _, window, cx| this.unlock_cases(window, cx)))
+                    ui::control("unlock-vault", action, theme, true)
+                        .when(cfg!(test), |v| v.debug_selector(|| "unlock-vault".into()))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.unlock_projects(window, cx)),
+                        )
                 }))
                 .into_any_element(),
         )

@@ -208,44 +208,18 @@ fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn locked_cases_notice_opens_only_when_a_locked_case_is_needed(cx: &mut TestAppContext) {
+fn a_locked_vault_shows_unlock_in_the_notices_over_an_earlier_one(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let plain = dir.path().join("plain.md");
-    std::fs::write(&plain, "Nothing to restore here.").unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
+    let root = dir.path().join("vault");
+    let (tabs, cx) = boot_home_with(cx, Session::default(), move |tabs, _, _| {
+        tabs.stage_vault_key(Ok(mdoc_vault::Vault::open(root, &[3; 32]).unwrap()))
+    });
     cx.simulate_resize(size(px(1100.), px(760.)));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
-        tabs.open_paths(vec![plain], window, cx);
-    });
-    cx.run_until_parked();
-    draw(cx);
-    draw(cx);
-    // A plain document: the notice waits behind the bell.
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        assert!(tabs.case_coordinator.locked());
-        assert_eq!(tabs.title.notices.get(), 1);
-        assert!(!tabs.title.notices_open.get());
-    });
-    assert!(cx.debug_bounds("header-notices").is_some());
-    assert!(cx.debug_bounds("notices-popover").is_none());
-    // Pasting an AI reply into a tab without a mapping needs the locked
-    // cases: the notice opens.
-    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
-    cx.dispatch_action(crate::workspace::PasteAiResponse);
     draw(cx);
     assert!(cx.debug_bounds("notices-popover").is_some());
-    assert!(cx.debug_bounds("unlock-cases").is_some());
-}
-
-#[gpui::test]
-fn restore_from_home_shows_unlock_over_an_earlier_notice(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot_home(cx, Session::default());
-    cx.simulate_resize(size(px(1100.), px(760.)));
+    assert!(cx.debug_bounds("unlock-vault").is_some());
+    // Closed over an earlier notice, Paste AI Reply on Home opens it again.
     tabs.update(cx, |tabs, cx| {
-        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
-        // An earlier notice the user closed without dismissing.
         tabs.notices.post("The clipboard has no text.");
         cx.notify();
     });
@@ -256,34 +230,11 @@ fn restore_from_home_shows_unlock_over_an_earlier_notice(cx: &mut TestAppContext
     });
     draw(cx);
     assert!(cx.debug_bounds("notices-popover").is_none());
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
     tabs.update_in(cx, |_, window, cx| {
         window.dispatch_action(Box::new(crate::workspace::PasteAiResponse), cx)
     });
     draw(cx);
-    cx.update(|_, cx| assert!(tabs.read(cx).case_coordinator.locked()));
     assert!(cx.debug_bounds("notices-popover").is_some());
-    assert!(cx.debug_bounds("unlock-cases").is_some());
-}
-
-#[gpui::test]
-fn restore_from_a_blank_tab_looks_for_locked_cases(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
-    cx.simulate_resize(size(px(1100.), px(760.)));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
-        tabs.new_tab(window, cx);
-    });
-    cx.simulate_input("PERSON_1 wrote back.");
-    draw(cx);
-    cx.update(|_, cx| {
-        assert!(
-            !tabs.read(cx).case_coordinator.locked(),
-            "nothing looked yet"
-        )
-    });
-    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
-    cx.dispatch_action(crate::workspace::PasteAiResponse);
-    draw(cx);
-    cx.update(|_, cx| assert!(tabs.read(cx).case_coordinator.locked()));
-    assert!(cx.debug_bounds("unlock-cases").is_some());
+    assert!(cx.debug_bounds("unlock-vault").is_some());
 }

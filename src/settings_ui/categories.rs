@@ -299,8 +299,8 @@ impl Panel {
             .border_color(p.border)
             .child(div().text_size(px(13.)).child("Categories to detect"))
             .child(div().text_size(px(11.)).text_color(p.header_muted).child(
-                "Scans of documents without a case skip categories that are off, and new \
-                 cases start with this list. Names you mark yourself are still replaced.",
+                "Scans of documents outside a Project skip categories that are off, and new \
+                 Projects start with this list. Names you mark yourself are still replaced.",
             ))
             .child(
                 div()

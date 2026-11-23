@@ -1,7 +1,9 @@
-//! Transient case overview. Opening uses the coordinator's cache only.
+//! The Project page: its documents, names, categories and lists, from the
+//! window's Projects and the Vault's summaries; it opens no document.
+use super::ProjectLink;
 use super::{
     Workspace,
-    cases_ui::{AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName},
+    projects_ui::{AddProjectName, CancelProjectName, ClearProjectName, ConfirmProjectName},
 };
 use crate::{
     markdown_search::{SearchInput, SearchInputEvent},
@@ -11,19 +13,30 @@ use gpui::{
     AnyElement, Context, Entity, FocusHandle, Focusable, SharedString, Subscription, Window, div,
     prelude::*, px,
 };
-use mdoc_store::cases::{CaseColor, CaseLink, CaseSummary};
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use mdoc_store::document_id::{DocumentId, VaultId};
+use mdoc_vault::{Colour, Project};
+use std::{cell::RefCell, collections::HashMap};
+
+/// A swatch's name, as the page reads it out.
+pub(crate) fn colour_name(colour: Colour) -> &'static str {
+    match colour {
+        Colour::Red => "Red",
+        Colour::Orange => "Orange",
+        Colour::Amber => "Amber",
+        Colour::Green => "Green",
+        Colour::Teal => "Teal",
+        Colour::Blue => "Blue",
+        Colour::Violet => "Violet",
+        Colour::Pink => "Pink",
+    }
+}
 
 #[derive(Default)]
-pub(super) struct CaseClose {
+pub(super) struct ProjectClose {
     waiting: Option<u64>,
     queue: std::collections::VecDeque<u64>,
 }
-impl CaseClose {
+impl ProjectClose {
     pub(super) fn begin(&mut self, ids: impl IntoIterator<Item = u64>) -> Option<u64> {
         self.queue = ids.into_iter().collect();
         self.waiting = self.queue.pop_front();
@@ -36,9 +49,6 @@ impl CaseClose {
         self.waiting = self.queue.pop_front();
         self.waiting
     }
-    pub(super) fn cancel(&mut self) {
-        *self = Self::default();
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +60,7 @@ pub(super) enum Place {
 }
 
 /// View state only: never serialized and cleared on any tab activation.
-pub(super) struct CasePage {
+pub(super) struct ProjectPage {
     id: String,
     swatches: bool,
     #[cfg(all(
@@ -69,7 +79,7 @@ pub(super) struct CasePage {
     _filter_changes: Subscription,
 }
 
-impl CasePage {
+impl ProjectPage {
     pub(super) fn id(&self) -> &str {
         &self.id
     }
@@ -97,9 +107,9 @@ impl CasePage {
             .map(|(id, focus)| (id.clone(), focus.clone()))
             .collect();
         controls.extend([
-            ("case-page-color".into(), self.color_focus.clone()),
+            ("project-page-color".into(), self.color_focus.clone()),
             ("page-category-PERSON".into(), self.category_focus.clone()),
-            ("case-page-delete".into(), self.delete_focus.clone()),
+            ("project-page-delete".into(), self.delete_focus.clone()),
         ]);
         controls
     }
@@ -114,22 +124,25 @@ impl CasePage {
 }
 
 impl Workspace {
-    pub(super) fn sidebar_case_link(&self, tab: &super::Tab, cx: &gpui::App) -> Option<CaseLink> {
-        tab.view()
-            .and_then(|view| view.read(cx).case.link().cloned())
-            .or_else(|| {
-                let id = tab.record().case.as_ref()?;
-                self.case_coordinator
-                    .summaries()
-                    .iter()
-                    .find(|case| &case.id == id)
-                    .map(CaseSummary::link)
-            })
+    /// The Project tab `tab` shows in the sidebar under: its view's, or,
+    /// before it loads, the one the Vault files its document in.
+    pub(super) fn sidebar_project_link(
+        &self,
+        tab: &super::Tab,
+        cx: &gpui::App,
+    ) -> Option<ProjectLink> {
+        if let Some(view) = tab.view()
+            && !view.read(cx).lifecycle.loading()
+        {
+            return view.read(cx).project.link().cloned();
+        }
+        let document = tab.record().document.as_ref()?;
+        self.projects.link(&self.project_of(document.as_str())?)
     }
-    pub(super) fn case_header_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let (id, position) = self.cases.header_menu.as_ref()?;
+    pub(super) fn project_header_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (id, position) = self.project_ui.header_menu.as_ref()?;
         let theme = self.theme.get();
-        let mut menu = ui::panel("case-header-actions", theme)
+        let mut menu = ui::panel("project-header-actions", theme)
             .track_focus(&self.menu_focus)
             .key_context("UiPanel UiMenu")
             .flex()
@@ -145,54 +158,53 @@ impl Workspace {
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                this.cases.header_menu = None;
+                this.project_ui.header_menu = None;
                 if let Some(focus) = this.menu_return.take() {
                     window.focus(&focus, cx);
                 }
                 cx.notify();
             }))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                this.cases.header_menu = None;
+                this.project_ui.header_menu = None;
                 cx.notify();
             }));
         for (key, label, place) in [
-            ("case-action-rename", "Rename", Place::Rename),
+            ("project-action-rename", "Rename", Place::Rename),
             (
-                "case-action-categories",
+                "project-action-categories",
                 "Categories to detect",
                 Place::Categories,
             ),
-            (
-                "case-action-delete",
-                "Delete case and forget originals…",
-                Place::Delete,
-            ),
+            ("project-action-delete", "Delete Project…", Place::Delete),
         ] {
             let id = id.clone();
             menu = menu.child(
                 ui::control(key, label, theme, true)
                     .when(cfg!(test), move |v| v.debug_selector(move || key.into()))
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.cases.header_menu = None;
-                        this.show_case_page(&id, place, window, cx);
+                        this.project_ui.header_menu = None;
+                        this.show_project_page(&id, place, window, cx);
                     })),
             );
         }
         let id = id.clone();
         menu = menu.child(
-            ui::control("case-action-close-all", "Close all", theme, true)
+            ui::control("project-action-close-all", "Close all", theme, true)
                 .when(cfg!(test), |v| {
-                    v.debug_selector(|| "case-action-close-all".into())
+                    v.debug_selector(|| "project-action-close-all".into())
                 })
                 .on_click(cx.listener(move |this, _, window, cx| {
-                    this.cases.header_menu = None;
+                    this.project_ui.header_menu = None;
                     let tabs: Vec<_> = this
                         .tabs
                         .iter()
-                        .filter(|tab| tab.record().case.as_deref() == Some(id.as_str()))
+                        .filter(|tab| {
+                            this.sidebar_project_link(tab, cx)
+                                .is_some_and(|link| link.id == id)
+                        })
                         .map(|tab| tab.id())
                         .collect();
-                    if let Some(tab) = this.cases.closing_members.begin(tabs) {
+                    if let Some(tab) = this.project_ui.closing_members.begin(tabs) {
                         this.close_tab(tab, window, cx);
                     }
                     cx.notify();
@@ -209,7 +221,7 @@ impl Workspace {
             .into_any_element(),
         )
     }
-    pub(super) fn confirm_forget_case_identity(
+    pub(super) fn confirm_forget_project_identity(
         &mut self,
         id: &str,
         alias: &str,
@@ -218,12 +230,12 @@ impl Workspace {
     ) {
         let (id, alias) = (id.to_string(), alias.to_string());
         let answer = window.prompt(gpui::PromptLevel::Warning, &format!("Forget identity “{alias}”?"),
-            Some("Its originals are forgotten from this case and its member documents. Document text is untouched. This cannot be undone."), &["Forget Identity", "Cancel"], cx);
+            Some("Its originals are forgotten from this Project and its documents. Document text is untouched. This cannot be undone."), &["Forget Identity", "Cancel"], cx);
         cx.spawn_in(window, async move |this, cx| {
             if answer.await.ok() == Some(0) {
                 let _ = this.update_in(cx, |this, window, cx| {
-                    this.forget_case_identity(&id, &alias, cx);
-                    if let Some(page) = this.cases.page.as_ref().filter(|page| page.id == id) {
+                    this.forget_project_identity(&id, &alias, cx);
+                    if let Some(page) = this.project_ui.page.as_ref().filter(|page| page.id == id) {
                         window.focus(&page.add.read(cx).focus_handle(cx), cx);
                     }
                 });
@@ -232,45 +244,44 @@ impl Workspace {
         .detach();
     }
 
-    pub(super) fn forget_case_identity(&mut self, id: &str, alias: &str, cx: &mut Context<Self>) {
-        let Some(((forgotten, exported), effect)) = self.case_coordinator.edit(id, |case| {
-            let identity = case
-                .identities
-                .iter()
+    pub(super) fn forget_project_identity(
+        &mut self,
+        id: &str,
+        alias: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((forgotten, exported)) = self.projects.edit(id, |project| {
+            let identity = (project.mapping.identities.iter())
                 .find(|identity| identity.names(alias))?
                 .clone();
-            case.forget_identity(alias)
-                .then(|| (identity, case.exported()))
+            project
+                .forget_identity(alias)
+                .then(|| (identity, project.mapping.exported()))
         }) else {
             return;
         };
-        self.carry_out_cases(effect.into_iter().collect(), cx);
+        self.write_project(id, cx);
         for view in self.tabs.iter().filter_map(|tab| tab.view()) {
             view.update(cx, |view, cx| {
-                if !view.case.is(id) {
+                if !view.project.is(id) {
                     return;
                 }
                 let aliases: Vec<_> = std::iter::once(forgotten.alias.as_str())
                     .chain(forgotten.previous.iter().map(String::as_str))
                     .collect();
-                view.forget_case_identity(&aliases, &forgotten.originals, &exported, cx);
+                view.forget_project_identity(&aliases, &forgotten.originals, &exported, cx);
             });
         }
         cx.notify();
     }
-    pub(super) fn show_case_page(
+    pub(super) fn show_project_page(
         &mut self,
         id: &str,
         place: Place,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self
-            .case_coordinator
-            .summaries()
-            .iter()
-            .any(|case| case.id == id)
-        {
+        if self.projects.project(id).is_none() {
             return;
         }
         if let Some(view) = self.active_view() {
@@ -279,8 +290,8 @@ impl Workspace {
                 view.pii.dismiss_popup();
             });
         }
-        self.cases.list_open = false;
-        self.case_list_return = None;
+        self.project_ui.list_open = false;
+        self.project_list_return = None;
         self.end_rename(true, cx);
         let input = |cx: &mut gpui::Context<SearchInput>, placeholder, context| {
             SearchInput::new(cx)
@@ -288,10 +299,10 @@ impl Workspace {
                 .with_placeholder(placeholder)
                 .with_key_context(context)
         };
-        let filter = cx.new(|cx| input(cx, "Filter names", "CasePageFilter"));
-        let add = cx.new(|cx| input(cx, "Add a name", "CaseTerm"));
+        let filter = cx.new(|cx| input(cx, "Filter names", "ProjectPageFilter"));
+        let add = cx.new(|cx| input(cx, "Add a name", "ProjectTerm"));
         let changes = cx.subscribe(&filter, |_, _, _: &SearchInputEvent, cx| cx.notify());
-        let page = CasePage {
+        let page = ProjectPage {
             id: id.into(),
             swatches: false,
             #[cfg(all(
@@ -310,16 +321,14 @@ impl Workspace {
             _filter_changes: changes,
         };
         let focus = match place {
-            Place::Categories if self.case_coordinator.case(id).is_some() => {
-                page.category_focus.clone()
-            }
-            Place::Delete if self.case_coordinator.case(id).is_some() => page.delete_focus.clone(),
+            Place::Categories => page.category_focus.clone(),
+            Place::Delete => page.delete_focus.clone(),
             _ => page.color_focus.clone(),
         };
-        self.cases.page = Some(page);
+        self.project_ui.page = Some(page);
         self.note_destination(super::navigation::Arrival::Visit, cx);
-        if matches!(place, Place::Rename) && self.case_coordinator.case(id).is_some() {
-            self.start_rename_case(id.into(), window, cx);
+        if matches!(place, Place::Rename) {
+            self.start_rename_project(id.into(), window, cx);
         } else {
             // Controls are mounted on the next frame; GPUI reveals a focused descendant.
             window.defer(cx, move |window, cx| window.focus(&focus, cx));
@@ -327,112 +336,89 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(super) fn set_case_color(
+    pub(super) fn set_project_color(
         &mut self,
         id: &str,
-        color: CaseColor,
+        colour: Colour,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some((link, effect)) = self.case_coordinator.edit(id, |case| {
-            case.color = Some(color);
-            Some(CaseLink::of(case))
+        if let Some(link) = self.projects.edit(id, |project| {
+            project.colour = Some(colour);
+            Some(ProjectLink::of(project))
         }) {
-            self.carry_out_cases(effect.into_iter().collect(), cx);
+            self.write_project(id, cx);
             for view in self.tabs.iter().filter_map(|tab| tab.view()) {
                 view.update(cx, |view, cx| {
-                    if view.case.is(id) {
-                        view.case.attach(Some(link.clone()));
+                    if view.project.is(id) {
+                        view.project.attach(Some(link.clone()));
                         cx.notify();
                     }
                 });
             }
             self.checkpoint(window, cx);
         }
-        if let Some(page) = self.cases.page.as_mut() {
+        if let Some(page) = self.project_ui.page.as_mut() {
             page.swatches = false;
             window.focus(&page.color_focus, cx);
         }
         cx.notify();
     }
 
-    pub(super) fn open_case_member(
+    pub(super) fn open_project_member(
         &mut self,
-        path: PathBuf,
+        document: VaultId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(tab) = self.find_path(&path, None, cx) {
-            self.activate(tab, window, cx);
-        } else if path.is_file() {
-            // A member is a Markdown file the case lists, not a Vault
-            // document, until cases become Projects.
-            self.finish_open(vec![(path, true)], None, true, window, cx);
-        }
+        self.open_vault_document(document, window, cx);
     }
 
-    pub(super) fn open_all_case_members(
+    pub(super) fn open_all_project_members(
         &mut self,
         id: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(case) = self.case_coordinator.case(id) else {
-            return;
-        };
-        let paths: Vec<_> = case
-            .members
-            .iter()
-            .filter(|path| path.is_file() || self.find_path(path, None, cx).is_some())
-            .cloned()
-            .collect();
-        for path in paths {
-            self.open_case_member(path, window, cx);
+        for document in self.members(id) {
+            self.open_project_member(document.0, window, cx);
         }
     }
 
-    pub(super) fn remove_case_member(
+    /// The Project page's Move to Unfiled; its document may be closed.
+    pub(super) fn remove_project_member(
         &mut self,
         id: &str,
-        path: &Path,
+        document: VaultId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(tab) = self.find_path(path, None, cx)
-            && self
-                .tabs
-                .get(tab)
-                .is_some_and(|tab| tab.record().case.as_deref() == Some(id))
-        {
-            self.remove_from_case(tab, window, cx);
-            self.tabs.set_case(tab, None);
-        }
-        // Closed/missing members have no view; removing never opens one.
-        if let Some(((), effect)) = self
-            .case_coordinator
-            .edit(id, |case| case.remove_member(path).then_some(()))
-        {
-            self.carry_out_cases(effect.into_iter().collect(), cx);
-        }
-        self.checkpoint(window, cx);
-        if let Some(page) = self.cases.page.as_ref().filter(|page| page.id == id)
-            && let Some(focus) = page.controls.borrow().get("case-page-open-all")
+        self.move_document(document, None, window, cx);
+        if let Some(page) = self.project_ui.page.as_ref().filter(|page| page.id == id)
+            && let Some(focus) = page.controls.borrow().get("project-page-open-all")
         {
             window.focus(focus, cx);
         }
         cx.notify();
     }
 
-    pub(super) fn case_page(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
-        let page = self.cases.page.as_ref().unwrap();
-        let Some(summary) = self
-            .case_coordinator
-            .summaries()
-            .into_iter()
-            .find(|case| case.id == page.id)
-        else {
-            let gone = super::navigation::Stop::Case(page.id.clone());
-            self.cases.page = None;
+    /// Project `id`'s documents, by title, from the Vault's summaries.
+    pub(super) fn members(&self, id: &str) -> Vec<(VaultId, String)> {
+        let Some(vault) = self.vault.vault() else {
+            return Vec::new();
+        };
+        let mut members: Vec<_> = (vault.documents_in(Some(id)).into_iter())
+            .filter_map(|summary| Some((VaultId::parse(&summary.id)?, summary.title)))
+            .collect();
+        members.sort_by_key(|(_, title)| title.to_lowercase());
+        members
+    }
+
+    pub(super) fn project_page(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let page = self.project_ui.page.as_ref().unwrap();
+        let Some(project) = self.projects.project(&page.id).cloned() else {
+            let gone = super::navigation::Stop::Project(page.id.clone());
+            self.project_ui.page = None;
             self.tabs.show_home();
             self.note_destination(super::navigation::Arrival::Replace, cx);
             self.navigation.forget(&gone);
@@ -461,26 +447,23 @@ impl Workspace {
             div()
                 .size(px(8.))
                 .rounded_full()
-                .bg(style::case_color(summary.link().hue(), theme)),
+                .bg(style::project_color(ProjectLink::of(&project).hue(), theme)),
         )
-        .child("Case")
+        .child("Project")
         .child(div().flex_1())
         .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))));
         let header = ui::title_bar(bar, (!detached).then_some(p.border), window, theme);
-        let content = match self.case_coordinator.case(&page.id) {
-            Some(case) => self.unlocked_case_page(case, cx),
-            None => self.locked_case_page(&summary, cx),
-        };
+        let content = self.unlocked_project_page(&project, cx);
         let body = div()
-            .id("case-page-scroll")
+            .id("project-page-scroll")
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&page.scroll)
             .child(div().w_full().flex().justify_center().p_6().child(content));
         div()
-            .id("case-page")
-            .when(cfg!(test), |v| v.debug_selector(|| "case-page".into()))
+            .id("project-page")
+            .when(cfg!(test), |v| v.debug_selector(|| "project-page".into()))
             .track_focus(self.focus_regions.home())
             .size_full()
             .flex()
@@ -506,42 +489,18 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn locked_case_page(&self, summary: &CaseSummary, cx: &mut Context<Self>) -> AnyElement {
-        div()
-            .id("case-page-locked")
-            .when(cfg!(test), |v| {
-                v.debug_selector(|| "case-page-locked".into())
-            })
-            .w_full()
-            .max_w(px(680.))
-            .flex()
-            .flex_col()
-            .gap_4()
-            .child(div().text_size(px(26.)).child(summary.name.clone()))
-            .child(document_count(summary.documents))
-            .child(
-                ui::primary_button("case-page-unlock", "Unlock…", self.theme.get(), true)
-                    .track_focus(&self.cases.page.as_ref().unwrap().color_focus)
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(|| "case-page-unlock".into())
-                    })
-                    .on_click(cx.listener(|this, _, window, cx| this.unlock_cases(window, cx))),
-            )
-            .into_any_element()
-    }
-
     fn page_control(
         &self,
         id: impl Into<SharedString>,
         label: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> ui::Control {
-        let page = self.cases.page.as_ref().unwrap();
+        let page = self.project_ui.page.as_ref().unwrap();
         let id = id.into();
         let focus = match id.as_ref() {
-            "case-page-color" => page.color_focus.clone(),
+            "project-page-color" => page.color_focus.clone(),
             "page-category-PERSON" => page.category_focus.clone(),
-            "case-page-delete" => page.delete_focus.clone(),
+            "project-page-delete" => page.delete_focus.clone(),
             _ => page
                 .controls
                 .borrow_mut()
@@ -558,20 +517,18 @@ impl Workspace {
         )
     }
 
-    fn unlocked_case_page(
-        &self,
-        case: &mdoc_store::cases::Case,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let page = self.cases.page.as_ref().unwrap();
+    fn unlocked_project_page(&self, project: &Project, cx: &mut Context<Self>) -> AnyElement {
+        let page = self.project_ui.page.as_ref().unwrap();
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let id = case.id.clone();
+        let id = project.id.clone();
+        let exported = project.mapping.exported();
+        let members = self.members(&project.id);
         let name = match self
-            .cases
+            .project_ui
             .renaming
             .as_ref()
-            .filter(|(id, _)| *id == case.id)
+            .filter(|(id, _)| *id == project.id)
         {
             Some((_, input)) => div()
                 .flex_1()
@@ -580,11 +537,11 @@ impl Workspace {
                 .border_color(p.border)
                 .rounded_sm()
                 .p_1()
-                .on_action(cx.listener(|this, _: &ConfirmCaseName, window, cx| {
+                .on_action(cx.listener(|this, _: &ConfirmProjectName, window, cx| {
                     this.finish_rename(true, window, cx);
                     cx.stop_propagation();
                 }))
-                .on_action(cx.listener(|this, _: &CancelCaseName, window, cx| {
+                .on_action(cx.listener(|this, _: &CancelProjectName, window, cx| {
                     this.finish_rename(false, window, cx);
                     cx.stop_propagation();
                 }))
@@ -595,75 +552,75 @@ impl Workspace {
                 .child(input.clone())
                 .into_any_element(),
             None => self
-                .page_control("case-page-rename", case.name.clone(), cx)
+                .page_control("project-page-rename", project.name.clone(), cx)
                 .when(cfg!(test), |v| {
-                    v.debug_selector(|| "case-page-rename".into())
+                    v.debug_selector(|| "project-page-rename".into())
                 })
-                .aria_label(format!("Rename {}", case.name))
+                .aria_label(format!("Rename {}", project.name))
                 .flex_1()
                 .min_w_0()
                 .text_size(px(26.))
                 .on_click(cx.listener({
                     let id = id.clone();
-                    move |this, _, window, cx| this.start_rename_case(id.clone(), window, cx)
+                    move |this, _, window, cx| this.start_rename_project(id.clone(), window, cx)
                 }))
                 .into_any_element(),
         };
-        let color = style::case_color(CaseLink::of(case).hue(), theme);
-        let heading =
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
+        let color = style::project_color(ProjectLink::of(project).hue(), theme);
+        let heading = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        self.page_control("project-page-color", "", cx)
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "project-page-color".into())
+                            })
+                            .aria_label("Project colour")
+                            .p_2()
+                            .child(div().size(px(16.)).rounded_full().bg(color))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Some(page) = this.project_ui.page.as_mut() {
+                                    page.swatches = !page.swatches;
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(name),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(format!(
+                        "{} · {} {} · created {}",
+                        document_count(members.len()),
+                        exported.len(),
+                        if exported.len() == 1 { "name" } else { "names" },
+                        created_date(project.created)
+                    )),
+            )
+            .when(page.swatches, |v| {
+                v.child(
                     div()
                         .flex()
-                        .items_center()
-                        .gap_3()
-                        .child(
-                            self.page_control("case-page-color", "", cx)
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "case-page-color".into())
-                                })
-                                .aria_label("Case color")
-                                .p_2()
-                                .child(div().size(px(16.)).rounded_full().bg(color))
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    if let Some(page) = this.cases.page.as_mut() {
-                                        page.swatches = !page.swatches;
-                                    }
-                                    cx.notify();
-                                })),
-                        )
-                        .child(name),
-                )
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(p.header_muted)
-                        .child(format!(
-                            "{} · {} {} · created {}",
-                            document_count(case.members.len()),
-                            case.exported().len(),
-                            if case.exported().len() == 1 {
-                                "name"
-                            } else {
-                                "names"
-                            },
-                            created_date(case.created)
-                        )),
-                )
-                .when(page.swatches, |v| {
-                    v.child(div().flex().flex_wrap().gap_2().children(
-                        CaseColor::ALL.into_iter().map(|swatch| {
+                        .flex_wrap()
+                        .gap_2()
+                        .children(Colour::ALL.into_iter().map(|swatch| {
                             let id = id.clone();
+                            let name = colour_name(swatch);
                             self.page_control(
-                                SharedString::from(format!("case-swatch-{}", swatch.name())),
-                                swatch.name(),
+                                SharedString::from(format!("project-swatch-{name}")),
+                                name,
                                 cx,
                             )
                             .when(cfg!(test), move |v| {
-                                v.debug_selector(move || format!("case-swatch-{}", swatch.name()))
+                                v.debug_selector(move || format!("project-swatch-{name}"))
                             })
                             .flex()
                             .items_center()
@@ -672,19 +629,22 @@ impl Workspace {
                                 div()
                                     .size(px(12.))
                                     .rounded_full()
-                                    .bg(style::case_color(swatch.hue(), theme)),
+                                    .bg(style::project_color(swatch.hue(), theme)),
                             )
                             .aria_selected(
-                                case.color.unwrap_or_else(|| CaseColor::for_id(&case.id)) == swatch,
+                                project
+                                    .colour
+                                    .unwrap_or_else(|| Colour::for_id(&project.id))
+                                    == swatch,
                             )
                             .on_click(cx.listener(
                                 move |this, _, window, cx| {
-                                    this.set_case_color(&id, swatch, window, cx)
+                                    this.set_project_color(&id, swatch, window, cx)
                                 },
                             ))
-                        }),
-                    ))
-                });
+                        })),
+                )
+            });
         let documents = div()
             .flex()
             .flex_col()
@@ -697,93 +657,91 @@ impl Workspace {
                     .child(section("Documents"))
                     .child(div().flex_1())
                     .child(
-                        self.page_control("case-page-open-all", "Open all", cx)
+                        self.page_control("project-page-open-all", "Open all", cx)
                             .when(cfg!(test), |v| {
-                                v.debug_selector(|| "case-page-open-all".into())
+                                v.debug_selector(|| "project-page-open-all".into())
                             })
                             .on_click(cx.listener({
                                 let id = id.clone();
                                 move |this, _, window, cx| {
-                                    this.open_all_case_members(&id, window, cx)
+                                    this.open_all_project_members(&id, window, cx)
                                 }
                             })),
                     ),
             )
-            .children(case.members.iter().enumerate().map(|(index, path)| {
-                let open = self.find_path(path, None, cx).is_some();
-                let missing = !open && !path.is_file(); // metadata only; no member contents
-                let title = path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned();
-                let path = path.clone();
-                let remove_path = path.clone();
-                let id = id.clone();
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .py_1()
-                    .child(if missing {
-                        div().flex_1().min_w_0().child(title).into_any_element()
-                    } else {
-                        self.page_control(
-                            SharedString::from(format!("case-document-{index}")),
-                            title,
-                            cx,
-                        )
-                        .when(cfg!(test), move |v| {
-                            v.debug_selector(move || format!("case-document-{index}"))
-                        })
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.open_case_member(path.clone(), window, cx)
-                        }))
-                        .into_any_element()
-                    })
-                    .child(
+            .children(
+                members
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (document, title))| {
+                        let open = self
+                            .find_document(&DocumentId::Vault(document.clone()), None, cx)
+                            .is_some();
+                        let (open_document, remove_document) = (document.clone(), document.clone());
+                        let id = id.clone();
                         div()
-                            .text_size(px(11.))
-                            .text_color(p.header_muted)
-                            .child(if open {
-                                "Open"
-                            } else if missing {
-                                "Missing"
-                            } else {
-                                "Closed"
-                            }),
-                    )
-                    .child(
-                        self.page_control(
-                            SharedString::from(format!("case-remove-{index}")),
-                            "Remove from case",
-                            cx,
-                        )
-                        .when(cfg!(test), move |v| {
-                            v.debug_selector(move || format!("case-remove-{index}"))
-                        })
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
-                                this.remove_case_member(&id, &remove_path, window, cx)
-                            },
-                        )),
-                    )
-            }));
-        let filter = if case.exported().len() > 10 {
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .py_1()
+                            .child(
+                                self.page_control(
+                                    SharedString::from(format!("project-document-{index}")),
+                                    title.clone(),
+                                    cx,
+                                )
+                                .when(cfg!(test), move |v| {
+                                    v.debug_selector(move || format!("project-document-{index}"))
+                                })
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .on_click(cx.listener(
+                                    move |this, _, window, cx| {
+                                        this.open_project_member(open_document.clone(), window, cx)
+                                    },
+                                )),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(p.header_muted)
+                                    .child(if open { "Open" } else { "Closed" }),
+                            )
+                            .child(
+                                self.page_control(
+                                    SharedString::from(format!("project-remove-{index}")),
+                                    "Move to Unfiled",
+                                    cx,
+                                )
+                                .when(cfg!(test), move |v| {
+                                    v.debug_selector(move || format!("project-remove-{index}"))
+                                })
+                                .on_click(cx.listener(
+                                    move |this, _, window, cx| {
+                                        this.remove_project_member(
+                                            &id,
+                                            remove_document.clone(),
+                                            window,
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                    }),
+            );
+        let filter = if exported.len() > 10 {
             page.filter.read(cx).value().to_lowercase()
         } else {
             String::new()
         };
         let mut names = div().flex().flex_col().gap_2().child(section("Names"));
-        if case.exported().len() > 10 {
+        if exported.len() > 10 {
             names = names.child(ui::reveal_focus(
                 div()
-                    .id("case-page-filter")
+                    .id("project-page-filter")
                     .when(cfg!(test), |v| {
-                        v.debug_selector(|| "case-page-filter".into())
+                        v.debug_selector(|| "project-page-filter".into())
                     })
                     .border_1()
                     .border_color(p.border)
@@ -794,10 +752,15 @@ impl Workspace {
                 page.scroll.clone(),
             ));
         }
+        // Mentions in each open member, by alias.
+        let open_members: Vec<_> = (members.iter())
+            .filter_map(|(document, title)| {
+                let tab = self.find_document(&DocumentId::Vault(document.clone()), None, cx)?;
+                Some((self.tabs.get(tab)?.view()?.clone(), title.clone()))
+            })
+            .collect();
         for category in mdoc_pii::Category::ALL {
-            let identities: Vec<_> = case
-                .identities
-                .iter()
+            let identities: Vec<_> = (project.mapping.identities.iter())
                 .filter(|identity| {
                     !identity.originals.is_empty()
                         && identity.category == category.token()
@@ -825,33 +788,22 @@ impl Workspace {
             for identity in identities {
                 let alias = identity.alias.clone();
                 let id = id.clone();
-                let counts = case
-                    .members
-                    .iter()
-                    .map(|path| {
-                        let count = self
-                            .find_path(path, None, cx)
-                            .and_then(|tab| self.tabs.get(tab)?.view())
-                            .map(|view| {
-                                let review = view.read(cx).pii.review();
-                                review
-                                    .identity_by_alias(&identity.alias)
-                                    .map_or(0, |id| review.identity_count(id))
-                            });
-                        format!(
-                            "{}: {}",
-                            path.file_name().unwrap_or_default().to_string_lossy(),
-                            count.map_or_else(|| "—".into(), |count| count.to_string())
-                        )
+                let counts = (open_members.iter())
+                    .map(|(view, title)| {
+                        let review = view.read(cx).pii.review();
+                        let count = review
+                            .identity_by_alias(&identity.alias)
+                            .map_or(0, |id| review.identity_count(id));
+                        format!("{title}: {count}")
                     })
                     .collect::<Vec<_>>()
                     .join(" · ");
                 names = names.child(
                     div()
-                        .id(SharedString::from(format!("case-identity-{alias}")))
+                        .id(SharedString::from(format!("project-identity-{alias}")))
                         .when(cfg!(test), {
                             let alias = alias.clone();
-                            move |v| v.debug_selector(move || format!("case-identity-{alias}"))
+                            move |v| v.debug_selector(move || format!("project-identity-{alias}"))
                         })
                         .flex()
                         .items_start()
@@ -871,30 +823,34 @@ impl Workspace {
                                 )))
                                 .child(div().text_size(px(11.)).text_color(p.header_muted).child(
                                     format!(
-                                        "{} {} · {}",
+                                        "{} {}{}",
                                         identity.originals.len(),
                                         if identity.originals.len() == 1 {
                                             "variant"
                                         } else {
                                             "variants"
                                         },
-                                        counts
+                                        if counts.is_empty() {
+                                            String::new()
+                                        } else {
+                                            format!(" · {counts}")
+                                        }
                                     ),
                                 )),
                         )
                         .child(
                             self.page_control(
-                                SharedString::from(format!("case-forget-{alias}")),
+                                SharedString::from(format!("project-forget-{alias}")),
                                 "Forget identity…",
                                 cx,
                             )
                             .when(cfg!(test), {
                                 let alias = alias.clone();
-                                move |v| v.debug_selector(move || format!("case-forget-{alias}"))
+                                move |v| v.debug_selector(move || format!("project-forget-{alias}"))
                             })
                             .on_click(cx.listener(
                                 move |this, _, window, cx| {
-                                    this.confirm_forget_case_identity(&id, &alias, window, cx)
+                                    this.confirm_forget_project_identity(&id, &alias, window, cx)
                                 },
                             )),
                         ),
@@ -906,12 +862,12 @@ impl Workspace {
                 .flex()
                 .items_center()
                 .gap_2()
-                .on_action(cx.listener(|this, _: &AddCaseName, _, cx| {
+                .on_action(cx.listener(|this, _: &AddProjectName, _, cx| {
                     this.add_page_name(cx);
                     cx.stop_propagation();
                 }))
-                .on_action(cx.listener(|this, _: &ClearCaseName, _, cx| {
-                    if let Some(page) = &this.cases.page {
+                .on_action(cx.listener(|this, _: &ClearProjectName, _, cx| {
+                    if let Some(page) = &this.project_ui.page {
                         page.add.update(cx, |input, cx| input.reset(cx));
                     }
                     cx.stop_propagation();
@@ -928,11 +884,14 @@ impl Workspace {
                     page.scroll.clone(),
                 ))
                 .child(
-                    self.page_control("case-page-add", "Add a name", cx)
-                        .when(cfg!(test), |v| v.debug_selector(|| "case-page-add".into()))
+                    self.page_control("project-page-add", "Add a name", cx)
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "project-page-add".into())
+                        })
                         .on_click(cx.listener(|this, _, _, cx| this.add_page_name(cx))),
                 ),
         );
+        let skipped = project.skipped();
         let categories = div()
             .flex()
             .flex_col()
@@ -948,7 +907,7 @@ impl Workspace {
                         .filter(|category| *category != mdoc_pii::Category::Other)
                         .map(|category| {
                             let id = id.clone();
-                            let on = !case.skipped().contains(&category);
+                            let on = !skipped.contains(&category);
                             self.page_control(
                                 SharedString::from(format!("page-category-{}", category.token())),
                                 format!(
@@ -970,12 +929,14 @@ impl Workspace {
                                 })
                             })
                             .on_click(cx.listener(
-                                move |this, _, _, cx| this.toggle_case_category(&id, category, cx),
+                                move |this, _, _, cx| {
+                                    this.toggle_project_category(&id, category, cx)
+                                },
                             ))
                         }),
                 ),
             );
-        let lists = self.case_lists(case, cx);
+        let lists = self.project_lists(project, cx);
         div()
             .w_full()
             .max_w(px(680.))
@@ -989,22 +950,22 @@ impl Workspace {
             .child(categories)
             .child(lists)
             .child(
-                self.page_control("case-page-delete", "Delete case and forget originals…", cx)
+                self.page_control("project-page-delete", "Delete Project…", cx)
                     .text_color(style::markdown_style(theme).popover_danger)
                     .when(cfg!(test), |v| {
-                        v.debug_selector(|| "case-page-delete".into())
+                        v.debug_selector(|| "project-page-delete".into())
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.delete_case(id.clone(), window, cx)
+                        this.delete_project(id.clone(), window, cx)
                     })),
             )
             .into_any_element()
     }
 
-    /// The case's Always and Never lists: what its members'
-    /// manual marks and Keeps put there, each with Remove. Entries are
-    /// added only by marking and keeping in a member.
-    fn case_lists(&self, case: &mdoc_store::cases::Case, cx: &mut Context<Self>) -> gpui::Div {
+    /// The Project's Always and Never lists: what its members' manual marks
+    /// and Keeps put there, each with Remove. Entries are added only by
+    /// marking and keeping in a member.
+    fn project_lists(&self, project: &Project, cx: &mut Context<Self>) -> gpui::Div {
         let p = self.theme.get().pdf_style();
         let mut lists = div()
             .flex()
@@ -1012,14 +973,16 @@ impl Workspace {
             .gap_2()
             .child(section("Always and never replace"))
             .child(div().text_size(px(12.)).text_color(p.header_muted).child(
-                "Scans in this case's documents propose what you marked yourself and skip what you kept.",
+                "Scans in this Project's documents propose what you marked yourself and skip \
+                 what you kept.",
             ));
         // Each list's wordings, with the category of an Always one.
         type Entries = Vec<(String, Option<&'static str>)>;
         let entries: [(bool, Entries); 2] = [
             (
                 true,
-                case.lists
+                project
+                    .lists
                     .always
                     .iter()
                     .map(|e| (e.wording.clone(), Some(e.category().label())))
@@ -1027,7 +990,12 @@ impl Workspace {
             ),
             (
                 false,
-                case.lists.never.iter().map(|w| (w.clone(), None)).collect(),
+                project
+                    .lists
+                    .never
+                    .iter()
+                    .map(|w| (w.clone(), None))
+                    .collect(),
             ),
         ];
         for (always, entries) in entries {
@@ -1053,8 +1021,8 @@ impl Workspace {
                 ));
             }
             for (index, (wording, category)) in entries.into_iter().enumerate() {
-                let control = format!("case-{list}-remove-{index}");
-                let (id, remove) = (case.id.clone(), wording.clone());
+                let control = format!("project-{list}-remove-{index}");
+                let (id, remove) = (project.id.clone(), wording.clone());
                 lists = lists.child(
                     div()
                         .flex()
@@ -1075,7 +1043,7 @@ impl Workspace {
                                     v.debug_selector(move || control.clone())
                                 })
                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.remove_case_list_entry(&id, always, &remove, cx)
+                                    this.remove_project_list_entry(&id, always, &remove, cx)
                                 })),
                         ),
                 );
@@ -1085,12 +1053,12 @@ impl Workspace {
     }
 
     pub(super) fn add_page_name(&mut self, cx: &mut Context<Self>) {
-        let Some(page) = &self.cases.page else {
+        let Some(page) = &self.project_ui.page else {
             return;
         };
         let (id, input) = (page.id.clone(), page.add.clone());
         let term = input.read(cx).value().to_string();
-        self.add_case_name(&id, &term, cx);
+        self.add_project_name(&id, &term, cx);
         input.update(cx, |input, cx| input.reset(cx));
     }
 }

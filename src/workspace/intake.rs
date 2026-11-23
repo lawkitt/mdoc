@@ -1,5 +1,6 @@
-//! Intake: a file opened, dropped or chosen in a folder sheet becomes an
-//! Unfiled Vault document when it is admitted, before any conversion, with
+//! Intake: a file opened, dropped or chosen in a folder sheet becomes a
+//! Vault document, Unfiled or in the Project it was dropped on, when it is
+//! admitted, before any conversion, with
 //! its bytes kept as its Source Original. A file the Vault already holds
 //! asks once, for every such file in the open, whether to open the existing
 //! document or import it again.
@@ -85,12 +86,13 @@ enum Repeats {
 }
 
 impl Workspace {
-    /// Admit `paths` (supported files) as Vault documents in new tabs placed
-    /// before the tab now at `at`.
+    /// Admit `paths` (supported files) as Vault documents, Unfiled or in
+    /// `project`, in new tabs placed before the tab now at `at`.
     pub(super) fn admit(
         &mut self,
         paths: Vec<PathBuf>,
         at: Option<usize>,
+        project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -98,7 +100,7 @@ impl Workspace {
             return;
         }
         let anchor = at.and_then(|at| self.tabs.at(at).map(|tab| tab.id()));
-        self.admit_at(paths, anchor, window, cx);
+        self.admit_at(paths, anchor, project, window, cx);
     }
 
     /// Admit `paths` before tab `anchor`, after any admission still running:
@@ -107,11 +109,12 @@ impl Workspace {
         &mut self,
         paths: Vec<PathBuf>,
         anchor: Option<u64>,
+        project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.admitting {
-            self.admit_queue.push_back((paths, anchor));
+            self.admit_queue.push_back((paths, anchor, project));
             return;
         }
         self.admitting = true;
@@ -121,7 +124,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let admitted = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.admitted(admitted, anchor, window, cx)
+                this.admitted(admitted, anchor, project, window, cx)
             });
         })
         .detach();
@@ -131,6 +134,7 @@ impl Workspace {
         &mut self,
         admitted: Vec<Result<Admitted, (String, String)>>,
         anchor: Option<u64>,
+        project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -183,7 +187,15 @@ impl Workspace {
             .map(|(file, _)| file_name(&file.path))
             .collect();
         if repeats.is_empty() {
-            self.import(files, existing, Repeats::ImportAgain, anchor, window, cx);
+            self.import(
+                files,
+                existing,
+                Repeats::ImportAgain,
+                anchor,
+                project,
+                window,
+                cx,
+            );
             return;
         }
         let (question, detail) = match repeats.as_slice() {
@@ -220,7 +232,7 @@ impl Workspace {
                 _ => Repeats::Skip,
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.import(files, existing, repeats, anchor, window, cx)
+                this.import(files, existing, repeats, anchor, project, window, cx)
             });
         })
         .detach();
@@ -240,12 +252,14 @@ impl Workspace {
 
     /// Import `files` into the Vault, each as `repeats` says when it is a
     /// repeat of `existing`, then show them.
+    #[allow(clippy::too_many_arguments)]
     fn import(
         &mut self,
         files: Vec<Admitted>,
         existing: Vec<Option<VaultId>>,
         repeats: Repeats,
         anchor: Option<u64>,
+        project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -274,7 +288,7 @@ impl Workspace {
                             .map(|stem| stem.to_string_lossy().into_owned())
                             .unwrap_or_else(|| name.clone());
                         let new = NewDocument {
-                            project: None,
+                            project: project.clone(),
                             title: title.clone(),
                             source_kind: file.kind,
                             origin: DocumentOrigin::Ordinary,
@@ -374,24 +388,30 @@ impl Workspace {
     /// An admission ended: the next one waiting starts.
     fn admitted_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.admitting = false;
-        if let Some((paths, anchor)) = self.admit_queue.pop_front() {
-            self.admit_at(paths, anchor, window, cx);
+        if let Some((paths, anchor, project)) = self.admit_queue.pop_front() {
+            self.admit_at(paths, anchor, project, window, cx);
         }
     }
 
-    /// Tests: open Markdown files as a case lists them.
-    #[cfg(test)]
-    pub(crate) fn open_case_files(
+    /// Show Vault document `document`: its tab, or a new one.
+    pub(super) fn open_vault_document(
         &mut self,
-        paths: Vec<PathBuf>,
+        document: VaultId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let paths = paths
-            .into_iter()
-            .map(|path| (mdoc_store::session_store::identity(&path), true))
-            .collect();
-        self.finish_open(paths, None, true, window, cx);
+        let id = DocumentId::Vault(document);
+        let tab = match self.find_document(&id, None, cx) {
+            Some(tab) => tab,
+            None => {
+                let mut record = TabRecord::default();
+                record.set_document(id);
+                let tab = self.push(record);
+                self.name_from_vault(tab);
+                tab
+            }
+        };
+        self.show_opened(tab, window, cx);
     }
 
     /// A Vault tab not loaded yet is named as its document is.

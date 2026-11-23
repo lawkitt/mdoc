@@ -366,18 +366,10 @@ fn imported_warning_survives_save_and_stays_with_its_tab_until_dismissed(cx: &mu
             window,
             cx,
         );
-        app.save_as_file(dir.path().join("output.md"), cx);
     });
-    // The window checks for another tab with the file, then saves.
+    cx.dispatch_action(Save);
     cx.run_until_parked();
-    cx.update(|_, cx| {
-        let app = app.read(cx);
-        assert_eq!(
-            app.session.document.path,
-            Some(session_store::identity(&dir.path().join("output.md")))
-        );
-        assert!(app.session.warning.is_some());
-    });
+    cx.update(|_, cx| assert!(app.read(cx).session.warning.is_some()));
     cx.dispatch_action(DismissImportWarning);
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).session.warning.is_none()));

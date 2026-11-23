@@ -1,98 +1,30 @@
-//! What the window gives the menu bar shelf: its open tabs with
-//! applied aliases and its cases' closed members, read only while the shelf
-//! asks; and, on save, the fingerprint of a ready member's text, kept in its
-//! (encrypted) case.
+//! What the window gives the menu bar shelf: its open tabs with applied
+//! aliases, and its Projects' names for the clipboard rows.
 
 use super::{Workspace, navigation::Arrival};
 use crate::{
     document_view::DocumentView,
-    shelf::{self, ClosedMember, OpenTab, ShelfDocument, ShelfKey},
+    shelf::{self, OpenTab, ShelfDocument, ShelfKey},
 };
 use gpui::{App, Context, Window};
 use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
-use mdoc_store::{session_store, settings};
-use std::{path::PathBuf, time::SystemTime};
+use mdoc_store::settings;
+use std::time::SystemTime;
 
 impl Workspace {
-    /// The shelf's documents: open tabs with applied aliases, then closed
-    /// members of unlocked cases, at most `shelf::MAX_DOCUMENTS`. Reads up
-    /// to that many member files; nothing about them is kept.
+    /// The shelf's documents: open tabs with applied aliases, at most
+    /// `shelf::MAX_DOCUMENTS`.
     pub(crate) fn shelf_documents(&self, cx: &App) -> Vec<ShelfDocument> {
-        let mut open = Vec::new();
-        let mut tabs = Vec::new();
-        for tab in &self.tabs {
-            let Some(view) = tab.view() else {
-                continue;
-            };
-            let view = view.read(cx);
-            if let Some(path) = &view.session.document.path {
-                open.push(session_store::identity(path));
-            }
-            if let Some(document) = shelf_tab(tab.id(), view, cx) {
-                tabs.push(document);
-            }
-        }
-        let room = shelf::MAX_DOCUMENTS.saturating_sub(tabs.len());
-        // Locked cases are not loaded: their closed members stay hidden.
-        let members = shelf::closed_members(self.case_coordinator.cases(), &open, room)
-            .into_iter()
-            .map(|(case, path, edited)| {
-                let text = shelf::read_member(path);
-                ShelfDocument::of_member(ClosedMember {
-                    case,
-                    path,
-                    text: text.as_deref(),
-                    edited,
-                })
-            })
+        let tabs = (self.tabs.iter())
+            .filter_map(|tab| shelf_tab(tab.id(), tab.view()?.read(cx), cx))
             .collect();
-        shelf::list(tabs, members)
-    }
-
-    /// The tab `id` was saved, or its case created: keep the fingerprint of
-    /// its saved text in its case while it is ready, or forget it.
-    pub(super) fn record_review(&mut self, id: u64, cx: &mut Context<Self>) {
-        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
-            return;
-        };
-        let (link, path, fingerprint) = {
-            let v = view.read(cx);
-            (
-                v.case.link().cloned(),
-                v.session
-                    .document
-                    .path
-                    .as_deref()
-                    .map(session_store::identity),
-                if !ready(v, cx) {
-                    Some(None)
-                } else if v.unsaved(cx) {
-                    // The saved text is the reviewed one only while nothing
-                    // is unsaved: keep the fingerprint of the last save.
-                    None
-                } else {
-                    Some(Some(shelf::fingerprint(&v.session.document.saved)))
-                },
-            )
-        };
-        let (Some(link), Some(path), Some(fingerprint)) = (link, path, fingerprint) else {
-            return;
-        };
-        if let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
-            case.members
-                .contains(&path)
-                .then(|| case.set_reviewed(&path, fingerprint))
-                .filter(|changed| *changed)
-                .map(|_| ())
-        }) {
-            self.carry_out_cases(effect.into_iter().collect(), cx);
-        }
+        shelf::list(tabs)
     }
 }
 
 /// A tab is ready as the shelf counts it: an applied alias,
 /// nothing pending or still being found, and no known name left as written.
-fn ready(view: &DocumentView, cx: &App) -> bool {
+pub(super) fn ready(view: &DocumentView, cx: &App) -> bool {
     shelf_tab(0, view, cx).is_some_and(|row| row.readiness.is_ready())
 }
 
@@ -103,11 +35,7 @@ fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
         return None;
     }
     let names = view.known_identities();
-    let edited = view
-        .lifecycle
-        .edited_at()
-        .or_else(|| modified(view.session.document.path.as_ref()))
-        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let edited = view.lifecycle.edited_at().unwrap_or(SystemTime::UNIX_EPOCH);
     let title = view.display_name();
     ShelfDocument::of_tab(OpenTab {
         id,
@@ -121,20 +49,16 @@ fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
         pending: review.remaining(),
         checking: review.awaiting_discovery(),
         names,
-        case: view.case.link().cloned(),
+        project: view.project.link().cloned(),
         edited,
     })
 }
 
-fn modified(path: Option<&PathBuf>) -> Option<SystemTime> {
-    std::fs::metadata(path?).ok()?.modified().ok()
-}
-
-/// Whose names the shelf's clipboard rows use: a case, or an
-/// open tab without one through its live mapping. Never mixed.
+/// Whose names the shelf's clipboard rows use: a Project, or an open tab
+/// outside one through its live mapping. Never mixed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ClipboardSource {
-    Case {
+    Project {
         id: String,
         name: String,
     },
@@ -149,7 +73,7 @@ impl ClipboardSource {
     /// The name the row and its picker show.
     pub(crate) fn name(&self) -> &str {
         match self {
-            Self::Case { name, .. } => name,
+            Self::Project { name, .. } => name,
             Self::Tab { title, .. } => title,
         }
     }
@@ -158,22 +82,22 @@ impl ClipboardSource {
 /// The names a clipboard row may use.
 pub(crate) enum ClipboardNames {
     Names(Vec<ExportedIdentity>),
-    /// The case's key is not open: "Unlock cases in mdoc…".
+    /// The Vault's key is not open: "Unlock in mdoc…".
     Locked,
-    /// The case or tab is gone.
+    /// The Project or tab is gone.
     Gone,
 }
 
 impl Workspace {
-    /// Every source the picker offers: open tabs without a case that have a
-    /// mapping, then every case, loaded or locked.
+    /// Every source the picker offers: open tabs outside a Project that
+    /// have a mapping, then every Project.
     pub(crate) fn clipboard_sources(&self, cx: &App) -> Vec<ClipboardSource> {
         let mut sources: Vec<_> = self
             .tabs
             .iter()
             .filter_map(|tab| {
                 let view = tab.view()?.read(cx);
-                if view.case.link().is_some() || view.pii.review().applied().is_empty() {
+                if view.project.link().is_some() || view.pii.review().applied().is_empty() {
                     return None;
                 }
                 let row = shelf_tab(tab.id(), view, cx)?;
@@ -183,36 +107,41 @@ impl Workspace {
                 })
             })
             .collect();
-        let mut cases = self.case_coordinator.summaries();
-        cases.sort_by_key(|case| case.name.to_lowercase());
+        let mut projects = self.projects.summaries();
+        projects.sort_by_key(|project| project.name.to_lowercase());
         sources.extend(
-            cases
+            projects
                 .into_iter()
-                .map(|case| self.case_source(&case.id, &case.name)),
+                .map(|project| self.project_source(&project.id, &project.name)),
         );
         sources
     }
 
-    /// A case as a clipboard source, named as the shelf may show it: with
-    /// its own names pseudonymized (a case is often named after a person),
-    /// or "a locked case" while its names cannot be read.
-    fn case_source(&self, id: &str, name: &str) -> ClipboardSource {
-        let name = match self.case_coordinator.case(id) {
-            Some(case) => RestoreMap::new(case.exported()).pseudonymize(name).0,
-            None => "a locked case".to_string(),
+    /// A Project as a clipboard source, named as the shelf may show it:
+    /// with its own names pseudonymized, as a Project is often named after
+    /// a person.
+    fn project_source(&self, id: &str, name: &str) -> ClipboardSource {
+        let name = match self.projects.project(id) {
+            Some(project) => {
+                RestoreMap::new(project.mapping.exported())
+                    .pseudonymize(name)
+                    .0
+            }
+            None => name.to_string(),
         };
-        ClipboardSource::Case {
+        ClipboardSource::Project {
             id: id.to_string(),
             name,
         }
     }
 
-    /// The document used last: the active tab's case, or its own mapping.
+    /// The document used last: the active tab's Project, or its own
+    /// mapping.
     pub(crate) fn active_clipboard_source(&self, cx: &App) -> Option<ClipboardSource> {
         let view = self.active_view()?;
         let view = view.read(cx);
-        if let Some(link) = view.case.link() {
-            return Some(self.case_source(&link.id, &link.name));
+        if let Some(link) = view.project.link() {
+            return Some(self.project_source(&link.id, &link.name));
         }
         let id = self.tabs.active();
         self.clipboard_sources(cx)
@@ -221,12 +150,12 @@ impl Workspace {
     }
 
     /// The names `source` restores or pseudonymizes with. Never reads the
-    /// case key: a case that is not open is locked.
+    /// key: while the Vault is locked its Projects are.
     pub(crate) fn clipboard_names(&self, source: &ClipboardSource, cx: &App) -> ClipboardNames {
         match source {
-            ClipboardSource::Case { id, .. } => match self.case_coordinator.case(id) {
-                Some(case) => ClipboardNames::Names(case.exported()),
-                None if self.case_coordinator.key_wait().is_some() => ClipboardNames::Locked,
+            ClipboardSource::Project { id, .. } => match self.projects.project(id) {
+                Some(project) => ClipboardNames::Names(project.mapping.exported()),
+                None if self.vault.needs_key() => ClipboardNames::Locked,
                 None => ClipboardNames::Gone,
             },
             ClipboardSource::Tab { id, .. } => match self.tabs.get(*id).and_then(|t| t.view()) {
@@ -236,9 +165,8 @@ impl Workspace {
         }
     }
 
-    /// A shelf row's click: the tab comes forward in its current view, a
-    /// closed member opens as a tab, and a document that is not ready
-    /// shows its first pending proposal once it has loaded.
+    /// A shelf row's click: the tab comes forward in its current view, and
+    /// a document that is not ready shows its first pending proposal.
     pub(crate) fn open_from_shelf(
         &mut self,
         key: &ShelfKey,
@@ -246,41 +174,22 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (tab, path) = match key {
-            ShelfKey::Tab(id) => {
-                if !self.tabs.contains(*id) {
-                    return;
-                }
-                self.activate_as(*id, Arrival::Visit, window, cx);
-                (Some(*id), None)
-            }
-            ShelfKey::Member { path, .. } => {
-                // A case's member is the Markdown file it lists.
-                match self.find_path(path, None, cx) {
-                    Some(id) => self.activate_as(id, Arrival::Visit, window, cx),
-                    None => {
-                        self.finish_open(vec![(path.clone(), true)], None, true, window, cx);
-                    }
-                }
-                (None, Some(path.clone()))
-            }
-        };
-        if ready {
-            if tab.is_some() {
-                self.focus_active(window, cx);
-            }
+        let ShelfKey::Tab(tab) = *key;
+        if !self.tabs.contains(tab) {
             return;
         }
-        // A closed member opens and loads asynchronously, and its proposals
-        // appear once it joins its case: wait a little for them.
+        self.activate_as(tab, Arrival::Visit, window, cx);
+        if ready {
+            self.focus_active(window, cx);
+            return;
+        }
+        // A tab still loading shows its proposals once it is ready: wait a
+        // little for them.
         cx.spawn_in(window, async move |this, cx| {
             for _ in 0..50 {
                 let shown = this
                     .update_in(cx, |this, window, cx| {
-                        let id = tab.or_else(|| this.find_path(path.as_deref()?, None, cx));
-                        let Some(view) = id
-                            .and_then(|id| this.tabs.get(id))
-                            .and_then(|tab| tab.view().cloned())
+                        let Some(view) = (this.tabs.get(tab)).and_then(|tab| tab.view().cloned())
                         else {
                             return false;
                         };
@@ -393,9 +302,9 @@ impl Workspace {
         saved
     }
 
-    /// "Unlock cases in mdoc…": the Keychain explainer, in the window.
+    /// "Unlock in mdoc…": the Keychain explainer, in the window.
     pub(crate) fn unlock_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.unlock_cases(window, cx);
+        self.unlock_projects(window, cx);
     }
 
     /// "Restart to update": the ordinary quit, prompts included.
