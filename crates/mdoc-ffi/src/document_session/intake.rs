@@ -30,6 +30,8 @@ pub(super) struct Imported {
     pub markdown: String,
     /// The file family a first save into the Vault records.
     pub source_kind: mdoc_vault::SourceKind,
+    /// What a first save into the Vault keeps as its Source Original.
+    pub source: Option<Source>,
     pub note: ImportNote,
     /// OCR's kept pages, removed once the session takes the document.
     pub kept: Option<mdoc_import::resume::Completed>,
@@ -69,6 +71,7 @@ pub(super) fn import_file(
             title,
             markdown,
             source_kind: source_kind(path),
+            source: Source::of(path, false)?,
             note: ImportNote::default(),
             kept: None,
             #[cfg(not(target_os = "android"))]
@@ -112,7 +115,18 @@ pub(super) fn import_file(
             None,
         ),
     };
-    finish(title, source_kind(path), imported, completed, cancel)
+    // Locked as imported: an Office file the password unlocked in memory,
+    // or a PDF, which the apps give a password only once it asked for one.
+    let locked = imported.source.unlocked() || (imported.is_pdf && password.is_some());
+    let source = Source::of(path, locked)?;
+    finish(
+        title,
+        source_kind(path),
+        source,
+        imported,
+        completed,
+        cancel,
+    )
 }
 
 /// The file family `path` is from (#1091, source kind). OpenDocument text
@@ -186,9 +200,16 @@ pub(super) fn import_images(
             None,
         ),
     };
+    // One photo is its own original; pages picked together have none of
+    // their own yet.
+    let source = match images {
+        [image] => Source::of(image, false)?,
+        _ => None,
+    };
     finish(
         title,
         mdoc_vault::SourceKind::Image,
+        source,
         imported,
         completed,
         cancel,
@@ -206,6 +227,7 @@ fn advanced(progress: Option<&dyn JobProgress>, page: u32, pages: u32) {
 fn finish(
     title: String,
     source_kind: mdoc_vault::SourceKind,
+    source: Option<Source>,
     imported: mdoc_import::import::Imported,
     kept: Option<mdoc_import::resume::Completed>,
     cancel: &AtomicBool,
@@ -216,6 +238,7 @@ fn finish(
     Ok(Imported {
         title,
         source_kind,
+        source,
         note: ImportNote::of(&imported),
         markdown: imported.markdown,
         kept,
@@ -236,6 +259,66 @@ impl ImportNote {
                 .left_out
                 .line(cfg!(not(target_os = "android")) && imported.is_docx),
         }
+    }
+}
+
+/// The bytes a Vault document keeps as its Source Original (#1091
+/// Decisions 7, 14 and 23): the file as imported, a locked one still
+/// locked; a photo without its metadata, as the phones keep it
+/// (`image_without_metadata`).
+#[derive(Clone, Debug)]
+pub(crate) struct Source {
+    bytes: SourceBytes,
+    pub file_name: String,
+    pub password_protected: bool,
+}
+
+#[derive(Clone, Debug)]
+enum SourceBytes {
+    /// Read when it is kept, streamed: it must still be there then.
+    File(PathBuf),
+    Memory(Vec<u8>),
+}
+
+impl Source {
+    /// What `path` keeps: `None` for an image the core cannot strip of its
+    /// metadata (HEIC, TIFF, one it does not parse, one past the import's
+    /// size limit), which is never kept with it. An image is told by its
+    /// bytes, as the import tells it, whatever its name.
+    pub(crate) fn of(path: &Path, password_protected: bool) -> std::io::Result<Option<Self>> {
+        let Some(file_name) = path.file_name() else {
+            return Ok(None);
+        };
+        let file_name = file_name.to_string_lossy().into_owned();
+        let bytes = match mdoc_import::image_pdf::format_of_file(path)? {
+            Some(ImageFormat::Tiff | ImageFormat::Heic) => return Ok(None),
+            Some(_) => {
+                if std::fs::metadata(path)?.len() > mdoc_import::import::MAX_PDF_BYTES {
+                    return Ok(None);
+                }
+                let image = std::fs::read(path)?;
+                match mdoc_import::image_pdf::without_metadata(&image) {
+                    Some(stripped) => SourceBytes::Memory(stripped),
+                    None => return Ok(None),
+                }
+            }
+            None => SourceBytes::File(std::path::absolute(path)?),
+        };
+        Ok(Some(Self {
+            bytes,
+            file_name,
+            password_protected,
+        }))
+    }
+
+    /// The bytes it keeps, to read once.
+    pub(crate) fn reader(&self) -> std::io::Result<Box<dyn std::io::Read + '_>> {
+        Ok(match &self.bytes {
+            SourceBytes::File(path) => {
+                Box::new(std::io::BufReader::new(std::fs::File::open(path)?))
+            }
+            SourceBytes::Memory(bytes) => Box::new(bytes.as_slice()),
+        })
     }
 }
 

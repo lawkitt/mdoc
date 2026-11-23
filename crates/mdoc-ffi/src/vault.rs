@@ -14,8 +14,10 @@
 //! AI Replies are saved, listed, restored and deleted here too
 //! ([`replies`]); `ReplyVault` is the Restore extension's handle, which
 //! writes nothing but new replies.
+mod originals;
 mod replies;
 
+pub use originals::OriginalFile;
 pub use replies::{ReplyInfo, ReplyOwner, ReplyVault, SavedReply, SharedFrom};
 
 use crate::{
@@ -104,6 +106,8 @@ pub struct DocumentInfo {
     /// Seconds since the Unix epoch.
     pub created: u64,
     pub updated: u64,
+    /// It keeps its Source Original (`Vault::original`).
+    pub has_original: bool,
 }
 
 /// One of a Project's names, for its `Names` segment.
@@ -410,7 +414,7 @@ impl Vault {
         }
     }
 
-    fn infos(&self, summaries: Vec<DocumentSummary>) -> Vec<DocumentInfo> {
+    pub(crate) fn infos(&self, summaries: Vec<DocumentSummary>) -> Vec<DocumentInfo> {
         document_infos(&self.store, summaries)
     }
 
@@ -529,6 +533,7 @@ fn document_info(store: &impl Reads, summary: DocumentSummary) -> DocumentInfo {
         kept: counts.kept,
         created: summary.created,
         updated: summary.updated,
+        has_original: summary.source_sha256.is_some(),
     }
 }
 
