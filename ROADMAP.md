@@ -390,11 +390,6 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–22 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
-10. **[iOS] Restore extension and saved replies on the Vault.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Restore with mdoc
-    reads a Project and saves the reply through the Vault; the app lists it
-    and shows it restored. *Blocked by:* items 8, 9. *Done when:* a reply
-    shared to the extension on a device appears in the app, restored.
 11. **[iOS] Vault sidebar and Project page.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Sidebar: Search,
     Home, To review, the top five Projects with All Projects and New Project,
