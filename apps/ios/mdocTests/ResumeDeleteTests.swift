@@ -17,34 +17,35 @@ final class ResumeDeleteTests: XCTestCase {
     }
 
     private func core() throws -> Core {
-        try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
     }
 
     /// A scanned page waiting for OCR, imported but not read.
     private func pendingScan(_ core: Core) throws -> (any mdoc.DocumentSession, URL) {
-        let folder = storage.url(.originals).appendingPathComponent("scan", isDirectory: true)
+        let folder = storage.url(.intake).appendingPathComponent("scan", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let page = folder.appendingPathComponent("page-1.jpg")
         try UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).jpegData(withCompressionQuality: 0.9) { _ in }.write(to: page)
-        let session = try core.library.importDocument(.scan([page]), title: "Scan", into: .newCase(name: "Scan"))
+        let session = try core.library.importDocument(.scan([page]), title: "Scan", into: nil)
         return (session, folder.appendingPathComponent("Scan.jpg"))
     }
 
-    func testDeletingASavedDocumentLeavesItsCase() throws {
+    func testDeletingASavedDocumentLeavesItsProject() throws {
         let core = try core()
-        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .newCase(name: "Lee"))
+        let projectID = try Fixture.createProject("Ann", in: core)
+        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: projectID)
         let saved = try session.recognize(observer: TestObserver())
+        XCTAssertEqual(saved.projectID, projectID)
         let library = try XCTUnwrap(core.library as? RealLibrary)
-        let caseID = try XCTUnwrap(saved.caseID).rawValue
-        let path = try XCTUnwrap(library.ffi.caseInfo(id: caseID).documents.first)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        let vaultID = try XCTUnwrap((session as? RealSession)?.vaultID)
+        XCTAssertEqual(try library.vault.projectPage(id: projectID.rawValue).documents.map(\.id), [vaultID])
 
         try core.library.deleteDocument(session.id)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
-        // The case stays, without the document.
-        XCTAssertEqual(try library.ffi.caseInfo(id: caseID).documents, [])
+        XCTAssertThrowsError(try library.vault.document(id: vaultID))
+        // The Project stays, without the document.
+        XCTAssertEqual(try library.vault.projectPage(id: projectID.rawValue).documents, [])
         XCTAssertTrue(core.library.snapshot().documents.isEmpty)
-        XCTAssertEqual(core.library.snapshot().cases.map(\.id.rawValue), [caseID])
+        XCTAssertEqual(core.library.snapshot().projects.map(\.id), [projectID])
     }
 
     func testDroppingAnImportDiscardsItsKeptOCRPages() throws {
@@ -52,8 +53,8 @@ final class ResumeDeleteTests: XCTestCase {
         let (session, source) = try pendingScan(core)
         // Pages the core kept for this file, and for another one.
         let digest = SHA256.hash(data: try Data(contentsOf: source)).map { String(format: "%02x", $0) }.joined()
-        let kept = storage.url(.imports).appendingPathComponent("\(digest)-0123456789abcdef", isDirectory: true)
-        let other = storage.url(.imports).appendingPathComponent("\(String(repeating: "0", count: 64))-0123456789abcdef", isDirectory: true)
+        let kept = storage.url(.ocr).appendingPathComponent("\(digest)-0123456789abcdef", isDirectory: true)
+        let other = storage.url(.ocr).appendingPathComponent("\(String(repeating: "0", count: 64))-0123456789abcdef", isDirectory: true)
         for folder in [kept, other] {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try Data("{}".utf8).write(to: folder.appendingPathComponent("1.json"))
@@ -90,9 +91,9 @@ final class ResumeDeleteTests: XCTestCase {
     /// stopped PDF import reads as an import, never as missing OCR (ADR 0088).
     @MainActor
     func testAStoppedPDFImportOffersFinishImport() throws {
-        let pdf = storage.url(.originals).appendingPathComponent("statement.pdf")
+        let pdf = storage.url(.intake).appendingPathComponent("statement.pdf")
         try Data("%PDF-1.4".utf8).write(to: pdf)
-        let session = try core().library.importDocument(.file(pdf, .pdf), title: "Statement", into: .newCase(name: "Statement"))
+        let session = try core().library.importDocument(.file(pdf, .pdf), title: "Statement", into: nil)
         PendingImports(storage: storage).markOCRStarted(session.id)
         let reopened = try core().library.session(for: session.id)
         XCTAssertTrue(reopened.snapshot().resumesOCR)
@@ -105,21 +106,21 @@ final class ResumeDeleteTests: XCTestCase {
     /// The library's folders as a locked phone leaves them (Data Protection
     /// Complete): unwritable, and `ProtectedData` says so.
     private func lock() throws {
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: storage.url(.documents).path)
+        try Fixture.setVault(storage, writable: false)
         ProtectedData.isAvailable = false
     }
 
     /// The folders writable again; `ProtectedData` still says locked until
     /// the test unlocks.
     private func makeWritable() throws {
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: storage.url(.documents).path)
+        try Fixture.setVault(storage, writable: true)
     }
 
     /// A document deleted while its scan's save waits for the phone to
     /// unlock: the unlock writes nothing, so it does not come back.
     func testADeletedDocumentsSaveOnUnlockIsDropped() throws {
         let core = try core()
-        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .newCase(name: "Lee"))
+        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: nil)
         _ = try session.recognize(observer: TestObserver())
         defer {
             try? makeWritable()
@@ -139,7 +140,7 @@ final class ResumeDeleteTests: XCTestCase {
     /// the phone to unlock: discarded, it stays gone after the unlock.
     func testADiscardedDocumentsSaveOnUnlockIsDropped() throws {
         let core = try core()
-        let session = try core.library.importDocument(.newDocument, title: "New document", into: .newCase(name: "New document"))
+        let session = try core.library.importDocument(.newDocument, title: "New document", into: nil)
         _ = try session.recognize(observer: TestObserver())
         _ = try session.type(SourceRange(start: 0, end: 0), "Hello")
         try session.saveChanges()
@@ -158,18 +159,17 @@ final class ResumeDeleteTests: XCTestCase {
         XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty, "not saved again")
     }
 
-    /// A delete the core refuses (its case cannot be saved) leaves the
+    /// A delete the Vault refuses (its folder cannot be written) leaves the
     /// document as it was: still listed, and its next changes saved.
     func testAFailedDeleteLeavesTheDocumentAsItWas() throws {
         let core = try core()
-        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .newCase(name: "Lee"))
+        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: nil)
         _ = try session.recognize(observer: TestObserver())
         XCTAssertEqual(try session.scan(observer: TestObserver()).phase, .reviewing)
-        let cases = storage.url(.cases).path
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: cases)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cases) }
+        try Fixture.setVault(storage, writable: false)
+        defer { try? Fixture.setVault(storage, writable: true) }
         XCTAssertThrowsError(try core.library.deleteDocument(session.id))
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cases)
+        try Fixture.setVault(storage, writable: true)
         XCTAssertEqual(try session.replaceAllPending().phase, .ready)
         try core.library.saveChanges()
         XCTAssertEqual(try self.core().library.snapshot().documents.map(\.phase), [.ready])
@@ -179,7 +179,7 @@ final class ResumeDeleteTests: XCTestCase {
     /// have found is not saved: the document does not come back.
     func testAJobOnADeletedDocumentSavesNothing() throws {
         let core = try core()
-        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .newCase(name: "Lee"))
+        let session = try core.library.importDocument(.text("Write to ann@example.com."), title: "Note", into: nil)
         _ = try session.recognize(observer: TestObserver())
         try core.library.deleteDocument(session.id)
         XCTAssertThrowsError(try session.scan(observer: TestObserver())) { error in
@@ -188,13 +188,15 @@ final class ResumeDeleteTests: XCTestCase {
         XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty, "not saved again")
     }
 
-    func testTheCoreKeepsOCRPagesInTheProtectedImportsFolder() throws {
-        XCTAssertEqual(MdocStorage.Area.imports.rawValue, "imports")
-        XCTAssertEqual(MdocStorage.Area.imports.protection, .complete)
+    /// OCR's finished pages go to the intake folder, never the old
+    /// library's `imports` (#1109's note for item 9).
+    func testTheCoreKeepsOCRPagesInTheProtectedIntakeFolder() throws {
+        XCTAssertEqual(storage.url(.ocr), storage.intake.appendingPathComponent("ocr", isDirectory: true))
+        XCTAssertEqual(MdocStorage.Area.ocr.protection, .complete)
         var isFolder: ObjCBool = false
-        XCTAssertTrue(FileManager.default.fileExists(atPath: storage.url(.imports).path, isDirectory: &isFolder))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storage.url(.ocr).path, isDirectory: &isFolder))
         XCTAssertTrue(isFolder.boolValue)
-        let values = try storage.url(.imports).resourceValues(forKeys: [.isExcludedFromBackupKey])
+        let values = try storage.url(.ocr).resourceValues(forKeys: [.isExcludedFromBackupKey])
         XCTAssertEqual(values.isExcludedFromBackup, true)
     }
 }

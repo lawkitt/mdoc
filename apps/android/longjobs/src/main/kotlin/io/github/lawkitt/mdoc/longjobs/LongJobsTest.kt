@@ -181,7 +181,7 @@ class LongJobsTest {
         assertTrue(device.wait(Until.gone(By.textContains("Downloading")), 60_000))
     }
 
-    /** Shares the file into mdoc as a file app would, then adds it in a new case. */
+    /** Shares the file into mdoc as a file app would, then adds it, Unfiled. */
     private fun share(file: File): String {
         // From Home, as the document opens over whatever screen mdoc shows.
         home()

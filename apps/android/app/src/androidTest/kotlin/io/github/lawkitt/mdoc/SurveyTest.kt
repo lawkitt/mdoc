@@ -20,7 +20,6 @@ import androidx.compose.ui.test.printToLog
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.restore.RestoreActivity
@@ -166,14 +165,14 @@ class SurveyTest {
     private fun seed() {
         val assets = instrumentation.context.assets
         val markdown = assets.open("Settlement agreement.md").bufferedReader().readText()
-        val session = app.core.documents.importDocument(ImportSource.Text(markdown), "Settlement agreement", CaseChoice.New("Harrow & Finch"))
+        val session = app.core.documents.importDocument(ImportSource.Text(markdown), "Settlement agreement")
         session.recognize(Quiet)
         session.seedProposals(candidates(markdown))
-        settlement = session.path!!
+        settlement = session.vaultId!!
         val folder = File(app.core.storage.dir(MdocStorage.Area.Originals), "survey-scan").apply { mkdirs() }
         val pdf = File(folder, "Scanned letter.pdf")
         assets.open("english.pdf").use { input -> pdf.outputStream().use(input::copyTo) }
-        scan = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), "Scanned letter", CaseChoice.New("Scanned letter")).id.raw
+        scan = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), "Scanned letter").id.raw
     }
 
     private fun candidates(markdown: String): List<Candidate> {

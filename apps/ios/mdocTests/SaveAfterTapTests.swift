@@ -19,16 +19,16 @@ final class SaveAfterTapTests: XCTestCase {
     override func tearDown() {
         ProtectedData.isAvailable = true
         if let seeded {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: seeded.storage.url(.documents).path)
+            try? Fixture.setVault(seeded.storage, writable: true)
         }
     }
 
     private var library: RealLibrary { seeded.library as! RealLibrary }
 
-    /// The letter's file as saved now.
+    /// The letter's text as saved in the Vault now.
     private func onDisk() throws -> String {
-        let path = try XCTUnwrap((try seeded.session(seeded.letter) as? RealSession)?.path)
-        return try String(contentsOfFile: path, encoding: .utf8)
+        let id = try XCTUnwrap((try seeded.session(seeded.letter) as? RealSession)?.vaultID)
+        return try Fixture.savedText(id, in: library)
     }
 
     /// Replace on each of the letter's first `count` proposals, as taps.
@@ -44,11 +44,11 @@ final class SaveAfterTapTests: XCTestCase {
     }
 
     private func makeDocumentsUnwritable() throws {
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: seeded.storage.url(.documents).path)
+        try Fixture.setVault(seeded.storage, writable: false)
     }
 
     private func makeDocumentsWritable() throws {
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: seeded.storage.url(.documents).path)
+        try Fixture.setVault(seeded.storage, writable: true)
     }
 
     // MARK: Scheduling
@@ -126,7 +126,7 @@ final class SaveAfterTapTests: XCTestCase {
     /// session yet).
     func testOpeningADocumentSavesTheOthersFirst() throws {
         let relaunched = try XCTUnwrap(
-            try RealCore.make(storage: seeded.storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+            try RealCore.make(storage: seeded.storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
                 .library as? RealLibrary)
         relaunched.savePause = .seconds(60)
         let documents = relaunched.snapshot().documents
@@ -192,22 +192,23 @@ final class SaveAfterTapTests: XCTestCase {
     }
 
     /// An import read while the phone was locked waits for its first save,
-    /// which joins the case chosen for it. A save of the taps once mdoc is
+    /// which joins the Project chosen for it. A save of the taps once mdoc is
     /// back (the scene turns inactive before active) runs that save first,
-    /// never one that starts a case of its own.
+    /// never one that leaves it Unfiled.
     func testAFlushRunsTheImportsHeldBackSaveFirst() throws {
         library.savePause = .seconds(60)
-        let session = try library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .existing(seeded.harbour))
+        let session = try library.importDocument(.text("Write to ann@example.com."), title: "Note", into: seeded.harbour)
         try makeDocumentsUnwritable()
         ProtectedData.isAvailable = false
         _ = try session.recognize(observer: TestObserver())
         try makeDocumentsWritable()
         try session.saveChanges()
-        XCTAssertNotNil((session as? RealSession)?.path, "saved")
-        XCTAssertEqual(session.snapshot().caseID, seeded.harbour)
+        XCTAssertNotNil((session as? RealSession)?.vaultID, "saved")
+        XCTAssertEqual(session.snapshot().projectID, seeded.harbour)
         ProtectedData.isAvailable = true
         XCTAssertEqual(try library.saveDeferred(), [], "saved once")
-        XCTAssertEqual(library.snapshot().cases.count, 2, "no case of its own")
+        XCTAssertEqual(library.snapshot().projects.count, 2, "no Project of its own")
+        XCTAssertEqual(library.snapshot().documents.first { $0.id == session.id }?.projectID, seeded.harbour)
     }
 
     /// A deleted document's scheduled save never runs: it neither writes
@@ -216,14 +217,14 @@ final class SaveAfterTapTests: XCTestCase {
         library.savePause = .milliseconds(100)
         // Held, as the document's model holds it while its delete's toast shows.
         let session = try XCTUnwrap(try seeded.session(seeded.letter) as? RealSession)
-        let path = try XCTUnwrap(session.path)
+        let vaultID = try XCTUnwrap(session.vaultID)
         try tapReplace()
         let saved = expectation(description: "no save")
         saved.isInverted = true
         library.observeSaves { _ in saved.fulfill() }
         try library.deleteDocument(seeded.letter)
         wait(for: [saved], timeout: 0.5)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertThrowsError(try library.vault.document(id: vaultID))
         withExtendedLifetime(session) {}
     }
 }

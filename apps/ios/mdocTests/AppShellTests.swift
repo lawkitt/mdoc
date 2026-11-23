@@ -23,7 +23,7 @@ final class AppShellTests: XCTestCase {
         let navigator = Navigator()
         navigator.sidebarLayoutChanged(stands: true)
         XCTAssertTrue(navigator.showsSidebar)
-        navigator.show(.section(.cases))
+        navigator.show(.section(.projects))
         XCTAssertTrue(navigator.showsSidebar, "the standing column stays")
         navigator.sidebarLayoutChanged(stands: false)
         XCTAssertFalse(navigator.showsSidebar, "the drawer starts closed")
@@ -48,8 +48,8 @@ final class AppShellTests: XCTestCase {
         app.open(seeded.letter)
         XCTAssertEqual(app.navigator.destination, .document(seeded.letter))
         XCTAssertNil(app.navigator.section)
-        app.open(.cases)
-        XCTAssertEqual(app.navigator.destination, .section(.cases))
+        app.open(.projects)
+        XCTAssertEqual(app.navigator.destination, .section(.projects))
         XCTAssertNil(app.navigator.openDocument)
         app.showStart()
         XCTAssertEqual(app.navigator.destination, .start)
@@ -89,7 +89,7 @@ final class AppShellTests: XCTestCase {
         guard case .importing(let pending) = app.navigator.presentation else {
             return XCTFail("no import sheet: \(String(describing: app.navigator.presentation))")
         }
-        let model = try XCTUnwrap(app.finishImport(pending, title: "Lease", into: .newCase(name: "Lease")))
+        let model = try XCTUnwrap(app.finishImport(pending, title: "Lease", into: nil))
         XCTAssertNil(app.navigator.presentation)
         XCTAssertEqual(app.navigator.openDocument, model.id)
         XCTAssertTrue(app.openModel === model)
@@ -180,7 +180,7 @@ final class AppShellTests: XCTestCase {
     func testAModelWithSomethingToSayIsKeptUntilSeen() async throws {
         let app = try app()
         let note = try seeded.library.importDocument(
-            .text("# Note\n\nNothing to hide here."), title: "Note", into: .existing(seeded.ellison))
+            .text("# Note\n\nNothing to hide here."), title: "Note", into: seeded.ellison)
         _ = try note.recognize(observer: TestObserver())
         app.open(note.id)
         let found = try XCTUnwrap(app.openModel)

@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -41,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -50,23 +54,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.MdocApplication
 import io.github.lawkitt.mdoc.R
-import io.github.lawkitt.mdoc.core.CaseId
-import io.github.lawkitt.mdoc.core.Documents
-import io.github.lawkitt.mdoc.core.LibrarySnapshot
+import io.github.lawkitt.mdoc.core.Place
+import io.github.lawkitt.mdoc.core.Replies
+import io.github.lawkitt.mdoc.core.RestorePlace
+import io.github.lawkitt.mdoc.core.RestorePlaces
 import io.github.lawkitt.mdoc.core.RestoreResult
 import io.github.lawkitt.mdoc.document.copy
 import io.github.lawkitt.mdoc.ui.MdocTheme
+import io.github.lawkitt.mdoc.ui.Palette
 import io.github.lawkitt.mdoc.ui.RestoredText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.mdoc_ffi.markdownStyling
 
 /**
- * Restore with mdoc: an AI app shares its reply here as
- * text; mdoc restores it with the case of the most recently shared document,
- * with a picker for another case and never mixing two, then offers Copy,
- * Share and Save to document. It runs in mdoc's own process, so it opens the
- * same library and case key as the app and needs no model.
+ * Restore with mdoc: an AI app shares its reply here as text; mdoc restores
+ * it with the names of the place text was shared from last (a Project, or
+ * an Unfiled document), with a picker for another and never mixing two,
+ * then offers Copy, Share and Save reply. It runs in mdoc's own process and
+ * opens the Vault with the same key through a handle of its own, which
+ * reads the Projects and documents and writes only the reply (#1091
+ * Decision 37); it needs no model.
  */
 class RestoreActivity : ComponentActivity() {
     /** The reply being restored; a new share replaces it (the activity is single-task). */
@@ -76,11 +84,11 @@ class RestoreActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         reply = replyOf(intent)
-        val documents = runCatching { (application as MdocApplication).core.documents }.getOrNull()
+        val replies = runCatching { (application as MdocApplication).core.replies }.getOrNull()
         setContent {
             MdocTheme {
                 // Keyed on the reply: a new one starts afresh, never showing the last.
-                key(reply) { RestoreScreen(reply, documents, onDone = ::finish) }
+                key(reply) { RestoreScreen(reply, replies, onDone = ::finish) }
             }
         }
     }
@@ -99,22 +107,22 @@ private data class Restored(val result: RestoreResult?, val error: String?)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RestoreScreen(reply: String?, documents: Documents?, onDone: () -> Unit) {
-    var library by remember { mutableStateOf<LibrarySnapshot?>(null) }
-    var case by remember { mutableStateOf<CaseId?>(null) }
+private fun RestoreScreen(reply: String?, replies: Replies?, onDone: () -> Unit) {
+    var places by remember { mutableStateOf<RestorePlaces?>(null) }
+    var place by remember { mutableStateOf<Place?>(null) }
     var restored by remember { mutableStateOf<Restored?>(null) }
     var notice by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(documents) {
-        if (documents == null) return@LaunchedEffect
-        val snapshot = withContext(Dispatchers.IO) { documents.snapshot() }
-        library = snapshot
-        case = snapshot.currentCase ?: snapshot.cases.firstOrNull()?.id
+    LaunchedEffect(replies) {
+        if (replies == null) return@LaunchedEffect
+        val read = withContext(Dispatchers.IO) { runCatching { replies.places() }.getOrDefault(RestorePlaces()) }
+        places = read
+        place = read.default
     }
-    LaunchedEffect(case) {
-        val chosen = case ?: return@LaunchedEffect
-        if (reply == null || documents == null) return@LaunchedEffect
+    LaunchedEffect(place) {
+        val chosen = place ?: return@LaunchedEffect
+        if (reply == null || replies == null) return@LaunchedEffect
         restored = withContext(Dispatchers.IO) {
-            runCatching { documents.restore(reply, chosen) }
+            runCatching { replies.restore(reply, chosen) }
                 .fold({ Restored(it, null) }, { Restored(null, it.message) })
         }
         notice = null
@@ -128,16 +136,16 @@ private fun RestoreScreen(reply: String?, documents: Documents?, onDone: () -> U
         },
     ) { padding ->
         val inner = Modifier.padding(padding).fillMaxSize()
-        val snapshot = library
+        val listed = places
         when {
-            reply == null || documents == null -> Unavailable(R.string.nothing_to_restore, R.string.share_reply_as_text, inner)
-            snapshot == null -> Box(inner)
-            snapshot.cases.isEmpty() -> Unavailable(R.string.no_cases_yet, R.string.share_document_first, inner)
+            reply == null || replies == null -> Unavailable(R.string.nothing_to_restore, R.string.share_reply_as_text, inner)
+            listed == null -> Box(inner)
+            listed.all.isEmpty() -> Unavailable(R.string.no_documents_to_restore, R.string.share_document_first, inner)
             else -> Column(inner) {
-                CasePicker(snapshot, case) {
-                    // Cleared at once: the last case's names never show under the new one.
+                PlacePicker(listed, place) {
+                    // Cleared at once: the last place's names never show under the new one.
                     restored = null
-                    case = it
+                    place = it
                 }
                 val result = restored?.result
                 if (result != null) {
@@ -157,13 +165,12 @@ private fun RestoreScreen(reply: String?, documents: Documents?, onDone: () -> U
                     }
                     Actions(
                         result = result,
-                        // The case's newest saved document: an import not yet read has nowhere to keep it.
-                        saveTarget = snapshot.documents.firstOrNull { it.caseId == case && it.saved },
+                        saveTarget = listed.of(place),
                         notice = notice,
                         onSaved = { notice = R.string.saved },
                         onCopied = { notice = R.string.copied_reply },
                         onFailed = { notice = R.string.not_saved },
-                        save = { target -> documents.saveReply(reply, target) },
+                        save = { target -> replies.save(reply, target) },
                     )
                 } else if (restored?.error != null) {
                     Unavailable(R.string.not_restored, null, Modifier.weight(1f), restored?.error)
@@ -173,13 +180,14 @@ private fun RestoreScreen(reply: String?, documents: Documents?, onDone: () -> U
     }
 }
 
+/** Projects, then Unfiled documents: whose names the reply restores with. */
 @Composable
-private fun CasePicker(library: LibrarySnapshot, selected: CaseId?, onSelect: (CaseId) -> Unit) {
+private fun PlacePicker(places: RestorePlaces, selected: Place?, onSelect: (Place) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    val name = library.case(selected)?.name.orEmpty()
+    val name = places.of(selected)?.name.orEmpty()
     Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.case_label), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            Text(stringResource(R.string.names_from), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
             Box {
                 // A picker, and it looks like one.
                 TextButton({ open = true }) {
@@ -187,12 +195,14 @@ private fun CasePicker(library: LibrarySnapshot, selected: CaseId?, onSelect: (C
                     Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                 }
                 DropdownMenu(open, { open = false }) {
-                    library.cases.forEach { option ->
-                        DropdownMenuItem(text = { Text(option.name) }, onClick = {
-                            open = false
-                            onSelect(option.id)
-                        })
+                    val choose = { option: RestorePlace ->
+                        open = false
+                        onSelect(option.place)
                     }
+                    if (places.projects.isNotEmpty()) Section(R.string.projects)
+                    places.projects.forEach { PlaceOption(it) { choose(it) } }
+                    if (places.unfiled.isNotEmpty()) Section(R.string.unfiled)
+                    places.unfiled.forEach { PlaceOption(it) { choose(it) } }
                 }
             }
         }
@@ -200,14 +210,36 @@ private fun CasePicker(library: LibrarySnapshot, selected: CaseId?, onSelect: (C
 }
 
 @Composable
+private fun PlaceOption(option: RestorePlace, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(option.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = option.colour?.let { colour ->
+            { Box(Modifier.size(10.dp).background(Color(Palette.project(colour)), CircleShape)) }
+        },
+        onClick = onClick,
+    )
+}
+
+/** A heading in the picker: Projects, Unfiled. */
+@Composable
+private fun Section(label: Int) {
+    Text(
+        stringResource(label),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(16.dp, 8.dp).semantics { heading() },
+    )
+}
+
+@Composable
 private fun Actions(
     result: RestoreResult,
-    saveTarget: io.github.lawkitt.mdoc.core.DocumentSummary?,
+    saveTarget: RestorePlace?,
     notice: Int?,
     onSaved: () -> Unit,
     onCopied: () -> Unit,
     onFailed: () -> Unit,
-    save: (io.github.lawkitt.mdoc.core.DocumentId) -> Unit,
+    save: (RestorePlace) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     Surface(tonalElevation = 3.dp) {
@@ -229,9 +261,10 @@ private fun Actions(
                 }, Modifier.weight(1f)) { Text(stringResource(R.string.share)) }
             }
             if (saveTarget != null) {
+                // Saved as received, with the people it names bound (#1091 Decision 18).
                 OutlinedButton({
-                    runCatching { save(saveTarget.id) }.onSuccess { onSaved() }.onFailure { onFailed() }
-                }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.save_to_document)) }
+                    runCatching { save(saveTarget) }.onSuccess { onSaved() }.onFailure { onFailed() }
+                }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.save_reply)) }
             }
         }
     }

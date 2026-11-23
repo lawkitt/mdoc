@@ -93,9 +93,10 @@ final class SurveyUITests: XCTestCase {
         let row = MdocUITest.documentRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         shot("11-home-to-review")
-        app.buttons["sidebar-cases"].firstMatch.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["case-row"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
-        shot("39-cases")
+        // The seed lands in Unfiled: the Projects page has none yet.
+        app.buttons["sidebar-projects"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No Projects yet"].firstMatch.waitForExistence(timeout: MdocUITest.timeout))
+        shot("39-projects")
         MdocUITest.revealSidebar(app)
         row.tap()
         let text = app.textViews["document-text"]

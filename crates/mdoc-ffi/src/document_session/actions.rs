@@ -262,7 +262,7 @@ impl DocumentSession {
         Some(SessionInfo {
             title: document.title.clone(),
             path: document.path.as_ref().map(|p| p.display().to_string()),
-            case_id: document.case.clone(),
+            case_id: document.case_or_project().map(str::to_owned),
             scanned: document.scanned,
             phase: DocumentPhase::of(document.scanned, proposed),
             proposed,

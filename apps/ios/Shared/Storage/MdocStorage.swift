@@ -1,57 +1,97 @@
 import Foundation
 import MdocFFI
 
-/// mdoc's on-device folders (ADR 0085). Everything lives in the App Group
-/// container so the Restore extension reads the same cases. The core's
-/// `Library` keeps Markdown in `documents/`, cases in `cases/` and the OCR
-/// pages of unfinished imports in `imports/`; the app
-/// keeps the source files in `originals/`. All of it is excluded from iCloud
-/// and device backups, and everything but models and their downloads uses
-/// Data Protection Complete. Models keep the default class so a background
-/// download can install them while the phone is locked.
+/// mdoc's on-device folders (ADR 0085, ADR 0125). Everything lives in the
+/// App Group container so the Restore extension reads the same store.
+///
+/// - `root` (`mdoc/`) keeps the models, their downloads and the `.md` file
+///   Share writes. It is also the old library's folder: its `documents/`,
+///   `cases/`, `imports/` and `originals/` stay untouched (#1091 Decision 2),
+///   and only the Restore extension still reads its cases (until Vault &
+///   Projects item 10).
+/// - `vault` (`vault/`, `vault-dev/` for UI tests) is the core's encrypted
+///   Vault, a sibling of the old folder, never inside it.
+/// - `intake` (`vault-intake/`, `vault-dev-intake/`) holds what an import
+///   reads until its first save keeps it in the Vault: the received files,
+///   the record of imports not yet read, and OCR's finished pages.
+/// - `viewing` is the app's own cache (not the App Group's) for viewing a
+///   Vault document's original: a decrypted copy, wiped when the document
+///   closes and at launch (#1091 Decision 24).
+///
+/// All of it is excluded from iCloud and device backups, and everything but
+/// models and their downloads uses Data Protection Complete. Models keep the
+/// default class so a background download can install them while the phone
+/// is locked.
 struct MdocStorage: Sendable {
     static let appGroup = "group.io.github.lawkitt.mdoc"
 
     enum Area: String, CaseIterable, Sendable {
-        /// The core's Markdown documents.
-        case documents
-        /// The core's sealed cases.
-        case cases
-        /// The core's finished OCR pages of imports not yet complete
-        /// (`imports/` under the library root, where `mdoc-ffi` keeps them).
-        case imports
-        /// Imported PDFs, DOCX files and page images, for the Original view.
-        case originals
         case models
         /// Model files downloaded and waiting for the core to install them.
         case downloads
         /// The `.md` file Share writes; emptied at the next share and at launch.
         case handOff = "hand-off"
+        /// Received files (PDFs, DOCX files, page images), a folder each,
+        /// until their document's first save keeps them in the Vault.
+        case intake = "files"
+        /// OCR's finished pages of imports not yet complete
+        /// (`DocumentSession::import_file_resuming`).
+        case ocr
 
         var protection: FileProtectionType? {
             self == .models || self == .downloads ? nil : .complete
         }
+
+        /// Under `intake`, not `root`.
+        var isIntake: Bool { self == .intake || self == .ocr }
     }
 
     let root: URL
+    /// The Vault's folder, which the core opens.
+    let vault: URL
+    /// What imports read before their first save.
+    let intake: URL
+    /// Decrypted viewing copies of originals.
+    let viewing: URL
 
+    /// Everything under `root`: tests and previews, where no old library
+    /// lives.
     init(root: URL) {
+        self.init(
+            root: root, vault: root.appendingPathComponent("vault", isDirectory: true),
+            intake: root.appendingPathComponent("intake", isDirectory: true),
+            viewing: root.appendingPathComponent("original-view", isDirectory: true))
+    }
+
+    init(root: URL, vault: URL, intake: URL, viewing: URL) {
         self.root = root
+        self.vault = vault
+        self.intake = intake
+        self.viewing = viewing
     }
 
     /// `folder` in the App Group container, or in Application Support when
-    /// the group is unavailable.
-    static func shared(folder: String = "mdoc", fileManager: FileManager = .default) throws -> MdocStorage {
+    /// the group is unavailable, with the Vault `vaultFolder` beside it.
+    static func shared(
+        folder: String = "mdoc", vaultFolder: String = "vault", fileManager: FileManager = .default
+    ) throws -> MdocStorage {
+        let base: URL
         if let group = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
-            return MdocStorage(root: group.appendingPathComponent(folder, isDirectory: true))
+            base = group
+        } else {
+            base = try fileManager.url(
+                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         }
-        let support = try fileManager.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        return MdocStorage(root: support.appendingPathComponent(folder, isDirectory: true))
+        let caches = try fileManager.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        return MdocStorage(
+            root: base.appendingPathComponent(folder, isDirectory: true),
+            vault: base.appendingPathComponent(vaultFolder, isDirectory: true),
+            intake: base.appendingPathComponent("\(vaultFolder)-intake", isDirectory: true),
+            viewing: caches.appendingPathComponent("\(vaultFolder)-original-view", isDirectory: true))
     }
 
     func url(_ area: Area) -> URL {
-        root.appendingPathComponent(area.rawValue, isDirectory: true)
+        (area.isIntake ? intake : root).appendingPathComponent(area.rawValue, isDirectory: true)
     }
 
     /// Creates the folders with their protection and backup exclusion. Safe
@@ -59,6 +99,14 @@ struct MdocStorage: Sendable {
     func prepare(fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         try excludeFromBackup(root)
+        // The Vault's folder the core fills; the intake and viewing folders
+        // the app does.
+        for folder in [vault, intake, viewing] {
+            try fileManager.createDirectory(
+                at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
+            try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: folder.path)
+            try excludeFromBackup(folder)
+        }
         for area in Area.allCases {
             let folder = url(area)
             var attributes: [FileAttributeKey: Any] = [:]
@@ -112,6 +160,14 @@ struct MdocStorage: Sendable {
     static func fileName(_ title: String, extension ext: String) -> String {
         let base = MdocFFI.fileNameStem(title: title)
         return ext.isEmpty ? base : "\(base).\(ext)"
+    }
+
+    /// Every viewing copy goes: at launch, after a stop that left one.
+    func clearViewing(fileManager: FileManager = .default) {
+        let items = (try? fileManager.contentsOfDirectory(at: viewing, includingPropertiesForKeys: nil)) ?? []
+        for item in items {
+            try? fileManager.removeItem(at: item)
+        }
     }
 
     func clear(_ area: Area, fileManager: FileManager = .default) {

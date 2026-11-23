@@ -303,7 +303,7 @@ final class ReviewBarModelTests: XCTestCase {
     func testFindPreviewsCutOnCharacters() throws {
         let (core, storage) = try Fixture.core()
         let text = String(repeating: "а", count: 60) + " Иван " + String(repeating: "б", count: 60)
-        let session = try core.library.importDocument(.text(text), title: "Письмо", into: .newCase(name: "Петров"))
+        let session = try core.library.importDocument(.text(text), title: "Письмо", into: nil)
         _ = try session.recognize(observer: TestObserver())
         let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
         let match = try XCTUnwrap(model.matches(of: "Иван").first)
@@ -441,7 +441,7 @@ final class ReviewBarModelTests: XCTestCase {
     /// With no other identity there is no Same as… to offer.
     func testNoSameAsWithoutAnotherIdentity() throws {
         let (core, storage) = try Fixture.core()
-        let session = try core.library.importDocument(.text("Maya Bennett signed."), title: "Note", into: .newCase(name: "Bennett"))
+        let session = try core.library.importDocument(.text("Maya Bennett signed."), title: "Note", into: nil)
         _ = try session.recognize(observer: TestObserver())
         _ = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
         let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)

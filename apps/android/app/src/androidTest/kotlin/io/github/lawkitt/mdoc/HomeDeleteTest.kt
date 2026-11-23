@@ -7,7 +7,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -26,7 +25,7 @@ class HomeDeleteTest {
     @Test
     fun aLongPressDeletes() {
         val title = "Delete me ${System.nanoTime()}"
-        core.app.core.documents.importDocument(ImportSource.Text("Dear Maya."), title, CaseChoice.New(title))
+        core.app.core.documents.importDocument(ImportSource.Text("Dear Maya."), title)
         compose.activityRule.scenario.onActivity { it.recreate() }
         compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText(title).performTouchInput { longClick() }

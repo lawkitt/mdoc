@@ -194,16 +194,8 @@ fn ready_is_the_fingerprint_of_the_text_saved_while_ready() {
     let project = project_with(&vault, &[person("PERSON_1", &["Anna Petrova"])]);
     let letter = document(&vault, Some(&project), "PERSON_1 signed.");
 
-    // Never scanned, or saved with proposals left.
+    // Never saved while Ready: never scanned, or saved with proposals left.
     assert_eq!(vault.readiness(&letter).unwrap(), Readiness::NotReviewed);
-    vault
-        .update_document(&letter, |d| d.set_ready(true))
-        .unwrap();
-    assert_eq!(
-        vault.readiness(&letter).unwrap(),
-        Readiness::NotReviewed,
-        "not scanned"
-    );
     vault
         .update_document(&letter, |d| {
             d.scanned = true;
@@ -363,4 +355,31 @@ fn a_project_that_does_not_open_fails_the_check() {
         vault.text_for_ai(&letter),
         Err(VaultError::NotFound { .. })
     ));
+}
+
+/// Below the name finder's floor a document is never scanned: its names are
+/// decided by hand, and the save records it Ready with the fingerprint alone
+/// (#1091 Q4). It reads Ready, still unscanned, until its text changes.
+#[test]
+fn a_fingerprint_saved_without_a_scan_reads_ready_until_the_text_changes() {
+    let folder = Folder::new();
+    let vault = folder.open();
+    let project = project_with(&vault, &[person("PERSON_1", &["Anna Petrova"])]);
+    let letter = document(&vault, Some(&project), "PERSON_1 signed.");
+
+    let saved = vault
+        .update_document(&letter, |d| d.set_ready(true))
+        .unwrap();
+    assert!(!saved.scanned, "scanned stays false");
+    assert_eq!(vault.readiness(&letter).unwrap(), Readiness::Ready);
+    assert!(vault.text_for_ai(&letter).is_ok());
+
+    vault
+        .update_document(&letter, |d| d.markdown = "PERSON_1 signed it.".into())
+        .unwrap();
+    assert_eq!(
+        vault.readiness(&letter).unwrap(),
+        Readiness::ChangedSinceReview
+    );
+    assert!(vault.text_for_ai(&letter).is_err());
 }

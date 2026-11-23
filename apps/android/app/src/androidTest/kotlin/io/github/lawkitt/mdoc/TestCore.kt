@@ -8,8 +8,9 @@ import org.junit.rules.ExternalResource
 import java.util.UUID
 
 /**
- * Gives a test its own core: a fresh storage folder and a fixed case key,
- * never the app's library or Keystore key. Removed afterwards.
+ * Gives a test its own core: fresh storage folders, its own Vault among
+ * them, and a fixed key, never the app's Vault or Keystore key. Removed
+ * afterwards.
  */
 class TestCore(
     /**
@@ -33,8 +34,7 @@ class TestCore(
     override fun after() {
         app.openCore = { AppCore.make(it) }
         app.reopenCore()
-        storage.root.deleteRecursively()
-        storage.dir(MdocStorage.Area.Models).parentFile?.deleteRecursively()
+        storage.folders.forEach { it.deleteRecursively() }
     }
 }
 

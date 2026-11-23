@@ -390,38 +390,6 @@ and desktop tracks can run side by side once the core items they need are
 done. Desktop items 16–22 share one integration branch, because the app is
 not coherent between them and `main` stays releasable; item 23 lands them.
 
-3. **[Core] Source Originals in the Vault.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Each original is
-   sealed under its own wrapped key, in 1 MiB chunks with counter nonces, and
-   streamed in and out without holding the file in memory. A viewing copy goes
-   to a folder the caller names; the source's SHA-256 is recorded and looked
-   up for repeated imports; a locked source stays locked. *Blocked by:* item
-   1. *Done when:* a 256 MiB original round-trips in bounded memory; a flipped
-   byte, a truncated file, swapped chunks and a file placed under another
-   document all fail to open; a second import of the same bytes finds the
-   first.
-7. **[Mobile] The mobile core stores documents and Projects through the
-   Vault.** *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* New
-   exported objects beside the old ones, so both apps keep building until they
-   switch: documents and Projects by id, Unfiled intake, move, rename, delete,
-   summaries from the manifest, the review saved as item 2 defines, originals
-   as item 3 does. *Blocked by:* items 2, 3, 4, 6. *Done when:* the core's
-   tests and the parity goldens pass through the new objects, and the old
-   objects still pass theirs.
-8. **[Mobile] The mobile core saves and restores replies through the Vault.**
-   *From [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Saved replies
-   for a Project or an Unfiled document, restored through their bindings, and
-   the Restore extension's path: a handle that reads a Project and writes only
-   a reply. *Blocked by:* items 5, 7. *Done when:* a reply saved through a
-   second handle shows in the first's list and restores.
-9. **[iOS] iOS cuts over to the Vault with today's screens.** *From
-   [#1091](https://github.com/lawkitt/mdoc/issues/1091).* The app uses the new
-   objects. "Case" reads "Project"; a scan, file, paste or new document lands
-   in Unfiled, or in the Project it was started from, and no import makes a
-   Project; documents are known by id; an original is viewed from a cache
-   wiped on close and at launch; the old library's files stay untouched.
-   *Blocked by:* item 7. *Done when:* iOS unit and UI tests pass, and a device
-   check imports, reviews, shares and reopens a document.
 10. **[iOS] Restore extension and saved replies on the Vault.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* Restore with mdoc
     reads a Project and saves the reply through the Vault; the app lists it
@@ -436,11 +404,6 @@ not coherent between them and `main` stays releasable; item 23 lands them.
     in iOS items 22 and 37. *Blocked by:* items 9, 10. *Done when:* UI tests
     cover the page, the delete question and multi-select delete, and a device
     check passes.
-12. **[Android] Android cuts over to the Vault.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As items 9 and 10,
-    for the Android app and its Restore screen. *Blocked by:* items 7, 8.
-    *Done when:* the Android job passes, and an emulator run imports, reviews,
-    shares, reopens and restores.
 13. **[Android] Android sidebar and Project page.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091).* As item 11.
     *Blocked by:* item 12. *Done when:* the Android job passes with tests of

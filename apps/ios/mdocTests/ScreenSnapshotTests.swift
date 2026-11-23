@@ -10,26 +10,26 @@ final class ScreenSnapshotTests: XCTestCase {
     private let today = Calendar.current.date(bySettingHour: 17, minute: 24, second: 0, of: .now)!
     private let earlier = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 12))!
 
-    private func document(_ title: String, _ phase: DocumentPhase, kind: SourceKind, pending: Int = 0, candidates: Int = 0, updated: Date, caseID: String? = nil) -> LibraryDocument {
+    private func document(_ title: String, _ phase: DocumentPhase, kind: SourceKind, pending: Int = 0, candidates: Int = 0, updated: Date, projectID: String? = nil) -> LibraryDocument {
         LibraryDocument(
-            id: DocumentID(rawValue: title), title: title, caseID: caseID.map(CaseID.init), kind: kind, phase: phase,
+            id: DocumentID(rawValue: title), title: title, projectID: projectID.map(ProjectID.init), kind: kind, phase: phase,
             pendingCount: pending, updated: updated, candidateCount: candidates)
     }
 
     func testDocumentRows() {
-        let agreement = CaseSummary(id: CaseID(rawValue: "a"), name: "Riverside v Bennett", colour: .teal)
+        let agreement = ProjectSummary(id: ProjectID(rawValue: "a"), name: "Riverside v Bennett", colour: .teal)
         let rows = VStack(alignment: .leading, spacing: Space.s) {
             DocumentRow(
-                document: document("Services agreement", .reviewing, kind: .pdf, pending: 11, candidates: 14, updated: today, caseID: "a"),
-                caseSummary: agreement, findsNames: true)
+                document: document("Services agreement", .reviewing, kind: .pdf, pending: 11, candidates: 14, updated: today, projectID: "a"),
+                projectSummary: agreement, findsNames: true)
             Divider()
             DocumentRow(
-                document: document("Riverside v Bennett", .ready, kind: .scan, candidates: 6, updated: earlier, caseID: "a"),
-                caseSummary: agreement, findsNames: true)
+                document: document("Riverside v Bennett", .ready, kind: .scan, candidates: 6, updated: earlier, projectID: "a"),
+                projectSummary: agreement, findsNames: true)
             Divider()
             DocumentRow(
                 document: document("Note from a client", .unscanned, kind: .text, updated: earlier),
-                caseSummary: nil, findsNames: true)
+                projectSummary: nil, findsNames: true)
         }
         .card()
         .padding()
@@ -101,7 +101,7 @@ final class ScreenSnapshotTests: XCTestCase {
         XCTAssertEqual(ModelDetailView.memoryText(7_900_000_000), "8 GB")
     }
 
-    func testDocumentsSearchAndCaseFilter() throws {
+    func testDocumentsSearchAndProjectFilter() throws {
         let home = LibraryModel(library: try Fixture.seeded().library)
         XCTAssertEqual(home.shownDocuments.count, home.documents.count)
         let first = try XCTUnwrap(home.documents.first)
@@ -110,9 +110,9 @@ final class ScreenSnapshotTests: XCTestCase {
         home.query = "zzzz-no-such-document"
         XCTAssertTrue(home.shownDocuments.isEmpty)
         home.query = ""
-        if let caseID = first.caseID {
-            home.caseFilter = caseID
-            XCTAssertTrue(home.shownDocuments.allSatisfy { $0.caseID == caseID })
+        if let projectID = first.projectID {
+            home.projectFilter = projectID
+            XCTAssertTrue(home.shownDocuments.allSatisfy { $0.projectID == projectID })
         }
     }
 }

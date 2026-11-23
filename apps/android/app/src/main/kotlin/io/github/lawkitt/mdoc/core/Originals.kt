@@ -9,14 +9,12 @@ import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.UUID
-import org.json.JSONArray
-import org.json.JSONObject
 import uniffi.mdoc_ffi.imageWithoutMetadata
 
 /**
- * Which source file each saved document came from, for the Original view
- * (`originals.json` beside the core's folders, paths relative to the
- * storage root), and the one file the core imports for each intake.
+ * The received files of imports not yet read, in the intake folder, a
+ * folder each, and the one file the core imports for each intake. Once a
+ * document's first save keeps its original in the Vault, its files go.
  */
 class Originals(private val storage: MdocStorage) {
     sealed interface Input {
@@ -38,8 +36,6 @@ class Originals(private val storage: MdocStorage) {
         }
         val file: File? get() = files.firstOrNull()
     }
-
-    private val index = File(storage.root, "originals.json")
 
     /**
      * Names a received file after its title (the core titles a document by
@@ -131,85 +127,21 @@ class Originals(private val storage: MdocStorage) {
     }
 
     /**
-     * A stage survives a restart only when a saved document or pending
-     * import owns it, or it is a scan in progress less than a day old. Once,
-     * the intake folders older versions left unowned go too: picked files
-     * copied as they came, which may carry a photo's GPS position.
+     * A stage survives a restart only when a pending import owns it, or it
+     * is a scan in progress less than a day old.
      */
     fun clearAbandonedStages(pendingFiles: List<File>) {
-        val saved = if (index.exists()) {
-            runCatching { JSONObject(index.readText()) }.getOrElse { return }
-        } else {
-            JSONObject()
-        }
-        val savedFiles = runCatching {
-            saved.keys().asSequence().flatMap { files(saved.getJSONObject(it)) }.toList()
-        }.getOrElse { return }
-        val owned = (pendingFiles + savedFiles).mapNotNull(::importFolder).toSet()
-        val swept = File(storage.root, SWEPT_MARKER)
-        val sweepOld = !swept.exists()
+        val owned = pendingFiles.mapNotNull(::importFolder).toSet()
         val dayAgo = System.currentTimeMillis() - SCAN_KEPT_MILLIS
         storage.dir(MdocStorage.Area.Originals).listFiles()?.forEach {
             if (it.canonicalFile in owned) return@forEach
             val abandoned = when {
                 it.name.startsWith(STAGE_PREFIX) -> true
                 it.name.startsWith(SCAN_PREFIX) -> it.lastModified() < dayAgo
-                else -> sweepOld && it.isDirectory && isUuid(it.name)
+                else -> false
             }
             if (abandoned) it.deleteRecursively()
         }
-        if (sweepOld) swept.createNewFile()
-    }
-
-    @Synchronized
-    fun record(path: String, kind: SourceKind, files: List<File>) {
-        val entries = load()
-        val entry = entries.optJSONObject(relative(path)) ?: JSONObject()
-        entry.remove("file")
-        val list = JSONArray().apply { files.forEach { put(relative(it.path)) } }
-        entries.put(relative(path), entry.put("kind", kind.name).put("files", list))
-        save(entries)
-    }
-
-    /** Find names ran on the document, even if it found nothing. */
-    @Synchronized
-    fun markScanned(path: String) {
-        val entries = load()
-        val entry = entries.optJSONObject(relative(path)) ?: JSONObject().put("kind", SourceKind.Text.name)
-        entries.put(relative(path), entry.put("scanned", true))
-        save(entries)
-    }
-
-    @Synchronized
-    fun scanned(path: String): Boolean = load().optJSONObject(relative(path))?.optBoolean("scanned") == true
-
-    @Synchronized
-    fun kind(path: String): SourceKind = runCatching {
-        SourceKind.valueOf(load().getJSONObject(relative(path)).getString("kind"))
-    }.getOrDefault(SourceKind.Text)
-
-    /** The files a document came from; an entry recorded before several were kept has one. */
-    @Synchronized
-    fun files(path: String): List<File> = runCatching {
-        files(load().getJSONObject(relative(path)))
-    }.getOrDefault(emptyList())
-
-    private fun files(entry: JSONObject): List<File> {
-        val list = entry.optJSONArray("files")
-        return if (list == null) {
-            listOfNotNull(entry.optString("file").takeIf { it.isNotEmpty() }?.let { File(storage.root, it) })
-        } else {
-            (0 until list.length()).map { File(storage.root, list.getString(it)) }
-        }
-    }
-
-    /** Forgets a deleted document and removes its intake folder. */
-    @Synchronized
-    fun remove(path: String) {
-        val entries = load()
-        files(path).firstOrNull()?.let(::importFolder)?.deleteRecursively()
-        entries.remove(relative(path))
-        save(entries)
     }
 
     /** The folder an import owns: the one directly under `originals/` that holds `file`. */
@@ -220,22 +152,12 @@ class Originals(private val storage: MdocStorage) {
         return folder
     }
 
-    private fun relative(path: String): String = File(path).relativeTo(storage.root).path.replace('\\', '/')
-
-    private fun load(): JSONObject = runCatching { JSONObject(index.readText()) }.getOrDefault(JSONObject())
-
     companion object {
         private const val STAGE_PREFIX = "staged-"
         private const val SCAN_PREFIX = "scanning-"
 
         /** How long a scan in progress waits for its process to come back. */
         private const val SCAN_KEPT_MILLIS = 24L * 60 * 60 * 1000
-
-        /** Written once the unowned intake folders of older versions were swept. */
-        private const val SWEPT_MARKER = ".originals-swept"
-
-        private fun isUuid(name: String) = runCatching { UUID.fromString(name).toString() == name }.getOrDefault(false)
-
 
         /** Recognizes the formats the core keeps without converting to JPEG. */
         internal fun imageExtension(bytes: ByteArray): String? {
@@ -272,14 +194,6 @@ class Originals(private val storage: MdocStorage) {
             var sample = 1
             while (longSide / sample > MAX_LONG_SIDE) sample *= 2
             return sample
-        }
-    }
-
-    private fun save(entries: JSONObject) {
-        index.parentFile?.mkdirs()
-        writeAtomically(index) {
-            it.write(entries.toString().toByteArray())
-            true
         }
     }
 }

@@ -20,7 +20,7 @@
     <string name="back">Back</string>
     <string name="more_options">More options</string>
     <string name="opens_first_mention">Opens the first mention.</string>
-    <string name="case_named">case %1$s</string>
+    <string name="project_named">Project %1$s</string>
     <string name="status_ready_to_find">Ready to find names</string>
     <string name="status_ready_to_mark">Ready to mark names</string>
     <string name="status_ready_to_share">Ready to share</string>
@@ -34,9 +34,9 @@
     <string name="paste_placeholder">Paste or type the text to check</string>
     <string name="add_document">Add document</string>
     <string name="title">Title</string>
-    <string name="case_label">Case</string>
-    <string name="new_case">New case</string>
-    <string name="case_explanation">A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored.</string>
+    <string name="project_label">Project</string>
+    <string name="unfiled">Unfiled</string>
+    <string name="project_explanation">A Project keeps the names and their aliases together, so an AI reply about any of its documents can be restored. An Unfiled document keeps its own.</string>
     <string name="pasted_text">Pasted text</string>
     <string name="photo">Photo</string>
     <string name="add_page">Add page</string>
@@ -140,8 +140,8 @@
     <string name="paste_another_reply">Paste another reply</string>
     <string name="paste_ai_reply">Paste AI reply</string>
     <string name="ai_reply">AI reply</string>
-    <string name="puts_back_case">mdoc puts back the names from the case “%1$s”.</string>
-    <string name="puts_back_this_case">mdoc puts back the names from this document\'s case.</string>
+    <string name="puts_back_project">mdoc puts back the names from the Project “%1$s”.</string>
+    <string name="puts_back_this_document">mdoc puts back the names from this document.</string>
     <string name="restore">Restore</string>
     <string name="copy_reply">Copy reply</string>
     <string name="share_reply">Share reply</string>
@@ -180,10 +180,12 @@
     <!-- Restore with mdoc -->
     <string name="restore_with_mdoc">Restore with mdoc</string>
     <string name="share_reply_as_text">Share the AI\'s reply as text to restore it.</string>
-    <string name="no_cases_yet">No cases yet</string>
-    <string name="share_document_first">Share a document from mdoc first; replies restore with its case.</string>
+    <string name="no_documents_to_restore">No documents yet</string>
+    <string name="share_document_first">Share a document from mdoc first; replies restore with its names.</string>
+    <string name="names_from">Names from</string>
+    <string name="projects">Projects</string>
     <string name="not_restored">Not restored</string>
-    <string name="save_to_document">Save to document</string>
+    <string name="save_reply">Save reply</string>
     <string name="saved">Saved</string>
     <string name="not_saved">The reply was not saved.</string>
 

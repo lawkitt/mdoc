@@ -10,6 +10,7 @@ mod replies;
 pub use export::{Exported, ORIGINALS};
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
 pub use readiness::Readiness;
+pub use replies::ReplyHandle;
 
 use crate::{
     ObjectKind, VaultError, is_id,
@@ -115,6 +116,9 @@ pub struct Vault {
     hook: Option<FaultHook>,
     crashed: AtomicBool,
     opened: ManifestCheck,
+    /// `false` for a [`ReplyHandle`]: the manifest is checked and kept in
+    /// memory but never written, not at open, on flush or on drop.
+    writes_manifest: bool,
 }
 
 #[derive(Default)]
@@ -145,7 +149,7 @@ impl Vault {
     /// [`VaultError::WrongKey`] when the folder holds objects and none opens
     /// with `key`; nothing is written then.
     pub fn open(root: impl Into<PathBuf>, key: &[u8; 32]) -> Result<Self, VaultError> {
-        Self::open_inner(root.into(), key, None)
+        Self::open_inner(root.into(), key, None, true)
     }
 
     /// [`Self::open`] with a hook run at every write step (tests).
@@ -154,15 +158,20 @@ impl Vault {
         key: &[u8; 32],
         hook: FaultHook,
     ) -> Result<Self, VaultError> {
-        Self::open_inner(root.into(), key, Some(hook))
+        Self::open_inner(root.into(), key, Some(hook), true)
     }
 
-    fn open_inner(
+    /// `writes_manifest: false` opens for a [`ReplyHandle`]: an existing
+    /// folder only, no temp files swept and no manifest written.
+    pub(super) fn open_inner(
         root: PathBuf,
         key: &[u8; 32],
         hook: Option<FaultHook>,
+        writes_manifest: bool,
     ) -> Result<Self, VaultError> {
-        std::fs::create_dir_all(&root)?;
+        if writes_manifest {
+            std::fs::create_dir_all(&root)?;
+        }
         let lock_file = File::options()
             .read(true)
             .write(true)
@@ -177,13 +186,17 @@ impl Vault {
             hook,
             crashed: AtomicBool::new(false),
             opened: ManifestCheck::Current,
+            writes_manifest,
         };
         vault.opened = {
             let _lock = vault.write_lock()?;
             // Every write holds the lock, so a temp file now is one a dead
             // write left.
-            sweep_temp_files(&vault.root);
-            sweep_orphans(&vault.root);
+            // A ReplyHandle removes nothing: the app sweeps.
+            if writes_manifest {
+                sweep_temp_files(&vault.root);
+                sweep_orphans(&vault.root);
+            }
             let (mut manifest, mut opened) =
                 match Manifest::read(&vault.sealer, &vault.manifest_path()) {
                     Ok(Some(manifest)) => (manifest, ManifestCheck::Current),
@@ -288,12 +301,17 @@ impl Vault {
     pub fn refresh(&self) -> Result<bool, VaultError> {
         let mut state = self.state();
         let changed = state.manifest.check(&self.sealer, &self.root)?.changed;
-        state.dirty |= changed;
+        // A handle that never writes the manifest never marks it either, so
+        // its drop takes no lock.
+        state.dirty |= changed && self.writes_manifest;
         Ok(changed)
     }
 
     /// Write the manifest now if a summary changed since it was written.
     pub fn flush(&self) -> Result<(), VaultError> {
+        if !self.writes_manifest {
+            return Ok(());
+        }
         let _lock = self.write_lock()?;
         let mut state = self.state();
         if state.dirty {
@@ -761,6 +779,9 @@ impl Vault {
     /// Check the cache against the folder, taking in other handles' writes,
     /// and seal it to `manifest.enc`. The caller holds the write lock.
     fn write_manifest(&self, state: &mut State) -> Result<(), VaultError> {
+        if !self.writes_manifest {
+            return Ok(());
+        }
         state.manifest.check(&self.sealer, &self.root)?;
         let json = state.manifest.to_json()?;
         self.write_object(
@@ -818,7 +839,7 @@ impl Vault {
 impl Drop for Vault {
     /// Write a manifest the debounce held back.
     fn drop(&mut self) {
-        if self.crashed.load(Ordering::SeqCst) || !self.state().dirty {
+        if !self.writes_manifest || self.crashed.load(Ordering::SeqCst) || !self.state().dirty {
             return;
         }
         let _ = self.flush();
@@ -845,6 +866,7 @@ fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Doc
         mapping: Mapping::default(),
         review: None,
         original,
+        counts: None,
     }
 }
 

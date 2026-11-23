@@ -34,8 +34,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.CameraCapture
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
+import io.github.lawkitt.mdoc.core.OriginalData
 import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.Originals
 import io.github.lawkitt.mdoc.core.ScanSession
@@ -118,8 +118,8 @@ class PhotoImportTest {
             withTimeout(15_000) { home.state.first { it.refused != null } }
             assertTrue(originals.listFiles()!!.isEmpty())
             val staged = receive(home, listOf(photo))
-            assertTrue(File(core.storage.root, "pending.json").mkdir())
-            val id = withContext(Dispatchers.Main) { home.add(null, "Photo", CaseChoice.New("Photos")) }
+            assertTrue(core.storage.pendingFile.mkdir())
+            val id = withContext(Dispatchers.Main) { home.add(null, "Photo") }
             assertNull(id)
             assertFalse(staged.folder.exists())
         } finally {
@@ -156,13 +156,13 @@ class PhotoImportTest {
             } finally {
                 kept.recycle()
             }
-            val id = withContext(Dispatchers.Main) { home.add(null, "Photos", CaseChoice.New("Photos")) }!!
+            val id = withContext(Dispatchers.Main) { home.add(null, "Photos") }!!
             val abandoned = Originals(core.storage).run {
                 newStage().also { stageImage(File(it, "abandoned.jpg"), taggedJpeg(1)) }
             }
             core.app.reopenCore()
             val reopened = core.app.core.documents.session(id).snapshot()
-            assertEquals(OriginalSource.Images(pages), reopened.original)
+            assertEquals(OriginalSource.Images(pages.map(OriginalData::Local)), reopened.original)
             assertFalse(abandoned.exists())
             assertTrue(staged.folder.isDirectory)
         } finally {
@@ -228,7 +228,7 @@ class PhotoImportTest {
         compose.setContent {
             MdocTheme {
                 Box(Modifier.size(160.dp, 120.dp)) {
-                    key(page) { OriginalView(OriginalSource.Images(listOf(page)), Modifier.fillMaxSize()) }
+                    key(page) { OriginalView(OriginalSource.Images(listOf(OriginalData.Local(page))), Modifier.fillMaxSize()) }
                 }
             }
         }
@@ -497,14 +497,14 @@ class PhotoImportTest {
         val originals = Originals(core.storage)
         val stage = originals.newStage()
         val page = originals.stageImage(File(stage, "page-1.jpg"), taggedJpeg(1))
-        core.app.core.documents.importDocument(ImportSource.Pages(listOf(page), SourceKind.Scan), "Scan", CaseChoice.New("Scans"))
-        File(core.storage.root, "pending.json").writeText("{ not json")
+        core.app.core.documents.importDocument(ImportSource.Pages(listOf(page), SourceKind.Scan), "Scan")
+        core.storage.pendingFile.writeText("{ not json")
         repeat(2) {
             core.app.reopenCore()
             core.app.core.documents
             assertTrue("restart ${it + 1}", page.isFile)
         }
-        assertTrue(File(core.storage.root, "pending.json.corrupt").isFile)
+        assertTrue(File(core.storage.intake, "pending.json.corrupt").isFile)
     }
 
     /**
@@ -516,44 +516,27 @@ class PhotoImportTest {
         val originals = Originals(core.storage)
         val stage = originals.newStage()
         val page = originals.stageImage(File(stage, "page-1.jpg"), taggedJpeg(1))
-        core.app.core.documents.importDocument(ImportSource.Pages(listOf(page), SourceKind.Scan), "Scan", CaseChoice.New("Scans"))
-        File(core.storage.root, "pending.json").writeText("{ not json")
+        core.app.core.documents.importDocument(ImportSource.Pages(listOf(page), SourceKind.Scan), "Scan")
+        core.storage.pendingFile.writeText("{ not json")
         // The quarantine's place is taken by a folder that can't be replaced.
-        File(core.storage.root, "pending.json.corrupt").apply { mkdirs() }.resolve("keep").writeText("x")
+        File(core.storage.intake, "pending.json.corrupt").apply { mkdirs() }.resolve("keep").writeText("x")
         core.app.reopenCore()
         core.app.core.documents
         assertTrue(page.isFile)
-        assertTrue(File(core.storage.root, "pending.json").isFile)
+        assertTrue(core.storage.pendingFile.isFile)
     }
 
     /** A damaged pending list is set aside: imports go on, and no stage is cleared on its word. */
     @Test
     fun aDamagedPendingListIsSetAside() {
-        val pendingFile = File(core.storage.root, "pending.json").apply { writeText("{ not json") }
+        val pendingFile = core.storage.pendingFile.apply { writeText("{ not json") }
         val stage = Originals(core.storage).newStage()
         core.app.reopenCore()
-        val session = core.app.core.documents.importDocument(ImportSource.Text("A short note."), "Note", CaseChoice.New("Notes"))
+        val session = core.app.core.documents.importDocument(ImportSource.Text("A short note."), "Note")
         assertNotNull(session)
-        assertTrue(File(core.storage.root, "pending.json.corrupt").isFile)
+        assertTrue(File(core.storage.intake, "pending.json.corrupt").isFile)
         assertTrue(pendingFile.isFile)
         assertTrue(stage.isDirectory)
-    }
-
-    /** Once, intake folders older versions left unowned go: raw copies that may carry GPS. */
-    @Test
-    fun unownedIntakeFoldersAreSweptOnce() {
-        // As an older version left it: the sweep hasn't run on this library.
-        File(core.storage.root, ".originals-swept").delete()
-        val raw = File(originals, UUID.randomUUID().toString()).apply { mkdirs() }
-        File(raw, "photo.jpg").writeBytes(taggedJpeg(1))
-        core.app.reopenCore()
-        core.app.core.documents
-        assertFalse(raw.exists())
-        // Later folders are left to their owners.
-        val later = File(originals, UUID.randomUUID().toString()).apply { mkdirs() }
-        core.app.reopenCore()
-        core.app.core.documents
-        assertTrue(later.isDirectory)
     }
 
     private fun discard(uri: Uri) {
@@ -569,7 +552,7 @@ class PhotoImportTest {
         val before = OriginalDecodes.started.get()
         compose.setContent {
             MdocTheme {
-                Box(Modifier.size(160.dp, 240.dp)) { OriginalView(OriginalSource.Images(pages), Modifier.fillMaxSize()) }
+                Box(Modifier.size(160.dp, 240.dp)) { OriginalView(OriginalSource.Images(pages.map(OriginalData::Local)), Modifier.fillMaxSize()) }
             }
         }
         compose.waitForIdle()

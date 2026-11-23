@@ -58,7 +58,7 @@ extension Category {
     }
 }
 
-extension CaseColour {
+extension ProjectColour {
     var color: Color {
         switch self {
         case .red: .red
@@ -74,8 +74,8 @@ extension CaseColour {
 }
 
 /// The case's colour dot; it marks the case, never a state (ADR 0077).
-struct CaseDot: View {
-    let colour: CaseColour
+struct ProjectDot: View {
+    let colour: ProjectColour
 
     var body: some View {
         Circle()
