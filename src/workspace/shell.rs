@@ -69,8 +69,9 @@ pub(super) struct ShellState {
     pub drop: Option<usize>,
     pub drop_generation: u64,
     home_scroll: gpui::ScrollHandle,
-    /// Focus for each card of Home's Continue strip, by position.
-    pub card_focus: std::cell::RefCell<Vec<gpui::FocusHandle>>,
+    /// Focus for each card of Home's Continue strip, by its document's or
+    /// reply's id, so a reordered strip keeps focus on the same card.
+    pub card_focus: std::cell::RefCell<HashMap<String, gpui::FocusHandle>>,
     /// The pointer is over Home's "Documents stay on this Mac".
     pub local_note_hover: bool,
 }
@@ -106,6 +107,8 @@ fn share_recents(recents: &Recents, cx: &mut App) {
 pub(super) struct Palette {
     input: Entity<SearchInput>,
     selected: usize,
+    /// The list's scroll, which keeps the selected row in view.
+    scroll: gpui::ScrollHandle,
     return_focus: Option<gpui::FocusHandle>,
     _changes: Subscription,
 }
@@ -1208,10 +1211,12 @@ impl Workspace {
         let documents_shown = (strip.cards.iter())
             .filter(|card| matches!(card, home::Card::Document { .. }))
             .count();
-        let more = (strip.need_review > documents_shown).then(|| match strip.need_review {
-            1 => "1 needs review".to_string(),
-            n => format!("{n} need review"),
-        });
+        let more = match strip.need_review {
+            0 if !strip.cards.is_empty() => Some("Nothing needs review".to_string()),
+            n if n <= documents_shown => None,
+            1 => Some("1 needs review".to_string()),
+            n => Some(format!("{n} need review")),
+        };
         let header = div()
             .flex()
             .items_center()
@@ -1299,13 +1304,10 @@ impl Workspace {
                 }
             };
             let label = format!("{title}, {place}, {status}, {age}");
-            let focus = {
-                let mut handles = self.shell.card_focus.borrow_mut();
-                while handles.len() <= i {
-                    handles.push(cx.focus_handle().tab_stop(true));
-                }
-                handles[i].clone()
-            };
+            let focus = (self.shell.card_focus.borrow_mut())
+                .entry(card.id().to_string())
+                .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                .clone();
             let view =
                 crate::ui::focus_ring(("home-card", i), theme)
                     .when(cfg!(test), |v| {
@@ -1496,6 +1498,7 @@ impl Workspace {
         let changes = cx.subscribe(&input, |this, _, _: &SearchInputEvent, cx| {
             if let Some(palette) = &mut this.shell.palette {
                 palette.selected = 0;
+                palette.scroll.set_offset(gpui::Point::default());
             }
             cx.notify();
         });
@@ -1504,6 +1507,7 @@ impl Workspace {
         self.shell.palette = Some(Palette {
             input,
             selected: 0,
+            scroll: gpui::ScrollHandle::new(),
             return_focus,
             _changes: changes,
         });
@@ -1728,7 +1732,7 @@ impl Workspace {
         let Some(vault) = self.vault.vault() else {
             return Vec::new();
         };
-        let projects = self.projects.summaries();
+        let projects = vault.projects();
         let documents = vault.documents();
         let found = home::search(query, &projects, &documents);
         let names: HashMap<&str, &str> = (projects.iter())
@@ -1773,6 +1777,15 @@ impl Workspace {
             .collect()
     }
 
+    /// The palette list's vertical scroll offset, for tests.
+    #[cfg(test)]
+    pub(super) fn palette_offset(&self) -> gpui::Pixels {
+        self.shell
+            .palette
+            .as_ref()
+            .map_or(px(0.), |palette| palette.scroll.offset().y)
+    }
+
     /// The palette's labels in order, for tests.
     #[cfg(test)]
     pub(super) fn palette_labels(&self, cx: &App) -> Vec<String> {
@@ -1793,12 +1806,20 @@ impl Workspace {
     }
 
     pub(super) fn palette_step(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let count = self.palette_rows(cx).len();
+        let rows = self.palette_rows(cx);
         if let Some(palette) = &mut self.shell.palette
-            && count > 0
+            && !rows.is_empty()
         {
-            palette.selected =
-                (palette.selected as isize + delta).rem_euclid(count as isize) as usize;
+            let selected =
+                (palette.selected as isize + delta).rem_euclid(rows.len() as isize) as usize;
+            palette.selected = selected;
+            // The list's children are its rows and a label before each
+            // section.
+            let labels = 1
+                + (rows[..=selected].windows(2))
+                    .filter(|pair| pair[0].section != pair[1].section)
+                    .count();
+            palette.scroll.scroll_to_item(selected + labels);
             cx.notify();
         }
     }
@@ -1814,12 +1835,17 @@ impl Workspace {
         let Some(row) = index.and_then(|i| rows.into_iter().nth(i)) else {
             return;
         };
+        self.palette_run(row.command, window, cx);
+    }
+
+    /// Close the palette and run `command`.
+    fn palette_run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         self.close_palette(window, cx);
         let dispatch =
             |window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
                 window.dispatch_action(action, cx)
             };
-        match row.command {
+        match command {
             Command::NewTab => dispatch(window, cx, Box::new(New)),
             Command::OpenFiles => dispatch(window, cx, Box::new(Open)),
             Command::PasteText => self.paste_as_new_tab(window, cx),
@@ -1848,7 +1874,7 @@ impl Workspace {
                 }
             }
             Command::ExpandIdentities | Command::CollapseIdentities => {
-                let expand = matches!(row.command, Command::ExpandIdentities);
+                let expand = matches!(command, Command::ExpandIdentities);
                 if let Some(view) = self.active_view() {
                     view.update(cx, |view, cx| {
                         if view.replacements_open() {
@@ -1894,7 +1920,15 @@ impl Workspace {
         let p = theme.pdf_style();
         let rows = self.palette_rows(cx);
         let selected = palette.selected.min(rows.len().saturating_sub(1));
-        let mut list = div().flex().flex_col().px_1().pb_1();
+        let mut list = div()
+            .id("palette-list")
+            .track_scroll(&palette.scroll)
+            .max_h(px(470.))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .px_1()
+            .pb_1();
         let mut section = "";
         for (i, row) in rows.iter().enumerate() {
             if row.section != section {
@@ -1962,9 +1996,12 @@ impl Workspace {
                     .when_some(row.command.shortcut(), |v, s| {
                         v.child(div().text_size(px(11.)).text_color(p.header_muted).child(s))
                     })
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.palette_confirm(Some(i), window, cx)
-                    })),
+                    .on_click({
+                        let command = row.command.clone();
+                        cx.listener(move |this, _, window, cx| {
+                            this.palette_run(command.clone(), window, cx)
+                        })
+                    }),
             );
         }
         if rows.is_empty() {
@@ -2044,13 +2081,7 @@ impl Workspace {
                                             .child(palette.input.clone()),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .id("palette-list")
-                                    .max_h(px(470.))
-                                    .overflow_y_scroll()
-                                    .child(list),
-                            ),
+                            .child(list),
                     ),
             )
             .with_priority(2)

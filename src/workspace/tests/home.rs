@@ -178,7 +178,11 @@ fn strip_cards_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppContext)
         cx.debug_bounds("home-strip-more").is_some(),
         "4 need review, 3 shown"
     );
-    let cards: Vec<_> = cx.update(|_, cx| tabs.read(cx).shell.card_focus.borrow()[..3].to_vec());
+    let shown = strip_documents(&tabs, cx);
+    let cards: Vec<_> = cx.update(|_, cx| {
+        let focus = tabs.read(cx).shell.card_focus.borrow();
+        (shown.iter()).map(|id| focus[id].clone()).collect()
+    });
     let mut reached = [false; 3];
     for _ in 0..40 {
         key(cx, "tab");
@@ -191,7 +195,7 @@ fn strip_cards_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppContext)
     }
     assert_eq!(reached, [true; 3], "Tab reaches every card");
     assert!(cx.update(|window, _| cards[2].is_focused(window)));
-    let expected = strip_documents(&tabs, cx)[2].clone();
+    let expected = shown[2].clone();
     activate_control(cx);
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -331,7 +335,20 @@ fn pseudonymize_clipboard_leaves_the_vault_unchanged(cx: &mut TestAppContext) {
     assert_eq!(vault_state(&tabs, cx), before);
     assert_eq!(live(&tabs, cx), views);
 
-    // From the document, and with nothing to replace.
+    // From the document, with names to replace and with none.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "Anna Petrova agreed.".into(),
+    ));
+    cx.dispatch_action(PseudonymizeClipboard);
+    settle(cx);
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).showing_home(cx));
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("PERSON_1 agreed.")
+        );
+    });
+    assert_eq!(vault_state(&tabs, cx), before);
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("Nobody here.".into()));
     cx.dispatch_action(PseudonymizeClipboard);
     settle(cx);
@@ -378,6 +395,8 @@ fn a_saved_reply_on_the_strip_opens_its_reply_page(cx: &mut TestAppContext) {
         })
         .unwrap();
     click_toolbar(cx, "sidebar-home");
+    // The document still needs review: the header counts nothing extra.
+    assert!(cx.debug_bounds("home-strip-more").is_none());
     let index = cx.update(|_, cx| {
         let (strip, _) = tabs.read(cx).home_strip_now(cx).unwrap();
         (strip.cards.iter())
@@ -396,4 +415,72 @@ fn a_saved_reply_on_the_strip_opens_its_reply_page(cx: &mut TestAppContext) {
             .map(|page| page.id().to_string());
         assert_eq!(page.as_deref(), Some(reply.id.as_str()));
     });
+}
+
+#[gpui::test]
+fn the_strip_says_nothing_needs_review_beside_reply_cards(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(900.)));
+    let ready = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "ready.md",
+        "Anna Petrova signed.",
+        &[("Anna Petrova", Person)],
+    );
+    let document = document_of(&tabs, ready, cx);
+    vault(&tabs, cx)
+        .save_reply(mdoc_vault::NewReply {
+            owner: mdoc_vault::ReplyOwner::Document(document),
+            title: "Reply to ready".into(),
+            source_app: None,
+            markdown: "Thanks.
+"
+            .into(),
+        })
+        .unwrap();
+    settle(cx);
+    click_toolbar(cx, "sidebar-home");
+    assert!(cx.debug_bounds("home-card-0").is_some());
+    assert!(cx.debug_bounds("home-strip-more").is_some());
+    cx.update(|_, cx| {
+        let (strip, _) = tabs.read(cx).home_strip_now(cx).unwrap();
+        assert_eq!((strip.cards.len(), strip.need_review), (1, 0));
+    });
+}
+
+/// Moving through a long result list keeps the selected row in view.
+#[gpui::test]
+fn the_palette_scrolls_to_the_selected_row(cx: &mut TestAppContext) {
+    cx.update(shell::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(900.)));
+    let vault = vault(&tabs, cx);
+    for i in 0..30 {
+        vault
+            .create_document(mdoc_vault::NewDocument {
+                project: None,
+                title: format!("Lease {i}"),
+                source_kind: mdoc_vault::SourceKind::Markdown,
+                origin: mdoc_vault::DocumentOrigin::Ordinary,
+                markdown: format!("Lease {i}"),
+            })
+            .unwrap();
+    }
+    cx.simulate_keystrokes("secondary-k");
+    cx.simulate_input("lease");
+    draw(cx);
+    assert_eq!(tabs.read_with(cx, |w, _| w.palette_offset()), px(0.));
+    // Up from the first row selects the last.
+    cx.simulate_keystrokes("up");
+    draw(cx);
+    draw(cx);
+    assert!(tabs.read_with(cx, |w, _| w.palette_offset()) < px(0.));
+    // A new query starts at the top again.
+    cx.simulate_input(" 1");
+    draw(cx);
+    assert_eq!(tabs.read_with(cx, |w, _| w.palette_offset()), px(0.));
 }

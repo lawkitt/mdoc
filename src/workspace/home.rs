@@ -23,6 +23,14 @@ pub(super) enum Card {
 }
 
 impl Card {
+    /// Its document's or reply's id.
+    pub(super) fn id(&self) -> &str {
+        match self {
+            Self::Document { summary, .. } => &summary.id,
+            Self::Reply(reply) => &reply.id,
+        }
+    }
+
     /// When it last changed, in seconds since the epoch.
     pub(super) fn at(&self) -> u64 {
         match self {
@@ -43,15 +51,15 @@ pub(super) struct Strip {
 
 /// Whether `summary` needs review: it was never saved Ready (desktop marks
 /// a document scanned only by a Ready save), or its live view has
-/// `proposed` proposals left now. The Project page's Documents segment uses
-/// the same rule.
+/// `proposed` proposals left now. A document kept from AI never does. The
+/// Project page's Documents segment uses the same rule.
 pub(super) fn needs_review(summary: &DocumentSummary, proposed: Option<usize>) -> bool {
-    proposed.is_some_and(|n| n > 0) || !summary.scanned
+    !summary.exclude_from_ai && (proposed.is_some_and(|n| n > 0) || !summary.scanned)
 }
 
 /// The Continue strip: documents that need review and saved replies,
 /// newest first, at most [`STRIP_CARDS`]. `live` holds each live view's
-/// proposals left, by document id. Documents kept from AI never show.
+/// proposals left, by document id.
 pub(super) fn strip(
     documents: &[DocumentSummary],
     replies: &[ReplySummary],
@@ -59,7 +67,6 @@ pub(super) fn strip(
 ) -> Strip {
     let mut cards: Vec<Card> = documents
         .iter()
-        .filter(|summary| !summary.exclude_from_ai)
         .filter_map(|summary| {
             let proposed = live.get(&summary.id).copied().filter(|&n| n > 0);
             needs_review(summary, proposed).then(|| Card::Document {
@@ -246,6 +253,8 @@ mod tests {
         assert!(!needs_review(&lease, None));
         assert!(!needs_review(&lease, Some(0)));
         assert!(needs_review(&lease, Some(2)));
+        lease.exclude_from_ai = true;
+        assert!(!needs_review(&lease, Some(2)));
     }
 
     #[test]
