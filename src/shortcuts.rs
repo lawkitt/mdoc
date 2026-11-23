@@ -1272,6 +1272,16 @@ pub static SHORTCUTS: &[Shortcut] = &[
         ],
     ),
     row(
+        Panel,
+        "Open documents with the recovery key",
+        &[on!(
+            Shell,
+            Some("RecoveryKey"),
+            &["enter"],
+            workspace::OpenWithRecoveryKey
+        )],
+    ),
+    row(
         Popup,
         "Close the command palette",
         &[on!(

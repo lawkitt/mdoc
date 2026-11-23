@@ -187,6 +187,18 @@ impl Workspace {
                     })),
             );
         }
+        // Its Markdown and originals as plain files (#1091 Decision 22).
+        let export = id.clone();
+        menu = menu.child(
+            ui::control("project-action-export", "Export Project…", theme, true)
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "project-action-export".into())
+                })
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.project_ui.header_menu = None;
+                    this.export_project(export.clone(), window, cx);
+                })),
+        );
         let id = id.clone();
         menu = menu.child(
             ui::control("project-action-close-all", "Close all", theme, true)

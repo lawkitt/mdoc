@@ -962,9 +962,10 @@ pub fn vault_dir() -> Option<PathBuf> {
     crate::app_paths::data_local_dir().map(|p| p.join("mdoc").join(key::vault_folder()))
 }
 
-/// The Vault key, which is the OS-held case key, created on first use.
-/// `quiet` reads it with dialogs off: `None` when reading it would show the
-/// macOS password dialog. Elsewhere a quiet read is the real one.
+/// The Vault key: a recovery key kept in the Vault key slot, read first,
+/// or else the OS-held case key, created on first use (#1091 Decisions 21
+/// and 22). `quiet` reads with dialogs off: `None` when reading would show
+/// the macOS password dialog. Elsewhere a quiet read is the real one.
 pub fn vault_key(quiet: bool) -> Result<Option<[u8; 32]>, CaseError> {
     if crate::app_paths::isolated() {
         return Err(CaseError::KeysDisabled);
@@ -972,10 +973,55 @@ pub fn vault_key(quiet: bool) -> Result<Option<[u8; 32]>, CaseError> {
     #[cfg(feature = "deny-os-services")]
     deny_os_service("the Vault key");
     let dir = Store::default_dir().ok_or(CaseError::NoAppData)?;
-    if quiet {
-        key::load_quietly(&dir)
-    } else {
-        key::load_or_create(&dir).map(Some)
+    let mdoc = dir.parent().ok_or(CaseError::NoAppData)?.to_path_buf();
+    slot_first(
+        || key::load_vault_slot(&mdoc, quiet),
+        || {
+            if quiet {
+                key::load_quietly(&dir)
+            } else {
+                key::load_or_create(&dir).map(Some)
+            }
+        },
+    )
+}
+
+/// Keep `key`, a recovery key that opened the Vault, as the Vault key: in
+/// the Vault key slot of the OS key store, never in a plain file. The case
+/// key and the cases folder are left as they are, so old cases still open
+/// with their own key (#1091 Decision 2).
+pub fn store_vault_key(key: &[u8; 32]) -> Result<(), CaseError> {
+    if crate::app_paths::isolated() {
+        return Err(CaseError::KeysDisabled);
+    }
+    #[cfg(feature = "deny-os-services")]
+    deny_os_service("the Vault key, to store it");
+    let mdoc = crate::app_paths::data_local_dir()
+        .ok_or(CaseError::NoAppData)?
+        .join("mdoc");
+    key::store_vault_slot(&mdoc, key)
+}
+
+/// What the Vault key slot holds.
+#[derive(Debug, PartialEq)]
+enum Slot {
+    Key([u8; 32]),
+    /// No recovery key was ever kept: the case key is the Vault key.
+    Missing,
+    /// Reading it would show the macOS password dialog.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    MayAsk,
+}
+
+/// The slot's key when it holds one; the case key only when it is empty.
+fn slot_first(
+    slot: impl FnOnce() -> Result<Slot, CaseError>,
+    case_key: impl FnOnce() -> Result<Option<[u8; 32]>, CaseError>,
+) -> Result<Option<[u8; 32]>, CaseError> {
+    match slot()? {
+        Slot::Key(key) => Ok(Some(key)),
+        Slot::MayAsk => Ok(None),
+        Slot::Missing => case_key(),
     }
 }
 
@@ -1145,6 +1191,12 @@ mod key {
     /// loud read at launch.
     #[cfg(target_os = "macos")]
     fn login(service: &str, quiet: bool) -> Result<Login, CaseError> {
+        login_account(service, ACCOUNT, quiet)
+    }
+
+    /// [`login`] for any account: the case key's or the Vault key slot's.
+    #[cfg(target_os = "macos")]
+    fn login_account(service: &str, account: &str, quiet: bool) -> Result<Login, CaseError> {
         use security_framework::{
             os::macos::keychain::SecKeychain, passwords::get_generic_password,
         };
@@ -1152,7 +1204,7 @@ mod key {
             .then(SecKeychain::disable_user_interaction)
             .transpose()
             .map_err(|e| CaseError::KeychainRead(e.to_string()))?;
-        match get_generic_password(service, ACCOUNT) {
+        match get_generic_password(service, account) {
             Ok(bytes) => bytes
                 .try_into()
                 .map(Login::Key)
@@ -1215,21 +1267,30 @@ mod key {
         use security_framework::passwords::{
             PasswordOptions, generic_password, set_generic_password_options,
         };
-        fn options() -> PasswordOptions {
-            let mut options = PasswordOptions::new_generic_password(SERVICE, ACCOUNT);
+        fn options(account: &str) -> PasswordOptions {
+            let mut options = PasswordOptions::new_generic_password(SERVICE, account);
             options.use_protected_keychain();
             options
         }
         /// `Ok(None)` when there is no key yet; `Err` is the OSStatus.
         pub fn read() -> Result<Option<[u8; 32]>, i32> {
-            match generic_password(options()) {
+            read_account(ACCOUNT)
+        }
+        pub fn read_account(account: &str) -> Result<Option<[u8; 32]>, i32> {
+            match generic_password(options(account)) {
                 Ok(bytes) => bytes.try_into().map(Some).map_err(|_| -26275), // errSecDecode
                 Err(e) if e.code() == -25300 => Ok(None),
                 Err(e) => Err(e.code()),
             }
         }
         pub fn write(key: &[u8; 32]) -> Result<(), security_framework::base::Error> {
-            set_generic_password_options(key, options())
+            write_account(ACCOUNT, key)
+        }
+        pub fn write_account(
+            account: &str,
+            key: &[u8; 32],
+        ) -> Result<(), security_framework::base::Error> {
+            set_generic_password_options(key, options(account))
         }
     }
 
@@ -1298,6 +1359,144 @@ mod key {
 
     #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
     pub fn load_or_create(_: &Path) -> Result<[u8; 32], CaseError> {
+        Err(CaseError::NoKeyStore)
+    }
+
+    /// The Vault key slot's account (macOS) or kind (Linux): written only
+    /// by a recovery key, read before the case key.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    const VAULT_ACCOUNT: &str = "vault-key";
+
+    /// Windows: the slot's DPAPI-sealed file in mdoc's app data folder,
+    /// beside the Vault's folder and never inside it, so a copied Vault
+    /// carries no key sealed to another computer.
+    #[cfg(windows)]
+    fn vault_slot_file(mdoc: &Path) -> std::path::PathBuf {
+        mdoc.join(format!("{}-key.dpapi", vault_folder()))
+    }
+
+    #[cfg(windows)]
+    pub fn load_vault_slot(mdoc: &Path, _quiet: bool) -> Result<super::Slot, CaseError> {
+        match std::fs::read(vault_slot_file(mdoc)) {
+            Ok(sealed) => dpapi::unprotect(&sealed)?
+                .try_into()
+                .map(super::Slot::Key)
+                .map_err(|_| CaseError::KeyDamaged),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(super::Slot::Missing),
+            Err(e) => Err(CaseError::KeyRead(e)),
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn store_vault_slot(mdoc: &Path, key: &[u8; 32]) -> Result<(), CaseError> {
+        let sealed = dpapi::protect(key)?;
+        std::fs::create_dir_all(mdoc)
+            .and_then(|_| {
+                let mut file = tempfile::NamedTempFile::new_in(mdoc)?;
+                file.write_all(&sealed)?;
+                file.as_file().sync_all()?;
+                file.persist(vault_slot_file(mdoc)).map_err(|e| e.error)?;
+                Ok(())
+            })
+            .map_err(CaseError::KeyWrite)
+    }
+
+    /// macOS: the same Keychain as the case key, under the slot's account.
+    #[cfg(target_os = "macos")]
+    pub fn load_vault_slot(_: &Path, quiet: bool) -> Result<super::Slot, CaseError> {
+        let login = |service: &str| -> Result<super::Slot, CaseError> {
+            Ok(match login_account(service, VAULT_ACCOUNT, quiet)? {
+                Login::Key(key) => super::Slot::Key(key),
+                Login::MayAsk => super::Slot::MayAsk,
+                Login::Missing => super::Slot::Missing,
+            })
+        };
+        match keychain() {
+            Keychain::Release => login(SERVICE),
+            Keychain::Dev => login(DEV_SERVICE),
+            Keychain::Protected => match protected::read_account(VAULT_ACCOUNT) {
+                // Missing entitlement: as a build without a profile.
+                Err(-34018) => login(SERVICE),
+                Err(e) => Err(CaseError::KeychainRead(e.to_string())),
+                Ok(Some(key)) => Ok(super::Slot::Key(key)),
+                Ok(None) => Ok(super::Slot::Missing),
+            },
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn store_vault_slot(_: &Path, key: &[u8; 32]) -> Result<(), CaseError> {
+        use security_framework::passwords::set_generic_password;
+        let store = |e: security_framework::base::Error| CaseError::KeychainStore(e.to_string());
+        match keychain() {
+            Keychain::Release => set_generic_password(SERVICE, VAULT_ACCOUNT, key).map_err(store),
+            Keychain::Dev => set_generic_password(DEV_SERVICE, VAULT_ACCOUNT, key).map_err(store),
+            Keychain::Protected => match protected::write_account(VAULT_ACCOUNT, key) {
+                // Missing entitlement: as a build without a profile.
+                Err(e) if e.code() == -34018 => {
+                    set_generic_password(SERVICE, VAULT_ACCOUNT, key).map_err(store)
+                }
+                result => result.map_err(store),
+            },
+        }
+    }
+
+    /// Linux: a second Secret Service item, `kind=vault-key`.
+    #[cfg(target_os = "linux")]
+    pub fn load_vault_slot(_: &Path, _quiet: bool) -> Result<super::Slot, CaseError> {
+        use secret_service::{EncryptionType, blocking::SecretService};
+        let unavailable = |e: secret_service::Error| CaseError::KeyringUnavailable(e.to_string());
+        let service = SecretService::connect(EncryptionType::Dh).map_err(unavailable)?;
+        let collection = service.get_default_collection().map_err(unavailable)?;
+        collection.ensure_unlocked().map_err(unavailable)?;
+        let found = collection
+            .search_items(vault_attributes())
+            .map_err(unavailable)?;
+        match found.first() {
+            Some(item) => item
+                .get_secret()
+                .map_err(unavailable)?
+                .try_into()
+                .map(super::Slot::Key)
+                .map_err(|_| CaseError::KeyringDamaged),
+            None => Ok(super::Slot::Missing),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn store_vault_slot(_: &Path, key: &[u8; 32]) -> Result<(), CaseError> {
+        use secret_service::{EncryptionType, blocking::SecretService};
+        let unavailable = |e: secret_service::Error| CaseError::KeyringUnavailable(e.to_string());
+        let service = SecretService::connect(EncryptionType::Dh).map_err(unavailable)?;
+        let collection = service.get_default_collection().map_err(unavailable)?;
+        collection.ensure_unlocked().map_err(unavailable)?;
+        collection
+            .create_item(
+                "mdoc Vault key",
+                vault_attributes(),
+                key,
+                true,
+                "application/octet-stream",
+            )
+            .map_err(|e| CaseError::KeyringStore(e.to_string()))?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn vault_attributes() -> std::collections::HashMap<&'static str, &'static str> {
+        std::collections::HashMap::from([
+            ("application", "io.github.lawkitt.mdoc"),
+            ("kind", VAULT_ACCOUNT),
+        ])
+    }
+
+    #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+    pub fn load_vault_slot(_: &Path, _quiet: bool) -> Result<super::Slot, CaseError> {
+        Ok(super::Slot::Missing)
+    }
+
+    #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+    pub fn store_vault_slot(_: &Path, _: &[u8; 32]) -> Result<(), CaseError> {
         Err(CaseError::NoKeyStore)
     }
 
@@ -2079,5 +2278,90 @@ mod tests {
         case.not_a_name_member_moved(a, b);
         assert_eq!(case.identities[0].not_a_name_by.as_deref(), Some(b));
         assert!(case.reserved_aliases_for(b).is_empty());
+    }
+
+    /// An OS key store in memory: the case key, the Vault key slot, and
+    /// every read and write of each.
+    #[derive(Default)]
+    struct FakeKeys {
+        case: Option<[u8; 32]>,
+        slot: Option<[u8; 32]>,
+        case_reads: usize,
+        case_writes: usize,
+    }
+
+    impl FakeKeys {
+        fn vault_key(&mut self, may_ask: bool) -> Result<Option<[u8; 32]>, CaseError> {
+            let slot = match (self.slot, may_ask) {
+                (_, true) => Slot::MayAsk,
+                (Some(key), false) => Slot::Key(key),
+                (None, false) => Slot::Missing,
+            };
+            let case = &mut self.case;
+            let (reads, writes) = (&mut self.case_reads, &mut self.case_writes);
+            slot_first(
+                || Ok(slot),
+                || {
+                    *reads += 1;
+                    // Created on first use, as the OS store does.
+                    if case.is_none() {
+                        *case = Some([9; 32]);
+                        *writes += 1;
+                    }
+                    Ok(*case)
+                },
+            )
+        }
+    }
+
+    #[test]
+    fn the_vault_key_slot_is_read_before_the_case_key() {
+        let mut keys = FakeKeys {
+            case: Some([1; 32]),
+            ..FakeKeys::default()
+        };
+        // No recovery key kept: the case key is the Vault key.
+        assert_eq!(keys.vault_key(false).unwrap(), Some([1; 32]));
+        assert_eq!(keys.case_reads, 1);
+        // A recovery key kept in the slot wins, and the case key is not
+        // even read.
+        keys.slot = Some([2; 32]);
+        assert_eq!(keys.vault_key(false).unwrap(), Some([2; 32]));
+        assert_eq!(keys.case_reads, 1);
+        // A slot that would ask asks first: nothing is read behind it.
+        assert_eq!(keys.vault_key(true).unwrap(), None);
+        assert_eq!(keys.case_reads, 1);
+        // The case key was never written, and is still the old one.
+        assert_eq!((keys.case, keys.case_writes), (Some([1; 32]), 0));
+    }
+
+    #[test]
+    fn a_slot_error_is_reported_and_never_falls_back_to_the_case_key() {
+        let mut read = false;
+        let result = slot_first(
+            || Err(CaseError::KeyDamaged),
+            || {
+                read = true;
+                Ok(Some([1; 32]))
+            },
+        );
+        assert!(matches!(result, Err(CaseError::KeyDamaged)));
+        assert!(!read);
+    }
+
+    /// The guard covers the slot: a test that reaches for the OS Vault key,
+    /// to read or to keep one, fails at once.
+    #[cfg(feature = "deny-os-services")]
+    #[test]
+    #[should_panic(expected = "a test asked the OS for the Vault key, to store it")]
+    fn storing_a_vault_key_in_a_test_panics() {
+        let _ = store_vault_key(&[1; 32]);
+    }
+
+    #[cfg(feature = "deny-os-services")]
+    #[test]
+    #[should_panic(expected = "a test asked the OS for the Vault key")]
+    fn reading_the_vault_key_in_a_test_panics() {
+        let _ = vault_key(true);
     }
 }

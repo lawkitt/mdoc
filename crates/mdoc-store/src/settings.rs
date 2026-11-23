@@ -314,6 +314,10 @@ pub struct GeneralConfig {
     /// place. Off by default, so the page matches what Word prints.
     #[serde(default)]
     pub show_hidden_text: bool,
+    /// The first-Project nudge to save the recovery key was closed, or the
+    /// key was shown; it never shows again.
+    #[serde(default)]
+    pub recovery_key_nudge_dismissed: bool,
 }
 fn on() -> bool {
     true
@@ -327,6 +331,7 @@ impl Default for GeneralConfig {
             sidebar_width: None,
             show_comments: true,
             show_hidden_text: false,
+            recovery_key_nudge_dismissed: false,
         }
     }
 }

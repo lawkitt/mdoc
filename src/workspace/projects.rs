@@ -58,6 +58,11 @@ impl Projects {
         self.projects.iter().find(|project| project.id == id)
     }
 
+    /// No Project is held.
+    pub(super) fn is_empty(&self) -> bool {
+        self.projects.is_empty()
+    }
+
     pub(super) fn link(&self, id: &str) -> Option<ProjectLink> {
         self.project(id).map(ProjectLink::of)
     }

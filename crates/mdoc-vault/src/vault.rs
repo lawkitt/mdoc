@@ -2,10 +2,12 @@
 //! time: in the process through a mutex and across processes and handles
 //! through `.lock`, held only for the write (#1091 Decision 20). A handle
 //! never writes a revision older than the last it wrote.
+mod export;
 mod moves;
 mod readiness;
 mod replies;
 
+pub use export::{Exported, ORIGINALS};
 pub use moves::{MoveUndo, Moved, ProjectDocuments};
 pub use readiness::Readiness;
 pub use replies::ReplyHandle;
@@ -222,6 +224,20 @@ impl Vault {
             opened
         };
         Ok(vault)
+    }
+
+    /// Whether `key` is the key this handle seals with: Settings shows a
+    /// recovery key only when it opens these documents. The key itself is
+    /// never kept.
+    pub fn opens_with(&self, key: &[u8; 32]) -> bool {
+        const PROBE: &str = "recovery-key-check";
+        self.sealer
+            .seal(ObjectKind::Manifest, PROBE, PROBE.as_bytes())
+            .is_ok_and(|sealed| {
+                Sealer::new(key)
+                    .open(ObjectKind::Manifest, PROBE, &sealed)
+                    .is_ok()
+            })
     }
 
     pub fn root(&self) -> &Path {

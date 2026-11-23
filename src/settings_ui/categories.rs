@@ -17,14 +17,16 @@ pub(crate) enum Category {
     Detection,
     Recognition,
     Spelling,
+    Vault,
     About,
 }
 impl Category {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::General,
         Self::Detection,
         Self::Recognition,
         Self::Spelling,
+        Self::Vault,
         Self::About,
     ];
     pub fn label(self) -> &'static str {
@@ -33,6 +35,7 @@ impl Category {
             Self::Detection => "Detection",
             Self::Recognition => "Recognition",
             Self::Spelling => "Spelling",
+            Self::Vault => "Vault",
             Self::About => "About",
         }
     }
@@ -72,6 +75,7 @@ impl Panel {
         }
         self.category = category;
         self.dictionary = None;
+        self.recovery.forget();
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
         window.focus(&self.category_focus, cx);
         cx.notify();
@@ -479,21 +483,25 @@ impl Panel {
                     .child(self.setting_row("Compare text recognition", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-ocr", "Compare", theme, true, cx).aria_label("Compare text recognition").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic))))), theme))
             },
             Category::Spelling => div().child(self.spelling_section(theme, cx)),
+            Category::Vault => div().child(self.vault_section(theme, cx)),
             Category::About => div().child(self.about_section(theme, cx)),
         };
-        // About has no preferences, so it has nothing to reset.
-        body.when(self.category != Category::About, |v| {
-            v.child(
-                self.setting_row(
-                    "Reset",
-                    "Restore this category's defaults.",
-                    self.scrolled_quiet("reset-settings", "Reset", theme, true, cx)
-                        .when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into()))
-                        .on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
-                    theme,
-                ),
-            )
-        })
+        // About and Vault have no preferences, so nothing to reset.
+        body.when(
+            !matches!(self.category, Category::About | Category::Vault),
+            |v| {
+                v.child(
+                    self.setting_row(
+                        "Reset",
+                        "Restore this category's defaults.",
+                        self.scrolled_quiet("reset-settings", "Reset", theme, true, cx)
+                            .when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into()))
+                            .on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
+                        theme,
+                    ),
+                )
+            },
+        )
         .into_any_element()
     }
     pub(super) fn category_render(
