@@ -230,26 +230,33 @@ struct ProjectPage: View {
             .foregroundStyle(.secondary)
     }
 
-    /// An Always or Never wording; a swipe removes it. Nothing is added
-    /// here, as on desktop.
+    /// An Always or Never wording, with Remove at its end and on a swipe.
+    /// Nothing is added here, as on desktop.
     private func listedRow(_ wording: String, detail: String?, always: Bool) -> some View {
-        HStack(spacing: Space.s) {
-            UnhyphenatedText(wording)
-            Spacer(minLength: Space.xs)
-            if let detail {
-                Text(detail)
-                    .font(Typography.caption)
+        let remove = { app.removeListed(wording, always: always, from: projectID) }
+        return HStack(spacing: Space.s) {
+            HStack(spacing: Space.s) {
+                UnhyphenatedText(wording)
+                Spacer(minLength: Space.xs)
+                if let detail {
+                    Text(detail)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            Button(action: remove) {
+                Image(systemName: "minus.circle")
                     .foregroundStyle(.secondary)
+                    .frame(width: Size.target, height: Size.target)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(Text("Remove “\(wording)”"))
+            .accessibilityIdentifier("remove-listed")
         }
-        .accessibilityElement(children: .combine)
         .swipeActions {
-            Button("Remove", role: .destructive) {
-                app.removeListed(wording, always: always, from: projectID)
-            }
-        }
-        .accessibilityAction(named: Text("Remove")) {
-            app.removeListed(wording, always: always, from: projectID)
+            Button("Remove", role: .destructive, action: remove)
         }
         .accessibilityIdentifier(always ? "always-row" : "never-row")
     }
