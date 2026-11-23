@@ -152,6 +152,7 @@ impl Document {
             case: self.case.clone(),
             synced: self.synced.clone(),
             stored: mdoc_store::document::Document {
+                vault: None,
                 path: self.stored.path.clone(),
                 saved: self.stored.saved.clone(),
             },
