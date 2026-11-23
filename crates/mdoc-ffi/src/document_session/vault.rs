@@ -330,11 +330,12 @@ impl DocumentSession {
         Ok(())
     }
 
-    /// This phone finds no names: no name finder fits it, or none is
-    /// installed yet (#1091 Q4: the maintainer chose this). Then a Vault save with no
-    /// proposals left counts as reviewed by hand and records the document
-    /// as Ready, so Copy for AI and Share (`Vault::text_for_ai`) take it.
-    /// Its session's own phase is unchanged.
+    /// This phone is below the name finder's floor: no name finder fits
+    /// it (#1091 Q4: the maintainer's (b)). Then a Vault save with no
+    /// proposals left records the document Ready, its names decided by
+    /// hand, so Copy for AI and Share (`Vault::text_for_ai`) take it. It
+    /// stays unscanned, so lists keep their labels and a scan is still
+    /// offered where one becomes possible.
     pub fn set_no_name_finder(&self, no_name_finder: bool) {
         self.by_hand.store(no_name_finder, Ordering::Relaxed);
     }
@@ -361,7 +362,7 @@ struct Pending {
     /// counts may miss a name, so it is not Ready.
     awaiting_discovery: bool,
     scanned: bool,
-    /// The phone finds no names (`set_no_name_finder`).
+    /// The phone is below the name finder's floor (`set_no_name_finder`).
     by_hand: bool,
     review: SavedReview,
     /// What a first save keeps as the Source Original, with what the
@@ -574,14 +575,13 @@ pub(crate) fn vault_counts(
 }
 
 impl Pending {
-    /// Whether the record reads as scanned, and whether it is Ready
-    /// (scanned, no proposals left, no discovery owed). On a phone that
-    /// finds no names, a review with no proposals left counts as scanned
-    /// by hand (#1091 Q4: the maintainer chose this): this is the one place that decides.
-    fn reviewed(&self) -> (bool, bool) {
-        let settled = self.counts.proposed == 0 && !self.awaiting_discovery;
-        let scanned = self.scanned || (self.by_hand && settled);
-        (scanned, scanned && settled)
+    /// Whether the record is Ready: scanned, no proposals left and no
+    /// discovery owed. On a phone below the name finder's floor
+    /// (`set_no_name_finder`), names decided by hand with none left count
+    /// too (#1091 Q4: the maintainer's (b)); the record stays unscanned.
+    /// This is the one place that decides.
+    fn ready(&self) -> bool {
+        (self.scanned || self.by_hand) && self.counts.proposed == 0 && !self.awaiting_discovery
     }
 
     /// Store the names and then the record, under the Vault handle's write
@@ -639,7 +639,7 @@ impl Pending {
             },
             None => None,
         };
-        let (scanned, ready) = self.reviewed();
+        let ready = self.ready();
         // Checked again under the Vault's own lock: another handle's write
         // since is never overwritten (it is rewritten unchanged instead).
         let (revision, place) = (self.place.revision, self.place.project.clone());
@@ -652,7 +652,7 @@ impl Pending {
             record.title.clone_from(&self.title);
             record.origin = self.origin.into();
             record.markdown.clone_from(&self.text);
-            record.scanned = scanned;
+            record.scanned = self.scanned;
             record.review = Some(self.review.clone());
             record.counts = Some(self.counts.into());
             if record.project.is_none() {

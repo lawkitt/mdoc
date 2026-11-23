@@ -806,10 +806,11 @@ fn a_document_awaiting_discovery_is_not_saved_ready() {
     );
 }
 
-/// On a phone that finds no names, a document reviewed by hand (a name
+/// Below the name finder's floor, a document reviewed by hand (a name
 /// marked and replaced, never scanned) saves Ready once no proposals are
-/// left, and leaves as Copy for AI's text; with proposals left, or on a
-/// phone that finds names, it is not reviewed (#1091 Q4: the maintainer chose this).
+/// left, and leaves as Copy for AI's text, still unscanned; with proposals
+/// left, or above the floor, it is not reviewed (#1091 Q4: the
+/// maintainer's (b)).
 #[test]
 fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
     let scratch = Scratch::new();
@@ -848,6 +849,13 @@ fn a_document_reviewed_by_hand_is_ready_where_no_names_are_found() {
         by_hand.snapshot().unwrap().phase,
         DocumentPhase::Unscanned,
         "the session's own phase is unchanged"
+    );
+    let listed = vault.document(saved.id.clone()).unwrap();
+    assert!(!listed.scanned, "scanned stays false");
+    assert_eq!(
+        listed.phase,
+        DocumentPhase::Unscanned,
+        "lists keep their label"
     );
 
     let scanning = marked(false);
