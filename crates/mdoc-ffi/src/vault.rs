@@ -41,9 +41,11 @@ struct Undo {
     shared: HashMap<Option<String>, u64>,
 }
 
-/// The file family a Document was made from (#1091, source kind).
+/// The file family a Document was made from (#1091, source kind); named
+/// apart from both apps' own `SourceKind`, which Swift's tests would find
+/// ambiguous.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum SourceKind {
+pub enum DocumentSourceKind {
     Pdf,
     Word,
     Spreadsheet,
@@ -82,7 +84,7 @@ pub struct DocumentInfo {
     pub title: String,
     /// `None`: Unfiled.
     pub project_id: Option<String>,
-    pub source_kind: SourceKind,
+    pub source_kind: DocumentSourceKind,
     pub origin: DocumentOrigin,
     pub exclude_from_ai: bool,
     pub phase: DocumentPhase,
@@ -517,7 +519,7 @@ pub(crate) fn document_title(title: &str) -> Result<String, CoreError> {
     Ok(title.into())
 }
 
-impl From<mdoc_vault::SourceKind> for SourceKind {
+impl From<mdoc_vault::SourceKind> for DocumentSourceKind {
     fn from(kind: mdoc_vault::SourceKind) -> Self {
         use mdoc_vault::SourceKind as K;
         match kind {
@@ -534,18 +536,18 @@ impl From<mdoc_vault::SourceKind> for SourceKind {
     }
 }
 
-impl From<SourceKind> for mdoc_vault::SourceKind {
-    fn from(kind: SourceKind) -> Self {
+impl From<DocumentSourceKind> for mdoc_vault::SourceKind {
+    fn from(kind: DocumentSourceKind) -> Self {
         match kind {
-            SourceKind::Pdf => Self::Pdf,
-            SourceKind::Word => Self::Word,
-            SourceKind::Spreadsheet => Self::Spreadsheet,
-            SourceKind::Presentation => Self::Presentation,
-            SourceKind::Ebook => Self::Ebook,
-            SourceKind::Image => Self::Image,
-            SourceKind::Scan => Self::Scan,
-            SourceKind::Markdown => Self::Markdown,
-            SourceKind::Text => Self::Text,
+            DocumentSourceKind::Pdf => Self::Pdf,
+            DocumentSourceKind::Word => Self::Word,
+            DocumentSourceKind::Spreadsheet => Self::Spreadsheet,
+            DocumentSourceKind::Presentation => Self::Presentation,
+            DocumentSourceKind::Ebook => Self::Ebook,
+            DocumentSourceKind::Image => Self::Image,
+            DocumentSourceKind::Scan => Self::Scan,
+            DocumentSourceKind::Markdown => Self::Markdown,
+            DocumentSourceKind::Text => Self::Text,
         }
     }
 }

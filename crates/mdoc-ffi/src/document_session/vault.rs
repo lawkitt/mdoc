@@ -14,7 +14,7 @@
 use super::{Document, DocumentOrigin, DocumentSession, ReviewSnapshot, no_document};
 use crate::{
     CoreError, ReviewError,
-    vault::{ProjectInfo, SourceKind, Vault},
+    vault::{DocumentSourceKind, ProjectInfo, Vault},
 };
 use mdoc_pii::{
     restore::{ExportedIdentity, RestoreMap},
@@ -315,7 +315,7 @@ impl DocumentSession {
     /// knows better than the import: a camera page is `Scan`, where
     /// `import_images_in` takes every image as `Image`. A document saved
     /// already keeps the kind it was saved with.
-    pub fn set_source_kind(&self, kind: SourceKind) -> Result<(), CoreError> {
+    pub fn set_source_kind(&self, kind: DocumentSourceKind) -> Result<(), CoreError> {
         let mut guard = self.lock_document();
         guard.as_mut().ok_or_else(no_document)?.source_kind = kind.into();
         Ok(())

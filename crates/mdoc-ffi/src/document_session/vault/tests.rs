@@ -107,7 +107,7 @@ fn an_import_lands_in_unfiled_and_lists_its_counts() {
     assert_eq!(listed.id, saved.id);
     assert_eq!(listed.title, "Letter");
     assert_eq!(listed.project_id, None);
-    assert_eq!(listed.source_kind, crate::vault::SourceKind::Text);
+    assert_eq!(listed.source_kind, crate::vault::DocumentSourceKind::Text);
     assert_eq!(
         (listed.proposed, listed.replaced, listed.kept),
         (snapshot.proposed, snapshot.replaced, snapshot.kept)
@@ -735,14 +735,14 @@ fn an_import_records_its_source_kind() {
     let saved = session.save_into_vault(vault.clone()).unwrap();
     assert_eq!(
         vault.document(saved.id).unwrap().source_kind,
-        crate::vault::SourceKind::Word
+        crate::vault::DocumentSourceKind::Word
     );
     let scan = self::session("Page one.", "Scan");
-    scan.set_source_kind(crate::vault::SourceKind::Scan)
+    scan.set_source_kind(crate::vault::DocumentSourceKind::Scan)
         .unwrap();
     let saved = scan.save_into_vault(vault.clone()).unwrap();
     assert_eq!(
         vault.document(saved.id).unwrap().source_kind,
-        crate::vault::SourceKind::Scan
+        crate::vault::DocumentSourceKind::Scan
     );
 }
