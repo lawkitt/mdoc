@@ -82,6 +82,12 @@ impl ProjectsState {
     pub(super) fn mark_unwritten(&mut self, id: &str) {
         self.unwritten.insert(id.to_string());
     }
+
+    /// Project `id` changed since its last write was queued, or that write
+    /// failed.
+    pub(super) fn is_unwritten(&self, id: &str) -> bool {
+        self.unwritten.contains(id)
+    }
 }
 
 /// What a move shows in its toast, and whether it can be undone.

@@ -485,24 +485,39 @@ impl ShelfView {
                 .iter()
                 .find(|s| matches!(s, ClipboardSource::Tab { id: tab, .. } if tab == id))
                 .cloned(),
+            // A stored Unfiled document is no clipboard source.
+            (None, ShelfKey::Document(_)) => None,
         };
         if let Some(source) = source {
             self.pick(source, cx);
         }
     }
 
+    /// Row `index`, if listed ready, checked again as its text is about to
+    /// leave: the Vault's outbound check runs now, and a row it refuses
+    /// shows why and hands out nothing.
+    fn checked_again(&mut self, index: usize, window: &mut Window, cx: &App) -> Option<String> {
+        let listed = self.content.documents.get(index)?;
+        listed.text_for_ai()?;
+        let now = (self.workspace.read(cx).ok())
+            .and_then(|workspace| workspace.shelf_row(&listed.key, cx))
+            .filter(|now| now.key == listed.key)?;
+        let text = now.text_for_ai().map(str::to_owned);
+        self.fitted[index] = (now.preview.as_ref())
+            .map(|preview| row::fit_preview(preview, row::PREVIEW_WIDTH, window));
+        self.titles[index] = row::fit_title(&now, window);
+        self.content.documents[index] = now;
+        text
+    }
+
     /// Copy for AI on a ready row: the text a drag carries, then ✓ "Copied"
     /// and the shelf closes after [`COPIED_FOR`].
     pub(crate) fn copy(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self
-            .content
-            .documents
-            .get(index)
-            .and_then(ShelfDocument::text_for_ai)
-        else {
+        let Some(text) = self.checked_again(index, window, cx) else {
+            cx.notify();
             return;
         };
-        cx.write_to_clipboard(ClipboardItem::new_string(text.to_owned()));
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
         self.copied = Some(index);
         self.used(index, cx);
         self.closing = Some(cx.spawn_in(window, async move |this, cx| {
@@ -593,10 +608,11 @@ impl ShelfView {
     /// on one pasteboard item, under a card with its title and preview. The
     /// first drop retires the hint.
     pub(crate) fn drag(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(document) = self.content.documents.get(index) else {
+        let Some(text) = self.checked_again(index, window, cx) else {
+            cx.notify();
             return;
         };
-        let Some(text) = document.text_for_ai().map(str::to_owned) else {
+        let Some(document) = self.content.documents.get(index) else {
             return;
         };
         let card = document.drag_card();

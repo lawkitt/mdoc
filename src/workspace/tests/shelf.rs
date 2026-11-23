@@ -1,8 +1,10 @@
 //! The menu bar shelf's list and handoff: what it lists from the
-//! window's tabs and Projects, and that nothing leaves it unless ready.
+//! window's tabs and the Vault, and that nothing leaves it unless the
+//! Vault's outbound check finds it ready.
 use super::*;
 use crate::shelf::{Readiness, ShelfExports, ShelfKey};
 use mdoc_pii::Category::{Organization, Person};
+use mdoc_store::document_id::VaultId;
 
 const ORIGINALS: [&str; 5] = [
     "Anna Petrova",
@@ -12,8 +14,29 @@ const ORIGINALS: [&str; 5] = [
     "Clara Moss",
 ];
 
-/// Done when: ready and not-ready documents are copied and dragged from the
-/// shelf, and no export holds an original.
+/// Pending autosaves, and the Project writes they start, land.
+fn written(cx: &mut VisualTestContext) {
+    wait(cx, 800);
+    wait(cx, 800);
+}
+
+/// Apply every proposal in the active tab: a moved document's Project names.
+fn apply_all(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
+    let view = active(tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+}
+
+fn close(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) {
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(id, window, cx));
+    cx.run_until_parked();
+}
+
+/// Done when: ready, not-ready and changed-since-review documents, open
+/// and stored, are copied and dragged from the shelf; only ready ones carry
+/// anything, the Vault's outbound text; no export holds an original.
 #[gpui::test]
 fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -31,6 +54,45 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
     );
     let project = new_project(&tabs, cx, ready);
 
+    // Ready and stored: moved in, its Project's names applied, written and
+    // closed.
+    let closed = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "Clara Moss notes.md",
+        "Clara Moss paid Anna Petrova.",
+        &[("Clara Moss", Person)],
+    );
+    move_tab(&tabs, cx, closed, Some(&project));
+    apply_all(&tabs, cx);
+    written(cx);
+    let closed_document = cx.update(|_, cx| tabs.read(cx).tab_document(closed, cx).unwrap());
+    close(&tabs, closed, cx);
+
+    // Changed since review: written ready and closed, then its stored text
+    // changed by another writer.
+    let changed = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "Ivan Ivanov settlement.md",
+        "Ivan Ivanov owes Northwind Ltd.",
+        &[("Ivan Ivanov", Person)],
+    );
+    move_tab(&tabs, cx, changed, Some(&project));
+    written(cx);
+    let changed_document = cx.update(|_, cx| tabs.read(cx).tab_document(changed, cx).unwrap());
+    close(&tabs, changed, cx);
+    let vault = vault(&tabs, cx);
+    vault
+        .update_document(changed_document.as_str(), |document| {
+            document
+                .markdown
+                .push_str("\n\nA paragraph added elsewhere.")
+        })
+        .unwrap();
+
     // Not ready: open, moved in, with the Project's names still proposed.
     let pending = open_applied(
         &tabs,
@@ -41,6 +103,7 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         &[("Boris Ivanov", Person)],
     );
     move_tab(&tabs, cx, pending, Some(&project));
+    written(cx);
 
     let rows = cx.update(|_, cx| tabs.read(cx).shelf_documents(cx));
     let state = |key: &ShelfKey| {
@@ -49,19 +112,29 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
             .unwrap_or_else(|| panic!("{key:?} is listed"))
             .readiness
     };
-    assert_eq!(
-        rows.len(),
-        2,
-        "only open tabs until the shelf reads the Vault"
+    let stored = |document: &VaultId| ShelfKey::Document(document.clone());
+    assert_eq!(rows.len(), 4);
+    // Open tabs first, then documents no tab shows.
+    assert!(rows[..2].iter().all(|r| matches!(r.key, ShelfKey::Tab(_))));
+    assert!(
+        rows[2..]
+            .iter()
+            .all(|r| matches!(r.key, ShelfKey::Document(_)))
     );
     assert_eq!(state(&ShelfKey::Tab(ready)), Readiness::Ready);
     assert_eq!(state(&ShelfKey::Tab(pending)), Readiness::LeftToReview(1));
+    assert_eq!(state(&stored(&closed_document)), Readiness::Ready);
+    assert_eq!(
+        state(&stored(&changed_document)),
+        Readiness::ChangedSinceReview
+    );
     assert!(
         rows.iter()
             .all(|row| row.project.as_ref().unwrap().id == project)
     );
 
-    // Copy for AI is the editor's bytes for an open tab.
+    // Copy for AI is the editor's bytes for an open tab, as the Vault's
+    // outbound check gives them, and the check's text for a stored one.
     let ready_view = cx.update(|_, cx| {
         tabs.read(cx)
             .tabs
@@ -72,11 +145,16 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
             .unwrap()
     });
     let editor_copy = cx.update(|_, cx| ready_view.read(cx).text_for_ai(cx));
-    let ready_row = rows
-        .iter()
-        .find(|row| row.key == ShelfKey::Tab(ready))
-        .unwrap();
-    assert_eq!(ready_row.text_for_ai(), Some(editor_copy.as_str()));
+    let row = |key: &ShelfKey| rows.iter().find(|row| &row.key == key).unwrap();
+    assert_eq!(
+        row(&ShelfKey::Tab(ready)).text_for_ai(),
+        Some(editor_copy.as_str())
+    );
+    let outbound = vault.text_for_ai(closed_document.as_str()).unwrap();
+    assert_eq!(
+        row(&stored(&closed_document)).text_for_ai(),
+        Some(outbound.as_str())
+    );
 
     // Copy and drag every row; only ready ones carry anything.
     let exports = ShelfExports::create_in(dir.path()).unwrap();
@@ -117,6 +195,242 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         }
     }
     exports.clear();
+}
+
+/// Done when: a name another document adds to the Project takes a row off
+/// ready without touching its file, and a shelf opened before hands out
+/// nothing for it.
+#[gpui::test]
+fn a_name_another_document_adds_takes_a_row_off_ready(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let letter = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        "Anna Petrova wrote to Boris Ivanov about the lease.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, letter);
+    written(cx);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(letter, cx).unwrap());
+    close(&tabs, letter, cx);
+    let vault = vault(&tabs, cx);
+    let file = vault
+        .root()
+        .join("docs")
+        .join(document.as_str())
+        .join("doc.enc");
+    let before = std::fs::read(&file).unwrap();
+    let key = ShelfKey::Document(document.clone());
+    let listed = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            tabs.read(cx)
+                .shelf_documents(cx)
+                .into_iter()
+                .find(|row| row.key == key)
+                .unwrap()
+        })
+    };
+    assert_eq!(listed(cx).readiness, Readiness::Ready);
+    let shelf = open_shelf(cx);
+    let index = shelf
+        .read_with(cx, |view, _| {
+            let documents = &view.content().documents;
+            documents.iter().position(|d| d.key == key).unwrap()
+        })
+        .unwrap();
+
+    // Another document names Boris Ivanov and joins the Project.
+    let memo = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "memo.md",
+        "Boris Ivanov signed.",
+        &[("Boris Ivanov", Person)],
+    );
+    move_tab(&tabs, cx, memo, Some(&project));
+    written(cx);
+    let names = vault.project(&project).unwrap().mapping.exported();
+    assert!(
+        names
+            .iter()
+            .any(|n| n.originals.iter().any(|o| &**o == "Boris Ivanov"))
+    );
+
+    let row = listed(cx);
+    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
+    assert_eq!(row.text_for_ai(), None);
+    assert!(row.preview.is_none());
+    assert_eq!(
+        vault.readiness(document.as_str()).unwrap(),
+        mdoc_vault::Readiness::NamesNotReplaced(1)
+    );
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        before,
+        "its file is untouched"
+    );
+
+    // The shelf listed it ready before: Copy for AI and a drag check again
+    // and hand out nothing.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
+    shelf
+        .update(cx, |view, window, cx| {
+            view.copy(index, window, cx);
+            view.drag(index, window, cx);
+            assert!(view.dragged.is_none());
+            assert_eq!(view.copied(), None);
+            assert_eq!(
+                view.content().documents[index].readiness,
+                Readiness::NamesNotReplaced(1)
+            );
+        })
+        .unwrap();
+    assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
+}
+
+/// A stored document that is not ready opens in a tab at its first
+/// proposal: the name its Project added since.
+#[gpui::test]
+fn a_stored_document_that_is_not_ready_opens_at_its_first_proposal(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let letter = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        "Northwind Ltd wrote. Copy to Anna Petrova.",
+        &[("Northwind Ltd", Organization)],
+    );
+    let project = new_project(&tabs, cx, letter);
+    written(cx);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(letter, cx).unwrap());
+    close(&tabs, letter, cx);
+    let memo = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "memo.md",
+        "Anna Petrova signed.",
+        &[("Anna Petrova", Person)],
+    );
+    move_tab(&tabs, cx, memo, Some(&project));
+    written(cx);
+    let key = ShelfKey::Document(document.clone());
+    let row = cx
+        .update(|_, cx| tabs.read(cx).shelf_documents(cx))
+        .into_iter()
+        .find(|row| row.key == key)
+        .unwrap();
+    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_from_shelf(&row.key, false, window, cx)
+    });
+    for _ in 0..20 {
+        wait(cx, 100);
+    }
+    let shown = cx.update(|_, cx| tabs.read(cx).tab_document(tabs.read(cx).tabs.active(), cx));
+    assert_eq!(shown, Some(document));
+    assert_first_proposal_shown(&tabs, cx);
+}
+
+/// Review of #1127: a name applied in an open member reaches the Vault
+/// only once the Project is written; until then a stored member of that
+/// Project is not checked against the old names, and does not leave.
+#[gpui::test]
+fn a_stored_row_waits_for_its_projects_unwritten_names(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let letter = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        "Anna Petrova wrote to Boris Ivanov about the lease.",
+        &[("Anna Petrova", Person)],
+    );
+    let project = new_project(&tabs, cx, letter);
+    written(cx);
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(letter, cx).unwrap());
+    close(&tabs, letter, cx);
+    let memo = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "memo.md",
+        "Boris Ivanov signed for Anna Petrova.",
+        &[],
+    );
+    move_tab(&tabs, cx, memo, Some(&project));
+    apply_all(&tabs, cx);
+    written(cx);
+    let key = ShelfKey::Document(document);
+    let state = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            tabs.read(cx)
+                .shelf_documents(cx)
+                .into_iter()
+                .find(|row| row.key == key)
+                .unwrap()
+                .readiness
+        })
+    };
+    assert_eq!(state(cx), Readiness::Ready);
+
+    // The memo names Boris Ivanov: its mapping change waits to be folded
+    // into the Project, then the Project's write.
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("Boris Ivanov").unwrap();
+        view.pii
+            .review_mut()
+            .add_manual(&text, start..start + 12, Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(state(cx), Readiness::Checking);
+    written(cx);
+    assert_eq!(state(cx), Readiness::NamesNotReplaced(1));
+}
+
+/// Review of #1127: a save made while an edit's names were still being
+/// found recorded the review as not ready; once they are found it is
+/// written again, so the row does not stay on "Checking names".
+#[gpui::test]
+fn a_save_during_a_scan_is_written_again_once_the_scan_ends(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    written(cx);
+    assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::Ready);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, " Later.", cx);
+        });
+    });
+    // ⌘S at once: written while the edit's scan still runs.
+    view.update(cx, |view, cx| {
+        assert!(view.pii.review().awaiting_discovery());
+        view.save_now(cx);
+    });
+    cx.run_until_parked();
+    written(cx);
+    assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::Ready);
 }
 
 /// A write records the Ready text's fingerprint in the Vault document, and
@@ -239,6 +553,7 @@ fn kept_names_and_scans_in_flight_keep_an_open_tab_on_the_shelf(cx: &mut TestApp
         &[("Anna Petrova", Person)],
     );
     let view = active(&tabs, cx);
+    written(cx);
     assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::Ready);
     view.update(cx, |view, cx| {
         let text = view.editor.read(cx).text().to_owned();
@@ -314,6 +629,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         &[("Boris Ivanov", Person)],
     );
     move_tab(&tabs, cx, pending, Some(&project));
+    written(cx);
     let editor_copy = cx.update(|_, cx| {
         let view = tabs
             .read(cx)
@@ -457,6 +773,7 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
         &[("Clara Moss", Person)],
     );
     cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    written(cx);
     let shelf = open_shelf(cx);
     let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
     let focus = |cx: &mut VisualTestContext| {
@@ -534,6 +851,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         &[("Clara Moss", Person)],
     );
     cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    written(cx);
     let shelf = open_shelf(cx);
     let open = |shelf: gpui::WindowHandle<crate::shelf_ui::ShelfView>,
                 cx: &mut VisualTestContext| {
@@ -694,6 +1012,7 @@ fn the_shelf_popup_follows_its_content_height(cx: &mut TestAppContext) {
         "Clara Moss wrote to the landlord about the deposit.",
         &[("Clara Moss", Person)],
     );
+    written(cx);
     let shelf = open_shelf(cx);
     let estimate = shelf
         .update(cx, |view, _, _| {
