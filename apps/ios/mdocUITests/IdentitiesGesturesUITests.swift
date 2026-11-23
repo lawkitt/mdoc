@@ -190,7 +190,10 @@ final class IdentitiesGesturesUITests: XCTestCase {
         }
         openSidebar()
         let inner = sidebar.frame.maxX
-        drag(app, fromX: inner - 200, by: 150)
+        // Below the rows, where none takes the touch for a tap.
+        let last = sidebar.descendants(matching: .any)["sidebar-documents"].firstMatch
+        XCTAssertTrue(last.exists)
+        drag(app, fromX: inner - 200, y: last.frame.maxY + 80, by: 150)
         XCTAssertTrue(sidebar.isHittable, "a drag right over the sidebar leaves it open")
         drag(app, fromX: inner - 120, by: -200)
         XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "a drag left over the sidebar closes it")
