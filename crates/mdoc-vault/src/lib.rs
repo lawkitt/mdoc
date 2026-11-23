@@ -31,7 +31,8 @@ pub use mapping::{Binding, Identity, Mapping, NotName};
 pub use original::{OriginalReader, source_sha256};
 pub use records::{
     Colour, Document, DocumentOrigin, DocumentSummary, NewDocument, NewProject, NewReply, Original,
-    OriginalInfo, Project, ProjectSummary, Reply, ReplyOwner, ReplySummary, SourceKind, UserLists,
+    OriginalInfo, Project, ProjectSummary, Reply, ReplyOwner, ReplySummary, ReviewCounts,
+    SourceKind, UserLists,
 };
 pub use vault::{
     Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, Saved, Stage,

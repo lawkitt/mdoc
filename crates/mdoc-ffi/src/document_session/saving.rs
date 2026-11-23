@@ -47,6 +47,9 @@ impl DocumentSession {
             let mut pending = {
                 let guard = self.lock_document();
                 match guard.as_ref() {
+                    Some(document) if document.vault.is_some() => {
+                        return Err(super::vault::in_vault().into());
+                    }
                     Some(document)
                         if document.saved.is_some() && document.has_unsaved_changes() =>
                     {
@@ -139,7 +142,7 @@ struct Saved {
 }
 
 impl Document {
-    fn has_unsaved_changes(&self) -> bool {
+    pub(super) fn has_unsaved_changes(&self) -> bool {
         self.saved != Some(self.change_key())
     }
 
@@ -208,6 +211,9 @@ impl Document {
 
     /// `DocumentSession::save`.
     pub(super) fn save(&mut self, library: &Library) -> Result<super::SavedDocument, CoreError> {
+        if self.vault.is_some() {
+            return Err(super::vault::in_vault());
+        }
         loop {
             let mut pending = self.pending();
             let written = pending.write(library);

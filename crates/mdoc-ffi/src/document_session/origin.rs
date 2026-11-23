@@ -161,6 +161,9 @@ impl DocumentSession {
         if document.origin != DocumentOrigin::New || !document.review.text.trim().is_empty() {
             return Ok(false);
         }
+        if document.vault.is_some() {
+            return Err(super::vault::in_vault());
+        }
         if let Some(path) = &document.path {
             library.delete_document(path.display().to_string())?;
         }
@@ -180,6 +183,9 @@ impl Document {
         library: &Library,
         title: &str,
     ) -> Result<RenamedDocument, CoreError> {
+        if self.vault.is_some() {
+            return Err(super::vault::in_vault());
+        }
         let lock = library.lock()?;
         let renamed = match &self.path {
             Some(path) => library.rename_locked(&lock, path, title)?,

@@ -827,6 +827,7 @@ fn new_document(id: String, new: NewDocument, original: Option<Original>) -> Doc
         mapping: Mapping::default(),
         review: None,
         original,
+        counts: None,
     }
 }
 

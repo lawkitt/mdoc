@@ -139,6 +139,13 @@ impl ReviewText {
         Ok(())
     }
 
+    /// Undo and Redo start here, as in a document just opened.
+    pub(crate) fn forget_undo(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+        self.step = None;
+    }
+
     /// Every mention's range, proposed, replaced or kept, in source order.
     pub(crate) fn mention_ranges(&self) -> Vec<Range<usize>> {
         let review = &self.review;
