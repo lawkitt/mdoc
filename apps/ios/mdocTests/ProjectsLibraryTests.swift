@@ -258,7 +258,7 @@ final class ProjectsLibraryTests: XCTestCase {
             NSString(string: "Reply to maya.ellison@example.com").draw(at: CGPoint(x: 20, y: 20), withAttributes: nil)
         }
         let session = try core.library.importDocument(.file(pdf, .pdf), title: "Statement", into: nil)
-        XCTAssertEqual(session.snapshot().original, .pdf(folder.appendingPathComponent("Statement.pdf")), "shown while it is read")
+        XCTAssertEqual(session.snapshot().original, .pdf(.file(folder.appendingPathComponent("Statement.pdf"))), "shown while it is read")
         _ = try session.recognize(observer: TestObserver())
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path), "the intake files went at its first save")
         return (session.id, folder)

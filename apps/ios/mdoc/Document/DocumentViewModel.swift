@@ -254,8 +254,8 @@ final class DocumentViewModel {
     /// False when `password` doesn't open it.
     @discardableResult
     func unlockOriginal(password: String) -> Bool {
-        guard case .pdf(let url) = snapshot.original,
-              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+        guard case .pdf(let bytes) = snapshot.original,
+              let data = try? bytes.data(),
               let document = PDFDocument(data: data),
               document.isLocked, document.unlock(withPassword: password)
         else { return false }
@@ -265,9 +265,12 @@ final class DocumentViewModel {
 
     /// The Original asks again on reopening, even if this model stayed for
     /// a job's notice. Work started by the closed screen cannot restore it.
+    /// A Vault original's decrypted bytes and viewing copy go too
+    /// (#1091 Decision 24).
     func closeOriginal() {
         originalUnlock = nil
         originalUnlockGeneration += 1
+        session.closeOriginal()
     }
 
     var importUnlockAction: @MainActor (String) async -> Void {

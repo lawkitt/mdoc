@@ -300,7 +300,7 @@ final class DocumentViewModelTests: XCTestCase {
         let missing = try XCTUnwrap(storage).root.appendingPathComponent("missing.docx")
         let own = try XCTUnwrap(storage).root
         let before = Self.temporaryFiles(keeping: own)
-        let result = await RenderedDocx.render(missing, unlocked: unlocked)
+        let result = await RenderedDocx.render(.file(missing), unlocked: unlocked)
         XCTAssertEqual(Self.temporaryFiles(keeping: own), before)
         XCTAssertNil(result.unlocked)
         guard case .ready(let original) = result.rendering else {
@@ -425,8 +425,8 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(ownerOnly.passwordPrompt)
         XCTAssertNil(ownerOnly.errorMessage)
         XCTAssertEqual(ownerOnly.snapshot.phase, .unscanned)
-        guard case .pdf(let url) = ownerOnly.snapshot.original else { return XCTFail("a PDF's Original") }
-        XCTAssertEqual(PDFDocument(url: url)?.isLocked, false)
+        guard case .pdf(let bytes) = ownerOnly.snapshot.original else { return XCTFail("a PDF's Original") }
+        XCTAssertEqual(PDFDocument(data: try bytes.data())?.isLocked, false)
         let unknown = try imported(
             {
                 // The AES-256 twin with a security handler no reader knows,

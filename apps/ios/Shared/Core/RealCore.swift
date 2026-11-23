@@ -238,6 +238,8 @@ final class RealLibrary: Library, @unchecked Sendable {
         self.setup = setup
         pending = PendingImports(storage: storage)
         vault = try core { try MdocFFI.Vault.open(root: storage.vault.path, key: try keys.key()) }
+        // Viewing copies a stop left behind go at launch (#1091 Decision 24).
+        storage.clearViewing()
         // Imports not yet read when mdoc last stopped come back, ready to
         // recognize again.
         for entry in pending.all() {
@@ -1377,11 +1379,11 @@ enum IntakeFiles {
             let named = try rename(url, to: title)
             let folders = owned(named, storage: storage)
             if kind == .image {
-                return PreparedSource(input: .images([named]), kind: kind, original: .images([named]), owned: folders)
+                return PreparedSource(input: .images([named]), kind: kind, original: .images([.file(named)]), owned: folders)
             }
             let original: OriginalSource = switch kind {
-            case .pdf: .pdf(named)
-            case .docx: .docx(named)
+            case .pdf: .pdf(.file(named))
+            case .docx: .docx(.file(named))
             default: .none
             }
             return PreparedSource(input: .file(named, needsOcr: false), kind: kind, original: original, owned: folders)
@@ -1390,7 +1392,8 @@ enum IntakeFiles {
             guard let first = pages.first else { throw CoreError.emptySelection }
             let named = pages.count == 1 ? [try rename(first, to: title)] : pages
             return PreparedSource(
-                input: .images(named), kind: kind, original: .images(named), owned: owned(named[0], storage: storage))
+                input: .images(named), kind: kind, original: .images(named.map(OriginalBytes.file)),
+                owned: owned(named[0], storage: storage))
         }
     }
 
@@ -1470,13 +1473,13 @@ final class PendingImports: @unchecked Sendable {
         case .none: break
         case .pdf(let file):
             stored.originalKind = "pdf"
-            stored.originalFiles = [relative(file)]
+            stored.originalFiles = file.fileURL.map { [relative($0)] } ?? []
         case .docx(let file):
             stored.originalKind = "docx"
-            stored.originalFiles = [relative(file)]
+            stored.originalFiles = file.fileURL.map { [relative($0)] } ?? []
         case .images(let files):
             stored.originalKind = "images"
-            stored.originalFiles = files.map { relative($0) }
+            stored.originalFiles = files.compactMap(\.fileURL).map { relative($0) }
         }
         lock.withLock {
             var entries = load()
@@ -1509,9 +1512,9 @@ final class PendingImports: @unchecked Sendable {
             }
             let files = stored.originalFiles.map { absolute($0) }
             let original: OriginalSource = switch stored.originalKind {
-            case "pdf": files.first.map(OriginalSource.pdf) ?? .none
-            case "docx": files.first.map(OriginalSource.docx) ?? .none
-            case "images": .images(files)
+            case "pdf": files.first.map { .pdf(.file($0)) } ?? .none
+            case "docx": files.first.map { .docx(.file($0)) } ?? .none
+            case "images": .images(files.map(OriginalBytes.file))
             default: .none
             }
             let source = PreparedSource(

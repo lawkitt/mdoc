@@ -90,21 +90,21 @@ struct OriginalView: View {
                 "No original page",
                 systemImage: "doc.plaintext",
                 description: Text("Pasted text shows its text only."))
-        case .pdf(let url):
-            PDFOriginal(url: url, unlocked: unlockedPDF, unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
-        case .docx(let url):
+        case .pdf(let bytes):
+            PDFOriginal(bytes: bytes, unlocked: unlockedPDF, unlock: onUnlockPDF, viewport: viewport, darkPage: dark.isOn)
+        case .docx(let bytes):
             DocxOriginalView(
-                source: url, unlocked: $unlockedDocx, importPending: importPending, waits: jobRuns,
+                source: bytes, unlocked: $unlockedDocx, importPending: importPending, waits: jobRuns,
                 darkPage: dark.isOn, onComments: onComments, activeComment: activeComment,
                 onOpenComment: onOpenComment)
-        case .images(let urls):
+        case .images(let pages):
             TabView {
-                ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
-                    ZoomablePage(url: url, darkPage: dark.isOn)
-                        .accessibilityLabel(Text("Original page \(index + 1) of \(urls.count)"))
+                ForEach(Array(pages.enumerated()), id: \.offset) { index, bytes in
+                    ZoomablePage(bytes: bytes, darkPage: dark.isOn)
+                        .accessibilityLabel(Text("Original page \(index + 1) of \(pages.count)"))
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: urls.count > 1 ? .always : .never))
+            .tabViewStyle(.page(indexDisplayMode: pages.count > 1 ? .always : .never))
             .indexViewStyle(.page(backgroundDisplayMode: .always))
             .background(Color(uiColor: .secondarySystemBackground))
         }
@@ -115,17 +115,17 @@ struct OriginalView: View {
 /// PDFKit unlocks it in memory: no unlocked copy is written. A PDF locked
 /// only against editing opens as it is.
 private struct PDFOriginal: View {
-    let url: URL
+    let bytes: OriginalBytes
     let unlocked: PDFDocument?
     let unlock: @MainActor (String) -> Bool
     let viewport: PageViewport
     let darkPage: Bool
-    /// The file as read, once per URL.
-    @State private var read: (url: URL, document: PDFDocument?)?
+    /// The file as read, once per original.
+    @State private var read: (bytes: OriginalBytes, document: PDFDocument?)?
     @State private var prompt = DocumentViewModel.PasswordPrompt.needed
 
     private var document: PDFDocument? {
-        unlocked ?? read.flatMap { $0.url == url ? $0.document : nil }
+        unlocked ?? read.flatMap { $0.bytes == bytes ? $0.document : nil }
     }
 
     var body: some View {
@@ -142,9 +142,16 @@ private struct PDFOriginal: View {
                     .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
             }
         }
-        .task(id: url) {
-            if read?.url != url {
-                read = (url, PDFDocument(url: url))
+        .task(id: bytes) {
+            if read?.bytes != bytes {
+                // A stored original decrypts off the main thread.
+                let resolved = try? await Task.detached(priority: .userInitiated) { [bytes] in try bytes.resolved() }.value
+                let document: PDFDocument? = switch resolved {
+                case .file(let url): PDFDocument(url: url)
+                case .memory(let data): PDFDocument(data: data.bytes)
+                case .stored, nil: nil
+                }
+                read = (bytes, document)
             }
         }
     }
@@ -175,12 +182,12 @@ struct PDFKitView: UIViewRepresentable {
 /// A scan page and its ⤡ control, shown while zoomed past fit; a page
 /// turned sideways has no "top" to go back to.
 private struct ZoomablePage: View {
-    let url: URL
+    let bytes: OriginalBytes
     let darkPage: Bool
     @State private var viewport = PageViewport()
 
     var body: some View {
-        ZoomableImageView(url: url, viewport: viewport)
+        ZoomableImageView(bytes: bytes, viewport: viewport)
             .darkPage(darkPage)
             .originalPage()
             .overlay(alignment: .bottomTrailing) { PageControlButton(viewport: viewport) }
@@ -189,8 +196,17 @@ private struct ZoomablePage: View {
 
 /// One page image that pinches to zoom and double-taps between fit and 2×.
 struct ZoomableImageView: UIViewRepresentable {
-    let url: URL
+    let bytes: OriginalBytes
     let viewport: PageViewport
+
+    init(bytes: OriginalBytes, viewport: PageViewport) {
+        self.bytes = bytes
+        self.viewport = viewport
+    }
+
+    init(url: URL, viewport: PageViewport) {
+        self.init(bytes: .file(url), viewport: viewport)
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -233,9 +249,13 @@ struct ZoomableImageView: UIViewRepresentable {
     }
 
     func updateUIView(_ scroll: UIScrollView, context: Context) {
-        guard context.coordinator.url != url else { return }
-        context.coordinator.url = url
-        let image = UIImage(contentsOfFile: url.path)
+        guard context.coordinator.bytes != bytes else { return }
+        context.coordinator.bytes = bytes
+        let image = switch try? bytes.resolved() {
+        case .file(let url): UIImage(contentsOfFile: url.path)
+        case .memory(let data): UIImage(data: data.bytes)
+        case .stored, nil: nil as UIImage?
+        }
         context.coordinator.imageView?.image = image
         context.coordinator.fitWidth(image)
         scroll.zoomScale = 1
@@ -243,7 +263,7 @@ struct ZoomableImageView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
         var imageView: UIImageView?
-        var url: URL?
+        var bytes: OriginalBytes?
         weak var viewport: PageViewport?
         private var ratio: NSLayoutConstraint?
 

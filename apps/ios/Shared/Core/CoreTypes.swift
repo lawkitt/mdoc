@@ -156,10 +156,95 @@ struct ProjectMove: Hashable, Sendable {
 /// The page the text came from.
 enum OriginalSource: Equatable, Sendable {
     case none
-    case pdf(URL)
+    case pdf(OriginalBytes)
     /// Rendered in process while the Original pane shows it.
-    case docx(URL)
-    case images([URL])
+    case docx(OriginalBytes)
+    case images([OriginalBytes])
+}
+
+/// An original's bytes as the Original pane reads them (#1091 Decision 24):
+/// a file (an import's received file, or a viewing copy in the app's
+/// private cache) or, under about 16 MiB, in memory.
+enum OriginalBytes: Hashable, Sendable {
+    case file(URL)
+    case memory(OriginalData)
+    /// A Vault document's original, decrypted when the pane first reads it.
+    case stored(StoredOriginal)
+
+    /// The file, when there is one.
+    var fileURL: URL? {
+        if case .file(let url) = self { url } else { nil }
+    }
+
+    /// A file or bytes in memory: a stored original decrypted now. Off the
+    /// main thread for a large one.
+    func resolved() throws -> OriginalBytes {
+        if case .stored(let original) = self { try original.load() } else { self }
+    }
+
+    func data() throws -> Data {
+        switch try resolved() {
+        case .file(let url): try Data(contentsOf: url, options: .mappedIfSafe)
+        case .memory(let data): data.bytes
+        case .stored: throw CoreError.notFound
+        }
+    }
+}
+
+/// A Vault document's original for the Original pane (#1091 Decision 24):
+/// decrypted once, on first use, into memory when small or into the app's
+/// private viewing cache, and let go when the document closes.
+final class StoredOriginal: Hashable, @unchecked Sendable {
+    private let lock = NSLock()
+    private let decrypt: @Sendable () throws -> OriginalBytes
+    private let remove: @Sendable () -> Void
+    private var loaded: OriginalBytes?
+
+    init(decrypt: @escaping @Sendable () throws -> OriginalBytes, remove: @escaping @Sendable () -> Void) {
+        self.decrypt = decrypt
+        self.remove = remove
+    }
+
+    /// The bytes, decrypted the first time; never `.stored`.
+    func load() throws -> OriginalBytes {
+        try lock.withLock {
+            if let loaded { return loaded }
+            let bytes = try decrypt()
+            loaded = bytes
+            return bytes
+        }
+    }
+
+    /// The document closed: the decrypted bytes go, and the viewing copy
+    /// with them. The next view decrypts again.
+    func close() {
+        lock.withLock {
+            loaded = nil
+            remove()
+        }
+    }
+
+    static func == (lhs: StoredOriginal, rhs: StoredOriginal) -> Bool { lhs === rhs }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(self))
+    }
+}
+
+/// Bytes held in memory, compared by identity: snapshots compare their
+/// originals often, and never need to compare the bytes.
+final class OriginalData: Hashable, @unchecked Sendable {
+    let bytes: Data
+
+    init(_ bytes: Data) {
+        self.bytes = bytes
+    }
+
+    static func == (lhs: OriginalData, rhs: OriginalData) -> Bool { lhs === rhs }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(self))
+    }
 }
 
 /// One underlined mention in the text.

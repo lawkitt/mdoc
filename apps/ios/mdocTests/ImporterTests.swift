@@ -101,7 +101,7 @@ final class ImporterTests: XCTestCase {
         let pending = try XCTUnwrap(try Importer(storage: storage).images([try cameraJPEG(), png], scanned: false))
         guard case .photos(let pages) = pending.source else { return XCTFail("\(pending.source)") }
         let session = try core.library.importDocument(pending.source, title: "Receipts", into: nil)
-        XCTAssertEqual(session.snapshot().original, .images(pages))
+        XCTAssertEqual(session.snapshot().original, .images(pages.map(OriginalBytes.file)))
         XCTAssertThrowsError(try session.recognize(observer: TestObserver())) { error in
             XCTAssertEqual(error as? CoreError, .modelMissing)
         }

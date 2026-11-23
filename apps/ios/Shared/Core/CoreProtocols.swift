@@ -89,6 +89,8 @@ extension Library {
 protocol DocumentSession: AnyObject, Sendable {
     /// Moves the import's in-memory unlock to the open document.
     func takeUnlockedDocx() -> UnlockedDocx?
+    /// The document closed: its decrypted original goes (#1091 Decision 24).
+    func closeOriginal()
     var id: DocumentID { get }
     func snapshot() -> DocumentSnapshot
     /// Import and OCR. Resumes after the pages already finished. A locked
@@ -233,6 +235,8 @@ struct Core: Sendable {
 
 extension DocumentSession {
     func takeUnlockedDocx() -> UnlockedDocx? { nil }
+
+    func closeOriginal() {}
 
     func scanEstimate() -> Int? { nil }
 

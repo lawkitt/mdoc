@@ -569,7 +569,7 @@ extension RealCoreTests {
             NSString(string: "Reply to maya.ellison@example.com").draw(at: CGPoint(x: 20, y: 20), withAttributes: nil)
         }
         let session = try core.library.importDocument(.file(pdf, .pdf), title: "Statement", into: nil)
-        XCTAssertEqual(session.snapshot().original, .pdf(folder.appendingPathComponent("Statement.pdf")))
+        XCTAssertEqual(session.snapshot().original, .pdf(.file(folder.appendingPathComponent("Statement.pdf"))))
         _ = try session.recognize(observer: TestObserver())
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path), "gone at its first save")
         try core.library.deleteDocument(session.id)

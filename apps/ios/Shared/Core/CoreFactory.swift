@@ -41,8 +41,9 @@ enum CoreFactory {
             let storage = try uiTestingStorage()
             if !launch.keepsLibrary {
                 clearKeepingDetector(storage)
-                try? FileManager.default.removeItem(at: storage.vault)
-                try? FileManager.default.removeItem(at: storage.intake)
+                for folder in [storage.vault, storage.intake, storage.viewing] {
+                    try? FileManager.default.removeItem(at: folder)
+                }
             }
             if launch.detectorTier && launch.realDownloads, let library = try? MdocStorage.shared() {
                 reuseDetector(from: library, into: storage)

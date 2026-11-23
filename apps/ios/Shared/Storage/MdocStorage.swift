@@ -14,6 +14,9 @@ import MdocFFI
 /// - `intake` (`vault-intake/`, `vault-dev-intake/`) holds what an import
 ///   reads until its first save keeps it in the Vault: the received files,
 ///   the record of imports not yet read, and OCR's finished pages.
+/// - `viewing` is the app's own cache (not the App Group's) for viewing a
+///   Vault document's original: a decrypted copy, wiped when the document
+///   closes and at launch (#1091 Decision 24).
 ///
 /// All of it is excluded from iCloud and device backups, and everything but
 /// models and their downloads uses Data Protection Complete. Models keep the
@@ -48,19 +51,23 @@ struct MdocStorage: Sendable {
     let vault: URL
     /// What imports read before their first save.
     let intake: URL
+    /// Decrypted viewing copies of originals.
+    let viewing: URL
 
     /// Everything under `root`: tests and previews, where no old library
     /// lives.
     init(root: URL) {
         self.init(
             root: root, vault: root.appendingPathComponent("vault", isDirectory: true),
-            intake: root.appendingPathComponent("intake", isDirectory: true))
+            intake: root.appendingPathComponent("intake", isDirectory: true),
+            viewing: root.appendingPathComponent("original-view", isDirectory: true))
     }
 
-    init(root: URL, vault: URL, intake: URL) {
+    init(root: URL, vault: URL, intake: URL, viewing: URL) {
         self.root = root
         self.vault = vault
         self.intake = intake
+        self.viewing = viewing
     }
 
     /// `folder` in the App Group container, or in Application Support when
@@ -75,10 +82,12 @@ struct MdocStorage: Sendable {
             base = try fileManager.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         }
+        let caches = try fileManager.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         return MdocStorage(
             root: base.appendingPathComponent(folder, isDirectory: true),
             vault: base.appendingPathComponent(vaultFolder, isDirectory: true),
-            intake: base.appendingPathComponent("\(vaultFolder)-intake", isDirectory: true))
+            intake: base.appendingPathComponent("\(vaultFolder)-intake", isDirectory: true),
+            viewing: caches.appendingPathComponent("\(vaultFolder)-original-view", isDirectory: true))
     }
 
     func url(_ area: Area) -> URL {
@@ -90,8 +99,9 @@ struct MdocStorage: Sendable {
     func prepare(fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         try excludeFromBackup(root)
-        // The Vault's folder the core fills; the intake folder the app does.
-        for folder in [vault, intake] {
+        // The Vault's folder the core fills; the intake and viewing folders
+        // the app does.
+        for folder in [vault, intake, viewing] {
             try fileManager.createDirectory(
                 at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
             try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: folder.path)
@@ -150,6 +160,14 @@ struct MdocStorage: Sendable {
     static func fileName(_ title: String, extension ext: String) -> String {
         let base = MdocFFI.fileNameStem(title: title)
         return ext.isEmpty ? base : "\(base).\(ext)"
+    }
+
+    /// Every viewing copy goes: at launch, after a stop that left one.
+    func clearViewing(fileManager: FileManager = .default) {
+        let items = (try? fileManager.contentsOfDirectory(at: viewing, includingPropertiesForKeys: nil)) ?? []
+        for item in items {
+            try? fileManager.removeItem(at: item)
+        }
     }
 
     func clear(_ area: Area, fileManager: FileManager = .default) {
