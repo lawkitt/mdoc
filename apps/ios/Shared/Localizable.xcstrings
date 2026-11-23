@@ -246,7 +246,7 @@
     "1 name" : {
 
     },
-    "A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored." : {
+    "A Project keeps the names and their aliases together, so an AI reply about any of its documents can be restored. An Unfiled document keeps its own." : {
 
     },
     "A letter, contract or note. mdoc finds the names in it so you can share it with an AI without them." : {
@@ -321,10 +321,10 @@
     "All %lld reviewed" : {
 
     },
-    "All cases" : {
+    "All Projects" : {
 
     },
-    "All cases…" : {
+    "All Projects…" : {
 
     },
     "all decided" : {
@@ -384,22 +384,28 @@
     "Candidates" : {
 
     },
-    "Case" : {
+    "Open mdoc to add documents." : {
 
     },
-    "case %@" : {
+    "Project" : {
 
     },
-    "Case keys stay in this device's Keychain." : {
+    "Project %@" : {
+
+    },
+    "Reply to %@" : {
+
+    },
+    "The Vault key stays in this device's Keychain." : {
 
     },
     "Case number" : {
 
     },
-    "Case: %@" : {
+    "Project: %@" : {
 
     },
-    "Cases" : {
+    "Projects" : {
 
     },
     "Category, %@" : {
@@ -529,7 +535,7 @@
     "Documents" : {
 
     },
-    "Documents and cases" : {
+    "Documents and Projects" : {
 
     },
     "Documents stay on this iPad" : {
@@ -586,7 +592,7 @@
     "Drag to make one with another name" : {
 
     },
-    "Each document you add starts a case, or joins one you choose." : {
+    "Each document you add lands in Unfiled, or in the Project you choose." : {
 
     },
     "Each gets its alias. You can still keep any of them." : {
@@ -757,7 +763,7 @@
     "Italic" : {
 
     },
-    "Its case keeps its names." : {
+    "Its names stay with it." : {
 
     },
     "Just this one" : {
@@ -848,7 +854,7 @@
     "mdoc" : {
       "shouldTranslate" : false
     },
-    "mdoc could not make a case key (%lld)." : {
+    "mdoc could not make its key (%lld)." : {
 
     },
     "mdoc could not open its documents" : {
@@ -857,7 +863,7 @@
     "mdoc could not open this file: %@" : {
 
     },
-    "mdoc could not read its case key from the Keychain (%lld)." : {
+    "mdoc could not read its key from the Keychain (%lld)." : {
 
     },
     "mdoc could not read or write a file: %@" : {
@@ -893,10 +899,10 @@
     "mdoc opens PDF, DOCX and image files." : {
 
     },
-    "mdoc puts back the names from the case “%@”." : {
+    "mdoc puts back the names from the Project “%@”." : {
 
     },
-    "mdoc puts back the names from this document's case." : {
+    "mdoc puts back the names from this document." : {
 
     },
     "mdoc reads the text when recognition runs." : {
@@ -933,7 +939,7 @@
     "Move the document once it is read." : {
 
     },
-    "Move to case" : {
+    "Move to Project" : {
 
     },
     "Moved back to %@" : {
@@ -960,10 +966,10 @@
     "New alias" : {
 
     },
-    "New case" : {
+    "New Project" : {
 
     },
-    "New case…" : {
+    "New Project…" : {
 
     },
     "New document" : {
@@ -978,10 +984,10 @@
     "Next comment" : {
       "comment" : "VoiceOver label of the comment sheet's ›."
     },
-    "No cases yet" : {
+    "No Projects yet" : {
 
     },
-    "No documents or cases match “%@”." : {
+    "No documents or Projects match “%@”." : {
 
     },
     "No names found. Select text to mark one." : {
@@ -1200,7 +1206,7 @@
     "Rename" : {
 
     },
-    "Rename case" : {
+    "Rename Project" : {
 
     },
     "Rename document" : {
@@ -1285,7 +1291,7 @@
     "Restore with mdoc" : {
 
     },
-    "Restores the reply with another case's names." : {
+    "Restores the reply with another Project's names." : {
 
     },
     "Resume" : {
@@ -1379,7 +1385,7 @@
     "Scrolls to this name's next mention." : {
 
     },
-    "Search documents and cases" : {
+    "Search documents and Projects" : {
 
     },
     "Search names" : {
@@ -1409,7 +1415,7 @@
     "Share" : {
 
     },
-    "Share a document from mdoc first; replies restore with its case." : {
+    "Share a document from mdoc first; replies restore with its Project." : {
 
     },
     "Share as Markdown file" : {
@@ -1499,7 +1505,7 @@
     "The document and its names stay as they are." : {
 
     },
-    "The document leaves its case. Replies already sent still restore with the old case." : {
+    "The document leaves where it is for a new Project. Replies already sent still restore with the names they were sent with." : {
 
     },
     "The download failed (HTTP %lld)." : {
@@ -1590,6 +1596,9 @@
 
     },
     "Undone" : {
+
+    },
+    "Unfiled" : {
 
     },
     "Unlock" : {

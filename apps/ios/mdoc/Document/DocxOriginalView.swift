@@ -9,7 +9,7 @@ import SwiftUI
 /// title menu's Show comments shows or hides them, an app-wide setting,
 /// and opens those not on the page (`onComments` tells it what there is).
 struct DocxOriginalView: View {
-    let source: URL
+    let source: OriginalBytes
     @Binding var unlocked: UnlockedDocx?
     var importPending = false
     /// A long job runs on the document: the render waits for it, because
@@ -42,7 +42,7 @@ struct DocxOriginalView: View {
     }
 
     private struct TaskKey: Equatable {
-        let source: URL
+        let source: OriginalBytes
         let waits: Bool
         let unlocked: Bool
     }
@@ -72,7 +72,11 @@ struct DocxOriginalView: View {
         request = current
         rendering = .working
         let (result, newUnlock) = await RenderedDocx.render(source, unlocked: unlocked, password: password)
-        guard !Task.isCancelled, request == current else { return }
+        guard !Task.isCancelled, request == current else {
+            // Gone before it came: nothing decrypted stays behind.
+            if Task.isCancelled { source.closeIfStored() }
+            return
+        }
         rendering = result
         if case .ready(let rendered) = result {
             if let newUnlock { unlocked = newUnlock }
@@ -127,18 +131,18 @@ struct DocxOriginalView: View {
 /// The PDF bytes and the comments shown by the pane.
 final class RenderedDocx: Sendable {
     let id = UUID()
-    let source: URL
+    let source: OriginalBytes
     let pdf: Data
     let comments: DocxComments
 
-    private init(original: DocxOriginal, source: URL, pdf: Data) {
+    private init(original: DocxOriginal, source: OriginalBytes, pdf: Data) {
         self.source = source
         self.pdf = pdf
         comments = DocxComments(comments: original.comments(), anchors: original.anchors())
     }
 
     static func render(
-        _ source: URL, unlocked: UnlockedDocx? = nil, password: String? = nil
+        _ source: OriginalBytes, unlocked: UnlockedDocx? = nil, password: String? = nil
     ) async -> (rendering: DocxOriginalView.Rendering, unlocked: UnlockedDocx?) {
         await Task.detached(priority: .userInitiated) {
             do {
@@ -159,11 +163,19 @@ final class RenderedDocx: Sendable {
         }.value
     }
 
-    static func readSource(_ source: URL) throws -> Data {
-        let file = try FileHandle(forReadingFrom: source)
-        defer { try? file.close() }
-        // Read one byte past the core's limit so an oversized source fails
-        // there without sending the entire file across the bridge.
-        return try file.read(upToCount: Int(docxPreviewMaxInputBytes()) + 1) ?? Data()
+    static func readSource(_ source: OriginalBytes) throws -> Data {
+        // One byte past the core's limit so an oversized source fails there
+        // without sending the entire file across the bridge.
+        let limit = Int(docxPreviewMaxInputBytes()) + 1
+        switch try source.resolved() {
+        case .memory(let data):
+            return data.bytes.prefix(limit)
+        case .file(let url):
+            let file = try FileHandle(forReadingFrom: url)
+            defer { try? file.close() }
+            return try file.read(upToCount: limit) ?? Data()
+        case .stored:
+            throw CoreError.notFound
+        }
     }
 }

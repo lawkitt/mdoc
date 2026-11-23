@@ -8,6 +8,14 @@ enum CoreFactory {
     /// the Restore extension opens the same test library.
     private static let uiTestingKey = "uiTestingLibrary"
     private static let uiTestingFolder = "mdoc-ui-testing"
+    /// The UI tests' Vault, beside their folder: the dev Vault, chosen by
+    /// the same check that picks their folder and key (#1091).
+    private static let uiTestingVault = "vault-dev"
+
+    /// The UI tests' storage: their folder and their Vault.
+    private static func uiTestingStorage() throws -> MdocStorage {
+        try MdocStorage.shared(folder: uiTestingFolder, vaultFolder: uiTestingVault)
+    }
 
     /// The process opens the UI tests' library and preferences: the app
     /// launched for UI tests, or the Restore extension while the app runs
@@ -30,8 +38,13 @@ enum CoreFactory {
         let defaults = UserDefaults(suiteName: MdocStorage.appGroup)
         #if DEBUG
         if launch.isUITesting {
-            let storage = try MdocStorage.shared(folder: uiTestingFolder)
-            if !launch.keepsLibrary { clearKeepingDetector(storage) }
+            let storage = try uiTestingStorage()
+            if !launch.keepsLibrary {
+                clearKeepingDetector(storage)
+                for folder in [storage.vault, storage.intake, storage.viewing] {
+                    try? FileManager.default.removeItem(at: folder)
+                }
+            }
             if launch.detectorTier && launch.realDownloads, let library = try? MdocStorage.shared() {
                 reuseDetector(from: library, into: storage)
             }
@@ -106,12 +119,12 @@ enum CoreFactory {
     /// The extension gets the library only: restoring needs no model.
     static func restoreExtension() throws -> any Library {
         let testing = opensUITestLibrary
-        let storage = try testing ? MdocStorage.shared(folder: uiTestingFolder) : MdocStorage.shared()
+        let storage = try testing ? uiTestingStorage() : MdocStorage.shared()
         try storage.prepare()
         return try RealCore.library(storage: storage, keys: keyStore(testing: testing))
     }
 
-    private static func keyStore(testing: Bool) -> any CaseKeyStore {
-        testing ? KeychainCaseKeyStore(account: "case-key-ui-testing") : KeychainCaseKeyStore()
+    private static func keyStore(testing: Bool) -> any VaultKeyStore {
+        testing ? KeychainVaultKeyStore(account: "case-key-ui-testing") : KeychainVaultKeyStore()
     }
 }

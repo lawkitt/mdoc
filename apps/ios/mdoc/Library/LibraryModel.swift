@@ -38,12 +38,12 @@ final class LibraryModel {
         snapshot.documents.filter { !hidden.contains($0.id) }.sorted { $0.updated > $1.updated }
     }
 
-    var cases: [CaseSummary] { snapshot.cases }
+    var projects: [ProjectSummary] { snapshot.projects }
 
     var isEmpty: Bool { documents.isEmpty }
 
-    func caseSummary(of document: LibraryDocument) -> CaseSummary? {
-        snapshot.cases.first { $0.id == document.caseID }
+    func projectSummary(of document: LibraryDocument) -> ProjectSummary? {
+        snapshot.projects.first { $0.id == document.projectID }
     }
 
     func document(_ id: DocumentID) -> LibraryDocument? {
@@ -63,23 +63,23 @@ final class LibraryModel {
         toReview.max { $0.updated < $1.updated }
     }
 
-    /// The five cases most recently created, without the one the document is
+    /// The five projects most recently created, without the one the document is
     /// in: Move to case's quick list.
-    func recentCases(excluding current: CaseID?) -> [CaseSummary] {
-        Array(cases.filter { $0.id != current }.prefix(5))
+    func recentProjects(excluding current: ProjectID?) -> [ProjectSummary] {
+        Array(projects.filter { $0.id != current }.prefix(5))
     }
 
     /// The one search over titles and case names, for the sidebar and the
     /// Documents page: the documents whose title or case matches, and the
-    /// cases whose name does. An empty query matches nothing.
-    func search(_ query: String) -> (documents: [LibraryDocument], cases: [CaseSummary]) {
+    /// projects whose name does. An empty query matches nothing.
+    func search(_ query: String) -> (documents: [LibraryDocument], projects: [ProjectSummary]) {
         let needle = query.trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return ([], []) }
         let documents = documents.filter { document in
             document.title.localizedStandardContains(needle)
-                || (caseSummary(of: document)?.name.localizedStandardContains(needle) ?? false)
+                || (projectSummary(of: document)?.name.localizedStandardContains(needle) ?? false)
         }
-        return (documents, cases.filter { $0.name.localizedStandardContains(needle) })
+        return (documents, projects.filter { $0.name.localizedStandardContains(needle) })
     }
 
     // MARK: The Documents page
@@ -87,19 +87,19 @@ final class LibraryModel {
     /// The Documents page's search, shown from `searchThreshold` documents
     /// (ADR 0099).
     var query = ""
-    /// The Documents page's case filter, offered from two cases.
-    var caseFilter: CaseID?
+    /// The Documents page's case filter, offered from two projects.
+    var projectFilter: ProjectID?
     static let searchThreshold = 8
 
     /// Search shows from the threshold, and stays while a query is typed,
     /// so a query can always be cleared.
     var offersSearch: Bool { documents.count >= Self.searchThreshold || !query.isEmpty }
-    /// The filter shows from two cases, and stays while one is chosen.
-    var offersCaseFilter: Bool { cases.count >= 2 || caseFilter != nil }
+    /// The filter shows from two projects, and stays while one is chosen.
+    var offersProjectFilter: Bool { projects.count >= 2 || projectFilter != nil }
 
     /// The documents the page lists: the case filter, then the search.
     var shownDocuments: [LibraryDocument] {
-        let filtered = documents.filter { caseFilter == nil || $0.caseID == caseFilter }
+        let filtered = documents.filter { projectFilter == nil || $0.projectID == projectFilter }
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return filtered }
         let found = Set(search(query).documents.map(\.id))
         return filtered.filter { found.contains($0.id) }
@@ -110,30 +110,23 @@ final class LibraryModel {
     func refresh() {
         snapshot = library.snapshot()
         // A filtered case that is gone filters nothing.
-        if let caseFilter, !snapshot.cases.contains(where: { $0.id == caseFilter }) {
-            self.caseFilter = nil
+        if let projectFilter, !snapshot.projects.contains(where: { $0.id == projectFilter }) {
+            self.projectFilter = nil
         }
     }
 
-    /// Imports into the chosen case and returns the new document's session.
-    func importDocument(_ pending: PendingImport, title: String, into caseChoice: CaseChoice) throws -> any DocumentSession {
+    /// Imports into Unfiled or the chosen Project and returns the new
+    /// document's session.
+    func importDocument(_ pending: PendingImport, title: String, into project: ProjectID?) throws -> any DocumentSession {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        var caseChoice = caseChoice
-        if case .newCase(let caseName) = caseChoice {
-            // Trimmed first, as the core trims it: " Lease" is "Lease".
-            let caseName = caseName.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Documents' titles count too, so a case named after its
-            // document takes the number the core gives that title.
-            caseChoice = .newCase(name: Self.unusedName(caseName, among: cases.map(\.name) + documents.map(\.title)))
-        }
         let session = try library.importDocument(
-            pending.source, title: name.isEmpty ? pending.suggestedTitle : name, into: caseChoice)
+            pending.source, title: name.isEmpty ? pending.suggestedTitle : name, into: project)
         refresh()
         return session
     }
 
     /// `name`, or "name 2", "name 3"… when a case has it already, as the
-    /// core numbers a document's title: two cases of one name could not be
+    /// core numbers a document's title: two projects of one name could not be
     /// told apart in the case pickers.
     static func unusedName(_ name: String, among names: [String]) -> String {
         let taken = Set(names)
@@ -150,28 +143,28 @@ final class LibraryModel {
     }
 
     /// Renames a case; a blank name changes nothing.
-    func renameCase(_ id: CaseID, to name: String) throws {
+    func renameProject(_ id: ProjectID, to name: String) throws {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        try library.renameCase(id, to: name)
+        try library.renameProject(id, to: name)
         refresh()
     }
 
     /// Move to case. A new case is named as every new case is (#677):
     /// trimmed, never blank (nil, nothing moves), and numbered when a case
     /// has the name already.
-    func move(_ id: DocumentID, to target: CaseChoice) throws -> CaseMove? {
+    func move(_ id: DocumentID, to target: ProjectChoice) throws -> ProjectMove? {
         var target = target
-        if case .newCase(let name) = target {
+        if case .newProject(let name) = target {
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return nil }
-            target = .newCase(name: Self.unusedName(name, among: cases.map(\.name)))
+            target = .newProject(name: Self.unusedName(name, among: projects.map(\.name)))
         }
         defer { refresh() }
         return try library.moveDocument(id, to: target)
     }
 
-    func undoMove(_ move: CaseMove) throws -> CaseMove {
+    func undoMove(_ move: ProjectMove) throws -> ProjectMove {
         defer { refresh() }
         return try library.undoMove(move)
     }

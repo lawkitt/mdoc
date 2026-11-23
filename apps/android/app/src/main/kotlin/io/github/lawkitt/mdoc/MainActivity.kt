@@ -17,6 +17,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -176,9 +177,12 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             },
         )
     } else {
-        BackHandler { open = null }
         val documents = app.core.documents
         val session = remember(current) { runCatching { documents.session(DocumentId(current)) }.getOrNull() }
+        // Leaving the document, however it goes (Back, or another document
+        // opened in its place), wipes its decrypted original (#1091 Decision 24).
+        DisposableEffect(session) { onDispose { session?.closeOriginal() } }
+        BackHandler { open = null }
         if (session == null) {
             LaunchedEffect(current) { open = null }
         } else {
@@ -210,10 +214,10 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     state.adding?.let { adding ->
         AddSheet(
             adding = adding,
-            cases = state.cases,
-            onAdd = { text, title, case ->
+            projects = state.projects,
+            onAdd = { text, title, project ->
                 scope.launch {
-                    home.add(text, title, case)?.let {
+                    home.add(text, title, project)?.let {
                         // Read at once, from the visible screen, as a long job.
                         readAfterOpen = true
                         open = it.raw

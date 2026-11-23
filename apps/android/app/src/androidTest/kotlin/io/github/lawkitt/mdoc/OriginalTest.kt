@@ -9,8 +9,8 @@ import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
+import io.github.lawkitt.mdoc.core.OriginalData
 import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.SourceKind
 import io.github.lawkitt.mdoc.storage.MdocStorage
@@ -36,7 +36,7 @@ class OriginalTest {
         val pdf = File(folder, "english.pdf")
         InstrumentationRegistry.getInstrumentation().context.assets.open("english.pdf").use { input -> pdf.outputStream().use(input::copyTo) }
         val title = "Scan ${System.nanoTime()}"
-        val session = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), title, CaseChoice.New(title))
+        val session = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), title)
         assertTrue(session.snapshot().original is OriginalSource.Pdf)
 
         compose.activityRule.scenario.onActivity { it.recreate() }
@@ -55,5 +55,35 @@ class OriginalTest {
         compose.waitForIdle()
         val after = compose.onNode(hasContentDescription("Original page 1 of 1")).fetchSemanticsNode().positionInRoot.x
         assertTrue("zoomed in: left edge $before -> $after", after < before - 100f)
+    }
+
+    /** A saved PDF's original is decrypted from the Vault into memory and drawn from there (#1091 Decision 24). */
+    @Test
+    fun aSavedPdfShowsItsOriginalFromTheVault() {
+        val app = core.app
+        val folder = File(app.core.storage.dir(MdocStorage.Area.Originals), "vault-pdf").apply { mkdirs() }
+        val pdf = File(folder, "running.pdf")
+        InstrumentationRegistry.getInstrumentation().context.assets.open("handmade-running-header.pdf").use { input ->
+            pdf.outputStream().use(input::copyTo)
+        }
+        val title = "Saved ${System.nanoTime()}"
+        val session = app.core.documents.importDocument(ImportSource.File(pdf, SourceKind.Pdf), title)
+        session.recognize(object : io.github.lawkitt.mdoc.core.JobObserver {
+            override fun stage(stage: uniffi.mdoc_ffi.JobStage) = Unit
+
+            override fun onCancel(handler: () -> Unit) = Unit
+        })
+        assertTrue((session.snapshot().original as OriginalSource.Pdf).file is OriginalData.Stored)
+
+        compose.activityRule.scenario.onActivity { it.recreate() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText(title)).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(title).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Original")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Original").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasContentDescription("Original page 1 of 4")).fetchSemanticsNodes().isNotEmpty()
+        }
+        // Nothing of it reached the viewing folder.
+        assertTrue(app.core.storage.viewing.list().orEmpty().isEmpty())
     }
 }

@@ -256,6 +256,7 @@ impl Vault {
         // The review's ranges and identities were of that text and mapping
         // too: the next open scans again.
         moved.review = None;
+        moved.counts = None;
         // Its text is still to be made, though the move writes it.
         moved.unconverted = stored.pending_conversion();
         let moved = match self.place_document(lock, moved) {

@@ -38,7 +38,7 @@ struct DocumentsPage: View {
             // Its own section, so the setup card above reads apart from it.
             Section {
                 ForEach(library.shownDocuments) { document in
-                    DocumentRow(document: document, caseSummary: library.caseSummary(of: document), findsNames: library.findsNames)
+                    DocumentRow(document: document, projectSummary: library.projectSummary(of: document), findsNames: library.findsNames)
                         .tag(document.id)
                         .swipeActions {
                             Button("Delete", role: .destructive) {
@@ -53,7 +53,7 @@ struct DocumentsPage: View {
                             }
                             DocumentMenuItems(app: app, document: document)
                         } preview: {
-                            DocumentPreview(document: document, caseSummary: library.caseSummary(of: document), findsNames: library.findsNames)
+                            DocumentPreview(document: document, projectSummary: library.projectSummary(of: document), findsNames: library.findsNames)
                         }
                 }
             }
@@ -69,9 +69,9 @@ struct DocumentsPage: View {
             if let showSidebar {
                 SidebarButton(action: showSidebar)
             }
-            if library.offersCaseFilter {
+            if library.offersProjectFilter {
                 ToolbarItem(placement: .primaryAction) {
-                    caseFilterMenu
+                    projectFilterMenu
                 }
             }
             // Adding sits within thumb reach: Scan prominent, the rest in
@@ -105,23 +105,23 @@ struct DocumentsPage: View {
             .frame(maxWidth: 520)
     }
 
-    /// From two cases: the page shows one case's documents, or all.
-    private var caseFilterMenu: some View {
+    /// From two projects: the page shows one case's documents, or all.
+    private var projectFilterMenu: some View {
         Menu {
-            Picker("Case", selection: Bindable(library).caseFilter) {
-                Text("All cases").tag(CaseID?.none)
-                ForEach(library.cases) { summary in
+            Picker("Project", selection: Bindable(library).projectFilter) {
+                Text("All Projects").tag(ProjectID?.none)
+                ForEach(library.projects) { summary in
                     Label {
                         Text(summary.name)
                     } icon: {
                         Image(systemName: "circle.fill")
                     }
                     .tint(summary.colour.color)
-                    .tag(CaseID?.some(summary.id))
+                    .tag(ProjectID?.some(summary.id))
                 }
             }
         } label: {
-            Label("Case", systemImage: library.caseFilter == nil
+            Label("Project", systemImage: library.projectFilter == nil
                 ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
         }
         .accessibilityIdentifier("case-filter")
@@ -145,7 +145,7 @@ private struct DocumentsSearch: ViewModifier {
 
     func body(content: Content) -> some View {
         if library.offersSearch {
-            content.searchable(text: $library.query, prompt: Text("Documents and cases"))
+            content.searchable(text: $library.query, prompt: Text("Documents and Projects"))
         } else {
             content
         }
@@ -156,7 +156,7 @@ private struct DocumentsSearch: ViewModifier {
 /// in its color, when it last changed, and the case as a tag.
 struct DocumentRow: View {
     let document: LibraryDocument
-    let caseSummary: CaseSummary?
+    let projectSummary: ProjectSummary?
     let findsNames: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -178,15 +178,15 @@ struct DocumentRow: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: Space.xs) {
                         statusAndTime(stacked: false)
-                        caseTag
+                        projectTag
                     }
                     VStack(alignment: .leading, spacing: Space.xxs) {
                         statusAndTime(stacked: false)
-                        caseTag
+                        projectTag
                     }
                     VStack(alignment: .leading, spacing: Space.xxs) {
                         statusAndTime(stacked: true)
-                        caseTag
+                        projectTag
                     }
                 }
             }
@@ -223,9 +223,9 @@ struct DocumentRow: View {
     }
 
     @ViewBuilder
-    private var caseTag: some View {
-        if let caseSummary {
-            CaseTag(summary: caseSummary, showsName: caseSummary.name != document.title)
+    private var projectTag: some View {
+        if let projectSummary {
+            ProjectTag(summary: projectSummary, showsName: projectSummary.name != document.title)
         }
     }
 
@@ -239,8 +239,8 @@ struct DocumentRow: View {
     /// "Settlement agreement, 1 to review, case Settlement agreement".
     private var spoken: String {
         var parts = [document.title, status]
-        if let caseSummary {
-            parts.append(String(localized: "case \(caseSummary.name)"))
+        if let projectSummary {
+            parts.append(String(localized: "Project \(projectSummary.name)"))
         }
         return parts.joined(separator: ", ")
     }
@@ -270,11 +270,11 @@ struct DocumentRow: View {
 /// The long-press preview of a document: its row, larger.
 private struct DocumentPreview: View {
     let document: LibraryDocument
-    let caseSummary: CaseSummary?
+    let projectSummary: ProjectSummary?
     let findsNames: Bool
 
     var body: some View {
-        DocumentRow(document: document, caseSummary: caseSummary, findsNames: findsNames)
+        DocumentRow(document: document, projectSummary: projectSummary, findsNames: findsNames)
             .padding(Space.m)
             .frame(width: 320, alignment: .leading)
     }
@@ -282,13 +282,13 @@ private struct DocumentPreview: View {
 
 /// The case as a small tag: its colour dot, and its name when it says
 /// something the title does not.
-struct CaseTag: View {
-    let summary: CaseSummary
+struct ProjectTag: View {
+    let summary: ProjectSummary
     let showsName: Bool
 
     var body: some View {
         HStack(spacing: Space.xxs) {
-            CaseDot(colour: summary.colour)
+            ProjectDot(colour: summary.colour)
             if showsName {
                 Text(summary.name)
                     .lineLimit(1)

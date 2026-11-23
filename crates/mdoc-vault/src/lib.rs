@@ -31,11 +31,12 @@ pub use mapping::{Binding, Identity, Mapping, NotName};
 pub use original::{OriginalReader, source_sha256};
 pub use records::{
     Colour, Document, DocumentOrigin, DocumentSummary, NewDocument, NewProject, NewReply, Original,
-    OriginalInfo, Project, ProjectSummary, Reply, ReplyOwner, ReplySummary, SourceKind, UserLists,
+    OriginalInfo, Project, ProjectSummary, Reply, ReplyOwner, ReplySummary, ReviewCounts,
+    SharedFrom, SourceKind, UserLists,
 };
 pub use vault::{
-    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, Saved, Stage,
-    Vault, WriteStep,
+    Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ProjectDocuments, Readiness, ReplyHandle,
+    Saved, Stage, Vault, WriteStep,
 };
 
 use std::io;

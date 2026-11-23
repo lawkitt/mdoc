@@ -1,6 +1,8 @@
 //! Readiness checked when text leaves (#1091 Decision 19). Ready stays
-//! "scanned, and no proposals left", kept as the fingerprint of the text
-//! last saved while Ready; the AI text is computed from the Document's
+//! "scanned, and no proposals left", decided by the caller at each save
+//! and kept as the fingerprint of the text last saved while Ready: on a
+//! phone below the name finder's floor, "names decided by hand, none left"
+//! (#1091 Q4), with `scanned` left false; the AI text is computed from the Document's
 //! Markdown on every outbound read and checked against the names its
 //! Project knows then. The Vault stores no AI text, so a name another
 //! Document adds to the Project makes this one not Ready without touching
@@ -15,7 +17,8 @@ use sha2::Digest;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Readiness {
     Ready,
-    /// Never saved while Ready: not scanned, or proposals were left.
+    /// Never saved while Ready: not scanned (nor decided by hand below the
+    /// floor), or proposals were left.
     NotReviewed,
     /// Its text is not the text it saved while Ready.
     ChangedSinceReview,
@@ -42,15 +45,17 @@ fn fingerprint(text: &str) -> String {
 
 impl Document {
     /// Before a save: whether its Markdown is Ready as the review counts it
-    /// (scanned, and no proposals left). Keeps the fingerprint of the text
-    /// as it is now, or forgets it.
+    /// (scanned, and no proposals left; below the floor, no proposals left
+    /// of names decided by hand). Keeps the fingerprint of the text as it
+    /// is now, or forgets it. The fingerprint alone decides: `scanned` is
+    /// not asked again.
     pub fn set_ready(&mut self, ready: bool) {
         self.ready_fingerprint = ready.then(|| fingerprint(&self.markdown));
     }
 
     /// Its readiness against `mapping`, the names its Project knows now.
     fn readiness(&self, mapping: &Mapping) -> Readiness {
-        let Some(saved) = self.ready_fingerprint.as_deref().filter(|_| self.scanned) else {
+        let Some(saved) = self.ready_fingerprint.as_deref() else {
             return Readiness::NotReviewed;
         };
         match known_names(self, mapping).known_names(&self.markdown) {

@@ -36,6 +36,6 @@ final class SidebarSearchUITests: XCTestCase {
             XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 10), .completed,
             "⌘K focuses the sidebar's search")
         field.typeText("zzzz")
-        XCTAssertTrue(app.staticTexts["No documents or cases match “zzzz”."].waitForExistence(timeout: MdocUITest.timeout))
+        XCTAssertTrue(app.staticTexts["No documents or Projects match “zzzz”."].waitForExistence(timeout: MdocUITest.timeout))
     }
 }

@@ -24,7 +24,7 @@ enum RestoreSheet {
 
 /// Restores a shared AI reply in place for the Restore with mdoc extension.
 /// It uses one case at a time, the case of the document shared last unless
-/// the user picks another, so aliases from different cases never mix
+/// the user picks another, so aliases from different projects never mix
 /// (ADR 0084's rule). It needs no model.
 @MainActor
 @Observable
@@ -32,7 +32,7 @@ final class RestoreViewModel {
     let reply: String
     private let library: any Library
     private(set) var snapshot: LibrarySnapshot
-    private(set) var selectedCase: CaseID?
+    private(set) var selectedProject: ProjectID?
     private(set) var result: RestoreResult?
     private(set) var errorMessage: String?
     private(set) var savedTo: DocumentID?
@@ -43,42 +43,42 @@ final class RestoreViewModel {
         self.library = library
         self.reply = reply
         snapshot = library.snapshot()
-        selectedCase = snapshot.currentCase ?? snapshot.cases.first?.id
+        selectedProject = snapshot.currentProject ?? snapshot.projects.first?.id
         restore()
     }
 
-    var cases: [CaseSummary] { snapshot.cases }
+    var projects: [ProjectSummary] { snapshot.projects }
 
-    var selectedCaseName: String? {
-        cases.first { $0.id == selectedCase }?.name
+    var selectedProjectName: String? {
+        projects.first { $0.id == selectedProject }?.name
     }
 
-    var documentsInCase: [LibraryDocument] {
-        guard let selectedCase else { return [] }
-        return snapshot.documents(in: selectedCase)
+    var documentsInProject: [LibraryDocument] {
+        guard let selectedProject else { return [] }
+        return snapshot.documents(in: selectedProject)
     }
 
     /// Save to document's default: the case's most recently changed document.
     var defaultSaveTarget: LibraryDocument? {
-        documentsInCase.first
+        documentsInProject.first
     }
 
-    func selectCase(_ id: CaseID) {
-        guard id != selectedCase else { return }
-        selectedCase = id
+    func selectProject(_ id: ProjectID) {
+        guard id != selectedProject else { return }
+        selectedProject = id
         savedTo = nil
         copied = false
         restore()
     }
 
     private func restore() {
-        guard let selectedCase else {
+        guard let selectedProject else {
             result = nil
-            errorMessage = CoreError.noCase.errorDescription
+            errorMessage = CoreError.noProject.errorDescription
             return
         }
         do {
-            result = try library.restore(reply: reply, in: selectedCase)
+            result = try library.restore(reply: reply, in: selectedProject)
             errorMessage = nil
         } catch {
             result = nil

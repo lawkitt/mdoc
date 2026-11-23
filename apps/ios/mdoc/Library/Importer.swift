@@ -48,7 +48,7 @@ struct Importer {
             removeInboxCopy(url)
             return pending
         }
-        let copy = try storage.importCopy(of: url, in: .originals)
+        let copy = try storage.importCopy(of: url, in: .intake)
         removeInboxCopy(url)
         return PendingImport(source: .file(copy, kind), suggestedTitle: url.deletingPathExtension().lastPathComponent)
     }
@@ -72,7 +72,7 @@ struct Importer {
         let images = pages.compactMap { $0 }
         let unread = pages.count - images.count
         guard !images.isEmpty else { throw Failure.unread(unread) }
-        let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = storage.url(.intake).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let urls: [URL]
         do {

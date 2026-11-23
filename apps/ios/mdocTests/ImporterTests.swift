@@ -96,12 +96,12 @@ final class ImporterTests: XCTestCase {
     /// the core without any PDF written beside them; deleting the import
     /// removes them.
     func testPhotosPickedTogetherAreOneDocument() throws {
-        let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        let core = try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
         let png = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { _ in })
         let pending = try XCTUnwrap(try Importer(storage: storage).images([try cameraJPEG(), png], scanned: false))
         guard case .photos(let pages) = pending.source else { return XCTFail("\(pending.source)") }
-        let session = try core.library.importDocument(pending.source, title: "Receipts", into: .newCase(name: "Receipts"))
-        XCTAssertEqual(session.snapshot().original, .images(pages))
+        let session = try core.library.importDocument(pending.source, title: "Receipts", into: nil)
+        XCTAssertEqual(session.snapshot().original, .images(pages.map(OriginalBytes.file)))
         XCTAssertThrowsError(try session.recognize(observer: TestObserver())) { error in
             XCTAssertEqual(error as? CoreError, .modelMissing)
         }
@@ -136,7 +136,7 @@ final class ImporterTests: XCTestCase {
         let pending = try XCTUnwrap(try importer.file(photo))
         guard case .photos(let pages) = pending.source else { return XCTFail("\(pending.source)") }
         XCTAssertEqual(pages.map(\.pathExtension), ["png"])
-        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.intake), includingPropertiesForKeys: nil)
         XCTAssertEqual(left.count, 1, "\(left)")
     }
 
@@ -184,7 +184,7 @@ final class ImporterTests: XCTestCase {
                 XCTAssertEqual(error.localizedDescription, "mdoc opens PDF, DOCX and image files.", name)
             }
         }
-        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.intake), includingPropertiesForKeys: nil)
         XCTAssertTrue(left.isEmpty, "\(left)")
     }
 
@@ -204,11 +204,11 @@ final class ImporterTests: XCTestCase {
         }
         XCTAssertEqual(Importer.unreadNote(1), "1 page couldn't be read and wasn't imported.")
         XCTAssertEqual(Importer.unreadNote(2), "2 pages couldn't be read and weren't imported.")
-        let before = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        let before = try FileManager.default.contentsOfDirectory(at: storage.url(.intake), includingPropertiesForKeys: nil)
         XCTAssertThrowsError(try Importer(storage: storage).images([nil, nil], scanned: true)) { error in
             XCTAssertEqual(error.localizedDescription, "2 pages couldn't be read and weren't imported.")
         }
-        let after = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        let after = try FileManager.default.contentsOfDirectory(at: storage.url(.intake), includingPropertiesForKeys: nil)
         XCTAssertEqual(after.count, before.count)
     }
 
@@ -219,7 +219,7 @@ final class ImporterTests: XCTestCase {
         XCTAssertThrowsError(try Importer(storage: storage).images([jpeg, bigTIFF()], scanned: false)) { error in
             XCTAssertEqual(error.localizedDescription, "mdoc opens PDF, DOCX and image files.")
         }
-        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.originals), includingPropertiesForKeys: nil)
+        let left = try FileManager.default.contentsOfDirectory(at: storage.url(.intake), includingPropertiesForKeys: nil)
         XCTAssertTrue(left.isEmpty, "\(left)")
     }
 }

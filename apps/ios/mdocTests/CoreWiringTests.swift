@@ -27,7 +27,7 @@ final class CoreWiringTests: XCTestCase {
     }
 
     private func core() throws -> Core {
-        let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        let core = try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
         cores.append(core)
         return core
     }
@@ -43,7 +43,7 @@ final class CoreWiringTests: XCTestCase {
 
     /// Read, not scanned yet.
     private func imported(_ core: Core, text: String = letter) throws -> any DocumentSession {
-        let session = try core.library.importDocument(.text(text), title: "Letter", into: .newCase(name: "Ellison"))
+        let session = try core.library.importDocument(.text(text), title: "Letter", into: nil)
         _ = try session.recognize(observer: TestObserver())
         return session
     }
@@ -87,12 +87,12 @@ final class CoreWiringTests: XCTestCase {
         let core = try core()
         let session = try XCTUnwrap(try imported(core) as? RealSession)
         let stored = Set(Mirror(reflecting: session).children.compactMap(\.label))
-        XCTAssertTrue(stored.isDisjoint(with: ["path", "caseID", "title", "review", "scanned"]), "\(stored)")
+        XCTAssertTrue(stored.isDisjoint(with: ["path", "projectID", "title", "review", "scanned"]), "\(stored)")
         // What it says is the core's.
         let info = try XCTUnwrap(session.info)
         XCTAssertEqual(info.title, "Letter")
-        XCTAssertEqual(info.caseId, session.snapshot().caseID?.rawValue)
-        XCTAssertNotNil(info.path)
+        XCTAssertEqual(info.caseId, session.snapshot().projectID?.rawValue)
+        XCTAssertNotNil(session.vaultID)
         try core.library.renameDocument(session.id, to: "Reply")
         XCTAssertEqual(session.info?.title, "Reply")
         XCTAssertEqual(session.snapshot().title, "Reply")
@@ -109,7 +109,7 @@ final class CoreWiringTests: XCTestCase {
         }
         for _ in 0..<50 {
             XCTAssertEqual(core.library.snapshot().documents.count, 1)
-            XCTAssertNotNil((session as? RealSession)?.path)
+            XCTAssertNotNil((session as? RealSession)?.vaultID)
         }
         wait(for: [done], timeout: 30)
     }
@@ -197,9 +197,8 @@ final class CoreWiringTests: XCTestCase {
         let session = try imported(core())
         let scanned = try session.scan(observer: TestObserver())
         let email = try XCTUnwrap(scanned.candidates.first { $0.category == .email })
-        let documents = storage.url(.documents)
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: documents.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path) }
+        try Fixture.setVault(storage, writable: false)
+        defer { try? Fixture.setVault(storage, writable: true) }
         XCTAssertNoThrow(try session.decide(email.id, .replace, scope: .all))
         XCTAssertThrowsError(try session.saveChanges()) { error in
             guard case .saveFailed = error as? CoreError else { return XCTFail("\(error)") }
@@ -220,7 +219,7 @@ final class CoreWiringTests: XCTestCase {
             (.detect("x"), .findNamesFailed("x")),
             (.cancelled, .cancelled),
             (.review("x"), .reviewChanged("x")),
-            (.caseFailed("x"), .caseRefused("x")),
+            (.caseFailed("x"), .projectRefused("x")),
             (.setup("x"), .setupFailed("x")),
             (.invalid("x"), .invalid("x")),
             (.io("x"), .fileFailed("x")),
@@ -244,12 +243,12 @@ final class CoreWiringTests: XCTestCase {
 
     // MARK: Document summaries
 
-    /// The list comes from the core's summaries: no document is opened to
-    /// draw it, in the app or the Restore extension.
+    /// The list comes from the Vault's manifest: no document is opened to
+    /// draw it.
     @MainActor
     func testTheListOpensNoDocument() throws {
         let seeded = try Fixture.seeded()
-        let library = try RealCore.library(storage: seeded.storage, keys: FixedCaseKeyStore())
+        let library = try RealCore.make(storage: seeded.storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor).library
         let real = try XCTUnwrap(library as? RealLibrary)
         // The tenancy, an import not read yet, comes back from `pending.json`.
         XCTAssertEqual(real.openSessionCount, 1)
@@ -259,7 +258,6 @@ final class CoreWiringTests: XCTestCase {
         XCTAssertEqual(letter.phase, .reviewing)
         XCTAssertGreaterThan(letter.pendingCount, 0)
         XCTAssertEqual(snapshot.documents.first { $0.title == Letters.quotationTitle }?.phase, .ready)
-        _ = RestoreViewModel(library: library, reply: "Reply")
         XCTAssertEqual(real.openSessionCount, 1, "listing opened a document")
         // Opening one from the list gives the same id the list showed.
         XCTAssertEqual(try library.session(for: letter.id).snapshot().title, Letters.letterTitle)
@@ -268,23 +266,27 @@ final class CoreWiringTests: XCTestCase {
     /// Delete from the list, for a document not opened since mdoc started:
     /// the list opened none, so there is no session to delete through.
     func testDeletingADocumentNotOpenedThisRun() throws {
-        let path = try XCTUnwrap((try imported(core()) as? RealSession)?.path)
+        let vaultID = try XCTUnwrap((try imported(core()) as? RealSession)?.vaultID)
         let library = try core().library
         let id = try XCTUnwrap(library.snapshot().documents.first?.id)
+        XCTAssertEqual(id.rawValue, vaultID, "known by its Vault id")
         try library.deleteDocument(id)
         XCTAssertTrue(library.snapshot().documents.isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertThrowsError(try XCTUnwrap(library as? RealLibrary).vault.document(id: vaultID))
     }
 
     /// A document open this run lists as it shows: a Keep of a name its
-    /// case knows is not saved (reopened, the case proposes it again), so
-    /// the saved summary still counts it.
+    /// Project knows is not saved (reopened, the Project proposes it
+    /// again), so the saved summary still counts it.
     func testAnOpenDocumentListsAsItShows() throws {
         let core = try core()
-        let first = try imported(core, text: "Write to ann@example.com.")
+        let projectID = try Fixture.createProject("Ann", in: core)
+        let first = try core.library.importDocument(.text("Write to ann@example.com."), title: "Letter", into: projectID)
+        _ = try first.recognize(observer: TestObserver())
         let email = try XCTUnwrap(try first.scan(observer: TestObserver()).candidates.first)
-        let caseID = try XCTUnwrap(try first.decide(email.id, .replace, scope: .all).caseID)
-        let second = try core.library.importDocument(.text("Ann: ann@example.com."), title: "Note", into: .existing(caseID))
+        XCTAssertEqual(try first.decide(email.id, .replace, scope: .all).projectID, projectID)
+        try first.saveChanges()
+        let second = try core.library.importDocument(.text("Ann: ann@example.com."), title: "Note", into: projectID)
         let read = try second.recognize(observer: TestObserver())
         let proposal = try XCTUnwrap(read.candidates.first)
         XCTAssertEqual(read.pendingCount, 1)
@@ -292,25 +294,6 @@ final class CoreWiringTests: XCTestCase {
         let row = try XCTUnwrap(core.library.snapshot().documents.first { $0.id == second.id })
         XCTAssertEqual(row.pendingCount, 0)
         XCTAssertEqual(row.candidateCount, 1)
-    }
-
-    /// A library from before the core kept "scanned": what the app recorded
-    /// (#685) goes to the core once, then the app's record goes.
-    func testTheAppsScannedRecordGoesToTheCoreOnce() throws {
-        let session = try imported(core(), text: "# Note\n\nNothing to hide here.")
-        XCTAssertEqual(try session.scan(observer: TestObserver()).phase, .ready)
-        let path = try XCTUnwrap((session as? RealSession)?.path)
-        // As #685 left it: the core has no record, the app has one.
-        try FileManager.default.removeItem(at: storage.root.appendingPathComponent("documents.json"))
-        let index = storage.root.appendingPathComponent("originals.json")
-        let key = OriginalsIndex(storage: storage).key(path)
-        try JSONSerialization.data(withJSONObject: [key: ["kind": "none", "files": [], "folders": [], "scanned": true]])
-            .write(to: index)
-        let reopened = try core()
-        XCTAssertEqual(reopened.library.snapshot().documents.first?.phase, .ready)
-        let record = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: index)) as? [String: Any])
-        XCTAssertNil(record[key], "the app's record went")
-        XCTAssertEqual(try core().library.snapshot().documents.first?.phase, .ready)
     }
 
     // MARK: Q12, one review tap
@@ -325,7 +308,7 @@ final class CoreWiringTests: XCTestCase {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_TIMING_TESTS"] == "1", "timing tests run nightly")
         let sample = SampleDocument.english
         let text = Array(repeating: sample.text, count: 12).joined(separator: "\n\n")
-        let session = try core().library.importDocument(.text(text), title: sample.title, into: .newCase(name: "Timing"))
+        let session = try core().library.importDocument(.text(text), title: sample.title, into: nil)
         _ = try session.recognize(observer: TestObserver())
         let proposed = try session.propose(sample.names)
         let first = try XCTUnwrap(proposed.candidates.first)

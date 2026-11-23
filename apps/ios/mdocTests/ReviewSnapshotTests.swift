@@ -63,7 +63,7 @@ final class ReviewSnapshotTests: XCTestCase {
         let (core, _) = try Fixture.core()
         let session = try core.library.importDocument(
             .text("Maya Bennett signs for Daniel Okafor.\n\nLater Maya Bennett signs again.\n"),
-            title: "Agreement", into: .newCase(name: "Bennett"))
+            title: "Agreement", into: nil)
         _ = try session.recognize(observer: TestObserver())
         _ = try session.propose([
             SampleDocument.Name(wording: "Maya Bennett", category: .person),

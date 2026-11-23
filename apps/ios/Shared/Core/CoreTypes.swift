@@ -11,7 +11,7 @@ import MdocFFI
 /// `Category` too.
 typealias Category = MdocFFI.Category
 
-struct CaseID: Hashable, Sendable, Codable {
+struct ProjectID: Hashable, Sendable, Codable {
     let rawValue: String
 }
 
@@ -64,14 +64,14 @@ extension SourceRange {
 }
 
 /// The eight named case swatches (ADR 0077).
-enum CaseColour: String, CaseIterable, Sendable {
+enum ProjectColour: String, CaseIterable, Sendable {
     case red, orange, amber, green, teal, blue, violet, pink
 }
 
-struct CaseSummary: Identifiable, Hashable, Sendable {
-    let id: CaseID
+struct ProjectSummary: Identifiable, Hashable, Sendable {
+    let id: ProjectID
     var name: String
-    var colour: CaseColour
+    var colour: ProjectColour
 }
 
 enum SourceKind: String, Sendable {
@@ -88,7 +88,7 @@ enum SourceKind: String, Sendable {
 struct LibraryDocument: Identifiable, Hashable, Sendable {
     let id: DocumentID
     var title: String
-    var caseID: CaseID?
+    var projectID: ProjectID?
     var kind: SourceKind
     /// Nil while the import or its text recognition has not finished.
     var phase: DocumentPhase?
@@ -101,17 +101,18 @@ struct LibraryDocument: Identifiable, Hashable, Sendable {
 }
 
 struct LibrarySnapshot: Sendable, Equatable {
-    var cases: [CaseSummary]
+    var projects: [ProjectSummary]
     var documents: [LibraryDocument]
-    /// The case of the document shared or copied for AI last. Restore uses
-    /// it unless the user picks another (ADR 0084's current case).
-    var currentCase: CaseID?
+    /// The old library's case of the document shared last, which the
+    /// Restore extension still uses (ADR 0084's current case) until Vault &
+    /// Projects item 10; the Vault keeps no such pointer.
+    var currentProject: ProjectID?
 
-    static let empty = LibrarySnapshot(cases: [], documents: [], currentCase: nil)
+    static let empty = LibrarySnapshot(projects: [], documents: [], currentProject: nil)
 
-    /// The case's documents, most recently changed first.
-    func documents(in caseID: CaseID) -> [LibraryDocument] {
-        documents.filter { $0.caseID == caseID }.sorted { $0.updated > $1.updated }
+    /// The Project's documents, most recently changed first.
+    func documents(in projectID: ProjectID) -> [LibraryDocument] {
+        documents.filter { $0.projectID == projectID }.sorted { $0.updated > $1.updated }
     }
 }
 
@@ -128,33 +129,156 @@ enum ImportSource: Sendable, Equatable {
     case sample(String)
 }
 
-/// Each prepared document starts a new case unless the user adds it to an
-/// existing one, so restore always has a mapping (ADR 0085).
-enum CaseChoice: Hashable, Sendable {
-    case newCase(name: String)
-    case existing(CaseID)
+/// Move to Project's target: a Project, or a new one named so. Intake
+/// takes a `ProjectID?` instead: Unfiled or the Project it was started
+/// from, and no import makes a Project (#1091 Decision 35).
+enum ProjectChoice: Hashable, Sendable {
+    case newProject(name: String)
+    case existing(ProjectID)
 }
 
-/// Where Move to case took a document, for "Moved to <case> · Undo".
-struct CaseMove: Hashable, Sendable {
+/// Where Move to Project took a document, for "Moved to <Project> · Undo".
+struct ProjectMove: Hashable, Sendable {
     var document: DocumentID
-    /// The case it is in now.
-    var to: CaseSummary
-    /// The case it left, if it was in one; it stays, even empty. Undo moves
-    /// the document back there.
-    var from: CaseID?
-    /// Aliases of the names the move added to `to`; Undo takes them out
-    /// again where nothing else uses them.
-    var added: [String]
+    /// The Project it is in now; nil: Unfiled.
+    var to: ProjectSummary?
+    /// The Project it left, which keeps its names; nil: it was Unfiled.
+    var from: ProjectID?
+    /// The Vault's handle for Undo, good while the app runs.
+    var undo: UInt64
+
+    /// Where it is now, as the toast names it.
+    var placeName: String {
+        to?.name ?? String(localized: "Unfiled")
+    }
 }
 
 /// The page the text came from.
 enum OriginalSource: Equatable, Sendable {
     case none
-    case pdf(URL)
+    case pdf(OriginalBytes)
     /// Rendered in process while the Original pane shows it.
-    case docx(URL)
-    case images([URL])
+    case docx(OriginalBytes)
+    case images([OriginalBytes])
+}
+
+extension OriginalSource {
+    /// A Vault original's decrypted bytes go; received files stay.
+    func close() {
+        switch self {
+        case .pdf(.stored(let stored)), .docx(.stored(let stored)): stored.close()
+        case .images(let pages):
+            for case .stored(let stored) in pages { stored.close() }
+        default: break
+        }
+    }
+}
+
+/// An original's bytes as the Original pane reads them (#1091 Decision 24):
+/// a file (an import's received file, or a viewing copy in the app's
+/// private cache) or, under about 16 MiB, in memory.
+enum OriginalBytes: Hashable, Sendable {
+    case file(URL)
+    case memory(OriginalData)
+    /// A Vault document's original, decrypted when the pane first reads it.
+    case stored(StoredOriginal)
+
+    /// The file, when there is one.
+    var fileURL: URL? {
+        if case .file(let url) = self { url } else { nil }
+    }
+
+    /// A file or bytes in memory: a stored original decrypted now. Off the
+    /// main thread for a large one.
+    func resolved() throws -> OriginalBytes {
+        if case .stored(let original) = self { try original.load() } else { self }
+    }
+
+    /// A stored original's decrypted bytes and viewing copy go: the view
+    /// that read them went before they came (review 1).
+    func closeIfStored() {
+        if case .stored(let original) = self { original.close() }
+    }
+
+    func data() throws -> Data {
+        switch try resolved() {
+        case .file(let url): try Data(contentsOf: url, options: .mappedIfSafe)
+        case .memory(let data): data.bytes
+        case .stored: throw CoreError.notFound
+        }
+    }
+}
+
+/// A Vault document's original for the Original pane (#1091 Decision 24):
+/// decrypted once, on first use, into memory when small or into the app's
+/// private viewing cache, and let go when the document closes.
+final class StoredOriginal: Hashable, @unchecked Sendable {
+    private let lock = NSLock()
+    private let decrypt: @Sendable () throws -> OriginalBytes
+    private let remove: @Sendable () -> Void
+    private var loaded: OriginalBytes?
+    /// Bumped by each close: a decrypt that started before it throws its
+    /// result away (review 1).
+    private var generation = 0
+
+    init(decrypt: @escaping @Sendable () throws -> OriginalBytes, remove: @escaping @Sendable () -> Void) {
+        self.decrypt = decrypt
+        self.remove = remove
+    }
+
+    /// The bytes, decrypted the first time; never `.stored`. The decrypt
+    /// runs outside the lock, so a close never waits for it; one the
+    /// document closed during leaves nothing behind and throws
+    /// `CoreError.cancelled`.
+    func load() throws -> OriginalBytes {
+        let (cached, started) = lock.withLock { (loaded, generation) }
+        if let cached { return cached }
+        let bytes = try decrypt()
+        let kept = lock.withLock { () -> OriginalBytes? in
+            guard generation == started else { return nil }
+            if let loaded { return loaded }
+            loaded = bytes
+            return bytes
+        }
+        guard let kept else {
+            remove()
+            throw CoreError.cancelled
+        }
+        return kept
+    }
+
+    /// The document closed: the decrypted bytes go, and the viewing copy
+    /// with them, also one a decrypt running now writes. The next view
+    /// decrypts again.
+    func close() {
+        lock.withLock {
+            generation += 1
+            loaded = nil
+        }
+        remove()
+    }
+
+    static func == (lhs: StoredOriginal, rhs: StoredOriginal) -> Bool { lhs === rhs }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(self))
+    }
+}
+
+/// Bytes held in memory, compared by identity: snapshots compare their
+/// originals often, and never need to compare the bytes.
+final class OriginalData: Hashable, @unchecked Sendable {
+    let bytes: Data
+
+    init(_ bytes: Data) {
+        self.bytes = bytes
+    }
+
+    static func == (lhs: OriginalData, rhs: OriginalData) -> Bool { lhs === rhs }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(self))
+    }
 }
 
 /// One underlined mention in the text.
@@ -255,8 +379,8 @@ struct MentionCounts: Hashable, Sendable {
 struct DocumentSnapshot: Equatable, Sendable {
     let id: DocumentID
     var title: String
-    var caseID: CaseID?
-    var caseName: String?
+    var projectID: ProjectID?
+    var projectName: String?
     var kind: SourceKind
     /// Nil while the import or its text recognition has not finished:
     /// finished pages are kept.
@@ -417,7 +541,7 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     /// Copy for AI and Share wait until every proposal is replaced or kept.
     case pendingReview(Int)
     case emptySelection
-    case noCase
+    case noProject
     /// Scanning needs the detector, or recognition needs OCR, and it is not
     /// installed.
     case modelMissing
@@ -433,7 +557,7 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     /// A review change no longer applies: the text or the mention changed.
     case reviewChanged(String)
     /// A case rule (one case per document), or the case could not be read.
-    case caseRefused(String)
+    case projectRefused(String)
     /// A model file could not be verified or installed.
     case setupFailed(String)
     /// Something the core does not accept, such as a blank title.
@@ -461,8 +585,8 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "Review \(count) proposals before sharing.")
         case .emptySelection:
             String(localized: "Select the words to replace first.")
-        case .noCase:
-            String(localized: "Share a document from mdoc first; replies restore with its case.")
+        case .noProject:
+            String(localized: "Share a document from mdoc first; replies restore with its Project.")
         case .modelMissing:
             String(localized: "Download the models first.")
         case .importFailed(let reason):
@@ -487,7 +611,7 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "That name is no longer in the document.")
         // Sentences of the core's (a blank title, the case a document is
         // in already, a mention that moved) or of the app's, as they are.
-        case .reviewChanged(let reason), .caseRefused(let reason), .invalid(let reason), .refused(let reason),
+        case .reviewChanged(let reason), .projectRefused(let reason), .invalid(let reason), .refused(let reason),
              .other(let reason):
             reason
         }

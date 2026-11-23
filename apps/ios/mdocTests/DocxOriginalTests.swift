@@ -9,7 +9,7 @@ import XCTest
 final class DocxOriginalTests: XCTestCase {
     private func render(_ fixture: String) async throws -> RenderedDocx {
         let source = Fixture.repository.appendingPathComponent("tests/fixtures/docx-preview/\(fixture)")
-        switch await RenderedDocx.render(source).rendering {
+        switch await RenderedDocx.render(.file(source)).rendering {
         case .ready(let rendered): return rendered
         case .failed(let message): throw RenderFailed(message: message)
         case .password: throw RenderFailed(message: "password required")

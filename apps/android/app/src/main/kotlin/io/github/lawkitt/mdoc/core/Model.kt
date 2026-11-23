@@ -5,10 +5,11 @@ import io.github.lawkitt.mdoc.R
 import uniffi.mdoc_ffi.MarkdownStyling
 
 // View types built from the core's snapshots: the app keeps only
-// these and its own view state; Rust owns documents, review, cases and
-// restore. The twins of the iOS app's CoreTypes.
+// these and its own view state; Rust owns documents, review, Projects and
+// restore, and the Vault keeps them (ADR 0125). The twins of the iOS app's
+// CoreTypes.
 
-@JvmInline value class CaseId(val raw: String)
+@JvmInline value class ProjectId(val raw: String)
 
 @JvmInline value class DocumentId(val raw: String)
 
@@ -31,10 +32,21 @@ enum class Category(@StringRes val label: Int, val token: String) {
     Other(R.string.category_other, "REDACTED"),
 }
 
-/** A case's colour: it marks the case, never a state. */
-enum class CaseColour { Red, Orange, Amber, Green, Teal, Blue, Violet, Pink }
+/** A Project's colour: it marks the Project, never a state. */
+enum class ProjectColour { Red, Orange, Amber, Green, Teal, Blue, Violet, Pink }
 
-data class CaseSummary(val id: CaseId, val name: String, val colour: CaseColour)
+data class ProjectSummary(val id: ProjectId, val name: String, val colour: ProjectColour)
+
+/**
+ * Where text was shared from, and so whose names a reply to it restores
+ * with: a Project, or an Unfiled document by its Vault id (#1091
+ * Decision 4).
+ */
+sealed interface Place {
+    data class Project(val id: ProjectId) : Place
+
+    data class Unfiled(val document: String) : Place
+}
 
 enum class SourceKind {
     Pdf, Docx, Image, Scan, Text;
@@ -60,23 +72,23 @@ enum class DocumentPhase {
 data class DocumentSummary(
     val id: DocumentId,
     val title: String,
-    val caseId: CaseId?,
+    /** `null`: Unfiled. */
+    val projectId: ProjectId?,
     val kind: SourceKind,
     val phase: DocumentPhase,
     val pendingCount: Int,
     /** Milliseconds since the epoch. */
     val updated: Long,
     val candidateCount: Int = 0,
-    /** Saved into its case; an import not yet read is not. */
-    val saved: Boolean = true,
+    /** Its id in the Vault, once saved; an import not yet read has none. */
+    val vaultId: String? = null,
 )
 
 data class LibrarySnapshot(
-    val cases: List<CaseSummary> = emptyList(),
+    val projects: List<ProjectSummary> = emptyList(),
     val documents: List<DocumentSummary> = emptyList(),
-    val currentCase: CaseId? = null,
 ) {
-    fun case(id: CaseId?): CaseSummary? = cases.firstOrNull { it.id == id }
+    fun project(id: ProjectId?): ProjectSummary? = projects.firstOrNull { it.id == id }
 }
 
 /** What the user brings in. */
@@ -87,12 +99,6 @@ sealed interface ImportSource {
     data class Pages(val pages: List<java.io.File>, val kind: SourceKind) : ImportSource
 
     data class Text(val text: String) : ImportSource
-}
-
-sealed interface CaseChoice {
-    data class New(val name: String) : CaseChoice
-
-    data class Existing(val id: CaseId) : CaseChoice
 }
 
 enum class MentionState { Proposed, Replaced, Kept }
@@ -144,38 +150,114 @@ data class RestoreResult(
         }
 }
 
+/**
+ * One file of a document's original as the Original view reads it: a
+ * received file not saved yet, or the Vault's sealed original, decrypted
+ * the first time it is read, into memory when small, else into a viewing
+ * copy (#1091 Decision 24).
+ */
+sealed interface OriginalData {
+    data class Local(val file: java.io.File) : OriginalData
+
+    /** The Vault's original, read by [open]; [close] drops what it decrypted. */
+    class Stored(private val decrypt: () -> Decrypted, private val remove: () -> Unit) : OriginalData {
+        /** One decrypt at a time; [close] never waits for it. */
+        private val decrypting = Any()
+        private var decrypted: Decrypted? = null
+
+        /** Counts closes: a decrypt that a close overtook keeps nothing. */
+        private var closes = 0
+
+        fun open(): Decrypted = synchronized(decrypting) {
+            synchronized(this) { decrypted }?.let { return it }
+            val before = synchronized(this) { closes }
+            val fresh = decrypt()
+            synchronized(this) {
+                if (closes == before) {
+                    decrypted = fresh
+                    return fresh
+                }
+            }
+            (fresh as? Decrypted.Memory)?.bytes?.fill(0)
+            remove()
+            throw IllegalStateException("The document closed.")
+        }
+
+        /** The document closed: its bytes go, and its viewing copy, even while a decrypt runs. */
+        fun close() {
+            val dropped = synchronized(this) {
+                closes++
+                decrypted.also { decrypted = null }
+            }
+            (dropped as? Decrypted.Memory)?.bytes?.fill(0)
+            remove()
+        }
+    }
+
+    sealed interface Decrypted {
+        class Memory(val bytes: ByteArray) : Decrypted
+
+        data class Copy(val file: java.io.File) : Decrypted
+    }
+}
+
 /** The pages a document came from, for the Original view: a PDF, or photos and camera pages; DOCX and text have none. */
 sealed interface OriginalSource {
     data object None : OriginalSource
 
-    data class Pdf(val file: java.io.File) : OriginalSource
+    data class Pdf(val file: OriginalData) : OriginalSource
 
     /** Photos or camera pages, a page each, in order, each drawn on its own. */
-    data class Images(val files: List<java.io.File>) : OriginalSource
+    data class Images(val files: List<OriginalData>) : OriginalSource
+
+    /** Drops what was decrypted to view it. */
+    fun close() {
+        when (this) {
+            None -> Unit
+            is Pdf -> (file as? OriginalData.Stored)?.close()
+            is Images -> files.forEach { (it as? OriginalData.Stored)?.close() }
+        }
+    }
 
     companion object {
         private val images = setOf("jpg", "jpeg", "png", "webp", "gif", "heic", "heif")
 
+        /** Received files, by their names. */
         fun of(files: List<java.io.File>): OriginalSource {
             val first = files.firstOrNull { it.exists() } ?: return None
             return when {
-                first.extension.lowercase() == "pdf" -> Pdf(first)
-                files.all { it.extension.lowercase() in images } -> Images(files)
+                first.extension.lowercase() == "pdf" -> Pdf(OriginalData.Local(first))
+                files.all { it.extension.lowercase() in images } -> Images(files.map(OriginalData::Local))
                 else -> None
             }
         }
+
+        /** A Vault original, by the name it was imported with. */
+        fun stored(fileName: String, data: OriginalData.Stored): OriginalSource =
+            when (fileName.substringAfterLast('.', "").lowercase()) {
+                "pdf" -> Pdf(data)
+                in images -> Images(listOf(data))
+                else -> None
+            }
     }
 }
 
-data class ReplySnapshot(val aliasText: String, val restored: RestoreResult, val styling: MarkdownStyling? = null)
+data class ReplySnapshot(
+    val aliasText: String,
+    val restored: RestoreResult,
+    val styling: MarkdownStyling? = null,
+    /** The saved AI Reply it shows, by its Vault id. */
+    val id: String? = null,
+)
 
 data class HandOff(val text: String, val fileName: String)
 
 data class DocumentSnapshot(
     val id: DocumentId,
     val title: String,
-    val caseId: CaseId?,
-    val caseName: String?,
+    /** `null`: Unfiled. */
+    val projectId: ProjectId?,
+    val projectName: String?,
     val kind: SourceKind,
     val phase: DocumentPhase,
     val markdown: String,
@@ -210,8 +292,6 @@ sealed class AppError(message: String) : Exception(message) {
     class WrongPassword : AppError("The password is incorrect. Check it and try again.")
 
     class NotFound : AppError("The document is gone.")
-
-    class NoCase : AppError("This document has no case yet.")
 
     class PendingReview(val count: Int) : AppError("Review the proposals first.")
 

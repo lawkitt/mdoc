@@ -3,7 +3,6 @@ package io.github.lawkitt.mdoc
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
 import io.github.lawkitt.mdoc.core.SourceKind
@@ -54,7 +53,7 @@ class SetupTest {
             instrumentation.context.assets.open("english.pdf").use { input -> pdf.outputStream().use(input::copyTo) }
             val expected = instrumentation.context.assets.open("english.txt").bufferedReader().readText()
             val session = app.core.documents.importDocument(
-                ImportSource.File(pdf, SourceKind.Pdf), "English scan", CaseChoice.New("English scan"),
+                ImportSource.File(pdf, SourceKind.Pdf), "English scan",
             )
             val outcome = app.jobs.run(JobKind.Recognize, session.id) { observer -> session.recognize(observer) }
             assertTrue(outcome.toString(), outcome is JobOutcome.Finished)

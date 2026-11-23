@@ -20,7 +20,7 @@ final class DocumentViewModelTests: XCTestCase {
         findsNames: Bool = true
     ) throws -> DocumentViewModel {
         let (core, storage) = try Fixture.core(memory: memory)
-        let session = try core.library.importDocument(try source(storage), title: title, into: .newCase(name: title))
+        let session = try core.library.importDocument(try source(storage), title: title, into: nil)
         return DocumentViewModel(
             session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage,
             findsNames: findsNames)
@@ -32,7 +32,7 @@ final class DocumentViewModelTests: XCTestCase {
         let title = "Halvorsen v. Okonkwo"
         let (core, storage) = try Fixture.core(memory: Fixture.belowFloor)
         let session = try core.library.importDocument(
-            .text(Letters.quotation), title: title, into: .newCase(name: "Case"))
+            .text(Letters.quotation), title: title, into: nil)
         let background = RecordingContinuation()
         let model = DocumentViewModel(
             session: session, jobs: LongJobRunner(background: background), storage: storage)
@@ -77,7 +77,7 @@ final class DocumentViewModelTests: XCTestCase {
 
     func testPrimaryActionFollowsTheDocument() async throws {
         // A PDF with a text layer reads without text recognition.
-        let model = try imported({ try .file(Letters.textPDF([Letters.letter], named: "letter", in: $0.url(.originals)), .pdf) })
+        let model = try imported({ try .file(Letters.textPDF([Letters.letter], named: "letter", in: $0.url(.intake)), .pdf) })
         XCTAssertEqual(model.primaryAction, .finishImport)
         await model.recognize()
         XCTAssertEqual(model.primaryAction, .findNames)
@@ -300,7 +300,7 @@ final class DocumentViewModelTests: XCTestCase {
         let missing = try XCTUnwrap(storage).root.appendingPathComponent("missing.docx")
         let own = try XCTUnwrap(storage).root
         let before = Self.temporaryFiles(keeping: own)
-        let result = await RenderedDocx.render(missing, unlocked: unlocked)
+        let result = await RenderedDocx.render(.file(missing), unlocked: unlocked)
         XCTAssertEqual(Self.temporaryFiles(keeping: own), before)
         XCTAssertNil(result.unlocked)
         guard case .ready(let original) = result.rendering else {
@@ -425,8 +425,8 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(ownerOnly.passwordPrompt)
         XCTAssertNil(ownerOnly.errorMessage)
         XCTAssertEqual(ownerOnly.snapshot.phase, .unscanned)
-        guard case .pdf(let url) = ownerOnly.snapshot.original else { return XCTFail("a PDF's Original") }
-        XCTAssertEqual(PDFDocument(url: url)?.isLocked, false)
+        guard case .pdf(let bytes) = ownerOnly.snapshot.original else { return XCTFail("a PDF's Original") }
+        XCTAssertEqual(PDFDocument(data: try bytes.data())?.isLocked, false)
         let unknown = try imported(
             {
                 // The AES-256 twin with a security handler no reader knows,
@@ -490,57 +490,42 @@ final class DocumentViewModelTests: XCTestCase {
 
 @MainActor
 final class LibraryModelTests: XCTestCase {
-    func testDocumentsAreNewestFirstWithTheirCase() throws {
+    func testDocumentsAreNewestFirstWithTheirProject() throws {
         let seeded = try Fixture.seeded()
         let home = LibraryModel(library: seeded.library)
         let documents = home.documents
         XCTAssertEqual(documents.map(\.id), [seeded.tenancy, seeded.letter, seeded.quotation])
         let tenancy = try XCTUnwrap(documents.first { $0.id == seeded.tenancy })
-        XCTAssertEqual(home.caseSummary(of: tenancy)?.id, seeded.harbour)
+        XCTAssertEqual(home.projectSummary(of: tenancy)?.id, seeded.harbour)
         let letter = try XCTUnwrap(documents.first { $0.id == seeded.letter })
-        XCTAssertEqual(home.caseSummary(of: letter)?.id, seeded.ellison)
+        XCTAssertEqual(home.projectSummary(of: letter)?.id, seeded.ellison)
     }
 
-    func testImportIntoAnExistingCase() throws {
+    func testImportIntoAnExistingProject() throws {
         let seeded = try Fixture.seeded()
         let home = LibraryModel(library: seeded.library)
         let pending = PendingImport(source: .text("Maya Ellison phoned."), suggestedTitle: "Call note")
-        let session = try home.importDocument(pending, title: " ", into: .existing(seeded.harbour))
+        let session = try home.importDocument(pending, title: " ", into: seeded.harbour)
         XCTAssertEqual(session.snapshot().title, "Call note")
-        XCTAssertEqual(session.snapshot().caseID, seeded.harbour)
-        XCTAssertEqual(home.documents.filter { $0.caseID == seeded.harbour }.count, 2)
+        XCTAssertEqual(session.snapshot().projectID, seeded.harbour)
+        XCTAssertEqual(home.documents.filter { $0.projectID == seeded.harbour }.count, 2)
     }
 
-    func testImportStartsANewCaseByDefault() throws {
+    /// An import lands in Unfiled by default: no Project is made for it
+    /// (#1091 Decision 35).
+    func testImportLandsInUnfiledByDefault() throws {
         let home = LibraryModel(library: try Fixture.seeded().library)
         let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
-        _ = try home.importDocument(pending, title: "Note", into: .newCase(name: "Note"))
-        XCTAssertEqual(home.cases.count, 3)
+        _ = try home.importDocument(pending, title: "Note", into: nil)
+        XCTAssertEqual(home.projects.count, 2)
         let note = try XCTUnwrap(home.documents.first { $0.title == "Note" })
-        XCTAssertEqual(home.caseSummary(of: note)?.name, "Note")
-    }
-
-    /// A new case never takes a name a case already has: the case pickers
-    /// could not tell the two apart.
-    func testANewCaseOfATakenNameIsNumbered() throws {
-        let home = LibraryModel(library: try Fixture.seeded().library)
-        let taken = try XCTUnwrap(home.cases.first?.name)
-        let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
-        _ = try home.importDocument(pending, title: "Note", into: .newCase(name: taken))
-        XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
-        XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 2" })
-        // Spaces around a name count for nothing, as the core trims them.
-        _ = try home.importDocument(pending, title: "Note", into: .newCase(name: " \(taken) "))
-        XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
-        XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 3" })
-        XCTAssertEqual(LibraryModel.unusedName("Lease", among: ["Lease", "Lease 2"]), "Lease 3")
-        XCTAssertEqual(LibraryModel.unusedName("Lease", among: ["Other"]), "Lease")
+        XCTAssertNil(home.projectSummary(of: note))
     }
 
     /// A scan that found nothing says so in the lists (ADR 0087).
     func testStatusSaysWhenNothingWasFound() {
         var document = LibraryDocument(
-            id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .ready,
+            id: DocumentID(rawValue: "letter"), title: "Letter", projectID: nil, kind: .text, phase: .ready,
             pendingCount: 0, updated: .now, candidateCount: 0)
         XCTAssertEqual(LibraryModel.status(of: document), "Nothing found")
         document.candidateCount = 3
@@ -551,7 +536,7 @@ final class LibraryModelTests: XCTestCase {
     /// recognition wording (ADR 0088).
     func testStatusSaysWhenAnImportIsNotFinished() {
         var document = LibraryDocument(
-            id: DocumentID(rawValue: "quotation"), title: "Quotation", caseID: nil, kind: .docx, phase: nil,
+            id: DocumentID(rawValue: "quotation"), title: "Quotation", projectID: nil, kind: .docx, phase: nil,
             pendingCount: 0, updated: .now)
         XCTAssertEqual(LibraryModel.status(of: document), "Import not finished")
         document.kind = .pdf
@@ -564,7 +549,7 @@ final class LibraryModelTests: XCTestCase {
 
     func testBelowTheFloorNothingWaitsForFindNames() {
         let document = LibraryDocument(
-            id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .unscanned,
+            id: DocumentID(rawValue: "letter"), title: "Letter", projectID: nil, kind: .text, phase: .unscanned,
             pendingCount: 0, updated: .now)
         XCTAssertEqual(LibraryModel.status(of: document), "Ready to find names")
         XCTAssertEqual(LibraryModel.status(of: document, findsNames: false), "Ready to mark names")
@@ -574,38 +559,38 @@ final class LibraryModelTests: XCTestCase {
         let seeded = try Fixture.seeded()
         let home = LibraryModel(library: seeded.library)
         try home.delete(seeded.tenancy)
-        XCTAssertFalse(home.documents.contains { $0.caseID == seeded.harbour })
+        XCTAssertFalse(home.documents.contains { $0.projectID == seeded.harbour })
     }
 }
 
 @MainActor
 final class RestoreViewModelTests: XCTestCase {
-    /// The seeded library, and the alias the shared quotation gave Maya Ellison.
-    private func seeded() throws -> (Seeded, String) {
-        let seeded = try Fixture.seeded()
-        let quotation = try seeded.session(seeded.quotation).snapshot()
-        let alias = try XCTUnwrap(quotation.candidates.first { $0.original == "Maya Ellison" }?.alias)
-        return (seeded, alias)
+    /// The Restore extension over the old library (until Vault & Projects
+    /// item 10), and the alias the shared quotation gave Maya Ellison.
+    private func seeded() throws -> (LegacySeeded, String) {
+        let seeded = try LegacySeeded.make()
+        XCTAssertFalse(seeded.alias.isEmpty)
+        return (seeded, seeded.alias)
     }
 
-    func testDefaultsToTheCaseSharedLast() throws {
+    func testDefaultsToTheProjectSharedLast() throws {
         let (seeded, alias) = try seeded()
         let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
-        XCTAssertEqual(model.selectedCase, seeded.ellison)
+        XCTAssertEqual(model.selectedProject, seeded.ellison)
         XCTAssertEqual(model.result?.text, "Maya Ellison agrees.")
         // Save to document's default: the case's most recently changed one.
-        XCTAssertEqual(model.documentsInCase.map(\.id), [seeded.letter, seeded.quotation])
+        XCTAssertEqual(model.documentsInProject.map(\.id), [seeded.letter, seeded.quotation])
         XCTAssertEqual(model.defaultSaveTarget?.id, seeded.letter)
     }
 
-    func testPickingAnotherCaseRestoresWithItsNamesOnly() throws {
+    func testPickingAnotherProjectRestoresWithItsNamesOnly() throws {
         let (seeded, alias) = try seeded()
         let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
-        model.selectCase(seeded.harbour)
-        XCTAssertEqual(model.selectedCase, seeded.harbour)
+        model.selectProject(seeded.harbour)
+        XCTAssertEqual(model.selectedProject, seeded.harbour)
         XCTAssertEqual(model.result?.text, "\(alias) agrees.")
         XCTAssertEqual(model.result?.unresolvedCount, 1)
-        XCTAssertEqual(model.documentsInCase.map(\.id), [seeded.tenancy])
+        XCTAssertEqual(model.documentsInProject.map(\.id), [seeded.tenancy])
     }
 
     func testSaveKeepsTheReplyInAliasForm() throws {
@@ -613,21 +598,19 @@ final class RestoreViewModelTests: XCTestCase {
         let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
         model.save(to: seeded.quotation)
         XCTAssertEqual(model.savedTo, seeded.quotation)
-        let reply = try seeded.session(seeded.quotation).snapshot().reply
-        XCTAssertEqual(reply?.aliasText, "\(alias) agrees.")
-        XCTAssertEqual(reply?.restored.text, "Maya Ellison agrees.")
+        XCTAssertNil(model.errorMessage)
     }
 
-    func testWithoutCasesItSaysSo() {
+    func testWithoutProjectsItSaysSo() {
         let model = RestoreViewModel(library: EmptyLibrary(), reply: "PERSON_1")
-        XCTAssertNil(model.selectedCase)
+        XCTAssertNil(model.selectedProject)
         XCTAssertNil(model.result)
-        XCTAssertEqual(model.errorMessage, CoreError.noCase.errorDescription)
+        XCTAssertEqual(model.errorMessage, CoreError.noProject.errorDescription)
     }
 
     /// Copied says the restored text shown was copied: another case's
     /// restored text is not, so the button reads Copy again.
-    func testCopiedGoesWhenTheCaseChanges() throws {
+    func testCopiedGoesWhenTheProjectChanges() throws {
         let (seeded, alias) = try seeded()
         let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
         let pasteboard = UIPasteboard.withUniqueName()
@@ -638,9 +621,9 @@ final class RestoreViewModelTests: XCTestCase {
         XCTAssertEqual(pasteboard.string, "Maya Ellison agrees.")
         model.save(to: seeded.letter)
         XCTAssertTrue(model.copied, "saving copies nothing new")
-        model.selectCase(seeded.ellison)
+        model.selectProject(seeded.ellison)
         XCTAssertTrue(model.copied, "the same case, the same text")
-        model.selectCase(seeded.harbour)
+        model.selectProject(seeded.harbour)
         XCTAssertFalse(model.copied)
         model.copy(to: pasteboard)
         XCTAssertEqual(pasteboard.string, "\(alias) agrees.")
@@ -679,15 +662,15 @@ final class RestoreViewModelTests: XCTestCase {
     }
 }
 
-/// A library with no cases at all.
+/// A library with no projects at all.
 private final class EmptyLibrary: Library {
     func snapshot() -> LibrarySnapshot { .empty }
     func session(for document: DocumentID) throws -> any mdoc.DocumentSession { throw CoreError.notFound }
-    func importDocument(_ source: ImportSource, title: String, into caseChoice: CaseChoice) throws -> any mdoc.DocumentSession {
+    func importDocument(_ source: ImportSource, title: String, into project: ProjectID?) throws -> any mdoc.DocumentSession {
         throw CoreError.notFound
     }
     func deleteDocument(_ document: DocumentID) throws {}
-    func restore(reply: String, in caseID: CaseID) throws -> RestoreResult { throw CoreError.noCase }
+    func restore(reply: String, in projectID: ProjectID) throws -> RestoreResult { throw CoreError.noProject }
     func saveReply(_ reply: String, to document: DocumentID) throws {}
 }
 

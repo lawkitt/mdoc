@@ -15,7 +15,7 @@ final class OCRResumeTests: XCTestCase {
     override func setUp() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_OCR_TESTS"] == "1", "OCR tests not requested")
         storage = try Fixture.temporaryStorage()
-        core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        core = try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
         try await Self.installOCR(into: core)
     }
 
@@ -26,13 +26,13 @@ final class OCRResumeTests: XCTestCase {
     }
 
     func testACancelledScanResumesWithThePagesLeft() throws {
-        let full = try core.library.importDocument(.scan(try pages("full")), title: "Full", into: .newCase(name: "Full"))
+        let full = try core.library.importDocument(.scan(try pages("full")), title: "Full", into: nil)
         let uninterrupted = try full.recognize(observer: TestObserver()).markdown
         XCTAssertTrue(uninterrupted.contains("Harbour Street"), uninterrupted)
         XCTAssertEqual(keptPages(), 0)
 
         // Cancel once the core has kept a page, as the Cancel button does.
-        let stopped = try core.library.importDocument(.scan(try pages("stopped")), title: "Stopped", into: .newCase(name: "Stopped"))
+        let stopped = try core.library.importDocument(.scan(try pages("stopped")), title: "Stopped", into: nil)
         XCTAssertThrowsError(try stopped.recognize(observer: cancelAfterAPage())) { error in
             XCTAssertEqual(error as? CoreError, .cancelled)
         }
@@ -42,7 +42,7 @@ final class OCRResumeTests: XCTestCase {
         XCTAssertTrue(stopped.snapshot().resumesOCR)
 
         // Resume, after mdoc stopped too: the next launch finds the import.
-        core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        core = try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
         let resumed = try core.library.session(for: stopped.id)
         XCTAssertTrue(resumed.snapshot().resumesOCR)
         let observer = TestObserver()
@@ -53,7 +53,7 @@ final class OCRResumeTests: XCTestCase {
     }
 
     func testDroppingAStoppedScanDiscardsItsPages() throws {
-        let stopped = try core.library.importDocument(.scan(try pages("dropped")), title: "Dropped", into: .newCase(name: "Dropped"))
+        let stopped = try core.library.importDocument(.scan(try pages("dropped")), title: "Dropped", into: nil)
         XCTAssertThrowsError(try stopped.recognize(observer: cancelAfterAPage()))
         XCTAssertGreaterThan(keptPages(), 0)
         try core.library.deleteDocument(stopped.id)
@@ -66,8 +66,8 @@ final class OCRResumeTests: XCTestCase {
     func testMissingOCRSetsUpThenRecognizes() async throws {
         let fresh = try Fixture.temporaryStorage()
         defer { try? FileManager.default.removeItem(at: fresh.root) }
-        let without = try RealCore.make(storage: fresh, keys: FixedCaseKeyStore(), physicalMemory: Fixture.detectorTier)
-        let session = try without.library.importDocument(.scan(try pages("setup")), title: "Setup", into: .newCase(name: "Setup"))
+        let without = try RealCore.make(storage: fresh, keys: FixedVaultKeyStore(), physicalMemory: Fixture.detectorTier)
+        let session = try without.library.importDocument(.scan(try pages("setup")), title: "Setup", into: nil)
         let model = DocumentViewModel(
             session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: fresh)
         await model.recognize()
@@ -88,7 +88,7 @@ final class OCRResumeTests: XCTestCase {
 
     /// Rendered pages of a fictional tenancy, as the camera would give them.
     private func pages(_ name: String) throws -> [URL] {
-        let folder = storage.url(.originals).appendingPathComponent(name, isDirectory: true)
+        let folder = storage.url(.intake).appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return try (1...Self.pageCount).map { number in
             let format = UIGraphicsImageRendererFormat()
@@ -114,10 +114,10 @@ final class OCRResumeTests: XCTestCase {
     }
 
     private func keptPages() -> Int {
-        Self.keptPages(in: storage.url(.imports))
+        Self.keptPages(in: storage.url(.ocr))
     }
 
-    /// Pages the core keeps under `imports/`, across every import.
+    /// Pages the core keeps in the intake folder's `ocr/`, across every import.
     private static func keptPages(in imports: URL) -> Int {
         let folders = (try? FileManager.default.contentsOfDirectory(at: imports, includingPropertiesForKeys: nil)) ?? []
         return folders.reduce(0) { count, folder in
@@ -128,7 +128,7 @@ final class OCRResumeTests: XCTestCase {
     /// An observer that cancels once a page is kept.
     private func cancelAfterAPage() -> TestObserver {
         let observer = TestObserver()
-        let imports = storage.url(.imports)
+        let imports = storage.url(.ocr)
         let watch = Thread {
             let deadline = Date().addingTimeInterval(300)
             while Date() < deadline, !observer.isCancelled() {

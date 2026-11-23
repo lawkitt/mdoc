@@ -130,6 +130,11 @@ pub struct Document {
     /// or update keeps it as stored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original: Option<Original>,
+    /// What its review counted at the last save, so lists show it without
+    /// opening it; `None` until a save says. A move clears it with the
+    /// review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counts: Option<ReviewCounts>,
 }
 
 impl Document {
@@ -171,6 +176,15 @@ pub struct OriginalInfo {
     /// The left-out line: what else the Markdown leaves out, counted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub left_out: Option<String>,
+}
+
+/// A review's mentions by state, as the caller counted them at a save.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ReviewCounts {
+    /// Proposals left.
+    pub proposed: u64,
+    pub replaced: u64,
+    pub kept: u64,
 }
 
 /// What a new Document starts with.
@@ -309,6 +323,9 @@ pub struct DocumentSummary {
     /// The original's SHA-256 in hex, for the repeated-import check.
     #[serde(default)]
     pub source_sha256: Option<String>,
+    /// [`Document::counts`].
+    #[serde(default)]
+    pub counts: Option<ReviewCounts>,
 }
 
 impl DocumentSummary {
@@ -324,6 +341,7 @@ impl DocumentSummary {
             created: document.created,
             updated: document.updated,
             source_sha256: (document.original.as_ref()).map(|original| original.sha256.clone()),
+            counts: document.counts,
         }
     }
 }
@@ -337,6 +355,16 @@ pub enum ReplyOwner {
     /// It follows the Document: it restores with the Document's own mapping
     /// while Unfiled and with its Project's once moved into one (#1091
     /// Decision 4).
+    Document(String),
+}
+
+/// Where the text an AI Reply answers was shared from; it decides the
+/// reply's [`ReplyOwner`] (`Vault::save_shared_reply`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SharedFrom {
+    /// A Project as a whole, from its page.
+    Project(String),
+    /// A Document: its Project's when it is in one, else Unfiled.
     Document(String),
 }
 
