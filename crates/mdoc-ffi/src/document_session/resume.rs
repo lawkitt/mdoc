@@ -83,8 +83,7 @@ pub fn discard_kept_images(kept: String, images: Vec<String>) -> Result<(), Core
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{setup::OcrPaths, test_support::Scratch};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use crate::test_support::Scratch;
 
     fn fixture(name: &str) -> String {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -165,6 +164,8 @@ mod tests {
         all(target_os = "windows", target_arch = "x86_64")
     ))]
     fn a_stopped_ocr_import_resumes_from_the_apps_folder() {
+        use crate::setup::OcrPaths;
+        use std::sync::atomic::{AtomicBool, Ordering};
         let scratch = Scratch::new();
         let models = scratch.path().join("models");
         let installed = mdoc_import::ocr::install_config_in(
