@@ -18,7 +18,7 @@ final class RealCoreTests: XCTestCase {
     }
 
     private func core() throws -> Core {
-        try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
     }
 
     private static let letter = """
@@ -28,13 +28,15 @@ final class RealCoreTests: XCTestCase {
         Ms Ellison's account: GB82 WEST 1234 5698 7654 32.
         """
 
-    /// Import, rules-only scan and a review, saved into the case it started.
+    /// Import, rules-only scan and a review, saved into the Project
+    /// "Ellison", which it was started from.
     private func reviewed(_ core: Core) throws -> any mdoc.DocumentSession {
-        let session = try core.library.importDocument(.text(Self.letter), title: "Letter", into: .newCase(name: "Ellison"))
+        let ellison = try Fixture.createProject("Ellison", in: core)
+        let session = try core.library.importDocument(.text(Self.letter), title: "Letter", into: ellison)
         XCTAssertNil(session.snapshot().phase, "recognizing")
         let imported = try session.recognize(observer: TestObserver())
         XCTAssertEqual(imported.phase, .unscanned)
-        XCTAssertEqual(imported.caseName, "Ellison")
+        XCTAssertEqual(imported.projectName, "Ellison")
         let scanned = try session.scan(observer: TestObserver())
         XCTAssertEqual(scanned.phase, .reviewing)
         XCTAssertTrue(scanned.candidates.contains { $0.original == "maya.ellison@example.com" && $0.category == .email })
@@ -54,7 +56,7 @@ final class RealCoreTests: XCTestCase {
     func testTheSampleProposesItsNamesWithoutAScan() throws {
         let core = try core()
         let sample = SampleDocument.english
-        let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: .newCase(name: sample.title))
+        let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: nil)
         _ = try session.recognize(observer: TestObserver())
         let proposed = try session.propose(sample.names)
         XCTAssertEqual(proposed.phase, .reviewing)
@@ -80,15 +82,15 @@ final class RealCoreTests: XCTestCase {
     /// case's names proposed: Replace N comes before the hand-off, which the
     /// core refuses while proposals wait (ADR 0088).
     @MainActor
-    func testBelowTheFloorCaseProposalsComeBeforeShare() throws {
+    func testBelowTheFloorProjectProposalsComeBeforeShare() throws {
         let core = try core()
         let first = try reviewed(core)
         let email = try XCTUnwrap(first.snapshot().candidates.first { $0.category == .email })
         _ = try first.decide(email.id, .replace, scope: .all)
-        let caseID = try XCTUnwrap(first.snapshot().caseID)
+        let projectID = try XCTUnwrap(first.snapshot().projectID)
 
         let second = try core.library.importDocument(
-            .text("Write to maya.ellison@example.com today."), title: "Note", into: .existing(caseID))
+            .text("Write to maya.ellison@example.com today."), title: "Note", into: projectID)
         let imported = try second.recognize(observer: TestObserver())
         XCTAssertEqual(imported.phase, .unscanned)
         XCTAssertGreaterThan(imported.pendingCount, 0)
@@ -101,17 +103,17 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(model.primaryAction, .handOff)
     }
 
-    func testHomeListsTheSavedDocumentInItsCase() throws {
+    func testHomeListsTheSavedDocumentInItsProject() throws {
         let core = try core()
         let session = try reviewed(core)
         let snapshot = core.library.snapshot()
         let document = try XCTUnwrap(snapshot.documents.first { $0.id == session.id })
         XCTAssertEqual(document.title, "Letter")
-        XCTAssertEqual(snapshot.cases.first { $0.id == document.caseID }?.name, "Ellison")
+        XCTAssertEqual(snapshot.projects.first { $0.id == document.projectID }?.name, "Ellison")
         XCTAssertGreaterThan(document.pendingCount, 0)
     }
 
-    func testShareWaitsForReviewThenRestoresWithTheCase() throws {
+    func testShareWaitsForReviewThenRestoresWithTheProject() throws {
         let core = try core()
         let session = try reviewed(core)
         // The core refuses while proposals wait, with how many.
@@ -125,7 +127,6 @@ final class RealCoreTests: XCTestCase {
         XCTAssertTrue(handOff.text.hasPrefix("Note: names and other identifying details"))
         XCTAssertFalse(handOff.text.contains("maya.ellison@example.com"))
         XCTAssertEqual(handOff.fileName, "Letter.md")
-        XCTAssertEqual(core.library.snapshot().currentCase, ready.caseID)
 
         let alias = try XCTUnwrap(ready.candidates.first { $0.category == .email }?.alias)
         let restored = try session.restoreReply("Write to \(alias) by Friday. \(alias.dropLast())9 is new.")
@@ -134,30 +135,12 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(restored.reply?.aliasText.hasPrefix("Write to \(alias)"), true)
     }
 
+    /// The reply and the Project's name are read once, not on every review
+    /// tap; a cleared reply and a renamed Project still show at once. The
+    /// reply pasted shows while the session lives, and not when the
+    /// document opens again (#1091 Q2, until Vault & Projects item 10).
     @MainActor
-    func testTheExtensionRestoresWithTheCurrentCase() throws {
-        let core = try core()
-        let session = try reviewed(core)
-        let ready = try session.replaceAllPending()
-        _ = try session.copyForAI()
-        let alias = try XCTUnwrap(ready.candidates.first { $0.category == .email }?.alias)
-
-        // The extension opens its own library on the same folder and key.
-        let library = try RealCore.library(storage: storage, keys: FixedCaseKeyStore())
-        let model = RestoreViewModel(library: library, reply: "Reply to \(alias).")
-        XCTAssertEqual(model.selectedCase, ready.caseID)
-        XCTAssertEqual(model.result?.text, "Reply to maya.ellison@example.com.")
-        let target = try XCTUnwrap(model.defaultSaveTarget)
-        model.save(to: target.id)
-        XCTAssertEqual(model.savedTo, target.id)
-        XCTAssertEqual(session.snapshot().reply?.aliasText, "Reply to \(alias).")
-    }
-
-    /// The reply and the case's name are read once, not on every review
-    /// tap; a reply saved here or by the Restore extension, a cleared reply
-    /// and a renamed case still show at once.
-    @MainActor
-    func testTheReplyAndCaseNameFollowEveryChange() throws {
+    func testTheReplyAndProjectNameFollowEveryChange() throws {
         let core = try core()
         let session = try reviewed(core)
         let ready = try session.replaceAllPending()
@@ -175,36 +158,38 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(kept.reply?.restored.text, "Write to \(alias).", "kept: the alias no longer restores")
         XCTAssertEqual(try session.undo().reply?.restored.text, "Write to maya.ellison@example.com.")
 
-        // The extension opens its own library on the same folder and key.
-        let library = try RealCore.library(storage: storage, keys: FixedCaseKeyStore())
-        let model = RestoreViewModel(library: library, reply: "Reply to \(alias).")
-        model.save(to: try XCTUnwrap(model.defaultSaveTarget).id)
-        XCTAssertEqual(session.snapshot().reply?.aliasText, "Reply to \(alias).")
+        XCTAssertEqual(try session.restoreReply("Reply to \(alias).").reply?.aliasText, "Reply to \(alias).")
         XCTAssertNil(try session.clearReply().reply)
         XCTAssertNil(session.snapshot().reply)
 
-        XCTAssertEqual(session.snapshot().caseName, "Ellison")
-        try core.library.renameCase(try XCTUnwrap(ready.caseID), to: "Ellison v Brightwater")
-        XCTAssertEqual(session.snapshot().caseName, "Ellison v Brightwater")
+        XCTAssertEqual(session.snapshot().projectName, "Ellison")
+        try core.library.renameProject(try XCTUnwrap(ready.projectID), to: "Ellison v Brightwater")
+        XCTAssertEqual(session.snapshot().projectName, "Ellison v Brightwater")
+
+        _ = try session.restoreReply("Write to \(alias).")
+        try core.library.saveChanges()
+        let vaultID = try XCTUnwrap((session as? RealSession)?.vaultID)
+        let reopened = try self.core().library.session(for: DocumentID(rawValue: vaultID))
+        XCTAssertNil(reopened.snapshot().reply, "empty when opened again")
     }
 
-    /// A document renamed in a case named after it, its only document,
-    /// renames the case: the snapshot shows the case's new name.
-    func testACaseRenamedWithItsDocumentShowsItsNewName() throws {
+    /// An Unfiled document has no Project, and renaming it makes none.
+    func testAnUnfiledDocumentsRenameMakesNoProject() throws {
         let core = try core()
-        let session = try core.library.importDocument(.text("# Memo\n\nCall Ann."), title: "Memo", into: .newCase(name: "Memo"))
+        let session = try core.library.importDocument(.text("# Memo\n\nCall Ann."), title: "Memo", into: nil)
         _ = try session.recognize(observer: TestObserver())
-        XCTAssertEqual(session.snapshot().caseName, "Memo")
+        XCTAssertNil(session.snapshot().projectID)
+        XCTAssertNil(session.snapshot().projectName)
         try core.library.renameDocument(session.id, to: "Note")
-        XCTAssertEqual(core.library.snapshot().cases.map(\.name), ["Note"])
-        XCTAssertEqual(session.snapshot().caseName, "Note")
+        XCTAssertTrue(core.library.snapshot().projects.isEmpty)
+        XCTAssertEqual(session.snapshot().title, "Note")
     }
 
     /// A scan that found nothing is still a scan (#673): after mdoc
     /// restarts the document is ready, not offered Find names again.
     func testAScanThatFoundNothingStaysScannedAfterARestart() throws {
         let session = try core().library.importDocument(
-            .text("# Note\n\nNothing to hide here."), title: "Note", into: .newCase(name: "Plain"))
+            .text("# Note\n\nNothing to hide here."), title: "Note", into: nil)
         _ = try session.recognize(observer: TestObserver())
         let scanned = try session.scan(observer: TestObserver())
         XCTAssertTrue(scanned.candidates.isEmpty)
@@ -239,7 +224,7 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(long, String(repeating: "ж", count: 120) + ".pdf", "240 bytes, whole letters")
     }
 
-    func testReopenedLibraryKeepsTheDocumentAndCase() throws {
+    func testReopenedLibraryKeepsTheDocumentAndProject() throws {
         let core = try core()
         let session = try reviewed(core)
         _ = try session.replaceAllPending()
@@ -248,7 +233,7 @@ final class RealCoreTests: XCTestCase {
         let reopened = try self.core().library.snapshot()
         XCTAssertEqual(reopened.documents.count, 1)
         XCTAssertEqual(reopened.documents.first?.phase, .ready)
-        XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
+        XCTAssertEqual(reopened.projects.map(\.name), ["Ellison"])
     }
 
     /// Find names that ends while the phone is locked cannot write the
@@ -256,25 +241,26 @@ final class RealCoreTests: XCTestCase {
     /// saved on unlock. Unlocked, a failed save is still an error.
     func testAScanThatEndsWhileLockedIsSavedOnUnlock() throws {
         let core = try core()
-        let session = try core.library.importDocument(.text(Self.letter), title: "Letter", into: .newCase(name: "Ellison"))
+        let session = try core.library.importDocument(.text(Self.letter), title: "Letter", into: nil)
         _ = try session.recognize(observer: TestObserver())
-        let documents = storage.url(.documents)
-        // Unwritable, as the library's folders are once the phone locks.
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: documents.path)
+        // Unwritable, as the Vault's folders are once the phone locks.
+        try Fixture.setVault(storage, writable: false)
         defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+            try? Fixture.setVault(storage, writable: true)
             ProtectedData.isAvailable = true
         }
         XCTAssertThrowsError(try session.scan(observer: TestObserver()), "unlocked, a failed save is an error")
         ProtectedData.isAvailable = false
         let scanned = try session.scan(observer: TestObserver())
         XCTAssertEqual(scanned.phase, .reviewing)
-        XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .unscanned, "not saved while locked")
+        let vaultID = try XCTUnwrap((session as? RealSession)?.vaultID)
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        XCTAssertEqual(try library.vault.document(id: vaultID).phase, .unscanned, "not saved while locked")
         XCTAssertEqual(try core.library.saveDeferred(), [], "still locked")
         // Unlocked but still failing (a full disk): reported, and kept.
         ProtectedData.isAvailable = true
         XCTAssertThrowsError(try core.library.saveDeferred())
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+        try Fixture.setVault(storage, writable: true)
         XCTAssertEqual(try core.library.saveDeferred(), [session.id])
         XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
         XCTAssertEqual(try core.library.saveDeferred(), [], "saved once")
@@ -285,19 +271,18 @@ final class RealCoreTests: XCTestCase {
     func testSampleProposalsWhileLockedAreSavedOnUnlock() throws {
         let core = try core()
         let sample = SampleDocument.english
-        let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: .newCase(name: sample.title))
+        let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: nil)
         _ = try session.recognize(observer: TestObserver())
-        let documents = storage.url(.documents)
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: documents.path)
+        try Fixture.setVault(storage, writable: false)
         defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+            try? Fixture.setVault(storage, writable: true)
             ProtectedData.isAvailable = true
         }
         ProtectedData.isAvailable = false
         let proposed = try session.propose(sample.names)
         XCTAssertEqual(proposed.phase, .reviewing)
         ProtectedData.isAvailable = true
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+        try Fixture.setVault(storage, writable: true)
         XCTAssertEqual(try core.library.saveDeferred(), [session.id])
         XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
     }
@@ -370,11 +355,11 @@ final class RealCoreTests: XCTestCase {
     func testAScanNeedsOCRToReadAPhoto() throws {
         let core = try core()
         let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).jpegData(withCompressionQuality: 0.9) { _ in }
-        let folder = storage.url(.originals).appendingPathComponent("photo", isDirectory: true)
+        let folder = storage.url(.intake).appendingPathComponent("photo", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent("page-1.jpg")
         try image.write(to: url)
-        let session = try core.library.importDocument(.photos([url]), title: "Receipt", into: .newCase(name: "Receipt"))
+        let session = try core.library.importDocument(.photos([url]), title: "Receipt", into: nil)
         XCTAssertThrowsError(try session.recognize(observer: TestObserver())) { error in
             XCTAssertEqual(error as? CoreError, .modelMissing)
         }
@@ -382,12 +367,11 @@ final class RealCoreTests: XCTestCase {
     }
 
     /// A title lists as typed (no "Sample- services agreement"), and Rename
-    /// keeps the open session: it saves on to the renamed file, and the
-    /// case named after the document follows it.
+    /// keeps the open session, which saves on into the Vault.
     func testRenameKeepsTheTitleAsTypedAndTheSession() throws {
         let core = try core()
         let title = "Sample: services agreement"
-        let session = try core.library.importDocument(.text(Self.letter), title: title, into: .newCase(name: title))
+        let session = try core.library.importDocument(.text(Self.letter), title: title, into: nil)
         _ = try session.recognize(observer: TestObserver())
         XCTAssertEqual(core.library.snapshot().documents.map(\.title), [title])
 
@@ -395,7 +379,7 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(session.snapshot().title, "Services: final")
         let renamed = core.library.snapshot()
         XCTAssertEqual(renamed.documents.map(\.title), ["Services: final"])
-        XCTAssertEqual(renamed.cases.map(\.name), ["Services: final"])
+        XCTAssertTrue(renamed.projects.isEmpty, "Unfiled: no Project follows it")
         XCTAssertEqual(renamed.documents.first?.id, session.id)
         _ = try session.scan(observer: TestObserver())
         XCTAssertEqual(try session.replaceAllPending().phase, .ready)
@@ -403,54 +387,123 @@ final class RealCoreTests: XCTestCase {
             XCTAssertEqual(error as? CoreError, .invalid("A document needs a title."))
         }
 
-        try core.library.renameCase(try XCTUnwrap(renamed.cases.first?.id), to: "Ellison")
         // Replace all is saved once mdoc leaves the foreground, if not before.
         try core.library.saveChanges()
         let reopened = try self.core().library.snapshot()
         XCTAssertEqual(reopened.documents.map(\.title), ["Services: final"])
         XCTAssertEqual(reopened.documents.first?.phase, .ready)
-        XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
     }
 
-    /// Move to case re-aliases the document for the case it joins; the case
-    /// it left stays, and Undo moves it back with the old aliases and takes
-    /// its names out of the case it joined.
-    func testMoveToCaseAndUndoThroughTheCore() throws {
+    /// The aliases a Project's names have now.
+    private func aliases(_ project: ProjectID, _ core: Core) throws -> Set<String> {
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        return Set(try library.vault.projectPage(id: project.rawValue).names.map(\.alias))
+    }
+
+    /// Move to Project re-aliases the document for the Project it joins; the
+    /// Project it left stays, and Undo moves it back with the old aliases
+    /// and takes its names out of the Project it joined.
+    func testMoveToProjectAndUndoThroughTheCore() throws {
         let core = try core()
         let letter = try reviewed(core)
         let before = try letter.replaceAllPending().markdown
         XCTAssertTrue(before.contains("EMAIL_1"))
+        let other = try Fixture.createProject("Other", in: core)
         let note = try core.library.importDocument(
-            .text("Write to someone@example.org."), title: "Note", into: .newCase(name: "Other"))
+            .text("Write to someone@example.org."), title: "Note", into: other)
         _ = try note.recognize(observer: TestObserver())
         _ = try note.scan(observer: TestObserver())
         XCTAssertTrue(try note.replaceAllPending().markdown.contains("EMAIL_1"))
-        let other = try XCTUnwrap(note.snapshot().caseID)
+        try core.library.saveChanges()
 
         let move = try core.library.moveDocument(letter.id, to: .existing(other))
-        XCTAssertEqual(move.to.id, other)
-        XCTAssertEqual(move.to.name, "Other")
-        XCTAssertTrue(move.added.contains("EMAIL_2"))
+        XCTAssertEqual(move.to?.id, other)
+        XCTAssertEqual(move.placeName, "Other")
         let moved = letter.snapshot()
-        XCTAssertEqual(moved.caseID, other)
+        XCTAssertEqual(moved.projectID, other)
         XCTAssertFalse(moved.markdown.contains("EMAIL_1"))
         XCTAssertTrue(moved.markdown.contains("EMAIL_2"))
-        XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).text, "maya.ellison@example.com")
+        XCTAssertTrue(try aliases(other, core).contains("EMAIL_2"))
         let ellison = try XCTUnwrap(move.from)
-        XCTAssertEqual(Set(core.library.snapshot().cases.map(\.name)), ["Ellison", "Other"])
+        XCTAssertEqual(Set(core.library.snapshot().projects.map(\.name)), ["Ellison", "Other"])
         XCTAssertTrue(core.library.snapshot().documents(in: ellison).isEmpty)
         XCTAssertThrowsError(try core.library.moveDocument(letter.id, to: .existing(other)))
 
         let undone = try core.library.undoMove(move)
-        XCTAssertEqual(undone.to.id, ellison)
+        XCTAssertEqual(undone.to?.id, ellison)
         XCTAssertEqual(letter.snapshot().markdown, before)
-        XCTAssertEqual(letter.snapshot().caseID, ellison)
-        XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).unresolvedCount, 1)
-        XCTAssertEqual(try core.library.restore(reply: "EMAIL_1", in: other).text, "someone@example.org")
+        XCTAssertEqual(letter.snapshot().projectID, ellison)
+        XCTAssertFalse(try aliases(other, core).contains("EMAIL_2"), "the names the move added went")
+        XCTAssertTrue(try aliases(other, core).contains("EMAIL_1"))
 
-        let fresh = try core.library.moveDocument(letter.id, to: .newCase(name: "Fresh"))
-        XCTAssertEqual(fresh.to.name, "Fresh")
+        let fresh = try core.library.moveDocument(letter.id, to: .newProject(name: "Fresh"))
+        XCTAssertEqual(fresh.to?.name, "Fresh")
         XCTAssertEqual(letter.snapshot().markdown, before)
+    }
+
+    /// Undo of a move keeps the names it added where text was shared from
+    /// since: a reply to it may name them (#1109's note, through
+    /// `Vault::text_for_ai`).
+    func testUndoOfAMoveKeepsNamesSharedSince() throws {
+        let core = try core()
+        let letter = try reviewed(core)
+        _ = try letter.replaceAllPending()
+        let other = try Fixture.createProject("Other", in: core)
+        let note = try core.library.importDocument(.text("Write to someone@example.org."), title: "Note", into: other)
+        _ = try note.recognize(observer: TestObserver())
+        _ = try note.scan(observer: TestObserver())
+        _ = try note.replaceAllPending()
+        try core.library.saveChanges()
+
+        let move = try core.library.moveDocument(letter.id, to: .existing(other))
+        XCTAssertTrue(try letter.copyForAI().text.contains("EMAIL_2"), "shared from Other")
+        _ = try core.library.undoMove(move)
+        XCTAssertTrue(try aliases(other, core).contains("EMAIL_2"), "kept: a reply may name it")
+    }
+
+    /// A reply pasted into a document is saved in the Vault as an AI Reply
+    /// to text shared from it: its Project's, or its own while Unfiled
+    /// (#1091 Q2 and Decision 4).
+    func testAPastedReplyIsSavedInTheVault() throws {
+        let core = try core()
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        let letter = try reviewed(core)
+        let ready = try letter.replaceAllPending()
+        let alias = try XCTUnwrap(ready.candidates.first { $0.category == .email }?.alias)
+        _ = try letter.restoreReply("Write to \(alias).")
+        let ellison = try XCTUnwrap(ready.projectID)
+        let saved = library.vault.projectReplies(projectId: ellison.rawValue)
+        XCTAssertEqual(saved.map(\.title), ["Reply to Letter"])
+        XCTAssertEqual(try library.vault.reply(id: try XCTUnwrap(saved.first?.id)).markdown, "Write to \(alias).")
+        XCTAssertEqual(
+            try library.vault.restoreReply(id: try XCTUnwrap(saved.first?.id)).text, "Write to maya.ellison@example.com.")
+
+        let memo = try core.library.importDocument(.text("Write to ann@example.com."), title: "Memo", into: nil)
+        _ = try memo.recognize(observer: TestObserver())
+        _ = try memo.scan(observer: TestObserver())
+        let memoAlias = try XCTUnwrap(try memo.replaceAllPending().candidates.first?.alias)
+        _ = try memo.restoreReply("Ask \(memoAlias).")
+        let memoID = try XCTUnwrap((memo as? RealSession)?.vaultID)
+        XCTAssertEqual(library.vault.documentReplies(documentId: memoID).count, 1, "an Unfiled document's own")
+    }
+
+    /// Below the floor, where the phone finds no names, a document whose
+    /// names were all decided by hand, never scanned, leaves through Copy
+    /// for AI (#1091 Q4); one with a proposal left does not.
+    func testANameDecidedByHandIsReadyWhereNoNamesAreFound() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.text("Ms Ellison signed."), title: "Note", into: nil)
+        _ = try session.recognize(observer: TestObserver())
+        let text = session.snapshot().markdown
+        let range = try XCTUnwrap(text.range(of: "Ms Ellison"))
+        let start = text.utf8.distance(from: text.utf8.startIndex, to: range.lowerBound)
+        let marked = try session.markSelection(SourceRange(start: start, end: start + "Ms Ellison".utf8.count), as: .person)
+        XCTAssertEqual(marked.phase, .unscanned)
+        XCTAssertThrowsError(try session.copyForAI())
+        _ = try session.replaceAllPending()
+        let handOff = try session.copyForAI()
+        XCTAssertFalse(handOff.text.contains("Ms Ellison"))
+        XCTAssertEqual(handOff.fileName, "Note.md")
     }
 
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
@@ -478,7 +531,7 @@ final class RealCoreTests: XCTestCase {
 
 extension RealCoreTests {
     func testAPendingImportSurvivesARestart() throws {
-        let first = try core().library.importDocument(.text(Self.letter), title: "Letter", into: .newCase(name: "Ellison"))
+        let first = try core().library.importDocument(.text(Self.letter), title: "Letter", into: nil)
         // mdoc stops before recognition runs; the next launch finds it.
         let core = try core()
         let pending = try XCTUnwrap(core.library.snapshot().documents.first { $0.id == first.id })
@@ -491,28 +544,29 @@ extension RealCoreTests {
 
     func testDeletingAnImportRemovesItsSourceFiles() throws {
         let core = try core()
-        let folder = storage.url(.originals).appendingPathComponent("import", isDirectory: true)
+        let folder = storage.url(.intake).appendingPathComponent("import", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let pdf = folder.appendingPathComponent("upload.pdf")
         try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 200)).writePDF(to: pdf) { context in
             context.beginPage()
             NSString(string: "Reply to maya.ellison@example.com").draw(at: CGPoint(x: 20, y: 20), withAttributes: nil)
         }
-        let session = try core.library.importDocument(.file(pdf, .pdf), title: "Statement", into: .newCase(name: "Statement"))
-        let imported = try session.recognize(observer: TestObserver())
-        XCTAssertEqual(imported.original, .pdf(folder.appendingPathComponent("Statement.pdf")))
+        let session = try core.library.importDocument(.file(pdf, .pdf), title: "Statement", into: nil)
+        XCTAssertEqual(session.snapshot().original, .pdf(folder.appendingPathComponent("Statement.pdf")))
+        _ = try session.recognize(observer: TestObserver())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path), "gone at its first save")
         try core.library.deleteDocument(session.id)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
         XCTAssertTrue(core.library.snapshot().documents.isEmpty)
+        XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty)
     }
 
     func testDeletingAPendingImportRemovesItsSourceFiles() throws {
         let core = try core()
-        let folder = storage.url(.originals).appendingPathComponent("scan", isDirectory: true)
+        let folder = storage.url(.intake).appendingPathComponent("scan", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let page = folder.appendingPathComponent("page-1.jpg")
         try UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).jpegData(withCompressionQuality: 0.9) { _ in }.write(to: page)
-        let session = try core.library.importDocument(.scan([page]), title: "Scan", into: .newCase(name: "Scan"))
+        let session = try core.library.importDocument(.scan([page]), title: "Scan", into: nil)
         try core.library.deleteDocument(session.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
         XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty)
@@ -561,9 +615,9 @@ final class BackgroundModelDownloaderTests: XCTestCase {
 }
 
 /// The Keychain store, on the Simulator's keychain under a test service.
-final class KeychainCaseKeyStoreTests: XCTestCase {
+final class KeychainVaultKeyStoreTests: XCTestCase {
     func testTheKeyIsMadeOnceAndKept() throws {
-        let store = KeychainCaseKeyStore(service: "io.github.lawkitt.mdoc.tests", account: UUID().uuidString)
+        let store = KeychainVaultKeyStore(service: "io.github.lawkitt.mdoc.tests", account: UUID().uuidString)
         defer { store.remove() }
         let first = try store.key()
         XCTAssertEqual(first.count, 32)

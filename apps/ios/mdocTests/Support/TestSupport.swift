@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 import XCTest
 @testable import mdoc
 
@@ -32,11 +33,11 @@ enum Fixture {
         .deletingLastPathComponent().deletingLastPathComponent()
 
     /// A copy of the repository's `path` in a folder of its own under the
-    /// storage's originals, as the app's intake leaves a file: an import
+    /// storage's intake folder, as the app's intake leaves a file: an import
     /// renames its file to the title.
     static func copy(_ path: String, into storage: MdocStorage) throws -> URL {
         let source = repository.appendingPathComponent(path)
-        let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = storage.url(.intake).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let copy = folder.appendingPathComponent(source.lastPathComponent)
         try FileManager.default.copyItem(at: source, to: copy)
@@ -60,40 +61,65 @@ enum Fixture {
     /// The real core over fresh temporary storage, with a fixed case key.
     static func core(memory: UInt64 = belowFloor) throws -> (Core, MdocStorage) {
         let storage = try temporaryStorage()
-        return (try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: memory), storage)
+        return (try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: memory), storage)
     }
 
     /// The fictional library (`Letters`) on the real core: the quotation,
-    /// replaced and shared, and the letter waiting for review in "Ellison v
-    /// Brightwater"; the tenancy scan, not yet recognized, in "Harbour
-    /// Street lease". The letter's and quotation's names are proposed as
-    /// Try a sample proposes its own, so no model is needed.
+    /// replaced and shared, and the letter waiting for review in the Project
+    /// "Ellison v Brightwater"; the tenancy scan, not yet recognized, in the
+    /// Project "Harbour Street lease". The letter's and quotation's names
+    /// are proposed as Try a sample proposes its own, so no model is needed.
+    /// The Vault dates a document by its last save, to the second, and lists
+    /// a tie by title: the letter, then the quotation (the tenancy, an
+    /// import not yet read, dates from now).
     static func seeded(memory: UInt64 = belowFloor) throws -> Seeded {
         let (core, storage) = try core(memory: memory)
         let library = core.library
+        let ellison = try createProject(Letters.ellisonProject, in: core)
+        let harbour = try createProject(Letters.harbourProject, in: core)
         let pages = try Letters.pageImages(
-            Letters.tenancyPages, named: "tenancy", in: storage.url(.originals).appendingPathComponent(UUID().uuidString))
-        let tenancy = try library.importDocument(.scan(pages), title: Letters.tenancyTitle, into: .newCase(name: Letters.harbourCase))
-        let quotation = try library.importDocument(.text(Letters.quotation), title: Letters.quotationTitle, into: .newCase(name: Letters.ellisonCase))
+            Letters.tenancyPages, named: "tenancy", in: storage.url(.intake).appendingPathComponent(UUID().uuidString))
+        let tenancy = try library.importDocument(.scan(pages), title: Letters.tenancyTitle, into: harbour)
+        let quotation = try library.importDocument(.text(Letters.quotation), title: Letters.quotationTitle, into: ellison)
         _ = try quotation.recognize(observer: TestObserver())
         _ = try quotation.propose(Letters.names)
         _ = try quotation.replaceAllPending()
         _ = try quotation.copyForAI()
-        let ellison = try XCTUnwrap(quotation.snapshot().caseID)
-        let letter = try library.importDocument(.text(Letters.letter), title: Letters.letterTitle, into: .existing(ellison))
+        let letter = try library.importDocument(.text(Letters.letter), title: Letters.letterTitle, into: ellison)
         _ = try letter.recognize(observer: TestObserver())
         _ = try letter.propose(Letters.names)
-        // The core dates a saved document by its file, to the second: the
-        // letter an hour ago and the quotation two, so the order is the
-        // fixture's (the tenancy, an import not yet read, dates from now).
-        for (session, hours) in [(letter, 1.0), (quotation, 2.0)] {
-            let path = try XCTUnwrap((session as? RealSession)?.path)
-            try FileManager.default.setAttributes(
-                [.modificationDate: Date().addingTimeInterval(-hours * 3600)], ofItemAtPath: path)
-        }
+        try library.saveChanges()
         return Seeded(
-            core: core, storage: storage, ellison: ellison, harbour: try XCTUnwrap(tenancy.snapshot().caseID),
+            core: core, storage: storage, ellison: ellison, harbour: harbour,
             letter: letter.id, quotation: quotation.id, tenancy: tenancy.id)
+    }
+
+    /// Every folder of the Vault made read-only, or writable again: a save
+    /// then fails as one does while the phone is locked.
+    static func setVault(_ storage: MdocStorage, writable: Bool) throws {
+        let files = FileManager.default
+        var folders = [storage.vault]
+        if let items = files.enumerator(at: storage.vault, includingPropertiesForKeys: [.isDirectoryKey]) {
+            for case let item as URL in items where (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                folders.append(item)
+            }
+        }
+        for folder in folders {
+            try files.setAttributes([.posixPermissions: writable ? 0o700 : 0o500], ofItemAtPath: folder.path)
+        }
+    }
+
+    /// The text a document has saved in the Vault, read through a session
+    /// of its own.
+    static func savedText(_ vaultID: String, in library: RealLibrary) throws -> String {
+        try MdocFFI.DocumentSession().openFromVault(vault: library.vault, id: vaultID).text
+    }
+
+    /// A Project made in the Vault, as the Project page will make one
+    /// (Vault & Projects item 11): no import makes one.
+    static func createProject(_ name: String, in core: Core) throws -> ProjectID {
+        let library = try XCTUnwrap(core.library as? RealLibrary)
+        return ProjectID(rawValue: try library.vault.createProject(name: name).id)
     }
 }
 
@@ -101,13 +127,13 @@ enum Fixture {
 struct Seeded {
     let core: Core
     let storage: MdocStorage
-    let ellison: CaseID
-    let harbour: CaseID
+    let ellison: ProjectID
+    let harbour: ProjectID
     let letter: DocumentID
     let quotation: DocumentID
     let tenancy: DocumentID
 
-    var library: any Library { core.library }
+    var library: any mdoc.Library { core.library }
 
     func session(_ id: DocumentID) throws -> any mdoc.DocumentSession {
         try core.library.session(for: id)
@@ -209,5 +235,55 @@ final class TestObserver: JobObserver, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return cancelled
+    }
+}
+
+/// The old library as the app left it before the Vault, which the Restore
+/// extension still reads until Vault & Projects item 10: the quotation,
+/// replaced and shared last, and the letter waiting for review in the case
+/// "Ellison v Brightwater"; the tenancy in "Harbour Street lease". Written
+/// through the core's old objects, as the app wrote it then.
+struct LegacySeeded {
+    let storage: MdocStorage
+    let library: any mdoc.Library
+    let ellison: ProjectID
+    let harbour: ProjectID
+    let letter: DocumentID
+    let quotation: DocumentID
+    let tenancy: DocumentID
+    /// The alias the shared quotation gave Maya Ellison.
+    let alias: String
+
+    static func make() throws -> LegacySeeded {
+        let storage = try Fixture.temporaryStorage()
+        let key = try FixedVaultKeyStore().key()
+        let old = try MdocFFI.Library(root: storage.root.path, caseKey: key)
+        let ellison = try old.createCase(name: Letters.ellisonProject).id
+        let harbour = try old.createCase(name: Letters.harbourProject).id
+        let names = Letters.names.map { ProposedName(wording: $0.wording, category: $0.category) }
+        var alias = ""
+        func saved(_ text: String, _ title: String, in caseID: String, replace: Bool, share: Bool, hoursAgo: Double) throws -> DocumentID {
+            let session = MdocFFI.DocumentSession()
+            _ = try session.importTextAs(text: text, title: title, origin: .ordinary)
+            _ = try session.joinCase(library: old, caseId: caseID)
+            _ = try session.review(action: .proposeNames(names: names), library: nil)
+            if replace {
+                let review = try session.review(action: .replaceAll, library: nil)
+                alias = review.mentions.first { $0.original == "Maya Ellison" }?.alias ?? ""
+            }
+            let path = try session.save(library: old).path
+            if share { _ = try session.handOff(library: old) }
+            // The old library dates a document by its file.
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date().addingTimeInterval(-hoursAgo * 3600)], ofItemAtPath: path)
+            return DocumentID(rawValue: path)
+        }
+        let quotation = try saved(Letters.quotation, Letters.quotationTitle, in: ellison, replace: true, share: true, hoursAgo: 2)
+        let letter = try saved(Letters.letter, Letters.letterTitle, in: ellison, replace: false, share: false, hoursAgo: 1)
+        let tenancy = try saved("Tenancy agreement", Letters.tenancyTitle, in: harbour, replace: false, share: false, hoursAgo: 3)
+        return LegacySeeded(
+            storage: storage, library: try RealCore.library(storage: storage, keys: FixedVaultKeyStore()),
+            ellison: ProjectID(rawValue: ellison), harbour: ProjectID(rawValue: harbour),
+            letter: letter, quotation: quotation, tenancy: tenancy, alias: alias)
     }
 }

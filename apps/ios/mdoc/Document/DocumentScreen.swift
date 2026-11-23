@@ -90,7 +90,7 @@ struct DocumentScreen: View {
                 sameAsPicker($0.id)
             }
             .sheet(isPresented: $model.showsReplySheet) {
-                ReplySheet(caseName: model.snapshot.caseName) { reply in
+                ReplySheet(projectName: model.snapshot.projectName) { reply in
                     model.restore(reply: reply)
                 }
             }

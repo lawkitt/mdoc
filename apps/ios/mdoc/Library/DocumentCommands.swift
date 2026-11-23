@@ -27,7 +27,7 @@ struct DocumentFileItems: View {
             Label("Rename…", systemImage: "pencil")
         }
         Menu {
-            let recent = app.library.recentCases(excluding: document.caseID)
+            let recent = app.library.recentProjects(excluding: document.projectID)
             ForEach(recent) { summary in
                 Button {
                     app.move(document.id, to: .existing(summary.id))
@@ -37,19 +37,19 @@ struct DocumentFileItems: View {
             }
             if !recent.isEmpty { Divider() }
             Button {
-                app.navigator.present(.moveToNewCase(document.id))
+                app.navigator.present(.moveToNewProject(document.id))
             } label: {
-                Label("New case…", systemImage: "plus")
+                Label("New Project…", systemImage: "plus")
             }
-            if app.library.cases.count > recent.count + (document.caseID == nil ? 0 : 1) {
+            if app.library.projects.count > recent.count + (document.projectID == nil ? 0 : 1) {
                 Button {
-                    app.navigator.present(.chooseCase(document.id))
+                    app.navigator.present(.chooseProject(document.id))
                 } label: {
-                    Label("All cases…", systemImage: "list.bullet")
+                    Label("All Projects…", systemImage: "list.bullet")
                 }
             }
         } label: {
-            Label("Move to case", systemImage: "folder")
+            Label("Move to Project", systemImage: "folder")
         }
     }
 }
@@ -101,21 +101,21 @@ struct DocumentDeleteButton: View {
     }
 }
 
-/// Move to case › All cases…: every other case, searchable.
-struct CasePicker: View {
-    let cases: [CaseSummary]
-    let onPick: (CaseID) -> Void
+/// Move to case › All projects…: every other case, searchable.
+struct ProjectPicker: View {
+    let projects: [ProjectSummary]
+    let onPick: (ProjectID) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
 
     var body: some View {
         NavigationStack {
-            List(cases.filter { query.isEmpty || $0.name.localizedStandardContains(query) }) { summary in
+            List(projects.filter { query.isEmpty || $0.name.localizedStandardContains(query) }) { summary in
                 Button {
                     onPick(summary.id)
                 } label: {
                     HStack(spacing: Space.s) {
-                        CaseDot(colour: summary.colour)
+                        ProjectDot(colour: summary.colour)
                         Text(summary.name)
                             .foregroundStyle(.primary)
                     }
@@ -123,7 +123,7 @@ struct CasePicker: View {
                 }
             }
             .searchable(text: $query)
-            .navigationTitle("Move to case")
+            .navigationTitle("Move to Project")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

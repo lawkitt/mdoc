@@ -22,7 +22,7 @@ final class TableEditingTests: XCTestCase, TextViewHarnessTests {
         """
 
     func harness(text: String = text, rendered: Bool = true) throws -> Harness {
-        let harness = try textViewHarness(text: text, title: "Rent", caseName: "Rent", rendered: rendered, editing: true)
+        let harness = try textViewHarness(text: text, title: "Rent", projectName: "Rent", rendered: rendered, editing: true)
         XCTAssertTrue(harness.view.isEditMode)
         return harness
     }

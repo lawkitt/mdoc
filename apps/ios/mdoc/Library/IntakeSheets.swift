@@ -1,50 +1,55 @@
 import SwiftUI
 import VisionKit
 
-/// The case something new goes into: a new case (the default) or one of the
-/// library's, with what a case is for. `leading` rows (Paste's title) sit
-/// above the picker in the same section.
-struct CaseChoiceSection<Leading: View>: View {
-    let cases: [CaseSummary]
-    @Binding var existingCase: CaseID?
+/// Where something new goes: Unfiled, or a Project, with what a Project is
+/// for. It starts on the Project the intake was started from, else Unfiled;
+/// no import makes a Project (#1091 Decision 35). `leading` rows (Paste's
+/// title) sit above the picker in the same section.
+struct ProjectChoiceSection<Leading: View>: View {
+    let projects: [ProjectSummary]
+    @Binding var existingProject: ProjectID?
     @ViewBuilder var leading: () -> Leading
 
     var body: some View {
         Section {
             leading()
-            Picker("Case", selection: $existingCase) {
-                Text("New case").tag(CaseID?.none)
-                ForEach(cases) { item in
+            Picker("Project", selection: $existingProject) {
+                Text("Unfiled").tag(ProjectID?.none)
+                ForEach(projects) { item in
                     Text(item.name).tag(Optional(item.id))
                 }
             }
         } footer: {
-            Text("A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored.")
+            Text("A Project keeps the names and their aliases together, so an AI reply about any of its documents can be restored. An Unfiled document keeps its own.")
         }
     }
 }
 
-extension CaseChoiceSection where Leading == EmptyView {
-    init(cases: [CaseSummary], existingCase: Binding<CaseID?>) {
-        self.init(cases: cases, existingCase: existingCase) { EmptyView() }
+extension ProjectChoiceSection where Leading == EmptyView {
+    init(projects: [ProjectSummary], existingProject: Binding<ProjectID?>) {
+        self.init(projects: projects, existingProject: existingProject) { EmptyView() }
     }
 }
 
-/// The title and the case for something just brought in. A new case is the
-/// default, named after the document.
+/// The title and the Project for something just brought in: Unfiled, or
+/// the Project it was started from.
 struct ImportSheet: View {
     let pending: PendingImport
-    let cases: [CaseSummary]
-    let onImport: (String, CaseChoice) -> Void
+    let projects: [ProjectSummary]
+    let onImport: (String, ProjectID?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
-    @State private var existingCase: CaseID?
+    @State private var existingProject: ProjectID?
 
-    init(pending: PendingImport, cases: [CaseSummary], onImport: @escaping (String, CaseChoice) -> Void) {
+    init(
+        pending: PendingImport, projects: [ProjectSummary], startingProject: ProjectID? = nil,
+        onImport: @escaping (String, ProjectID?) -> Void
+    ) {
         self.pending = pending
-        self.cases = cases
+        self.projects = projects
         self.onImport = onImport
         _title = State(initialValue: pending.suggestedTitle)
+        _existingProject = State(initialValue: startingProject)
     }
 
     var body: some View {
@@ -54,7 +59,7 @@ struct ImportSheet: View {
                     TextField("Title", text: $title)
                         .accessibilityIdentifier("import-title")
                 }
-                CaseChoiceSection(cases: cases, existingCase: $existingCase)
+                ProjectChoiceSection(projects: projects, existingProject: $existingProject)
             }
             .navigationTitle("Add document")
             .navigationBarTitleDisplayMode(.inline)
@@ -64,9 +69,7 @@ struct ImportSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        onImport(title, existingCase.map(CaseChoice.existing)
-                            ?? .newCase(name: name.isEmpty ? pending.suggestedTitle : name))
+                        onImport(title, existingProject)
                     }
                     .accessibilityIdentifier("import-add")
                 }
@@ -76,15 +79,21 @@ struct ImportSheet: View {
     }
 }
 
-/// Paste: text from the clipboard, its title and its case in one sheet
-/// (ADR 0087); a new case named after the title is the default.
+/// Paste: text from the clipboard, its title and its Project in one sheet
+/// (ADR 0087); Unfiled, or the Project it was started from.
 struct PasteTextSheet: View {
-    let cases: [CaseSummary]
-    let onAdd: (String, String, CaseChoice) -> Void
+    let projects: [ProjectSummary]
+    let onAdd: (String, String, ProjectID?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var title = ""
-    @State private var existingCase: CaseID?
+    @State private var existingProject: ProjectID?
+
+    init(projects: [ProjectSummary], startingProject: ProjectID? = nil, onAdd: @escaping (String, String, ProjectID?) -> Void) {
+        self.projects = projects
+        self.onAdd = onAdd
+        _existingProject = State(initialValue: startingProject)
+    }
 
     private var suggestedTitle: String { Importer.suggestedTitle(for: text) }
 
@@ -114,7 +123,7 @@ struct PasteTextSheet: View {
                         }
                         .accessibilityLabel(Text("Text"))
                 }
-                CaseChoiceSection(cases: cases, existingCase: $existingCase) {
+                ProjectChoiceSection(projects: projects, existingProject: $existingProject) {
                     TextField("Title", text: $title, prompt: Text(suggestedTitle))
                         .accessibilityIdentifier("import-title")
                 }
@@ -129,7 +138,7 @@ struct PasteTextSheet: View {
                     Button("Add") {
                         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
                         let chosen = name.isEmpty ? suggestedTitle : name
-                        onAdd(text, chosen, existingCase.map(CaseChoice.existing) ?? .newCase(name: chosen))
+                        onAdd(text, chosen, existingProject)
                     }
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("import-add")

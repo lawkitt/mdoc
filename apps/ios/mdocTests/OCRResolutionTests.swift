@@ -17,7 +17,7 @@ final class OCRResolutionTests: XCTestCase {
         let runs = Int(environment["MDOC_OCR_DPI_RUNS"] ?? "") ?? 3
         let storage = try Fixture.temporaryStorage()
         defer { try? FileManager.default.removeItem(at: storage.root) }
-        let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+        let core = try RealCore.make(storage: storage, keys: FixedVaultKeyStore(), physicalMemory: Fixture.belowFloor)
         try await OCRResumeTests.installOCR(into: core)
         let paths = try XCTUnwrap((core.setup as? RealSetup)?.ocrPaths())
 

@@ -28,7 +28,7 @@ final class LargeTableEditModeTests: XCTestCase, TextViewHarnessTests {
     /// The document shown in review, Show Markdown off.
     private func harness() throws -> Harness {
         let harness = try textViewHarness(
-            text: Self.text(), title: "Contract", caseName: "Contract", rendered: true, editing: false)
+            text: Self.text(), title: "Contract", projectName: "Contract", rendered: true, editing: false)
         XCTAssertFalse(harness.view.isEditMode)
         return harness
     }

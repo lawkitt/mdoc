@@ -18,20 +18,25 @@ protocol JobObserver: AnyObject, Sendable {
     func onCancel(_ handler: @escaping @Sendable () -> Void)
 }
 
-/// Cases and stored documents.
+/// Projects and stored documents: the app's over the Vault (ADR 0125), and
+/// the Restore extension's over the old library until Vault & Projects
+/// item 10 (`restore`, `saveReply` and the snapshot's cases only).
 protocol Library: AnyObject, Sendable {
     func snapshot() -> LibrarySnapshot
     func session(for document: DocumentID) throws -> any DocumentSession
-    /// Stores the document and returns its session, ready for `recognize`.
-    func importDocument(_ source: ImportSource, title: String, into caseChoice: CaseChoice) throws -> any DocumentSession
+    /// Stores the document and returns its session, ready for `recognize`:
+    /// Unfiled for nil, or in the Project it was started from. No import
+    /// makes a Project (#1091 Decision 35).
+    func importDocument(_ source: ImportSource, title: String, into project: ProjectID?) throws -> any DocumentSession
     func deleteDocument(_ document: DocumentID) throws
-    /// A new document left empty goes, with the case made for it, when it
-    /// is left (ADR 0109). True when it went; any other document stays.
+    /// A new document left empty goes when it is left (ADR 0109). True
+    /// when it went; any other document stays.
     func discardIfEmpty(_ document: DocumentID) throws -> Bool
-    /// Restores a reply in place with one case's mapping. Needs no model,
-    /// so the share extension can call it.
-    func restore(reply: String, in caseID: CaseID) throws -> RestoreResult
-    /// Keeps `reply`, in alias form, as the document's reply (ADR 0078).
+    /// Restores a reply in place with one Project's mapping. Needs no
+    /// model, so the share extension can call it.
+    func restore(reply: String, in projectID: ProjectID) throws -> RestoreResult
+    /// Keeps `reply`, in alias form, for the document (ADR 0078): the
+    /// Vault saves it as an AI Reply to text shared from it.
     func saveReply(_ reply: String, to document: DocumentID) throws
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
@@ -42,27 +47,22 @@ protocol Library: AnyObject, Sendable {
     /// Tells `observer`, on the main thread, how each save that follows
     /// taps went.
     func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void)
-    /// Rename: the document's title, as typed (its file follows, numbered
-    /// when another document has the title). A case holding only this
-    /// document and named after it is renamed with it. Refused for a blank
-    /// title, and for an import not read yet.
+    /// Rename: the document's title, as typed, trimmed. Refused for a
+    /// blank title, and for an import not read yet.
     func renameDocument(_ document: DocumentID, to title: String) throws
-    /// Renames a case; its documents keep their titles.
-    func renameCase(_ caseID: CaseID, to name: String) throws
-    /// Move to case (ADR 0041 Joining): the document leaves its case and
-    /// joins `target`, its names taking that case's aliases (a name the case
-    /// knows takes its alias, a clashing alias the next free number). The
-    /// case it left keeps its names and the document's reply, so replies to
-    /// what was sent still restore with it, and it stays even with no
-    /// documents left. Refused for the case it is in already, and for an
-    /// import not read yet.
-    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove
-    /// Undo of Move to case: the document moves back into the case it
-    /// left and its names take their old aliases again; the reply kept there
-    /// is the document's again. The case it leaves loses the names the move
-    /// added, unless another of its documents or a reply kept there uses
-    /// them, or it is the current case.
-    func undoMove(_ move: CaseMove) throws -> CaseMove
+    /// Renames a Project; its documents keep their titles.
+    func renameProject(_ projectID: ProjectID, to name: String) throws
+    /// Move to Project (#1091 Decision 9): the document joins `target`, its
+    /// names taking that Project's aliases (a name the Project knows takes
+    /// its alias, a clashing alias the next free number) and its text
+    /// rewritten with them. The Project it left keeps its names, so replies
+    /// to what was sent still restore. Refused for the Project it is in
+    /// already, and for an import not read yet.
+    func moveDocument(_ document: DocumentID, to target: ProjectChoice) throws -> ProjectMove
+    /// Undo of Move to Project: the document moves back and its names take
+    /// their old aliases there. The names the move added go again where
+    /// nothing uses them, unless text was shared from there since.
+    func undoMove(_ move: ProjectMove) throws -> ProjectMove
 }
 
 /// How a save that followed review taps went (`Library.observeSaves`).
@@ -79,9 +79,9 @@ extension Library {
     func saveChanges() throws {}
     func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void) {}
     func renameDocument(_ document: DocumentID, to title: String) throws { throw CoreError.notFound }
-    func renameCase(_ caseID: CaseID, to name: String) throws { throw CoreError.noCase }
-    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove { throw CoreError.notFound }
-    func undoMove(_ move: CaseMove) throws -> CaseMove { throw CoreError.noCase }
+    func renameProject(_ projectID: ProjectID, to name: String) throws { throw CoreError.noProject }
+    func moveDocument(_ document: DocumentID, to target: ProjectChoice) throws -> ProjectMove { throw CoreError.notFound }
+    func undoMove(_ move: ProjectMove) throws -> ProjectMove { throw CoreError.noProject }
     func discardIfEmpty(_ document: DocumentID) throws -> Bool { false }
 }
 

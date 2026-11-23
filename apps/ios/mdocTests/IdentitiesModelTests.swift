@@ -197,14 +197,14 @@ final class IdentitiesModelTests: XCTestCase {
         defer { Hints.shared.setAvailableForTesting([]) }
         let seeded = try Fixture.seeded()
         let one = try seeded.library.importDocument(
-            .text("Write to maya.ellison@example.com."), title: "One name", into: .existing(seeded.ellison))
+            .text("Write to maya.ellison@example.com."), title: "One name", into: seeded.ellison)
         _ = try one.recognize(observer: TestObserver())
         _ = try one.propose(Letters.names.filter { $0.category == .email })
         let alone = try seeded.model(one.id)
         XCTAssertEqual(alone.snapshot.identities.count, 1)
         XCTAssertFalse(alone.offersSelectDemo)
         let two = try seeded.library.importDocument(
-            .text("Write to maya.ellison@example.com or call 01632 960 418."), title: "Two names", into: .existing(seeded.ellison))
+            .text("Write to maya.ellison@example.com or call 01632 960 418."), title: "Two names", into: seeded.ellison)
         _ = try two.recognize(observer: TestObserver())
         _ = try two.propose(Letters.names.filter { $0.category == .email || $0.category == .phone })
         XCTAssertTrue(try seeded.model(two.id).offersSelectDemo, "names of two categories are enough")

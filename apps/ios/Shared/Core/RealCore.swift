@@ -1,34 +1,34 @@
 import Foundation
 import MdocFFI
-import notify
 import os
 
 /// The app's `Core` over `crates/mdoc-ffi` (ADR 0085). The Rust objects own
-/// documents, review, cases and restore; this file only converts their
-/// records into the snapshots the views use, and keeps which source file a
-/// document came from for the Original view.
+/// documents, review, Projects and restore, and the Vault keeps them
+/// (ADR 0125); this file only converts their records into the snapshots
+/// the views use, and keeps an import's received files until its first
+/// save.
 enum RealCore {
     /// The library and setup for the app. `physicalMemory` decides which
     /// models are offered; below the floor a scan runs the structured rules.
-    static func make(storage: MdocStorage, keys: any CaseKeyStore, physicalMemory: UInt64) throws -> Core {
+    static func make(storage: MdocStorage, keys: any VaultKeyStore, physicalMemory: UInt64) throws -> Core {
         let setup = RealSetup(storage: storage, physicalMemory: physicalMemory)
         let library = try RealLibrary(storage: storage, keys: keys, setup: setup)
-        library.migrateScanned()
         return Core(library: library, setup: setup)
     }
 
-    /// The Restore extension's library: cases and restore, no models.
-    static func library(storage: MdocStorage, keys: any CaseKeyStore) throws -> any Library {
-        try RealLibrary(storage: storage, keys: keys, setup: nil)
+    /// The Restore extension's library: the old library's cases and
+    /// restore, no models, until Vault & Projects item 10.
+    static func library(storage: MdocStorage, keys: any VaultKeyStore) throws -> any Library {
+        try LegacyRestoreLibrary(storage: storage, keys: keys)
     }
 }
 
 // MARK: - Conversions
 
-extension CaseColour {
+extension ProjectColour {
     /// The swatch nearest a case's stored hue (ADR 0077).
     init(hue: UInt32) {
-        let hues: [(CaseColour, Double)] = [
+        let hues: [(ProjectColour, Double)] = [
             (.red, 0), (.orange, 30), (.amber, 45), (.green, 130), (.teal, 175), (.blue, 215), (.violet, 270), (.pink, 330),
         ]
         let value = Double(hue % 360)
@@ -80,7 +80,7 @@ extension CoreError {
         case .detect(let message): .findNamesFailed(message)
         case .cancelled: .cancelled
         case .review(let message): .reviewChanged(message)
-        case .caseFailed(let message): .caseRefused(message)
+        case .caseFailed(let message): .projectRefused(message)
         case .setup(let message): .setupFailed(message)
         case .invalid(let message): .invalid(message)
         case .io(let message): .fileFailed(message)
@@ -105,9 +105,22 @@ private func core<T>(_ call: () throws -> T) throws -> T {
     }
 }
 
-extension CaseSummary {
-    init(_ info: CaseInfo) {
-        self.init(id: CaseID(rawValue: info.id), name: info.name, colour: CaseColour(hue: info.hue))
+extension ProjectSummary {
+    init(_ info: ProjectInfo) {
+        self.init(id: ProjectID(rawValue: info.id), name: info.name, colour: ProjectColour(hue: info.hue))
+    }
+}
+
+extension SourceKind {
+    /// The app's kind of a Vault document's file family.
+    init(_ kind: DocumentSourceKind) {
+        self = switch kind {
+        case .pdf: .pdf
+        case .word: .docx
+        case .image: .image
+        case .scan: .scan
+        case .spreadsheet, .presentation, .ebook, .markdown, .text: .text
+        }
     }
 }
 
@@ -187,28 +200,29 @@ struct DeviceConditions: Sendable {
         })
 }
 
+
 // MARK: - Library
 
+/// The app's documents and Projects in the Vault (ADR 0125): opened on the
+/// storage's `vault` folder with the Keychain key, known by the Vault's ids
+/// (#1091). An import the core has not read yet is the one thing kept
+/// outside it: its received files and its record wait in `intake` until its
+/// first save.
 final class RealLibrary: Library, @unchecked Sendable {
-    let ffi: MdocFFI.Library
+    let vault: MdocFFI.Vault
     let storage: MdocStorage
     let setup: RealSetup?
     private let lock = NSLock()
     private var sessions: [DocumentID: RealSession] = [:]
-    /// Saved document path → the id this run gave it.
+    /// Vault id → the id this run gave its document: an import keeps the
+    /// id it had before its first save.
     private var ids: [String: DocumentID] = [:]
-    private let originals: OriginalsIndex
     private let pending: PendingImports
     /// Saves that wait for the phone to unlock, by document.
     private var unsaved: [DocumentID: () throws -> Void] = [:]
-    /// Case names by id, read once each: every snapshot shows its case's
-    /// name, and reading it opens the case.
-    private var caseNames: [String: String] = [:]
-    /// Told of each reply saved, here or in the Restore extension, so the
-    /// sessions read their kept reply again (`replyGeneration`).
-    private var replyToken: Int32 = 0
-    private let replyWatch: Bool
-    private var replyGenerationValue = 0
+    /// Project names by id, read once each: every snapshot shows its
+    /// Project's name.
+    private var projectNames: [String: String] = [:]
     /// Where the saves that follow taps run (ADR 0104).
     fileprivate let saveQueue = DispatchQueue(label: "io.github.lawkitt.mdoc.save", qos: .utility)
     /// How long taps pause before their save; the tests shorten it.
@@ -219,56 +233,54 @@ final class RealLibrary: Library, @unchecked Sendable {
     var device = DeviceConditions.live
     private var saveObserver: (@MainActor @Sendable (SaveEvent) -> Void)?
 
-    init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
+    init(storage: MdocStorage, keys: any VaultKeyStore, setup: RealSetup?) throws {
         self.storage = storage
         self.setup = setup
-        originals = OriginalsIndex(storage: storage)
         pending = PendingImports(storage: storage)
-        ffi = try core { try MdocFFI.Library(root: storage.root.path, caseKey: try keys.key()) }
-        replyWatch = notify_register_check(Self.replySaved, &replyToken) == NOTIFY_STATUS_OK
+        vault = try core { try MdocFFI.Vault.open(root: storage.vault.path, key: try keys.key()) }
         // Imports not yet read when mdoc last stopped come back, ready to
         // recognize again.
         for entry in pending.all() {
             let session = RealSession(
-                id: entry.id, library: self, source: entry.source, title: entry.title, caseID: entry.caseID,
+                id: entry.id, library: self, source: entry.source, title: entry.title, projectID: entry.projectID,
                 ocrStarted: entry.ocrStarted)
             sessions[entry.id] = session
         }
     }
 
-    deinit {
-        if replyWatch { notify_cancel(replyToken) }
+    /// The phone finds no names (ADR 0088, ADR 0120): below the floor, or
+    /// before the name finder is installed. Then a Vault save with no
+    /// proposals left records the document Ready (#1091 Q4).
+    var findsNoNames: Bool {
+        guard let setup else { return true }
+        return setup.snapshot().tier != .detector || setup.detectorPaths() == nil
     }
 
-    /// The saved documents from the core's summaries, which open none of
+    /// The saved documents from the Vault's manifest, which opens none of
     /// them (ADR 0104), then the imports not saved yet. A document open
     /// this run lists as its session has it, as it shows when opened: a
-    /// Keep is not saved, and a save a locked phone held back has not
-    /// landed yet.
+    /// save a locked phone held back has not landed yet.
     func snapshot() -> LibrarySnapshot {
-        let cases = ffi.cases().cases.map(CaseSummary.init)
-        let stored = (try? ffi.documentSummaries()) ?? []
-        let kinds = originals.kinds()
+        let projects = vault.projects().map(ProjectSummary.init)
+        let stored = vault.documents()
         let rows = lock.withLock {
-            stored.map { summary in
-                let id = ids[summary.path] ?? DocumentID(rawValue: summary.path)
-                return (summary, id, sessions[id])
+            stored.map { info in
+                let id = ids[info.id] ?? DocumentID(rawValue: info.id)
+                return (info, id, sessions[id])
             }
         }
-        var documents = rows.map { summary, id, session in
-            let updated = Date(timeIntervalSince1970: TimeInterval(summary.modified))
+        var documents = rows.map { info, id, session in
+            let updated = Date(timeIntervalSince1970: TimeInterval(info.updated))
             return session?.loadedSummary(updated: updated) ?? LibraryDocument(
-                id: id, title: summary.title, caseID: summary.caseId.map(CaseID.init), kind: kinds(summary.path),
-                phase: summary.phase, pendingCount: Int(summary.proposed), updated: updated,
-                candidateCount: Int(summary.proposed + summary.replaced + summary.kept), origin: summary.origin)
+                id: id, title: info.title, projectID: info.projectId.map(ProjectID.init),
+                kind: SourceKind(info.sourceKind), phase: info.phase, pendingCount: Int(info.proposed),
+                updated: updated, candidateCount: Int(info.proposed + info.replaced + info.kept), origin: info.origin)
         }
         let listed = Set(documents.map(\.id))
         let pending = lock.withLock { sessions.values.filter { !listed.contains($0.id) } }
         documents += pending.map { $0.summary(updated: $0.created) }
         return LibrarySnapshot(
-            cases: cases,
-            documents: documents.sorted { $0.updated > $1.updated },
-            currentCase: ffi.currentCase().map { CaseID(rawValue: $0.id) })
+            projects: projects, documents: documents.sorted { $0.updated > $1.updated }, currentProject: nil)
     }
 
     /// The documents this run has a session for: opened, or imported.
@@ -278,42 +290,44 @@ final class RealLibrary: Library, @unchecked Sendable {
         if let session = lock.withLock({ sessions[document] }) {
             return session
         }
-        return try session(path: document.rawValue)
+        return try session(vaultID: document.rawValue)
     }
 
-    /// The session of a saved document, opened in its case the first time.
-    private func session(path: String) throws -> RealSession {
-        if let id = lock.withLock({ ids[path] }), let session = lock.withLock({ sessions[id] }) {
+    /// The session of a saved document, opened from the Vault the first
+    /// time.
+    private func session(vaultID: String) throws -> RealSession {
+        if let id = lock.withLock({ ids[vaultID] }), let session = lock.withLock({ sessions[id] }) {
             return session
         }
-        guard FileManager.default.fileExists(atPath: path) else { throw CoreError.notFound }
-        // It opens in its case as stored: what the other documents' taps
-        // added to the case (a name marked and replaced) is saved first,
-        // so it is proposed here too.
+        let info: DocumentInfo
+        do {
+            info = try vault.document(id: vaultID)
+        } catch {
+            throw CoreError.notFound
+        }
+        // It opens in its Project as stored: what the other documents'
+        // taps added there (a name marked and replaced) is saved first, so
+        // it is proposed here too.
         saveChangesReporting()
-        let session = RealSession(id: DocumentID(rawValue: path), library: self, source: nil, title: "", caseID: nil)
-        try session.reopen(path: path, original: originals.original(for: path))
+        let session = RealSession(
+            id: DocumentID(rawValue: vaultID), library: self, source: nil, title: info.title, projectID: nil)
+        try session.reopen(vaultID: vaultID, kind: SourceKind(info.sourceKind))
         lock.withLock {
             sessions[session.id] = session
-            ids[path] = session.id
+            ids[vaultID] = session.id
         }
         return session
     }
 
-    func importDocument(_ source: ImportSource, title: String, into caseChoice: CaseChoice) throws -> any DocumentSession {
-        // The case exists from the start, so the document lists under it
-        // while it is read (ADR 0085: a new case unless one is chosen).
-        let caseID: String = switch caseChoice {
-        case .existing(let id): id.rawValue
-        case .newCase(let name): try core { try ffi.createCase(name: name) }.id
-        }
-        // Its job joins the case as stored: the taps' changes first.
+    func importDocument(_ source: ImportSource, title: String, into project: ProjectID?) throws -> any DocumentSession {
+        // Its job joins the Project as stored: the taps' changes first.
         saveChangesReporting()
-        let prepared = try originals.prepare(source, title: title)
+        let prepared = try IntakeFiles.prepare(source, title: title, storage: storage)
         let id = DocumentID(rawValue: "new:\(UUID().uuidString)")
-        // Kept on disk until its first save, so it survives mdoc stopping.
-        pending.add(PendingImports.Entry(id: id, title: title, caseID: caseID, source: prepared))
-        let session = RealSession(id: id, library: self, source: prepared, title: title, caseID: caseID)
+        // Kept in the intake folder until its first save, so it survives
+        // mdoc stopping.
+        pending.add(PendingImports.Entry(id: id, title: title, projectID: project?.rawValue, source: prepared))
+        let session = RealSession(id: id, library: self, source: prepared, title: title, projectID: project?.rawValue)
         lock.withLock { sessions[session.id] = session }
         return session
     }
@@ -321,169 +335,118 @@ final class RealLibrary: Library, @unchecked Sendable {
     func deleteDocument(_ document: DocumentID) throws {
         guard let session = lock.withLock({ sessions[document] }) else {
             // A listed document not opened this run has no session: its id
-            // is its file.
-            let path = document.rawValue
-            guard FileManager.default.fileExists(atPath: path) else { throw CoreError.notFound }
-            try deleteFile(path)
-            forget(document, path: path)
+            // is the Vault's.
+            try core { try vault.deleteDocument(id: document.rawValue) }
+            forget(document, vaultID: document.rawValue)
             return
         }
-        // Its file is read once no save or rename runs, and none starts
-        // until the delete ends: once it succeeds, nothing writes the
-        // document again (not its taps' save, its job's, or a save waiting
-        // for the phone to unlock) and its job stops. A delete that fails
-        // leaves the session as it was.
-        let path = try session.delete { [self] path in
-            if let path {
-                try deleteFile(path)
+        // Deleted once no save or rename runs, and none starts until the
+        // delete ends: once it succeeds, nothing writes the document again
+        // (not its taps' save, its job's, or a save waiting for the phone
+        // to unlock) and its job stops. A delete that fails leaves the
+        // session as it was.
+        let vaultID = try session.delete { [self] vaultID in
+            if let vaultID {
+                try core { try vault.deleteDocument(id: vaultID) }
             } else if let input = session.pendingInput {
                 // An import not yet read: OCR's kept pages go first, found by
                 // the source files' digests, then the files.
+                let kept = storage.url(.ocr).path
                 switch input {
-                case .file(let url, _): try core { try ffi.discardImport(source: url.path) }
-                case .images(let urls): try core { try ffi.discardImages(images: urls.map(\.path)) }
+                case .file(let url, _): try core { try discardKeptImport(kept: kept, source: url.path) }
+                case .images(let urls): try core { try discardKeptImages(kept: kept, images: urls.map(\.path)) }
                 case .text: break
                 }
             }
         }
-        forget(document, path: path)
-    }
-
-    /// The core takes a saved document out of its case (and the reply kept
-    /// for it), then removes the file; a case it cannot save keeps it.
-    private func deleteFile(_ path: String) throws {
-        _ = try core { try ffi.deleteDocument(path: path) }
+        forget(document, vaultID: vaultID)
     }
 
     /// A deleted or discarded document's session goes, with the save that
     /// waited for the phone to unlock: together, so no failed save queues
-    /// one again after (`saveOnUnlock`).
-    private func forget(_ document: DocumentID, path: String?) {
+    /// one again after (`saveOnUnlock`). An import's intake files go too.
+    private func forget(_ document: DocumentID, vaultID: String?) {
         lock.withLock {
             _ = unsaved.removeValue(forKey: document)
             _ = sessions.removeValue(forKey: document)
-            if let path { _ = ids.removeValue(forKey: path) }
+            if let vaultID { _ = ids.removeValue(forKey: vaultID) }
         }
-        if let path { originals.remove(for: path) }
         pending.remove(document)
     }
 
     func discardIfEmpty(_ document: DocumentID) throws -> Bool {
         guard let session = lock.withLock({ sessions[document] }),
               let discarded = try session.discardIfEmpty() else { return false }
-        // Gone in the core: its saves have nothing left to write.
-        forget(document, path: discarded)
+        // Gone in the Vault: its saves have nothing left to write.
+        forget(document, vaultID: discarded)
         return true
     }
 
     func renameDocument(_ document: DocumentID, to title: String) throws {
         guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
-        let (old, new) = try session.rename(to: title)
-        renamed(session, from: old, to: new)
+        try session.rename(to: title)
     }
 
-    /// A document's rename renames a case named after it, its only
-    /// document: the case names are read again.
-    fileprivate func caseNamesChanged() {
-        lock.withLock { caseNames.removeAll() }
+    func renameProject(_ projectID: ProjectID, to name: String) throws {
+        _ = try core { try vault.renameProject(id: projectID.rawValue, name: name) }
+        lock.withLock { _ = projectNames.removeValue(forKey: projectID.rawValue) }
     }
 
-    /// What this side keeps by the file follows a renamed document.
-    fileprivate func renamed(_ session: RealSession, from old: String?, to new: String?) {
-        if let old, let new, old != new {
-            lock.withLock {
-                ids[old] = nil
-                ids[new] = session.id
-            }
-            originals.move(from: old, to: new)
-        }
-    }
-
-    func renameCase(_ caseID: CaseID, to name: String) throws {
-        _ = try core { try ffi.renameCase(caseId: caseID.rawValue, name: name) }
-        lock.withLock { _ = caseNames.removeValue(forKey: caseID.rawValue) }
-    }
-
-    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove {
-        try move(document) { path in
+    func moveDocument(_ document: DocumentID, to target: ProjectChoice) throws -> ProjectMove {
+        try move(document) { id in
             switch target {
-            case .existing(let id): try ffi.moveDocument(path: path, caseId: id.rawValue)
-            case .newCase(let name): try ffi.moveDocumentToNewCase(path: path, name: name)
+            case .existing(let project): try vault.moveDocument(id: id, projectId: project.rawValue)
+            case .newProject(let name): try vault.moveDocumentToNewProject(id: id, name: name)
             }
         }
     }
 
-    func undoMove(_ move: CaseMove) throws -> CaseMove {
-        guard let from = move.from else { throw CoreError.noCase }
-        return try self.move(move.document) { path in
-            try ffi.moveBack(path: path, caseId: from.rawValue, added: move.added)
-        }
+    func undoMove(_ move: ProjectMove) throws -> ProjectMove {
+        try self.move(move.document) { _ in try vault.undoMove(undo: move.undo) }
     }
 
-    /// A saved document's move through the core. The move has happened once
-    /// the core returns, so the result stands even if the session cannot
-    /// open the changed file at once: it opens it on its next use.
-    private func move(_ document: DocumentID, _ call: (String) throws -> MovedDocument) throws -> CaseMove {
+    /// A saved document's move through the Vault. The move has happened
+    /// once the core returns, so the result stands even if the session
+    /// cannot open the changed document at once: it opens it on its next
+    /// use.
+    private func move(_ document: DocumentID, _ call: (String) throws -> DocumentMove) throws -> ProjectMove {
         guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
-        guard let path = session.path else {
+        guard let vaultID = session.vaultID else {
             throw CoreError.refused(String(localized: "Move the document once it is read."))
         }
-        // The move rewrites the file and the session opens it again: what
-        // the taps changed is in the file first.
+        // The move rewrites the document and the session opens it again:
+        // what the taps changed is saved first.
         try session.saveChanges()
-        let moved = try core { try call(path) }
-        // Its text and case changed on disk: the session opens it again.
-        let original = originals.original(for: path)
+        let moved = try core { try call(vaultID) }
+        lock.withLock { projectNames.removeAll() }
+        // Its text and Project changed in the Vault: the session opens it
+        // again.
         do {
-            try session.reopen(path: path, original: original)
+            try session.reopen(vaultID: vaultID, kind: nil)
         } catch {
-            session.reopenLater(original: original)
+            session.reopenLater()
         }
-        return CaseMove(
-            document: document, to: CaseSummary(moved.case), from: moved.left.map { CaseID(rawValue: $0.id) },
-            added: moved.added)
+        return ProjectMove(
+            document: document, to: moved.project.map(ProjectSummary.init),
+            from: moved.left.map { ProjectID(rawValue: $0.id) }, undo: moved.undo)
     }
 
-    func restore(reply: String, in caseID: CaseID) throws -> RestoreResult {
-        RestoreResult(try core { try ffi.restore(caseId: caseID.rawValue, reply: reply) })
+    /// The app restores replies in the document's session; the Restore
+    /// extension restores with the old library until item 10.
+    func restore(reply: String, in projectID: ProjectID) throws -> RestoreResult {
+        throw CoreError.noProject
     }
 
+    /// Saves `reply` for the document as `restoreReply` does.
     func saveReply(_ reply: String, to document: DocumentID) throws {
-        guard let session = try session(for: document) as? RealSession, let info = session.info, let path = info.path,
-              let caseID = info.caseId else {
-            throw CoreError.noCase
-        }
-        try core { try ffi.saveReply(caseId: caseID, document: path, reply: reply) }
-        replySaved()
-    }
-
-    /// Posted with each reply saved, in this process or the other (the app
-    /// and its Restore extension share the library).
-    private static let replySaved = "io.github.lawkitt.mdoc.reply-saved"
-
-    /// A reply was saved: every session reads its kept reply again.
-    fileprivate func replySaved() {
-        lock.withLock { replyGenerationValue += 1 }
-        notify_post(Self.replySaved)
-    }
-
-    /// Changes with each reply saved, here or in the Restore extension. If
-    /// the system cannot tell, it changes on every call: nothing is cached.
-    fileprivate func replyGeneration() -> Int {
-        lock.withLock {
-            var posted: Int32 = 1
-            if replyWatch {
-                notify_check(replyToken, &posted)
-            }
-            if posted != 0 { replyGenerationValue += 1 }
-            return replyGenerationValue
-        }
+        guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
+        _ = try session.restoreReply(reply)
     }
 
     /// A save that waits for the phone to unlock. A job's save replaces
     /// what waited for the document before it (it saves the taps' changes
-    /// too); the taps' save never replaces a job's, which may join the case
-    /// first.
+    /// too); the taps' save never replaces a job's, which may join the
+    /// Project first.
     fileprivate func saveOnUnlock(_ id: DocumentID, replacing: Bool = true, _ save: @escaping () throws -> Void) {
         lock.withLock {
             // A document deleted or discarded meanwhile has nothing to save.
@@ -579,50 +542,25 @@ final class RealLibrary: Library, @unchecked Sendable {
         pending.markOCRStarted(session.id)
     }
 
-    /// A saved document keeps its id for the rest of the run, and its
-    /// source files; the first save ends its import. Later saves of the
-    /// same file find it recorded and write nothing.
-    fileprivate func saved(_ session: RealSession, path: String, original: OriginalSource, owned: [URL]) {
+    /// A saved document keeps its id for the rest of the run; its first
+    /// save ends its import, and its received files go: the Vault keeps
+    /// what it keeps of them.
+    fileprivate func saved(_ session: RealSession, vaultID: String) {
         let first = lock.withLock {
-            let first = ids[path] != session.id
-            ids[path] = session.id
+            let first = ids[vaultID] != session.id
+            ids[vaultID] = session.id
             return first
         }
         guard first else { return }
-        originals.record(original, owned: owned, for: path)
-        pending.remove(session.id, keepingFiles: true)
+        pending.remove(session.id)
     }
 
-    /// Once, for a library from before the core kept whether a document
-    /// was scanned (#684): a document this app recorded as scanned (#685),
-    /// which the core does not count as scanned, is told so, so a scan that
-    /// found nothing still reads as scanned. Then the app's record goes. A
-    /// document that cannot be opened now (the phone locked) keeps its
-    /// record for the next launch.
-    func migrateScanned() {
-        let recorded = originals.scannedKeys()
-        guard !recorded.isEmpty, let summaries = try? ffi.documentSummaries() else { return }
-        var kept: Set<String> = []
-        for summary in summaries where !summary.scanned && recorded.contains(originals.key(summary.path)) {
-            // A session of its own, let go after: the document saves once,
-            // its time changing as any save's does.
-            let session = RealSession(id: DocumentID(rawValue: summary.path), library: self, source: nil, title: "", caseID: nil)
-            do {
-                try session.reopen(path: summary.path, original: (.none, .text))
-                try session.markScanned()
-            } catch {
-                kept.insert(originals.key(summary.path))
-            }
-        }
-        originals.forgetScanned(except: kept)
-    }
-
-    fileprivate func caseName(_ id: String?) -> String? {
+    fileprivate func projectName(_ id: String?) -> String? {
         guard let id else { return nil }
-        if let name = lock.withLock({ caseNames[id] }) { return name }
+        if let name = lock.withLock({ projectNames[id] }) { return name }
         // Not kept when it cannot be read now (the phone locked).
-        guard let name = try? ffi.caseInfo(id: id).name else { return nil }
-        lock.withLock { caseNames[id] = name }
+        guard let name = try? vault.project(id: id).name else { return nil }
+        lock.withLock { projectNames[id] = name }
         return name
     }
 }
@@ -638,11 +576,12 @@ private let reviewSignposter = OSSignposter(subsystem: "io.github.lawkitt.mdoc",
 private let typingSignposter = OSSignposter(subsystem: "io.github.lawkitt.mdoc", category: "Editing")
 
 /// One document over the core's `DocumentSession`. What the document is
-/// (its title, file, case, review and whether it was scanned) is the core's,
-/// read with `info()` and `snapshot()` each time (#681, ADR 0104). This side
-/// keeps only what the core has no record of: an import's source before it
-/// is read, with the title and case chosen for it, and which source file a
-/// document came from, for the Original view.
+/// (its title, Project, review and whether it was scanned) is the core's,
+/// read with `info()` and `snapshot()` each time (#681, ADR 0104), and the
+/// Vault keeps it. This side keeps only what the core has no record of: an
+/// import's source before it is read, with the title and Project chosen for
+/// it, the document's Vault id once saved, and the reply pasted this
+/// session.
 final class RealSession: DocumentSession, @unchecked Sendable {
     let id: DocumentID
     let created = Date()
@@ -652,42 +591,39 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private let lock = NSLock()
     /// What an import reads; nil once it is read, or for a saved document.
     private var source: PreparedSource?
-    /// The title and case chosen at import, until the core holds the
-    /// document: it reads the title from the file and has no case before
-    /// its first save.
-    private let chosen: (title: String, caseID: String?)
+    /// The title and Project chosen at import, until the core holds the
+    /// document: it reads the title from the file and joins the Project
+    /// only once it is read. Nil: Unfiled.
+    private let chosen: (title: String, projectID: String?)
     private var kind: SourceKind = .text
     private var original: OriginalSource = .none
-    private var owned: [URL] = []
+    /// Its id in the Vault, once its first save made it or it was opened
+    /// from there.
+    private var savedID: String?
     /// OCR began on this import and has not finished: the core keeps its
     /// finished pages, so recognition resumes with the rest.
     private var ocrStarted: Bool
-    /// A move changed the saved file and opening it again failed: the next
-    /// use opens it, with this original.
-    private var reopenPending: (OriginalSource, SourceKind)?
+    /// A move changed the saved document and opening it again failed: the
+    /// next use opens it.
+    private var reopenPending = false
     /// The Markdown styling of the text with this revision: a snapshot whose
     /// `text_revision` is the same reuses it instead of parsing again.
     private var styled: (revision: UInt64, styling: MarkdownStyling)?
     /// The save that follows taps (ADR 0104).
     private let saver: SaveScheduler
-    /// Held while a save records its file, and while a rename moves it:
-    /// the file a save records is the session's.
+    /// Held while a save records the document, and while a rename or a
+    /// delete runs.
     private let saving = NSLock()
     /// Deleted or discarded (`end`): nothing saves it again.
     private var ended = false
     /// The core's id of the long job running now, which `end` stops.
     private var runningJob: UInt64?
-    /// The reply kept for the document, read from its case again only
-    /// once a reply was saved or the document moved.
-    private var keptReply: (key: KeptReplyKey, text: String?)?
-    /// The kept reply as restored, while its text and the names stay.
+    /// The reply pasted this session (#1091 Q2): the Reply pane shows it,
+    /// and it is empty when the document is opened again until the app
+    /// lists saved replies (Vault & Projects item 10).
+    private var pastedReply: String?
+    /// The pasted reply as restored, while its text and the names stay.
     private var restoredReply: (key: RestoredReplyKey, reply: ReplySnapshot?)?
-
-    private struct KeptReplyKey: Equatable {
-        let caseID: String
-        let path: String
-        let generation: Int
-    }
 
     private struct RestoredReplyKey: Equatable {
         let text: String
@@ -696,92 +632,90 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     fileprivate init(
-        id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?,
+        id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, projectID: String?,
         ocrStarted: Bool = false
     ) {
         self.id = id
         self.library = library
         self.source = source
-        chosen = (title, caseID)
+        chosen = (title, projectID)
         self.ocrStarted = ocrStarted
         saver = SaveScheduler(queue: library.saveQueue)
         if let source {
             kind = source.kind
             original = source.original
-            owned = source.owned
         }
     }
 
-    /// The core's title, file, case and phase; nil before the import is read.
+    /// The core's title, Project and phase; nil before the import is read.
     var info: MdocFFI.SessionInfo? { ffi.info() }
 
-    /// The library file, once saved.
-    var path: String? { ffi.info()?.path }
+    /// Its Vault id, once saved.
+    var vaultID: String? { lock.withLock { savedID } }
 
-    /// Opens a saved document in its case.
-    fileprivate func reopen(path: String, original: (OriginalSource, SourceKind)) throws {
-        _ = try core { try ffi.openDocument(library: library.ffi, path: path) }
+    /// Opens a saved document from the Vault: its review as saved, its
+    /// names lined up with its Project's as they are now. `kind` nil keeps
+    /// the one it has.
+    fileprivate func reopen(vaultID: String, kind: SourceKind?) throws {
+        _ = try core { try ffi.openFromVault(vault: library.vault, id: vaultID) }
         lock.withLock {
-            self.original = original.0
-            kind = original.1
+            savedID = vaultID
+            if let kind { self.kind = kind }
+            // Viewing a saved document's original comes with the mobile
+            // core's originals; the received files went at its first save.
+            original = .none
+            reopenPending = false
         }
     }
 
-    /// Rename: the core renames the file and the session follows it,
-    /// keeping its review and history. Returns the path before and after.
-    fileprivate func rename(to title: String) throws -> (old: String?, new: String?) {
-        guard let before = ffi.info() else {
+    /// Rename: the core renames the document, in the Vault too once saved,
+    /// keeping its review and history.
+    fileprivate func rename(to title: String) throws {
+        guard ffi.info() != nil else {
             throw CoreError.refused(String(localized: "Rename the document once it is read."))
         }
-        let renamed = try saving.withLock { try core { try ffi.renameDocument(library: library.ffi, title: title) } }
-        library.caseNamesChanged()
-        return (before.path, renamed.path ?? before.path)
+        _ = try saving.withLock { try core { try ffi.renameInVault(vault: library.vault, title: title) } }
     }
 
-    /// `RealLibrary.discardIfEmpty`: the core removes the file and its case,
-    /// with no save or rename running; nil when it was not empty. Ended
-    /// (`end`) once discarded, with the file it had.
+    /// `RealLibrary.discardIfEmpty`: the core removes the document, with no
+    /// save or rename running; nil when it was not empty. Ended (`end`)
+    /// once discarded, with the Vault id it had.
     fileprivate func discardIfEmpty() throws -> String?? {
-        try end { [self] _ in try core { try ffi.discardIfEmpty(library: library.ffi) } }
+        try end { [self] _ in try core { try ffi.discardIfEmptyInVault(vault: library.vault) } }
     }
 
-    /// `RealLibrary.deleteDocument`: `remove` deletes the document at its
-    /// file (nil before its first save), read once no save or rename runs;
-    /// none starts until it returns. Ended (`end`) once it succeeds;
-    /// returns the file.
+    /// `RealLibrary.deleteDocument`: `remove` deletes the document by its
+    /// Vault id (nil before its first save), read once no save or rename
+    /// runs; none starts until it returns. Ended (`end`) once it succeeds;
+    /// returns the Vault id.
     fileprivate func delete(_ remove: (String?) throws -> Void) throws -> String? {
-        try end { path in
-            try remove(path)
+        try end { vaultID in
+            try remove(vaultID)
             return true
         } ?? nil
     }
 
-    /// Runs `remove` on the document's file under the save lock; once it
-    /// returns true, the session ends: its scheduled save does not run, no
-    /// later save writes it, and its running job stops. Nil when `remove`
-    /// returned false, else the file.
+    /// Runs `remove` on the document's Vault id under the save lock; once
+    /// it returns true, the session ends: its scheduled save does not run,
+    /// no later save writes it, and its running job stops. Nil when
+    /// `remove` returned false, else the Vault id.
     private func end(_ remove: (String?) throws -> Bool) throws -> String?? {
-        let outcome: (path: String?, job: UInt64?)? = try saving.withLock {
-            let path = ffi.info()?.path
-            guard try remove(path) else { return nil }
+        let outcome: (vaultID: String?, job: UInt64?)? = try saving.withLock {
+            let vaultID = lock.withLock { savedID }
+            guard try remove(vaultID) else { return nil }
             return lock.withLock {
                 ended = true
-                return (path, runningJob)
+                return (vaultID, runningJob)
             }
         }
         guard let outcome else { return nil }
         saver.cancel()
         if let job = outcome.job { ffi.cancelJob(job: job) }
-        return .some(outcome.path)
+        return .some(outcome.vaultID)
     }
 
     func followFirstLine() throws -> String? {
-        let before = ffi.info()?.path
-        let renamed = try saving.withLock { try core { try ffi.followFirstLine(library: library.ffi) } }
-        guard let renamed else { return nil }
-        library.caseNamesChanged()
-        library.renamed(self, from: before, to: renamed.path ?? before)
-        return renamed.title
+        try saving.withLock { try core { try ffi.followFirstLineInVault(vault: library.vault) } }
     }
 
     /// What an import not yet read reads.
@@ -793,7 +727,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     fileprivate func summary(updated: Date) -> LibraryDocument {
         let snapshot = snapshot()
         return LibraryDocument(
-            id: id, title: snapshot.title, caseID: snapshot.caseID, kind: snapshot.kind,
+            id: id, title: snapshot.title, projectID: snapshot.projectID, kind: snapshot.kind,
             phase: snapshot.phase, pendingCount: snapshot.pendingCount, updated: updated,
             candidateCount: snapshot.candidates.count, origin: snapshot.origin)
     }
@@ -802,30 +736,22 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// review without the reply or the styling; nil before it is read.
     fileprivate func loadedSummary(updated: Date) -> LibraryDocument? {
         guard let review = try? ffi.snapshot() else { return nil }
-        let caseID = review.caseId ?? chosen.caseID
+        let projectID = review.caseId ?? chosen.projectID
         return LibraryDocument(
-            id: id, title: review.title, caseID: caseID.map(CaseID.init), kind: lock.withLock { kind },
+            id: id, title: review.title, projectID: projectID.map(ProjectID.init), kind: lock.withLock { kind },
             phase: review.phase, pendingCount: Int(review.proposed), updated: updated,
             candidateCount: review.mentions.count, origin: ffi.info()?.origin ?? .ordinary)
     }
 
-    fileprivate func reopenLater(original: (OriginalSource, SourceKind)) {
-        lock.withLock { reopenPending = original }
+    fileprivate func reopenLater() {
+        lock.withLock { reopenPending = true }
     }
 
-    /// Opens the file again when a move left that for later; a failure
+    /// Opens the document again when a move left that for later; a failure
     /// leaves it pending for the next try.
     private func reopenIfPending() {
-        guard let pending = lock.withLock({ reopenPending }), let path = ffi.info()?.path else { return }
-        if (try? reopen(path: path, original: pending)) != nil {
-            lock.withLock { reopenPending = nil }
-        }
-    }
-
-    /// `migrateScanned`: the core counts the document as scanned, as the
-    /// app recorded it, and saves that.
-    fileprivate func markScanned() throws {
-        _ = try core { try ffi.review(action: .proposeNames(names: []), library: library.ffi) }
+        guard let vaultID = lock.withLock({ reopenPending ? savedID : nil }) else { return }
+        try? reopen(vaultID: vaultID, kind: nil)
     }
 
     func snapshot() -> DocumentSnapshot {
@@ -835,20 +761,19 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             // Before it is read, its origin is the import's.
             let origin: DocumentOrigin = if case .text(_, let origin) = source?.input { origin } else { .ordinary }
             return DocumentSnapshot(
-                id: id, title: chosen.title, caseID: chosen.caseID.map(CaseID.init), caseName: library.caseName(chosen.caseID),
+                id: id, title: chosen.title, projectID: chosen.projectID.map(ProjectID.init),
+                projectName: library.projectName(chosen.projectID),
                 kind: kind, phase: nil, markdown: "", styling: .empty, candidates: [], identities: [],
                 original: original, reply: nil, resumesOCR: ocrStarted, origin: origin)
         }
-        return snapshot(of: review, path: ffi.info()?.path)
+        return snapshot(of: review)
     }
 
-    /// The app's snapshot of the core's review, the document saved at
-    /// `path`. It derives nothing: states, counts, the kept names, the
-    /// phase and the ids are the core's.
-    private func snapshot(of review: ReviewSnapshot, path: String?) -> DocumentSnapshot {
-        // Before its first save the core has no case: the one chosen. A
-        // saved document is always in one.
-        let caseID = review.caseId ?? chosen.caseID
+    /// The app's snapshot of the core's review. It derives nothing: states,
+    /// counts, the kept names, the phase and the ids are the core's.
+    private func snapshot(of review: ReviewSnapshot) -> DocumentSnapshot {
+        // Before it joins its Project the core has none: the one chosen.
+        let projectID = review.caseId ?? chosen.projectID
         let (kind, original) = lock.withLock { (self.kind, self.original) }
         let candidates = review.mentions.map { mention in
             Candidate(
@@ -865,10 +790,10 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 primaryWording: row.originals.first ?? row.alias, variants: row.originals,
                 mentionCount: Int(row.mentionCount), state: row.state, owner: row.owner.map(IdentityID.init))
         }
-        let reply = reply(caseID: caseID, path: path, textRevision: review.textRevision, identities: identities)
+        let reply = reply(textRevision: review.textRevision, identities: identities)
         return DocumentSnapshot(
-            id: id, title: review.title, caseID: caseID.map(CaseID.init),
-            caseName: library.caseName(caseID), kind: kind, phase: review.phase,
+            id: id, title: review.title, projectID: projectID.map(ProjectID.init),
+            projectName: library.projectName(projectID), kind: kind, phase: review.phase,
             markdown: review.text, styling: styling(review), textRevision: review.textRevision,
             candidates: candidates, identities: identities, original: original,
             reply: reply, notice: review.notice, leftOut: review.leftOut,
@@ -878,26 +803,10 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             origin: ffi.info()?.origin ?? .ordinary)
     }
 
-    /// The reply kept for the document and its restored reading. Reading
-    /// it opens the case, so it is read again only once a reply was saved
-    /// (here or in the Restore extension) or the document's case or file
-    /// changed; it is restored again only once its text or the names did.
-    private func reply(caseID: String?, path: String?, textRevision: UInt64, identities: [Identity]) -> ReplySnapshot? {
-        guard let caseID, let path else { return nil }
-        let key = KeptReplyKey(caseID: caseID, path: path, generation: library.replyGeneration())
-        let text: String?
-        if let kept = lock.withLock({ keptReply }), kept.key == key {
-            text = kept.text
-        } else {
-            // No reply is kept too: most documents have none.
-            do {
-                text = try library.ffi.reply(caseId: caseID, document: path)
-            } catch {
-                return nil
-            }
-            lock.withLock { keptReply = (key, text) }
-        }
-        guard let text else { return nil }
+    /// The reply pasted this session, restored with the document's names;
+    /// restored again only once its text or the names changed.
+    private func reply(textRevision: UInt64, identities: [Identity]) -> ReplySnapshot? {
+        guard let text = lock.withLock({ pastedReply }) else { return nil }
         let restoredKey = RestoredReplyKey(text: text, textRevision: textRevision, identities: identities)
         if let restored = lock.withLock({ restoredReply }), restored.key == restoredKey {
             return restored.reply
@@ -954,12 +863,12 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 lock.withLock { ocrStarted = true }
                 library.ocrStarted(self)
             }
-            // OCR keeps its finished pages in the library (ADR 0085 Long
-            // jobs): after a cancel, or mdoc stopping, this resumes with the
-            // pages left.
+            // OCR keeps its finished pages in the intake folder (ADR 0085
+            // Long jobs): after a cancel, or mdoc stopping, this resumes
+            // with the pages left.
             _ = try job(observer) {
-                try ffi.importFileIn(
-                    library: library.ffi, path: url.path,
+                try ffi.importFileResuming(
+                    kept: library.storage.url(.ocr).path, path: url.path,
                     options: ImportOptions(ocr: ocr, nativeTextOnly: false, password: password), progress: reporter)
             }
         case .images(let urls):
@@ -971,8 +880,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             // One document, a page each, built in memory by the core; its
             // kept pages resume as a file's do.
             _ = try job(observer) {
-                try ffi.importImagesIn(
-                    library: library.ffi, images: urls.map(\.path), title: chosen.title,
+                try ffi.importImagesResuming(
+                    kept: library.storage.url(.ocr).path, images: urls.map(\.path), title: chosen.title,
                     options: ImportOptions(ocr: ocr, nativeTextOnly: false, password: nil), progress: reporter)
             }
         }
@@ -980,12 +889,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             self.source = nil
             ocrStarted = false
         }
-        let caseID = chosen.caseID
+        // Camera pages are a scan; the core takes every image as a photo.
+        if kind == .scan {
+            try core { try ffi.setSourceKind(kind: .scan) }
+        }
+        let projectID = chosen.projectID
         try saveAfterJob { [self] in
-            // Deleted meanwhile: nothing joins the case.
+            // Deleted meanwhile: nothing joins the Project.
             guard !lock.withLock({ ended }) else { return }
-            if let caseID {
-                _ = try core { try ffi.joinCase(library: library.ffi, caseId: caseID) }
+            // Started from a Project: it joins it before its first save.
+            if let projectID, vaultID == nil {
+                _ = try core { try ffi.joinProject(vault: library.vault, projectId: projectID) }
             }
             try save()
         }
@@ -1066,26 +980,42 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         try review(.replaceAll)
     }
 
-    /// The core refuses while proposals are pending, and makes the
-    /// document's case the current one. Saved first: a reply pasted into
-    /// the Restore extension restores with the case as saved.
+    /// Copy for AI and Share (#1091 Decision 19): saved first, then the
+    /// session refuses while proposals are pending and names the file, and
+    /// the text comes from the Vault, which checks the document is Ready
+    /// against its Project's names as they are now. The Vault also notes
+    /// the share, so a move's Undo keeps the names a reply may use.
     func copyForAI() throws -> HandOff {
         try saveChanges()
-        return try core { try ffi.handOff(library: library.ffi) }
+        let handOff = try core { try ffi.handOff(library: nil) }
+        guard let vaultID else { throw CoreError.notFound }
+        let text = try core { try library.vault.textForAi(id: vaultID) }
+        return HandOff(text: text, fileName: handOff.fileName)
     }
 
+    /// Restores `reply` with the document's names and saves it in the
+    /// Vault as an AI Reply to text shared from this document: its
+    /// Project's, or its own while Unfiled. The Reply pane shows it while
+    /// the session lives (#1091 Q2); the app lists saved replies from
+    /// Vault & Projects item 10.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot {
-        guard let info = ffi.info(), let caseID = info.caseId, let path = info.path else { throw CoreError.noCase }
         _ = try core { try ffi.restoreReply(reply: reply) }
-        try core { try library.ffi.saveReply(caseId: caseID, document: path, reply: reply) }
-        library.replySaved()
+        guard let vaultID else { throw CoreError.notFound }
+        // What the reply restores with is saved first.
+        try saveChanges()
+        let title = ffi.info()?.title ?? chosen.title
+        _ = try core {
+            try library.vault.saveReply(
+                sharedFrom: .document(id: vaultID), title: String(localized: "Reply to \(title)"), sourceApp: nil,
+                markdown: reply)
+        }
+        lock.withLock { pastedReply = reply }
         return snapshot()
     }
 
+    /// Clears the Reply pane; a reply saved stays saved.
     func clearReply() throws -> DocumentSnapshot {
-        guard let info = ffi.info(), let caseID = info.caseId, let path = info.path else { throw CoreError.noCase }
-        try core { try library.ffi.saveReply(caseId: caseID, document: path, reply: "") }
-        library.replySaved()
+        lock.withLock { pastedReply = nil }
         return snapshot()
     }
 
@@ -1123,7 +1053,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     func fixWordsDraft(_ candidate: CandidateID) throws -> WordsDraft {
         let draft = try core { try ffi.fixWordsDraft(mention: Self.mention(candidate)) }
         return WordsDraft(
-            snapshot: snapshot(of: draft.snapshot, path: ffi.info()?.path),
+            snapshot: snapshot(of: draft.snapshot),
             wording: SourceRange(draft.wording), bounds: SourceRange(draft.bounds))
     }
 
@@ -1194,7 +1124,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         let interval = reviewSignposter.beginInterval("Review tap", id: reviewSignposter.makeSignpostID())
         defer { reviewSignposter.endInterval("Review tap", interval) }
         let review = try core { try ffi.review(action: action, library: nil) }
-        return snapshot(of: review, path: ffi.info()?.path)
+        return snapshot(of: review)
     }
 
     // MARK: Edit mode (ADR 0109)
@@ -1220,7 +1150,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     func discover() throws -> DocumentSnapshot {
         let review = try core { try ffi.discover() }
-        return snapshot(of: review, path: ffi.info()?.path)
+        return snapshot(of: review)
     }
 
     /// The taps' save, once they pause (`SaveScheduler`). Told to the app:
@@ -1258,26 +1188,39 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     private func savePendingNow() throws {
         let saved = try saving.withLock {
-            guard !lock.withLock({ ended }) else { return nil as SavedChange? }
-            let saved = try core { try ffi.savePending(library: library.ffi) }
-            if let saved { recordSaved(path: saved.path) }
+            guard !lock.withLock({ ended }) else { return nil as SavedVaultChange? }
+            ffi.setNoNameFinder(noNameFinder: library.findsNoNames)
+            let saved = try core { try ffi.savePendingIntoVault(vault: library.vault) }
+            if let saved { recordSaved(vaultID: saved.id) }
             return saved
         }
         guard let saved else { return }
         library.report(.saved(id, rejoined: saved.rejoined))
     }
 
+    /// The save that ends a job: the first one makes the document in the
+    /// Vault, Unfiled unless it joined a Project.
     private func save() throws {
         try saving.withLock {
             guard !lock.withLock({ ended }) else { return }
-            let saved = try core { try ffi.save(library: library.ffi) }
-            recordSaved(path: saved.path)
+            ffi.setNoNameFinder(noNameFinder: library.findsNoNames)
+            let saved = try core { try ffi.saveIntoVault(vault: library.vault) }
+            recordSaved(vaultID: saved.id)
         }
     }
 
-    private func recordSaved(path: String) {
-        let (original, owned) = lock.withLock { (self.original, self.owned) }
-        library.saved(self, path: path, original: original, owned: owned)
+    private func recordSaved(vaultID: String) {
+        let first = lock.withLock {
+            let first = savedID == nil
+            savedID = vaultID
+            if first {
+                // The received files go with the import: viewing the
+                // original comes from the Vault.
+                original = .none
+            }
+            return first
+        }
+        if first { library.saved(self, vaultID: vaultID) }
     }
 }
 
@@ -1389,11 +1332,11 @@ final class RealSetup: Setup, @unchecked Sendable {
     }
 }
 
-// MARK: - Originals
+// MARK: - Intake
 
-/// What `DocumentSession.import_file` reads: a file in `originals/`, named
-/// after the title the user chose (the core titles a document by its file),
-/// or pasted text.
+/// What an import reads: a received file in the intake folder, named after
+/// the title the user chose (the core titles a document by its file), page
+/// images, or pasted text.
 struct PreparedSource: Sendable {
     enum Input: Sendable {
         /// Text taken as Markdown, and how its document began.
@@ -1413,32 +1356,14 @@ struct PreparedSource: Sendable {
     var owned: [URL] = []
 }
 
-/// The app's record of which source file each saved document came from,
-/// for the Original view: `originals.json` beside the core's folders, with
-/// paths relative to the storage root.
-final class OriginalsIndex: @unchecked Sendable {
-    private struct Entry: Codable {
-        var kind: String
-        var files: [String]
-        /// Intake folders the document owns; older entries have none.
-        var folders: [String]?
-        /// Find names ran, as #685 recorded it before the core kept it
-        /// (#684); `RealLibrary.migrateScanned` hands it to the core once.
-        var scanned: Bool?
-    }
-
-    private let storage: MdocStorage
-    private let lock = NSLock()
-    private var url: URL { storage.root.appendingPathComponent("originals.json") }
-
-    init(storage: MdocStorage) {
-        self.storage = storage
-    }
-
+/// Received files made ready for the core: renamed after their title, in
+/// their own folder under the intake folder, which the import owns until
+/// its first save.
+enum IntakeFiles {
     /// Moves a received file under its title. Page images go to the core
     /// as they are, together as one document, a single one named after the
     /// title.
-    func prepare(_ source: ImportSource, title: String) throws -> PreparedSource {
+    static func prepare(_ source: ImportSource, title: String, storage: MdocStorage) throws -> PreparedSource {
         switch source {
         case .text(let text):
             return PreparedSource(input: .text(text, .ordinary), kind: .text, original: .none)
@@ -1448,31 +1373,33 @@ final class OriginalsIndex: @unchecked Sendable {
             return PreparedSource(input: .text(text, .sample), kind: .text, original: .none)
         case .file(let url, let kind):
             let named = try rename(url, to: title)
+            let folders = owned(named, storage: storage)
             if kind == .image {
-                return PreparedSource(input: .images([named]), kind: kind, original: .images([named]), owned: owned(named))
+                return PreparedSource(input: .images([named]), kind: kind, original: .images([named]), owned: folders)
             }
             let original: OriginalSource = switch kind {
             case .pdf: .pdf(named)
             case .docx: .docx(named)
             default: .none
             }
-            return PreparedSource(input: .file(named, needsOcr: false), kind: kind, original: original, owned: owned(named))
+            return PreparedSource(input: .file(named, needsOcr: false), kind: kind, original: original, owned: folders)
         case .scan(let pages), .photos(let pages):
             let kind: SourceKind = if case .scan = source { .scan } else { .image }
             guard let first = pages.first else { throw CoreError.emptySelection }
             let named = pages.count == 1 ? [try rename(first, to: title)] : pages
-            return PreparedSource(input: .images(named), kind: kind, original: .images(named), owned: owned(named[0]))
+            return PreparedSource(
+                input: .images(named), kind: kind, original: .images(named), owned: owned(named[0], storage: storage))
         }
     }
 
-    /// The import's own folder under `originals/`, when it has one.
-    private func owned(_ file: URL) -> [URL] {
+    /// The import's own folder under the intake folder, when it has one.
+    private static func owned(_ file: URL, storage: MdocStorage) -> [URL] {
         let folder = file.deletingLastPathComponent().standardizedFileURL
-        let originals = storage.url(.originals).standardizedFileURL
-        return folder.deletingLastPathComponent().path == originals.path ? [folder] : []
+        let intake = storage.url(.intake).standardizedFileURL
+        return folder.deletingLastPathComponent().path == intake.path ? [folder] : []
     }
 
-    private func rename(_ url: URL, to title: String) throws -> URL {
+    private static func rename(_ url: URL, to title: String) throws -> URL {
         let target = url.deletingLastPathComponent()
             .appendingPathComponent(MdocStorage.fileName(title, extension: url.pathExtension))
         guard target != url else { return url }
@@ -1480,134 +1407,21 @@ final class OriginalsIndex: @unchecked Sendable {
         try FileManager.default.moveItem(at: url, to: target)
         return target
     }
-
-    func record(_ original: OriginalSource, owned: [URL], for path: String) {
-        let files: [URL]
-        let kind: String
-        switch original {
-        case .none: files = []; kind = "none"
-        case .pdf(let url): files = [url]; kind = "pdf"
-        case .docx(let url): files = [url]; kind = "docx"
-        case .images(let urls): files = urls; kind = "images"
-        }
-        guard !files.isEmpty || !owned.isEmpty else { return }
-        lock.withLock {
-            var entries = load()
-            let key = relative(path)
-            entries[key] = Entry(
-                kind: kind, files: files.map { relative($0.path) }, folders: owned.map { relative($0.path) },
-                scanned: entries[key]?.scanned)
-            save(entries)
-        }
-    }
-
-    /// The documents #685 recorded as scanned, by `key`.
-    func scannedKeys() -> Set<String> {
-        lock.withLock { Set(load().filter { $0.value.scanned == true }.keys) }
-    }
-
-    /// Forgets #685's scanned records, all but `kept`'s.
-    func forgetScanned(except kept: Set<String>) {
-        lock.withLock {
-            var entries = load()
-            guard entries.contains(where: { $0.value.scanned != nil && !kept.contains($0.key) }) else { return }
-            for key in entries.keys where !kept.contains(key) {
-                entries[key]?.scanned = nil
-            }
-            // An entry that only kept the record goes with it.
-            entries = entries.filter { $0.value.scanned != nil || !$0.value.files.isEmpty || !($0.value.folders ?? []).isEmpty }
-            save(entries)
-        }
-    }
-
-    func original(for path: String) -> (OriginalSource, SourceKind) {
-        guard let entry = lock.withLock({ load()[relative(path)] }) else { return (.none, .text) }
-        return original(of: entry)
-    }
-
-    /// Each document's kind, read once for a whole list.
-    func kinds() -> (String) -> SourceKind {
-        let entries = lock.withLock { load() }
-        return { [self] path in entries[relative(path)].map { original(of: $0).1 } ?? .text }
-    }
-
-    private func original(of entry: Entry) -> (OriginalSource, SourceKind) {
-        let urls = entry.files.map { storage.root.appendingPathComponent($0) }
-        switch entry.kind {
-        case "pdf": return (urls.first.map(OriginalSource.pdf) ?? .none, .pdf)
-        case "docx": return (urls.first.map(OriginalSource.docx) ?? .none, .docx)
-        case "images": return (.images(urls), .scan)
-        default:
-            // A DOCX imported before the Original pane showed DOCX files was
-            // recorded by its folder only.
-            let docx = (entry.folders ?? []).lazy.compactMap { folder in
-                try? FileManager.default.contentsOfDirectory(
-                    at: self.storage.root.appendingPathComponent(folder), includingPropertiesForKeys: nil
-                ).first { $0.pathExtension.lowercased() == "docx" }
-            }.first
-            return docx.map { (.docx($0), .docx) } ?? (.none, .text)
-        }
-    }
-
-    /// A document's key in the index: its path relative to the root.
-    func key(_ path: String) -> String {
-        relative(path)
-    }
-
-    /// A renamed document keeps its source files.
-    func move(from old: String, to new: String) {
-        lock.withLock {
-            var entries = load()
-            guard let entry = entries.removeValue(forKey: relative(old)) else { return }
-            entries[relative(new)] = entry
-            save(entries)
-        }
-    }
-
-    func remove(for path: String) {
-        lock.withLock {
-            var entries = load()
-            if let entry = entries.removeValue(forKey: relative(path)) {
-                for item in entry.files + (entry.folders ?? []) {
-                    try? FileManager.default.removeItem(at: storage.root.appendingPathComponent(item))
-                }
-            }
-            save(entries)
-        }
-    }
-
-    private func relative(_ path: String) -> String {
-        let root = storage.root.standardizedFileURL.path + "/"
-        let standard = URL(fileURLWithPath: path).standardizedFileURL.path
-        return standard.hasPrefix(root) ? String(standard.dropFirst(root.count)) : standard
-    }
-
-    private func load() -> [String: Entry] {
-        guard let data = try? Data(contentsOf: url) else { return [:] }
-        return (try? JSONDecoder().decode([String: Entry].self, from: data)) ?? [:]
-    }
-
-    private func save(_ entries: [String: Entry]) {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: url, options: [.atomic, .completeFileProtection])
-    }
 }
 
-/// Imports chosen but not yet read and saved: `pending.json` beside the
-/// core's folders, so an import survives mdoc being stopped (by the user or
-/// by iOS) before recognition finishes. Paths are relative to the root.
 final class PendingImports: @unchecked Sendable {
     struct Entry {
         var id: DocumentID
         var title: String
-        var caseID: String
+        /// Nil: Unfiled.
+        var projectID: String?
         var source: PreparedSource
         var ocrStarted = false
     }
 
     private struct Stored: Codable {
         var title: String
-        var caseID: String
+        var projectID: String?
         var kind: String
         var text: String?
         var file: String?
@@ -1625,7 +1439,7 @@ final class PendingImports: @unchecked Sendable {
 
     private let storage: MdocStorage
     private let lock = NSLock()
-    private var url: URL { storage.root.appendingPathComponent("pending.json") }
+    private var url: URL { storage.intake.appendingPathComponent("pending.json") }
 
     init(storage: MdocStorage) {
         self.storage = storage
@@ -1634,7 +1448,7 @@ final class PendingImports: @unchecked Sendable {
     func add(_ entry: Entry) {
         let source = entry.source
         var stored = Stored(
-            title: entry.title, caseID: entry.caseID, kind: source.kind.rawValue, text: nil, file: nil,
+            title: entry.title, projectID: entry.projectID, kind: source.kind.rawValue, text: nil, file: nil,
             needsOcr: false, originalKind: "none", originalFiles: [], owned: source.owned.map { relative($0) })
         switch source.input {
         case .text(let text, let origin):
@@ -1702,7 +1516,7 @@ final class PendingImports: @unchecked Sendable {
                 input: input, kind: SourceKind(rawValue: stored.kind) ?? .text, original: original,
                 owned: stored.owned.map { absolute($0) })
             return Entry(
-                id: DocumentID(rawValue: id), title: stored.title, caseID: stored.caseID, source: source,
+                id: DocumentID(rawValue: id), title: stored.title, projectID: stored.projectID, source: source,
                 ocrStarted: stored.ocrStarted ?? false)
         }
     }
@@ -1716,28 +1530,26 @@ final class PendingImports: @unchecked Sendable {
         }
     }
 
-    /// Forgets an import; unless it was saved, its intake files go too.
-    func remove(_ id: DocumentID, keepingFiles: Bool = false) {
+    /// Forgets an import, and its intake files.
+    func remove(_ id: DocumentID) {
         lock.withLock {
             var entries = load()
             guard let stored = entries.removeValue(forKey: id.rawValue) else { return }
-            if !keepingFiles {
-                for folder in stored.owned {
-                    try? FileManager.default.removeItem(at: absolute(folder))
-                }
+            for folder in stored.owned {
+                try? FileManager.default.removeItem(at: absolute(folder))
             }
             save(entries)
         }
     }
 
     private func relative(_ url: URL) -> String {
-        let root = storage.root.standardizedFileURL.path + "/"
+        let root = storage.intake.standardizedFileURL.path + "/"
         let path = url.standardizedFileURL.path
         return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : path
     }
 
     private func absolute(_ path: String) -> URL {
-        path.hasPrefix("/") ? URL(fileURLWithPath: path) : storage.root.appendingPathComponent(path)
+        path.hasPrefix("/") ? URL(fileURLWithPath: path) : storage.intake.appendingPathComponent(path)
     }
 
     private func load() -> [String: Stored] {
