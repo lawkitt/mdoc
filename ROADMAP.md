@@ -395,10 +395,6 @@ GUI rows in [#1146](https://github.com/lawkitt/mdoc/issues/1146) and one day
 of real use by the maintainer on the landed build gate its next candidate;
 items 33–35 are polish and do not.
 
-26. **[iOS] Document notes and Promote to Document.** *From
-    [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
-    25, over the core API it adds. *Blocked by:* items 23, 25. *Done when:*
-    the iOS job passes with tests of notes and Promote.
 27. **[Android] Document notes and Promote to Document.** *From
     [#1091](https://github.com/lawkitt/mdoc/issues/1091) decision 3.* As item
     26. *Blocked by:* items 23, 25. *Done when:* the Android job passes with
