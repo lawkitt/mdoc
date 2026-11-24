@@ -70,16 +70,14 @@ enum Fixture {
     /// Project "Harbour Street lease". The letter's and quotation's names
     /// are proposed as Try a sample proposes its own, so no model is needed.
     /// The Vault dates a document by its last save, to the second, and lists
-    /// a tie by title: the letter, then the quotation (the tenancy, an
-    /// import not yet read, dates from now).
+    /// a tie by title: the letter, then the quotation. The tenancy, an
+    /// import not yet read, is dated by its import, which comes after every
+    /// save: it lists first however the saves fall across seconds (#1136).
     static func seeded(memory: UInt64 = belowFloor) throws -> Seeded {
         let (core, storage) = try core(memory: memory)
         let library = core.library
         let ellison = try createProject(Letters.ellisonProject, in: core)
         let harbour = try createProject(Letters.harbourProject, in: core)
-        let pages = try Letters.pageImages(
-            Letters.tenancyPages, named: "tenancy", in: storage.url(.intake).appendingPathComponent(UUID().uuidString))
-        let tenancy = try library.importDocument(.scan(pages), title: Letters.tenancyTitle, into: harbour)
         let quotation = try library.importDocument(.text(Letters.quotation), title: Letters.quotationTitle, into: ellison)
         _ = try quotation.recognize(observer: TestObserver())
         _ = try quotation.propose(Letters.names)
@@ -89,6 +87,9 @@ enum Fixture {
         _ = try letter.recognize(observer: TestObserver())
         _ = try letter.propose(Letters.names)
         try library.saveChanges()
+        let pages = try Letters.pageImages(
+            Letters.tenancyPages, named: "tenancy", in: storage.url(.intake).appendingPathComponent(UUID().uuidString))
+        let tenancy = try library.importDocument(.scan(pages), title: Letters.tenancyTitle, into: harbour)
         return Seeded(
             core: core, storage: storage, ellison: ellison, harbour: harbour,
             letter: letter.id, quotation: quotation.id, tenancy: tenancy.id)
