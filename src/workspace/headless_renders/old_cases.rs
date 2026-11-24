@@ -193,6 +193,9 @@ fn walk(mdoc: &Path, path: &Path, entries: &mut BTreeMap<PathBuf, Entry>) -> Res
 mod tests {
     use super::*;
 
+    /// A change made to the filled profile.
+    type Touch = fn(&Path);
+
     fn filled() -> (tempfile::TempDir, PathBuf, Snapshot) {
         let dir = tempfile::tempdir().unwrap();
         let mdoc = dir.path().join("mdoc");
@@ -239,7 +242,7 @@ mod tests {
 
     #[test]
     fn every_kind_of_touch_is_named() {
-        let touches: [(&str, fn(&Path)); 6] = [
+        let touches: [(&str, Touch); 6] = [
             ("cases/key.dpapi: size, contents changed", |m| {
                 std::fs::write(m.join("cases/key.dpapi"), b"new key").unwrap();
                 set_old(&m.join("cases/key.dpapi"));

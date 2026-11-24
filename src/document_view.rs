@@ -72,6 +72,27 @@ pub(crate) enum Next {
     Import(Box<import::Imported>),
 }
 
+/// The folder of the last file imported or exported this run, for Export
+/// Markdown to start in when a document has no folder of its own (#180).
+/// Kept in memory only: nothing about it is written to disk.
+#[derive(Default)]
+pub(crate) struct LastFolder(Option<PathBuf>);
+
+impl gpui::Global for LastFolder {}
+
+impl LastFolder {
+    /// `file` was imported or exported: its folder is the last one.
+    pub(crate) fn note(file: &std::path::Path, cx: &mut App) {
+        if let Some(folder) = file.parent().filter(|f| !f.as_os_str().is_empty()) {
+            cx.set_global(Self(Some(folder.to_path_buf())));
+        }
+    }
+
+    pub(crate) fn get(cx: &App) -> Option<&std::path::Path> {
+        cx.try_global::<Self>().and_then(|last| last.0.as_deref())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum OcrState {
     Checking,
@@ -1728,15 +1749,17 @@ impl DocumentView {
         self.session.directory()
     }
 
-    /// Where Export Markdown starts: the document's folder, else Documents
-    /// (#180).
-    fn export_directory(&self) -> PathBuf {
+    /// Where Export Markdown starts: the document's folder, else the last
+    /// folder a file was imported from or exported to this run, else
+    /// Documents (#180).
+    fn export_directory(&self, cx: &App) -> PathBuf {
+        let last = LastFolder::get(cx);
         // A Vault document's Source is a viewing copy in the app cache,
         // removed with its tab: never a place to export to.
         if self.session.document.vault.is_some() {
-            return mdoc_store::document_session::DocumentSession::default().export_directory();
+            return mdoc_store::document_session::DocumentSession::default().export_directory(last);
         }
-        self.session.export_directory()
+        self.session.export_directory(last)
     }
 
     pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1830,7 +1853,7 @@ impl DocumentView {
         if !document::is_markdown(std::path::Path::new(&name)) {
             name.push_str(".md");
         }
-        let directory = self.export_directory();
+        let directory = self.export_directory(cx);
         let path = cx.prompt_for_new_path(&directory, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
@@ -1870,6 +1893,7 @@ impl DocumentView {
                             this.error = Some(format!("Could not export: {error}"));
                         } else {
                             this.error = None;
+                            LastFolder::note(&path, cx);
                         }
                     }
                     Ok(Err(error)) => this.error = Some(chooser_unavailable(&error)),

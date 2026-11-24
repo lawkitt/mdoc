@@ -437,8 +437,8 @@ fn untitled_save_as_starts_in_the_last_used_folder(cx: &mut TestAppContext) {
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| tabs.open_path(file, window, cx));
     cx.run_until_parked();
-    // An Untitled tab has no folder of its own: the last file's folder, not
-    // the process's working directory (#180).
+    // A new document has no folder of its own: the folder of the last file
+    // imported this run, not the process's working directory (#180).
     cx.dispatch_action(New);
     cx.run_until_parked();
     cx.dispatch_action(ExportMarkdown);
