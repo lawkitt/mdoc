@@ -1,5 +1,7 @@
 //! The window shell: theme choice, the sidebar's top and foot,
-//! Home with its drop zone, and the ⌘K command palette.
+//! Home (drop zone, quick actions, the Continue strip), and the ⌘K command
+//! palette with its search over the Vault.
+use super::home;
 use super::{Tab, Workspace};
 use crate::{
     document_view::{
@@ -17,12 +19,14 @@ use crate::{
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Entity, Focusable, Hsla, KeyBinding,
-    SharedString, Subscription, Window, actions, div, prelude::*, px,
+    Subscription, Window, actions, div, prelude::*, px,
 };
 use mdoc_import::import;
-use mdoc_store::recents::{self, Recents};
+use mdoc_store::document_id::VaultId;
+use mdoc_store::recents::Recents;
 use mdoc_store::session_store::ThemeChoice;
-use std::{path::PathBuf, time::Duration};
+use mdoc_vault::{DocumentSummary, ProjectSummary, ReplyOwner};
+use std::{collections::HashMap, time::Duration};
 
 actions!(
     mdoc_shell,
@@ -65,8 +69,9 @@ pub(super) struct ShellState {
     pub drop: Option<usize>,
     pub drop_generation: u64,
     home_scroll: gpui::ScrollHandle,
-    /// Focus for each Recents row on Home, by position.
-    pub recent_focus: std::cell::RefCell<Vec<gpui::FocusHandle>>,
+    /// Focus for each card of Home's Continue strip, by its document's or
+    /// reply's id, so a reordered strip keeps focus on the same card.
+    pub card_focus: std::cell::RefCell<HashMap<String, gpui::FocusHandle>>,
     /// The pointer is over Home's "Documents stay on this Mac".
     pub local_note_hover: bool,
 }
@@ -85,8 +90,8 @@ impl ShellState {
             shortcuts: None,
             drop: None,
             drop_generation: 0,
-            recent_focus: Default::default(),
             home_scroll: gpui::ScrollHandle::new(),
+            card_focus: Default::default(),
             local_note_hover: false,
         }
     }
@@ -102,6 +107,8 @@ fn share_recents(recents: &Recents, cx: &mut App) {
 pub(super) struct Palette {
     input: Entity<SearchInput>,
     selected: usize,
+    /// The list's scroll, which keeps the selected row in view.
+    scroll: gpui::ScrollHandle,
     return_focus: Option<gpui::FocusHandle>,
     _changes: Subscription,
 }
@@ -136,11 +143,10 @@ enum Command {
     Theme,
     /// The active document's heading whose line starts at this offset.
     Heading(usize),
-    Tab(u64),
+    Document(VaultId),
     Project(String),
     /// An action of the Project page or Reply page shown.
     Page(PageAction),
-    Recent(PathBuf),
 }
 
 /// The header and ⋯ actions of the page shown, in the palette too.
@@ -185,10 +191,9 @@ impl Command {
             | Command::Theme
             | Command::SettingsCategory(_)
             | Command::Heading(_)
-            | Command::Tab(_)
+            | Command::Document(_)
             | Command::Project(_)
-            | Command::Page(_)
-            | Command::Recent(_) => return None,
+            | Command::Page(_) => return None,
         })
     }
 
@@ -352,7 +357,7 @@ impl Workspace {
                     .iter()
                     .any(|recent| &recent.path == path && !recent.pseudonymized);
             // A saved conversion's source folds into the .md's row (#306).
-            let folded = saved.and(source).map(PathBuf::as_path);
+            let folded = saved.and(source).map(std::path::PathBuf::as_path);
             // Cleared or evicted entries return only on a new file event.
             if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized, folded) {
                 share_recents(&self.shell.recents, cx);
@@ -891,8 +896,7 @@ impl Workspace {
                                     )
                                     .child(self.drop_zone(cx))
                                     .child(self.home_actions(cx))
-                                    .children(self.home_projects(cx))
-                                    .children(self.home_recents(cx)),
+                                    .children(self.home_strip(cx)),
                             ),
                     ),
             );
@@ -1074,7 +1078,7 @@ impl Workspace {
                         Some(why) => v.max_w(px(460.)).child(why.to_owned()),
                         None => v
                             .child(mdoc_import::import::supported_formats())
-                            .child("Several at once open in their own tabs"),
+                            .child("Several at once each become a document in Unfiled"),
                     }),
             )
             .into_any_element()
@@ -1092,20 +1096,21 @@ impl Workspace {
             "Detection, conversion and Projects run on {machine}. mdoc goes online only \
              to check for updates and to download models you choose."
         );
+        let intake = self.vault.unavailable().is_none();
         div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap_2()
             .child(
-                ui::primary_button(
-                    "home-paste",
-                    "Paste text",
-                    theme,
-                    self.vault.unavailable().is_none(),
-                )
-                .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
-                .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
+                ui::primary_button("home-new", "New document", theme, intake)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-new".into()))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
+            )
+            .child(
+                ui::primary_button("home-paste", "Paste text", theme, intake)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
             .child(
                 ui::primary_button("home-restore", "Paste AI reply", theme, true)
@@ -1172,218 +1177,223 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn home_projects(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    /// Each live view's proposals left, by its Vault document's id.
+    fn live_proposals(&self, cx: &App) -> HashMap<String, usize> {
+        (self.tabs.iter())
+            .filter_map(|tab| {
+                let view = tab.view()?.read(cx);
+                let document = self.live_document(tab, cx)?;
+                Some((document.as_str().to_string(), view.pii.review().remaining()))
+            })
+            .collect()
+    }
+
+    /// The Continue strip as it stands, with the summaries it was read
+    /// from; `None` while the Vault is closed.
+    pub(super) fn home_strip_now(&self, cx: &App) -> Option<(home::Strip, Vec<DocumentSummary>)> {
+        let vault = self.vault.vault()?;
+        let documents = vault.documents();
+        let strip = home::strip(&documents, &vault.replies(), &self.live_proposals(cx));
+        Some((strip, documents))
+    }
+
+    /// Continue: documents that need review and saved replies, newest first.
+    fn home_strip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (strip, documents) = self.home_strip_now(cx)?;
+        if !strip.shown {
+            return None;
+        }
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let projects = self.projects.summaries();
-        let mut list = div().flex().flex_col();
-        if projects.is_empty() {
-            return Some(
-                // The label's top padding moves to the row, so the label and
-                // the link share a center line.
+        let projects: HashMap<String, ProjectSummary> = (self.projects.summaries().into_iter())
+            .map(|project| (project.id.clone(), project))
+            .collect();
+        let documents_shown = (strip.cards.iter())
+            .filter(|card| matches!(card, home::Card::Document { .. }))
+            .count();
+        let more = match strip.need_review {
+            0 if !strip.cards.is_empty() => Some("Nothing needs review".to_string()),
+            n if n <= documents_shown => None,
+            1 => Some("1 needs review".to_string()),
+            n => Some(format!("{n} need review")),
+        };
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .pt_2()
+            .child(home_label("Continue", theme).pt_0())
+            .child(div().flex_1())
+            .children(more.map(|more| {
                 div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .pt_2()
-                    .child(home_label("Projects", theme).pt_0())
-                    .child(div().flex_1())
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "home-strip-more".into())
+                    })
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(more)
+            }));
+        let strip_box = div()
+            .id("home-strip")
+            .when(cfg!(test), |v| v.debug_selector(|| "home-strip".into()))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(header);
+        if strip.cards.is_empty() {
+            return Some(
+                strip_box
                     .child(
-                        // The list opens below this link (#307). The link's
-                        // text, not its padding, ends where the local note
-                        // above it ends (U25).
                         div()
-                            .relative()
-                            .mr(px(-8.))
-                            .child({
-                                let bounds = self.project_ui.home_link.clone();
-                                gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
-                                    .absolute()
-                                    .inset_0()
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "home-strip-empty".into())
                             })
-                            .child(
-                                ui::link_button(
-                                    "home-open-project",
-                                    "Open a Project…",
-                                    theme,
-                                    true,
-                                )
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "home-open-project".into())
-                                })
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| {
-                                        let link = this.project_ui.home_link.get();
-                                        this.show_project_list_at(link, window, cx);
-                                    },
-                                )),
-                            ),
+                            .text_size(px(13.))
+                            .text_color(p.header_muted)
+                            .child("Nothing needs review."),
                     )
                     .into_any_element(),
             );
         }
-        for project in projects.iter().take(6) {
-            let link = super::ProjectLink {
-                id: project.id.clone(),
-                name: project.name.clone(),
-                colour: project.colour,
-            };
-            let id = project.id.clone();
-            let documents =
-                (self.vault.vault()).map_or(0, |vault| vault.documents_in(Some(&project.id)).len());
-            list = list.child(
-                home_row(
-                    SharedString::from(format!("home-project-{}", project.id)),
-                    format!(
-                        "Project {}, {documents} {}",
-                        project.name,
-                        if documents == 1 {
-                            "document"
-                        } else {
-                            "documents"
-                        }
-                    ),
-                    theme,
-                )
-                .child(
-                    div()
-                        .size(px(8.))
-                        .rounded_full()
-                        .bg(style::project_color(link.hue(), theme))
-                        .flex_shrink_0(),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(project.name.clone()),
-                )
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(p.header_muted)
-                        .child(format!(
-                            "{documents} {}",
-                            if documents == 1 {
-                                "document"
-                            } else {
-                                "documents"
-                            }
-                        )),
-                )
-                .on_click(
-                    cx.listener(move |this, _, window, cx| this.open_project(&id, window, cx)),
-                ),
-            );
-        }
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(home_label("Projects", theme))
-                .child(list)
-                .into_any_element(),
-        )
-    }
-
-    fn home_recents(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let theme = self.theme.get();
-        let p = theme.pdf_style();
-        if self.shell.recents.files.is_empty() {
-            return None;
-        }
-        let rows = self
-            .shell
-            .recents
-            .files
-            .iter()
-            .take(8)
-            .enumerate()
-            .map(|(i, recent)| {
-                let path = recent.path.clone();
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let folder = path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let label = format!(
-                    "{name} in {folder}{}, opened {}",
-                    if recent.pseudonymized {
-                        ", pseudonymized"
-                    } else {
-                        ""
+        // A document's place: its Project's dot and name, or Unfiled.
+        let place = |project: Option<&str>| -> (Option<Hsla>, String) {
+            match project.and_then(|id| projects.get(id)) {
+                Some(project) => {
+                    let link = super::ProjectLink {
+                        id: project.id.clone(),
+                        name: project.name.clone(),
+                        colour: project.colour,
+                    };
+                    (
+                        Some(style::project_color(link.hue(), theme)),
+                        project.name.clone(),
+                    )
+                }
+                None => (None, "Unfiled".to_string()),
+            }
+        };
+        let now = home::now();
+        let shown = strip.cards.len();
+        let mut row = div().flex().gap_3();
+        for (i, card) in strip.cards.into_iter().enumerate() {
+            let age = home::age(card.at(), now);
+            let (badge, title, (dot, place), status) = match &card {
+                home::Card::Document { summary, proposed } => (
+                    super::tree_ui::kind_label(summary),
+                    summary.title.clone(),
+                    place(summary.project.as_deref()),
+                    match proposed {
+                        Some(1) => "1 to review".to_string(),
+                        Some(n) => format!("{n} to review"),
+                        None => "Not reviewed".to_string(),
                     },
-                    recents::when(recent.opened).to_lowercase()
-                );
-                let focus = {
-                    let mut handles = self.shell.recent_focus.borrow_mut();
-                    while handles.len() <= i {
-                        handles.push(cx.focus_handle().tab_stop(true));
-                    }
-                    handles[i].clone()
-                };
-                home_row(("home-recent", i), label, theme)
-                    .track_focus(&focus)
+                ),
+                home::Card::Reply(reply) => {
+                    let project = match &reply.owner {
+                        ReplyOwner::Project(id) => Some(id.as_str()),
+                        ReplyOwner::Document(id) => (documents.iter())
+                            .find(|summary| &summary.id == id)
+                            .and_then(|summary| summary.project.as_deref()),
+                    };
+                    (
+                        "REPLY",
+                        reply.title.clone(),
+                        place(project),
+                        "Saved reply".to_string(),
+                    )
+                }
+            };
+            let label = format!("{title}, {place}, {status}, {age}");
+            let focus = (self.shell.card_focus.borrow_mut())
+                .entry(card.id().to_string())
+                .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                .clone();
+            let view =
+                crate::ui::focus_ring(("home-card", i), theme)
                     .when(cfg!(test), |v| {
-                        v.debug_selector(move || format!("home-recent-{i}"))
+                        v.debug_selector(move || format!("home-card-{i}"))
                     })
-                    .tooltip(style::tooltip(path.to_string_lossy().into_owned(), theme))
-                    .child(
-                        gpui::svg()
-                            .data(ui::Icon::Source.data())
-                            .size(px(14.))
-                            .flex_shrink_0()
-                            .text_color(p.header_muted),
-                    )
-                    .child(div().min_w_0().truncate().child(name))
+                    .role(gpui::Role::Button)
+                    .aria_label(label)
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .track_focus(&focus)
+                    .flex_1()
+                    .flex_basis(px(0.))
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_3()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(p.border)
+                    .text_size(px(13.))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(p.placeholder_bg))
                     .child(
                         div()
-                            .flex_1()
-                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(px(10.))
+                                    .text_color(p.header_muted)
+                                    .child(badge),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child(title),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
+                            .children(dot.map(|dot| {
+                                div().size(px(8.)).rounded_full().bg(dot).flex_shrink_0()
+                            }))
+                            .child(div().min_w_0().truncate().child(place)),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
                             .truncate()
-                            .text_size(px(12.))
-                            .text_color(p.header_muted)
-                            .child(folder),
-                    )
-                    .when(recent.pseudonymized, |v| {
-                        v.child(
-                            div()
-                                .px(px(6.))
-                                .rounded_sm()
-                                .bg(p.placeholder_bg)
-                                .text_size(px(11.))
-                                .text_color(p.header_muted)
-                                .child("pseudonymized"),
-                        )
-                    })
-                    .child(
-                        div()
-                            .w(px(84.))
-                            .flex_shrink_0()
-                            .text_right()
-                            .text_size(px(12.))
-                            .text_color(p.header_muted)
-                            .child(recents::when(recent.opened)),
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.open_paths(vec![path.clone()], window, cx)
+                            .child(format!("{status} · {age}")),
+                    );
+            let view = match card {
+                home::Card::Document { summary, .. } => {
+                    let id = VaultId::parse(&summary.id);
+                    view.on_click(cx.listener(move |this, _, window, cx| {
+                        if let Some(id) = id.clone() {
+                            this.open_vault_document(id, window, cx);
+                        }
                     }))
-            });
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(home_label("Recent", theme))
-                .child(div().flex().flex_col().children(rows))
-                .into_any_element(),
-        )
+                }
+                home::Card::Reply(reply) => {
+                    let id = reply.id;
+                    view.on_click(
+                        cx.listener(move |this, _, window, cx| this.open_reply(&id, window, cx)),
+                    )
+                }
+            };
+            row = row.child(view);
+        }
+        // Fewer cards keep a card's width.
+        for _ in shown..home::STRIP_CARDS {
+            row = row.child(div().flex_1().flex_basis(px(0.)));
+        }
+        Some(strip_box.child(row).into_any_element())
     }
 
     /// A file drag anywhere over the window while Home shows.
@@ -1488,6 +1498,7 @@ impl Workspace {
         let changes = cx.subscribe(&input, |this, _, _: &SearchInputEvent, cx| {
             if let Some(palette) = &mut this.shell.palette {
                 palette.selected = 0;
+                palette.scroll.set_offset(gpui::Point::default());
             }
             cx.notify();
         });
@@ -1496,6 +1507,7 @@ impl Workspace {
         self.shell.palette = Some(Palette {
             input,
             selected: 0,
+            scroll: gpui::ScrollHandle::new(),
             return_focus,
             _changes: changes,
         });
@@ -1524,7 +1536,7 @@ impl Workspace {
         rows.extend(vec![
             Row {
                 section: "Actions",
-                label: "New tab".into(),
+                label: "New document".into(),
                 detail: None,
                 command: Command::NewTab,
             },
@@ -1536,7 +1548,7 @@ impl Workspace {
             },
             Row {
                 section: "Actions",
-                label: "Paste text as new tab".into(),
+                label: "Paste text as new document".into(),
                 detail: None,
                 command: Command::PasteText,
             },
@@ -1702,55 +1714,58 @@ impl Workspace {
                 }
             }
         }
-        for tab in &self.tabs {
-            if self.is_placeholder(tab, cx) {
-                continue;
-            }
-            let name = super::tab_label(tab, cx).name;
-            rows.push(Row {
-                section: "Open tabs",
-                label: name,
-                detail: None,
-                command: Command::Tab(tab.id()),
-            });
-        }
-        for project in self.projects.summaries() {
-            let documents =
-                (self.vault.vault()).map_or(0, |vault| vault.documents_in(Some(&project.id)).len());
-            rows.push(Row {
-                section: "Projects",
-                label: project.name.clone(),
-                detail: Some(format!("{documents} documents")),
-                command: Command::Project(project.id.clone()),
-            });
-        }
-        for recent in &self.shell.recents.files {
-            let name = recent
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let kind = recent
-                .path
-                .extension()
-                .map(|e| e.to_string_lossy().to_uppercase())
-                .unwrap_or_default();
-            rows.push(Row {
-                section: "Recent",
-                label: name,
-                detail: Some(kind),
-                command: Command::Recent(recent.path.clone()),
-            });
-        }
         if query.is_empty() {
             return rows;
         }
-        rows.into_iter()
-            .filter(|row| {
-                let label = row.label.to_lowercase();
-                query.split_whitespace().all(|word| label.contains(word))
+        // What the query finds in the Vault comes first, then the actions.
+        let mut found = self.vault_rows(&query);
+        found.extend(rows.into_iter().filter(|row| {
+            let label = row.label.to_lowercase();
+            query.split_whitespace().all(|word| label.contains(word))
+        }));
+        found
+    }
+
+    /// The palette's Documents and Projects for `query`: titles and Project
+    /// names from the manifest.
+    fn vault_rows(&self, query: &str) -> Vec<Row> {
+        let Some(vault) = self.vault.vault() else {
+            return Vec::new();
+        };
+        let projects = vault.projects();
+        let documents = vault.documents();
+        let found = home::search(query, &projects, &documents);
+        let names: HashMap<&str, &str> = (projects.iter())
+            .map(|project| (project.id.as_str(), project.name.as_str()))
+            .collect();
+        let mut rows: Vec<Row> = (found.documents.iter())
+            .filter_map(|summary| {
+                let place = (summary.project.as_deref())
+                    .and_then(|id| names.get(id).copied())
+                    .unwrap_or("Unfiled");
+                Some(Row {
+                    section: "Documents",
+                    label: summary.title.clone(),
+                    detail: Some(format!("{place} · {}", super::tree_ui::kind_label(summary))),
+                    command: Command::Document(VaultId::parse(&summary.id)?),
+                })
             })
-            .collect()
+            .collect();
+        rows.extend(found.projects.into_iter().map(|project| {
+            let count = (documents.iter())
+                .filter(|summary| summary.project.as_deref() == Some(project.id.as_str()))
+                .count();
+            Row {
+                section: "Projects",
+                label: project.name,
+                detail: Some(match count {
+                    1 => "1 document".to_string(),
+                    n => format!("{n} documents"),
+                }),
+                command: Command::Project(project.id),
+            }
+        }));
+        rows
     }
 
     /// Each palette row with a key: its label and the key, for tests.
@@ -1759,6 +1774,24 @@ impl Workspace {
         self.palette_rows(cx)
             .into_iter()
             .filter_map(|row| Some((row.label, row.command.shortcut()?)))
+            .collect()
+    }
+
+    /// The palette list's vertical scroll offset, for tests.
+    #[cfg(test)]
+    pub(super) fn palette_offset(&self) -> gpui::Pixels {
+        self.shell
+            .palette
+            .as_ref()
+            .map_or(px(0.), |palette| palette.scroll.offset().y)
+    }
+
+    /// The palette's labels in order, for tests.
+    #[cfg(test)]
+    pub(super) fn palette_labels(&self, cx: &App) -> Vec<String> {
+        self.palette_rows(cx)
+            .into_iter()
+            .map(|row| row.label)
             .collect()
     }
 
@@ -1773,12 +1806,20 @@ impl Workspace {
     }
 
     pub(super) fn palette_step(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let count = self.palette_rows(cx).len();
+        let rows = self.palette_rows(cx);
         if let Some(palette) = &mut self.shell.palette
-            && count > 0
+            && !rows.is_empty()
         {
-            palette.selected =
-                (palette.selected as isize + delta).rem_euclid(count as isize) as usize;
+            let selected =
+                (palette.selected as isize + delta).rem_euclid(rows.len() as isize) as usize;
+            palette.selected = selected;
+            // The list's children are its rows and a label before each
+            // section.
+            let labels = 1
+                + (rows[..=selected].windows(2))
+                    .filter(|pair| pair[0].section != pair[1].section)
+                    .count();
+            palette.scroll.scroll_to_item(selected + labels);
             cx.notify();
         }
     }
@@ -1794,12 +1835,17 @@ impl Workspace {
         let Some(row) = index.and_then(|i| rows.into_iter().nth(i)) else {
             return;
         };
+        self.palette_run(row.command, window, cx);
+    }
+
+    /// Close the palette and run `command`.
+    fn palette_run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         self.close_palette(window, cx);
         let dispatch =
             |window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
                 window.dispatch_action(action, cx)
             };
-        match row.command {
+        match command {
             Command::NewTab => dispatch(window, cx, Box::new(New)),
             Command::OpenFiles => dispatch(window, cx, Box::new(Open)),
             Command::PasteText => self.paste_as_new_tab(window, cx),
@@ -1828,7 +1874,7 @@ impl Workspace {
                 }
             }
             Command::ExpandIdentities | Command::CollapseIdentities => {
-                let expand = matches!(row.command, Command::ExpandIdentities);
+                let expand = matches!(command, Command::ExpandIdentities);
                 if let Some(view) = self.active_view() {
                     view.update(cx, |view, cx| {
                         if view.replacements_open() {
@@ -1862,10 +1908,9 @@ impl Workspace {
                 }
                 self.focus_active(window, cx);
             }
-            Command::Tab(id) => self.activate(id, window, cx),
+            Command::Document(id) => self.open_vault_document(id, window, cx),
             Command::Project(id) => self.open_project(&id, window, cx),
             Command::Page(action) => self.run_page_action(action, window, cx),
-            Command::Recent(path) => self.open_paths(vec![path], window, cx),
         }
     }
 
@@ -1875,7 +1920,15 @@ impl Workspace {
         let p = theme.pdf_style();
         let rows = self.palette_rows(cx);
         let selected = palette.selected.min(rows.len().saturating_sub(1));
-        let mut list = div().flex().flex_col().px_1().pb_1();
+        let mut list = div()
+            .id("palette-list")
+            .track_scroll(&palette.scroll)
+            .max_h(px(470.))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .px_1()
+            .pb_1();
         let mut section = "";
         for (i, row) in rows.iter().enumerate() {
             if row.section != section {
@@ -1893,7 +1946,7 @@ impl Workspace {
             let icon = match &row.command {
                 Command::NewTab | Command::PasteText => ui::Icon::Plus,
                 Command::OpenFiles => ui::Icon::Open,
-                Command::Tab(_) | Command::Recent(_) => ui::Icon::Source,
+                Command::Document(_) => ui::Icon::Source,
                 Command::Heading(_) => ui::Icon::ChevronRight,
                 Command::Home => ui::Icon::Home,
                 Command::Settings | Command::SettingsCategory(_) => ui::Icon::Settings,
@@ -1943,9 +1996,12 @@ impl Workspace {
                     .when_some(row.command.shortcut(), |v, s| {
                         v.child(div().text_size(px(11.)).text_color(p.header_muted).child(s))
                     })
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.palette_confirm(Some(i), window, cx)
-                    })),
+                    .on_click({
+                        let command = row.command.clone();
+                        cx.listener(move |this, _, window, cx| {
+                            this.palette_run(command.clone(), window, cx)
+                        })
+                    }),
             );
         }
         if rows.is_empty() {
@@ -2025,13 +2081,7 @@ impl Workspace {
                                             .child(palette.input.clone()),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .id("palette-list")
-                                    .max_h(px(470.))
-                                    .overflow_y_scroll()
-                                    .child(list),
-                            ),
+                            .child(list),
                     ),
             )
             .with_priority(2)
@@ -2086,30 +2136,22 @@ fn home_label(label: &'static str, theme: Theme) -> gpui::Div {
         .child(label)
 }
 
-/// A Home list row: a Tab stop that Enter or Space opens, read by screen
-/// readers as a button named `label`.
-fn home_row(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<SharedString>,
-    theme: Theme,
-) -> ui::Control {
-    let p = theme.pdf_style();
-    crate::ui::focus_ring(id, theme)
-        .role(gpui::Role::Button)
-        .aria_label(label.into())
-        .key_context("UiControl")
-        .tab_index(0)
-        .flex()
-        .items_center()
-        .gap_3()
-        .h(px(36.))
-        .px_2()
-        .rounded_md()
-        .border_b_1()
-        .border_color(p.border)
-        .text_size(px(13.))
-        .cursor_pointer()
-        .hover(move |s| s.bg(p.placeholder_bg))
+impl Workspace {
+    /// Headless renders: type `query` into the open palette.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn palette_query_for_render(&mut self, query: &str, cx: &mut Context<Self>) {
+        if let Some(palette) = &self.shell.palette {
+            (palette.input.clone()).update(cx, |input, cx| {
+                input.set_value(query.into(), cx);
+                input.move_to_end(cx);
+            });
+        }
+        cx.notify();
+    }
 }
 
 impl Workspace {

@@ -36,7 +36,7 @@ pub(super) struct TreeNow {
 }
 
 /// The short kind label a document row shows.
-fn kind_label(document: &DocumentSummary) -> &'static str {
+pub(super) fn kind_label(document: &DocumentSummary) -> &'static str {
     match document.source_kind {
         SourceKind::Pdf => "PDF",
         SourceKind::Word => "DOC",

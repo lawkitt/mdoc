@@ -379,7 +379,6 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
     });
     click_toolbar(cx, "pii-setup-cancel");
     click_toolbar(cx, "sidebar-home");
-    assert!(cx.debug_bounds("home-recent-0").is_some());
     cx.update(|_, cx| {
         assert!(!view.read(cx).pii.setup());
         assert!(!view.read(cx).pseudonymized());

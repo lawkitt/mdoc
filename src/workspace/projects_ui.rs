@@ -55,10 +55,6 @@ pub(super) struct ProjectsState {
     /// Saves the rename when focus leaves its field.
     rename_blur: Option<gpui::Subscription>,
     pub(super) list_open: bool,
-    /// The link the Open Project list hangs from; none centers it.
-    list_anchor: Option<gpui::Bounds<gpui::Pixels>>,
-    /// Where Home's Open a Project… link was last painted.
-    pub(super) home_link: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     /// The Keychain explainer is shown.
     pub(super) explainer: bool,
     /// What runs once the explainer's Continue opened the key.
@@ -1351,16 +1347,6 @@ impl Workspace {
     }
 
     pub(super) fn show_project_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_project_list_at(None, window, cx);
-    }
-
-    /// Open the list below `anchor`, the link it was opened from (#307).
-    pub(super) fn show_project_list_at(
-        &mut self,
-        anchor: Option<gpui::Bounds<gpui::Pixels>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
         // An existing modal keeps focus; the list waits for it.
         if self.project_ui.explainer {
             let earlier = self.project_ui.then.take();
@@ -1368,13 +1354,12 @@ impl Workspace {
                 if let Some(earlier) = earlier {
                     earlier(this, window, cx);
                 }
-                this.show_project_list_at(anchor, window, cx);
+                this.show_project_list(window, cx);
             }));
             return;
         }
         self.load_projects(cx);
         self.project_ui.list_open = true;
-        self.project_ui.list_anchor = anchor;
         self.project_list_return = window.focused(cx).filter(|f| *f != self.project_list_focus);
         // After the palette, if it ran this, has restored its own focus.
         let focus = self.project_list_focus.clone();
@@ -1668,24 +1653,14 @@ impl Workspace {
                         ),
                 )
             });
-        // Below Home's link when opened from it; centered otherwise.
-        let placed = match self.project_ui.list_anchor {
-            Some(link) => gpui::anchored()
-                .position(gpui::point(link.right(), link.bottom() + px(4.)))
-                .anchor(gpui::Anchor::TopRight)
-                .snap_to_window_with_margin(px(8.))
-                .child(panel)
-                .into_any_element(),
-            None => div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_start()
-                .justify_center()
-                .pt(px(80.))
-                .child(panel)
-                .into_any_element(),
-        };
+        let placed = div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_start()
+            .justify_center()
+            .pt(px(80.))
+            .child(panel);
         Some(gpui::deferred(placed).with_priority(2).into_any_element())
     }
 }

@@ -41,6 +41,7 @@ mod docx_queue;
 mod export_project;
 mod focus_regions;
 mod folder_sheet;
+mod home;
 mod import_flow;
 mod menu_bar;
 mod navigation;

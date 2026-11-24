@@ -45,6 +45,7 @@ mod folder_sheet_ui;
     any(target_os = "macos", target_os = "windows")
 ))]
 pub(crate) mod headless_renders;
+mod home;
 mod intake;
 mod keychain_ui;
 mod navigation;

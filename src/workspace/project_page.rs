@@ -868,12 +868,12 @@ impl Workspace {
                 continue;
             };
             // A live document says what its review holds now.
-            let pending = (self.find_document(&DocumentId::Vault(document.clone()), None, cx))
+            let proposed = (self.find_document(&DocumentId::Vault(document.clone()), None, cx))
                 .and_then(|tab| self.tabs.get(tab)?.view().cloned())
-                .is_some_and(|view| view.read(cx).pii.review().remaining() > 0);
+                .map(|view| view.read(cx).pii.review().remaining());
             let detail = format!(
                 "{}{}",
-                if summary.scanned && !pending {
+                if !super::home::needs_review(summary, proposed) {
                     ""
                 } else {
                     "Needs review · "
