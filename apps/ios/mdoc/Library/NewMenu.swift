@@ -71,13 +71,18 @@ struct AddTiles: View {
                 if let text = await PastedReply.plainText(from: providers) { app.paste(text) }
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 96)
+        .frame(maxWidth: .infinity)
         .accessibilityIdentifier("empty-paste")
     }
 }
 
 /// One of the large add tiles.
 struct AddTile: View {
+    /// Its icon and words' least height, and its own with the card's
+    /// padding, which Paste's tile matches.
+    static let labelHeight: CGFloat = 96
+    static let height = labelHeight + 2 * Space.s
+
     let title: LocalizedStringKey
     /// Apart from the + menu's item of the same name.
     let spoken: LocalizedStringKey
@@ -94,7 +99,7 @@ struct AddTile: View {
                     .font(Typography.chip)
                     .foregroundStyle(.primary)
             }
-            .frame(maxWidth: .infinity, minHeight: 96)
+            .frame(maxWidth: .infinity, minHeight: Self.labelHeight)
             .card(padding: Space.s)
         }
         .buttonStyle(.plain)

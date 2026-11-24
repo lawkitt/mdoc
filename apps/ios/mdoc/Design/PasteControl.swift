@@ -49,11 +49,18 @@ struct PasteControl: UIViewRepresentable {
         context.coordinator.onPaste = onPaste
     }
 
-    /// The width it is offered, so it fills its tile or its share of a row,
-    /// and never less than its own height.
+    /// The width it is offered, so it fills its tile or its share of a row;
+    /// its own width when asked for its least or its ideal. Its height is
+    /// its look's, as tall as the add tiles beside it or a big button, and
+    /// never what a container offers, which can be the whole screen.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIPasteControl, context: Context) -> CGSize? {
         let natural = uiView.intrinsicContentSize
-        return CGSize(width: proposal.width ?? natural.width, height: max(proposal.height ?? 0, natural.height))
+        let width = proposal.width.flatMap { $0 > 0 && $0.isFinite ? $0 : nil } ?? natural.width
+        let least: CGFloat = switch look {
+        case .tile: AddTile.height
+        case .bar: BigButton.height
+        }
+        return CGSize(width: width, height: max(least, natural.height))
     }
 
     /// What the control pastes into: it asks `pasteConfiguration` whether

@@ -181,7 +181,6 @@ struct ActionBar: View {
                 if let text = await PastedReply.text(from: providers) { model.restore(reply: text) }
             }
         }
-        .frame(minHeight: BigButton.height)
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityIdentifier("paste-reply")
     }
