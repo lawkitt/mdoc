@@ -16,6 +16,8 @@ import io.github.lawkitt.mdoc.home.PendingAdd
 import io.github.lawkitt.mdoc.home.RepeatedImport
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -105,6 +107,41 @@ class ProjectPageTest {
         assertEquals(ellison, page.project)
         assertEquals(listOf(reply), page.replies.map { it.id })
         assertEquals(details, page.details)
+    }
+
+    /**
+     * A page load that ends late, its Project left for another, never
+     * covers the page shown: Harbour's replies stay when Ellison's slow
+     * read ends after them, and a refresh reads Harbour's again.
+     */
+    @Test
+    fun aLatePageLoadNeverCoversThePageShown() = runBlocking {
+        val (ellison, _) = project("Ellison")
+        val (harbour, _) = project("Harbour", "Tenancy")
+        projectReply(ellison)
+        val reply = projectReply(harbour)
+        val home = model()
+        val read = home.readPage
+        val slow = CountDownLatch(1)
+        val reads = mutableListOf<ProjectId>()
+        home.readPage = { id ->
+            synchronized(reads) { reads += id }
+            if (id == ellison) check(slow.await(30, TimeUnit.SECONDS)) { "Ellison's read was never let go" }
+            read(id)
+        }
+        val late = withContext(Dispatchers.Main) { home.loadPage(ellison) }
+        withContext(Dispatchers.Main) { home.loadPage(harbour) }.join()
+        assertEquals(harbour, home.now().page?.project)
+        slow.countDown()
+        late.join()
+        val page = home.now().page!!
+        assertEquals("the page shown keeps its own", harbour, page.project)
+        assertEquals(listOf(reply), page.replies.map { it.id })
+        // A refresh reads the page shown again, not the one left.
+        synchronized(reads) { reads.clear() }
+        home.refreshNow()
+        withTimeout(10_000) { while (synchronized(reads) { reads.isEmpty() }) kotlinx.coroutines.delay(20) }
+        assertEquals(listOf(harbour), synchronized(reads) { reads.toList() })
     }
 
     /** New Project: a blank name makes nothing, a taken one is numbered, and what is added from its page lands in it. */

@@ -16,6 +16,7 @@ import uniffi.mdoc_ffi.ImportOptions
 import uniffi.mdoc_ffi.JobProgress
 import uniffi.mdoc_ffi.JobStage
 import uniffi.mdoc_ffi.Mention
+import uniffi.mdoc_ffi.ProjectDocuments
 import uniffi.mdoc_ffi.RestoredReply
 import uniffi.mdoc_ffi.ReviewSnapshot
 import uniffi.mdoc_ffi.SharedFrom
@@ -62,6 +63,14 @@ class Documents(
 
     /** The largest original viewed from memory, about 16 MiB (#1091 Decision 24); the tests lower it. */
     internal var originalsInMemory: ULong = IN_MEMORY
+
+    /** Tests: runs on the saving thread as an import's first save shows its Vault id, before the save ends. */
+    @Volatile internal var firstSaveShown: ((DocumentId) -> Unit)? = null
+
+    /** The core's delete of a Project; the tests make it stop part way. */
+    @Volatile internal var deleteInVault: (String, ProjectDocuments) -> Unit = { project, documents ->
+        vault.deleteProject(project, documents)
+    }
 
     /** Where text was shared from last: Restore with mdoc restores with it first. */
     val lastShared = LastShared(File(storage.intake, "last-shared.json"))
@@ -232,6 +241,8 @@ class Documents(
         // The imports that would join it, first; the Documents' lock only to
         // read them: a save holds its session's save lock, then takes this one.
         val imports = synchronized(this) { sessions.values.filter { it.joins(raw) } }
+        // A move that stopped part way: its error, raised once the moved are open again.
+        var failure: Exception? = null
         try {
             // No import's join and first save runs meanwhile, so the members
             // read now are all of them: each import lands in Unfiled, or,
@@ -242,7 +253,7 @@ class Documents(
                 when (documents) {
                     ProjectDeletion.DeleteDocuments -> {
                         (imports.filter { it.joins(raw) }.map { it.id } + members.map { it.second }).forEach(::delete)
-                        core { vault.deleteProject(raw, uniffi.mdoc_ffi.ProjectDocuments.DELETE) }
+                        core { deleteInVault(raw, ProjectDocuments.DELETE) }
                         emptyList<Pair<String, Session>>()
                     }
                     ProjectDeletion.MoveToUnfiled -> {
@@ -252,22 +263,27 @@ class Documents(
                         val leaving = imports.filter { it.leaveProject(raw) }
                         leaving.forEach { pending.moveToUnfiled(it.id) }
                         try {
-                            core { vault.deleteProject(raw, uniffi.mdoc_ffi.ProjectDocuments.MOVE_TO_UNFILED) }
+                            core { deleteInVault(raw, ProjectDocuments.MOVE_TO_UNFILED) }
                         } catch (error: Exception) {
                             leaving.forEach {
                                 it.rejoin(raw)
                                 pending.rejoin(it.id, raw)
                             }
-                            throw error
+                            failure = error
                         }
+                        // Every member opens again, failed or not: one moved
+                        // before a failure would otherwise still show the
+                        // Project and refuse to save.
                         synchronized(this) { members.mapNotNull { (vaultId, id) -> sessions[id]?.let { vaultId to it } } }
                     }
                 }
             }
-            // The core rewrote their text: each opens again as it is now.
+            // The core rewrote their text: each opens again as it is now, in
+            // Unfiled, or still in the Project when the move stopped first.
             for ((vaultId, session) in open) {
                 runCatching { session.reopen(vaultId, vault.document(vaultId)) }
             }
+            failure?.let { throw it }
         } finally {
             synchronized(projectNames) { projectNames.clear() }
         }
@@ -683,17 +699,24 @@ class Documents(
             if (discarded) throw AppError.Cancelled()
             ffi.setNoNameFinder(findsNoNames())
             val saved = core { ffi.saveIntoVault(vault) }
-            val first = synchronized(this) {
-                val first = vaultId == null
-                vaultId = saved.id
-                projectId = saved.project?.id
-                // The core holds its Project from now on: the one chosen at
-                // import would show it there after a move to Unfiled.
-                chosenProject = null
-                review = saved.review
-                first
+            // Its Vault id is mapped to this session in the same step that
+            // shows it: a Project's delete finds an import either not saved
+            // yet (it waits on this save) or saved and known by its Vault id,
+            // never saved and unknown to it.
+            val first = synchronized(this@Documents) {
+                ids[saved.id] = id
+                synchronized(this) {
+                    val first = vaultId == null
+                    vaultId = saved.id
+                    projectId = saved.project?.id
+                    // The core holds its Project from now on: the one chosen at
+                    // import would show it there after a move to Unfiled.
+                    chosenProject = null
+                    review = saved.review
+                    first
+                }
             }
-            synchronized(this@Documents) { ids[saved.id] = id }
+            if (first) firstSaveShown?.invoke(id)
             if (first) {
                 // The Vault's original takes the received files' place, and they go.
                 val stored = storedOriginal(saved.id)
