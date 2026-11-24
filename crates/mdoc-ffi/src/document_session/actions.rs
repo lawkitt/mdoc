@@ -117,7 +117,7 @@ pub struct HandOff {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct SessionInfo {
     pub title: String,
-    pub case_id: Option<String>,
+    pub project_id: Option<String>,
     pub scanned: bool,
     pub phase: DocumentPhase,
     pub proposed: u64,
@@ -251,7 +251,7 @@ impl DocumentSession {
         let proposed = document.proposed();
         Some(SessionInfo {
             title: document.title.clone(),
-            case_id: document.project().map(str::to_owned),
+            project_id: document.project().map(str::to_owned),
             scanned: document.scanned,
             phase: DocumentPhase::of(document.scanned, proposed),
             proposed,
@@ -833,7 +833,7 @@ mod tests {
     fn info_reads_the_session_without_a_snapshot() {
         let scratch = Scratch::new();
         let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        let project = vault.create_project("Case".into()).unwrap();
+        let project = vault.create_project("Lease".into()).unwrap();
         assert!(DocumentSession::new().info().is_none());
         let (session, start) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
         session
@@ -846,8 +846,8 @@ mod tests {
             })
             .unwrap();
         let info = session.info().unwrap();
-        assert_eq!(info.case_id, replaced.case_id);
-        assert_eq!(info.case_id, Some(project.id));
+        assert_eq!(info.project_id, replaced.project_id);
+        assert_eq!(info.project_id, Some(project.id));
         assert_eq!((info.title.as_str(), info.proposed), ("Letter", 1));
         assert_eq!(info.phase, DocumentPhase::Reviewing);
     }

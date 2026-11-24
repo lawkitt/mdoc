@@ -7,8 +7,8 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
 
 - Detection assists the user's review; it never establishes that text is
   anonymous, and no UI or doc says it does.
-- Keep means "send the original"; Not a name, "never found", though a case
-  keeps a wording another member uses.
+- Keep means "send the original"; Not a name, "never found", though a Project
+  keeps a wording another of its documents uses.
 - The qualified envelope is English and Russian legal text, native or
   OCR-derived, on Apple Silicon macOS and Windows x64; Linux builds, and its
   automatic scanning is stated separately.
@@ -80,7 +80,7 @@ recognition quality is measured. Terms are in [CONTEXT.md](../../CONTEXT.md).
   or as web addresses; every other web address is.
 - Date and Other can be added by hand; Other is never detected.
 - A new category reaches the desktop, iOS and Android apps in one change,
-  and saved mappings and cases from before load unchanged.
+  and Vault documents and Projects saved before load unchanged.
 
 ## Name forms and linking
 

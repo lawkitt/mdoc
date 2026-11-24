@@ -6,7 +6,7 @@ import SwiftUI
 /// walking the journey in the Simulator. The sample is not behind
 /// `#if DEBUG`, since previews of components compile in Release too; the
 /// core and app model are, as only `#if DEBUG` previews use them and the
-/// fixed case key they open the library with ships in no Release build.
+/// fixed Vault key they open the library with ships in no Release build.
 @MainActor
 enum PreviewFixtures {
     static let sample = SampleDocument.english

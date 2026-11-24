@@ -410,7 +410,7 @@ impl Panel {
                 if cfg!(test) {
                     "Dev"
                 } else {
-                    mdoc_store::cases::build_identity()
+                    mdoc_store::os_key::build_identity()
                 }
             ),
             div(),

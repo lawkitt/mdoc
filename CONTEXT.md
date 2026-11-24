@@ -14,54 +14,59 @@ is extracted.
 **Converted Markdown**: editable Markdown extracted from a source document,
 from native text, OCR or both.
 
-**Source preview**: the visual reference to the retained original, before
-Markdown edits; DOCX rendering is approximate. UI label: **Source**.
+**Source preview**: the visual reference to the retained original; DOCX
+rendering is approximate. UI label: **Source**.
 "Original" names the view switcher's pre-pseudonymization view.
 
 **Page tone**: how Original pages are painted: *original* paper or *themed*
 (paper and ink remapped to the dark theme). Avoid "invert".
 
-**Markdown handoff**: saving or copying prepared Markdown to another tool.
-**Copy Markdown** copies the current source exactly.
+**Markdown handoff**: saving or copying prepared Markdown to another tool;
+**Copy Markdown** copies the source exactly.
 
 **Copy for AI**: copying the full current Markdown with an alias-only note
 asking the AI to keep placeholders exactly.
 
 **Restore**: replacing aliases in a pasted AI reply with the primary
-wordings of the source's mapping, saved in a case or not. UI label: **Paste AI Reply** (Title Case in menus).
+wordings of its mapping. UI label: **Paste AI Reply** (Title Case in menus).
 
-**Reply box**: the Share panel's "AI reply" field that restores a pasted
-reply in place.
+**Reply box**: the Share panel's "AI reply" field: a paste restores at once
+and is saved as an **AI reply** once it settles; an edit replaces it.
 
-**Reply view**: the view switcher's read-only Reply segment showing the
-restored reply.
+**Reply view**: the view switcher's read-only Reply segment, restoring the
+box's reply live.
 
-**Unresolved token**: an alias-shaped token in AI output that matches no case
-identity, such as an invented `PERSON_9`.
+**Reply page**: a saved AI reply, read-only, restored afresh each time it
+shows.
+
+**Notes**: a Document's private text, never handed off with it.
+
+**Unresolved token**: an alias-shaped token in AI output that matches no
+identity of the mapping, such as an invented `PERSON_9`.
 
 **Home**: the page shown with no document: drop zone, quick actions and the
 **Continue** strip.
 
 **Command palette**: the ⌘K search over actions, titles and Project names.
 
-**Find and Replace**: the find bar with its Replace row. It searches
-**visible text**, the Markdown with syntax hidden; a match that **crosses
-formatting** comes from several source ranges.
+**Find and Replace**: the find bar and its Replace row, searching **visible
+text** (syntax hidden); a match that **crosses formatting** spans several
+source ranges.
 
 **Document header**: the title-bar row above a document: breadcrumb, Source,
 panel toggle, ⋯ and the primary action.
 
-**Project tree**: the persistent sidebar hierarchy of Projects (expandable to all their documents) and Unfiled; desktop's only document navigation.
+**Project tree**: the sidebar's stable tree of Projects, each expandable to its documents, and Unfiled; desktop's only document navigation.
 
 ## Models and processing
 
 **OCR**: recognizing text in page images.
 
 **Recognition languages**: the languages OCR is asked to read; each engine
-maps them to its models or packs. Avoid "OCR language".
+maps them to models or packs. Avoid "OCR language".
 
 **Language signal**: what suggests a document's recognition languages: its
-text layer, its file name, then a keyboard input source.
+text layer, file name, then keyboard input source.
 
 **Qualified language**: a document language with its own OCR model,
 spellcheck dictionary and PII qualification; English and Russian today.
@@ -74,17 +79,16 @@ and its download size. Avoid "setup wizard".
 
 **State card**: the centered Markdown-pane card of an unconverted document.
 
-**Model comparison**: isolated sequential QA runs on one captured input, with
-read-only results; each run keeps a **configuration snapshot** of its model
-identity and settings.
+**Model comparison**: isolated sequential QA runs on one captured input; each
+keeps a **configuration snapshot** of its model and settings.
 
 **Recognition output**: OCR text and evidence before fusion with native
 text.
 
 **Scan status**: the spinner and timed stage label beside Pseudonymize.
 
-**Page artifact**: a non-text mark OCR misreads: a seal, signature,
-barcode, watermark or repeated header.
+**Page artifact**: a non-text mark OCR misreads: seal, signature, barcode,
+watermark or repeated header.
 
 ## Pseudonymization and review
 
@@ -94,23 +98,23 @@ consistent aliases that keep useful relationships. Avoid "anonymization".
 **Replacement mapping**: the local association between originals and aliases,
 kept apart from the Markdown handed off.
 
-**At-risk tab**: a tab that closing or quitting would lose something from:
-unsaved changes, an unsaved mapping, or both.
-
-**Vault**: mdoc's encrypted local store holding Projects, Documents, AI Replies and Source Originals under opaque names.
+**Vault**: mdoc's encrypted local store of Projects, Documents, AI Replies and Source Originals, under opaque names.
 
 **Unfiled**: a Vault document in no Project, with its own mapping and replies.
 
-**AI reply**: a saved pseudonymized AI response linked to a Project or Unfiled document, viewable restored and promotable to a Document.
+**AI reply**: a saved pseudonymized AI response of a Project or Unfiled document, shown restored and promotable to a Document.
 
 **Project**: a named, encrypted workspace sharing one replacement mapping across its Documents and AI Replies. Avoid "case" and "matter".
 
-**Vault key**: the 256-bit OS-held key encrypting the Vault. The **quiet probe** reads it at launch without dialogs; the **dev key** separates unsigned/debug macOS builds; the **recovery key** is its text form, shown in desktop Settings.
+**Vault key**: the 256-bit OS-held key encrypting the Vault. The **quiet
+probe** reads it at launch without dialogs; the **dev key** separates
+unsigned/debug macOS builds. The **recovery key** is its text form, behind
+Show Recovery Key; an accepted one gets its own slot, read first.
 
 **AI project**: the one Project the desktop MCP connector serves, chosen in mdoc.
 
-**Keychain explainer**: the dialog shown before the first case-key access and
-after a denial.
+**Keychain explainer**: the dialog shown before the first Vault key access
+and after a denial.
 
 **Variant proposal**: a suggested form ("Ms Raman", "Рамана", "Мариша") of a
 known identity.
@@ -119,10 +123,10 @@ known identity.
 document.
 
 **Case number**: the category of a claim or case number after a label (Claim
-No, Дело №). Not a **Case**.
+No, Дело №), aliased `CASE_1`; not a **Project**.
 
-**Always and Never lists**: wordings always or never proposed, per case and
-user-wide.
+**Always and Never lists**: wordings always or never proposed, per Project
+and user-wide.
 
 **Not a name**: unmarking with no trace.
 
@@ -136,11 +140,11 @@ user-wide.
 the flaws one fix cures.
 
 **Reference platform**: the one platform, hosted Windows, whose raw model
-output the recognition fixtures' snapshots record. The **detection gate**
+output the recognition snapshots record. The **detection gate**
 runs the model over every fixture.
 
-**Hunter, curator, fixer**: the flaw hunt's roles: one writes documents and
-reports flaws, one audits gold and lands fixtures, one fixes a flaw class.
+**Hunter, curator, fixer**: the flaw hunt's roles: writing documents and
+reporting flaws, auditing gold and landing fixtures, fixing a flaw class.
 
 **Holdout**: synthetic recognition documents kept in the private
 `lawkitt/mdoc-holdout` to catch overfitting.
@@ -149,8 +153,8 @@ reports flaws, one audits gold and lands fixtures, one fixes a flaw class.
 `lawkitt/mdoc-probes`; recognition targets are scored on it.
 
 **Probe**: a real public document in `lawkitt/mdoc-probes` run through mdoc
-to find flaw classes; never a fixture. The **judge** is the agent that reads
-it beside mdoc's proposals and lists its flaws.
+to find flaw classes; never a fixture. The **judge** is the agent that lists
+its flaws beside mdoc's proposals.
 
 **Outside set**: a public document set from outside mdoc, pinned by a
 manifest with a role: tune, held-out or regression
@@ -159,15 +163,16 @@ manifest with a role: tune, held-out or regression
 **Decision history**: the document's list of pseudonymization decisions with
 times. UI label: **What you did**.
 
-**Pseudonymize Clipboard**: replacing the clipboard text's known case names
-with their aliases, without detection. **Restore Clipboard**: replacing
-aliases in it with each identity's primary wording.
+**Pseudonymize Clipboard**: replacing known Project names in the clipboard
+with their aliases, without detection. **Restore Clipboard**: the reverse, to
+each identity's primary wording.
 
 **Shelf**: the macOS menu bar item's panel of pseudonymized documents and
 clipboard actions. Avoid "tray".
 
-**Ready document**: one with at least one applied alias and no pending
-proposals.
+**Ready document**: its text matches the fingerprint saved with no proposals
+left after a scan (below the phones' floor, every name decided by hand) and
+holds no name its Project knows.
 
 **Side by side view**: the read-only, line-paired view of original wording
 beside pseudonymized text. Avoid "diff".
@@ -182,7 +187,7 @@ beside pseudonymized text. Avoid "diff".
 **Placeholder / alias**: a stable replacement token such as `PERSON_1`;
 generated by mdoc or a **custom alias** the user chose.
 
-**Identity**: a document-local entity owning a stable neutral alias and
+**Identity**: an entity of a mapping, with a stable id, a neutral alias and
 original variants. UI label: **Identities** on the phones.
 
 **Occurrence assignment**: an identity override for one mention, separating
@@ -211,9 +216,8 @@ alias, category, Apply, Undo or Keep action.
 **Other category**: the manual-only neutral category with `REDACTED_n`
 aliases.
 
-**Undo replacement**: restoring applied text as a proposal that keeps its
-alias. **Keep original**: restoring the original text and recording a Keep
-decision.
+**Undo replacement**: restoring applied text as a proposal keeping its alias.
+**Keep original**: restoring the original text as a Keep decision.
 
 **Close review**: hiding candidate highlights while keeping edits; it does not
 establish safe sharing.
@@ -233,8 +237,8 @@ letters.
 
 **Ignored word**: a word skipped in one document for the session.
 
-**Legal word list**: the curated supplement to the base EN/RU dictionaries
-holding legal vocabulary, never names.
+**Legal word list**: curated legal vocabulary beside the base EN/RU
+dictionaries, never names.
 
 ## Application structure
 
@@ -242,21 +246,20 @@ holding legal vocabulary, never names.
 file-drop zone.
 
 **Rail** and **hover reveal**: the collapsed sidebar's icon strip, and the
-full document list that slides out over the editor on hover.
+Project tree that slides out over the editor on hover.
 
-**Back/Forward**: per-window history of tab activations, Home and the case
-page.
+**Back/Forward**: per-window history of the documents, Home, Project pages
+and Reply pages viewed.
 
 **Region**: a part of the window that F6 / ⇧F6 move focus between.
 
 ## Code structure
 
-**Owner**: the one place that holds a piece of state and changes it, with
-private fields. Avoid Manager, Controller or Service in owner names.
+**Owner**: the one place that holds and changes a piece of state, with
+private fields. Avoid Manager, Controller or Service in its name.
 
-**Transition**: a named, synchronous, GPUI-free method on an owner that
-changes its state in response to one input; an **effect** is what it asks
-its GPUI view to do.
+**Transition**: a named, synchronous, GPUI-free owner method changing its
+state for one input; an **effect** is what it asks its GPUI view to do.
 
 ## Releases and CI
 
@@ -297,8 +300,8 @@ plain `ios-v<x.y.z>` tag marks the build sent to App Store review.
 **Lawyers group**: the one external TestFlight group, and Play's same-named
 closed testing track.
 
-**Never-client-files line**: the sentence that opens every beta description,
-asking testers to use documents they may share, never client files.
+**Never-client-files line**: the opening sentence of every beta description,
+asking testers for shareable documents, never client files.
 
 ## Mobile apps
 
@@ -318,7 +321,7 @@ over the unchanged source. **Show Markdown** toggles to the source.
 place for its commands.
 
 **Adjust Words** (mobile): correcting a found name's span with handles in the
-text. Called "Fix the words" in code (`wordsFix`, `fix_words`). Not "rename",
+text; "Fix the words" in code (`wordsFix`, `fix_words`). Not "rename",
 which changes the alias.
 
 **Edit mode** (mobile): the document screen with the keyboard, the editing

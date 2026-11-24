@@ -100,7 +100,7 @@ final class SaveAfterTapTests: XCTestCase {
     // MARK: Flush points
 
     /// Copy for AI and Share save first: the Restore extension reads the
-    /// case from disk.
+    /// Project from disk.
     func testCopyForAISavesFirst() throws {
         library.savePause = .seconds(60)
         let session = try seeded.session(seeded.letter)
@@ -120,7 +120,7 @@ final class SaveAfterTapTests: XCTestCase {
         XCTAssertEqual(try onDisk(), tapped.markdown)
     }
 
-    /// A document opened from disk opens in its case as saved: a name
+    /// A document opened from disk opens in its Project as saved: a name
     /// another document's taps marked and replaced is saved first, so it is
     /// proposed in the one opened too (after a relaunch, no document has a
     /// session yet).
@@ -140,7 +140,7 @@ final class SaveAfterTapTests: XCTestCase {
         let mark = try XCTUnwrap(marked.candidates.first { $0.original == "staircase" && $0.state == .proposed })
         _ = try letter.decide(mark.id, .replace, scope: .all)
         let quotation = try relaunched.session(for: quotationID)
-        XCTAssertTrue(quotation.snapshot().candidates.contains { $0.original == "staircase" }, "proposed from the case")
+        XCTAssertTrue(quotation.snapshot().candidates.contains { $0.original == "staircase" }, "proposed from the Project")
     }
 
     /// mdoc leaving the foreground saves every document.

@@ -1775,9 +1775,10 @@ fn projectless_scans_follow_the_default_and_a_joined_tab_its_project(
             .collect::<Vec<_>>()
     };
     app.update(cx, |app, cx| {
-        assert_eq!(scan(app, cx), [Category::Person], "no case: the default");
+        assert_eq!(scan(app, cx), [Category::Person], "no Project: the default");
     });
-    // Once the tab joins a case, the case's list wins: this one detects all.
+    // Once the document joins a Project, the Project's list wins: this one
+    // detects all.
     app.update(cx, |app, cx| {
         app.pii.review = Default::default();
         app.project.attach(Some(crate::workspace::ProjectLink {
@@ -1787,7 +1788,7 @@ fn projectless_scans_follow_the_default_and_a_joined_tab_its_project(
         }));
         app.project.set_skip(Default::default());
         assert_eq!(scan(app, cx), [Category::Person, Category::Address]);
-        // A member ignores Settings changes; its case decides.
+        // A Project's document ignores Settings changes; its Project decides.
         app.default_categories_unticked(&[Category::Person].into(), cx);
         assert_eq!(app.pii.review.variants().len(), 2);
     });
@@ -2361,7 +2362,8 @@ fn merge_hint_applied_alias_keeps_restoring_and_merge_is_one_undo(cx: &mut gpui:
                 .collect::<Vec<_>>(),
             ["Maya Bennett", "Maya Bennett"]
         );
-        // Case reopen/reseeding must retain the retired alias for later replies.
+        // Reopening or reseeding a Project must retain the retired alias for
+        // later replies.
         let mut reopened = Review::default();
         reopened.seed(&identities, "Maya Bennett");
         let map = mdoc_pii::restore::RestoreMap::new(reopened.export_identities());

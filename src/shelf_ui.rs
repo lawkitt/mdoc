@@ -128,7 +128,7 @@ impl Fit {
 fn project_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSource> {
     sources
         .iter()
-        .find(|s| matches!(s, ClipboardSource::Project { id: case, .. } if case == id))
+        .find(|s| matches!(s, ClipboardSource::Project { id: project, .. } if project == id))
         .cloned()
 }
 

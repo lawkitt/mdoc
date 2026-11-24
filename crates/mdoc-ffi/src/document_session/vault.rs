@@ -75,7 +75,7 @@ pub struct SavedVaultChange {
 }
 
 fn changed_elsewhere() -> CoreError {
-    CoreError::case("The document changed elsewhere. Open it again.")
+    CoreError::project("The document changed elsewhere. Open it again.")
 }
 
 #[uniffi::export]
@@ -127,11 +127,11 @@ impl DocumentSession {
         let _saving = self.lock_saving();
         self.with_document(|document| match &document.vault {
             Some(place) if place.project.as_deref() == Some(project_id.as_str()) => Ok(()),
-            Some(place) if place.id.is_some() => Err(CoreError::case(
+            Some(place) if place.id.is_some() => Err(CoreError::project(
                 "This document is saved in the Vault: move it instead.",
             )),
             Some(place) if place.project.is_some() => {
-                Err(CoreError::case("This document is in another Project."))
+                Err(CoreError::project("This document is in another Project."))
             }
             _ => {
                 document.review.join(
@@ -544,7 +544,7 @@ fn open_review(
     // too: Undo starts afresh, so nothing here can give it back.
     let reserved = mapping.reserved_aliases();
     if !restored {
-        review.open_case(&mapping.exported(), &reserved);
+        review.open_mapping(&mapping.exported(), &reserved);
     } else {
         review.review.reserve_aliases(&reserved);
         if project.is_some() {

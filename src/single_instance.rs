@@ -237,7 +237,7 @@ mod windows {
                 panic!("the first launch owns the pipe");
             };
             for round in 0..3 {
-                let path = PathBuf::from(format!(r"C:\cases\{round}.pdf"));
+                let path = PathBuf::from(format!(r"C:\documents\{round}.pdf"));
                 assert!(matches!(
                     claim(&name, std::slice::from_ref(&path)),
                     Launch::Forwarded

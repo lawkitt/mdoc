@@ -182,7 +182,7 @@ extension MarkdownTextView.Coordinator {
 
     /// Shows `styled` while editing: when the view's string is the same,
     /// only the attributes that differ change; when the core changed the
-    /// text (undo, redo, a case rejoined), the stretch that differs is
+    /// text (undo, redo, a Project rejoined), the stretch that differs is
     /// replaced and the caret kept beside it. Waits while text is marked.
     func showEditing(_ styled: NSAttributedString, tables: [RenderedTable]? = nil, in view: CandidateTextView) {
         guard view.markedTextRange == nil else {

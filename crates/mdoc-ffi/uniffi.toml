@@ -6,7 +6,7 @@
 "CoreError.Ocr.message" = "detail"
 "CoreError.Detect.message" = "detail"
 "CoreError.Review.message" = "detail"
-"CoreError.Case.message" = "detail"
+"CoreError.Project.message" = "detail"
 "CoreError.Setup.message" = "detail"
 "CoreError.Invalid.message" = "detail"
 "CoreError.Io.message" = "detail"

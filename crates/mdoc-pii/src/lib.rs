@@ -47,8 +47,7 @@ pub enum Category {
     Identity,
     Tax,
     Bank,
-    /// A claim or case number after its label. Its token is
-    /// `CASE`, so an alias never reads as a saved case.
+    /// A claim or case number after its label. Its token is `CASE`.
     CaseNumber,
     /// Scans propose only a date of birth; any other date is a
     /// manual addition.
@@ -150,11 +149,11 @@ pub struct Variant {
     keep_default: bool,
     /// Manual additions win discovery overlaps, the latest first; 0 when detected.
     priority: u64,
-    /// Seeded by a scan, not by the user, a case or a restored mapping.
+    /// Seeded by a scan, not by the user, a Project or a restored mapping.
     detected: bool,
     /// What proposed it: the detector's recognizer for a scan's seed,
     /// `Propagation` for a form of a known full name; `None` for
-    /// a manual mark, a case or a restored mapping.
+    /// a manual mark, a Project or a restored mapping.
     recognizer: Option<Recognizer>,
     /// An ordinary word too ("Rose", "Мира"): only its capitalised
     /// mentions mid-sentence count.
@@ -174,7 +173,7 @@ pub struct Variant {
     surname: bool,
 }
 impl Variant {
-    /// What proposed it first; `None` for a manual mark, a case or a
+    /// What proposed it first; `None` for a manual mark, a Project or a
     /// restored mapping.
     pub fn recognizer(&self) -> Option<Recognizer> {
         self.recognizer
@@ -454,7 +453,7 @@ impl Review {
     /// Wordings taken off as Not a name, each with the identity
     /// it was taken from, where no mention of that identity shows the
     /// wording any more (proposed, replaced or kept): what a save takes
-    /// out of the case. A homonym's other identity is not this one.
+    /// out of the Project. A homonym's other identity is not this one.
     pub fn not_a_name_wordings(&self) -> Vec<(Option<u64>, Arc<str>)> {
         let shown = |identity: Option<u64>, wording: &str| {
             self.candidates().iter().any(|c| {
@@ -480,11 +479,11 @@ impl Review {
         wordings
     }
     /// [`Self::not_a_name_wordings`] as (alias, wording) pairs, what a
-    /// case save drops; a wording with no identity names nothing there.
+    /// Project save drops; a wording with no identity names nothing there.
     pub fn not_a_name_pairs(&self) -> Vec<(String, String)> {
         self.alias_pairs(self.not_a_name_wordings())
     }
-    /// The kept mentions as (alias, wording) pairs: what a case save puts
+    /// The kept mentions as (alias, wording) pairs: what a Project save puts
     /// back after an undone Not a name.
     pub fn kept_pairs(&self) -> Vec<(String, String)> {
         self.alias_pairs(
@@ -506,8 +505,8 @@ impl Review {
             .collect()
     }
     /// Not a name again, with no undo step, for the proposed mentions of
-    /// these (alias, wording) pairs: a document opening in a case that
-    /// keeps them for another member.
+    /// these (alias, wording) pairs: a document opening in a Project that
+    /// keeps them for another of its documents.
     pub fn leave_off(&mut self, pairs: &[(String, String)]) {
         if pairs.is_empty() {
             return;
@@ -1044,14 +1043,14 @@ impl Review {
         Ok(())
     }
     /// The recognizer of variant `id` when this scan created it (its id
-    /// is past `first`); a marked, case or restored variant keeps `None`.
+    /// is past `first`); a marked, Project or restored variant keeps `None`.
     fn recognized(&mut self, id: u64, first: u64, recognizer: Recognizer) {
         if let Some(variant) = self.candidates.variant_mut(id).filter(|v| v.id > first) {
             variant.recognizer.get_or_insert(recognizer);
         }
     }
     /// Date variant `id` counts mentions after `cue` too. One this scan
-    /// created counts only those; a marked, case or restored date keeps
+    /// created counts only those; a marked, Project or restored date keeps
     /// every mention.
     fn cued(&mut self, id: u64, first: u64, cue: discovery::Cue) {
         let Some(variant) = self.candidates.variant_mut(id) else {

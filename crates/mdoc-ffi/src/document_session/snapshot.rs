@@ -186,12 +186,12 @@ pub struct ReviewSnapshot {
     pub mentions: Vec<Mention>,
     /// In category order (Person, Organization, …), then by first mention.
     pub identities: Vec<IdentityRow>,
-    /// Merge hints, without the ones dismissed here or in the case.
+    /// Merge hints, without the ones dismissed here or in the Project.
     pub link_hints: Vec<LinkHint>,
     pub proposed: u64,
     pub replaced: u64,
     pub kept: u64,
-    pub case_id: Option<String>,
+    pub project_id: Option<String>,
     pub can_undo: bool,
     pub can_redo: bool,
     /// The step Undo reverts; after a redo, the step it made again.
@@ -216,7 +216,7 @@ pub(super) fn of(
     title: &str,
     note: &super::intake::ImportNote,
     document: &ReviewText,
-    case_id: Option<&str>,
+    project_id: Option<&str>,
     scanned: bool,
 ) -> ReviewSnapshot {
     let id = |range: &std::ops::Range<usize>| {
@@ -421,7 +421,7 @@ pub(super) fn of(
         kept: counts.kept,
         identities,
         mentions,
-        case_id: case_id.map(str::to_owned),
+        project_id: project_id.map(str::to_owned),
         scanned,
         phase: DocumentPhase::of(scanned, proposed),
         kept_identities,

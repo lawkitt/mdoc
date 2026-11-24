@@ -88,7 +88,7 @@ impl DocumentView {
                 .child(text)
         };
         let status = self.share_status(cx);
-        let case = self.project.link().cloned();
+        let link = self.project.link().cloned();
         // Only a document in the Vault can move into a Project.
         let movable = self.session.document.vault.is_some();
         ui::panel("identity-panel", theme)
@@ -148,7 +148,7 @@ impl DocumentView {
                     // the palette (Vault & Projects item 29).
                     .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
                     .child(section("Project"))
-                    .child(match &case {
+                    .child(match &link {
                         Some(link) => ui::control("share-project-page", "", theme, true)
                             .when(cfg!(test), |v| v.debug_selector(|| "share-project-page".into()))
                             .aria_label(format!("Open Project {}", link.name))
