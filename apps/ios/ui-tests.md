@@ -34,7 +34,7 @@ both nightly (`TEST_RUNNER_MDOC_TIMING_TESTS=1`) without a threshold.
 ## How UI tests launch the app
 
 UI tests launch the app with `-mdoc-ui-testing` (`LaunchConfiguration` reads
-every flag once): its own library, case key and preferences, below the
+every flag once): its own Vault, Vault key and preferences, below the
 detector floor. It imports `MDOC_SEED_FILE` and scans it with the structured
 rules alone, the only such scan, so review needs no model. On a phone the
 seed reads the copy `just ios-device-test` put in the container.

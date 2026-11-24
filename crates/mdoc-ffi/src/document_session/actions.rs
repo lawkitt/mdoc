@@ -823,7 +823,7 @@ mod tests {
     fn info_reads_the_session_without_a_snapshot() {
         let scratch = Scratch::new();
         let vault = Vault::open(scratch.path().display().to_string(), vec![3; 32]).unwrap();
-        let project = vault.create_project("Case".into()).unwrap();
+        let project = vault.create_project("Lease".into()).unwrap();
         assert!(DocumentSession::new().info().is_none());
         let (session, start) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
         session

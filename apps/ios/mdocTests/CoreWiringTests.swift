@@ -16,7 +16,7 @@ final class CoreWiringTests: XCTestCase {
     }
 
     /// A decision schedules a save (`SaveScheduler.pause`): saved now, it
-    /// can't fire after the storage is gone and recreate its case lock in
+    /// can't fire after the storage is gone and recreate the Vault lock in
     /// the temporary folder while a later test watches that folder.
     override func tearDown() {
         for core in cores {

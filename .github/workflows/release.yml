@@ -128,7 +128,7 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # Optional until created (ADR 0045): without it the case key stays
+          # Optional until created (ADR 0045): without it the Vault key stays
           # in the login keychain.
           APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
         run: scripts/release/ci-apple-credentials.sh setup
@@ -175,7 +175,7 @@ jobs:
         with:
           name: package-Windows
           path: dist
-      - name: Install, launch, inspect, capture, quit and verify uninstall keeps the case key
+      - name: Install, launch, inspect, capture, quit and verify uninstall keeps the Vault key
         shell: pwsh
         env:
           SCENARIO: ${{ matrix.scenario }}

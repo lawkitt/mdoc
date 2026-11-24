@@ -30,7 +30,7 @@ pub enum StepKind {
     NewAlias,
     /// Belongs to…: a contact's owner set or cleared.
     Owner,
-    /// Joining a case renumbered aliases or proposed its names.
+    /// Joining a Project renumbered aliases or proposed its names.
     JoinCase,
     /// A run of typing in edit mode, coalesced as desktop's
     /// editor coalesces it.
@@ -58,7 +58,7 @@ impl StepKind {
             Self::SameAs => "Same as",
             Self::NewAlias => "New alias",
             Self::Owner => "Belongs to",
-            Self::JoinCase => "Join case",
+            Self::JoinCase => "Join Project",
             Self::Typing => "Typing",
             Self::Formatting => "Formatting",
             Self::FixWords => "Fix the words",

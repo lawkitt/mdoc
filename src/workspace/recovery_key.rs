@@ -56,7 +56,7 @@ impl KeyStore {
     /// The Vault key, read the way Unlock reads it (it may ask on macOS).
     fn read(&self) -> Result<Zeroizing<[u8; 32]>, String> {
         match self {
-            Self::Os => match mdoc_store::cases::vault_key(false) {
+            Self::Os => match mdoc_store::os_key::vault_key(false) {
                 Ok(Some(key)) => Ok(Zeroizing::new(key)),
                 Ok(None) => Err("mdoc could not read the key without asking.".into()),
                 Err(error) => Err(error.to_string()),
@@ -78,7 +78,7 @@ impl KeyStore {
     /// Keep `key` as the Vault key.
     fn store(&self, key: &[u8; 32]) -> Result<(), String> {
         match self {
-            Self::Os => mdoc_store::cases::store_vault_key(key).map_err(|e| e.to_string()),
+            Self::Os => mdoc_store::os_key::store_vault_key(key).map_err(|e| e.to_string()),
             #[cfg(any(
                 test,
                 all(

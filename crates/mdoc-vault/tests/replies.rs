@@ -608,9 +608,9 @@ fn a_reply_for_a_missing_owner_is_refused() {
     assert!(vault.replies().is_empty());
 }
 
-/// Deleting a reply's owner deletes it, as a case's replies went with the
-/// case and a member's with the member; a Document's replies follow it to
-/// Unfiled when its Project is deleted. Replies another handle saved go
+/// Deleting a reply's owner deletes it: a Project's replies go with the
+/// Project, a Document's with the Document, and a Document's replies follow
+/// it to Unfiled when its Project is deleted. Replies another handle saved go
 /// too.
 #[test]
 fn deleting_an_owner_deletes_its_replies() {

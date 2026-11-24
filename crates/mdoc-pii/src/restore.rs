@@ -69,7 +69,7 @@ impl RestoreMap {
         let mut custom = Vec::new();
         // Current aliases first: an alias that is one identity's own names it,
         // never another identity that used it before (a join can hand a
-        // document's old alias to a different case identity).
+        // document's old alias to a different identity of its Project).
         let current = identities
             .iter()
             .enumerate()
@@ -211,7 +211,7 @@ impl RestoreMap {
     /// wording (exact, whole words), or by a lone word of a multi-word
     /// person original ("Марина" of "Марина Сергеевна"): names a
     /// pseudonymized text did not replace. Counted by alias, as
-    /// a tab's mapping and its case list one person twice. Text and
+    /// a document's mapping and its Project's list one person twice. Text and
     /// originals are read as detection reads them (`view`): "Ann&#97;
     /// Petrova" is "Anna Petrova".
     pub fn known_names(&self, text: &str) -> usize {
@@ -366,8 +366,8 @@ impl RestoreMap {
             .collect()
     }
     /// The aliases of this map's identities that `text` restores, as
-    /// [`Self::tokens`] reads them: a case keeps a Not a name wording
-    /// while another member's text still needs it.
+    /// [`Self::tokens`] reads them: a Project keeps a Not a name wording
+    /// while another of its documents still needs it.
     pub fn restored_aliases(&self, text: &str) -> Vec<String> {
         self.tokens(text)
             .into_iter()
@@ -719,7 +719,7 @@ fn zone_number_reading<'w>(
 }
 
 impl Review {
-    /// Reserve retired case aliases without retaining any original wording.
+    /// Reserve retired Project aliases without retaining any original wording.
     /// Generated counters are monotonic; custom reservations survive discovery.
     pub fn reserve_aliases(&mut self, aliases: &[String]) {
         self.revision.advance();
@@ -777,7 +777,7 @@ impl Review {
             }
         }
         // A homonym's explicitly assigned occurrence can outlive its group's
-        // default identity, e.g. when that identity was forgotten from a case.
+        // default identity, e.g. when that identity was forgotten from a Project.
         for candidate in self.candidates() {
             if let Some(id) = self.occurrence_identity(candidate.variant, &candidate.range)
                 && active.contains(&id)
@@ -978,21 +978,22 @@ impl Review {
     }
 }
 
-/// How a document joining a case lines up with it.
+/// How a document joining a Project lines up with it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct JoinPlan {
     /// Identity id → alias, category and custom flag it takes.
     pub changes: Vec<(u64, String, Category, bool)>,
-    /// Case identities the document lacks; seed them so their originals are
-    /// proposed with the case aliases.
+    /// The Project's identities the document lacks; seed them so their
+    /// originals are proposed with the Project's aliases.
     pub unmatched: Vec<ExportedIdentity>,
 }
 
-/// Align a document's identities with a case: an identity sharing an original
-/// with a case identity takes its alias; any other whose alias the case already
-/// uses takes the next free number. Aliases are never reused.
+/// Align a document's identities with a Project's: an identity sharing an
+/// original with one of the Project's takes its alias; any other whose alias
+/// the Project already uses takes the next free number. Aliases are never
+/// reused.
 pub fn plan_join(
-    case: &[ExportedIdentity],
+    project: &[ExportedIdentity],
     document: &[(u64, ExportedIdentity)],
     reserved: &[String],
 ) -> JoinPlan {
@@ -1001,15 +1002,15 @@ pub fn plan_join(
             .chain(e.previous.iter().cloned())
             .collect::<Vec<_>>()
     };
-    // Aliases a document identity may not keep: the case's, and other
+    // Aliases a document identity may not keep: the Project's, and other
     // identities' earlier ones in this document.
-    let case_names: HashSet<String> = case
+    let project_names: HashSet<String> = project
         .iter()
         .flat_map(names)
         .chain(reserved.iter().cloned())
         .collect();
     // Aliases a fresh number may not take: every alias either side ever used.
-    let mut taken: HashSet<String> = case_names
+    let mut taken: HashSet<String> = project_names
         .iter()
         .cloned()
         .chain(document.iter().flat_map(|(_, d)| names(d)))
@@ -1025,18 +1026,21 @@ pub fn plan_join(
     let mut plan = JoinPlan::default();
     let mut assigned: Vec<(u64, String, Category, bool)> = Vec::new();
     for (id, doc) in document {
-        let found = case.iter().position(|c| {
+        let found = project.iter().position(|c| {
             !matched.contains(&std::ptr::from_ref(c))
                 && c.originals.iter().any(|o| doc.originals.contains(o))
         });
         let target = match found {
             Some(index) => {
-                let c = &case[index];
+                let c = &project[index];
                 matched.insert(std::ptr::from_ref(c));
                 (c.alias.clone(), c.category, c.custom)
             }
-            None if case_names.contains(&doc.alias)
-                || doc.previous.iter().any(|alias| case_names.contains(alias))
+            None if project_names.contains(&doc.alias)
+                || doc
+                    .previous
+                    .iter()
+                    .any(|alias| project_names.contains(alias))
                 || assigned.iter().any(|a| a.1 == doc.alias)
                 || document
                     .iter()
@@ -1066,7 +1070,7 @@ pub fn plan_join(
                 .is_some_and(|(_, d)| d.alias != *alias || d.category != *category)
         })
         .collect();
-    plan.unmatched = case
+    plan.unmatched = project
         .iter()
         .filter(|c| !matched.contains(&std::ptr::from_ref(*c)))
         .cloned()

@@ -254,7 +254,7 @@ fn images_digest(digests: Vec<String>) -> String {
 ///
 /// A PDF opened with `password` is locked: every pass takes the password,
 /// and its recognized pages are never kept (#1024 decision 7, until kept
-/// pages can be sealed with the case key). It is recognized page by page
+/// pages can be sealed with the Vault key). It is recognized page by page
 /// all the same, `recognized` hearing of each, and a cancelled or stopped
 /// run starts over; no [`Completed`] comes with it.
 pub fn prepare_resumable(

@@ -544,7 +544,7 @@ fn open_review(
     // too: Undo starts afresh, so nothing here can give it back.
     let reserved = mapping.reserved_aliases();
     if !restored {
-        review.open_case(&mapping.exported(), &reserved);
+        review.open_mapping(&mapping.exported(), &reserved);
     } else {
         review.review.reserve_aliases(&reserved);
         if project.is_some() {

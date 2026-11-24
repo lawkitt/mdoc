@@ -352,7 +352,7 @@ pub(super) struct Workspace {
     admit_queue: std::collections::VecDeque<(Vec<PathBuf>, Option<String>)>,
     /// What a test's loud key read yields.
     #[cfg(test)]
-    staged_vault: Option<Result<mdoc_vault::Vault, mdoc_store::cases::CaseError>>,
+    staged_vault: Option<Result<mdoc_vault::Vault, mdoc_store::os_key::KeyError>>,
     /// A test window's own Vault folder, removed with it.
     #[cfg(test)]
     test_vault_dir: Option<tempfile::TempDir>,
@@ -1473,17 +1473,17 @@ impl Workspace {
     }
 
     /// Open paths. Plain files open at once; each folder among them shows
-    /// its sheet in turn, offering to add to `case` when it was dropped on
+    /// its sheet in turn, offering to add to `project` when it was dropped on
     /// that Project's row.
     fn open_paths_into(
         &mut self,
         paths: Vec<PathBuf>,
-        case: Option<String>,
+        project: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if !self.ready {
-            self.pending_open.push((paths, case));
+            self.pending_open.push((paths, project));
             return;
         }
         if self.intake_refused(window, cx) {
@@ -1493,7 +1493,7 @@ impl Workspace {
         // until answered, and the paths open after. Checked before
         // quitting, so a cancelled quit still opens them.
         if self.dialog_up(window) {
-            self.pending_open.push((paths, case));
+            self.pending_open.push((paths, project));
             self.open_after_prompt(window, cx);
             return;
         }
@@ -1522,15 +1522,15 @@ impl Workspace {
             let _ = this.update_in(cx, |this, window, cx| {
                 // A dialog that came up while the paths resolved keeps focus.
                 if this.dialog_up(window) {
-                    this.pending_open.push((requested, case));
+                    this.pending_open.push((requested, project));
                     this.open_after_prompt(window, cx);
                     return;
                 }
-                this.finish_open(paths, case.clone(), window, cx);
+                this.finish_open(paths, project.clone(), window, cx);
                 for folder in folders {
                     let pending = folder_sheet::Pending {
                         folder,
-                        project: case.clone(),
+                        project: project.clone(),
                     };
                     this.queue_folder(pending, window, cx);
                 }

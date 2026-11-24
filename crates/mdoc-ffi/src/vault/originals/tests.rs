@@ -93,7 +93,7 @@ fn an_import_keeps_its_file_as_the_original() {
     );
 
     // A move keeps it; a delete takes it, and the repeat is no longer found.
-    let project = vault.create_project("Case".into()).unwrap();
+    let project = vault.create_project("Lease".into()).unwrap();
     vault.move_document(id.clone(), Some(project.id)).unwrap();
     assert_eq!(vault.original_bytes(id.clone()).unwrap(), bytes);
     vault.delete_document(id).unwrap();

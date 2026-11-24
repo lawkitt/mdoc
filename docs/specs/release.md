@@ -59,9 +59,9 @@ gh variable set APPLE_SIGNING_IDENTITY --env release -R lawkitt/mdoc --body "Dev
   one click.
 - A Developer ID provisioning profile (App ID `io.github.lawkitt.mdoc` with
   **Keychain Sharing**, in `APPLE_PROVISIONING_PROFILE_BASE64`) keeps the
-  case key in the data protection keychain, so macOS never asks for the
+  Vault key in the data protection keychain, so macOS never asks for the
   login password.
-- Before publishing a release that changes case-key handling, run
+- Before publishing a release that changes Vault key handling, run
   `scripts/desktop/keychain-launch-check.sh` on a clean macOS account.
 
 ## Release candidates
@@ -91,8 +91,8 @@ these.
 | D1 | *macOS:* the `.dmg` installs; `spctl -a -vv /Applications/mdoc.app` reports Notarized Developer ID, and launch shows no Gatekeeper warning beyond "downloaded from the Internet" |
 | D2 | *Windows:* SmartScreen's "Run anyway" proceeds, the installer completes with the VC++ runtime present, mdoc launches from Start, and the uninstaller removes it |
 | D3 | A clean first launch shows Home with no error and no Keychain, network or crash-report prompt, and About shows the expected version |
-| D4 | *macOS:* Save as Case shows the Keychain explainer, then the system dialog; after quit and relaunch, a case member restores its replacements with no prompt |
-| D5 | *Windows:* saving a case asks nothing (DPAPI); after quit and relaunch, a case member restores its replacements |
+| D4 | *macOS:* adding the first document shows the Keychain explainer, then the system dialog; after quit and relaunch, a Project's document restores its replacements with no prompt |
+| D5 | *Windows:* adding a document asks nothing (DPAPI); after quit and relaunch, a Project's document restores its replacements |
 | D6 | Model setup: offline, the consent card's download fails cleanly with Retry; online, it downloads with progress, verifies and resumes the scan |
 | D7 | Russian typed into the editor and the find field appears correctly, and a misspelled Russian word gets the spelling underline |
 | D8 | Dropping files from Finder or Explorer onto Home and the sidebar opens them, and "Open with" from the OS opens a file in mdoc |
@@ -100,8 +100,9 @@ these.
 | D10 | *macOS:* quitting with unsaved work asks first, from ⌘Q, the Dock and logout |
 
 - Start from a clean profile: quit mdoc and rename its app-data folder,
-  then restore it. Never delete the case key (`io.github.lawkitt.mdoc` /
-  `case-key`, or `key.dpapi`): saved cases become unreadable. D4 needs a
+  then restore it. Never delete the Vault key (`io.github.lawkitt.mdoc` /
+  `case-key`, or `cases/key.dpapi`, names from before the Vault): the Vault
+  becomes unreadable. D4 needs a
   macOS user that never ran mdoc.
 - Show only public fixtures (`docs/product-media/`, `tests/fixtures/`);
   copy one into `Документы/Папка с пробелами/` for the path rows.
@@ -148,7 +149,7 @@ On a TestFlight build, by the maintainer, before Lawyers get a version.
 |---|---|
 | I1 | Scan with the document camera recognizes a printed English and Russian page |
 | I2 | On cellular, the model download asks first; leaving the app keeps it going |
-| I3 | After locking the phone, documents and cases are unreadable to a backup or file browser, and a restored backup starts empty |
+| I3 | After locking the phone, the Vault is unreadable to a backup or file browser, and a restored backup starts empty |
 | I4 | A 20-page scan and Find names keep running in the background, or offer to resume on return |
 | I5 | Share to the ChatGPT or Claude app sends aliases only; Restore with mdoc from the AI app restores the names |
 | I6 | Below the device floor, setup offers only text recognition and the app says why it cannot find names |

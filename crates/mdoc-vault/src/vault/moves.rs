@@ -1,6 +1,5 @@
 //! Moving a Document into or out of a Project, and deleting a Project
-//! (#1091 Decisions 4 and 9): the old mobile library's Move to case with
-//! Document ids, and Unfiled in place of a case.
+//! (#1091 Decisions 4 and 9), by Document id.
 use super::{Vault, WriteLock};
 use crate::{
     VaultError, is_id,

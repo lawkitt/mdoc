@@ -2,7 +2,7 @@ import XCTest
 @testable import mdoc
 
 /// A launch in the background can find the device locked: the Keychain
-/// refuses the case key (`errSecInteractionNotAllowed`) and the core cannot
+/// refuses the Vault key (`errSecInteractionNotAllowed`) and the core cannot
 /// open. The app then shows why, and opens again once it is in front.
 ///
 /// The Simulator cannot lock the device (XCUIDevice has no lock button and

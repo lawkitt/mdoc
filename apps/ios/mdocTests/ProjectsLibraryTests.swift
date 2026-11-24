@@ -44,10 +44,10 @@ final class ProjectsLibraryTests: XCTestCase {
         return model
     }
 
-    // MARK: Rename a case
+    // MARK: Rename a Project
 
-    /// Rename… on a case: the name is trimmed, and shows at once in the
-    /// lists and on a document of the case that is open.
+    /// Rename… on a Project: the name is trimmed, and shows at once in the
+    /// lists and on a document of the Project that is open.
     func testARenamedProjectShowsOnItsOpenDocument() throws {
         let app = try app()
         app.open(seeded.letter)
@@ -74,7 +74,7 @@ final class ProjectsLibraryTests: XCTestCase {
         XCTAssertEqual(projectName(seeded.harbour, in: app), Letters.harbourProject)
     }
 
-    /// A rename the core cannot save says why, and the case keeps its name
+    /// A rename the core cannot save says why, and the Project keeps its name
     /// in the lists and on its open document.
     func testAProjectRenameThatFailsSaysWhy() throws {
         let app = try app()
@@ -92,8 +92,8 @@ final class ProjectsLibraryTests: XCTestCase {
 
     // MARK: Library search
 
-    /// The sidebar's one search: titles and case names, in any case and
-    /// trimmed; a document matches through its case's name. Nothing for an
+    /// The sidebar's one search: titles and Project names, in any case and
+    /// trimmed; a document matches through its Project's name. Nothing for an
     /// empty query.
     func testSearchFindsTitlesAndProjectNames() throws {
         let app = try app()
@@ -117,7 +117,7 @@ final class ProjectsLibraryTests: XCTestCase {
     }
 
     /// Search follows the library: a deleted document is gone while its
-    /// Undo is offered and back after it; a renamed case is found by its
+    /// Undo is offered and back after it; a renamed Project is found by its
     /// new name only.
     func testSearchFollowsDeleteAndRename() throws {
         let app = try app()
@@ -182,10 +182,10 @@ final class ProjectsLibraryTests: XCTestCase {
         XCTAssertNil(app.intakeProject, "Home is no Project's page")
     }
 
-    // MARK: Case colours
+    // MARK: Project colours
 
-    /// Each of the core's swatches (`CaseColor::hue` in `mdoc-store`'s
-    /// `projects.rs`) shows as its own colour, and a hue past red wraps to it.
+    /// Each of the core's swatches (`Colour::hue` in `mdoc-vault`'s
+    /// `records.rs`) shows as its own colour, and a hue past red wraps to it.
     func testEachCoreSwatchShowsAsItsOwnColour() {
         let core: [(UInt32, ProjectColour)] = [
             (0, .red), (30, .orange), (45, .amber), (120, .green), (175, .teal), (220, .blue), (270, .violet), (325, .pink),
@@ -200,8 +200,8 @@ final class ProjectsLibraryTests: XCTestCase {
         XCTAssertEqual(ProjectColour(hue: 335), .pink)
     }
 
-    /// A case keeps its colour when it is renamed and after mdoc restarts:
-    /// the colour marks the case.
+    /// A Project keeps its colour when it is renamed and after mdoc restarts:
+    /// the colour marks the Project.
     func testAProjectKeepsItsColour() throws {
         let app = try app()
         let colours = Dictionary(uniqueKeysWithValues: app.library.projects.map { ($0.id, $0.colour) })
@@ -215,15 +215,15 @@ final class ProjectsLibraryTests: XCTestCase {
         XCTAssertEqual(Dictionary(uniqueKeysWithValues: relaunched.projects.map { ($0.id, $0.colour) }), colours)
     }
 
-    // MARK: The Cases page
+    // MARK: The Projects page
 
     private func counts(_ app: AppModel) -> [String: String] {
         let page = ProjectsView(app: app)
         return Dictionary(uniqueKeysWithValues: app.library.projects.map { ($0.name, page.count($0)) })
     }
 
-    /// Each case's line counts its documents and those to review, and
-    /// follows Delete, its Undo and Move to case.
+    /// Each Project's line counts its documents and those to review, and
+    /// follows Delete, its Undo and Move to Project.
     func testTheProjectsPageCountsFollowTheLibrary() throws {
         let app = try app()
         XCTAssertEqual(counts(app), [

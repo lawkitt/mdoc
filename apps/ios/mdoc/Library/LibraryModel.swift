@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Something brought in that waits for its title and case.
+/// Something brought in that waits for its title and Project.
 struct PendingImport: Identifiable, Equatable, Sendable {
     let id = UUID()
     var source: ImportSource
@@ -37,8 +37,8 @@ struct RepeatedImport: Identifiable, Equatable, Sendable {
     var id: UUID { pending.id }
 }
 
-/// The library as the sidebar, Start, Cases and the Documents page show it
-/// (ADR 0102): every document, newest first, each with its case, and the
+/// The library as the sidebar, Start, Projects and the Documents page show it
+/// (ADR 0102): every document, newest first, each with its Project, and the
 /// library's changes. A change throws; `AppModel` shows the error.
 @MainActor
 @Observable
@@ -109,13 +109,13 @@ final class LibraryModel {
     }
 
     /// The five projects most recently created, without the one the document is
-    /// in: Move to case's quick list.
+    /// in: Move to Project's quick list.
     func recentProjects(excluding current: ProjectID?) -> [ProjectSummary] {
         Array(projects.filter { $0.id != current }.prefix(5))
     }
 
-    /// The one search over titles and case names, for the sidebar and the
-    /// Documents page: the documents whose title or case matches, and the
+    /// The one search over titles and Project names, for the sidebar and the
+    /// Documents page: the documents whose title or Project matches, and the
     /// projects whose name does. An empty query matches nothing.
     func search(_ query: String) -> (documents: [LibraryDocument], projects: [ProjectSummary]) {
         let needle = query.trimmingCharacters(in: .whitespaces)
@@ -237,9 +237,9 @@ final class LibraryModel {
         return session
     }
 
-    /// `name`, or "name 2", "name 3"… when a case has it already, as the
+    /// `name`, or "name 2", "name 3"… when a Project has it already, as the
     /// core numbers a document's title: two projects of one name could not be
-    /// told apart in the case pickers.
+    /// told apart in the Project pickers.
     static func unusedName(_ name: String, among names: [String]) -> String {
         let taken = Set(names)
         guard taken.contains(name) else { return name }
@@ -254,7 +254,7 @@ final class LibraryModel {
         refresh()
     }
 
-    /// Renames a case; a blank name changes nothing.
+    /// Renames a Project; a blank name changes nothing.
     func renameProject(_ id: ProjectID, to name: String) throws {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
@@ -262,8 +262,8 @@ final class LibraryModel {
         refresh()
     }
 
-    /// Move to case. A new case is named as every new case is (#677):
-    /// trimmed, never blank (nil, nothing moves), and numbered when a case
+    /// Move to Project. A new Project is named as every new Project is (#677):
+    /// trimmed, never blank (nil, nothing moves), and numbered when a Project
     /// has the name already.
     func move(_ id: DocumentID, to target: ProjectChoice) throws -> ProjectMove? {
         var target = target
@@ -281,7 +281,7 @@ final class LibraryModel {
         return try library.undoMove(move)
     }
 
-    /// A new document left empty goes, with the case made for it
+    /// A new document left empty goes, with the Project made for it
     /// (ADR 0109); true when it went.
     func discardIfEmpty(_ id: DocumentID) throws -> Bool {
         let gone = try library.discardIfEmpty(id)

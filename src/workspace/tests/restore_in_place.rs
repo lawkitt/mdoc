@@ -571,7 +571,7 @@ struct Swapped<'a> {
     first: u64,
     second: u64,
     view: Entity<DocumentView>,
-    case: String,
+    project_id: String,
 }
 
 const SWAPPED_REPLY: &str = "PERSON_1 owes PERSON_2, says person 1.";
@@ -590,7 +590,7 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
         &[("Boris Ivanov", Person), ("Anna Petrova", Person)],
     );
     let first_view = active(&tabs, cx);
-    let case = new_project(&tabs, cx, first);
+    let project_id = new_project(&tabs, cx, first);
     let second = open_applied(
         &tabs,
         cx,
@@ -619,7 +619,7 @@ fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a>
         first,
         second,
         view,
-        case,
+        project_id,
     }
 }
 
@@ -642,10 +642,10 @@ fn a_move_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut Tes
         cx,
         second,
         view,
-        case,
+        project_id,
         ..
     } = swapped(cx, dir.path());
-    move_tab(&tabs, cx, second, Some(&case));
+    move_tab(&tabs, cx, second, Some(&project_id));
     draw(cx);
     let joined = "PERSON_2 owes PERSON_1, says person 2.";
     cx.update(|_, cx| {
@@ -685,9 +685,9 @@ fn a_member_synced_after_another_member_renames_keeps_its_reply(cx: &mut TestApp
         first,
         second,
         view,
-        case,
+        project_id,
     } = swapped(cx, dir.path());
-    move_tab(&tabs, cx, second, Some(&case));
+    move_tab(&tabs, cx, second, Some(&project_id));
     let first_view = cx.update(|_, cx| {
         tabs.read(cx)
             .tabs

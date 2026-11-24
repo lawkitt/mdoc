@@ -108,7 +108,7 @@ struct PasteTextSheet: View {
                     }
                     .labelStyle(.titleAndIcon)
                     // A long paste scrolls inside the editor, so the title
-                    // and the case stay on the sheet.
+                    // and the Project stay on the sheet.
                     TextEditor(text: $text)
                         .frame(minHeight: 180, maxHeight: 260)
                         .overlay(alignment: .topLeading) {

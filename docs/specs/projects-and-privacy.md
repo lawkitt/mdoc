@@ -1,6 +1,6 @@
-# Cases and privacy
+# Projects and privacy
 
-Mappings, saved cases and their key, restoring AI replies, what never leaves
+Mappings, the Vault and its key, restoring AI replies, what never leaves
 the device, and crash reports. The user-facing summary is
 [privacy.md](../privacy.md); keep it true when a rule here changes. Terms are
 in [CONTEXT.md](../../CONTEXT.md).
@@ -52,7 +52,7 @@ in [CONTEXT.md](../../CONTEXT.md).
   anonymous.
 - A Project colour marks the Project, never a state.
 
-## Case key access
+## Vault key access
 
 - The per-query `kSecUseAuthenticationUIFail` flag does not prevent the
   macOS password dialog; only the process-wide

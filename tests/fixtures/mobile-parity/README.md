@@ -5,7 +5,7 @@ against the desktop's GUI-free path by `crates/mdoc-ffi/tests/parity.rs`. The Sw
 parity suite reads the same files.
 
 The captured Claude round trip in [`../restore/claude-en`](../restore/claude-en)
-is the first check: the Settlement agreement demo joins a case holding its
+is the first check: the Settlement agreement demo joins a Project holding its
 `identities.json`, and Copy for AI must equal `sent.md`, which desktop put on
 the clipboard, and the reply must restore to `expected.md`.
 

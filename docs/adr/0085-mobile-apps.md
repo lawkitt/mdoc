@@ -10,7 +10,7 @@ restore the reply), free, with no accounts and no sync. iOS and Android
 share the Rust core through UniFFI (`crates/mdoc-ffi`) under native SwiftUI
 and Jetpack Compose, so every platform gives a document the same
 candidates, aliases and restored text. The core decides every rule about
-documents, review, cases, aliases, file names and restore, and the apps
+documents, Projects, review, aliases, file names and restore, and the apps
 display its snapshots: when Swift computed review rules, two were wrong,
 and a fake core let tests pass on behaviour the core lacked, so tests run
 the real core. ONNX Runtime, PDFium and docxide ship inside the apps;
