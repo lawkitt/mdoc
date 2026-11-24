@@ -117,7 +117,8 @@ impl Vault {
     /// [`VaultError::ExcludedFromAi`], or [`VaultError::NotReady`] unless
     /// [`Self::readiness`] finds it Ready.
     pub fn text_for_ai(&self, id: &str) -> Result<String, VaultError> {
-        match self.checked_for_ai(self.document(id)?)? {
+        let (document, mapping) = self.checkable(self.document(id)?)?;
+        match checked_for_ai(document, &mapping) {
             Ok(checked) => Ok(checked.note + &checked.markdown),
             Err(not) => Err(VaultError::NotReady(not)),
         }
@@ -129,44 +130,39 @@ impl Vault {
     /// [`VaultError::NotFound`] before anything of it is told; one excluded
     /// from AI is [`VaultError::ExcludedFromAi`]. The Document and the
     /// names it is checked against are read under the write lock, so they
-    /// are one moment's, and its counts come from the record checked.
+    /// are one moment's (#1198); the check runs once it is released. Its
+    /// counts come from the record checked.
     pub fn text_for_ai_in(&self, project: &str, id: &str) -> Result<AiRead, VaultError> {
-        let _lock = self.write_lock()?;
-        let document = self.document(id)?;
-        if document.project.as_deref() != Some(project) {
-            return Err(VaultError::NotFound {
-                kind: crate::ObjectKind::Document,
-                id: id.to_owned(),
-            });
-        }
+        let (document, mapping) = {
+            let _lock = self.write_lock()?;
+            let document = self.document(id)?;
+            if document.project.as_deref() != Some(project) {
+                return Err(VaultError::NotFound {
+                    kind: crate::ObjectKind::Document,
+                    id: id.to_owned(),
+                });
+            }
+            #[cfg(test)]
+            connector_read::between_reads();
+            self.checkable(document)?
+        };
         let chars = document.markdown.chars().count();
         let words = document.markdown.split_whitespace().count();
         Ok(AiRead {
-            checked: self.checked_for_ai(document)?,
+            checked: checked_for_ai(document, &mapping),
             chars,
             words,
         })
     }
 
-    /// The one outbound check: exclusion, then readiness against the names
-    /// `document`'s Project holds now.
-    fn checked_for_ai(&self, document: Document) -> Result<Result<AiText, Readiness>, VaultError> {
+    /// `document` and the names its Project holds now, unless it is
+    /// excluded from AI.
+    fn checkable(&self, document: Document) -> Result<(Document, Mapping), VaultError> {
         if document.exclude_from_ai {
             return Err(VaultError::ExcludedFromAi);
         }
         let mapping = self.mapping_of(&document)?;
-        match document.readiness(&mapping) {
-            Readiness::Ready => {}
-            not => return Ok(Err(not)),
-        }
-        // The aliases a reopened document relinks as applied, as the
-        // editor's Copy for AI names them.
-        let names = RestoreMap::new(mapping.exported());
-        let note = mdoc_pii::handoff::note_for(names.exact_aliases(&document.markdown));
-        Ok(Ok(AiText {
-            note,
-            markdown: document.markdown,
-        }))
+        Ok((document, mapping))
     }
 
     /// The mapping `document`'s names live in: its Project's as stored now,
@@ -178,3 +174,23 @@ impl Vault {
         }
     }
 }
+
+/// The one outbound check: `document`'s readiness against `mapping`, the
+/// names its Project held when it was read.
+fn checked_for_ai(document: Document, mapping: &Mapping) -> Result<AiText, Readiness> {
+    match document.readiness(mapping) {
+        Readiness::Ready => {}
+        not => return Err(not),
+    }
+    // The aliases a reopened document relinks as applied, as the editor's
+    // Copy for AI names them.
+    let names = RestoreMap::new(mapping.exported());
+    let note = mdoc_pii::handoff::note_for(names.exact_aliases(&document.markdown));
+    Ok(AiText {
+        note,
+        markdown: document.markdown,
+    })
+}
+
+#[cfg(test)]
+mod connector_read;
