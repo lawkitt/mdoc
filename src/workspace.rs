@@ -1198,11 +1198,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                // A move's reload ends, done or with its tab gone: autosaves
-                // resume with the moved text.
-                if this.reloading.remove(&loading) {
-                    this.moving.remove(&loading);
-                }
+                this.move_reload_ended(&loading, window, cx);
                 if !this.tabs.contains(id) {
                     // Its viewing copy may have been made after the tab went.
                     if let Some(dir) = this.viewing_dir(id) {
@@ -1952,10 +1948,32 @@ impl Workspace {
 
     /// The quit's last step, once documents, Projects and the session are
     /// written: the Vault's summaries, then the window.
+    /// A move's reload of `document` ends, done or with its tab gone:
+    /// autosaves resume with the moved text, and a quit waiting for it goes
+    /// on once the view holds that text.
+    fn move_reload_ended(
+        &mut self,
+        document: &mdoc_store::document_id::VaultId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.reloading.remove(document) {
+            return;
+        }
+        self.moving.remove(document);
+        cx.defer_in(window, |this, window, cx| {
+            if this.quit_flow.finishing() && !this.late_pass {
+                this.finish_quit(window, cx);
+            }
+        });
+    }
+
     fn finish_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A move's reload waits too: a reply in its box saves only after.
         if !self.quit_flow.finishing()
             || self.session_writer.writing()
             || self.document_writer.busy()
+            || !self.reloading.is_empty()
         {
             return;
         }

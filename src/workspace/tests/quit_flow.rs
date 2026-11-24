@@ -130,6 +130,52 @@ fn a_failed_late_notes_write_cancels_the_quit(cx: &mut TestAppContext) {
     });
 }
 
+/// Review of #1152 (P2): a reply typed in the box while a move's reload is
+/// due is saved before a quit closes the window: the quit waits for the
+/// reload, which the reply's save waits for.
+#[gpui::test]
+fn a_quit_waits_for_a_moves_reload_to_save_the_box_reply(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let tab = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova wrote.",
+        &[("Anna Petrova", Person)],
+    );
+    wait(cx, 1000);
+    let vault = cx.update(|_, cx| tabs.read(cx).opened_vault().unwrap());
+    let document = cx.update(|_, cx| tabs.read(cx).tab_document(tab, cx).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| {
+        // As a move leaves it: written and moved, its tab loading again.
+        tabs.moving.insert(document.clone());
+        tabs.reloading.insert(document.clone());
+        let view = tabs.tabs.get(tab).unwrap().view().unwrap().clone();
+        view.update(cx, |view, cx| {
+            view.fill_reply("PERSON_1 replied.", window, cx)
+        });
+        tabs.quit(window, cx);
+    });
+    cx.run_until_parked();
+    assert!(!cx.cx.read(|cx| cx.windows().is_empty()), "the quit waits");
+    assert!(vault.replies().is_empty());
+    // The reload ends: the reply saves, then the window closes.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.move_reload_ended(&document, window, cx)
+    });
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let replies = vault.replies();
+    assert_eq!(replies.len(), 1, "the box's reply is saved");
+    assert_eq!(
+        vault.reply(&replies[0].id).unwrap().markdown,
+        "PERSON_1 replied."
+    );
+}
+
 #[gpui::test]
 fn production_shell_queues_startup_opens_and_a_quit_writes_the_edit(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
