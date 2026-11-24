@@ -93,7 +93,7 @@ final class NewDocumentUITests: XCTestCase {
         let app = launch()
         MdocUITest.revealSidebar(app)
         app.buttons["new-menu"].firstMatch.tap()
-        let paste = app.descendants(matching: .any)["paste-text"].firstMatch
+        let paste = MdocUITest.menuItem("Paste", app)
         XCTAssertTrue(paste.waitForExistence(timeout: MdocUITest.timeout))
         paste.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: MdocUITest.timeout), "no document after one tap")

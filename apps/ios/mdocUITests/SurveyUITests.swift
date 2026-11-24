@@ -32,7 +32,7 @@ final class SurveyUITests: XCTestCase {
         MdocUITest.copy(Self.pastedText)
         app.buttons["new-menu"].firstMatch.tap()
         // The menu's item, not Start's Paste tile of the same name.
-        let pasteItem = app.descendants(matching: .any)["paste-text"].firstMatch
+        let pasteItem = MdocUITest.menuItem("Paste", app)
         XCTAssertTrue(pasteItem.waitForExistence(timeout: MdocUITest.timeout))
         shot("02-add-menu")
         pasteItem.tap()
@@ -489,7 +489,7 @@ final class SurveyUITests: XCTestCase {
         shot("31-home-empty-below-floor")
 
         MdocUITest.copy(Self.pastedText)
-        app.descendants(matching: .any)["empty-paste"].firstMatch.tap()
+        MdocUITest.tapWhenEnabled(app.descendants(matching: .any)["empty-paste"].firstMatch)
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Find names"].exists)

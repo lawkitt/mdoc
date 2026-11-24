@@ -236,8 +236,16 @@ enum MdocUITest {
     @MainActor
     static func pasteReply(_ text: String, in app: XCUIApplication) {
         copy(text)
-        let paste = app.descendants(matching: .any)["paste-reply"].firstMatch
+        tapWhenEnabled(app.descendants(matching: .any)["paste-reply"].firstMatch)
+    }
+
+    /// Taps a Paste control once it is enabled: it dims while the
+    /// clipboard is empty and takes a moment to see a copy made in the
+    /// runner, and a tap before then does nothing.
+    @MainActor
+    static func tapWhenEnabled(_ paste: XCUIElement) {
         XCTAssertTrue(paste.waitForExistence(timeout: timeout))
+        XCTAssertTrue(paste.wait(until: NSPredicate(format: "isEnabled == true"), timeout: timeout), "Paste stayed dimmed")
         paste.tap()
     }
 
