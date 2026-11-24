@@ -8,7 +8,8 @@
 //! It opens a magenta 320x180 GPUI `WindowKind::PopUp` window at X,Y
 //! (logical pixels, default 200,200) with `focus: false`, then through the
 //! raw HWND adds `WS_EX_NOACTIVATE`, `HWND_TOPMOST` and
-//! `WDA_EXCLUDEFROMCAPTURE`. A hidden window of its own registers
+//! `WDA_EXCLUDEFROMCAPTURE`, and answers `WM_MOUSEACTIVATE` with
+//! `MA_NOACTIVATE` for hover activation. A hidden window of its own registers
 //! Ctrl+Alt+Shift+M and a tray icon; both toggle the spike without
 //! activating it. `--control` opens a normal window that is activated, as the
 //! main window is; `--no-exclude` skips the capture exclusion. Each step
@@ -47,18 +48,20 @@ mod spike {
                     MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey, UnregisterHotKey,
                 },
                 Shell::{
-                    NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
-                    NOTIFYICONIDENTIFIER, Shell_NotifyIconGetRect, Shell_NotifyIconW,
+                    NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_SETFOCUS,
+                    NOTIFYICONDATAW, NOTIFYICONIDENTIFIER, Shell_NotifyIconGetRect,
+                    Shell_NotifyIconW,
                 },
                 WindowsAndMessaging::{
-                    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-                    DestroyWindow, GWL_EXSTYLE, GetCursorPos, GetWindowDisplayAffinity,
-                    GetWindowLongPtrW, HWND_TOPMOST, IDI_APPLICATION, IsWindowVisible, LoadIconW,
-                    MF_STRING, PostMessageW, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE,
-                    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
-                    SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-                    TPM_RIGHTBUTTON, TrackPopupMenu, WDA_EXCLUDEFROMCAPTURE, WM_APP, WM_COMMAND,
-                    WM_HOTKEY, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WS_EX_NOACTIVATE,
+                    AppendMenuW, CallWindowProcW, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
+                    DestroyMenu, DestroyWindow, GWL_EXSTYLE, GWLP_WNDPROC, GetCursorPos,
+                    GetWindowDisplayAffinity, GetWindowLongPtrW, HWND_TOPMOST, IDI_APPLICATION,
+                    IsWindowVisible, LoadIconW, MA_NOACTIVATE, MF_STRING, PostMessageW,
+                    RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+                    SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetWindowDisplayAffinity,
+                    SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RIGHTBUTTON, TrackPopupMenu,
+                    WDA_EXCLUDEFROMCAPTURE, WM_APP, WM_COMMAND, WM_HOTKEY, WM_LBUTTONUP,
+                    WM_MOUSEACTIVATE, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WNDPROC, WS_EX_NOACTIVATE,
                     WS_OVERLAPPED,
                 },
             },
@@ -78,6 +81,8 @@ mod spike {
     static SPIKE: AtomicIsize = AtomicIsize::new(0);
     /// The hidden window that owns the hotkey and the tray icon.
     static OWNER: AtomicIsize = AtomicIsize::new(0);
+    /// GPUI's window procedure, which `spike_proc` forwards to.
+    static GPUI_PROC: AtomicIsize = AtomicIsize::new(0);
     static QUIT: AtomicBool = AtomicBool::new(false);
 
     struct Options {
@@ -218,6 +223,18 @@ mod spike {
         let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
         // SAFETY: as above; only an extended-style bit is added.
         unsafe { SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE as isize) };
+        // Hover activation ("Activate a window by hovering over it") ignores
+        // WS_EX_NOACTIVATE and asks WM_MOUSEACTIVATE, which GPUI answers with
+        // MA_ACTIVATE, so `spike_proc` answers it first.
+        let spike_proc: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT =
+            spike_proc;
+        // SAFETY: as above; `spike_proc` forwards every other message to the
+        // procedure it replaces, stored before any message can arrive.
+        unsafe {
+            let previous = GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+            GPUI_PROC.store(previous, Ordering::SeqCst);
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, spike_proc as usize as isize);
+        }
         // SAFETY: as above; no move, size or activation.
         let topmost = unsafe {
             SetWindowPos(
@@ -383,9 +400,17 @@ mod spike {
         );
     }
 
-    /// The tray menu: the shell needs the owner in front while it tracks.
+    /// The tray menu: the shell needs the owner in front while it tracks,
+    /// and the notification area gets the focus back however it closes.
     fn show_menu(owner: HWND) {
-        // SAFETY: a new menu, destroyed below; `owner` is live.
+        let data = NOTIFYICONDATAW {
+            cbSize: size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: owner,
+            uID: TRAY_ID,
+            ..Default::default()
+        };
+        // SAFETY: a new menu, destroyed below; `owner` is live; `data`
+        // outlives the call that reads it.
         unsafe {
             let menu = CreatePopupMenu();
             AppendMenuW(menu, MF_STRING, MENU_TOGGLE, w!("Show or hide"));
@@ -404,6 +429,20 @@ mod spike {
             );
             PostMessageW(owner, WM_NULL, 0, 0);
             DestroyMenu(menu);
+            Shell_NotifyIconW(NIM_SETFOCUS, &data);
+        }
+    }
+
+    extern "system" fn spike_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if msg == WM_MOUSEACTIVATE {
+            // The click still reaches GPUI; only the activation is refused.
+            return MA_NOACTIVATE as LRESULT;
+        }
+        // SAFETY: `GPUI_PROC` holds the procedure `float` replaced, a valid
+        // `WNDPROC` for this window for as long as the window lives.
+        unsafe {
+            let gpui: WNDPROC = std::mem::transmute(GPUI_PROC.load(Ordering::SeqCst));
+            CallWindowProcW(gpui, hwnd, msg, wparam, lparam)
         }
     }
 
