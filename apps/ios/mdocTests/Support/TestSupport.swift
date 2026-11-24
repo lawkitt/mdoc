@@ -105,8 +105,14 @@ enum Fixture {
             }
         }
         for folder in folders {
-            try files.setAttributes([.posixPermissions: writable ? 0o700 : 0o500], ofItemAtPath: folder.path)
+            try setFolder(folder, writable: writable)
         }
+    }
+
+    /// One folder made read-only, or writable again: a file written in it
+    /// then fails to save.
+    static func setFolder(_ folder: URL, writable: Bool) throws {
+        try FileManager.default.setAttributes([.posixPermissions: writable ? 0o700 : 0o500], ofItemAtPath: folder.path)
     }
 
     /// The text a document has saved in the Vault, read through a session

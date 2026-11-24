@@ -235,6 +235,10 @@ final class RealLibrary: Library, @unchecked Sendable {
     var typingPause = SaveScheduler.typingPause
     /// What scans ask about the phone; tests stand in low memory or heat.
     var device = DeviceConditions.live
+    /// Runs once Delete Project has begun listing the Project's documents
+    /// and imports, before it has both: a test saves an import there, as
+    /// the save queue can (#1140).
+    var listingProject: (() -> Void)?
     private var saveObserver: (@MainActor @Sendable (SaveEvent) -> Void)?
 
     init(storage: MdocStorage, keys: any VaultKeyStore, setup: RealSetup?) throws {
@@ -519,13 +523,12 @@ final class RealLibrary: Library, @unchecked Sendable {
     /// Project lands in Unfiled, or is deleted with the rest.
     func deleteProject(_ projectID: ProjectID, documents: ProjectDeletion) throws {
         let id = projectID.rawValue
-        let stored = vault.documents().filter { $0.projectId == id }.map(\.id)
-        let (members, imports) = lock.withLock {
-            (
-                stored.map { vaultID in (vaultID, ids[vaultID] ?? DocumentID(rawValue: vaultID)) },
-                sessions.values.filter { $0.joins(id) }
-            )
+        // Even a delete that fails may have moved or deleted some.
+        defer {
+            lock.withLock { projectNames.removeAll() }
+            noteChange()
         }
+        let (members, imports) = contents(of: id)
         switch documents {
         case .deleteDocuments:
             for document in imports.map(\.id) + members.map(\.1) {
@@ -537,30 +540,68 @@ final class RealLibrary: Library, @unchecked Sendable {
             for (_, session) in open {
                 try session.saveChanges()
             }
-            // No import's join and first save runs meanwhile: each lands in
-            // Unfiled, or saved in the Project before, moves with the rest.
-            try holdingSaves(imports[...]) {
-                let leaving = imports.filter { $0.leaveProject(id) }
-                do {
-                    try core { try vault.deleteProject(id: id, documents: .moveToUnfiled) }
-                } catch {
-                    leaving.forEach { $0.rejoin(id) }
-                    throw error
+            do {
+                // No import's join and first save runs meanwhile: each lands
+                // in Unfiled, or saved in the Project since it was listed,
+                // moves with the rest.
+                try holdingSaves(imports[...]) {
+                    let leaving = imports.filter { $0.leaveProject(id) }
+                    open += imports.filter { session in !leaving.contains { $0 === session } }
+                        .compactMap { session in session.vaultID.map { ($0, session) } }
+                    do {
+                        // Their records land in Unfiled first: a stop before
+                        // the Project goes leaves none naming it once gone.
+                        for session in leaving {
+                            try pending.place(session.id, in: nil)
+                        }
+                        try core { try vault.deleteProject(id: id, documents: .moveToUnfiled) }
+                    } catch {
+                        for session in leaving {
+                            session.rejoin(id)
+                            try? pending.place(session.id, in: id)
+                        }
+                        throw error
+                    }
                 }
-                leaving.forEach { pending.moveToUnfiled($0.id) }
-                open += imports.filter { session in !leaving.contains { $0 === session } }
-                    .compactMap { session in session.vaultID.map { ($0, session) } }
+            } catch {
+                // A delete that failed part way moved some to Unfiled: they
+                // show it before the error does.
+                let staying = Set(vault.documents().filter { $0.projectId == id }.map(\.id))
+                reopen(open.filter { !staying.contains($0.0) })
+                throw error
             }
-            for (vaultID, session) in open {
-                do {
-                    try session.reopen(vaultID: vaultID, kind: nil)
-                } catch {
-                    session.reopenLater()
-                }
+            reopen(open)
+        }
+    }
+
+    /// A Project's saved documents, by Vault id with this run's id, and the
+    /// imports not saved yet that are to join it, listed while none of
+    /// those imports saves: a first save lands it in one list, never
+    /// between the two.
+    private func contents(of id: String) -> (members: [(String, DocumentID)], imports: [RealSession]) {
+        let joining = lock.withLock { sessions.values.filter { $0.joins(id) } }
+        listingProject?()
+        return holdingSaves(joining[...]) {
+            let stored = vault.documents().filter { $0.projectId == id }.map(\.id)
+            return lock.withLock {
+                (
+                    stored.map { vaultID in (vaultID, ids[vaultID] ?? DocumentID(rawValue: vaultID)) },
+                    sessions.values.filter { $0.joins(id) }
+                )
             }
         }
-        lock.withLock { projectNames.removeAll() }
-        noteChange()
+    }
+
+    /// Moved documents' sessions, by Vault id, open them again; one that
+    /// fails opens it on its next use.
+    private func reopen(_ moved: [(String, RealSession)]) {
+        for (vaultID, session) in moved {
+            do {
+                try session.reopen(vaultID: vaultID, kind: nil)
+            } catch {
+                session.reopenLater()
+            }
+        }
     }
 
     /// Runs `body` while none of `sessions` saves.
@@ -1790,14 +1831,15 @@ final class PendingImports: @unchecked Sendable {
         }
     }
 
-    /// An import's Project was deleted, its documents moved: it lands in
-    /// Unfiled.
-    func moveToUnfiled(_ id: DocumentID) {
-        lock.withLock {
+    /// The Project an import is to join, `nil` Unfiled: its Project is
+    /// being deleted, its documents moved, or that delete failed. Throws
+    /// when the record can't be written.
+    func place(_ id: DocumentID, in projectID: String?) throws {
+        try lock.withLock {
             var entries = load()
             guard entries[id.rawValue] != nil else { return }
-            entries[id.rawValue]?.projectID = nil
-            save(entries)
+            entries[id.rawValue]?.projectID = projectID
+            try write(entries)
         }
     }
 
@@ -1829,8 +1871,13 @@ final class PendingImports: @unchecked Sendable {
     }
 
     private func save(_ entries: [String: Stored]) {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: url, options: [.atomic, .completeFileProtection])
+        try? write(entries)
+    }
+
+    /// `save`, throwing when the record can't be written.
+    private func write(_ entries: [String: Stored]) throws {
+        let data = try JSONEncoder().encode(entries)
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var excluded = url

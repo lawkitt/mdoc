@@ -277,7 +277,7 @@ private struct Sheets: ViewModifier {
                 case .share(let items):
                     ActivityView(items: items.items)
                 case .importing(let pending):
-                    ImportSheet(pending: pending, projects: library.projects, startingProject: app.intakeProject) { title, project in
+                    ImportSheet(pending: pending, projects: library.projects, startingProject: pending.project) { title, project in
                         app.finishImport(pending, title: title, into: project)
                     }
                 }
