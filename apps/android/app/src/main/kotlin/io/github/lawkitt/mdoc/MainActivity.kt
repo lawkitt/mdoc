@@ -50,6 +50,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.lawkitt.mdoc.core.DocumentId
+import io.github.lawkitt.mdoc.core.MoveTarget
 import io.github.lawkitt.mdoc.core.ProjectDeletion
 import io.github.lawkitt.mdoc.core.ProjectId
 import io.github.lawkitt.mdoc.document.DocumentScreen
@@ -62,6 +63,9 @@ import io.github.lawkitt.mdoc.home.Destination
 import io.github.lawkitt.mdoc.home.DocumentListScreen
 import io.github.lawkitt.mdoc.home.HomeScreen
 import io.github.lawkitt.mdoc.home.HomeViewModel
+import io.github.lawkitt.mdoc.home.MoveCommand
+import io.github.lawkitt.mdoc.home.MoveToNewProjectDialog
+import io.github.lawkitt.mdoc.home.MoveToProjectDialog
 import io.github.lawkitt.mdoc.home.NewProjectDialog
 import io.github.lawkitt.mdoc.home.ProjectPage
 import io.github.lawkitt.mdoc.home.RenameProjectDialog
@@ -142,7 +146,10 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     var settings by rememberSaveable { mutableStateOf(false) }
     var readAfterOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    /** New Project, Rename… or Delete Project… asking: "new", "rename:<id>", "delete:<id>". */
+    /**
+     * New Project, Rename…, Delete Project…, Move to Project… or Move to New
+     * Project… asking: "new", "rename:<id>", "delete:<id>", "move:<document>", "move-new:<document>".
+     */
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -188,6 +195,28 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
         if (deletedProject == null) return@LaunchedEffect
         snackbar.showSnackbar(deletedProject)
         home.deletedProjectShown()
+    }
+    // A move's snackbar, as iOS's toast: "Moved to <Project>" with Undo, then "Moved back to <Project>".
+    val moved = state.moved
+    val unfiled = stringResource(R.string.unfiled)
+    val movedText = moved?.let { stringResource(if (it.undone) R.string.moved_back_to else R.string.moved_to, it.move.to?.name ?: unfiled) }
+    LaunchedEffect(moved?.serial) {
+        if (moved == null || movedText == null) return@LaunchedEffect
+        if (moved.undone) {
+            snackbar.showSnackbar(movedText)
+            home.moveShown(moved.serial)
+        } else {
+            val result = snackbar.showSnackbar(movedText, actionLabel = undo, duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed) home.undoMove(moved.move) else home.moveShown(moved.serial)
+        }
+    }
+    // Move to Project… and Move to New Project… ask first; Move to Unfiled moves at once.
+    fun move(id: DocumentId, command: MoveCommand) {
+        when (command) {
+            MoveCommand.ToProject -> dialog = "move:${id.raw}"
+            MoveCommand.ToNewProject -> dialog = "move-new:${id.raw}"
+            MoveCommand.ToUnfiled -> home.move(id, MoveTarget.Unfiled)
+        }
     }
 
     // Notification permission is asked at the first long job; the job runs either way.
@@ -280,6 +309,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                 onGo = ::go,
                 onDialog = { dialog = it },
                 onSettings = { settings = true },
+                onMove = ::move,
                 setupCard = setupCard,
             )
         } else {
@@ -316,6 +346,10 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                         open = null
                         home.refresh()
                     },
+                    snackbar = snackbar,
+                    projects = state.projects,
+                    onMove = { move(DocumentId(current), it) },
+                    moves = state.moves,
                 )
             }
         }
@@ -401,6 +435,14 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             },
         )
     }
+    state.failed?.let { message ->
+        AlertDialog(
+            onDismissRequest = home::failureShown,
+            confirmButton = { TextButton(onClick = home::failureShown) { Text(stringResource(R.string.ok)) } },
+            title = { Text(stringResource(R.string.something_went_wrong)) },
+            text = { Text(message) },
+        )
+    }
     state.refused?.let { reason ->
         AlertDialog(
             onDismissRequest = home::refusalShown,
@@ -424,6 +466,7 @@ private fun Page(
     onGo: (Destination) -> Unit,
     onDialog: (String) -> Unit,
     onSettings: () -> Unit,
+    onMove: (DocumentId, MoveCommand) -> Unit,
     setupCard: (@Composable () -> Unit)?,
 ) {
     when (destination) {
@@ -459,6 +502,7 @@ private fun Page(
             emptyBody = R.string.unfiled_body,
             onMenu = onMenu,
             snackbar = snackbar,
+            onMove = onMove,
         )
         Destination.AllDocuments -> DocumentListScreen(
             title = stringResource(R.string.all_documents),
@@ -470,6 +514,7 @@ private fun Page(
             searchable = true,
             onMenu = onMenu,
             snackbar = snackbar,
+            onMove = onMove,
         )
         is Destination.Project -> {
             val project = state.project(destination.id)
@@ -490,13 +535,14 @@ private fun Page(
                     onHideReply = home::hideSavedReply,
                     onMenu = onMenu,
                     snackbar = snackbar,
+                    onMove = onMove,
                 )
             }
         }
     }
 }
 
-/** New Project, Rename… and Delete Project… (#1091 Decisions 9 and 34). */
+/** New Project, Rename…, Delete Project… and a document's moves (#1091 Decisions 9 and 34). */
 @Composable
 private fun ProjectDialogs(
     dialog: String?,
@@ -523,6 +569,21 @@ private fun ProjectDialogs(
             RenameProjectDialog(project.name, onRename = { name ->
                 onDone()
                 home.renameProject(id, name)
+            }, onDismiss = onDone)
+        }
+        dialog?.startsWith("move:") == true -> {
+            val id = DocumentId(dialog.removePrefix("move:"))
+            val own = state.documents.firstOrNull { it.id == id }?.projectId
+            MoveToProjectDialog(state.projects.filter { it.id != own }, onPick = { project ->
+                onDone()
+                home.move(id, MoveTarget.Existing(project))
+            }, onDismiss = onDone)
+        }
+        dialog?.startsWith("move-new:") == true -> {
+            val id = DocumentId(dialog.removePrefix("move-new:"))
+            MoveToNewProjectDialog(onMove = { name ->
+                onDone()
+                home.move(id, MoveTarget.NewProject(name))
             }, onDismiss = onDone)
         }
         dialog?.startsWith("delete:") == true -> {

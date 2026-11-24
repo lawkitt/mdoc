@@ -225,6 +225,7 @@ fun DocumentListScreen(
     emptyBody: Int? = null,
     onMenu: (() -> Unit)? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    onMove: ((DocumentId, MoveCommand) -> Unit)? = null,
 ) {
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -330,6 +331,8 @@ fun DocumentListScreen(
                             } else {
                                 null
                             },
+                            moves = documentMoves(document, state, onMove),
+                            onMove = { onMove?.invoke(document.id, it) },
                         ) {
                             onOpen(document.id)
                         }
@@ -357,10 +360,33 @@ private val AddOption.label: Int
         AddOption.Scan -> R.string.scan
     }
 
+/** The moves a listed document's menu offers, when its list moves documents. */
+fun documentMoves(document: DocumentSummary, state: HomeState, onMove: Any?): List<MoveCommand> =
+    if (onMove == null) emptyList() else HomeViewModel.moveCommands(document.projectId, document.vaultId != null, state.projects)
+
+/** A move command's menu label. */
+@Composable
+fun MoveCommand.label(): String = stringResource(
+    when (this) {
+        MoveCommand.ToProject -> R.string.move_to_project_ellipsis
+        MoveCommand.ToNewProject -> R.string.move_to_new_project_ellipsis
+        MoveCommand.ToUnfiled -> R.string.move_to_unfiled
+    },
+)
+
+/** A document menu's move commands, in iOS's order: a Project, a new one, then Unfiled. */
+@Composable
+fun MoveMenuItems(commands: List<MoveCommand>, onMove: (MoveCommand) -> Unit) {
+    commands.forEach { command ->
+        DropdownMenuItem(text = { Text(command.label()) }, onClick = { onMove(command) })
+    }
+}
+
 /**
  * A document's row in a list: its Project's dot where the list mixes
- * Projects, its title and status. A long press offers Delete (iOS's
- * swipe) and, in Unfiled, Select; TalkBack has them as actions.
+ * Projects, its title and status. A long press offers Select in Unfiled,
+ * the moves (#1091 Decision 9) and Delete (iOS's swipe); TalkBack has
+ * them as actions.
  */
 @Composable
 fun DocumentRow(
@@ -369,12 +395,15 @@ fun DocumentRow(
     canFindNames: Boolean,
     onDelete: (() -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
+    moves: List<MoveCommand> = emptyList(),
+    onMove: (MoveCommand) -> Unit = {},
     leading: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     var actions by remember { mutableStateOf(false) }
     val deleteLabel = stringResource(R.string.delete)
     val selectLabel = stringResource(R.string.select)
+    val moveLabels = moves.map { it to it.label() }
     val line = HomeViewModel.status(document, canFindNames)
     val status = when (line) {
         StatusLine.NotRecognized -> stringResource(R.string.status_not_recognized)
@@ -391,20 +420,21 @@ fun DocumentRow(
     val tone = if (toReview) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
     // The Project's name only when it differs from the title.
     val projectName = project?.name?.takeIf { it != document.title }
-    val hasActions = onDelete != null || onSelect != null
+    val hasActions = onDelete != null || onSelect != null || moves.isNotEmpty()
+    // Delete alone keeps its own name; with the moves, the press opens a menu.
+    val longPressLabel = if (moves.isEmpty()) deleteLabel else stringResource(R.string.more_options)
     Box {
         ListItem(
             modifier = Modifier
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = if (hasActions) ({ actions = true }) else null,
-                    onLongClickLabel = if (hasActions) deleteLabel else null,
+                    onLongClickLabel = if (hasActions) longPressLabel else null,
                 )
                 .semantics {
-                    customActions = listOfNotNull(
-                        onSelect?.let { CustomAccessibilityAction(selectLabel) { it(); true } },
-                        onDelete?.let { CustomAccessibilityAction(deleteLabel) { it(); true } },
-                    )
+                    customActions = listOfNotNull(onSelect?.let { CustomAccessibilityAction(selectLabel) { it(); true } }) +
+                        moveLabels.map { (command, label) -> CustomAccessibilityAction(label) { onMove(command); true } } +
+                        listOfNotNull(onDelete?.let { CustomAccessibilityAction(deleteLabel) { it(); true } })
                 },
             leadingContent = leading ?: project?.let {
                 {
@@ -431,6 +461,10 @@ fun DocumentRow(
                         select()
                     },
                 )
+            }
+            MoveMenuItems(moves) { command ->
+                actions = false
+                onMove(command)
             }
             onDelete?.let { delete ->
                 DropdownMenuItem(

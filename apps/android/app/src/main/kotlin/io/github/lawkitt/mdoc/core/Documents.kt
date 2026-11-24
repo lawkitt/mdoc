@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import uniffi.mdoc_ffi.CoreException
 import uniffi.mdoc_ffi.DocumentInfo
+import uniffi.mdoc_ffi.DocumentMove
 import uniffi.mdoc_ffi.DocumentSession as FfiSession
 import uniffi.mdoc_ffi.DocumentSourceKind
 import uniffi.mdoc_ffi.FloorReason
@@ -72,6 +73,17 @@ class Documents(
         vault.deleteProject(project, documents)
     }
 
+    /** Runs the core's move or its Undo; the tests make it stop part way. */
+    @Volatile internal var moveInVault: (() -> DocumentMove) -> DocumentMove = { it() }
+
+    /**
+     * Held for the whole of a document's move and of a Project's delete,
+     * before any session's save lock: a move never lands in a Project
+     * after its delete read the documents it has, which the delete would
+     * then move or delete behind the moved session.
+     */
+    private val projectChanges = Any()
+
     /** Where text was shared from last: Restore with mdoc restores with it first. */
     val lastShared = LastShared(File(storage.intake, "last-shared.json"))
 
@@ -114,8 +126,12 @@ class Documents(
     /** What Restore with mdoc saved since comes in; true when anything did. */
     fun refresh(): Boolean = runCatching { vault.refresh() }.getOrDefault(false)
 
-    @Synchronized
-    fun session(id: DocumentId): Session = sessions[id] ?: stored(id.raw)
+    /** Its session; one a move left stale opens again first, when it can. */
+    fun session(id: DocumentId): Session =
+        synchronized(this) { sessions[id] ?: stored(id.raw) }.also { runCatching { it.reopenIfStale() } }
+
+    /** Reads a document's record to open it again after a move; the tests make it fail. */
+    @Volatile internal var opening: (String) -> DocumentInfo = { vault.document(it) }
 
     /** The session of a saved document, opened from the Vault the first time. */
     private fun stored(vaultId: String): Session {
@@ -241,9 +257,15 @@ class Documents(
      * nothing saves it again. An import not read yet that was to join the
      * Project lands in Unfiled, or is deleted with the rest; one started
      * while the delete runs lands in Unfiled. The caller stops a job on a
-     * document it deletes first.
+     * document it deletes first. No move runs meanwhile. With
+     * `confirmed`, the documents the question counted, Delete them deletes
+     * nothing when the Project holds any other (one moved in meanwhile).
      */
-    fun deleteProject(project: ProjectId, documents: ProjectDeletion) {
+    fun deleteProject(
+        project: ProjectId,
+        documents: ProjectDeletion,
+        confirmed: Set<DocumentId>? = null,
+    ): Unit = synchronized(projectChanges) {
         val raw = project.raw
         // The imports that would join it, first; the Documents' lock only to
         // read them: a save holds its session's save lock, then takes this one.
@@ -263,7 +285,9 @@ class Documents(
                 val members = synchronized(this) { stored.map { it to (ids[it] ?: DocumentId(it)) } }
                 when (documents) {
                     ProjectDeletion.DeleteDocuments -> {
-                        (imports.filter { it.joins(raw) }.map { it.id } + members.map { it.second }).forEach(::delete)
+                        val deleting = imports.filter { it.joins(raw) }.map { it.id } + members.map { it.second }
+                        if (confirmed != null && deleting.any { it !in confirmed }) throw AppError.Failed(PROJECT_CHANGED)
+                        deleting.forEach(::delete)
                         core { deleteInVault(raw, ProjectDocuments.DELETE) }
                         emptyList<Pair<String, Session>>()
                     }
@@ -302,14 +326,87 @@ class Documents(
                 }
             }
             // The core rewrote their text: each opens again as it is now.
-            for ((vaultId, session) in open) {
-                runCatching { session.reopen(vaultId, vault.document(vaultId)) }
-            }
+            for ((vaultId, session) in open) session.reopenAfterMove(vaultId)
             failure?.let { throw it }
         } finally {
             synchronized(this) { deletingProjects -= raw }
             synchronized(projectNames) { projectNames.clear() }
         }
+    }
+
+    /**
+     * Move to Project, Move to New Project or Move to Unfiled (#1091
+     * Decision 9): the document's names take the aliases of the place it
+     * joins and its text is rewritten with them; the Project it left keeps
+     * its names. Refused for the place it is in already, and for an import
+     * not read yet. A new Project's name is the caller's, as typed.
+     */
+    fun moveDocument(id: DocumentId, target: MoveTarget): ProjectMove = move(id) { vaultId ->
+        when (target) {
+            is MoveTarget.Existing -> vault.moveDocument(vaultId, target.project.raw)
+            is MoveTarget.NewProject -> vault.moveDocumentToNewProject(vaultId, target.name)
+            MoveTarget.Unfiled -> vault.moveDocument(vaultId, null)
+        }
+    }
+
+    /**
+     * Undo of a move: the document moves back and its names take their old
+     * aliases there. The names the move added go again where nothing uses
+     * them, unless text was shared from there since.
+     */
+    fun undoMove(move: ProjectMove): ProjectMove = move(move.document) { vault.undoMove(move.undo) }
+
+    /**
+     * A saved document's move through the Vault, as iOS's: the move has
+     * happened once the core returns, so its session opens it again, as it
+     * is now. A move that stops part way may have moved it, or written it
+     * back as it was: its session opens it again too, and the error is
+     * raised once it has.
+     */
+    private fun move(id: DocumentId, call: (String) -> DocumentMove): ProjectMove {
+        synchronized(projectChanges) { return moveHeld(id, call) }
+    }
+
+    /** [move], under the Project changes' lock. */
+    private fun moveHeld(id: DocumentId, call: (String) -> DocumentMove): ProjectMove {
+        // Its session, read under this object's lock, where a first save
+        // shows its Vault id together with its mapping: an import is either
+        // saved and known by its Vault id, or refused as not read yet.
+        val held: Session
+        val vaultId: String
+        synchronized(this) {
+            // A listed document not opened this run: its id is the Vault's,
+            // and no session opens it while this lock is held.
+            held = sessions[id] ?: ids[id.raw]?.let { sessions[it] } ?: return moved(id, core { moveInVault { call(id.raw) } })
+            vaultId = held.vaultId ?: throw AppError.Failed(NOT_READ_YET)
+        }
+        // No save of it runs meanwhile, nor starts: a save after the move
+        // and before the session opens it again would be refused as stale.
+        return held.holdingSave {
+            val result = try {
+                core { moveInVault { call(vaultId) } }
+            } catch (error: Exception) {
+                held.reopenAfterMove(vaultId)?.let(error::addSuppressed)
+                synchronized(projectNames) { projectNames.clear() }
+                throw error
+            }
+            // Its text and Project changed in the Vault: the session opens it
+            // again. The move stands even if it can't: it is then opened again
+            // before its next change, or when it is next shown.
+            held.reopenAfterMove(vaultId)
+            moved(held.id, result)
+        }
+    }
+
+    /** What a move tells the app. */
+    private fun moved(id: DocumentId, moved: DocumentMove): ProjectMove {
+        synchronized(projectNames) { projectNames.clear() }
+        return ProjectMove(
+            document = id,
+            to = moved.project?.let { ProjectSummary(ProjectId(it.id), it.name, projectColour(it.hue)) },
+            from = moved.left?.let { ProjectId(it.id) },
+            undo = moved.undo,
+        )
     }
 
     /** Runs `body` while none of `held` saves. */
@@ -434,7 +531,32 @@ class Documents(
                 kind = sourceKind(info.sourceKind)
                 original.close()
                 original = stored
+                this.opened += 1
+                stale = false
             }
+        }
+
+        /** Times it opened from the Vault; see [DocumentSnapshot.opened]. */
+        private var opened = 0
+
+        /**
+         * A move went through but this session could not open the document
+         * again: it does before its next change, and when next asked for.
+         */
+        @Volatile private var stale = false
+
+        /** Opens it again after a move; on failure it stays [stale], and the error is returned. */
+        internal fun reopenAfterMove(vaultId: String): Throwable? =
+            runCatching { reopen(vaultId, opening(vaultId)) }.exceptionOrNull()?.also { stale = true }
+
+        /** Opens it again if a move left it [stale]; throws when it still can't. */
+        internal fun reopenIfStale() = holdingSave { reopenHeldIfStale() }
+
+        /** [reopenIfStale], the save lock held. */
+        private fun reopenHeldIfStale() {
+            if (!stale) return
+            val vaultId = vaultId ?: return
+            reopen(vaultId, opening(vaultId))
         }
 
         /** The document closed: its decrypted original goes (#1091 Decision 24). */
@@ -464,7 +586,7 @@ class Documents(
             val review = review
                 ?: return DocumentSnapshot(
                     id, title, chosenProject?.let(::ProjectId), projectName(chosenProject), kind, DocumentPhase.Recognizing,
-                    "", null, emptyList(), emptyList(), null, resumesOcr = ocrStarted, original = original,
+                    "", null, emptyList(), emptyList(), null, resumesOcr = ocrStarted, original = original, opened = opened,
                 )
             val candidates = review.mentions.map(::candidate)
             val identities = review.identities.map { row ->
@@ -486,6 +608,7 @@ class Documents(
                 markdownStyling(review.text), candidates, identities, reply(review),
                 warning = review.warning,
                 original = original,
+                opened = opened,
             )
         }
 
@@ -610,11 +733,12 @@ class Documents(
             return snapshot()
         }
 
-        fun decide(candidate: CandidateId, decision: Decision, scope: Scope): DocumentSnapshot {
+        /** `seen`: the [DocumentSnapshot.opened] the candidate was picked from. */
+        fun decide(candidate: CandidateId, decision: Decision, scope: Scope, seen: Int? = null): DocumentSnapshot {
             val mention = snapshot().candidate(candidate) ?: throw AppError.NotFound()
             val range = TextRange(mention.range.start.toULong(), mention.range.end.toULong())
             val reach = if (scope == Scope.AllOccurrences) FfiScope.ALL else FfiScope.THIS
-            return change {
+            return change(seen) {
                 when (decision) {
                     Decision.Replace -> ffi.replace(range, reach)
                     Decision.Keep -> ffi.keep(range, reach)
@@ -622,20 +746,24 @@ class Documents(
             }
         }
 
-        fun replaceAllPending(): DocumentSnapshot = change { ffi.replaceAll() }
+        fun replaceAllPending(): DocumentSnapshot = change(null) { ffi.replaceAll() }
 
         /**
          * Proposals as a scan would give them, for UI tests and the survey on
          * an emulator with no detector (the iOS app's seedForUITesting).
          */
         internal fun seedProposals(candidates: List<uniffi.mdoc_ffi.Candidate>): DocumentSnapshot =
-            change { ffi.addCandidates(candidates) }
+            change(null) { ffi.addCandidates(candidates) }
 
-        /** Replace…: a manual identity for the selected text, replaced in every exact repeat. */
-        fun addReplacement(range: SourceRange, category: Category): DocumentSnapshot {
+        /**
+         * Replace…: a manual identity for the selected text, replaced in
+         * every exact repeat; `seen`, the [DocumentSnapshot.opened] it was
+         * selected in.
+         */
+        fun addReplacement(range: SourceRange, category: Category, seen: Int? = null): DocumentSnapshot {
             if (range.length <= 0) throw AppError.EmptySelection()
             val selection = TextRange(range.start.toULong(), range.end.toULong())
-            return change {
+            return change(seen) {
                 val proposed = ffi.addSelection(selection, ffiCategory(category))
                 val mention = proposed.mentions.firstOrNull {
                     it.range.start <= selection.start && it.range.end >= selection.end
@@ -651,14 +779,16 @@ class Documents(
          * notes the share, so a move's Undo keeps the names a reply may use.
          * Its place is kept for Restore with mdoc.
          */
-        fun copyForAi(): HandOff {
+        fun copyForAi(): HandOff = synchronized(projectChanges) {
+            // No move or Project delete meanwhile: the place kept is the one
+            // whose names the text was shared in.
             val current = snapshot()
             if (current.pendingCount > 0) throw AppError.PendingReview(current.pendingCount)
             val vaultId = vaultId ?: throw AppError.NotFound()
             val fileName = core { ffi.shareFileName() }
             val text = core { vault.textForAi(vaultId) }
             lastShared.set(projectId?.let { Place.Project(ProjectId(it)) } ?: Place.Unfiled(vaultId))
-            return HandOff(text, fileName)
+            HandOff(text, fileName)
         }
 
         /**
@@ -680,11 +810,21 @@ class Documents(
             return snapshot()
         }
 
-        /** A review transition, then the document saved into the Vault, as desktop autosaves. */
-        private fun change(transition: () -> ReviewSnapshot): DocumentSnapshot {
-            val changed = core(transition)
-            synchronized(this) { review = changed }
-            save()
+        /**
+         * A review transition, then the document saved into the Vault, as
+         * desktop autosaves: one step under the save lock, so a move never
+         * opens the document again between them and loses the change. One
+         * made on a snapshot from before such an opening (`seen`) is refused:
+         * its ranges were of the old text.
+         */
+        private fun change(seen: Int?, transition: () -> ReviewSnapshot): DocumentSnapshot {
+            synchronized(saving) {
+                reopenHeldIfStale()
+                if (seen != null && seen != synchronized(this) { opened }) throw AppError.Failed(MOVED_MEANWHILE)
+                val changed = core(transition)
+                synchronized(this) { review = changed }
+                saveHeld()
+            }
             return snapshot()
         }
 
@@ -772,6 +912,15 @@ class Documents(
 
         /** A saved reply's title. */
         fun replyTitle(title: String) = "Reply to $title"
+
+        /** Why an import not read yet does not move, in iOS's words. */
+        const val NOT_READ_YET = "Move the document once it is read."
+
+        /** Delete them refused: the Project holds a document the question did not count. */
+        const val PROJECT_CHANGED = "A document joined the Project meanwhile, so nothing was deleted. Look at it again first."
+
+        /** A review action on a snapshot from before a move. */
+        const val MOVED_MEANWHILE = "The document moved meanwhile. Try again."
 
         /** As Home and the document show it: read, names searched for or marked, proposals left. */
         fun phase(scanned: Boolean, candidates: Int, proposed: Int) = when {

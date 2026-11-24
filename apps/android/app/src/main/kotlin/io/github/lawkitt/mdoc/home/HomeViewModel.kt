@@ -17,8 +17,11 @@ import io.github.lawkitt.mdoc.core.CameraCapture
 import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentPhase
 import io.github.lawkitt.mdoc.core.DocumentSummary
+import io.github.lawkitt.mdoc.core.Documents
 import io.github.lawkitt.mdoc.core.ImportSource
+import io.github.lawkitt.mdoc.core.MoveTarget
 import io.github.lawkitt.mdoc.core.ProjectId
+import io.github.lawkitt.mdoc.core.ProjectMove
 import io.github.lawkitt.mdoc.core.ProjectSummary
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ProjectDeletion
@@ -84,6 +87,12 @@ data class RepeatedImport(
 /** Delete's first half: the documents leave the lists while a snackbar offers Undo. */
 data class PendingDelete(val ids: List<DocumentId>, val title: String?, val serial: Long)
 
+/** A move's snackbar: "Moved to <Project>" offering Undo, or, once undone, "Moved back to <Project>". */
+data class MoveNotice(val move: ProjectMove, val undone: Boolean, val serial: Long)
+
+/** A document menu's move commands (#1091 Decision 9; iOS's Move to Project). */
+enum class MoveCommand { ToProject, ToNewProject, ToUnfiled }
+
 /** A saved reply shown restored: null while it is restored, [failed] when it can't be. */
 data class ShownReply(val reply: SavedReplyRow, val restored: RestoreResult? = null, val failed: Boolean = false)
 
@@ -116,6 +125,12 @@ data class HomeState(
     val page: ProjectPageData? = null,
     /** A saved reply a Project's Replies shows restored. */
     val shownReply: ShownReply? = null,
+    /** The last move or its Undo, while its snackbar shows. */
+    val moved: MoveNotice? = null,
+    /** Moves and Undos finished: an open document reads itself again at each. */
+    val moves: Long = 0,
+    /** Why a move or its Undo failed. */
+    val failed: String? = null,
 ) {
     private val hidden: Set<DocumentId> get() = pendingDelete?.ids?.toSet().orEmpty()
 
@@ -295,13 +310,16 @@ class HomeViewModel(
      * confirmation. True when it is gone.
      */
     suspend fun deleteProject(id: ProjectId, documents: ProjectDeletion): Boolean {
+        // What the question counted, and those whose own Delete is still
+        // offering Undo (they go now): Delete them deletes nothing if
+        // another joined since.
+        val counted = state.value.documents.filter { it.projectId == id }
         commitPendingDelete()
         val project = state.value.project(id) ?: return false
-        if (documents == ProjectDeletion.DeleteDocuments) {
-            stopJob(state.value.documents.filter { it.projectId == id })
-        }
-        val deleted = withContext(Dispatchers.IO) { runCatching { core().documents.deleteProject(id, documents) } }
-            .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+        if (documents == ProjectDeletion.DeleteDocuments) stopJob(counted)
+        val confirmed = counted.map { it.id }.toSet().takeIf { documents == ProjectDeletion.DeleteDocuments }
+        val deleted = withContext(Dispatchers.IO) { runCatching { core().documents.deleteProject(id, documents, confirmed) } }
+            .onFailure { error -> mutable.update { it.copy(failed = error.message ?: error.toString()) } }
             .isSuccess
         refreshNow()
         if (deleted) mutable.update { it.copy(deletedProject = project.name) }
@@ -309,6 +327,53 @@ class HomeViewModel(
     }
 
     fun deletedProjectShown() = mutable.update { it.copy(deletedProject = null) }
+
+    // Moves (#1091 Decision 9)
+
+    private var moveSerial = 0L
+
+    /**
+     * Move to Project, Move to New Project or Move to Unfiled, as iOS's: a
+     * new Project is named as every new Project is (#677), trimmed and
+     * numbered when a Project has the name already, and a blank name moves
+     * nothing. A job on the document stops first: the move rewrites the
+     * text it would save. Its snackbar offers Undo. In the view model's
+     * scope: an activity recreated meanwhile still gets its snackbar.
+     */
+    fun move(id: DocumentId, target: MoveTarget) = viewModelScope.launch {
+        val to = when (target) {
+            is MoveTarget.NewProject -> {
+                val trimmed = target.name.trim()
+                if (trimmed.isEmpty()) return@launch
+                MoveTarget.NewProject(unusedName(trimmed, state.value.projects.map { it.name }))
+            }
+            else -> target
+        }
+        moving(id) { it.moveDocument(id, to) }?.let { notice(it, undone = false) }
+    }
+
+    /** Undo on a move's snackbar: the document moves back, and "Moved back to <Project>" says where. */
+    fun undoMove(move: ProjectMove) = viewModelScope.launch {
+        moving(move.document) { it.undoMove(move) }?.let { notice(it, undone = true) }
+    }
+
+    /** A move's snackbar ended. */
+    fun moveShown(serial: Long) = mutable.update { if (it.moved?.serial == serial) it.copy(moved = null) else it }
+
+    fun failureShown() = mutable.update { it.copy(failed = null) }
+
+    /** A move or its Undo, then the lists and an open document read again: even a failed one may have moved it. */
+    private suspend fun moving(id: DocumentId, call: (Documents) -> ProjectMove): ProjectMove? {
+        stopJob(state.value.documents.filter { it.id == id })
+        val result = withContext(Dispatchers.IO) { runCatching { call(core().documents) } }
+        refreshNow()
+        val failure = result.exceptionOrNull()?.let { it.message ?: it.toString() }
+        mutable.update { it.copy(moves = it.moves + 1, failed = failure ?: it.failed) }
+        return result.getOrNull()
+    }
+
+    private fun notice(move: ProjectMove, undone: Boolean) =
+        mutable.update { it.copy(moved = MoveNotice(move, undone, ++moveSerial)) }
 
     /** One page load: its Project is the page shown while it is the latest. */
     private class PageLoad(val project: ProjectId)
@@ -437,7 +502,7 @@ class HomeViewModel(
                 next.copy(
                     adding = it.adding, scanPageCount = it.scanPageCount, refused = it.refused,
                     pendingDelete = it.pendingDelete, deletedProject = it.deletedProject, repeated = it.repeated, page = it.page,
-                    shownReply = it.shownReply,
+                    shownReply = it.shownReply, moved = it.moved, moves = it.moves, failed = it.failed,
                 )
             }
         }
@@ -768,6 +833,21 @@ class HomeViewModel(
             is ImportSource.File -> source.file
             is ImportSource.Pages -> source.pages.singleOrNull()?.takeIf { source.kind == SourceKind.Image }
             is ImportSource.Text -> null
+        }
+
+        /**
+         * The move commands a document's menu offers: none for an import not
+         * read yet (iOS refuses its move); Move to Project… while another
+         * Project exists, Move to New Project…, and Move to Unfiled from a
+         * Project.
+         */
+        fun moveCommands(project: ProjectId?, saved: Boolean, projects: List<ProjectSummary>): List<MoveCommand> {
+            if (!saved) return emptyList()
+            return listOfNotNull(
+                MoveCommand.ToProject.takeIf { projects.any { it.id != project } },
+                MoveCommand.ToNewProject,
+                MoveCommand.ToUnfiled.takeIf { project != null },
+            )
         }
 
         /** A new Project's name: `name`, or numbered from 2 when a Project has it already (iOS `unusedName`). */
