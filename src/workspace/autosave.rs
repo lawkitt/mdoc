@@ -49,6 +49,8 @@ pub(super) enum Write {
     UserLists(mdoc_store::lists::Lists),
     /// A dropped folder's new Project, for the sheet that asked.
     FolderProject(super::folder_sheet_ui::FolderProject),
+    /// New Project: an empty Project, then its page.
+    NewProject(super::new_project::NewProjectJob),
     /// The last job: every editor, the Projects and the session are
     /// written, then the window closes.
     Quit,
@@ -431,6 +433,10 @@ impl Workspace {
             }
             Write::FolderProject(project) => {
                 self.run_new_project(project, window, cx);
+                Ran::Ended
+            }
+            Write::NewProject(job) => {
+                self.run_empty_project(job, window, cx);
                 Ran::Ended
             }
             Write::Quit => {

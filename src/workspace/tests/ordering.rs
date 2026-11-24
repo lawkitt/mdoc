@@ -562,6 +562,7 @@ const JOBS: &[(&str, &str)] = &[
     ("workspace/saved_replies.rs", "run_delete_reply"),
     ("workspace/intake.rs", "run_import"),
     ("workspace/folder_sheet_ui.rs", "run_new_project"),
+    ("workspace/new_project.rs", "run_empty_project"),
     ("workspace/user_lists.rs", "run_user_lists"),
     ("workspace/export_project.rs", "run_export"),
 ];

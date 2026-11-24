@@ -574,6 +574,7 @@ impl Workspace {
                             .on_action(|_: &Open, _, _| {})
                             .on_action(|_: &Import, _, _| {})
                             .on_action(|_: &OpenProject, _, _| {})
+                            .on_action(|_: &super::NewProject, _, _| {})
                             .on_action(|_: &Settings, _, _| {})
                             .on_action(|_: &OpenPalette, _, _| {})
                             .on_action(|_: &ShowShortcuts, _, _| {})

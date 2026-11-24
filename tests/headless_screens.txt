@@ -58,6 +58,11 @@ folder-sheet
 folder-sheet-over-cap
 folder-sheet-add-to-project
 confirm-delete-project
+tree-projects-header
+open-project-empty
+tree-no-projects
+new-project-sheet
+new-project-page
 confirm-remove-model
 model-comparison
 conversion-failed

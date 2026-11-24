@@ -51,6 +51,7 @@ mod keychain_ui;
 mod navigation;
 use navigation::Arrival;
 mod navigation_ui;
+mod new_project;
 mod notices;
 pub(crate) use navigation_ui::{Back, Forward};
 mod project_page;
@@ -105,6 +106,7 @@ actions!(
         ToggleTheme,
         ToggleNotices,
         OpenProject,
+        NewProject,
         RetryDocument,
         PasteAiResponse,
         PseudonymizeClipboard,
@@ -312,6 +314,9 @@ pub(super) struct Workspace {
     /// Dropped folders' sheets, one at a time.
     folder_sheets: folder_sheet::FolderSheets,
     folder_sheet_focus: Option<folder_sheet_ui::SheetFocus>,
+    /// New Project's name question, while it shows.
+    new_project: Option<new_project::NewProjectSheet>,
+    new_project_group: gpui::FocusHandle,
     projects: projects::Projects,
     /// Documents a move or a delete is rewriting: their autosaves wait
     /// until they load again.
@@ -583,6 +588,8 @@ impl Workspace {
             reply_page: None,
             folder_sheets: Default::default(),
             folder_sheet_focus: None,
+            new_project: None,
+            new_project_group: cx.focus_handle(),
             projects: Default::default(),
             moving: Default::default(),
             reloading: Default::default(),
@@ -1490,10 +1497,13 @@ impl Workspace {
         .detach();
     }
 
-    /// A confirm dialog, the Keychain explainer or a folder sheet keeps
-    /// focus until answered.
+    /// A confirm dialog, the Keychain explainer, a folder sheet or New
+    /// Project's sheet keeps focus until answered.
     fn dialog_up(&self, window: &Window) -> bool {
-        window.has_active_prompt() || self.project_ui.explainer || self.folder_sheets.open()
+        window.has_active_prompt()
+            || self.project_ui.explainer
+            || self.folder_sheets.open()
+            || self.new_project.is_some()
     }
 
     /// Open paths. Plain files open at once; each folder among them shows
@@ -3434,6 +3444,7 @@ impl Render for Workspace {
             .children(self.move_toast(cx))
             .children(self.project_header_menu(cx))
             .children(self.folder_sheet_view(window, cx))
+            .children(self.new_project_view(window, cx))
             .children(self.keychain_explainer(window, cx))
             .child(
                 div()
@@ -3609,6 +3620,7 @@ impl Workspace {
             || self.project_ui.list_open
             || self.project_ui.explainer
             || self.folder_sheets.open()
+            || self.new_project.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
             || window
@@ -3629,6 +3641,7 @@ impl Workspace {
             || self.project_ui.list_open
             || self.project_ui.explainer
             || self.folder_sheets.open()
+            || self.new_project.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
         {

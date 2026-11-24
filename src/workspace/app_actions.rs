@@ -2,7 +2,7 @@
 use super::Workspace;
 use crate::workspace::{
     AddDocumentToProject, ChangeProjectColour, CheckForUpdates, DeleteProject, ExportProject, New,
-    Open, OpenProject, ProjectCategories, Quit, RenameProject, Settings, ToggleSidebar,
+    NewProject, Open, OpenProject, ProjectCategories, Quit, RenameProject, Settings, ToggleSidebar,
     ToggleTheme, shell::PageAction, shortcuts_ui::ShowShortcuts,
 };
 use gpui::{App, Context, Window};
@@ -38,6 +38,7 @@ pub(crate) fn bind(cx: &mut App) {
         }
     });
     app_action::<OpenProject>(cx, |this, window, cx| this.show_project_list(window, cx));
+    app_action::<NewProject>(cx, |this, window, cx| this.ask_new_project(window, cx));
     // The Project menu: the Project shown, or the active document's.
     app_action::<AddDocumentToProject>(cx, |this, window, cx| {
         this.run_page_action(PageAction::AddDocument, window, cx)
