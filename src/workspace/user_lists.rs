@@ -1,8 +1,8 @@
 //! The user-wide Always and Never lists of Settings › Detection: read with
-//! the Projects when the Vault opens, and saved into it at once on every
-//! change, one revision after another.
-use super::Workspace;
-use gpui::Context;
+//! the Projects when the Vault opens, and saved into it on every change by
+//! a job on the window's writer, one revision after another.
+use super::{Workspace, autosave::Write, document_writer::Target};
+use gpui::{Context, Window};
 use mdoc_store::lists::Lists;
 use mdoc_vault::{UserLists, VaultError};
 
@@ -28,20 +28,35 @@ impl Workspace {
     }
 
     /// Save the lists Settings changed, after the Keychain explainer while
-    /// the Vault is locked.
-    pub(super) fn save_user_lists(&mut self, lists: Lists, cx: &mut Context<Self>) {
+    /// the Vault is locked: a job on the writer, the latest lists replacing
+    /// a save still waiting, and the quit after it.
+    pub(super) fn save_user_lists(
+        &mut self,
+        lists: Lists,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let retry = lists.clone();
-        if !self.vault_key_ready(move |this, _, cx| this.save_user_lists(retry, cx), cx) {
+        if !self.vault_key_ready(
+            move |this, window, cx| this.save_user_lists(retry, window, cx),
+            cx,
+        ) {
             return;
         }
-        let Some(vault) = self.vault.vault().cloned() else {
+        if self.vault.vault().is_none() {
             self.notices
                 .post("Could not save your Always and Never lists: documents are unavailable.");
             cx.notify();
             return;
+        }
+        self.queue_write(Target::UserLists, Write::UserLists(lists), window, cx);
+    }
+
+    /// Write the user-wide lists at the head of the writer's queue.
+    pub(super) fn run_user_lists(&mut self, lists: Lists, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.vault().cloned() else {
+            return;
         };
-        // A small file, written at once: a quit right after an edit never
-        // outruns it.
         if let Err(error) = vault.update_user_lists(|saved| *saved = lists) {
             self.notices.post(format!(
                 "Could not save your Always and Never lists: {error}"

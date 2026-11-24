@@ -11,6 +11,7 @@
 //!   docs/<id>/doc.enc        Document record
 //!   docs/<id>/original.enc   the Document's Source Original, as imported
 //!   replies/<id>.enc         AI Reply record
+//!   staging/.import-*        an import sealed, not yet published
 //! ```
 //!
 //! The caller supplies the key; this crate never asks the OS for one.
@@ -37,7 +38,7 @@ pub use records::{
 };
 pub use vault::{
     Exported, Fault, FaultHook, ManifestCheck, MoveUndo, Moved, ORIGINALS, ProjectDocuments,
-    Readiness, ReplyHandle, Saved, Stage, Vault, WriteStep,
+    Readiness, ReplyHandle, Saved, Stage, StagedImport, Vault, WriteStep,
 };
 
 use std::io;

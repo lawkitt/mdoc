@@ -370,6 +370,10 @@ impl Workspace {
         if documents.is_empty() || self.quit_flow.quitting() {
             return;
         }
+        #[cfg(test)]
+        {
+            self.asked_to_delete.push_back(documents.clone());
+        }
         let title = match documents.as_slice() {
             [one] => {
                 let name = (self.tree_now().documents.into_iter())
@@ -416,6 +420,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if documents.is_empty() || self.quit_flow.quitting() {
+            return;
+        }
         for document in &documents {
             self.moving.insert(document.clone());
         }
@@ -457,7 +464,8 @@ impl Workspace {
                     self.moving.remove(document);
                 }
                 self.notices.post(
-                    "A document moved into a Project before it was deleted, so nothing was                      deleted. Choose again.",
+                    "A document moved into a Project before it was deleted, so nothing was \
+                     deleted. Choose again.",
                 );
                 self.delete_documents(ids, window, cx);
                 cx.notify();

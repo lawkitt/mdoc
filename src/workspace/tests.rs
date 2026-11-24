@@ -47,6 +47,7 @@ mod import_flow;
 mod menu_bar;
 mod navigation;
 mod notices;
+mod ordering;
 mod project_page;
 mod projects;
 mod quit_flow;

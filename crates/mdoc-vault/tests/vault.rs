@@ -848,3 +848,35 @@ fn a_document_without_a_review_is_stored_without_the_field() {
     let read: Document = serde_json::from_value(json).unwrap();
     assert_eq!(read.review, None);
 }
+
+/// ADR 0130: a dropped folder's new Project is made with its categories in
+/// its first write, so nothing can fail after the Project exists.
+#[test]
+fn a_project_made_with_a_setup_is_written_once_with_it() {
+    let folder = Folder::new();
+    let writes = Arc::new(AtomicUsize::new(0));
+    let hook: FaultHook = {
+        let writes = writes.clone();
+        Arc::new(move |step| {
+            if step.kind == ObjectKind::Project && step.stage == Stage::AfterRename {
+                writes.fetch_add(1, Ordering::SeqCst);
+            }
+            Fault::Continue
+        })
+    };
+    let vault = Vault::open_with_hook(&folder.root, &KEY, hook).unwrap();
+    let made = vault
+        .create_project_with(
+            NewProject {
+                name: "Lease".into(),
+                ..NewProject::default()
+            },
+            |project| project.skip = vec!["PERSON".into()],
+        )
+        .unwrap();
+    assert_eq!(writes.load(Ordering::SeqCst), 1, "one write");
+    drop(vault);
+    let stored = folder.open().project(&made.id).unwrap();
+    assert_eq!(stored.skip, ["PERSON"]);
+    assert_eq!(stored.name, "Lease");
+}
