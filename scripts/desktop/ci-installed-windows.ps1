@@ -152,7 +152,7 @@ try {
                     if (-not (Test-Path -LiteralPath $vaultKey -PathType Leaf)) {
                         throw 'Uninstall deleted the Vault key (cases/key.dpapi).'
                     }
-                    'Uninstall preserved cases/key.dpapi.' | Tee-Object -FilePath (Join-Path $evidence.FullName 'case-key.txt')
+                    'Uninstall preserved cases/key.dpapi.' | Tee-Object -FilePath (Join-Path $evidence.FullName 'vault-key.txt')
                     Write-Host 'Uninstall completed.'
                 } finally {
                     # Never remove a key that was already present before seeding.

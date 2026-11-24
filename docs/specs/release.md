@@ -71,7 +71,7 @@ gh variable set APPLE_SIGNING_IDENTITY --env release -R lawkitt/mdoc --body "Dev
   touches.
 - Cut another RC only for a feature after rc.1, or a fix to what only a
   signed, installed build exercises (installer, signing, update, the
-  keychain case key); full acceptance then runs on it.
+  keychain Vault key); full acceptance then runs on it.
 - A patch gets no RC: a smoke run on both platforms (install, launch, open a
   document, Copy for AI) plus the rows its fixes touch.
 - A release publishes once both platforms' runs end with no must-fix Fail.

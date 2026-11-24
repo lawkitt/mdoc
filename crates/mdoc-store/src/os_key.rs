@@ -467,7 +467,7 @@ mod key {
         let key = fresh();
         collection
             .create_item(
-                "mdoc case key",
+                "mdoc Vault key",
                 attributes(),
                 &key,
                 false,
