@@ -315,6 +315,12 @@ data class DocumentSnapshot(
     /** Text recognition began and kept finished pages: Recognize resumes. */
     val resumesOcr: Boolean = false,
     val original: OriginalSource = OriginalSource.None,
+    /**
+     * How many times its session opened it from the Vault when this was
+     * taken: a move opens it again, and a review action on a snapshot from
+     * before is refused, as its ranges were of the old text.
+     */
+    val opened: Int = 0,
 ) {
     val pendingCount: Int get() = candidates.count { it.state == MentionState.Proposed }
     val replacedCount: Int get() = candidates.count { it.state == MentionState.Replaced }

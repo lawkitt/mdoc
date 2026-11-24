@@ -21,6 +21,7 @@ import io.github.lawkitt.mdoc.jobs.JobOutcome
 import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.jobs.RunningJob
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -182,10 +183,14 @@ class DocumentViewModel(
 
     fun closeCandidate() = mutable.update { it.copy(reviewing = null) }
 
-    fun decide(candidate: CandidateId, decision: Decision, scope: Scope, openNext: Boolean = false) = change {
-        val next = session.decide(candidate, decision, scope)
-        val following = if (openNext) nextProposal(next.candidates, candidate) else null
-        mutable.update { it.copy(snapshot = next, reviewing = following) }
+    fun decide(candidate: CandidateId, decision: Decision, scope: Scope, openNext: Boolean = false): Job {
+        // Picked on the snapshot shown: refused if a move opened the document again since.
+        val seen = mutable.value.snapshot.opened
+        return change {
+            val next = session.decide(candidate, decision, scope, seen)
+            val following = if (openNext) nextProposal(next.candidates, candidate) else null
+            mutable.update { it.copy(snapshot = next, reviewing = following) }
+        }
     }
 
     fun replaceAll() = change { mutable.update { it.copy(snapshot = session.replaceAllPending()) } }
@@ -196,7 +201,9 @@ class DocumentViewModel(
 
     fun replaceSelection(category: Category) {
         val (range, _) = mutable.value.manual ?: return
-        change { mutable.update { it.copy(snapshot = session.addReplacement(range, category), manual = null) } }
+        // Selected in the snapshot shown: refused if a move opened the document again since.
+        val seen = mutable.value.snapshot.opened
+        change { mutable.update { it.copy(snapshot = session.addReplacement(range, category, seen), manual = null) } }
     }
 
     fun showIdentities(show: Boolean) = mutable.update { it.copy(showsIdentities = show) }

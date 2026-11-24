@@ -215,7 +215,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
         when (command) {
             MoveCommand.ToProject -> dialog = "move:${id.raw}"
             MoveCommand.ToNewProject -> dialog = "move-new:${id.raw}"
-            MoveCommand.ToUnfiled -> scope.launch(Dispatchers.Main) { home.move(id, MoveTarget.Unfiled) }
+            MoveCommand.ToUnfiled -> home.move(id, MoveTarget.Unfiled)
         }
     }
 
@@ -576,14 +576,14 @@ private fun ProjectDialogs(
             val own = state.documents.firstOrNull { it.id == id }?.projectId
             MoveToProjectDialog(state.projects.filter { it.id != own }, onPick = { project ->
                 onDone()
-                scope.launch(Dispatchers.Main) { home.move(id, MoveTarget.Existing(project)) }
+                home.move(id, MoveTarget.Existing(project))
             }, onDismiss = onDone)
         }
         dialog?.startsWith("move-new:") == true -> {
             val id = DocumentId(dialog.removePrefix("move-new:"))
             MoveToNewProjectDialog(onMove = { name ->
                 onDone()
-                scope.launch(Dispatchers.Main) { home.move(id, MoveTarget.NewProject(name)) }
+                home.move(id, MoveTarget.NewProject(name))
             }, onDismiss = onDone)
         }
         dialog?.startsWith("delete:") == true -> {

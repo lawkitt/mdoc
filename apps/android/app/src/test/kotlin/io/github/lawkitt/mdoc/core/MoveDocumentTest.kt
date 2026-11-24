@@ -176,6 +176,69 @@ class MoveDocumentTest {
     }
 
     /**
+     * A move the Vault made whose session could not open the document
+     * again: the session opens it before its next change, or when it is
+     * next asked for, and saves where it went.
+     */
+    @Test
+    fun aSessionAMoveLeftStaleOpensAgainBeforeItsNextChange() {
+        val harbour = harbour()
+        for (next in listOf("change", "session")) {
+            val letter = letter()
+            documents.opening = { throw CoreException.Io("busy") }
+            documents.moveDocument(letter.id, MoveTarget.Existing(harbour))
+            documents.opening = { vault.document(it) }
+            when (next) {
+                "change" -> letter.replaceAllPending()
+                else -> documents.session(letter.id).replaceAllPending()
+            }
+            assertEquals("$next: it shows where it went", harbour, letter.snapshot().projectId)
+            assertEquals(harbour.raw, vault.document(letter.vaultId!!).projectId)
+        }
+    }
+
+    /** A review action picked on a snapshot from before a move is refused: its ranges were of the old text. */
+    @Test
+    fun anActionOnASnapshotFromBeforeAMoveIsRefused() {
+        val harbour = harbour()
+        val text = "Dear Maya Bennett, Tom Hale will call."
+        val letter = reviewed(text, "Maya Bennett", "Letter")
+        val seen = letter.snapshot().opened
+        documents.moveDocument(letter.id, MoveTarget.Existing(harbour))
+        val start = text.indexOf("Tom Hale")
+        val error = assertThrows(AppError.Failed::class.java) {
+            letter.addReplacement(SourceRange(start, start + 8), Category.Person, seen)
+        }
+        assertEquals(Documents.MOVED_MEANWHILE, error.message)
+        // On the snapshot shown now, it goes through.
+        val now = letter.snapshot()
+        val at = now.markdown.indexOf("Tom Hale")
+        val replaced = letter.addReplacement(SourceRange(at, at + 8), Category.Person, now.opened)
+        assertTrue(replaced.identities.any { it.primaryWording == "Tom Hale" })
+    }
+
+    /**
+     * Delete them on a Project the question counted empty deletes nothing
+     * once a document moved in meanwhile: it is refused, and the letter and
+     * the Project stay.
+     */
+    @Test
+    fun deletingAProjectCountedEmptyKeepsADocumentThatMovedIn() {
+        val empty = documents.createProject("Empty").id
+        val letter = letter()
+        documents.moveDocument(letter.id, MoveTarget.Existing(empty))
+        val error = assertThrows(AppError.Failed::class.java) {
+            documents.deleteProject(empty, ProjectDeletion.DeleteDocuments, confirmed = emptySet())
+        }
+        assertEquals(Documents.PROJECT_CHANGED, error.message)
+        assertEquals(empty.raw, vault.document(letter.vaultId!!).projectId)
+        assertEquals(listOf("Empty"), vault.projects().map { it.name })
+        // Counted, it goes.
+        documents.deleteProject(empty, ProjectDeletion.DeleteDocuments, confirmed = setOf(letter.id))
+        assertTrue(vault.documents().isEmpty())
+    }
+
+    /**
      * A move into a Project while its delete runs waits for the delete:
      * it never lands there after the delete read the Project's documents,
      * which would move it to Unfiled behind its session. It is refused,

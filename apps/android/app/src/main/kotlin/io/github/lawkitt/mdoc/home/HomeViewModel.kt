@@ -310,13 +310,16 @@ class HomeViewModel(
      * confirmation. True when it is gone.
      */
     suspend fun deleteProject(id: ProjectId, documents: ProjectDeletion): Boolean {
+        // What the question counted, and those whose own Delete is still
+        // offering Undo (they go now): Delete them deletes nothing if
+        // another joined since.
+        val counted = state.value.documents.filter { it.projectId == id }
         commitPendingDelete()
         val project = state.value.project(id) ?: return false
-        if (documents == ProjectDeletion.DeleteDocuments) {
-            stopJob(state.value.documents.filter { it.projectId == id })
-        }
-        val deleted = withContext(Dispatchers.IO) { runCatching { core().documents.deleteProject(id, documents) } }
-            .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+        if (documents == ProjectDeletion.DeleteDocuments) stopJob(counted)
+        val confirmed = counted.map { it.id }.toSet().takeIf { documents == ProjectDeletion.DeleteDocuments }
+        val deleted = withContext(Dispatchers.IO) { runCatching { core().documents.deleteProject(id, documents, confirmed) } }
+            .onFailure { error -> mutable.update { it.copy(failed = error.message ?: error.toString()) } }
             .isSuccess
         refreshNow()
         if (deleted) mutable.update { it.copy(deletedProject = project.name) }
@@ -334,20 +337,19 @@ class HomeViewModel(
      * new Project is named as every new Project is (#677), trimmed and
      * numbered when a Project has the name already, and a blank name moves
      * nothing. A job on the document stops first: the move rewrites the
-     * text it would save. Its snackbar offers Undo. True when it moved.
+     * text it would save. Its snackbar offers Undo. In the view model's
+     * scope: an activity recreated meanwhile still gets its snackbar.
      */
-    suspend fun move(id: DocumentId, target: MoveTarget): Boolean {
+    fun move(id: DocumentId, target: MoveTarget) = viewModelScope.launch {
         val to = when (target) {
             is MoveTarget.NewProject -> {
                 val trimmed = target.name.trim()
-                if (trimmed.isEmpty()) return false
+                if (trimmed.isEmpty()) return@launch
                 MoveTarget.NewProject(unusedName(trimmed, state.value.projects.map { it.name }))
             }
             else -> target
         }
-        val move = moving(id) { it.moveDocument(id, to) } ?: return false
-        notice(move, undone = false)
-        return true
+        moving(id) { it.moveDocument(id, to) }?.let { notice(it, undone = false) }
     }
 
     /** Undo on a move's snackbar: the document moves back, and "Moved back to <Project>" says where. */

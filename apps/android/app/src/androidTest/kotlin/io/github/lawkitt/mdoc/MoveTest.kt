@@ -141,32 +141,41 @@ class MoveTest {
     }
 
     /**
-     * A move that stops part way after the Vault moved the letter: the
-     * error shows, no Undo is offered, and the open letter is where the
-     * Vault has it and saves there.
+     * A move from the open letter's menu that stops part way after the
+     * Vault moved it: the error shows, no Undo is offered, and the letter
+     * still open shows where the Vault has it, with Harbour's Ann Lee
+     * proposed in it, and saves its review there.
      */
     @Test
     fun aMoveThatStopsPartWay() {
         val harbour = documents.createProject("Harbour").id
-        val letter = reviewed("Letter")
-        val session = documents.session(letter)
+        val lease = documents.importDocument(ImportSource.Text("Ann Lee signed the lease."), "Lease", harbour)
+        lease.recognize(Quiet)
+        lease.addReplacement(SourceRange(0, 7), Category.Person)
+        val text = "Dear Maya Bennett, Ann Lee will call."
+        val session = documents.importDocument(ImportSource.Text(text), "Letter")
+        session.recognize(Quiet)
+        session.addReplacement(SourceRange(5, 17), Category.Person)
         documents.moveInVault = { move ->
             move()
             throw CoreException.Io("the disk is full")
         }
         reload()
-        compose.sidebar("Unfiled")
-        menuOf("Letter")
+        compose.openDocument("Letter")
+        compose.waitForShown(hasContentDescription("More options"))
+        compose.shown(hasContentDescription("More options")).performClick()
         tap("Move to Project…")
         tap("Harbour")
         compose.waitForText("Something went wrong")
         compose.waitForText("the disk is full")
         tap("OK")
-        compose.waitUntilGone("Moved to Harbour", timeout = 1_000)
+        assertEquals(0, compose.onAllNodes(hasText("Moved to Harbour")).fetchSemanticsNodes().size)
+        // The open letter is in Harbour now: Ann Lee is proposed, and its Replace saves there.
+        tap("Replace 1")
+        compose.waitUntil(15_000) { vault.document(vaultId(session.id)).proposed == 0uL }
+        assertEquals(harbour.raw, vault.document(vaultId(session.id)).projectId)
         assertEquals(harbour, session.snapshot().projectId)
-        session.replaceAllPending()
-        assertEquals(harbour.raw, vault.document(vaultId(letter)).projectId)
-        compose.sidebar("Harbour")
-        compose.waitForText("Letter")
+        compose.shown(hasContentDescription("More options")).performClick()
+        compose.waitForText("Move to Unfiled")
     }
 }
