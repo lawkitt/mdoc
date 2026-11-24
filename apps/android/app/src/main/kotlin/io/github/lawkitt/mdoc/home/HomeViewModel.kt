@@ -36,6 +36,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.RandomAccessFile
 import java.io.InputStream
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -309,21 +310,48 @@ class HomeViewModel(
 
     fun deletedProjectShown() = mutable.update { it.copy(deletedProject = null) }
 
-    /** A Project page's replies and names, read from the Vault as they are now. */
-    fun loadPage(id: ProjectId) = viewModelScope.launch(Dispatchers.IO) {
-        val page = runCatching {
-            val documents = core().documents
-            documents.refresh()
-            ProjectPageData(id, documents.projectReplies(id), documents.projectDetails(id))
-        }.getOrElse { ProjectPageData(id) }
-        mutable.update { it.copy(page = page) }
+    /** One page load: its Project is the page shown while it is the latest. */
+    private class PageLoad(val project: ProjectId)
+
+    /**
+     * The latest page load, whose Project a refresh reads again; only its
+     * result is shown. Started and published under this reference's lock,
+     * so a load started never lets an older one's result in after it.
+     */
+    private val pageLoad = AtomicReference<PageLoad?>(null)
+
+    private val pageShown: ProjectId? get() = pageLoad.get()?.project
+
+    /** Reads a Project page's replies and names; the tests slow it down. */
+    @Volatile internal var readPage: (ProjectId) -> ProjectPageData = { id ->
+        val documents = core().documents
+        documents.refresh()
+        ProjectPageData(id, documents.projectReplies(id), documents.projectDetails(id))
+    }
+
+    /**
+     * A Project page's replies and names, read from the Vault as they are
+     * now; `id`'s page is the one shown from here on. A load left behind,
+     * of a page shown before or an older read of this one, is dropped when
+     * it ends: it never covers the page shown.
+     */
+    fun loadPage(id: ProjectId): Job {
+        val load = PageLoad(id)
+        synchronized(pageLoad) { pageLoad.set(load) }
+        return viewModelScope.launch(Dispatchers.IO) {
+            val page = runCatching { readPage(id) }.getOrElse { ProjectPageData(id) }
+            synchronized(pageLoad) {
+                if (pageLoad.get() === load) mutable.update { it.copy(page = page) }
+            }
+        }
     }
 
     /** A Project page's Remove on an Always or Never wording. */
     fun removeListed(id: ProjectId, wording: String, always: Boolean) = viewModelScope.launch {
         withContext(Dispatchers.IO) { runCatching { core().documents.removeListed(id, wording, always) } }
             .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
-        loadPage(id)
+        // Read again only while it is the page shown.
+        if (pageShown == id) loadPage(id)
     }
 
     /** A saved reply restored, or null when it can't be. */
@@ -415,7 +443,7 @@ class HomeViewModel(
         }
         // A Project's page reads its replies and names again: a reply Restore
         // with mdoc saved changes no document.
-        state.value.page?.project?.let(::loadPage)
+        pageShown?.let(::loadPage)
     }
 
     /** Paste, started from a Project's page (`into`) or elsewhere. */
